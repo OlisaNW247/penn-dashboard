@@ -1,0 +1,22 @@
+# Swift / SPM
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# macOS
+.DS_Store
+
+# Secrets / local
+.env
+*.local
+secrets/
