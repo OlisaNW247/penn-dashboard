@@ -9,9 +9,14 @@ let package = Package(
     ],
     products: [
         .library(name: "PennDashboardKit", targets: ["PennDashboardKit"]),
+        .executable(name: "penn-dashboard", targets: ["PennDashboardApp"]),
     ],
     targets: [
         .target(name: "PennDashboardKit"),
+        .executableTarget(
+            name: "PennDashboardApp",
+            dependencies: ["PennDashboardKit"]
+        ),
         .testTarget(
             name: "PennDashboardKitTests",
             dependencies: ["PennDashboardKit"]

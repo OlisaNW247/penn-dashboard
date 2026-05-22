@@ -16,6 +16,9 @@ xcuserdata/
 # macOS
 .DS_Store
 
+# Generated app bundles
+PennDashboardKit/dist/
+
 # Secrets / local
 .env
 *.local

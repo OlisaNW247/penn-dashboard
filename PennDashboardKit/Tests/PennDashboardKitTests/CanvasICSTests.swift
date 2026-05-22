@@ -20,15 +20,33 @@ struct CanvasICSTests {
     DTSTART;VALUE=DATE:20260601
     URL:https://canvas.upenn.edu/courses/2/assignments/67890
     END:VEVENT
+    BEGIN:VEVENT
+    UID:event-quiz-24680@canvas.upenn.edu
+    SUMMARY:Quiz 2 [CIS 5050-001 Software Systems]
+    DTSTART:20260522T140000Z
+    URL:https://canvas.upenn.edu/courses/1/quizzes/24680
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:event-discussion-13579@canvas.upenn.edu
+    SUMMARY:Week 4 Discussion [ENM 5100-001]
+    DTSTART:20260523T150000Z
+    URL:https://canvas.upenn.edu/courses/2/discussion_topics/13579
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:event-calendar-11223@canvas.upenn.edu
+    SUMMARY:Guest Lecture [CIS 5050-001 Software Systems]
+    DTSTART:20260524T170000Z
+    URL:https://canvas.upenn.edu/calendar_events/11223
+    END:VEVENT
     END:VCALENDAR
     """
 
     @Test("parses both events and splits course suffix")
     func parsesEvents() throws {
         let data = Self.sampleICS.data(using: .utf8)!
-        let assignments = CanvasICSClient.assignments(from: data)
+        let assignments = CanvasICSClient.calendarItems(from: data)
 
-        #expect(assignments.count == 2)
+        #expect(assignments.count == 5)
 
         let hw = try #require(assignments.first { $0.sourceID.contains("12345") })
         #expect(hw.title == "Homework 3")
@@ -36,6 +54,7 @@ struct CanvasICSTests {
         #expect(hw.url?.absoluteString == "https://canvas.upenn.edu/courses/1/assignments/12345")
         #expect(hw.dueAt != nil)
         #expect(hw.source == .canvas)
+        #expect(hw.kind == .assignment)
         #expect(hw.submitted == false)
 
         let proj = try #require(assignments.first { $0.sourceID.contains("67890") })
@@ -44,10 +63,30 @@ struct CanvasICSTests {
         #expect(proj.dueAt != nil)
     }
 
+    @Test("classifies Canvas feed entries by URL")
+    func classifiesEventKinds() throws {
+        let data = Self.sampleICS.data(using: .utf8)!
+        let items = CanvasICSClient.calendarItems(from: data)
+
+        #expect(try #require(items.first { $0.sourceID.contains("12345") }).kind == .assignment)
+        #expect(try #require(items.first { $0.sourceID.contains("24680") }).kind == .quiz)
+        #expect(try #require(items.first { $0.sourceID.contains("13579") }).kind == .discussion)
+        #expect(try #require(items.first { $0.sourceID.contains("11223") }).kind == .event)
+    }
+
+    @Test("assignment dashboard data excludes non-assignment Canvas events")
+    func assignmentFeedFiltersNonAssignments() {
+        let data = Self.sampleICS.data(using: .utf8)!
+        let assignments = CanvasICSClient.assignments(from: data)
+
+        #expect(assignments.count == 2)
+        #expect(assignments.allSatisfy { $0.isAssignment })
+    }
+
     @Test("DTSTART with Z suffix is parsed as UTC")
     func dtStartZIsUTC() throws {
         let data = Self.sampleICS.data(using: .utf8)!
-        let assignments = CanvasICSClient.assignments(from: data)
+        let assignments = CanvasICSClient.calendarItems(from: data)
         let hw = try #require(assignments.first { $0.sourceID.contains("12345") })
         let due = try #require(hw.dueAt)
 
@@ -64,7 +103,7 @@ struct CanvasICSTests {
     @Test("date-only DTSTART becomes end-of-day UTC")
     func dateOnlyEndOfDay() throws {
         let data = Self.sampleICS.data(using: .utf8)!
-        let assignments = CanvasICSClient.assignments(from: data)
+        let assignments = CanvasICSClient.calendarItems(from: data)
         let proj = try #require(assignments.first { $0.sourceID.contains("67890") })
         let due = try #require(proj.dueAt)
 
@@ -88,7 +127,7 @@ struct CanvasICSTests {
         END:VEVENT
         END:VCALENDAR
         """
-        let assignments = CanvasICSClient.assignments(from: ics.data(using: .utf8)!)
+        let assignments = CanvasICSClient.calendarItems(from: ics.data(using: .utf8)!)
         #expect(assignments.count == 1)
         #expect(assignments[0].title == "Read chapter 4")
         #expect(assignments[0].course == "(unknown course)")
@@ -98,7 +137,7 @@ struct CanvasICSTests {
     func unfolding() {
         // SUMMARY split across two lines per RFC 5545 §3.1.
         let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:folded\r\nSUMMARY:Long title that\r\n  continues here [CIS 1200]\r\nDTSTART:20260601T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
-        let assignments = CanvasICSClient.assignments(from: ics.data(using: .utf8)!)
+        let assignments = CanvasICSClient.calendarItems(from: ics.data(using: .utf8)!)
         #expect(assignments.count == 1)
         #expect(assignments[0].title == "Long title that continues here")
         #expect(assignments[0].course == "CIS 1200")
