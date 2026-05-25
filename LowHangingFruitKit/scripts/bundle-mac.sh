@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds a shareable PennDashboard.app from the SwiftPM executable target.
-# Output: dist/PennDashboard.app and dist/PennDashboard.zip
+# Builds a shareable LowHangingFruit.app from the SwiftPM executable target.
+# Output: dist/LowHangingFruit.app and dist/LowHangingFruit.zip
 set -euo pipefail
 
-APP_NAME="PennDashboard"
-BUNDLE_ID="com.olisa.PennDashboard"
+APP_NAME="LowHangingFruit"
+BUNDLE_ID="com.olisa.LowHangingFruit"
 VERSION="0.1.0"
-EXECUTABLE_PRODUCT="penn-dashboard"
+EXECUTABLE_PRODUCT="low-hanging-fruit"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -47,7 +47,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key><string>${APP_NAME}</string>
-    <key>CFBundleDisplayName</key><string>Penn Dashboard</string>
+    <key>CFBundleDisplayName</key><string>Low Hanging Fruit</string>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>

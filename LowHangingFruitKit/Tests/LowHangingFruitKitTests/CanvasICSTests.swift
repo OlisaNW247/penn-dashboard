@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PennDashboardKit
+@testable import LowHangingFruitKit
 
 @Suite("Canvas ICS parsing")
 struct CanvasICSTests {

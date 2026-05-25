@@ -1,5 +1,5 @@
 import Foundation
-import PennDashboardKit
+import LowHangingFruitKit
 
 struct RecurringTask: Codable, Hashable, Identifiable {
     enum Origin: String, Codable, Hashable {

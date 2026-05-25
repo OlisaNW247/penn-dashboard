@@ -1,5 +1,5 @@
 import SwiftUI
-import PennDashboardKit
+import LowHangingFruitKit
 
 struct ContentView: View {
     @EnvironmentObject var state: AppState

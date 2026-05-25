@@ -1,5 +1,5 @@
 import Testing
-@testable import PennDashboardKit
+@testable import LowHangingFruitKit
 
 @Suite("Canvas requirement scanner")
 struct CanvasRequirementScannerTests {

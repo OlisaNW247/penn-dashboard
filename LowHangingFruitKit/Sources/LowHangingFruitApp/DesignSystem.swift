@@ -25,13 +25,13 @@ extension Color {
 // MARK: – Fonts
 //
 // To enable custom fonts, place the .ttf files here:
-//   Sources/PennDashboardApp/Resources/Fonts/
+//   Sources/LowHangingFruitApp/Resources/Fonts/
 //     Geist-Regular.ttf
 //     Geist-Medium.ttf
 //     Geist-SemiBold.ttf
 //     InstrumentSerif-Regular.ttf
 //
-// Then add to Package.swift PennDashboardApp target:
+// Then add to Package.swift LowHangingFruitApp target:
 //   resources: [.process("Resources")]
 //
 // Until then, SwiftUI silently falls back to the system font.

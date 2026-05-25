@@ -17,7 +17,7 @@ xcuserdata/
 .DS_Store
 
 # Generated app bundles
-PennDashboardKit/dist/
+LowHangingFruitKit/dist/
 
 # Secrets / local
 .env

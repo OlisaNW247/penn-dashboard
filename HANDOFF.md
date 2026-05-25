@@ -1,8 +1,8 @@
-# Penn Dashboard Handoff
+# Low Hanging Fruit Handoff
 
 ## Current Product State
 
-Penn Dashboard is a Swift package with a runnable macOS app and shared `PennDashboardKit` library for future iOS/macOS reuse.
+Low Hanging Fruit is a Swift package with a runnable macOS app and shared `LowHangingFruitKit` library for future iOS/macOS reuse.
 
 The app currently supports:
 
@@ -24,15 +24,15 @@ The app currently supports:
 - Canvas ICS does not include submission state.
 - Gradescope is handled through WebView session-cookie scraping.
 - Canvas syllabus/announcement discovery is also WebView session-cookie based.
-- Generated build artifacts in `PennDashboardKit/dist/` are intentionally ignored by Git.
+- Generated build artifacts in `LowHangingFruitKit/dist/` are intentionally ignored by Git.
 
 ## Project Layout
 
 ```text
-PennDashboardKit/
+LowHangingFruitKit/
   Package.swift
   Sources/
-    PennDashboardApp/
+    LowHangingFruitApp/
       AppState.swift
       ContentView.swift
       AutoSyncCoordinator.swift
@@ -40,7 +40,7 @@ PennDashboardKit/
       CanvasRequirementScanSheet.swift
       RecurringTask.swift
       RecurringTaskSheet.swift
-    PennDashboardKit/
+    LowHangingFruitKit/
       Models/Assignment.swift
       Canvas/
         CanvasICSClient.swift
@@ -51,7 +51,7 @@ PennDashboardKit/
         CanvasDiscoveryClient.swift
         CanvasRequirementScanner.swift
   Tests/
-    PennDashboardKitTests/
+    LowHangingFruitKitTests/
 ```
 
 ## Run And Test
@@ -59,22 +59,22 @@ PennDashboardKit/
 From repo root:
 
 ```sh
-cd PennDashboardKit
+cd LowHangingFruitKit
 swift test
-swift run penn-dashboard
+swift run low-hanging-fruit
 ```
 
 Build the shareable macOS app:
 
 ```sh
-cd PennDashboardKit
+cd LowHangingFruitKit
 bash scripts/bundle-mac.sh
 ```
 
 The shareable zip is generated at:
 
 ```text
-PennDashboardKit/dist/PennDashboard.zip
+LowHangingFruitKit/dist/LowHangingFruit.zip
 ```
 
 ## Collaboration Rules
@@ -82,7 +82,7 @@ PennDashboardKit/dist/PennDashboard.zip
 - Keep `main` stable.
 - Work on short-lived branches.
 - Open pull requests for review.
-- Do not commit `PennDashboardKit/dist/` or `.build/`.
+- Do not commit `LowHangingFruitKit/dist/` or `.build/`.
 - Keep scraper changes covered with small HTML fixture tests.
 - For UI work, avoid changing parsing logic in the same PR unless necessary.
 

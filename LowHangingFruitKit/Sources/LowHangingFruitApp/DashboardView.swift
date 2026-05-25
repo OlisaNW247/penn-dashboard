@@ -1,5 +1,5 @@
 import SwiftUI
-import PennDashboardKit
+import LowHangingFruitKit
 
 // MARK: – Tab
 

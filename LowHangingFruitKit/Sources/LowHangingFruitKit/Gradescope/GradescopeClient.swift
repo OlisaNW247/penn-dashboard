@@ -93,7 +93,7 @@ public struct GradescopeClient: Sendable {
         var request = URLRequest(url: url)
         request.httpShouldHandleCookies = true
         request.setValue(
-            "Mozilla/5.0 PennDashboard/0.1",
+            "Mozilla/5.0 LowHangingFruit/0.1",
             forHTTPHeaderField: "User-Agent"
         )
 

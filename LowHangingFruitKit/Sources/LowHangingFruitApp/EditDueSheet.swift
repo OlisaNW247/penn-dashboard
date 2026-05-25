@@ -1,5 +1,5 @@
 import SwiftUI
-import PennDashboardKit
+import LowHangingFruitKit
 
 struct EditDueSheet: View {
     let assignment: Assignment

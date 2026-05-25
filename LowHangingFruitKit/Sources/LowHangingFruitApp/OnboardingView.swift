@@ -1,6 +1,6 @@
 import SwiftUI
 import WebKit
-import PennDashboardKit
+import LowHangingFruitKit
 
 /// First-run welcome flow. Blocks the dashboard until both core data sources are
 /// connected. The Canvas calendar feed URL is captured automatically from the

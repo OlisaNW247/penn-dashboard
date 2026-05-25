@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PennDashboardKit
+@testable import LowHangingFruitKit
 
 @Suite("Gradescope scraping")
 struct GradescopeTests {

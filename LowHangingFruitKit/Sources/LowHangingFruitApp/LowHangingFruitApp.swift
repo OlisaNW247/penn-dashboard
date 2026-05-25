@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct PennDashboardApp: App {
+struct LowHangingFruitApp: App {
     @StateObject private var state = AppState()
 
     var body: some Scene {
-        WindowGroup("Penn Dashboard") {
+        WindowGroup("Low Hanging Fruit") {
             Group {
                 if state.needsOnboarding {
                     OnboardingView()

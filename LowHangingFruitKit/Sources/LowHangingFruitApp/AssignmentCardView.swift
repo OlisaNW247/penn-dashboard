@@ -1,5 +1,5 @@
 import SwiftUI
-import PennDashboardKit
+import LowHangingFruitKit
 
 struct AssignmentCardView: View {
     let assignment: Assignment

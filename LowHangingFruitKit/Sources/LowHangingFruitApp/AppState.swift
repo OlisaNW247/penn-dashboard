@@ -1,5 +1,5 @@
 import Foundation
-import PennDashboardKit
+import LowHangingFruitKit
 
 @MainActor
 final class AppState: ObservableObject {

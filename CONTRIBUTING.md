@@ -13,7 +13,7 @@ git checkout -b feature/short-description
 Run tests before pushing:
 
 ```sh
-cd PennDashboardKit
+cd LowHangingFruitKit
 swift test
 ```
 
@@ -41,14 +41,14 @@ Each PR should include:
 Run the app directly:
 
 ```sh
-cd PennDashboardKit
-swift run penn-dashboard
+cd LowHangingFruitKit
+swift run low-hanging-fruit
 ```
 
 Build a shareable app:
 
 ```sh
-cd PennDashboardKit
+cd LowHangingFruitKit
 bash scripts/bundle-mac.sh
 ```
 
@@ -66,8 +66,8 @@ When implementing UI designs:
 
 Canvas and Gradescope are intentionally session-cookie based. Keep parsing isolated in:
 
-- `PennDashboardKit/Sources/PennDashboardKit/Gradescope/`
-- `PennDashboardKit/Sources/PennDashboardKit/CanvasDiscovery/`
-- `PennDashboardKit/Sources/PennDashboardKit/Canvas/`
+- `LowHangingFruitKit/Sources/LowHangingFruitKit/Gradescope/`
+- `LowHangingFruitKit/Sources/LowHangingFruitKit/CanvasDiscovery/`
+- `LowHangingFruitKit/Sources/LowHangingFruitKit/Canvas/`
 
 Add tests with small sanitized HTML samples whenever selectors or parsing rules change.
