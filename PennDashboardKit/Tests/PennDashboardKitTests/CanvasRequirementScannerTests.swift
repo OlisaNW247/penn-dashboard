@@ -38,6 +38,35 @@ struct CanvasRequirementScannerTests {
         #expect(suggestions.isEmpty)
     }
 
+    @Test("extracts the personal calendar feed URL from the calendar page")
+    func extractsCalendarFeedURL() throws {
+        let html = """
+        <div class="calendar_feed_box_holder">
+          <input type="text" id="calendar_feed_box" readonly="readonly"
+                 value="https://canvas.upenn.edu/feeds/calendars/user_aBc123XyZ.ics" />
+        </div>
+        """
+
+        let feed = try #require(CanvasCalendarFeedParser.feedURL(from: html))
+        #expect(feed.absoluteString == "https://canvas.upenn.edu/feeds/calendars/user_aBc123XyZ.ics")
+    }
+
+    @Test("unescapes HTML entities in the feed URL")
+    func unescapesFeedURL() throws {
+        let html = #"""
+        <a href="webcal://canvas.upenn.edu/feeds/calendars/user_tok.ics?a=1&amp;b=2">Feed</a>
+        <span>https://canvas.upenn.edu/feeds/calendars/user_tok.ics?a=1&amp;b=2</span>
+        """#
+
+        let feed = try #require(CanvasCalendarFeedParser.feedURL(from: html))
+        #expect(feed.absoluteString == "https://canvas.upenn.edu/feeds/calendars/user_tok.ics?a=1&b=2")
+    }
+
+    @Test("returns nil when no feed URL is present")
+    func noFeedURL() {
+        #expect(CanvasCalendarFeedParser.feedURL(from: "<p>no feed here</p>") == nil)
+    }
+
     @Test("discovers Canvas course links")
     func discoversCourseLinks() throws {
         let html = """

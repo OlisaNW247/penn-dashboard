@@ -25,6 +25,85 @@ struct GradescopeTests {
         #expect(courses[1].name == "ENM 5100")
     }
 
+    @Test("keeps only the current term's courses")
+    func keepsOnlyCurrentTermCourses() throws {
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Spring 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+            <a class="courseBox" href="/courses/222">CIS 5050 Software Systems</a>
+          </div>
+          <div class="courseList--term">Fall 2025</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/333">CIS 4000 Senior Design</a>
+          </div>
+          <div class="courseList--term">Spring 2025</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/444">CIS 1200 Programming</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 5, day: 21, hour: 12, minute: 0))
+        let courses = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(courses.count == 2)
+        let ids = Set(courses.map(\.url.absoluteString))
+        #expect(ids.contains("https://www.gradescope.com/courses/111"))
+        #expect(ids.contains("https://www.gradescope.com/courses/222"))
+        #expect(!ids.contains("https://www.gradescope.com/courses/333"))
+        #expect(!ids.contains("https://www.gradescope.com/courses/444"))
+    }
+
+    @Test("falls back to the most recent term when none matches today")
+    func fallsBackToMostRecentTerm() throws {
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2025</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/333">CIS 4000 Senior Design</a>
+          </div>
+          <div class="courseList--term">Spring 2025</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/444">CIS 1200 Programming</a>
+          </div>
+        </div>
+        """
+
+        // July 2026 (summer) — no matching term, so the newest (Fall 2025) wins.
+        let now = try #require(Self.utcDate(year: 2026, month: 7, day: 1, hour: 12, minute: 0))
+        let courses = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(courses.count == 1)
+        #expect(courses.first?.url.absoluteString == "https://www.gradescope.com/courses/333")
+    }
+
+    @Test("falls back to all courses when there are no term headings")
+    func fallsBackWhenNoTermHeadings() throws {
+        let html = """
+        <main>
+          <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+          <a class="courseBox" href="/courses/222">CIS 5050 Software Systems</a>
+        </main>
+        """
+
+        let courses = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!
+        )
+
+        #expect(courses.count == 2)
+    }
+
     @Test("parses assignments from a course table")
     func parsesAssignments() throws {
         let html = """
@@ -155,6 +234,38 @@ struct GradescopeTests {
         #expect(demoComponents.month == 6)
         #expect(demoComponents.day == 2)
         #expect(demo.submitted == true)
+    }
+
+    @Test("yearless date far in the future resolves to last year")
+    func yearlessFutureResolvesToLastYear() throws {
+        let reference = try #require(Self.utcDate(year: 2026, month: 5, day: 21, hour: 12, minute: 0))
+        let due = try #require(GradescopeHTMLParser.parseDate("Oct 15 at 11:59 PM", referenceDate: reference))
+        let year = Calendar.current.component(.year, from: due)
+        #expect(year == 2025)
+    }
+
+    @Test("yearless near-future date keeps the current year")
+    func yearlessNearFutureKeepsCurrentYear() throws {
+        let reference = try #require(Self.utcDate(year: 2026, month: 5, day: 21, hour: 12, minute: 0))
+        let due = try #require(GradescopeHTMLParser.parseDate("Jun 5 at 11:59 PM", referenceDate: reference))
+        let year = Calendar.current.component(.year, from: due)
+        #expect(year == 2026)
+    }
+
+    @Test("yearless January date near year-end rolls into next year")
+    func yearlessJanuaryRollsToNextYear() throws {
+        let reference = try #require(Self.utcDate(year: 2026, month: 12, day: 20, hour: 12, minute: 0))
+        let due = try #require(GradescopeHTMLParser.parseDate("Jan 5 at 11:59 PM", referenceDate: reference))
+        let year = Calendar.current.component(.year, from: due)
+        #expect(year == 2027)
+    }
+
+    @Test("explicit year in the string is always respected")
+    func explicitYearRespected() throws {
+        let reference = try #require(Self.utcDate(year: 2026, month: 5, day: 21, hour: 12, minute: 0))
+        let due = try #require(GradescopeHTMLParser.parseDate("Oct 15, 2024 at 11:59 PM", referenceDate: reference))
+        let year = Calendar.current.component(.year, from: due)
+        #expect(year == 2024)
     }
 
     @Test("detects completed assignment detail pages")

@@ -3,10 +3,10 @@ import PennDashboardKit
 
 // MARK: – Tab
 
-enum DashTab: String, CaseIterable, CustomStringConvertible {
-    case active    = "Active"
-    case completed = "Completed"
-    case other     = "Other"
+private enum DashTab: String, CaseIterable, CustomStringConvertible {
+    case dashboard   = "Dashboard"
+    case later       = "Later"
+    case assessments = "Assessments"
 
     var description: String { rawValue }
 }
@@ -24,7 +24,7 @@ private struct DashSection: Identifiable {
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
 
-    @State private var selectedTab: DashTab = .active
+    @State private var selectedTab: DashTab = .dashboard
     @State private var dueDateOverrides: [String: Date] = [:]
     @State private var editingAssignment: Assignment?
 
@@ -32,19 +32,15 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.2)
+            tabBar
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: []) {
-                    tabBar
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 12)
-
-                    if selectedTab == .active {
-                        activeSections
-                    } else if selectedTab == .completed {
-                        completedSection
-                    } else {
-                        otherSection
+                    switch selectedTab {
+                    case .dashboard:   dashboardContent
+                    case .later:       laterContent
+                    case .assessments: assessmentsContent
                     }
                 }
                 .padding(.bottom, 32)
@@ -59,6 +55,99 @@ struct DashboardView: View {
                     set: { dueDateOverrides[assignment.id] = $0 }
                 )
             )
+        }
+    }
+
+    private var tabBar: some View {
+        SegmentedToggleView(
+            options: DashTab.allCases,
+            selection: $selectedTab,
+            counts: [
+                .dashboard:   state.assignments.count,
+                .later:       state.laterAssignments.count,
+                .assessments: state.assessments.count,
+            ]
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Tab content
+
+    @ViewBuilder
+    private var dashboardContent: some View {
+        if state.assignments.isEmpty {
+            emptyState(
+                systemImage: "leaf.fill",
+                title: "go touch grass",
+                message: "Nothing due in the next week."
+            )
+        } else {
+            activeSections
+                .padding(.top, 16)
+        }
+    }
+
+    @ViewBuilder
+    private var laterContent: some View {
+        if state.laterAssignments.isEmpty {
+            emptyState(
+                title: "Nothing later",
+                message: "Assignments due more than a week out — and ones with no due date — show up here."
+            )
+        } else {
+            datedSections(
+                from: state.laterAssignments,
+                datedLabel: "UPCOMING",
+                undatedLabel: "NO DUE DATE"
+            )
+            .padding(.top, 16)
+        }
+    }
+
+    @ViewBuilder
+    private var assessmentsContent: some View {
+        if state.assessments.isEmpty {
+            emptyState(
+                systemImage: "graduationcap.fill",
+                title: "No assessments",
+                message: "Quizzes, midterms, and exams show up here."
+            )
+        } else {
+            datedSections(
+                from: state.assessments,
+                datedLabel: "SCHEDULED",
+                undatedLabel: "NO DUE DATE"
+            )
+            .padding(.top, 16)
+        }
+    }
+
+    private func datedSections(from items: [Assignment], datedLabel: String, undatedLabel: String) -> some View {
+        let dated = items.filter { $0.dueAt != nil }
+        let undated = items.filter { $0.dueAt == nil }
+        return VStack(alignment: .leading, spacing: 20) {
+            if !dated.isEmpty   { cardSection(label: datedLabel,   items: dated) }
+            if !undated.isEmpty { cardSection(label: undatedLabel, items: undated) }
+        }
+    }
+
+    private func cardSection(label: String, items: [Assignment]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label)
+                .font(.geist(11, weight: .semibold))
+                .foregroundStyle(Color.lhfGraphite.opacity(0.45))
+                .padding(.horizontal, 16)
+
+            ForEach(items) { assignment in
+                AssignmentCardView(
+                    assignment: assignment,
+                    isCompleted: false,
+                    dueDateOverride: dueDateOverrides[assignment.id],
+                    onToggleCompleted: { state.markCompleted(assignment) },
+                    onEditDue: { editingAssignment = assignment }
+                )
+                .padding(.horizontal, 16)
+            }
         }
     }
 
@@ -92,21 +181,6 @@ struct DashboardView: View {
                     .help(err)
             }
         }
-    }
-
-    // MARK: Tab bar
-
-    private var tabBar: some View {
-        SegmentedToggleView(
-            options: DashTab.allCases,
-            selection: $selectedTab,
-            counts: [
-                .active:    state.assignments.count,
-                .completed: state.completedAssignments.count,
-                .other:     state.otherItems.count,
-            ]
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Active sections
@@ -143,72 +217,11 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: Completed section
-
-    private var completedSection: some View {
-        Group {
-            if state.completedAssignments.isEmpty {
-                emptyState(title: "Nothing completed yet", message: "Tap the circle on an assignment to mark it done.")
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(state.completedAssignments) { assignment in
-                        AssignmentCardView(
-                            assignment: assignment,
-                            isCompleted: true,
-                            dueDateOverride: dueDateOverrides[assignment.id],
-                            onToggleCompleted: {
-                                state.markActive(assignment)
-                                selectedTab = .active
-                            },
-                            onEditDue: {
-                                editingAssignment = assignment
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                    }
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    // MARK: Other section
-
-    private var otherSection: some View {
-        Group {
-            if state.otherItems.isEmpty {
-                emptyState(title: "No other items", message: "Canvas events and non-assignment items appear here.")
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(state.otherItems) { assignment in
-                        AssignmentCardView(
-                            assignment: assignment,
-                            isCompleted: state.isCompleted(assignment),
-                            dueDateOverride: dueDateOverrides[assignment.id],
-                            onToggleCompleted: {
-                                if state.isCompleted(assignment) {
-                                    state.markActive(assignment)
-                                } else {
-                                    state.markCompleted(assignment)
-                                }
-                            },
-                            onEditDue: {
-                                editingAssignment = assignment
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                    }
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
     // MARK: Empty state
 
-    private func emptyState(title: String, message: String) -> some View {
+    private func emptyState(systemImage: String = "tray", title: String, message: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "tray")
+            Image(systemName: systemImage)
                 .font(.system(size: 36))
                 .foregroundStyle(Color.lhfGraphite.opacity(0.25))
             Text(title)

@@ -6,13 +6,20 @@ struct PennDashboardApp: App {
 
     var body: some Scene {
         WindowGroup("Penn Dashboard") {
-            ContentView()
-                .environmentObject(state)
-                .frame(minWidth: 720, minHeight: 480)
-                .task {
-                    await state.syncIfConfigured()
-                    await AutoSyncCoordinator.syncConnectedServices(state: state)
+            Group {
+                if state.needsOnboarding {
+                    OnboardingView()
+                        .environmentObject(state)
+                } else {
+                    ContentView()
+                        .environmentObject(state)
+                        .task {
+                            await state.syncIfConfigured()
+                            await AutoSyncCoordinator.syncConnectedServices(state: state)
+                        }
                 }
+            }
+            .frame(minWidth: 720, minHeight: 480)
         }
     }
 }

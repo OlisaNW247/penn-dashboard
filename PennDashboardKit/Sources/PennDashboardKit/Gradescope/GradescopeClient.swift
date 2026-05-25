@@ -41,7 +41,7 @@ public struct GradescopeClient: Sendable {
         guard !GradescopeHTMLParser.isLoginPage(accountHTML) else {
             throw Error.notLoggedIn
         }
-        let courses = GradescopeHTMLParser.courseLinks(from: accountHTML, baseURL: baseURL)
+        let courses = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
 
         if courses.isEmpty {
             let assignments = GradescopeHTMLParser.assignments(
@@ -145,6 +145,79 @@ public enum GradescopeHTMLParser {
             guard !name.isEmpty, seen.insert(url).inserted else { return nil }
             return CourseLink(name: name, url: url)
         }
+    }
+
+    /// Courses belonging to the current term only. Gradescope groups the account
+    /// page's courses under term headings ("Spring 2026", "Fall 2025", …); past
+    /// terms are finished classes whose stale, often-undated assignments would
+    /// otherwise clog the dashboard. Falls back to all courses if the page has no
+    /// recognizable term grouping.
+    public static func currentTermCourses(
+        from html: String,
+        baseURL: URL,
+        now: Date = Date()
+    ) -> [CourseLink] {
+        let groups = coursesByTerm(from: html, baseURL: baseURL)
+        guard !groups.isEmpty else {
+            return courseLinks(from: html, baseURL: baseURL)
+        }
+
+        let current = GradescopeTerm(date: now)
+
+        // Prefer courses whose term matches today's term.
+        let currentCourses = groups
+            .filter { GradescopeTerm(label: $0.term) == current }
+            .flatMap(\.courses)
+        if !currentCourses.isEmpty {
+            return dedupedByURL(currentCourses)
+        }
+
+        // Otherwise fall back to the most recent term we can identify…
+        let datedGroups = groups.compactMap { group -> (term: GradescopeTerm, courses: [CourseLink])? in
+            guard let term = GradescopeTerm(label: group.term) else { return nil }
+            return (term, group.courses)
+        }
+        if let newest = datedGroups.max(by: { $0.term < $1.term }) {
+            return dedupedByURL(newest.courses)
+        }
+
+        // …or, if no term label could be parsed, the first listed group
+        // (Gradescope lists the newest term first).
+        return dedupedByURL(groups.first?.courses ?? [])
+    }
+
+    private static func coursesByTerm(
+        from html: String,
+        baseURL: URL
+    ) -> [(term: String, courses: [CourseLink])] {
+        let headingPattern = #"<[^>]*\bclass\s*=\s*["'][^"']*courseList--term[^"']*["'][^>]*>(.*?)</[^>]+>"#
+        guard let regex = try? NSRegularExpression(
+            pattern: headingPattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else { return [] }
+
+        let nsHTML = html as NSString
+        let headings = regex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+        guard !headings.isEmpty else { return [] }
+
+        return headings.enumerated().compactMap { index, heading in
+            let label = cleanText(nsHTML.substring(with: heading.range(at: 1)))
+            let segmentStart = heading.range.upperBound
+            let segmentEnd = index + 1 < headings.count
+                ? headings[index + 1].range.location
+                : nsHTML.length
+            let segment = nsHTML.substring(with: NSRange(
+                location: segmentStart,
+                length: segmentEnd - segmentStart
+            ))
+            let courses = courseLinks(from: segment, baseURL: baseURL)
+            return courses.isEmpty ? nil : (label, courses)
+        }
+    }
+
+    private static func dedupedByURL(_ courses: [CourseLink]) -> [CourseLink] {
+        var seen: Set<URL> = []
+        return courses.filter { seen.insert($0.url).inserted }
     }
 
     public static func assignments(
@@ -391,18 +464,31 @@ public enum GradescopeHTMLParser {
         return nil
     }
 
+    /// Picks the year for a date string that didn't include one. Resolves to the
+    /// occurrence within (reference - 12 months, reference + grace]: a yearless
+    /// date far in the future is almost always last year's (a stale leftover),
+    /// while a yearless date near a year boundary rolls into next year.
     private static func normalizeYear(for date: Date, referenceDate: Date) -> Date? {
         let calendar = Calendar(identifier: .gregorian)
         let referenceYear = calendar.component(.year, from: referenceDate)
         var components = calendar.dateComponents([.month, .day, .hour, .minute, .second], from: date)
-        components.year = referenceYear
 
-        guard let sameYear = calendar.date(from: components) else { return nil }
-        if sameYear.timeIntervalSince(referenceDate) < -15552000 {
+        // Allow a small future grace so genuinely near-term due dates keep the
+        // current year, but treat anything further ahead as last year's.
+        let futureGrace: TimeInterval = 45 * 86_400
+        let upperBound = referenceDate.addingTimeInterval(futureGrace)
+
+        components.year = referenceYear
+        guard let candidate = calendar.date(from: components),
+              let lowerBound = calendar.date(byAdding: .year, value: -1, to: upperBound)
+        else { return nil }
+
+        if candidate > upperBound {
+            components.year = referenceYear - 1
+        } else if candidate <= lowerBound {
             components.year = referenceYear + 1
-            return calendar.date(from: components)
         }
-        return sameYear
+        return calendar.date(from: components)
     }
 
     private static func matches(_ pattern: String, in text: String) -> [[String]] {
@@ -430,6 +516,43 @@ public enum GradescopeHTMLParser {
             .htmlDecoded()
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// An academic term, used to keep only the current term's Gradescope courses.
+private struct GradescopeTerm: Comparable, Equatable {
+    enum Season: Int { case winter = 0, spring = 1, summer = 2, fall = 3 }
+
+    let year: Int
+    let season: Season
+
+    init(date: Date) {
+        let calendar = Calendar(identifier: .gregorian)
+        year = calendar.component(.year, from: date)
+        switch calendar.component(.month, from: date) {
+        case 1...5: season = .spring
+        case 6...8: season = .summer
+        default:    season = .fall
+        }
+    }
+
+    init?(label: String) {
+        let lower = label.lowercased()
+        guard let yearRange = lower.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression),
+              let parsedYear = Int(lower[yearRange])
+        else { return nil }
+
+        if lower.contains("spring") { season = .spring }
+        else if lower.contains("summer") { season = .summer }
+        else if lower.contains("fall") || lower.contains("autumn") { season = .fall }
+        else if lower.contains("winter") { season = .winter }
+        else { return nil }
+
+        year = parsedYear
+    }
+
+    static func < (lhs: GradescopeTerm, rhs: GradescopeTerm) -> Bool {
+        (lhs.year, lhs.season.rawValue) < (rhs.year, rhs.season.rawValue)
     }
 }
 

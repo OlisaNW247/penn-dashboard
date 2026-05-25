@@ -3,10 +3,7 @@ import PennDashboardKit
 
 struct ContentView: View {
     @EnvironmentObject var state: AppState
-    @State private var draftCanvasICSURL = ""
-    @State private var isShowingGradescopeLogin = false
     @State private var isShowingRecurringTaskSheet = false
-    @State private var isShowingCanvasScanSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,17 +13,8 @@ struct ContentView: View {
             DashboardView()
                 .environmentObject(state)
         }
-        .onAppear {
-            draftCanvasICSURL = state.canvasICSURL
-        }
-        .sheet(isPresented: $isShowingGradescopeLogin) {
-            GradescopeLoginSheet().environmentObject(state)
-        }
         .sheet(isPresented: $isShowingRecurringTaskSheet) {
             RecurringTaskSheet().environmentObject(state)
-        }
-        .sheet(isPresented: $isShowingCanvasScanSheet) {
-            CanvasRequirementScanSheet().environmentObject(state)
         }
     }
 
@@ -35,44 +23,17 @@ struct ContentView: View {
     @ViewBuilder
     private var setupStrip: some View {
         VStack(spacing: 6) {
-            if state.canvasICSURL.isEmpty {
-                HStack(spacing: 8) {
-                    TextField(
-                        "Canvas Calendar Feed URL (https://canvas.upenn.edu/feeds/calendars/user_….ics)",
-                        text: $draftCanvasICSURL
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { saveCanvasFeedURL() }
-
-                    Button {
-                        saveCanvasFeedURL()
-                    } label: {
-                        Label("Connect Canvas", systemImage: "calendar.badge.checkmark")
-                    }
-                    .disabled(draftCanvasICSURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-
             HStack(spacing: 10) {
-                statusDot(label: "Canvas Feed",  connected: !state.canvasICSURL.isEmpty,        working: state.isLoading)
-                statusDot(label: "Gradescope",   connected: state.isGradescopeConnected,        working: state.isGradescopeLoading)
-                statusDot(label: "Canvas Scan",  connected: state.isCanvasDiscoveryConnected,   working: state.isCanvasDiscoveryLoading)
+                statusDot(label: "Canvas",     connected: state.isCanvasConnected,     working: state.isLoading || state.isCanvasDiscoveryLoading)
+                statusDot(label: "Gradescope", connected: state.isGradescopeConnected, working: state.isGradescopeLoading)
 
                 Spacer()
 
-                if !state.isGradescopeConnected {
+                if !state.isCanvasConnected || !state.isGradescopeConnected {
                     Button {
-                        isShowingGradescopeLogin = true
+                        state.restartOnboarding()
                     } label: {
-                        Label("Connect Gradescope", systemImage: "person.crop.circle.badge.checkmark")
-                    }
-                }
-
-                if !state.isCanvasDiscoveryConnected {
-                    Button {
-                        isShowingCanvasScanSheet = true
-                    } label: {
-                        Label("Canvas Scan", systemImage: "text.magnifyingglass")
+                        Label("Connect accounts", systemImage: "link")
                     }
                 }
 
@@ -102,12 +63,6 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func saveCanvasFeedURL() {
-        state.updateCanvasICSURL(draftCanvasICSURL)
-        draftCanvasICSURL = state.canvasICSURL
-        Task { await state.sync() }
     }
 
     // MARK: Notice / suggestion bars

@@ -6,8 +6,8 @@ final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeAssignments: [Assignment] = []
     @Published var assignments: [Assignment] = []
-    @Published var completedAssignments: [Assignment] = []
-    @Published var otherItems: [Assignment] = []
+    @Published var laterAssignments: [Assignment] = []
+    @Published var assessments: [Assignment] = []
     @Published var recurringTasks: [RecurringTask] = []
     @Published var canvasRequirementSuggestions: [CanvasRequirementSuggestion] = []
     @Published var isLoading = false
@@ -22,20 +22,41 @@ final class AppState: ObservableObject {
     @Published private(set) var completedAssignmentIDs: Set<String>
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var isCanvasDiscoveryConnected: Bool
+    @Published private(set) var hasCompletedOnboarding: Bool
 
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let recurringTasksKey = "recurringTasks"
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
+    private static let onboardingCompletedKey = "hasCompletedOnboarding"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
         self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
+        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         self.recurringTasks = Self.loadRecurringTasks()
         rebuildDashboardItems()
+    }
+
+    /// First-run onboarding is required until both core data sources are connected.
+    var needsOnboarding: Bool { !hasCompletedOnboarding }
+
+    /// True once the Canvas calendar feed has been captured automatically.
+    var isCanvasConnected: Bool { !canvasICSURL.isEmpty }
+
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+    }
+
+    /// Sends the user back to the connect flow (used by the dashboard's reconnect
+    /// buttons). Already-connected services stay connected and show as done.
+    func restartOnboarding() {
+        hasCompletedOnboarding = false
+        UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
     }
 
     func updateCanvasICSURL(_ value: String) {
@@ -43,7 +64,6 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(canvasICSURL, forKey: Self.urlKey)
         if canvasICSURL.isEmpty {
             canvasItems = []
-            otherItems = []
             rebuildDashboardItems()
             error = nil
             lastSync = nil
@@ -67,7 +87,6 @@ final class AppState: ObservableObject {
             let client = CanvasICSClient(feedURL: url)
             let fetched = try await client.fetchCalendarItems().sorted(by: Self.byDueDate)
             canvasItems = fetched
-            otherItems = fetched.filter { !$0.isAssignment }
             rebuildDashboardItems()
             lastSync = Date()
         } catch {
@@ -100,6 +119,34 @@ final class AppState: ObservableObject {
                 self.syncNotice = message
             }
         }
+    }
+
+    /// One-step Canvas connect for onboarding: captures the personal ICS feed URL
+    /// from the logged-in session, syncs Canvas, then scans for requirements.
+    /// Returns true once the feed was captured (the bar for "Canvas connected").
+    @discardableResult
+    func connectCanvas(cookies: [HTTPCookie]) async -> Bool {
+        isCanvasDiscoveryLoading = true
+        error = nil
+        defer { isCanvasDiscoveryLoading = false }
+
+        guard !cookies.isEmpty else {
+            error = "No Canvas session was found yet. Finish logging in to Canvas, then try again."
+            return false
+        }
+
+        let client = CanvasDiscoveryClient(cookies: cookies)
+        do {
+            let feedURL = try await client.discoverCalendarFeedURL()
+            updateCanvasICSURL(feedURL.absoluteString)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+
+        await sync()
+        await scanCanvasRequirements(cookies: cookies, reportErrors: false)
+        return isCanvasConnected
     }
 
     func scanCanvasRequirements(cookies: [HTTPCookie]) async {
@@ -164,12 +211,55 @@ final class AppState: ObservableObject {
         canvasRequirementSuggestions.removeAll { $0.id == suggestion.id }
     }
 
+    /// Active assignments are limited to a near-term window: due within the next
+    /// week, or overdue by less than a week.
+    static let dashboardWindow: TimeInterval = 7 * 86_400
+
+    /// Main dashboard: dated assignments due within the ±1-week window.
+    static func isActive(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let due = assignment.dueAt else { return false }
+        return due >= now.addingTimeInterval(-dashboardWindow)
+            && due <= now.addingTimeInterval(dashboardWindow)
+    }
+
+    /// Later tab: assignments due more than a week out, plus anything with no
+    /// due date (e.g. exams professors upload without a deadline).
+    static func isLater(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let due = assignment.dueAt else { return true }
+        return due > now.addingTimeInterval(dashboardWindow)
+    }
+
+    /// Stale leftovers — anything due more than 5 months ago — are hidden
+    /// everywhere. Undated items are never "too old" since we can't date them.
+    static func isTooOld(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let due = assignment.dueAt,
+              let cutoff = Calendar.current.date(byAdding: .month, value: -5, to: now)
+        else { return false }
+        return due < cutoff
+    }
+
+    /// Quizzes, midterms, and exams live on their own Assessments page rather than
+    /// mixed into coursework. Detected by Canvas's quiz classification or by title.
+    static func isAssessment(_ assignment: Assignment) -> Bool {
+        if assignment.kind == .quiz { return true }
+        let pattern = #"(?i)\b(midterms?|exams?|quiz|quizzes|prelims?|finals|final exam)\b"#
+        return assignment.title.range(of: pattern, options: .regularExpression) != nil
+    }
+
     private func rebuildDashboardItems() {
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
-        let allAssignments = (canvasItems.filter(\.isAssignment) + gradescopeAssignments + recurringAssignments)
+        // Canvas contributes graded assignments plus anything that reads as an
+        // assessment (quizzes/exams that aren't classified as plain assignments).
+        let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
+        let allItems = (canvasRelevant + gradescopeAssignments + recurringAssignments)
             .sorted(by: Self.byDueDate)
-        assignments = allAssignments.filter { !isCompleted($0) }
-        completedAssignments = allAssignments.filter { isCompleted($0) }
+
+        let incomplete = allItems.filter { !isCompleted($0) && !Self.isTooOld($0) }
+        assessments = incomplete.filter { Self.isAssessment($0) }
+
+        let coursework = incomplete.filter { !Self.isAssessment($0) }
+        assignments = coursework.filter { Self.isActive($0) }
+        laterAssignments = coursework.filter { Self.isLater($0) }
     }
 
     func markCompleted(_ assignment: Assignment) {

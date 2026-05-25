@@ -6,6 +6,7 @@ public struct CanvasDiscoveryClient: Sendable {
         case notHTTP
         case invalidResponseEncoding
         case noCoursesFound
+        case noCalendarFeed
 
         public var errorDescription: String? {
             switch self {
@@ -17,6 +18,8 @@ public struct CanvasDiscoveryClient: Sendable {
                 return "Canvas returned a page the app could not read."
             case .noCoursesFound:
                 return "Canvas login worked, but no courses were found to scan."
+            case .noCalendarFeed:
+                return "Couldn't find your Canvas calendar feed. Make sure you're fully logged in to Canvas, then try again."
             }
         }
     }
@@ -33,6 +36,16 @@ public struct CanvasDiscoveryClient: Sendable {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
+    }
+
+    /// Reads the user's personal Canvas iCalendar feed URL from the logged-in
+    /// `/calendar` page, so onboarding never has to ask the user to paste it.
+    public func discoverCalendarFeedURL() async throws -> URL {
+        let html = try await fetchHTML(baseURL.appendingPathComponent("calendar"))
+        guard let feed = CanvasCalendarFeedParser.feedURL(from: html) else {
+            throw Error.noCalendarFeed
+        }
+        return feed
     }
 
     public func scan(courseIDs: [String: String]) async throws -> [CanvasRequirementSuggestion] {
@@ -143,6 +156,24 @@ public enum CanvasCourseDiscoveryParser {
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+public enum CanvasCalendarFeedParser {
+    /// Extracts the per-user iCalendar feed URL (…/feeds/calendars/user_<token>.ics)
+    /// that Canvas embeds in the `/calendar` page's "Calendar Feed" box.
+    public static func feedURL(from html: String) -> URL? {
+        let pattern = #"https?://[^"'\s<>]+/feeds/calendars/[^"'\s<>?]+\.ics(?:\?[^"'\s<>]*)?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let nsHTML = html as NSString
+        guard let match = regex.firstMatch(in: html, range: NSRange(location: 0, length: nsHTML.length)) else {
+            return nil
+        }
+        let raw = nsHTML.substring(with: match.range)
+            .replacingOccurrences(of: "&amp;", with: "&")
+        return URL(string: raw)
     }
 }
 
