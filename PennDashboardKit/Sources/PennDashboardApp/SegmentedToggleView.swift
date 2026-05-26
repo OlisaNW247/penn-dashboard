@@ -18,6 +18,7 @@ struct SegmentedToggleView<Option: Hashable & CustomStringConvertible>: View {
                     HStack(spacing: 5) {
                         Text(option.description)
                             .font(.geist(13, weight: selection == option ? .semibold : .regular))
+                            .lineLimit(1)
                         if let count = counts[option], count > 0 {
                             Text("\(count)")
                                 .font(.geist(11, weight: .medium))
@@ -32,7 +33,8 @@ struct SegmentedToggleView<Option: Hashable & CustomStringConvertible>: View {
                                 )
                         }
                     }
-                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background {
                         if selection == option {

@@ -1,7 +1,21 @@
 import SwiftUI
-import PennDashboardKit
 
 struct ContentView: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        #if os(iOS)
+        DashboardView().environmentObject(state)
+        #else
+        MacOSShell().environmentObject(state)
+        #endif
+    }
+}
+
+// MARK: – macOS shell (setup strip + DashboardView)
+
+#if os(macOS)
+private struct MacOSShell: View {
     @EnvironmentObject var state: AppState
     @State private var draftCanvasICSURL = ""
     @State private var isShowingGradescopeLogin = false
@@ -11,14 +25,12 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             setupStrip
+            Divider()
             if let notice = state.syncNotice { noticeBar(notice) }
             if !state.canvasRequirementSuggestions.isEmpty { suggestionBar }
-            DashboardView()
-                .environmentObject(state)
+            DashboardView().environmentObject(state)
         }
-        .onAppear {
-            draftCanvasICSURL = state.canvasICSURL
-        }
+        .onAppear { draftCanvasICSURL = state.canvasICSURL }
         .sheet(isPresented: $isShowingGradescopeLogin) {
             GradescopeLoginSheet().environmentObject(state)
         }
@@ -30,9 +42,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: Setup strip
-
-    @ViewBuilder
     private var setupStrip: some View {
         VStack(spacing: 6) {
             if state.canvasICSURL.isEmpty {
@@ -44,9 +53,7 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { saveCanvasFeedURL() }
 
-                    Button {
-                        saveCanvasFeedURL()
-                    } label: {
+                    Button { saveCanvasFeedURL() } label: {
                         Label("Connect Canvas", systemImage: "calendar.badge.checkmark")
                     }
                     .disabled(draftCanvasICSURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -54,43 +61,30 @@ struct ContentView: View {
             }
 
             HStack(spacing: 10) {
-                statusDot(label: "Canvas Feed",  connected: !state.canvasICSURL.isEmpty,        working: state.isLoading)
-                statusDot(label: "Gradescope",   connected: state.isGradescopeConnected,        working: state.isGradescopeLoading)
-                statusDot(label: "Canvas Scan",  connected: state.isCanvasDiscoveryConnected,   working: state.isCanvasDiscoveryLoading)
-
+                statusDot("Canvas Feed",  connected: !state.canvasICSURL.isEmpty,       working: state.isLoading)
+                statusDot("Gradescope",   connected: state.isGradescopeConnected,       working: state.isGradescopeLoading)
+                statusDot("Canvas Scan",  connected: state.isCanvasDiscoveryConnected,  working: state.isCanvasDiscoveryLoading)
                 Spacer()
-
                 if !state.isGradescopeConnected {
-                    Button {
-                        isShowingGradescopeLogin = true
-                    } label: {
+                    Button { isShowingGradescopeLogin = true } label: {
                         Label("Connect Gradescope", systemImage: "person.crop.circle.badge.checkmark")
                     }
                 }
-
                 if !state.isCanvasDiscoveryConnected {
-                    Button {
-                        isShowingCanvasScanSheet = true
-                    } label: {
+                    Button { isShowingCanvasScanSheet = true } label: {
                         Label("Canvas Scan", systemImage: "text.magnifyingglass")
                     }
                 }
-
-                Button {
-                    isShowingRecurringTaskSheet = true
-                } label: {
+                Button { isShowingRecurringTaskSheet = true } label: {
                     Label("Recurring", systemImage: "calendar.badge.plus")
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.lhfBg)
-
-        Divider()
     }
 
-    private func statusDot(label: String, connected: Bool, working: Bool) -> some View {
+    private func statusDot(_ label: String, connected: Bool, working: Bool) -> some View {
         HStack(spacing: 5) {
             if working {
                 ProgressView().controlSize(.small)
@@ -98,9 +92,7 @@ struct ContentView: View {
                 Image(systemName: connected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(connected ? .green : .secondary)
             }
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(label).font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -110,18 +102,14 @@ struct ContentView: View {
         Task { await state.sync() }
     }
 
-    // MARK: Notice / suggestion bars
-
     private func noticeBar(_ notice: String) -> some View {
-        Group {
+        VStack(spacing: 0) {
             HStack {
                 Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(.orange)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             Divider()
         }
     }
@@ -135,9 +123,7 @@ struct ContentView: View {
                         Text("\(suggestion.title) · \(suggestion.course)")
                             .font(.subheadline.weight(.medium))
                         Text("\(suggestion.source.rawValue): \(suggestion.evidence)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                     Spacer()
                     Button("Ignore") { state.dismissCanvasSuggestion(suggestion) }
@@ -149,3 +135,4 @@ struct ContentView: View {
         Divider()
     }
 }
+#endif

@@ -9,7 +9,11 @@ struct GradescopeLoginSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             GradescopeWebView()
+                #if os(macOS)
                 .frame(minWidth: 860, minHeight: 620)
+                #else
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                #endif
 
             Divider()
 
@@ -55,16 +59,27 @@ struct GradescopeLoginSheet: View {
     }
 }
 
-private struct GradescopeWebView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+private struct GradescopeWebView: View {
+    var body: some View { _GradescopeWebViewRepresentable() }
+}
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
-        webView.load(URLRequest(url: URL(string: "https://www.gradescope.com/login")!))
-        return webView
-    }
-
+#if os(macOS)
+private struct _GradescopeWebViewRepresentable: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { makeWebView() }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+#else
+private struct _GradescopeWebViewRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { makeWebView() }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#endif
+
+private func makeWebView() -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .default()
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.allowsBackForwardNavigationGestures = true
+    webView.load(URLRequest(url: URL(string: "https://www.gradescope.com/login")!))
+    return webView
 }

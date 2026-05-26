@@ -9,28 +9,26 @@ struct AssignmentCardView: View {
     let onEditDue: () -> Void
 
     @State private var isPressed = false
-    @State private var checkVisible = false
     @State private var checkProgress: CGFloat = 0
+    @State private var checkVisible = false
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
-    @State private var exitScale: CGFloat = 1
 
     private var effectiveDue: Date? { dueDateOverride ?? assignment.dueAt }
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 60)) { tl in
             let urgency = Urgency(dueAt: effectiveDue, now: tl.date)
-            let color = isCompleted ? Color.lhfGraphite.opacity(0.35) : urgency.cardColor
+            let color: Color = isCompleted ? Color.lhfGraphite.opacity(0.35) : urgency.cardColor
 
-            ZStack(alignment: .trailing) {
-                cardContent(urgency: urgency, color: color, now: tl.date)
-                checkmarkOverlay(color: color)
+            ZStack {
+                cardBody(urgency: urgency, color: color, now: tl.date)
+                if checkVisible { checkOverlay(color: color) }
             }
             .opacity(exitOpacity)
             .offset(y: exitOffset)
-            .scaleEffect(exitScale)
             .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+            .animation(.spring(response: 0.2, dampingFraction: 0.75), value: isPressed)
             .contentShape(Rectangle())
             .onTapGesture { onEditDue() }
             .simultaneousGesture(
@@ -41,145 +39,116 @@ struct AssignmentCardView: View {
         }
     }
 
-    private func cardContent(urgency: Urgency, color: Color, now: Date) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(assignment.title)
-                    .font(.geist(15, weight: .semibold))
-                    .foregroundStyle(isCompleted ? Color.lhfGraphite.opacity(0.45) : .white)
-                    .strikethrough(isCompleted)
-                    .lineLimit(2)
+    // MARK: – Card body
 
-                HStack(spacing: 6) {
-                    Text(assignment.course)
-                        .font(.geist(12))
-                        .foregroundStyle(.white.opacity(0.7))
+    private func cardBody(urgency: Urgency, color: Color, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: course + completion button
+            HStack(alignment: .top) {
+                Text(assignment.course.uppercased())
+                    .font(.geist(11, weight: .semibold))
+                    .kerning(0.7)
+                    .foregroundStyle(.white.opacity(isCompleted ? 0.4 : 0.65))
+                Spacer()
+                completionButton
+            }
 
-                    if assignment.source != .canvas || assignment.kind != .assignment {
-                        kindBadge(urgency: urgency)
+            // Title
+            Text(assignment.title)
+                .font(.geist(16, weight: .semibold))
+                .foregroundStyle(isCompleted ? .white.opacity(0.45) : .white)
+                .strikethrough(isCompleted)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+
+            // Bottom row: due text + open link
+            HStack(alignment: .bottom) {
+                dueLabel(urgency: urgency)
+                Spacer()
+                if let url = assignment.url {
+                    Link(destination: url) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                if urgency.shouldPulse(dueAt: effectiveDue) {
-                    Text(formatDue(effectiveDue))
-                        .font(.geist(13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .modifier(PulseModifier())
-                } else {
-                    Text(formatDue(effectiveDue))
-                        .font(.geist(13, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-
-                Text(fullDueText)
-                    .font(.geist(11))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-
-            completionButton
+            .padding(.top, 14)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .background(color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(16)
+        .background(color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func kindBadge(urgency: Urgency) -> some View {
-        let label: String
-        switch assignment.kind {
-        case .quiz:       label = "Quiz"
-        case .discussion: label = "Discussion"
-        case .event:      label = "Event"
-        default:
-            switch assignment.source {
-            case .gradescope:      label = "Gradescope"
-            case .ed:              label = "Ed"
-            case .canvasSuggestion: label = "Recurring"
-            case .manual:          label = "Manual"
-            default:               label = ""
-            }
-        }
-        if label.isEmpty { return AnyView(EmptyView()) }
-        return AnyView(
-            Text(label)
-                .font(.geist(10, weight: .medium))
+    @ViewBuilder
+    private func dueLabel(urgency: Urgency) -> some View {
+        let text = formatDue(effectiveDue)
+        if urgency.shouldPulse(dueAt: effectiveDue) {
+            Text(text)
+                .font(.geist(13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.white.opacity(0.18), in: Capsule())
-        )
+                .modifier(PulseModifier())
+        } else {
+            Text(text)
+                .font(.geist(13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+        }
     }
 
     private var completionButton: some View {
-        Button {
-            animateCompletion()
-        } label: {
+        Button { animateCompletion() } label: {
             Image(systemName: isCompleted ? "arrow.uturn.backward.circle.fill" : "circle")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(isCompleted ? 0.7 : 0.55))
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(.white.opacity(isCompleted ? 0.6 : 0.5))
         }
         .buttonStyle(.plain)
         .help(isCompleted ? "Move back to active" : "Mark completed")
     }
 
-    private var checkmarkOverlay: some View { (Color.clear) }
+    // MARK: – Checkmark overlay
 
-    private func checkmarkOverlay(color: Color) -> some View {
-        ZStack {
-            if checkVisible {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(color)
+    private func checkOverlay(color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(color)
+            .overlay {
                 CheckmarkShape()
                     .trim(from: 0, to: checkProgress)
                     .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .padding(20)
+                    .padding(24)
                     .animation(.easeOut(duration: 0.22), value: checkProgress)
             }
-        }
     }
 
-    private var fullDueText: String {
-        guard let due = effectiveDue else { return "No due date" }
-        return due.formatted(date: .abbreviated, time: .shortened)
-    }
+    // MARK: – Completion animation
 
     private func animateCompletion() {
-        if isCompleted {
-            onToggleCompleted()
-            return
-        }
+        if isCompleted { onToggleCompleted(); return }
+
         checkVisible = true
         checkProgress = 0
-        withAnimation(.easeOut(duration: 0.22)) {
-            checkProgress = 1
-        }
+        withAnimation(.easeOut(duration: 0.22)) { checkProgress = 1 }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-            withAnimation(.easeIn(duration: 0.18)) {
+            withAnimation(.easeIn(duration: 0.2)) {
                 exitOpacity = 0
-                exitOffset = -12
-                exitScale = 0.95
+                exitOffset = -10
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.54) {
             onToggleCompleted()
         }
     }
 }
 
+// MARK: – Pulse
+
 private struct PulseModifier: ViewModifier {
     @State private var on = false
-
     func body(content: Content) -> some View {
         content
-            .opacity(on ? 0.55 : 1.0)
-            .animation(
-                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
-                value: on
-            )
+            .opacity(on ? 0.5 : 1.0)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: on)
             .onAppear { on = true }
     }
 }

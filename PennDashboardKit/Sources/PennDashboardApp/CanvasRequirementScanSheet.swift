@@ -10,7 +10,11 @@ struct CanvasRequirementScanSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             CanvasWebView()
+                #if os(macOS)
                 .frame(minWidth: 860, minHeight: 620)
+                #else
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                #endif
 
             Divider()
 
@@ -64,16 +68,27 @@ struct CanvasRequirementScanSheet: View {
     }
 }
 
-private struct CanvasWebView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+private struct CanvasWebView: View {
+    var body: some View { _CanvasWebViewRepresentable() }
+}
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
-        webView.load(URLRequest(url: URL(string: "https://canvas.upenn.edu")!))
-        return webView
-    }
-
+#if os(macOS)
+private struct _CanvasWebViewRepresentable: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { makeWebView() }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+#else
+private struct _CanvasWebViewRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { makeWebView() }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#endif
+
+private func makeWebView() -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .default()
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.allowsBackForwardNavigationGestures = true
+    webView.load(URLRequest(url: URL(string: "https://canvas.upenn.edu")!))
+    return webView
 }
