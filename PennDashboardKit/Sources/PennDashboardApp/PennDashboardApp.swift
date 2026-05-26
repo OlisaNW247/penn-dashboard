@@ -8,7 +8,9 @@ struct PennDashboardApp: App {
         WindowGroup("Penn Dashboard") {
             ContentView()
                 .environmentObject(state)
+                #if os(macOS)
                 .frame(minWidth: 720, minHeight: 480)
+                #endif
                 .task {
                     await state.syncIfConfigured()
                     await AutoSyncCoordinator.syncConnectedServices(state: state)
