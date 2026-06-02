@@ -6,8 +6,8 @@ import LowHangingFruitKit
 /// connected. The Canvas calendar feed URL is captured automatically from the
 /// logged-in session — the user never pastes it.
 ///
-/// Logins are presented inline (the window swaps to the WebView) rather than as
-/// sheets, which is far more reliable on macOS than stacking modal sheets.
+/// Styled to match the LHF redesign (greige surface, white cards, serif
+/// wordmark). Logins are presented inline (the view swaps to the WebView).
 struct OnboardingView: View {
     @EnvironmentObject var state: AppState
     @State private var phase: Phase = .steps
@@ -42,69 +42,90 @@ struct OnboardingView: View {
     }
 
     private var stepList: some View {
-        VStack(spacing: 28) {
-            header
+        ZStack {
+            Color.v2Bg.ignoresSafeArea()
 
-            VStack(spacing: 12) {
-                stepCard(
-                    index: 1,
-                    title: "Connect Canvas",
-                    subtitle: "Log in once. We'll pull in your assignments and find recurring requirements automatically.",
-                    connected: state.isCanvasConnected,
-                    working: state.isCanvasDiscoveryLoading || state.isLoading
-                ) { phase = .canvasLogin }
+            VStack(spacing: 0) {
+                Spacer(minLength: 24)
 
-                stepCard(
-                    index: 2,
-                    title: "Connect Gradescope",
-                    subtitle: "Log in once. We'll keep your Gradescope assignments in sync.",
-                    connected: state.isGradescopeConnected,
-                    working: state.isGradescopeLoading
-                ) { phase = .gradescopeLogin }
-            }
+                header
+                    .padding(.bottom, 28)
 
-            if let error = state.error {
-                Text(error)
-                    .font(.geist(12))
-                    .foregroundStyle(Color.lhfPast)
+                VStack(spacing: 12) {
+                    stepCard(
+                        index: 1,
+                        title: "Connect Canvas",
+                        subtitle: "Log in once. We'll pull in your assignments and find recurring requirements automatically.",
+                        connected: state.isCanvasConnected,
+                        working: state.isCanvasDiscoveryLoading || state.isLoading
+                    ) { phase = .canvasLogin }
+
+                    stepCard(
+                        index: 2,
+                        title: "Connect Gradescope",
+                        subtitle: "Log in once. We'll keep your Gradescope assignments in sync.",
+                        connected: state.isGradescopeConnected,
+                        working: state.isGradescopeLoading
+                    ) { phase = .gradescopeLogin }
+                }
+
+                if let error = state.error {
+                    Text(error)
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.v2SpineRed)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 16)
+                }
+
+                goToDashboardButton
+                    .padding(.top, 20)
+
+                Text("Both connections are required so the dashboard has something to show.")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2RingSub)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-            }
+                    .padding(.top, 12)
 
-            Button {
-                state.completeOnboarding()
-            } label: {
-                Text("Go to dashboard")
-                    .font(.geist(14, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                Spacer(minLength: 24)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.lhfGraphite)
-            .disabled(!canContinue)
-
-            Text("Both connections are required so the dashboard has something to show.")
-                .font(.geist(11))
-                .foregroundStyle(Color.lhfGraphite.opacity(0.45))
-                .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: 480)
         }
-        .padding(40)
-        .frame(minWidth: 560, minHeight: 520)
-        .background(Color.lhfBg.ignoresSafeArea())
     }
 
     private var header: some View {
         VStack(spacing: 6) {
             Text("LHF")
-                .font(.instrumentSerif(40))
-                .foregroundStyle(Color.lhfGraphite)
+                .font(.lhfSerif(44))
+                .foregroundStyle(Color.v2Ink)
             Text("Welcome to Low Hanging Fruit")
-                .font(.geist(16, weight: .semibold))
-                .foregroundStyle(Color.lhfGraphite)
+                .font(.lhfSans(16, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
             Text("Connect your accounts to build your assignment dashboard.")
-                .font(.geist(12))
-                .foregroundStyle(Color.lhfGraphite.opacity(0.55))
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var goToDashboardButton: some View {
+        Button {
+            state.completeOnboarding()
+        } label: {
+            Text("Go to dashboard")
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2ToggleActiveTx)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    Capsule().fill(Color.v2Ink.opacity(canContinue ? 1 : 0.25))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!canContinue)
     }
 
     private func stepCard(
@@ -115,47 +136,105 @@ struct OnboardingView: View {
         working: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 13) {
             ZStack {
                 Circle()
-                    .fill(connected ? Color.lhfFuture : Color.lhfGraphite.opacity(0.12))
-                    .frame(width: 30, height: 30)
+                    .fill(connected ? Color.v2SpineGreen : Color.v2Ink.opacity(0.08))
+                    .frame(width: 28, height: 28)
                 if connected {
-                    CheckmarkShape()
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        .frame(width: 14, height: 14)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
                 } else {
                     Text("\(index)")
-                        .font(.geist(13, weight: .semibold))
-                        .foregroundStyle(Color.lhfGraphite.opacity(0.6))
+                        .font(.lhfSans(13, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
                 }
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.geist(14, weight: .semibold))
-                    .foregroundStyle(Color.lhfGraphite)
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
                 Text(subtitle)
-                    .font(.geist(12))
-                    .foregroundStyle(Color.lhfGraphite.opacity(0.55))
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2CourseCode)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 10)
 
             if working {
                 ProgressView().controlSize(.small)
             } else {
-                Button(connected ? "Reconnect" : "Connect", action: action)
-                    .buttonStyle(.bordered)
-                    .font(.geist(12, weight: .medium))
+                Button(action: action) {
+                    Text(connected ? "Reconnect" : "Connect")
+                        .font(.lhfSans(12, weight: .semibold))
+                        .foregroundStyle(connected ? Color.v2DateText : Color.v2ToggleActiveTx)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(connected ? Color.v2Ink.opacity(0.07) : Color.v2Ink)
+                        )
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.35))
-        )
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+}
+
+// MARK: - Login chrome (shared)
+
+/// The bottom action bar under the login WebView. Stacks the hint above the
+/// buttons so it never crowds on a narrow phone screen.
+private struct LoginActionBar: View {
+    let message: String?
+    let defaultHint: String
+    let connectTitle: String
+    let isBusy: Bool
+    let onCancel: () -> Void
+    let onConnect: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(message ?? defaultHint)
+                .font(.lhfSans(12))
+                .foregroundStyle(message == nil ? Color.v2DateText : Color.v2SpineRed)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain)
+                    .font(.lhfSans(13, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+
+                Spacer()
+
+                Button(action: onConnect) {
+                    Group {
+                        if isBusy {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text(connectTitle)
+                                .font(.lhfSans(13, weight: .semibold))
+                                .foregroundStyle(Color.v2ToggleActiveTx)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(Capsule().fill(Color.v2Ink))
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .background(Color.v2Bg)
     }
 }
 
@@ -179,27 +258,21 @@ private struct CanvasLoginPane: View {
         VStack(spacing: 0) {
             LoginWebView(url: URL(string: "https://canvas.upenn.edu")!)
 
-            Divider()
+            Divider().overlay(Color.v2Divider)
 
-            HStack {
-                Text(message ?? "Log in to Canvas once. We'll capture your calendar feed automatically.")
-                    .font(.caption)
-                    .foregroundStyle(message == nil ? Color.secondary : Color.orange)
-                Spacer()
-                Button("Cancel", action: onCancel)
-                Button(action: connect) {
-                    if isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Connect Canvas", systemImage: "calendar.badge.checkmark")
-                    }
-                }
-                .disabled(isBusy)
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(12)
+            LoginActionBar(
+                message: message,
+                defaultHint: "Log in to Canvas once. We'll capture your calendar feed automatically.",
+                connectTitle: "Connect Canvas",
+                isBusy: isBusy,
+                onCancel: onCancel,
+                onConnect: connect
+            )
         }
+        .background(Color.v2Bg.ignoresSafeArea())
+#if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
+#endif
     }
 
     private func connect() {
@@ -238,27 +311,21 @@ private struct GradescopeLoginPane: View {
         VStack(spacing: 0) {
             LoginWebView(url: URL(string: "https://www.gradescope.com/login")!)
 
-            Divider()
+            Divider().overlay(Color.v2Divider)
 
-            HStack {
-                Text(message ?? "Log in to Gradescope once. The app will auto-sync while your session stays valid.")
-                    .font(.caption)
-                    .foregroundStyle(message == nil ? Color.secondary : Color.orange)
-                Spacer()
-                Button("Cancel", action: onCancel)
-                Button(action: connect) {
-                    if isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Connect Gradescope", systemImage: "person.crop.circle.badge.checkmark")
-                    }
-                }
-                .disabled(isBusy)
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(12)
+            LoginActionBar(
+                message: message,
+                defaultHint: "Log in to Gradescope once. The app will auto-sync while your session stays valid.",
+                connectTitle: "Connect Gradescope",
+                isBusy: isBusy,
+                onCancel: onCancel,
+                onConnect: connect
+            )
         }
+        .background(Color.v2Bg.ignoresSafeArea())
+#if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
+#endif
     }
 
     private func connect() {
@@ -312,3 +379,11 @@ private func makeWebView(url: URL) -> WKWebView {
     webView.load(URLRequest(url: url))
     return webView
 }
+
+#if DEBUG
+#Preview {
+    OnboardingView()
+        .environmentObject(AppState())
+        .frame(width: 393, height: 852)
+}
+#endif
