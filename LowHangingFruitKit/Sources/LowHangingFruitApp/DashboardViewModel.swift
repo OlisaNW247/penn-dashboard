@@ -62,6 +62,9 @@ final class DashboardViewModel: ObservableObject {
     func bind(to state: AppState) {
         guard appState == nil else { return }
         appState = state
+        // A preview may have pre-seeded sample data; don't clobber it with the
+        // (empty) real store.
+        if usingSampleData { return }
         reload()
         cancellable = state.objectWillChange
             .receive(on: RunLoop.main)
@@ -73,16 +76,17 @@ final class DashboardViewModel: ObservableObject {
         reload(preservingEdits: true)
     }
 
+    #if DEBUG
+    /// Preview-only: populate from bundled fixtures. The running app never calls
+    /// this — it always reads real scraped data via `reload()`.
+    func loadSampleData() {
+        usingSampleData = true
+        items = SampleData.items()
+    }
+    #endif
+
     func reload(preservingEdits: Bool = false) {
         guard let state = appState else { return }
-
-        #if DEBUG
-        if Self.hasNoRealData(state) {
-            usingSampleData = true
-            if items.isEmpty { items = SampleData.items() }
-            return
-        }
-        #endif
 
         usingSampleData = false
         let priorByID = preservingEdits
@@ -116,17 +120,6 @@ final class DashboardViewModel: ObservableObject {
 
         items = built
     }
-
-    #if DEBUG
-    private static func hasNoRealData(_ s: AppState) -> Bool {
-        s.canvasItems.isEmpty
-            && s.gradescopeAssignments.isEmpty
-            && s.assignments.isEmpty
-            && s.laterAssignments.isEmpty
-            && s.assessments.isEmpty
-            && s.recurringTasks.isEmpty
-    }
-    #endif
 
     // MARK: Mutations
 

@@ -6,11 +6,15 @@ import LowHangingFruitKit
 /// `DashboardViewModel`, which layers on top of the untouched `AppState`.
 struct ContentView: View {
     @EnvironmentObject var state: AppState
-    @StateObject private var vm = DashboardViewModel()
+    @StateObject private var vm: DashboardViewModel
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showSettings = false
+
+    init(previewVM: DashboardViewModel? = nil) {
+        _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
+    }
 
     var body: some View {
         let progress = vm.weeklyProgress()
@@ -141,7 +145,9 @@ struct ContentView: View {
 
 #if DEBUG
 #Preview {
-    ContentView()
+    let vm = DashboardViewModel()
+    vm.loadSampleData()
+    return ContentView(previewVM: vm)
         .environmentObject(AppState())
         .frame(width: 430, height: 880)
 }

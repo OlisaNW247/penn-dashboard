@@ -303,6 +303,7 @@ private struct LoginWebView: UIViewRepresentable {
 
 /// Shared WKWebView setup used by both platform representables. WKWebView and
 /// its default cookie store exist on iOS and macOS alike.
+@MainActor
 private func makeWebView(url: URL) -> WKWebView {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .default()
