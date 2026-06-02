@@ -1,106 +1,148 @@
 import SwiftUI
 import LowHangingFruitKit
 
+/// Redesigned root screen: header (wordmark + date + weekly ring), a three-way
+/// segmented toggle, and a timeline/done list. All data is read through
+/// `DashboardViewModel`, which layers on top of the untouched `AppState`.
 struct ContentView: View {
     @EnvironmentObject var state: AppState
-    @State private var isShowingRecurringTaskSheet = false
+    @StateObject private var vm = DashboardViewModel()
+
+    @State private var filter: DashFilter = .thisWeek
+    @State private var editing: DashItem?
+    @State private var showSettings = false
 
     var body: some View {
+        let progress = vm.weeklyProgress()
+
         VStack(spacing: 0) {
-            setupStrip
-            if let notice = state.syncNotice { noticeBar(notice) }
-            if !state.canvasRequirementSuggestions.isEmpty { suggestionBar }
-            DashboardView()
-                .environmentObject(state)
+            header(progress: progress)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+            SegmentedToggle(selection: $filter)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+
+            ScrollView {
+                listContent
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 40)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+            }
         }
-        .sheet(isPresented: $isShowingRecurringTaskSheet) {
-            RecurringTaskSheet().environmentObject(state)
+        .background(Color.v2Bg.ignoresSafeArea())
+        .onAppear { vm.bind(to: state) }
+        .sheet(item: $editing) { item in
+            EditDueSheet(
+                assignment: item.assignment,
+                overrideDate: Binding(
+                    get: { vm.items.first(where: { $0.id == item.id })?.dueOverride },
+                    set: { vm.setDue(item, to: $0) }
+                )
+            )
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet().environmentObject(state)
         }
     }
 
-    // MARK: Setup strip
+    // MARK: Header
 
-    @ViewBuilder
-    private var setupStrip: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                statusDot(label: "Canvas",     connected: state.isCanvasConnected,     working: state.isLoading || state.isCanvasDiscoveryLoading)
-                statusDot(label: "Gradescope", connected: state.isGradescopeConnected, working: state.isGradescopeLoading)
+    private func header(progress: (done: Int, total: Int)) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("LHF")
+                    .font(.lhfSerif(27))
+                    .foregroundStyle(Color.v2Ink)
 
-                Spacer()
+                HStack(spacing: 8) {
+                    Text(Self.dateText(Date()))
+                        .font(.lhfSerif(15))
+                        .foregroundStyle(Color.v2DateText)
 
-                if !state.isCanvasConnected || !state.isGradescopeConnected {
                     Button {
-                        state.restartOnboarding()
+                        showSettings = true
                     } label: {
-                        Label("Connect accounts", systemImage: "link")
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(Color.v2DateText.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Settings & accounts")
+                }
+            }
+
+            Spacer()
+
+            ProgressRingView(done: progress.done, total: progress.total)
+        }
+    }
+
+    // MARK: List
+
+    @ViewBuilder
+    private var listContent: some View {
+        switch filter {
+        case .thisWeek: timeline(sections: vm.thisWeekSections())
+        case .all:      timeline(sections: vm.allSections())
+        case .done:
+            DoneView(
+                sections: vm.doneSections(),
+                weeklyDone: vm.weeklyProgress().done,
+                onUncomplete: { item in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        vm.uncomplete(item)
                     }
                 }
-
-                Button {
-                    isShowingRecurringTaskSheet = true
-                } label: {
-                    Label("Recurring", systemImage: "calendar.badge.plus")
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.lhfBg)
-
-        Divider()
-    }
-
-    private func statusDot(label: String, connected: Bool, working: Bool) -> some View {
-        HStack(spacing: 5) {
-            if working {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: connected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(connected ? .green : .secondary)
-            }
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: Notice / suggestion bars
-
-    private func noticeBar(_ notice: String) -> some View {
-        Group {
-            HStack {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            Divider()
+            )
         }
     }
 
     @ViewBuilder
-    private var suggestionBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(state.canvasRequirementSuggestions) { suggestion in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(suggestion.title) · \(suggestion.course)")
-                            .font(.subheadline.weight(.medium))
-                        Text("\(suggestion.source.rawValue): \(suggestion.evidence)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer()
-                    Button("Ignore") { state.dismissCanvasSuggestion(suggestion) }
-                    Button("Add")    { state.addCanvasSuggestion(suggestion) }
+    private func timeline(sections: [DashSection]) -> some View {
+        if sections.isEmpty {
+            allDoneState
+        } else {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach(sections) { section in
+                    TimelineSectionView(
+                        section: section,
+                        onComplete: { item in
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                vm.complete(item)
+                            }
+                        },
+                        onEdit: { item in editing = item }
+                    )
                 }
             }
         }
-        .padding(12)
-        Divider()
+    }
+
+    private var allDoneState: some View {
+        Text("all done.")
+            .font(.lhfSerif(28))
+            .foregroundStyle(Color.v2DateText.opacity(0.5))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 120)
+    }
+
+    // MARK: Date
+
+    private static func dateText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMM d"   // "Tuesday, May 26"
+        return f.string(from: date)
     }
 }
+
+#if DEBUG
+#Preview {
+    ContentView()
+        .environmentObject(AppState())
+        .frame(width: 430, height: 880)
+}
+#endif

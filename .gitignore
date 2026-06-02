@@ -18,6 +18,8 @@ xcuserdata/
 
 # Generated app bundles
 LowHangingFruitKit/dist/
+LowHangingFruitKit/dist-ios/
+LowHangingFruitKit/.iosbuild/
 
 # Secrets / local
 .env

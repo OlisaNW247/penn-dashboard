@@ -1,38 +1,47 @@
 import SwiftUI
 import LowHangingFruitKit
 
+/// An active (incomplete) assignment card: white surface, 13pt corners, soft
+/// shadow, and a 6pt urgency-colored spine on the left edge whose corners are
+/// clipped to match the card. Single tap completes (with a deferred exit
+/// animation so the data mutation doesn't cause mid-animation jank); double
+/// tap opens the due-date editor.
 struct AssignmentCardView: View {
-    let assignment: Assignment
-    let isCompleted: Bool
-    let dueDateOverride: Date?
-    let onToggleCompleted: () -> Void
-    let onEditDue: () -> Void
+    let item: DashItem
+    /// Called once the exit animation has finished.
+    let onComplete: () -> Void
+    let onEdit: () -> Void
 
     @State private var isPressed = false
-    @State private var checkVisible = false
-    @State private var checkProgress: CGFloat = 0
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
-    @State private var exitScale: CGFloat = 1
 
-    private var effectiveDue: Date? { dueDateOverride ?? assignment.dueAt }
+    private let corner: CGFloat = 13
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 60)) { tl in
-            let urgency = Urgency(dueAt: effectiveDue, now: tl.date)
-            let color = isCompleted ? Color.lhfGraphite.opacity(0.35) : urgency.cardColor
+            let now = tl.date
+            let state = item.state(now: now)
 
-            ZStack(alignment: .trailing) {
-                cardContent(urgency: urgency, color: color, now: tl.date)
-                checkmarkOverlay(color: color)
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(state.spineColor)
+                    .frame(width: 6)
+
+                content(state: state, now: now)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
             }
+            .background(Color.v2Card)
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
             .opacity(exitOpacity)
             .offset(y: exitOffset)
-            .scaleEffect(exitScale)
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-            .contentShape(Rectangle())
-            .onTapGesture { onEditDue() }
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .onTapGesture(count: 2) { onEdit() }
+            .onTapGesture(count: 1) { triggerComplete(state: state) }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in isPressed = true }
@@ -41,145 +50,54 @@ struct AssignmentCardView: View {
         }
     }
 
-    private func cardContent(urgency: Urgency, color: Color, now: Date) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(assignment.title)
-                    .font(.geist(15, weight: .semibold))
-                    .foregroundStyle(isCompleted ? Color.lhfGraphite.opacity(0.45) : .white)
-                    .strikethrough(isCompleted)
-                    .lineLimit(2)
+    private func content(state: DueState, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(item.assignment.course.uppercased())
+                    .font(.lhfSans(9, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.v2CourseCode)
 
-                HStack(spacing: 6) {
-                    Text(assignment.course)
-                        .font(.geist(12))
-                        .foregroundStyle(.white.opacity(0.7))
+                Spacer(minLength: 8)
 
-                    if assignment.source != .canvas || assignment.kind != .assignment {
-                        kindBadge(urgency: urgency)
-                    }
-                }
+                Text(dueText(item.due, now: now))
+                    .font(.lhfSans(11, weight: .medium))
+                    .foregroundStyle(state.dueTextColor)
             }
 
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                if urgency.shouldPulse(dueAt: effectiveDue) {
-                    Text(formatDue(effectiveDue))
-                        .font(.geist(13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .modifier(PulseModifier())
-                } else {
-                    Text(formatDue(effectiveDue))
-                        .font(.geist(13, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-
-                Text(fullDueText)
-                    .font(.geist(11))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-
-            completionButton
+            Text(item.assignment.title)
+                .font(.lhfSans(14, weight: .medium))
+                .foregroundStyle(Color.v2Ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .background(color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func kindBadge(urgency: Urgency) -> some View {
-        let label: String
-        switch assignment.kind {
-        case .quiz:       label = "Quiz"
-        case .discussion: label = "Discussion"
-        case .event:      label = "Event"
-        default:
-            switch assignment.source {
-            case .gradescope:      label = "Gradescope"
-            case .ed:              label = "Ed"
-            case .canvasSuggestion: label = "Recurring"
-            case .manual:          label = "Manual"
-            default:               label = ""
-            }
+    private func triggerComplete(state: DueState) {
+        lhfHaptic(for: state)
+        withAnimation(.easeIn(duration: 0.28)) {
+            exitOpacity = 0
+            exitOffset = -16
         }
-        if label.isEmpty { return AnyView(EmptyView()) }
-        return AnyView(
-            Text(label)
-                .font(.geist(10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.white.opacity(0.18), in: Capsule())
-        )
-    }
-
-    private var completionButton: some View {
-        Button {
-            animateCompletion()
-        } label: {
-            Image(systemName: isCompleted ? "arrow.uturn.backward.circle.fill" : "circle")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(isCompleted ? 0.7 : 0.55))
-        }
-        .buttonStyle(.plain)
-        .help(isCompleted ? "Move back to active" : "Mark completed")
-    }
-
-    private var checkmarkOverlay: some View { (Color.clear) }
-
-    private func checkmarkOverlay(color: Color) -> some View {
-        ZStack {
-            if checkVisible {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(color)
-                CheckmarkShape()
-                    .trim(from: 0, to: checkProgress)
-                    .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .padding(20)
-                    .animation(.easeOut(duration: 0.22), value: checkProgress)
-            }
-        }
-    }
-
-    private var fullDueText: String {
-        guard let due = effectiveDue else { return "No due date" }
-        return due.formatted(date: .abbreviated, time: .shortened)
-    }
-
-    private func animateCompletion() {
-        if isCompleted {
-            onToggleCompleted()
-            return
-        }
-        checkVisible = true
-        checkProgress = 0
-        withAnimation(.easeOut(duration: 0.22)) {
-            checkProgress = 1
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-            withAnimation(.easeIn(duration: 0.18)) {
-                exitOpacity = 0
-                exitOffset = -12
-                exitScale = 0.95
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
-            onToggleCompleted()
+        // Defer the data mutation until the exit animation finishes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+            onComplete()
         }
     }
 }
 
-private struct PulseModifier: ViewModifier {
-    @State private var on = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(on ? 0.55 : 1.0)
-            .animation(
-                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
-                value: on
-            )
-            .onAppear { on = true }
+#if DEBUG
+#Preview("Active cards") {
+    ScrollView {
+        VStack(spacing: 12) {
+            ForEach(SampleData.items().filter { !$0.isCompleted }) { item in
+                AssignmentCardView(item: item, onComplete: {}, onEdit: {})
+            }
+        }
+        .padding(16)
     }
+    .background(Color.v2Bg)
 }
+#endif

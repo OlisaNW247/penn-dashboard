@@ -283,19 +283,31 @@ private struct GradescopeLoginPane: View {
     }
 }
 
-// MARK: - Shared WebView
+// MARK: - Shared WebView (cross-platform)
 
+#if os(macOS)
 private struct LoginWebView: NSViewRepresentable {
     let url: URL
 
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
-        webView.load(URLRequest(url: url))
-        return webView
-    }
-
+    func makeNSView(context: Context) -> WKWebView { makeWebView(url: url) }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+#else
+private struct LoginWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView { makeWebView(url: url) }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#endif
+
+/// Shared WKWebView setup used by both platform representables. WKWebView and
+/// its default cookie store exist on iOS and macOS alike.
+private func makeWebView(url: URL) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .default()
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.allowsBackForwardNavigationGestures = true
+    webView.load(URLRequest(url: url))
+    return webView
 }

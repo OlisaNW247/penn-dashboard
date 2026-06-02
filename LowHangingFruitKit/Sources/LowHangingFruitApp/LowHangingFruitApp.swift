@@ -1,4 +1,5 @@
 import SwiftUI
+import LowHangingFruitKit
 
 @main
 struct LowHangingFruitApp: App {
@@ -7,7 +8,7 @@ struct LowHangingFruitApp: App {
     var body: some Scene {
         WindowGroup("Low Hanging Fruit") {
             Group {
-                if state.needsOnboarding {
+                if showOnboarding {
                     OnboardingView()
                         .environmentObject(state)
                 } else {
@@ -19,7 +20,19 @@ struct LowHangingFruitApp: App {
                         }
                 }
             }
-            .frame(minWidth: 720, minHeight: 480)
+#if os(macOS)
+            .frame(minWidth: 480, minHeight: 600)
+#endif
         }
+    }
+
+    /// In DEBUG builds with no real data yet, skip straight to the dashboard so
+    /// the redesigned UI is visible immediately on the bundled sample data.
+    /// Release builds always honor onboarding.
+    private var showOnboarding: Bool {
+        #if DEBUG
+        if !state.isCanvasConnected && !state.isGradescopeConnected { return false }
+        #endif
+        return state.needsOnboarding
     }
 }
