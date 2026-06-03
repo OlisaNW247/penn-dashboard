@@ -23,7 +23,9 @@ final class AppState: ObservableObject {
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
+    @Published private(set) var userName: String
 
+    private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let recurringTasksKey = "recurringTasks"
@@ -37,6 +39,7 @@ final class AppState: ObservableObject {
         self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
+        self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
         self.recurringTasks = Self.loadRecurringTasks()
         rebuildDashboardItems()
     }
@@ -50,6 +53,13 @@ final class AppState: ObservableObject {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+    }
+
+    /// The user's first name, captured during onboarding and shown in the
+    /// dashboard greeting ("Hello, Marco").
+    func updateName(_ name: String) {
+        userName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(userName, forKey: Self.userNameKey)
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect

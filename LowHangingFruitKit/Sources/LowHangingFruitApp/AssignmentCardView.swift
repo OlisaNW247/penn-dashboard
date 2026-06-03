@@ -40,8 +40,7 @@ struct AssignmentCardView: View {
             .offset(y: exitOffset)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .onTapGesture(count: 2) { onEdit() }
-            .onTapGesture(count: 1) { triggerComplete(state: state) }
+            .onTapGesture { triggerComplete(state: state) }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in isPressed = true }
@@ -51,26 +50,44 @@ struct AssignmentCardView: View {
     }
 
     private func content(state: DueState, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(item.assignment.course.uppercased())
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)
 
-                Spacer(minLength: 8)
+                Text(item.assignment.title)
+                    .font(.lhfSans(14, weight: .medium))
+                    .foregroundStyle(Color.v2Ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 2) {
                 Text(dueText(item.due, now: now))
                     .font(.lhfSans(11, weight: .medium))
                     .foregroundStyle(state.dueTextColor)
+                if item.dueOverride != nil {
+                    Text("manually adjusted")
+                        .font(.lhfSans(8.5))
+                        .foregroundStyle(Color.v2CourseCode)
+                }
             }
 
-            Text(item.assignment.title)
-                .font(.lhfSans(14, weight: .medium))
-                .foregroundStyle(Color.v2Ink)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+            // Manual due-date adjust. Its own tap target so it doesn't trigger
+            // the card's tap-to-complete.
+            Button { onEdit() } label: {
+                Image(systemName: "calendar")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.v2CourseCode)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .help("Adjust due date")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

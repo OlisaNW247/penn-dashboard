@@ -5,6 +5,34 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-06-03 — Onboarding name + dashboard greeting, manual due-date adjust, Sync button
+Onboarding now captures the user's first name; the dashboard opens with
+"Hello, &lt;name&gt;". Each assignment card got a calendar button to manually
+adjust its due date, which then shows "manually adjusted" under the date.
+Added a header Sync button for on-demand refresh (auto-sync still runs on launch).
+
+## 2026-06-03 — Persist login session across launches
+`WKWebView` drops session cookies (Gradescope `_gradescope_session`, Penn SSO)
+when the app quits, silently logging the user out every launch. We now persist
+the captured cookies (`SessionCookieStore`) and replay + re-inject them on
+launch via `AutoSyncCoordinator`, so the session and data survive relaunches.
+Rejected relying on `WKWebsiteDataStore` alone — it doesn't keep session cookies.
+
+## 2026-06-03 — Gradescope parser handles unsubmitted assignments
+Unsubmitted assignments render as "submit" buttons (`data-assignment-id` /
+`data-assignment-title`, no `href`), so the old parser — which required a
+submission link per row — dropped every unsubmitted assignment, making whole
+courses (e.g. CIS 2400) disappear. The parser now also reads submit-button rows,
+targets the real due-date `<time>` element, and parses the `yyyy-MM-dd HH:mm:ss Z`
+datetime format.
+
+## 2026-06-03 — v2 UI redesign (greige + spine cards + progress ring)
+Replaced the dashboard presentation layer: warm-greige background, white cards
+with an urgency-colored left spine, a weekly progress ring, a This week / All /
+Done segmented toggle, and an archived Done view. A `DashboardViewModel` derives
+all sections/ring math from the existing `AppState` without changing the model
+or scrapers. Superseded the earlier eggshell/full-bleed concept in design.md.
+
 ## 2026-05-26 — Branched `marco/ios-ui-rework`
 Branched `marco/ios-ui-rework` off `main` to adapt the Mac-first UI for
 iPhone. The Mac layout assumes a wide window and hover affordances; iPhone

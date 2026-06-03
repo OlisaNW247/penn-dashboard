@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showSettings = false
+    @State private var isSyncing = false
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -57,15 +58,33 @@ struct ContentView: View {
 
     private func header(progress: (done: Int, total: Int)) -> some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("LHF")
+                    .font(.lhfSans(11, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(Color.v2CourseCode)
+
+                Text(greeting)
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.v2Ink)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     Text(Self.dateText(Date()))
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
+
+                    Button { syncNow() } label: {
+                        if isSyncing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(Color.v2DateText.opacity(0.7))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSyncing)
+                    .help("Sync now")
 
                     Button {
                         showSettings = true
@@ -82,6 +101,23 @@ struct ContentView: View {
             Spacer()
 
             ProgressRingView(done: progress.done, total: progress.total)
+        }
+    }
+
+    private var greeting: String {
+        state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
+    }
+
+    /// Manual refresh: re-sync Canvas + Gradescope using the persisted session,
+    /// then reload the dashboard.
+    private func syncNow() {
+        guard !isSyncing else { return }
+        isSyncing = true
+        Task {
+            await state.syncIfConfigured()
+            await AutoSyncCoordinator.syncConnectedServices(state: state)
+            vm.reload(preservingEdits: true)
+            isSyncing = false
         }
     }
 

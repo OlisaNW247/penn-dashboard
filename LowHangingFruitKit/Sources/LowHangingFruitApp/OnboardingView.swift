@@ -11,6 +11,7 @@ import LowHangingFruitKit
 struct OnboardingView: View {
     @EnvironmentObject var state: AppState
     @State private var phase: Phase = .steps
+    @State private var name: String = ""
 
     private enum Phase {
         case steps
@@ -52,6 +53,8 @@ struct OnboardingView: View {
                     .padding(.bottom, 28)
 
                 VStack(spacing: 12) {
+                    nameCard
+
                     stepCard(
                         index: 1,
                         title: "Connect Canvas",
@@ -93,6 +96,25 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
         }
+        .onAppear { name = state.userName }
+    }
+
+    private var nameCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOUR NAME")
+                .font(.lhfSans(9, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(Color.v2CourseCode)
+            TextField("First name", text: $name)
+                .textFieldStyle(.plain)
+                .font(.lhfSans(15))
+                .foregroundStyle(Color.v2Ink)
+                .onChange(of: name) { _, newValue in state.updateName(newValue) }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }
 
     private var header: some View {

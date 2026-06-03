@@ -12,6 +12,13 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Profile") {
+                    TextField("Your name", text: Binding(
+                        get: { state.userName },
+                        set: { state.updateName($0) }
+                    ))
+                }
+
                 Section("Accounts") {
                     statusRow(label: "Canvas",
                               connected: state.isCanvasConnected,

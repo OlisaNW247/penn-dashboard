@@ -27,21 +27,39 @@ iPhone layout is being adapted from it.
 - No third-party UI dependencies
 
 ## Key files
-- `ContentView.swift` — root view, sectioned list, top-level navigation
-- `AppState.swift` — observable app state, assignment store, filters
-- `PennDashboardApp.swift` — `@main` app entry, scene setup
-- `AutoSyncCoordinator.swift` — background refresh loop tying scrapers to state
+App target (`Sources/LowHangingFruitApp/`, Marco's UI):
+- `LowHangingFruitApp.swift` — `@main` app entry; routes onboarding ↔ dashboard
+- `ContentView.swift` — redesigned root: header + greeting + ring + toggle + list
+- `DashboardViewModel.swift` — presentation layer over `AppState`; sectioning,
+  weekly ring math, completion/edit state (reads the model, never mutates it)
+- `AssignmentCardView.swift` — spine card; tap-to-complete, calendar edit button
+- `ProgressRingView.swift` · `SegmentedToggle.swift` · `TimelineSectionView.swift`
+  · `DoneView.swift` — dashboard components
+- `RedesignTokens.swift` — v2 palette, fonts (with system fallback), urgency model
+- `OnboardingView.swift` — first-run name + Canvas/Gradescope connect (cross-platform WebView)
+- `SettingsSheet.swift` — accounts / recurring / suggestions, off the main header
+- `SessionCookieStore.swift` — persists login cookies so the session survives launches
+- `AppState.swift` — observable app state, assignment store, filters, user name
+- `AutoSyncCoordinator.swift` — launch-time refresh; replays persisted cookies
+- `SampleData.swift` — DEBUG fixtures for SwiftUI previews only
+
+Data layer (`Sources/LowHangingFruitKit/`, Olisa's):
 - `Canvas/CanvasICSClient.swift` + `Canvas/ICSParser.swift` — Canvas calendar feed
 - `CanvasDiscovery/CanvasRequirementScanner.swift` — discovers Canvas feed URLs
-- `Gradescope/GradescopeClient.swift` — Gradescope session + scrape
+- `Gradescope/GradescopeClient.swift` — Gradescope session + scrape (handles both
+  submitted and **unsubmitted** assignment rows)
 - `Models/Assignment.swift` — shared assignment model
-- `RecurringTask.swift` + `RecurringTaskSheet.swift` — user-added recurring items
 
 ## Current state
-Mac build is functional end-to-end: login sheets for Canvas/Gradescope work,
-assignments populate, auto-sync runs. iPhone UI rework is in progress on
-`marco/ios-ui-rework`. Design system (see [design.md](design.md)) is being
-applied across both targets.
+v2 redesign has shipped to `main`. Working end-to-end on macOS and builds for
+iOS (run on iPhone via a hand-bundled `.app`; no committed Xcode app target yet).
+- Onboarding captures your name + connects Canvas/Gradescope; the session now
+  **persists across launches** (cookies are saved and replayed).
+- Gradescope scraping handles **unsubmitted** assignments (previously a whole
+  course like CIS 2400 could vanish because none of its rows had submission links).
+- Dashboard: weekly ring, This week / All / Done, per-card due-date adjust
+  ("manually adjusted"), and a manual **Sync** button.
+See [design.md](design.md) for the full design system and [decisions.md](decisions.md).
 
 ## Working agreements
 - Small PRs off `main`. No direct commits to `main`.
