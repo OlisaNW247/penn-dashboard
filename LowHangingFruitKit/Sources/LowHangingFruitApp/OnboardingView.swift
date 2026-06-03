@@ -280,6 +280,7 @@ private struct CanvasLoginPane: View {
         message = nil
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
             let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
+            SessionCookieStore.save(canvasCookies)
             Task { @MainActor in
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)
@@ -332,7 +333,8 @@ private struct GradescopeLoginPane: View {
         isReadingCookies = true
         message = nil
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-            let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope.com") }
+            let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope") }
+            SessionCookieStore.save(gradescopeCookies)
             Task { @MainActor in
                 isReadingCookies = false
                 guard !gradescopeCookies.isEmpty else {

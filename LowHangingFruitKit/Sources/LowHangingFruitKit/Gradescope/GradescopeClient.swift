@@ -291,6 +291,8 @@ public enum GradescopeHTMLParser {
             "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
             "yyyy-MM-dd'T'HH:mm:ssZ",
             "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd HH:mm:ss Z",
+            "yyyy-MM-dd HH:mm:ssZ",
             "MMM d, yyyy h:mm a",
             "MMM d, yyyy, h:mm a",
             "MMMM d, yyyy h:mm a",
@@ -330,14 +332,40 @@ public enum GradescopeHTMLParser {
         courseURL: URL,
         referenceDate: Date
     ) -> Assignment? {
-        let linkPattern = #"<a\b[^>]*href\s*=\s*["']([^"']*/courses/(\d+)/assignments/(\d+)[^"']*)["'][^>]*>(.*?)</a>"#
-        guard let link = matches(linkPattern, in: row).first,
-              link.count >= 4,
-              let url = URL(string: link[0], relativeTo: courseURL)?.absoluteURL
-        else { return nil }
+        let course = courseID(from: courseURL)
+        var assignmentID: String?
+        var title: String?
+        var url: URL?
 
-        let title = cleanText(link[3])
-        guard !title.isEmpty else { return nil }
+        // Submitted assignments link their name to the submission page.
+        let linkPattern = #"<a\b[^>]*href\s*=\s*["']([^"']*/courses/(\d+)/assignments/(\d+)[^"']*)["'][^>]*>(.*?)</a>"#
+        if let link = matches(linkPattern, in: row).first, link.count >= 4 {
+            assignmentID = link[2]
+            url = URL(string: link[0], relativeTo: courseURL)?.absoluteURL
+            let linkTitle = cleanText(link[3])
+            if !linkTitle.isEmpty { title = linkTitle }
+        }
+
+        // Unsubmitted assignments render the name as a "submit" button carrying
+        // data-assignment-id / data-assignment-title and no href — so recover
+        // the id and name from those attributes instead.
+        if assignmentID == nil,
+           let id = matches(#"(?i)\bdata-assignment-id\s*=\s*["'](\d+)["']"#, in: row).first?.first {
+            assignmentID = id
+        }
+        if title == nil || title?.isEmpty == true {
+            if let t = matches(#"(?i)\bdata-assignment-title\s*=\s*["']([^"']+)["']"#, in: row).first?.first {
+                title = cleanText(t)
+            } else if let th = matches(#"<th\b[^>]*>(.*?)</th>"#, in: row).first?.first {
+                title = cleanText(th)
+            }
+        }
+
+        guard let assignmentID, let title, !title.isEmpty else { return nil }
+
+        if url == nil, let course {
+            url = URL(string: "https://www.gradescope.com/courses/\(course)/assignments/\(assignmentID)")
+        }
 
         let cells = matches(#"<t[dh]\b[^>]*>(.*?)</t[dh]>"#, in: row).map { cleanText($0[0]) }
         let dueAt = dueDate(from: row, cells: cells, referenceDate: referenceDate)
@@ -345,7 +373,7 @@ public enum GradescopeHTMLParser {
 
         return Assignment(
             source: .gradescope,
-            sourceID: "course-\(link[1])-assignment-\(link[2])",
+            sourceID: "course-\(course ?? "0")-assignment-\(assignmentID)",
             kind: .assignment,
             course: courseName,
             title: title,
@@ -355,7 +383,23 @@ public enum GradescopeHTMLParser {
         )
     }
 
+    /// The numeric course id from a `…/courses/<id>` URL.
+    private static func courseID(from url: URL) -> String? {
+        let parts = url.pathComponents
+        guard let i = parts.firstIndex(of: "courses"), parts.indices.contains(i + 1) else { return nil }
+        let id = parts[i + 1]
+        return (!id.isEmpty && id.allSatisfy(\.isNumber)) ? id : nil
+    }
+
     private static func dueDate(from row: String, cells: [String], referenceDate: Date) -> Date? {
+        // Gradescope tags the real due date with a dedicated <time> element
+        // (`submissionTimeChart--dueDate`); prefer its machine-readable datetime
+        // over the release date or the noisy cell text.
+        if let raw = matches(#"(?i)submissionTimeChart--dueDate[^>]*\bdatetime\s*=\s*["']([^"']+)["']"#, in: row).first?.first,
+           let due = parseDate(raw, referenceDate: referenceDate) {
+            return due
+        }
+
         if let due = cells.reversed().compactMap({ parseDate($0, referenceDate: referenceDate) }).first {
             return due
         }
