@@ -140,8 +140,11 @@ struct ContentView: View {
             guard !isSyncing else { return }
             isSyncing = true
         }
-        await state.syncIfConfigured()
-        await AutoSyncCoordinator.syncConnectedServices(state: state)
+        // Run Canvas and Gradescope concurrently so a slow Canvas calendar fetch
+        // doesn't block Gradescope (their network waits interleave).
+        async let canvas: Void = state.syncIfConfigured()
+        async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
+        _ = await (canvas, services)
         vm.reload(preservingEdits: true)
         if showSpinner { isSyncing = false }
     }

@@ -14,8 +14,10 @@ struct LowHangingFruitApp: App {
                     ContentView()
                         .environmentObject(state)
                         .task {
-                            await state.syncIfConfigured()
-                            await AutoSyncCoordinator.syncConnectedServices(state: state)
+                            // Concurrent so a slow Canvas fetch doesn't block Gradescope.
+                            async let canvas: Void = state.syncIfConfigured()
+                            async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
+                            _ = await (canvas, services)
                         }
                 }
             }
