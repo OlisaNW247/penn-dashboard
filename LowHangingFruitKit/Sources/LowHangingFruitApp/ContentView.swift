@@ -6,6 +6,7 @@ import LowHangingFruitKit
 /// `DashboardViewModel`, which layers on top of the untouched `AppState`.
 struct ContentView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var scheduler: NotificationScheduler
     @StateObject private var vm: DashboardViewModel
 
     @Environment(\.scenePhase) private var scenePhase
@@ -57,9 +58,14 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await refresh(showSpinner: false) } }
+            if phase == .active {
+                Task {
+                    await scheduler.refreshAuthStatus()
+                    await refresh(showSpinner: false)
+                }
+            }
         }
-        .sheet(item: $editing) { item in
+        .sheet(item: $editing, onDismiss: rescheduleNotifications) { item in
             EditDueSheet(
                 assignment: item.assignment,
                 overrideDate: Binding(
@@ -68,9 +74,17 @@ struct ContentView: View {
                 )
             )
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet().environmentObject(state)
+        .sheet(isPresented: $showSettings, onDismiss: rescheduleNotifications) {
+            SettingsSheet()
+                .environmentObject(state)
+                .environmentObject(scheduler)
         }
+    }
+
+    /// Reschedule due-date reminders from the current (override-aware) items.
+    private func rescheduleNotifications() {
+        guard scheduler.isEnabled else { return }
+        Task { await scheduler.reschedule(from: vm.items) }
     }
 
     // MARK: Header
@@ -146,6 +160,7 @@ struct ContentView: View {
         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
         _ = await (canvas, services)
         vm.reload(preservingEdits: true)
+        if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         if showSpinner { isSyncing = false }
     }
 
@@ -164,6 +179,7 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         vm.uncomplete(item)
                     }
+                    rescheduleNotifications()
                 }
             )
         }
@@ -182,6 +198,7 @@ struct ContentView: View {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                                 vm.complete(item)
                             }
+                            rescheduleNotifications()
                         },
                         onEdit: { item in editing = item }
                     )
@@ -228,6 +245,7 @@ struct ContentView: View {
     vm.loadSampleData()
     return ContentView(previewVM: vm)
         .environmentObject(AppState())
+        .environmentObject(NotificationScheduler())
         .frame(width: 430, height: 880)
 }
 #endif

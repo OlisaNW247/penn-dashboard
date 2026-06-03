@@ -20,7 +20,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LowHangingFruitKitTests",
-            dependencies: ["LowHangingFruitKit"]
+            dependencies: ["LowHangingFruitKit", "LowHangingFruitApp"]
         ),
     ]
 )

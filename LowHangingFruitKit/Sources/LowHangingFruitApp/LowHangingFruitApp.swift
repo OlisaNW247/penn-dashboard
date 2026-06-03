@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct LowHangingFruitApp: App {
     @StateObject private var state = AppState()
+    @StateObject private var scheduler = NotificationScheduler()
 
     var body: some Scene {
         WindowGroup("Low Hanging Fruit") {
@@ -13,6 +14,7 @@ struct LowHangingFruitApp: App {
                 } else {
                     ContentView()
                         .environmentObject(state)
+                        .environmentObject(scheduler)
                         .task {
                             // Concurrent so a slow Canvas fetch doesn't block Gradescope.
                             async let canvas: Void = state.syncIfConfigured()

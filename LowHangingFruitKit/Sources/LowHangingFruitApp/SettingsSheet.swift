@@ -1,11 +1,17 @@
 import SwiftUI
 import LowHangingFruitKit
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Houses everything that used to clutter the main screen: connection status,
 /// reconnect, recurring-task entry, and Canvas requirement suggestions. The
 /// main dashboard stays just header + ring + toggle + list.
 struct SettingsSheet: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var showRecurring = false
 
@@ -44,6 +50,8 @@ struct SettingsSheet: View {
                         Label("Add recurring task", systemImage: "calendar.badge.plus")
                     }
                 }
+
+                remindersSection
 
                 if !state.canvasRequirementSuggestions.isEmpty {
                     Section("Suggestions") {
@@ -95,8 +103,65 @@ struct SettingsSheet: View {
             .sheet(isPresented: $showRecurring) {
                 RecurringTaskSheet().environmentObject(state)
             }
+            .task { await scheduler.refreshAuthStatus() }
         }
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    // MARK: Reminders
+
+    @ViewBuilder
+    private var remindersSection: some View {
+        Section("Reminders") {
+            Toggle("Due-date reminders", isOn: Binding(
+                get: { scheduler.isEnabled },
+                set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+            ))
+
+            if scheduler.isEnabled {
+                if scheduler.authStatus == .denied {
+                    Label("Notifications are off in System Settings.", systemImage: "bell.slash")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(.secondary)
+                    Button("Open Settings") { openSystemNotificationSettings() }
+                } else {
+                    ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                        Toggle(offset.label, isOn: Binding(
+                            get: { scheduler.leadOffsets.contains(offset) },
+                            set: { scheduler.setOffset(offset, on: $0) }
+                        ))
+                    }
+
+                    Toggle("Daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
+                        get: { scheduler.digestEnabled },
+                        set: { scheduler.setDigestEnabled($0) }
+                    ))
+                    if scheduler.digestEnabled {
+                        DatePicker("Digest time", selection: digestTimeBinding,
+                                   displayedComponents: .hourAndMinute)
+                    }
+                }
+            }
+        }
+    }
+
+    private var digestTimeBinding: Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(from: scheduler.digestTime) ?? Date() },
+            set: { scheduler.setDigestTime(Calendar.current.dateComponents([.hour, .minute], from: $0)) }
+        )
+    }
+
+    private func openSystemNotificationSettings() {
+#if os(iOS)
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+#elseif os(macOS)
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            NSWorkspace.shared.open(url)
+        }
+#endif
     }
 
     private func statusRow(label: String, connected: Bool, working: Bool) -> some View {

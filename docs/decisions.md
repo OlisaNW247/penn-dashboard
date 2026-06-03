@@ -5,6 +5,14 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-06-03 — Local due-date notifications
+Added `NotificationScheduler` (app layer, `UNUserNotificationCenter`, cross-platform,
+no entitlement) for local reminders. Defaults: 24h + 1h before each assignment, plus an
+optional daily digest; all configurable in Settings. Reschedules idempotently (full
+cancel + re-add, stable ids `due:<assignment.id>:<offset>`) whenever data changes — read
+from the override-aware `vm.items`, not `AppState`, so manual due-date edits are honored.
+Caps at 60 pending (iOS limit 64); permission requested on enable, not at launch.
+
 ## 2026-06-03 — Onboarding name + dashboard greeting, manual due-date adjust, Sync button
 Onboarding now captures the user's first name; the dashboard opens with
 "Hello, &lt;name&gt;". Each assignment card got a calendar button to manually
