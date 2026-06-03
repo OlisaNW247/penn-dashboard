@@ -141,10 +141,22 @@ public enum GradescopeHTMLParser {
                   let url = URL(string: groups[0], relativeTo: baseURL)?.absoluteURL
             else { return nil }
 
-            let name = cleanText(groups[1])
+            let name = shortCourseName(from: groups[1])
             guard !name.isEmpty, seen.insert(url).inserted else { return nil }
             return CourseLink(name: name, url: url)
         }
+    }
+
+    /// Gradescope course cards bundle the short code, full title, and an
+    /// "N assignments" count. Prefer the short code (e.g. "CIS 2400").
+    private static func shortCourseName(from inner: String) -> String {
+        if let short = matches(#"(?i)courseBox--shortname[^>]*>(.*?)<"#, in: inner).first?.first {
+            let s = cleanText(short)
+            if !s.isEmpty { return s }
+        }
+        // Fallback: drop a trailing "N assignment(s)" from the combined text.
+        return cleanText(inner)
+            .replacingOccurrences(of: #"(?i)\s*\d+\s+assignments?$"#, with: "", options: .regularExpression)
     }
 
     /// Courses belonging to the current term only. Gradescope groups the account
