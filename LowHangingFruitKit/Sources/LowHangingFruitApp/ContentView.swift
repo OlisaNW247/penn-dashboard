@@ -163,11 +163,26 @@ struct ContentView: View {
     }
 
     private var allDoneState: some View {
-        Text("all done.")
-            .font(.lhfSerif(28))
-            .foregroundStyle(Color.v2DateText.opacity(0.5))
-            .frame(maxWidth: .infinity)
-            .padding(.top, 120)
+        ZStack {
+            if let img = bundledImage("chill", ext: "jpg") {
+                img
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 320)
+                    .blendMode(.multiply)
+                    .opacity(0.35)
+            }
+            VStack(spacing: 8) {
+                Text("Touch Grass")
+                    .font(.lhfSerif(46))
+                    .foregroundStyle(Color.v2Ink)
+                Text("go enjoy life")
+                    .font(.lhfSans(15))
+                    .foregroundStyle(Color.v2DateText.opacity(0.85))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 
     // MARK: Date

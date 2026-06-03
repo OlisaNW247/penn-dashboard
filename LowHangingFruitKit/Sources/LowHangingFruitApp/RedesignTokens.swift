@@ -90,6 +90,23 @@ extension Font {
     }
 }
 
+// MARK: – Bundled images
+
+/// Loads an image bundled in the app target's Resources (cross-platform).
+func bundledImage(_ name: String, ext: String) -> Image? {
+    guard let url = Bundle.module.url(forResource: name, withExtension: ext),
+          let data = try? Data(contentsOf: url) else { return nil }
+#if canImport(UIKit)
+    guard let img = UIImage(data: data) else { return nil }
+    return Image(uiImage: img)
+#elseif canImport(AppKit)
+    guard let img = NSImage(data: data) else { return nil }
+    return Image(nsImage: img)
+#else
+    return nil
+#endif
+}
+
 // MARK: – Due-date urgency state (reads the model, never mutates it)
 
 /// Four-state urgency derived purely from an effective due date. This is a

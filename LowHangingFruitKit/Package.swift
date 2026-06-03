@@ -15,7 +15,8 @@ let package = Package(
         .target(name: "LowHangingFruitKit"),
         .executableTarget(
             name: "LowHangingFruitApp",
-            dependencies: ["LowHangingFruitKit"]
+            dependencies: ["LowHangingFruitKit"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "LowHangingFruitKitTests",
