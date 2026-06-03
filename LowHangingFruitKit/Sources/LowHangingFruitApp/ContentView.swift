@@ -8,10 +8,18 @@ struct ContentView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var vm: DashboardViewModel
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showSettings = false
     @State private var isSyncing = false
+
+    /// How often to silently re-sync while the dashboard is open. 5 minutes is a
+    /// gentle cadence for an academic dashboard (assignments rarely change minute
+    /// to minute) and avoids hammering Gradescope; an immediate sync on app
+    /// activation covers the "I just submitted something" case.
+    private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -40,6 +48,17 @@ struct ContentView: View {
         }
         .background(Color.v2Bg.ignoresSafeArea())
         .onAppear { vm.bind(to: state) }
+        .task {
+            // Silent auto-refresh loop while the dashboard is on screen.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
+                if Task.isCancelled { break }
+                await refresh(showSpinner: false)
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refresh(showSpinner: false) } }
+        }
         .sheet(item: $editing) { item in
             EditDueSheet(
                 assignment: item.assignment,
@@ -108,17 +127,23 @@ struct ContentView: View {
         state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
     }
 
-    /// Manual refresh: re-sync Canvas + Gradescope using the persisted session,
-    /// then reload the dashboard.
+    /// Manual refresh (header button): shows the spinner.
     private func syncNow() {
         guard !isSyncing else { return }
-        isSyncing = true
-        Task {
-            await state.syncIfConfigured()
-            await AutoSyncCoordinator.syncConnectedServices(state: state)
-            vm.reload(preservingEdits: true)
-            isSyncing = false
+        Task { await refresh(showSpinner: true) }
+    }
+
+    /// Re-sync Canvas + Gradescope using the persisted session, then reload the
+    /// dashboard. `showSpinner` is false for the silent auto-refresh.
+    private func refresh(showSpinner: Bool) async {
+        if showSpinner {
+            guard !isSyncing else { return }
+            isSyncing = true
         }
+        await state.syncIfConfigured()
+        await AutoSyncCoordinator.syncConnectedServices(state: state)
+        vm.reload(preservingEdits: true)
+        if showSpinner { isSyncing = false }
     }
 
     // MARK: List

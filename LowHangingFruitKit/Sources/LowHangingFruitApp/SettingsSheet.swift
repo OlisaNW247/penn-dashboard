@@ -69,6 +69,12 @@ struct SettingsSheet: View {
                     }
                 }
 
+                #if DEBUG
+                Section("Debug") {
+                    Button("Load sample data") { state.loadSampleData() }
+                }
+                #endif
+
                 if let notice = state.syncNotice ?? state.error {
                     Section {
                         Label(notice, systemImage: "exclamationmark.triangle")

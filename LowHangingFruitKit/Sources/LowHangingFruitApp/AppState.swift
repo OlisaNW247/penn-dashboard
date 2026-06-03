@@ -272,6 +272,17 @@ final class AppState: ObservableObject {
         laterAssignments = coursework.filter { Self.isLater($0) }
     }
 
+    #if DEBUG
+    /// Loads fake assignments (the preview fixtures) into the live store so the
+    /// UI can be exercised without connecting real Canvas/Gradescope accounts.
+    func loadSampleData() {
+        canvasItems = SampleData.items().map(\.assignment)
+        gradescopeAssignments = []
+        completedAssignmentIDs = []
+        rebuildDashboardItems()
+    }
+    #endif
+
     func markCompleted(_ assignment: Assignment) {
         completedAssignmentIDs.insert(assignment.id)
         persistCompletedIDs()
