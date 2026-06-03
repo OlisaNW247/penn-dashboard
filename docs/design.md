@@ -20,7 +20,8 @@ paper-like — a single well-laid-out page rather than an app with chrome.
 | Course code      | `#A39C8E` | Course code (9pt, uppercase, tracking 1.2)       |
 | Spine — overdue  | `#C8443A` | Red spine + due text, past due                   |
 | Spine — today    | `#D98C2B` | Amber spine (due text `#C2861A`), due ≤ 24h       |
-| Spine — upcoming | `#2E7D6B` | Green spine + due text, 2+ days / later          |
+| Spine — soon     | `#3A6EA5` | Cornflower spine (due text `#2F5C8A`), due 1–3 days |
+| Spine — later    | `#2E7D6B` | Green spine + due text, due 4+ days              |
 | Ring track       | `#E5DDCE` | Unfilled portion of the weekly ring              |
 | Toggle bg        | `#E9E3D8` | Segmented control container                      |
 | Divider          | `#E2DBCE` | Section header rules                             |
@@ -28,8 +29,11 @@ paper-like — a single well-laid-out page rather than an app with chrome.
 | Done spine       | `#B6B0A2` | Muted grey spine on completed cards              |
 
 Each active card has a **6pt colored spine** on its left edge (clipped to the
-card's 13pt corners). Spine color encodes urgency, derived from the due date —
-overdue → today (≤24h) → rest-of-week → later.
+card's 13pt corners). Spine color encodes urgency, derived from the due date, in
+four hot→cool tiers: **overdue** (red) → **today** ≤24h (amber) → **soon** 1–3
+days (cornflower) → **later** 4+ days (green). Section grouping (Overdue / Today
+/ Rest of week / Later) is separate, so the "Rest of week" section can contain
+both cornflower and green cards.
 
 ## Typography
 

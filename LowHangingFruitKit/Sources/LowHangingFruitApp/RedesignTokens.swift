@@ -20,14 +20,16 @@ extension Color {
     static let v2DateText    = Color(hex: 0x5C574E)  // header date / serif footer
     static let v2CourseCode  = Color(hex: 0xA39C8E)  // course code on active cards
 
-    // Urgency — spines
+    // Urgency — spines (hot → cool: overdue → today → soon → later)
     static let v2SpineRed    = Color(hex: 0xC8443A)  // overdue
     static let v2SpineAmber  = Color(hex: 0xD98C2B)  // due <24h
-    static let v2SpineGreen  = Color(hex: 0x2E7D6B)  // due 2+ days / later
+    static let v2SpineBlue   = Color(hex: 0x3A6EA5)  // due 1–3 days (upcoming)
+    static let v2SpineGreen  = Color(hex: 0x2E7D6B)  // due 4+ days / later
 
-    // Urgency — due text (slightly darker amber than the spine)
+    // Urgency — due text (slightly darker than the spine)
     static let v2DueRed      = Color(hex: 0xC8443A)
     static let v2DueAmber    = Color(hex: 0xC2861A)
+    static let v2DueBlue     = Color(hex: 0x2F5C8A)
     static let v2DueGreen    = Color(hex: 0x2E7D6B)
 
     // Ring
@@ -114,33 +116,33 @@ func bundledImage(_ name: String, ext: String) -> Image? {
 enum DueState {
     case overdue        // past due
     case today          // due within the next 24h
-    case restOfWeek     // due 1–7 days out
-    case later          // due 8+ days out, or no due date
+    case soon           // due 1–3 days out
+    case later          // due 4+ days out, or no due date
 
     init(due: Date?, now: Date = Date()) {
         guard let due else { self = .later; return }
         let s = due.timeIntervalSince(now)
         if s < 0                  { self = .overdue }
         else if s < 86_400        { self = .today }
-        else if s <= 86_400 * 7   { self = .restOfWeek }
+        else if s < 86_400 * 4    { self = .soon }
         else                      { self = .later }
     }
 
     var spineColor: Color {
         switch self {
-        case .overdue:    return .v2SpineRed
-        case .today:      return .v2SpineAmber
-        case .restOfWeek: return .v2SpineGreen
-        case .later:      return .v2SpineGreen
+        case .overdue: return .v2SpineRed
+        case .today:   return .v2SpineAmber
+        case .soon:    return .v2SpineBlue
+        case .later:   return .v2SpineGreen
         }
     }
 
     var dueTextColor: Color {
         switch self {
-        case .overdue:    return .v2DueRed
-        case .today:      return .v2DueAmber
-        case .restOfWeek: return .v2DueGreen
-        case .later:      return .v2DueGreen
+        case .overdue: return .v2DueRed
+        case .today:   return .v2DueAmber
+        case .soon:    return .v2DueBlue
+        case .later:   return .v2DueGreen
         }
     }
 }
@@ -180,9 +182,9 @@ func lhfHaptic(for state: DueState) {
 #if os(iOS)
     let style: UIImpactFeedbackGenerator.FeedbackStyle
     switch state {
-    case .overdue:               style = .heavy
-    case .today:                 style = .medium
-    case .restOfWeek, .later:    style = .light
+    case .overdue:        style = .heavy
+    case .today:          style = .medium
+    case .soon, .later:   style = .light
     }
     UIImpactFeedbackGenerator(style: style).impactOccurred()
 #endif

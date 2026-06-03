@@ -166,12 +166,19 @@ final class DashboardViewModel: ObservableObject {
         var rest: [DashItem] = []
         var later: [DashItem] = []
 
+        // Section thresholds are independent of the per-card color tiers:
+        // overdue / today (<24h) / rest of week (1–7d) / later (8d+).
         for item in activeItems {
-            switch item.state(now: now) {
-            case .overdue:    overdue.append(item)
-            case .today:      today.append(item)
-            case .restOfWeek: rest.append(item)
-            case .later:      later.append(item)
+            guard let due = item.due else { later.append(item); continue }
+            let s = due.timeIntervalSince(now)
+            if s < 0 {
+                overdue.append(item)
+            } else if s < 86_400 {
+                today.append(item)
+            } else if s <= 86_400 * 7 {
+                rest.append(item)
+            } else {
+                later.append(item)
             }
         }
 
