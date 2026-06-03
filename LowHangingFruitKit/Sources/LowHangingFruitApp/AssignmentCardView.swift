@@ -12,7 +12,6 @@ struct AssignmentCardView: View {
     let onComplete: () -> Void
     let onEdit: () -> Void
 
-    @State private var isPressed = false
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
 
@@ -35,17 +34,11 @@ struct AssignmentCardView: View {
             .background(Color.v2Card)
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-            .scaleEffect(isPressed ? 0.96 : 1.0)
             .opacity(exitOpacity)
             .offset(y: exitOffset)
-            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            // Plain tap (no drag gesture) so the ScrollView can scroll on touch.
             .onTapGesture { triggerComplete(state: state) }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in isPressed = true }
-                    .onEnded   { _ in isPressed = false }
-            )
         }
     }
 

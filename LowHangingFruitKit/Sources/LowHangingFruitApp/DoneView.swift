@@ -66,7 +66,6 @@ struct DoneCardView: View {
     let dayLabel: String?
     let onTap: () -> Void
 
-    @State private var isPressed = false
     private let corner: CGFloat = 13
 
     var body: some View {
@@ -105,17 +104,11 @@ struct DoneCardView: View {
         }
         .background(Color.v2DoneCard)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .scaleEffect(isPressed ? 0.97 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isPressed)
         .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        // Plain tap (no drag gesture) so the ScrollView can scroll on touch.
         .onTapGesture {
             lhfHapticLight()
             onTap()
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded   { _ in isPressed = false }
-        )
     }
 }
