@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showSettings = false
+    @State private var showAddSheet = false
     @State private var isSyncing = false
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
@@ -29,6 +30,7 @@ struct ContentView: View {
     var body: some View {
         let progress = vm.weeklyProgress()
 
+        ZStack(alignment: .bottomTrailing) {
         VStack(spacing: 0) {
             header(progress: progress)
                 .padding(.horizontal, 20)
@@ -46,6 +48,9 @@ struct ContentView: View {
                     .padding(.bottom, 40)
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
             }
+        }
+
+            addButton
         }
         .background(Color.v2Bg.ignoresSafeArea())
         .onAppear { vm.bind(to: state) }
@@ -79,6 +84,25 @@ struct ContentView: View {
                 .environmentObject(state)
                 .environmentObject(scheduler)
         }
+        .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
+            AddAssignmentSheet()
+                .environmentObject(state)
+        }
+    }
+
+    /// Floating "+" to add a user-created assignment (one-off or recurring).
+    private var addButton: some View {
+        Button { showAddSheet = true } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Color.v2ToggleActiveTx)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Color.v2Ink))
+                .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 22)
+        .padding(.bottom, 24)
     }
 
     /// Reschedule due-date reminders from the current (override-aware) items.

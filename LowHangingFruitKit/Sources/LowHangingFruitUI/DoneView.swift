@@ -69,6 +69,10 @@ struct DoneCardView: View {
     private let corner: CGFloat = 13
 
     var body: some View {
+        Button {
+            lhfHapticLight()
+            onTap()
+        } label: {
         HStack(spacing: 0) {
             Rectangle()
                 .fill(Color.v2DoneSpine)
@@ -105,10 +109,7 @@ struct DoneCardView: View {
         .background(Color.v2DoneCard)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        // Plain tap (no drag gesture) so the ScrollView can scroll on touch.
-        .onTapGesture {
-            lhfHapticLight()
-            onTap()
         }
+        .buttonStyle(.plain)
     }
 }

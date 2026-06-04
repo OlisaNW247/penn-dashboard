@@ -2,10 +2,10 @@ import SwiftUI
 import LowHangingFruitKit
 
 /// An active (incomplete) assignment card: white surface, 13pt corners, soft
-/// shadow, and a 6pt urgency-colored spine on the left edge whose corners are
-/// clipped to match the card. Single tap completes (with a deferred exit
-/// animation so the data mutation doesn't cause mid-animation jank); double
-/// tap opens the due-date editor.
+/// shadow, and a 6pt urgency-colored spine on the left edge. Tapping the body
+/// completes the assignment (with a deferred exit animation); the calendar
+/// button adjusts the due date. Both are real Buttons so the enclosing
+/// ScrollView still scrolls on touch.
 struct AssignmentCardView: View {
     let item: DashItem
     /// Called once the exit animation has finished.
@@ -27,18 +27,30 @@ struct AssignmentCardView: View {
                     .fill(state.spineColor)
                     .frame(width: 6)
 
-                content(state: state, now: now)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 13)
+                Button { triggerComplete(state: state) } label: {
+                    content(state: state, now: now)
+                        .padding(.leading, 14)
+                        .padding(.vertical, 13)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button { onEdit() } label: {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(Color.v2CourseCode)
+                        .frame(width: 30, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+                .help("Adjust due date")
             }
             .background(Color.v2Card)
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
             .opacity(exitOpacity)
             .offset(y: exitOffset)
-            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            // Plain tap (no drag gesture) so the ScrollView can scroll on touch.
-            .onTapGesture { triggerComplete(state: state) }
         }
     }
 
@@ -70,17 +82,6 @@ struct AssignmentCardView: View {
                         .foregroundStyle(Color.v2CourseCode)
                 }
             }
-
-            // Manual due-date adjust. Its own tap target so it doesn't trigger
-            // the card's tap-to-complete.
-            Button { onEdit() } label: {
-                Image(systemName: "calendar")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color.v2CourseCode)
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.plain)
-            .help("Adjust due date")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

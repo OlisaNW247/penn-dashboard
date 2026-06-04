@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
     @Published var recurringTasks: [RecurringTask] = []
+    @Published private(set) var manualAssignments: [ManualAssignment] = []
     @Published var canvasRequirementSuggestions: [CanvasRequirementSuggestion] = []
     @Published var isLoading = false
     @Published var isGradescopeLoading = false
@@ -29,6 +30,7 @@ final class AppState: ObservableObject {
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let recurringTasksKey = "recurringTasks"
+    private static let manualAssignmentsKey = "manualAssignments"
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
@@ -41,6 +43,7 @@ final class AppState: ObservableObject {
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
         self.recurringTasks = Self.loadRecurringTasks()
+        self.manualAssignments = Self.loadManualAssignments()
         rebuildDashboardItems()
     }
 
@@ -202,6 +205,18 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    func addManualAssignment(_ assignment: ManualAssignment) {
+        manualAssignments.append(assignment)
+        persistManualAssignments()
+        rebuildDashboardItems()
+    }
+
+    func removeManualAssignment(id: UUID) {
+        manualAssignments.removeAll { $0.id == id }
+        persistManualAssignments()
+        rebuildDashboardItems()
+    }
+
     func addCanvasSuggestion(_ suggestion: CanvasRequirementSuggestion) {
         addRecurringTask(RecurringTask(
             title: suggestion.title,
@@ -258,10 +273,11 @@ final class AppState: ObservableObject {
 
     private func rebuildDashboardItems() {
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
+        let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams that aren't classified as plain assignments).
         let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
-        let allItems = (canvasRelevant + gradescopeAssignments + recurringAssignments)
+        let allItems = (canvasRelevant + gradescopeAssignments + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
         let incomplete = allItems.filter { !isCompleted($0) && !Self.isTooOld($0) }
@@ -313,6 +329,18 @@ final class AppState: ObservableObject {
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
         else { return [] }
         return tasks
+    }
+
+    private func persistManualAssignments() {
+        guard let data = try? JSONEncoder().encode(manualAssignments) else { return }
+        UserDefaults.standard.set(data, forKey: Self.manualAssignmentsKey)
+    }
+
+    private static func loadManualAssignments() -> [ManualAssignment] {
+        guard let data = UserDefaults.standard.data(forKey: manualAssignmentsKey),
+              let items = try? JSONDecoder().decode([ManualAssignment].self, from: data)
+        else { return [] }
+        return items
     }
 
     private func canvasCourseIDs() -> [String: String] {

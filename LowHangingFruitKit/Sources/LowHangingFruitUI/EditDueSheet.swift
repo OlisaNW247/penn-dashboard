@@ -16,35 +16,38 @@ struct EditDueSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(assignment.title)
-                        .font(.geist(18, weight: .semibold))
-                    Text(assignment.course)
-                        .font(.geist(13))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-
-                DatePicker("Due", selection: $draft, displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.graphical)
-                    .padding(.horizontal)
-
-                if overrideDate != nil {
-                    Button(role: .destructive) {
-                        overrideDate = nil
-                        dismiss()
-                    } label: {
-                        Label("Reset to original", systemImage: "arrow.counterclockwise")
-                            .frame(maxWidth: .infinity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(assignment.title)
+                            .font(.geist(18, weight: .semibold))
+                        Text(assignment.course)
+                            .font(.geist(13))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.horizontal)
-                }
 
-                Spacer()
+                    if overrideDate != nil, let original = assignment.dueAt {
+                        Text("Originally due \(Self.format(original))")
+                            .font(.geist(12))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    DatePicker("Due", selection: $draft, displayedComponents: [.date, .hourAndMinute])
+                        .datePickerStyle(.graphical)
+
+                    if overrideDate != nil {
+                        Button(role: .destructive) {
+                            overrideDate = nil
+                            dismiss()
+                        } label: {
+                            Label("Reset to original due date", systemImage: "arrow.counterclockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(20)
             }
-            .padding(.top, 20)
             .navigationTitle("Edit Due Date")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -62,7 +65,13 @@ struct EditDueSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private static func format(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d 'at' h:mm a"
+        return f.string(from: date)
     }
 }
