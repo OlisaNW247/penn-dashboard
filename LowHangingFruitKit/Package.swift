@@ -9,18 +9,19 @@ let package = Package(
     ],
     products: [
         .library(name: "LowHangingFruitKit", targets: ["LowHangingFruitKit"]),
-        .executable(name: "low-hanging-fruit", targets: ["LowHangingFruitApp"]),
+        // App UI as a library so a real Xcode app target can import it and own @main.
+        .library(name: "LowHangingFruitUI", targets: ["LowHangingFruitUI"]),
     ],
     targets: [
         .target(name: "LowHangingFruitKit"),
-        .executableTarget(
-            name: "LowHangingFruitApp",
+        .target(
+            name: "LowHangingFruitUI",
             dependencies: ["LowHangingFruitKit"],
             resources: [.process("Resources")]
         ),
         .testTarget(
             name: "LowHangingFruitKitTests",
-            dependencies: ["LowHangingFruitKit", "LowHangingFruitApp"]
+            dependencies: ["LowHangingFruitKit", "LowHangingFruitUI"]
         ),
     ]
 )

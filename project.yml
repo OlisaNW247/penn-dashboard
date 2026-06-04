@@ -1,0 +1,39 @@
+name: LowHangingFruit
+options:
+  bundleIdPrefix: com.lhf
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  LowHangingFruitKit:
+    path: LowHangingFruitKit
+targets:
+  LowHangingFruit:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: App
+        excludes:
+          - "make-ios-icon.swift"
+    dependencies:
+      - package: LowHangingFruitKit
+        product: LowHangingFruitUI
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: LHF
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic

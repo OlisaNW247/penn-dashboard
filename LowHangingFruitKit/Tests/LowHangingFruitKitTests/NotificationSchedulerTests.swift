@@ -1,5 +1,5 @@
 import XCTest
-@testable import LowHangingFruitApp
+@testable import LowHangingFruitUI
 import LowHangingFruitKit
 
 /// Tests the pure scheduling logic (`plannedRequests`) without touching
