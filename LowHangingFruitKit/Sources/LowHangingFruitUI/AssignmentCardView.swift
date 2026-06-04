@@ -18,11 +18,10 @@ struct AssignmentCardView: View {
     private let corner: CGFloat = 13
 
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 60)) { tl in
-            let now = tl.date
-            let state = item.state(now: now)
+        let now = Date()
+        let state = item.state(now: now)
 
-            HStack(spacing: 0) {
+        return HStack(spacing: 0) {
                 Rectangle()
                     .fill(state.spineColor)
                     .frame(width: 6)
@@ -51,7 +50,6 @@ struct AssignmentCardView: View {
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
             .opacity(exitOpacity)
             .offset(y: exitOffset)
-        }
     }
 
     private func content(state: DueState, now: Date) -> some View {
