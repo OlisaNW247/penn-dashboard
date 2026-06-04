@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.lhf
   deploymentTarget:
     iOS: "17.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 packages:
   LowHangingFruitKit:
@@ -10,8 +11,7 @@ packages:
 targets:
   LowHangingFruit:
     type: application
-    platform: iOS
-    deploymentTarget: "17.0"
+    supportedDestinations: [iOS, macOS]
     sources:
       - path: App
         excludes:
