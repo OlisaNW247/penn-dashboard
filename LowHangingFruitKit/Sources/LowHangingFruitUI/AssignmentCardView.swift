@@ -57,7 +57,7 @@ struct AssignmentCardView: View {
     private func content(state: DueState, now: Date) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(item.assignment.course.uppercased())
+                Text(item.assignment.displayCourse.uppercased())
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)

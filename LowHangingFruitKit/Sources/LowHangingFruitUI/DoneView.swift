@@ -84,7 +84,7 @@ struct DoneCardView: View {
                     .foregroundStyle(Color.v2SpineGreen)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.assignment.course.uppercased())
+                    Text(item.assignment.displayCourse.uppercased())
                         .font(.lhfSans(9, weight: .medium))
                         .tracking(1.2)
                         .foregroundStyle(Color.v2DoneCourse)

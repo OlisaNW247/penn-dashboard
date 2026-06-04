@@ -22,3 +22,12 @@ struct ManualAssignment: Codable, Identifiable, Hashable {
         )
     }
 }
+
+extension Assignment {
+    /// Course code for display. Items without a course (e.g. a quick manual add)
+    /// fall back to "Misc" so the course slot is never blank.
+    var displayCourse: String {
+        let trimmed = course.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Misc" : trimmed
+    }
+}
