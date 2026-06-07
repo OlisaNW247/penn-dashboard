@@ -16,7 +16,6 @@ struct OnboardingView: View {
     private enum Phase {
         case steps
         case canvasLogin
-        case gradescopeLogin
     }
 
     var body: some View {
@@ -29,17 +28,11 @@ struct OnboardingView: View {
                 onCancel: { phase = .steps }
             )
             .environmentObject(state)
-        case .gradescopeLogin:
-            GradescopeLoginPane(
-                onConnected: { phase = .steps },
-                onCancel: { phase = .steps }
-            )
-            .environmentObject(state)
         }
     }
 
     private var canContinue: Bool {
-        state.isCanvasConnected && state.isGradescopeConnected
+        state.isCanvasConnected
     }
 
     private var stepList: some View {
@@ -58,18 +51,10 @@ struct OnboardingView: View {
                     stepCard(
                         index: 1,
                         title: "Connect Canvas",
-                        subtitle: "Log in once. We'll pull in your assignments and find recurring requirements automatically.",
+                        subtitle: "Log in once. We'll pull in your assignments and deadlines automatically.",
                         connected: state.isCanvasConnected,
                         working: state.isCanvasDiscoveryLoading || state.isLoading
                     ) { phase = .canvasLogin }
-
-                    stepCard(
-                        index: 2,
-                        title: "Connect Gradescope",
-                        subtitle: "Log in once. We'll keep your Gradescope assignments in sync.",
-                        connected: state.isGradescopeConnected,
-                        working: state.isGradescopeLoading
-                    ) { phase = .gradescopeLogin }
                 }
 
                 if let error = state.error {
@@ -84,7 +69,7 @@ struct OnboardingView: View {
                 goToDashboardButton
                     .padding(.top, 20)
 
-                Text("Both connections are required so the dashboard has something to show.")
+                Text("Connect Canvas to build your dashboard.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
                     .multilineTextAlignment(.center)
@@ -125,7 +110,7 @@ struct OnboardingView: View {
             Text("Welcome to Low Hanging Fruit")
                 .font(.lhfSans(16, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Connect your accounts to build your assignment dashboard.")
+            Text("Your assignments, sorted by what's due next.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -310,64 +295,6 @@ private struct CanvasLoginPane: View {
                     onConnected()
                 } else {
                     message = state.error ?? "Couldn't connect Canvas yet. Finish logging in, then try again."
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Gradescope login pane
-
-private struct GradescopeLoginPane: View {
-    @EnvironmentObject private var state: AppState
-    let onConnected: () -> Void
-    let onCancel: () -> Void
-
-    @State private var isReadingCookies = false
-    @State private var message: String?
-
-    private var isBusy: Bool {
-        isReadingCookies || state.isGradescopeLoading
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            LoginWebView(url: URL(string: "https://www.gradescope.com/login")!)
-
-            Divider().overlay(Color.v2Divider)
-
-            LoginActionBar(
-                message: message,
-                defaultHint: "Log in to Gradescope once. The app will auto-sync while your session stays valid.",
-                connectTitle: "Connect Gradescope",
-                isBusy: isBusy,
-                onCancel: onCancel,
-                onConnect: connect
-            )
-        }
-        .background(Color.v2Bg.ignoresSafeArea())
-#if os(macOS)
-        .frame(minWidth: 860, minHeight: 620)
-#endif
-    }
-
-    private func connect() {
-        isReadingCookies = true
-        message = nil
-        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-            let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope") }
-            SessionCookieStore.save(gradescopeCookies)
-            Task { @MainActor in
-                isReadingCookies = false
-                guard !gradescopeCookies.isEmpty else {
-                    message = "No Gradescope session was found yet. Finish logging in, then try again."
-                    return
-                }
-                await state.syncGradescope(cookies: gradescopeCookies)
-                if state.isGradescopeConnected {
-                    onConnected()
-                } else {
-                    message = state.error ?? "Couldn't connect Gradescope yet. Finish logging in, then try again."
                 }
             }
         }

@@ -25,20 +25,17 @@ struct SettingsSheet: View {
                     ))
                 }
 
-                Section("Accounts") {
+                Section("Account") {
                     statusRow(label: "Canvas",
                               connected: state.isCanvasConnected,
                               working: state.isLoading || state.isCanvasDiscoveryLoading)
-                    statusRow(label: "Gradescope",
-                              connected: state.isGradescopeConnected,
-                              working: state.isGradescopeLoading)
 
-                    if !state.isCanvasConnected || !state.isGradescopeConnected {
+                    if !state.isCanvasConnected {
                         Button {
                             dismiss()
                             state.restartOnboarding()
                         } label: {
-                            Label("Connect accounts", systemImage: "link")
+                            Label("Connect Canvas", systemImage: "link")
                         }
                     }
                 }
