@@ -19,7 +19,7 @@ public struct RootView: View {
                     .environmentObject(state)
                     .environmentObject(scheduler)
                     .task {
-                        // Concurrent so a slow Canvas fetch doesn't block Gradescope.
+                        // Calendar-feed fetch and syllabus scan are independent; run them concurrently.
                         async let canvas: Void = state.syncIfConfigured()
                         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
                         _ = await (canvas, services)

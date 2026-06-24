@@ -2,7 +2,7 @@ import Foundation
 import LowHangingFruitKit
 
 /// A user-created one-off assignment. Stored separately from scraped data so a
-/// Canvas/Gradescope sync never overwrites or removes it.
+/// Canvas sync never overwrites or removes it.
 struct ManualAssignment: Codable, Identifiable, Hashable {
     var id: UUID = UUID()
     var title: String

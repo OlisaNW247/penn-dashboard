@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Lets the user add their own assignment — a one-off, or a weekly-recurring
 /// item. User-created items are stored separately from scraped data, so a
-/// Canvas/Gradescope sync never overwrites or removes them.
+/// Canvas sync never overwrites or removes them.
 struct AddAssignmentSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var state: AppState

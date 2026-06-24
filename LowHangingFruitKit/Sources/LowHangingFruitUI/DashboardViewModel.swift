@@ -108,7 +108,7 @@ final class DashboardViewModel: ObservableObject {
         // Completed pool: reconstruct from the source feeds, since the grouped
         // arrays exclude completed items. Completion time isn't tracked by the
         // model, so reuse a prior session timestamp if we have one.
-        let pool = state.canvasItems + state.gradescopeAssignments
+        let pool = state.canvasItems
         var seen = Set(active.map { $0.id })
         for a in pool where state.isCompleted(a) && !seen.contains(a.id) {
             seen.insert(a.id)

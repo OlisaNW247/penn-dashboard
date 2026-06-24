@@ -1,12 +1,11 @@
 import Foundation
 
 /// The unified shape a dashboard item takes once normalized from any source
-/// (Canvas ICS, Canvas web scrape, Gradescope, Ed). Source-agnostic by design.
+/// (Canvas calendar feed, Canvas syllabus/announcement scan, user-created).
+/// Source-agnostic by design.
 public struct Assignment: Sendable, Hashable, Identifiable {
     public enum Source: String, Sendable, Codable, Hashable {
         case canvas
-        case gradescope
-        case ed
         case manual
         case canvasSuggestion
     }

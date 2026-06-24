@@ -75,6 +75,15 @@ final class NotificationScheduler: ObservableObject {
         let hour = d.object(forKey: Self.digestHourKey) as? Int ?? 8
         let minute = d.object(forKey: Self.digestMinuteKey) as? Int ?? 0
         self.digestTime = DateComponents(hour: hour, minute: minute)
+
+        #if DEBUG
+        // Screenshot seam: show the reminders feature fully expanded (in-memory
+        // only — never calls requestAuthorization, so no permission prompt fires).
+        if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
+            self.isEnabled = true
+            self.digestEnabled = true
+        }
+        #endif
     }
 
     // MARK: Authorization

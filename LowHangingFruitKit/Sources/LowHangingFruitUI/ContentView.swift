@@ -19,12 +19,19 @@ struct ContentView: View {
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
-    /// to minute) and avoids hammering Gradescope; an immediate sync on app
-    /// activation covers the "I just submitted something" case.
+    /// to minute) and is easy on the Canvas servers; an immediate sync on app
+    /// activation covers the "I just opened the app" case.
     private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
+        #if DEBUG
+        // Screenshot seam: pick the initial tab from launch flags. (Settings is
+        // opened from onAppear, after data loads, so it presents reliably.)
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-LHFTabAll") { _filter = State(initialValue: .all) }
+        else if args.contains("-LHFTabDone") { _filter = State(initialValue: .done) }
+        #endif
     }
 
     var body: some View {
@@ -53,7 +60,17 @@ struct ContentView: View {
             addButton
         }
         .background(Color.v2Bg.ignoresSafeArea())
-        .onAppear { vm.bind(to: state) }
+        .onAppear {
+            #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if args.contains("-LHFDemoData") {
+                vm.loadSampleData()
+                if args.contains("-LHFShowSettings") { showSettings = true }
+                return
+            }
+            #endif
+            vm.bind(to: state)
+        }
         .task {
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
@@ -171,15 +188,15 @@ struct ContentView: View {
         Task { await refresh(showSpinner: true) }
     }
 
-    /// Re-sync Canvas + Gradescope using the persisted session, then reload the
-    /// dashboard. `showSpinner` is false for the silent auto-refresh.
+    /// Re-sync Canvas using the persisted session, then reload the dashboard.
+    /// `showSpinner` is false for the silent auto-refresh.
     private func refresh(showSpinner: Bool) async {
         if showSpinner {
             guard !isSyncing else { return }
             isSyncing = true
         }
-        // Run Canvas and Gradescope concurrently so a slow Canvas calendar fetch
-        // doesn't block Gradescope (their network waits interleave).
+        // The calendar-feed fetch and the syllabus/announcement scan are
+        // independent, so run them concurrently rather than serially.
         async let canvas: Void = state.syncIfConfigured()
         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
         _ = await (canvas, services)

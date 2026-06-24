@@ -4,7 +4,6 @@ import LowHangingFruitKit
 @MainActor
 final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
-    @Published var gradescopeAssignments: [Assignment] = []
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
@@ -12,16 +11,13 @@ final class AppState: ObservableObject {
     @Published private(set) var manualAssignments: [ManualAssignment] = []
     @Published var canvasRequirementSuggestions: [CanvasRequirementSuggestion] = []
     @Published var isLoading = false
-    @Published var isGradescopeLoading = false
     @Published var isCanvasDiscoveryLoading = false
     @Published var error: String?
     @Published var syncNotice: String?
     @Published var lastSync: Date?
-    @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
     @Published private(set) var completedAssignmentIDs: Set<String>
-    @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var userName: String
@@ -31,20 +27,27 @@ final class AppState: ObservableObject {
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
-    private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
-        self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
         rebuildDashboardItems()
+
+        #if DEBUG
+        // Screenshot/preview seam: launch with `-LHFDemoData` to skip onboarding
+        // and show a fully-populated dashboard. DEBUG-only; never in release.
+        if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
+            hasCompletedOnboarding = true
+            userName = "Marco"
+        }
+        #endif
     }
 
     /// First-run onboarding is required until both core data sources are connected.
@@ -107,33 +110,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func syncGradescope(cookies: [HTTPCookie]) async {
-        await syncGradescope(cookies: cookies, reportErrors: true)
-    }
-
-    func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool) async {
-        isGradescopeLoading = true
-        if reportErrors { error = nil }
-        defer { isGradescopeLoading = false }
-
-        do {
-            let client = GradescopeClient(cookies: cookies)
-            gradescopeAssignments = try await client.fetchAssignments()
-            rebuildDashboardItems()
-            lastGradescopeSync = Date()
-            setGradescopeConnected(true)
-            syncNotice = nil
-        } catch {
-            setGradescopeConnected(false)
-            let message = "Gradescope needs you to reconnect."
-            if reportErrors {
-                self.error = "\(message) \(error.localizedDescription)"
-            } else {
-                self.syncNotice = message
-            }
-        }
-    }
-
     /// One-step Canvas connect for onboarding: captures the personal ICS feed URL
     /// from the logged-in session, syncs Canvas, then scans for requirements.
     /// Returns true once the feed was captured (the bar for "Canvas connected").
@@ -187,11 +163,6 @@ final class AppState: ObservableObject {
                 self.syncNotice = message
             }
         }
-    }
-
-    func setGradescopeConnected(_ connected: Bool) {
-        isGradescopeConnected = connected
-        UserDefaults.standard.set(connected, forKey: Self.gradescopeConnectedKey)
     }
 
     func setCanvasDiscoveryConnected(_ connected: Bool) {
@@ -277,7 +248,7 @@ final class AppState: ObservableObject {
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams that aren't classified as plain assignments).
         let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
-        let allItems = (canvasRelevant + gradescopeAssignments + recurringAssignments + manualItems)
+        let allItems = (canvasRelevant + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
         let incomplete = allItems.filter { !isCompleted($0) && !Self.isTooOld($0) }
@@ -290,10 +261,9 @@ final class AppState: ObservableObject {
 
     #if DEBUG
     /// Loads fake assignments (the preview fixtures) into the live store so the
-    /// UI can be exercised without connecting real Canvas/Gradescope accounts.
+    /// UI can be exercised without connecting a real Canvas account.
     func loadSampleData() {
         canvasItems = SampleData.items().map(\.assignment)
-        gradescopeAssignments = []
         completedAssignmentIDs = []
         rebuildDashboardItems()
     }

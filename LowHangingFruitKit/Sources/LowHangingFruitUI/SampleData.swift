@@ -47,7 +47,7 @@ enum SampleData {
             active(.canvas,     "s-3", "ECON 1",    "Problem set 3",            due: hrs(5).addingTimeInterval(1800)),
             active(.canvas,     "s-4", "MGMT 1010", "Reading response 7",       due: hrs(9).addingTimeInterval(1800)),
             // REST OF WEEK (green)
-            active(.gradescope, "s-5", "MEAM 1010", "Lab report 4",             due: days(2)),
+            active(.canvas,     "s-5", "MEAM 1010", "Lab report 4",             due: days(2)),
             active(.canvas,     "s-6", "CIS 1210",  "PSet 6: hashing",          due: days(3)),
             active(.canvas,     "s-7", "ECON 1",    "Midterm study guide",      due: days(4)),
             active(.canvas,     "s-8", "MGMT 1010", "Group case writeup",       due: days(5)),
@@ -56,7 +56,7 @@ enum SampleData {
             done(.canvas,       "s-10", "CIS 1210",  "Recitation worksheet",    at: doneB),
             // DONE — earlier this week
             done(.canvas,       "s-11", "ECON 1",    "Problem set 2",           at: earlierB),
-            done(.gradescope,   "s-12", "MEAM 1010", "Lab report 3",            at: earlierA),
+            done(.canvas,       "s-12", "MEAM 1010", "Lab report 3",            at: earlierA),
         ]
     }
 }

@@ -8,12 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 81469103D4BF3FC55D12744D /* Assets.xcassets */; };
+		CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */; };
 		D4423A175D42F440EF1A7B26 /* LHFApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC183EBB281825AF54C0509 /* LHFApp.swift */; };
 		DCE53F8C58169177C24DB343 /* LowHangingFruitUI in Frameworks */ = {isa = PBXBuildFile; productRef = F3B9C910C2C26AEF4BB71C2F /* LowHangingFruitUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		3DC183EBB281825AF54C0509 /* LHFApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LHFApp.swift; sourceTree = "<group>"; };
+		7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		81469103D4BF3FC55D12744D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B2FB5A48F750018E0BC603A6 /* LowHangingFruit.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LowHangingFruit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5231672329B97276105F09B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -46,6 +48,7 @@
 				81469103D4BF3FC55D12744D /* Assets.xcassets */,
 				C5231672329B97276105F09B /* Info.plist */,
 				3DC183EBB281825AF54C0509 /* LHFApp.swift */,
+				7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -132,6 +135,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */,
+				CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -162,7 +166,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lhf.lowhangingfruit;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -251,7 +255,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lhf.lowhangingfruit;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";

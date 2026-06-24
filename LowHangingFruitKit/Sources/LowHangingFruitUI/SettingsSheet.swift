@@ -75,8 +75,11 @@ struct SettingsSheet: View {
                 }
 
                 #if DEBUG
-                Section("Debug") {
-                    Button("Load sample data") { state.loadSampleData() }
+                // Hidden in demo/screenshot mode so store assets stay clean.
+                if !ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
+                    Section("Debug") {
+                        Button("Load sample data") { state.loadSampleData() }
+                    }
                 }
                 #endif
 

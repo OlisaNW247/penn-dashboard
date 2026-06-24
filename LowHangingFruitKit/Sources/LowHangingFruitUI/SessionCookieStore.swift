@@ -2,7 +2,7 @@ import Foundation
 
 /// Persists the login cookies captured from the in-app WebView so the session
 /// survives app launches. `WKWebsiteDataStore` drops *session* cookies (no
-/// expiry) when the app quits — which is exactly what Gradescope and Penn SSO
+/// expiry) when the app quits — which is exactly what Penn SSO and Canvas
 /// use — so without this the user is silently logged out on every relaunch.
 ///
 /// We only need name/value/domain/path to replay the session via

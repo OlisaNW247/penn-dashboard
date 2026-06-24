@@ -25,7 +25,7 @@ enum AutoSyncCoordinator {
             }
         }
 
-        // WKWebsiteDataStore drops session cookies (Gradescope/SSO) between
+        // WKWebsiteDataStore drops session cookies (Penn SSO) between
         // launches, so fold in the ones we persisted at connect time. Re-inject
         // them into the WebView store too, so the in-app login shows as signed in.
         let persisted = SessionCookieStore.load()
