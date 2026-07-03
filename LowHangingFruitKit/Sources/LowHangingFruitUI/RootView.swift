@@ -19,10 +19,9 @@ public struct RootView: View {
                     .environmentObject(state)
                     .environmentObject(scheduler)
                     .task {
-                        // Calendar-feed fetch and syllabus scan are independent; run them concurrently.
-                        async let canvas: Void = state.syncIfConfigured()
-                        async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
-                        _ = await (canvas, services)
+                        // Canvas-only: refresh the assignment list from the
+                        // (cookieless, self-authenticating) calendar feed.
+                        await state.syncIfConfigured()
                     }
             }
         }

@@ -1,12 +1,12 @@
 import Foundation
 import LowHangingFruitKit
 
-#if DEBUG
-/// Hardcoded fixtures for SwiftUI previews and offline UI work — no scrapers,
-/// no login, no network. Populates every section richly (2 overdue, 2 due
-/// today, 4 rest-of-week, 4 completed) so the full design is visible on first
-/// launch. Completion timestamps are synthesized here because the model
-/// doesn't store them. Compiles out of release builds.
+/// Hardcoded fixtures used by (1) SwiftUI previews / offline UI work and (2) the
+/// in-app **Preview mode** an App Store reviewer taps on the onboarding screen —
+/// no scrapers, no login, no network. Populates every section richly (2 overdue,
+/// 2 due today, 4 rest-of-week, 2 later, 4 completed) so the full design is
+/// visible without a Canvas account. Completion timestamps are synthesized here
+/// because the model doesn't store them.
 enum SampleData {
     static func items(now: Date = Date()) -> [DashItem] {
         let cal = Calendar.current
@@ -19,10 +19,10 @@ enum SampleData {
         let weekStart = cal.dateInterval(of: .weekOfYear, for: now)?.start ?? startToday
         let doneA = max(startToday, hrs(-2))                                   // today
         let doneB = max(startToday, hrs(-5))                                   // today
-        let earlierA = max(weekStart, cal.date(byAdding: .day, value: -1, to: startToday)!)
-            .addingTimeInterval(14 * 3600)                                     // earlier this week
-        let earlierB = max(weekStart, cal.date(byAdding: .day, value: -2, to: startToday)!)
-            .addingTimeInterval(11 * 3600)                                     // earlier this week
+        let dayBefore = cal.date(byAdding: .day, value: -1, to: startToday) ?? startToday
+        let twoDaysBefore = cal.date(byAdding: .day, value: -2, to: startToday) ?? startToday
+        let earlierA = max(weekStart, dayBefore).addingTimeInterval(14 * 3600)  // earlier this week
+        let earlierB = max(weekStart, twoDaysBefore).addingTimeInterval(11 * 3600)
 
         func active(_ source: Assignment.Source, _ id: String, _ course: String,
                     _ title: String, due: Date) -> DashItem {
@@ -51,6 +51,9 @@ enum SampleData {
             active(.canvas,     "s-6", "CIS 1210",  "PSet 6: hashing",          due: days(3)),
             active(.canvas,     "s-7", "ECON 1",    "Midterm study guide",      due: days(4)),
             active(.canvas,     "s-8", "MGMT 1010", "Group case writeup",       due: days(5)),
+            // LATER (8+ days out — fills the "All" tab's Later section)
+            active(.canvas,     "s-13", "CIS 1210", "Final project checkpoint", due: days(9)),
+            active(.canvas,     "s-14", "PHYS 0150", "Lab practical prep",       due: days(12)),
             // DONE — completed today
             done(.canvas,       "s-9",  "PSYC 1",    "Weekly quiz 8",           at: doneA),
             done(.canvas,       "s-10", "CIS 1210",  "Recitation worksheet",    at: doneB),
@@ -60,4 +63,3 @@ enum SampleData {
         ]
     }
 }
-#endif

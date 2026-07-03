@@ -69,6 +69,12 @@ struct ContentView: View {
                 return
             }
             #endif
+            // Reviewer/demo preview: show bundled sample data instead of binding
+            // to the (empty, un-synced) real store. No network, no login.
+            if state.isPreviewMode {
+                vm.loadSampleData()
+                return
+            }
             vm.bind(to: state)
         }
         .task {
@@ -118,6 +124,7 @@ struct ContentView: View {
                 .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Add assignment")
         .padding(.trailing, 22)
         .padding(.bottom, 24)
     }
@@ -142,34 +149,44 @@ struct ContentView: View {
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.v2Ink)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 2) {
                     Text(Self.dateText(Date()))
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
+                        .padding(.trailing, 6)
 
                     Button { syncNow() } label: {
-                        if isSyncing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(Color.v2DateText.opacity(0.7))
+                        Group {
+                            if isSyncing {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 13, weight: .regular))
+                                    .foregroundStyle(Color.v2DateText.opacity(0.7))
+                            }
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(isSyncing)
+                    .accessibilityLabel("Sync now")
                     .help("Sync now")
 
                     Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(Color.v2DateText.opacity(0.7))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Settings and accounts")
                     .help("Settings & accounts")
                 }
+                .padding(.vertical, -8)
             }
 
             Spacer()
@@ -195,11 +212,8 @@ struct ContentView: View {
             guard !isSyncing else { return }
             isSyncing = true
         }
-        // The calendar-feed fetch and the syllabus/announcement scan are
-        // independent, so run them concurrently rather than serially.
-        async let canvas: Void = state.syncIfConfigured()
-        async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
-        _ = await (canvas, services)
+        // Canvas-only: re-fetch the assignment list from the calendar feed.
+        await state.syncIfConfigured()
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         if showSpinner { isSyncing = false }
@@ -257,6 +271,7 @@ struct ContentView: View {
                     .frame(maxWidth: 320)
                     .blendMode(.multiply)
                     .opacity(0.35)
+                    .accessibilityHidden(true)
             }
             VStack(spacing: 8) {
                 Text("Touch Grass")

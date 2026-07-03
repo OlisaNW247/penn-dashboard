@@ -76,14 +76,12 @@ final class DashboardViewModel: ObservableObject {
         reload(preservingEdits: true)
     }
 
-    #if DEBUG
-    /// Preview-only: populate from bundled fixtures. The running app never calls
-    /// this — it always reads real scraped data via `reload()`.
+    /// Populate from bundled fixtures. Used by SwiftUI previews and by the in-app
+    /// Preview mode (reviewer demo). Real usage reads scraped data via `reload()`.
     func loadSampleData() {
         usingSampleData = true
         items = SampleData.items()
     }
-    #endif
 
     func reload(preservingEdits: Bool = false) {
         guard let state = appState else { return }

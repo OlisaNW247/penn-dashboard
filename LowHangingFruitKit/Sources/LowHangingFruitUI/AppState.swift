@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published private(set) var completedAssignmentIDs: Set<String>
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
+    @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
 
     private static let userNameKey = "userName"
@@ -29,16 +30,25 @@ final class AppState: ObservableObject {
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
+    private static let previewModeKey = "isPreviewMode"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
+        self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
         rebuildDashboardItems()
+
+        // Preview (demo) mode persists across launches so an App Store reviewer
+        // who relaunches still lands on the populated sample dashboard.
+        if isPreviewMode {
+            hasCompletedOnboarding = true
+            if userName.isEmpty { userName = "there" }
+        }
 
         #if DEBUG
         // Screenshot/preview seam: launch with `-LHFDemoData` to skip onboarding
@@ -73,6 +83,20 @@ final class AppState: ObservableObject {
     func restartOnboarding() {
         hasCompletedOnboarding = false
         UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
+        // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
+        // student who tapped Preview can switch to their own Canvas cleanly.
+        isPreviewMode = false
+        UserDefaults.standard.set(false, forKey: Self.previewModeKey)
+    }
+
+    /// Enters a read-only demo populated with sample courses and assignments, so
+    /// anyone who can't pass Penn SSO (notably an App Store reviewer) can explore
+    /// the full app. No network, no login; the dashboard reads bundled fixtures.
+    func enterPreviewMode() {
+        isPreviewMode = true
+        UserDefaults.standard.set(true, forKey: Self.previewModeKey)
+        if userName.isEmpty { userName = "there" }
+        completeOnboarding()
     }
 
     func updateCanvasICSURL(_ value: String) {
@@ -134,7 +158,6 @@ final class AppState: ObservableObject {
         }
 
         await sync()
-        await scanCanvasRequirements(cookies: cookies, reportErrors: false)
         return isCanvasConnected
     }
 

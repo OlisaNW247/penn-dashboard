@@ -7,21 +7,21 @@ as one chronological "what's due next" list, with local reminders.
 
 ---
 
-## ⚠️ Important: why you can't log in with a test account
+## ✅ How to review without a Penn login — tap "Preview with sample data"
 
-Sign-in is handled entirely by the **University of Pennsylvania's own Canvas
-login page** (Penn single sign-on / PennKey), shown inside the app in a web
-view. We do **not** run an authentication system and **cannot issue test
-credentials** — PennKey accounts are institutional and only the university can
-create them. There is no email/password we can give you.
+Sign-in uses the **University of Pennsylvania's own Canvas login (PennKey single
+sign-on)**, so we cannot issue test credentials — PennKey accounts are
+institutional and only the university can create them. **You do not need one to
+review the app.**
 
-**To review full functionality, please see the attached screen recording**,
-which demonstrates the complete flow end-to-end (onboarding → Canvas login →
-populated dashboard → completing items → reminders → adding tasks).
+On the **first screen**, tap **"Just exploring? Preview with sample data"**
+(the link just below the "Connect Canvas" card). This loads a fully-populated
+demo — sample courses and assignments across the **This week / All / Done**
+tabs, the weekly progress ring, plus working task-completion and reminders — so
+you can exercise the entire app with no account and no network.
 
-If a working in-app path is required for approval, we can ship a built-in
-"Explore with sample data" mode in the next build within 24 hours — just let us
-know and we'll turn it on.
+The attached screen recording additionally shows the real Canvas login flow
+end-to-end (onboarding → PennKey login → populated dashboard → reminders).
 
 ## What the app does, step by step
 1. **Onboarding:** the user enters a first name and taps "Connect Canvas."

@@ -76,6 +76,18 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
 
+                Button {
+                    state.enterPreviewMode()
+                } label: {
+                    Text("Just exploring? Preview with sample data")
+                        .font(.lhfSans(12, weight: .medium))
+                        .foregroundStyle(Color.v2DateText)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview the app with sample data")
+                .padding(.top, 16)
+
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 24)
@@ -110,7 +122,7 @@ struct OnboardingView: View {
             Text("Welcome to Low Hanging Fruit")
                 .font(.lhfSans(16, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Your assignments, sorted by what's due next.")
+            Text("Never miss another assignment")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -124,15 +136,17 @@ struct OnboardingView: View {
         } label: {
             Text("Go to dashboard")
                 .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2ToggleActiveTx)
+                .foregroundStyle(canContinue ? Color.v2ToggleActiveTx : Color.v2DateText.opacity(0.55))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
-                    Capsule().fill(Color.v2Ink.opacity(canContinue ? 1 : 0.25))
+                    Capsule().fill(canContinue ? Color.v2Ink : Color.v2Ink.opacity(0.08))
                 )
         }
         .buttonStyle(.plain)
         .disabled(!canContinue)
+        .accessibilityLabel("Go to dashboard")
+        .accessibilityHint(canContinue ? "" : "Connect Canvas first")
     }
 
     private func stepCard(
@@ -286,8 +300,9 @@ private struct CanvasLoginPane: View {
         isReadingCookies = true
         message = nil
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            // Used once, in-memory, to read the calendar-feed URL — never persisted.
+            // Every sync after onboarding is a cookieless GET of that feed.
             let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
-            SessionCookieStore.save(canvasCookies)
             Task { @MainActor in
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)

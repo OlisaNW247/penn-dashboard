@@ -45,8 +45,10 @@ xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
      reminder-permission flow once on device)
 - ⬜ Submit for review
 
-## Known review risk (your call — you chose reviewer-notes + video)
-Reviewers can't pass Penn SSO. The review notes + video address this, but Apple
-sometimes still asks for an in-app demo path. If they push back, I can add an
-"Explore with sample data" button to onboarding in ~1–2 hrs (the sample data and
-the `-LHFDemoData` seam already exist).
+## Review access — solved with an in-app preview
+Reviewers can't pass Penn SSO, so onboarding now has a **"Preview with sample
+data"** link (first screen) that loads a populated demo — sample courses across
+This week / All / Done, progress ring, working completion + reminders — with no
+login and no network. This is the primary review path; the demo video is
+supporting evidence. Instructions are in `REVIEW_NOTES.md`. Ships in Release
+(the fixtures are no longer DEBUG-gated).

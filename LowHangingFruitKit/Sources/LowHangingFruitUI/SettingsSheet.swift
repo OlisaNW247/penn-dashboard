@@ -50,30 +50,6 @@ struct SettingsSheet: View {
 
                 remindersSection
 
-                if !state.canvasRequirementSuggestions.isEmpty {
-                    Section("Suggestions") {
-                        ForEach(state.canvasRequirementSuggestions) { suggestion in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("\(suggestion.title) · \(suggestion.course)")
-                                    .font(.lhfSans(13, weight: .medium))
-                                Text("\(suggestion.source.rawValue): \(suggestion.evidence)")
-                                    .font(.lhfSans(11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                HStack {
-                                    Button("Add") { state.addCanvasSuggestion(suggestion) }
-                                    Button("Ignore", role: .destructive) {
-                                        state.dismissCanvasSuggestion(suggestion)
-                                    }
-                                }
-                                .font(.lhfSans(12, weight: .medium))
-                                .padding(.top, 2)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-
                 #if DEBUG
                 // Hidden in demo/screenshot mode so store assets stay clean.
                 if !ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
