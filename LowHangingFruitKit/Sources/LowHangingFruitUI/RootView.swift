@@ -6,28 +6,48 @@ import SwiftUI
 public struct RootView: View {
     @StateObject private var state = AppState()
     @StateObject private var scheduler = NotificationScheduler()
+    @State private var showSplash: Bool
 
-    public init() {}
+    public init() {
+        // Skip the splash in demo/screenshot mode so captures land on the app.
+        var skip = false
+        #if DEBUG
+        skip = ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
+        #endif
+        _showSplash = State(initialValue: !skip)
+    }
 
     public var body: some View {
-        Group {
-            if state.needsOnboarding {
-                OnboardingView()
-                    .environmentObject(state)
-            } else {
-                ContentView()
-                    .environmentObject(state)
-                    .environmentObject(scheduler)
-                    .task {
-                        // Calendar-feed fetch and syllabus scan are independent; run them concurrently.
-                        async let canvas: Void = state.syncIfConfigured()
-                        async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
-                        _ = await (canvas, services)
-                    }
+        ZStack {
+            mainContent
+
+            if showSplash {
+                SplashView {
+                    withAnimation(.easeOut(duration: 0.45)) { showSplash = false }
+                }
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
 #endif
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if state.needsOnboarding {
+            OnboardingView()
+                .environmentObject(state)
+        } else {
+            ContentView()
+                .environmentObject(state)
+                .environmentObject(scheduler)
+                .task {
+                    // Canvas-only: refresh the assignment list from the
+                    // (cookieless, self-authenticating) calendar feed.
+                    await state.syncIfConfigured()
+                }
+        }
     }
 }

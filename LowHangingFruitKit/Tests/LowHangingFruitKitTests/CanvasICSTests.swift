@@ -50,7 +50,7 @@ struct CanvasICSTests {
 
         let hw = try #require(assignments.first { $0.sourceID.contains("12345") })
         #expect(hw.title == "Homework 3")
-        #expect(hw.course == "CIS 5050-001 Software Systems")
+        #expect(hw.course == "CIS 5050")   // cleaned from "CIS 5050-001 Software Systems"
         #expect(hw.url?.absoluteString == "https://canvas.upenn.edu/courses/1/assignments/12345")
         #expect(hw.dueAt != nil)
         #expect(hw.source == .canvas)
@@ -59,7 +59,7 @@ struct CanvasICSTests {
 
         let proj = try #require(assignments.first { $0.sourceID.contains("67890") })
         #expect(proj.title == "Final Project Proposal")
-        #expect(proj.course == "ENM 5100-001")
+        #expect(proj.course == "ENM 5100")   // cleaned from "ENM 5100-001"
         #expect(proj.dueAt != nil)
     }
 

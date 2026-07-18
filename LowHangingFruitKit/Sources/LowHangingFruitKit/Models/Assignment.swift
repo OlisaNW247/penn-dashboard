@@ -6,6 +6,7 @@ import Foundation
 public struct Assignment: Sendable, Hashable, Identifiable {
     public enum Source: String, Sendable, Codable, Hashable {
         case canvas
+        case gradescope
         case manual
         case canvasSuggestion
     }
@@ -27,10 +28,15 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     public let source: Source
     public let sourceID: String
     public let kind: Kind
+    /// Clean display course code, e.g. "FNAR 3230" (see `CourseCode`). Doubles as
+    /// the grouping key for the class picker.
     public let course: String
     public let title: String
     public let dueAt: Date?
     public let url: URL?
+    /// The academic term this item belongs to, when it could be parsed from the
+    /// Canvas course descriptor. Used to scope the dashboard to the current term.
+    public let term: Term?
     public let submitted: Bool
 
     public var isAssignment: Bool {
@@ -45,6 +51,7 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         title: String,
         dueAt: Date?,
         url: URL?,
+        term: Term? = nil,
         submitted: Bool = false
     ) {
         self.source = source
@@ -54,6 +61,7 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         self.title = title
         self.dueAt = dueAt
         self.url = url
+        self.term = term
         self.submitted = submitted
     }
 }

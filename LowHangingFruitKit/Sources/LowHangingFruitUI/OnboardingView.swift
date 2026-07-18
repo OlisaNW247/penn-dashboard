@@ -16,6 +16,8 @@ struct OnboardingView: View {
     private enum Phase {
         case steps
         case canvasLogin
+        case gradescopeLogin
+        case classPicker
     }
 
     var body: some View {
@@ -28,9 +30,20 @@ struct OnboardingView: View {
                 onCancel: { phase = .steps }
             )
             .environmentObject(state)
+        case .gradescopeLogin:
+            GradescopeLoginPane(
+                onConnected: { phase = .steps },
+                onCancel: { phase = .steps }
+            )
+            .environmentObject(state)
+        case .classPicker:
+            ClassPickerPane(onDone: { phase = .steps })
+                .environmentObject(state)
         }
     }
 
+    /// Canvas is the only required connection; Gradescope and the class picker
+    /// are optional refinements.
     private var canContinue: Bool {
         state.isCanvasConnected
     }
@@ -55,6 +68,16 @@ struct OnboardingView: View {
                         connected: state.isCanvasConnected,
                         working: state.isCanvasDiscoveryLoading || state.isLoading
                     ) { phase = .canvasLogin }
+
+                    stepCard(
+                        index: 2,
+                        title: "Connect Gradescope",
+                        subtitle: "Optional. Log in once to fold your Gradescope assignments in too.",
+                        connected: state.isGradescopeConnected,
+                        working: state.isGradescopeLoading
+                    ) { phase = .gradescopeLogin }
+
+                    classPickerCard
                 }
 
                 if let error = state.error {
@@ -75,6 +98,18 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
+
+                Button {
+                    state.enterPreviewMode()
+                } label: {
+                    Text("Just exploring? Preview with sample data")
+                        .font(.lhfSans(12, weight: .medium))
+                        .foregroundStyle(Color.v2DateText)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview the app with sample data")
+                .padding(.top, 16)
 
                 Spacer(minLength: 24)
             }
@@ -110,7 +145,7 @@ struct OnboardingView: View {
             Text("Welcome to Low Hanging Fruit")
                 .font(.lhfSans(16, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Your assignments, sorted by what's due next.")
+            Text("Never miss another assignment")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -124,15 +159,17 @@ struct OnboardingView: View {
         } label: {
             Text("Go to dashboard")
                 .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2ToggleActiveTx)
+                .foregroundStyle(canContinue ? Color.v2ToggleActiveTx : Color.v2DateText.opacity(0.55))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
-                    Capsule().fill(Color.v2Ink.opacity(canContinue ? 1 : 0.25))
+                    Capsule().fill(canContinue ? Color.v2Ink : Color.v2Ink.opacity(0.08))
                 )
         }
         .buttonStyle(.plain)
         .disabled(!canContinue)
+        .accessibilityLabel("Go to dashboard")
+        .accessibilityHint(canContinue ? "" : "Connect Canvas first")
     }
 
     private func stepCard(
@@ -191,6 +228,52 @@ struct OnboardingView: View {
         .padding(16)
         .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+
+    /// Optional third step: pick which classes count. Enabled once Canvas is
+    /// connected so there are courses to list; everything is on by default.
+    private var classPickerCard: some View {
+        let courses = state.allCourseCodes()
+        let enabled = !courses.isEmpty
+        let onCount = courses.filter { state.isCourseSelected($0) }.count
+
+        return Button {
+            if enabled { phase = .classPicker }
+        } label: {
+            HStack(alignment: .center, spacing: 13) {
+                ZStack {
+                    Circle().fill(Color.v2Ink.opacity(0.08)).frame(width: 28, height: 28)
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Choose your classes")
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
+                    Text(enabled
+                         ? "All on by default. Turn off any you don't want reminders from."
+                         : "Connect Canvas first to see your classes.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.v2CourseCode)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 10)
+
+                if enabled {
+                    Text("\(onCount)/\(courses.count) on")
+                        .font(.lhfSans(12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .padding(16)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }
 
@@ -286,8 +369,9 @@ private struct CanvasLoginPane: View {
         isReadingCookies = true
         message = nil
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            // Used once, in-memory, to read the calendar-feed URL — never persisted.
+            // Every sync after onboarding is a cookieless GET of that feed.
             let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
-            SessionCookieStore.save(canvasCookies)
             Task { @MainActor in
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)
@@ -298,6 +382,135 @@ private struct CanvasLoginPane: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Gradescope login pane
+
+/// Gradescope login WebView. Unlike Canvas (a cookieless feed), Gradescope has
+/// no public feed, so we persist the login cookies and replay them each sync.
+private struct GradescopeLoginPane: View {
+    @EnvironmentObject private var state: AppState
+    let onConnected: () -> Void
+    let onCancel: () -> Void
+
+    @State private var isReadingCookies = false
+    @State private var message: String?
+
+    private var isBusy: Bool { isReadingCookies || state.isGradescopeLoading }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LoginWebView(url: URL(string: "https://www.gradescope.com/login")!)
+
+            Divider().overlay(Color.v2Divider)
+
+            LoginActionBar(
+                message: message,
+                defaultHint: "Log in to Gradescope once. We'll keep it in sync while your session is valid.",
+                connectTitle: "Connect Gradescope",
+                isBusy: isBusy,
+                onCancel: onCancel,
+                onConnect: connect
+            )
+        }
+        .background(Color.v2Bg.ignoresSafeArea())
+#if os(macOS)
+        .frame(minWidth: 860, minHeight: 620)
+#endif
+    }
+
+    private func connect() {
+        isReadingCookies = true
+        message = nil
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope") }
+            SessionCookieStore.save(gradescopeCookies)
+            Task { @MainActor in
+                isReadingCookies = false
+                guard !gradescopeCookies.isEmpty else {
+                    message = "No Gradescope session was found yet. Finish logging in, then try again."
+                    return
+                }
+                await state.syncGradescope(cookies: gradescopeCookies)
+                if state.isGradescopeConnected {
+                    onConnected()
+                } else {
+                    message = state.error ?? "Couldn't connect Gradescope yet. Finish logging in, then try again."
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Class picker pane
+
+/// Lets the user turn classes off. Everything is on by default; turning a class
+/// off removes it from the dashboard and its reminders. Also reachable later
+/// from Settings.
+private struct ClassPickerPane: View {
+    @EnvironmentObject private var state: AppState
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text("Your classes")
+                    .font(.lhfSerif(26))
+                    .foregroundStyle(Color.v2Ink)
+                Text("Turn off any class you don't want on your dashboard or in reminders.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2DateText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(state.allCourseCodes(), id: \.self) { course in
+                        courseRow(course)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+
+            Divider().overlay(Color.v2Divider)
+
+            Button(action: onDone) {
+                Text("Done")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+        }
+        .background(Color.v2Bg.ignoresSafeArea())
+#if os(macOS)
+        .frame(minWidth: 480, minHeight: 620)
+#endif
+    }
+
+    private func courseRow(_ course: String) -> some View {
+        let isOn = Binding(
+            get: { state.isCourseSelected(course) },
+            set: { state.setCourse(course, selected: $0) }
+        )
+        return Toggle(isOn: isOn) {
+            Text(course)
+                .font(.lhfSans(14, weight: .medium))
+                .foregroundStyle(Color.v2Ink)
+        }
+        .toggleStyle(.switch)
+        .tint(Color.v2SpineGreen)
+        .padding(14)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 

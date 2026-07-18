@@ -39,15 +39,17 @@ public struct CanvasICSClient: Sendable {
     }
 
     static func normalize(_ event: ICSParser.Event) -> Assignment {
-        let (title, course) = splitCourse(from: event.summary)
+        let (title, rawCourse) = splitCourse(from: event.summary)
+        let parsed = CourseCode.parse(rawCourse)
         return Assignment(
             source: .canvas,
             sourceID: event.uid,
             kind: classify(event),
-            course: course,
+            course: parsed.code,
             title: title,
             dueAt: event.dtStart,
             url: event.url,
+            term: parsed.term,
             submitted: false  // ICS feed doesn't expose submission status
         )
     }
