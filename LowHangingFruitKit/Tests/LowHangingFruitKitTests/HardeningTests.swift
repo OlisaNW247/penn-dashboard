@@ -132,14 +132,13 @@ struct HardeningTests {
         let undated = Assignment(source: .canvas, sourceID: "u", kind: .assignment,
                                  course: "C", title: "T", dueAt: nil, url: nil)
 
-        #expect(AppState.isActive(a(0), now: now))
-        #expect(AppState.isActive(a(6), now: now))
-        #expect(!AppState.isActive(a(10), now: now))
-        #expect(!AppState.isActive(undated, now: now))
-
-        #expect(AppState.isLater(a(10), now: now))
-        #expect(AppState.isLater(undated, now: now))        // undated sorts to Later
-        #expect(!AppState.isLater(a(2), now: now))
+        // Near vs later partition the pool with no gap: overdue and due-this-week
+        // are "near"; beyond a week out and undated are "later".
+        #expect(AppState.isNearOrOverdue(a(0), now: now))
+        #expect(AppState.isNearOrOverdue(a(6), now: now))
+        #expect(AppState.isNearOrOverdue(a(-30), now: now))  // long overdue is still near
+        #expect(!AppState.isNearOrOverdue(a(10), now: now))
+        #expect(!AppState.isNearOrOverdue(undated, now: now))  // undated sorts to Later
 
         #expect(AppState.isTooOld(a(-200), now: now))       // ~6.5 months ago
         #expect(!AppState.isTooOld(a(-10), now: now))

@@ -4,6 +4,7 @@ import LowHangingFruitKit
 @MainActor
 final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
+    @Published var gradescopeItems: [Assignment] = []
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
@@ -12,13 +13,25 @@ final class AppState: ObservableObject {
     @Published var canvasRequirementSuggestions: [CanvasRequirementSuggestion] = []
     @Published var isLoading = false
     @Published var isCanvasDiscoveryLoading = false
+    @Published var isGradescopeLoading = false
     @Published var error: String?
     @Published var syncNotice: String?
     @Published var lastSync: Date?
+    @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
     @Published private(set) var completedAssignmentIDs: Set<String>
+    /// When each completed item was marked done. Persisted so the Done tab keeps
+    /// its history across launches (and so completed homework doesn't vanish on
+    /// relaunch). IDs completed before this map existed simply have no entry;
+    /// the Done view falls back to the due date to place them.
+    @Published private(set) var completionDates: [String: Date]
+    /// Courses the user has switched OFF (no dashboard items, no notifications).
+    /// Stored as the *hidden* set so the default — empty — means every course is
+    /// shown, and any newly-discovered course shows up automatically.
+    @Published private(set) var hiddenCourseKeys: Set<String>
     @Published private(set) var isCanvasDiscoveryConnected: Bool
+    @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
@@ -26,16 +39,22 @@ final class AppState: ObservableObject {
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
+    private static let completionDatesKey = "completionDates"
+    private static let hiddenCoursesKey = "hiddenCourseKeys"
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
+    private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
     private static let previewModeKey = "isPreviewMode"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
+        self.completionDates = Self.loadCompletionDates()
+        self.hiddenCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
+        self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
@@ -193,6 +212,89 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
     }
 
+    func syncGradescope(cookies: [HTTPCookie]) async {
+        await syncGradescope(cookies: cookies, reportErrors: true)
+    }
+
+    /// Scrapes the user's Gradescope assignments using the captured login cookies
+    /// and folds them into the dashboard. Cookie sessions expire server-side; on
+    /// failure we mark Gradescope disconnected so the UI can prompt a reconnect.
+    func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool) async {
+        // Reentrancy guard: the 5-min loop and a scene-activation can both fire a
+        // sync; without this they'd run two full scrapes concurrently. The check
+        // and set are synchronous on the main actor, so there's no TOCTOU window.
+        guard !isGradescopeLoading else { return }
+        isGradescopeLoading = true
+        if reportErrors { error = nil }
+        defer { isGradescopeLoading = false }
+
+        guard !cookies.isEmpty else {
+            if reportErrors { error = "No Gradescope session was found yet. Finish logging in, then try again." }
+            setGradescopeConnected(false)
+            return
+        }
+
+        do {
+            let client = GradescopeClient(cookies: cookies)
+            // Normalize Gradescope's course labels through the same parser as
+            // Canvas so a course shared by both sources collapses to one picker
+            // entry (e.g. "CIS 2400 Systems Programming" → "CIS 2400").
+            gradescopeItems = try await client.fetchAssignments().map(Self.normalizingCourse)
+            lastGradescopeSync = Date()
+            setGradescopeConnected(true)
+            rebuildDashboardItems()
+        } catch {
+            setGradescopeConnected(false)
+            let message = "Gradescope needs you to reconnect."
+            if reportErrors {
+                self.error = "\(message) \(error.localizedDescription)"
+            } else {
+                self.syncNotice = message
+            }
+        }
+    }
+
+    func setGradescopeConnected(_ connected: Bool) {
+        isGradescopeConnected = connected
+        UserDefaults.standard.set(connected, forKey: Self.gradescopeConnectedKey)
+    }
+
+    /// Rewrites an item's course label to the canonical `CourseCode` form so
+    /// Gradescope and Canvas agree on course identity (the class picker keys on it).
+    private static func normalizingCourse(_ a: Assignment) -> Assignment {
+        let cleaned = CourseCode.parse(a.course).code
+        guard cleaned != a.course else { return a }
+        return Assignment(source: a.source, sourceID: a.sourceID, kind: a.kind,
+                          course: cleaned, title: a.title, dueAt: a.dueAt,
+                          url: a.url, term: a.term, submitted: a.submitted)
+    }
+
+    // MARK: Course selection (class picker)
+
+    /// Every distinct course currently seen across the connected sources, sorted
+    /// for a stable picker order. Drives the onboarding + settings class list.
+    func allCourseCodes() -> [String] {
+        let pool = canvasItems + gradescopeItems
+        let codes = Set(pool.map(\.course)).subtracting([Self.unknownCourse])
+        return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    func isCourseSelected(_ course: String) -> Bool {
+        !hiddenCourseKeys.contains(course)
+    }
+
+    /// Toggle a course on/off. Off = hidden from the dashboard and notifications.
+    func setCourse(_ course: String, selected: Bool) {
+        if selected { hiddenCourseKeys.remove(course) }
+        else { hiddenCourseKeys.insert(course) }
+        persistHiddenCourses()
+        rebuildDashboardItems()
+    }
+
+    private func persistHiddenCourses() {
+        UserDefaults.standard.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
+    }
+
     func addRecurringTask(_ task: RecurringTask) {
         recurringTasks.append(task)
         persistRecurringTasks()
@@ -230,22 +332,29 @@ final class AppState: ObservableObject {
         canvasRequirementSuggestions.removeAll { $0.id == suggestion.id }
     }
 
-    /// Active assignments are limited to a near-term window: due within the next
-    /// week, or overdue by less than a week.
+    /// How far ahead "this week" reaches.
     static let dashboardWindow: TimeInterval = 7 * 86_400
 
-    /// Main dashboard: dated assignments due within the ±1-week window.
-    static func isActive(_ assignment: Assignment, now: Date = Date()) -> Bool {
+    /// Near bucket: overdue OR due within the dashboard window. Its complement
+    /// (undated, or beyond the window) is "later" — together they cover the whole
+    /// pool with no gap, so items overdue by more than a week still surface.
+    static func isNearOrOverdue(_ assignment: Assignment, now: Date = Date()) -> Bool {
         guard let due = assignment.dueAt else { return false }
-        return due >= now.addingTimeInterval(-dashboardWindow)
-            && due <= now.addingTimeInterval(dashboardWindow)
+        return due <= now.addingTimeInterval(dashboardWindow)
     }
 
-    /// Later tab: assignments due more than a week out, plus anything with no
-    /// due date (e.g. exams professors upload without a deadline).
-    static func isLater(_ assignment: Assignment, now: Date = Date()) -> Bool {
+    /// Keeps the dashboard to the current term so next-term courses Canvas still
+    /// lists as "active" can't leak in. When the item's term is known (parsed
+    /// from the Canvas course code) we use it directly — exact, and immune to the
+    /// fuzzy month→season boundary. Otherwise we fall back to a due-date cap that
+    /// is never tighter than the dashboard window, so genuinely-soon items are
+    /// safe at term boundaries. Undated and overdue items always pass.
+    static func withinTermCap(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        let current = Term(date: now)
+        if let term = assignment.term { return term <= current }   // future term → excluded
         guard let due = assignment.dueAt else { return true }
-        return due > now.addingTimeInterval(dashboardWindow)
+        let cap = max(current.endDate(), now.addingTimeInterval(dashboardWindow))
+        return due <= cap
     }
 
     /// Stale leftovers — anything due more than 5 months ago — are hidden
@@ -257,29 +366,43 @@ final class AppState: ObservableObject {
         return due < cutoff
     }
 
+    static let unknownCourse = "(unknown course)"
+
     /// Quizzes, midterms, and exams live on their own Assessments page rather than
     /// mixed into coursework. Detected by Canvas's quiz classification or by title.
     static func isAssessment(_ assignment: Assignment) -> Bool {
         if assignment.kind == .quiz { return true }
+        // Institution-wide calendar entries — holidays, "no class / no exams"
+        // days — carry no course and no submission. Never promote them to
+        // assessments even when the title mentions "exam"; this was what surfaced
+        // "(unknown course) · Rosh Hashanah no exams" on the dashboard.
+        guard assignment.course != Self.unknownCourse else { return false }
         let pattern = #"(?i)\b(midterms?|exams?|quiz|quizzes|prelims?|finals|final exam)\b"#
         return assignment.title.range(of: pattern, options: .regularExpression) != nil
     }
 
-    private func rebuildDashboardItems() {
+    private func rebuildDashboardItems(now: Date = Date()) {
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
-        // assessment (quizzes/exams that aren't classified as plain assignments).
+        // assessment (quizzes/exams). Gradescope items are already assignments.
         let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
-        let allItems = (canvasRelevant + recurringAssignments + manualItems)
+        let allItems = (canvasRelevant + gradescopeItems + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
-        let incomplete = allItems.filter { !isCompleted($0) && !Self.isTooOld($0) }
+        let incomplete = allItems.filter { item in
+            !isCompleted(item)
+                && !Self.isTooOld(item, now: now)
+                && isCourseSelected(item.course)          // class picker
+                && Self.withinTermCap(item, now: now)     // end-of-term cap
+        }
         assessments = incomplete.filter { Self.isAssessment($0) }
 
+        // Near (overdue + this week) and later partition the coursework with no
+        // gap, so nothing incomplete is silently dropped.
         let coursework = incomplete.filter { !Self.isAssessment($0) }
-        assignments = coursework.filter { Self.isActive($0) }
-        laterAssignments = coursework.filter { Self.isLater($0) }
+        assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
+        laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
     }
 
     #if DEBUG
@@ -288,18 +411,21 @@ final class AppState: ObservableObject {
     func loadSampleData() {
         canvasItems = SampleData.items().map(\.assignment)
         completedAssignmentIDs = []
+        completionDates = [:]
         rebuildDashboardItems()
     }
     #endif
 
-    func markCompleted(_ assignment: Assignment) {
+    func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         completedAssignmentIDs.insert(assignment.id)
+        completionDates[assignment.id] = date
         persistCompletedIDs()
         rebuildDashboardItems()
     }
 
     func markActive(_ assignment: Assignment) {
         completedAssignmentIDs.remove(assignment.id)
+        completionDates[assignment.id] = nil
         persistCompletedIDs()
         rebuildDashboardItems()
     }
@@ -308,8 +434,27 @@ final class AppState: ObservableObject {
         assignment.submitted || completedAssignmentIDs.contains(assignment.id)
     }
 
+    /// When this item was marked done, if known. Items completed before the app
+    /// tracked timestamps return nil — callers fall back to the due date.
+    func completedAt(_ assignment: Assignment) -> Date? {
+        completionDates[assignment.id]
+    }
+
     private func persistCompletedIDs() {
         UserDefaults.standard.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
+        // Keep the date map trimmed to currently-completed IDs so it can't grow
+        // unbounded as items are toggled.
+        completionDates = completionDates.filter { completedAssignmentIDs.contains($0.key) }
+        if let data = try? JSONEncoder().encode(completionDates) {
+            UserDefaults.standard.set(data, forKey: Self.completionDatesKey)
+        }
+    }
+
+    private static func loadCompletionDates() -> [String: Date] {
+        guard let data = UserDefaults.standard.data(forKey: completionDatesKey),
+              let map = try? JSONDecoder().decode([String: Date].self, from: data)
+        else { return [:] }
+        return map
     }
 
     private func persistRecurringTasks() {

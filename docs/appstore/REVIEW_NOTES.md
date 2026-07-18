@@ -55,6 +55,3 @@ the user turns reminders on in Settings — not at launch.
 - SwiftUI; iPhone; iOS 17+.
 - `WKWebView` is used solely to present Canvas's own login web page.
 - No use of non-exempt encryption (`ITSAppUsesNonExemptEncryption = false`).
-
-## Contact
-[ADD YOUR REVIEWER-CONTACT NAME / EMAIL / PHONE HERE]

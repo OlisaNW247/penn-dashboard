@@ -15,7 +15,6 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showSettings = false
     @State private var showAddSheet = false
-    @State private var isSyncing = false
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
@@ -64,6 +63,8 @@ struct ContentView: View {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
+                // Seed AppState too, so the Settings class list has courses.
+                state.loadSampleData()
                 vm.loadSampleData()
                 if args.contains("-LHFShowSettings") { showSettings = true }
                 return
@@ -82,14 +83,14 @@ struct ContentView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
                 if Task.isCancelled { break }
-                await refresh(showSpinner: false)
+                await refresh()
             }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task {
                     await scheduler.refreshAuthStatus()
-                    await refresh(showSpinner: false)
+                    await refresh()
                 }
             }
         }
@@ -149,44 +150,31 @@ struct ContentView: View {
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.v2Ink)
 
-                HStack(spacing: 2) {
+                HStack(spacing: 10) {
                     Text(Self.dateText(Date()))
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
-                        .padding(.trailing, 6)
 
-                    Button { syncNow() } label: {
-                        Group {
-                            if isSyncing {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 13, weight: .regular))
-                                    .foregroundStyle(Color.v2DateText.opacity(0.7))
-                            }
+                    // The only header control: a clearly-labeled Settings button.
+                    // There's no manual reload — opening the app auto-refreshes.
+                    Button { showSettings = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Settings")
+                                .font(.lhfSans(12, weight: .semibold))
                         }
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSyncing)
-                    .accessibilityLabel("Sync now")
-                    .help("Sync now")
-
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(Color.v2DateText.opacity(0.7))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        .foregroundStyle(Color.v2DateText)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.v2Ink.opacity(0.07)))
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Settings and accounts")
                     .help("Settings & accounts")
                 }
-                .padding(.vertical, -8)
+                .padding(.top, 2)
             }
 
             Spacer()
@@ -199,24 +187,14 @@ struct ContentView: View {
         state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
     }
 
-    /// Manual refresh (header button): shows the spinner.
-    private func syncNow() {
-        guard !isSyncing else { return }
-        Task { await refresh(showSpinner: true) }
-    }
-
-    /// Re-sync Canvas using the persisted session, then reload the dashboard.
-    /// `showSpinner` is false for the silent auto-refresh.
-    private func refresh(showSpinner: Bool) async {
-        if showSpinner {
-            guard !isSyncing else { return }
-            isSyncing = true
-        }
-        // Canvas-only: re-fetch the assignment list from the calendar feed.
+    /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
+    /// from its persisted session, then reload the dashboard. Runs on launch,
+    /// on activation, and on the 5-minute loop — there's no manual sync button.
+    private func refresh() async {
         await state.syncIfConfigured()
+        await AutoSyncCoordinator.syncConnectedServices(state: state)
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
-        if showSpinner { isSyncing = false }
     }
 
     // MARK: List
@@ -274,10 +252,10 @@ struct ContentView: View {
                     .accessibilityHidden(true)
             }
             VStack(spacing: 8) {
-                Text("Touch Grass")
+                Text("Go enjoy Life")
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
-                Text("go enjoy life")
+                Text("you're all caught up")
                     .font(.lhfSans(15))
                     .foregroundStyle(Color.v2DateText.opacity(0.85))
             }

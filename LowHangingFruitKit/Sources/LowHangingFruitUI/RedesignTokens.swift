@@ -145,6 +145,26 @@ enum DueState {
         case .later:   return .v2DueGreen
         }
     }
+
+    /// A colored dot that carries the urgency tier into places that can't render
+    /// SwiftUI color — notably local notifications, whose text the OS styles.
+    /// Matches the card spine palette (red / amber / blue / green).
+    var urgencyEmoji: String {
+        switch self {
+        case .overdue: return "🔴"
+        case .today:   return "🟠"
+        case .soon:    return "🔵"
+        case .later:   return "🟢"
+        }
+    }
+
+    /// The two most-urgent tiers ask iOS to break through Focus / Do Not Disturb.
+    var isTimeSensitive: Bool {
+        switch self {
+        case .overdue, .today: return true
+        case .soon, .later:    return false
+        }
+    }
 }
 
 /// Compact, weekday-free due text: "2 days late", "5h left", "in 3 days".

@@ -4,9 +4,8 @@ import LowHangingFruitKit
 /// Hardcoded fixtures used by (1) SwiftUI previews / offline UI work and (2) the
 /// in-app **Preview mode** an App Store reviewer taps on the onboarding screen —
 /// no scrapers, no login, no network. Populates every section richly (2 overdue,
-/// 2 due today, 4 rest-of-week, 2 later, 4 completed) so the full design is
-/// visible without a Canvas account. Completion timestamps are synthesized here
-/// because the model doesn't store them.
+/// 2 due today, 4 rest-of-week, 2 later, 4 completed this week, 2 completed
+/// earlier this semester) so the full design is visible without a Canvas account.
 enum SampleData {
     static func items(now: Date = Date()) -> [DashItem] {
         let cal = Calendar.current
@@ -23,6 +22,17 @@ enum SampleData {
         let twoDaysBefore = cal.date(byAdding: .day, value: -2, to: startToday) ?? startToday
         let earlierA = max(weekStart, dayBefore).addingTimeInterval(14 * 3600)  // earlier this week
         let earlierB = max(weekStart, twoDaysBefore).addingTimeInterval(11 * 3600)
+
+        // Earlier this semester — fills the Done tab's scroll-down history.
+        // Clamped to sit inside the current term but before this week.
+        let semesterStart = Term(date: now).startDate()
+        let beforeThisWeek = weekStart.addingTimeInterval(-2 * 86_400)
+        func inSemester(daysAgo: Int) -> Date {
+            let target = cal.date(byAdding: .day, value: -daysAgo, to: startToday) ?? startToday
+            return max(semesterStart, min(target, beforeThisWeek)).addingTimeInterval(13 * 3600)
+        }
+        let semesterA = inSemester(daysAgo: 18)
+        let semesterB = inSemester(daysAgo: 25)
 
         func active(_ source: Assignment.Source, _ id: String, _ course: String,
                     _ title: String, due: Date) -> DashItem {
@@ -60,6 +70,9 @@ enum SampleData {
             // DONE — earlier this week
             done(.canvas,       "s-11", "ECON 1",    "Problem set 2",           at: earlierB),
             done(.canvas,       "s-12", "MEAM 1010", "Lab report 3",            at: earlierA),
+            // DONE — earlier this semester (Done tab's scroll-down history)
+            done(.canvas,       "s-15", "PSYC 1",    "Reading quiz 3",          at: semesterA),
+            done(.gradescope,   "s-16", "CIS 1210",  "PSet 1: recursion",       at: semesterB),
         ]
     }
 }
