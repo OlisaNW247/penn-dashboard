@@ -369,9 +369,12 @@ private struct CanvasLoginPane: View {
         isReadingCookies = true
         message = nil
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-            // Used once, in-memory, to read the calendar-feed URL — never persisted.
-            // Every sync after onboarding is a cookieless GET of that feed.
+            // Read once to discover the calendar-feed URL, but also persisted
+            // (Keychain, same treatment as Gradescope's) so Grade Watcher's
+            // cookie-authed refresh survives relaunches — `WKWebsiteDataStore`
+            // drops session cookies like Canvas's/Penn SSO's between launches.
             let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
+            SessionCookieStore.save(canvasCookies)
             Task { @MainActor in
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)

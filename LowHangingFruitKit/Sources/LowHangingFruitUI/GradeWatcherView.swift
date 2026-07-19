@@ -132,26 +132,44 @@ struct GradeWatcherView: View {
 
     // MARK: - Refresh
 
-    /// Grades are cookie-authed (docs/grades.md §1, §7); Canvas cookies aren't
-    /// persisted anywhere in this app today (only Gradescope's are, via
-    /// `SessionCookieStore` — see `AutoSyncCoordinator`), so this reads
-    /// whatever Canvas cookies the in-app WebView session currently holds,
-    /// same as the onboarding connect flow. When that session has lapsed,
-    /// `GradeWatcherStore` surfaces `isSessionExpired` and this view goes
-    /// stale rather than blank.
+    /// Grades are cookie-authed (docs/grades.md §1, §7). Canvas cookies are now
+    /// persisted the same way Gradescope's are (`SessionCookieStore`, captured
+    /// at connect time in `CanvasLoginPane.connect()`), so this mirrors
+    /// `AutoSyncCoordinator.gradescopeCookies()` exactly: try the persisted set
+    /// first, fold in whatever the in-app WebView session currently holds (live
+    /// values win on overlap), and replay the merged set. If the session still
+    /// comes back expired, the persisted cookies are stale — purge them so the
+    /// next attempt doesn't keep retrying dead cookies, and let the existing
+    /// stale banner (`GradeWatcherStore.isSessionExpired`) do the surfacing.
     private func performRefresh() async {
-        let cookies = await Self.liveCanvasCookies()
+        let cookies = await Self.canvasCookies()
         await state.refreshGradeWatcher(cookies: cookies)
-    }
 
-    private static func liveCanvasCookies() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-                continuation.resume(returning: cookies.filter {
-                    $0.domain.localizedCaseInsensitiveContains("canvas")
-                })
+        if store.isSessionExpired {
+            let hadPersisted = SessionCookieStore.load()
+                .contains { $0.domain.localizedCaseInsensitiveContains("canvas") }
+            if hadPersisted {
+                SessionCookieStore.remove(domainContains: "canvas")
             }
         }
+    }
+
+    private static func canvasCookies() async -> [HTTPCookie] {
+        let live: [HTTPCookie] = await withCheckedContinuation { continuation in
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
+        }
+
+        // Session cookies vanish between launches, so fold in the persisted set
+        // and re-inject them into the WebView store (keeps the in-app login warm),
+        // exactly as `AutoSyncCoordinator.gradescopeCookies()` does for Gradescope.
+        let persisted = SessionCookieStore.load()
+        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+        for cookie in persisted { await cookieStore.setCookie(cookie) }
+
+        // Live values win over persisted ones for the same cookie.
+        let liveKeys = Set(live.map { "\($0.name)|\($0.domain)|\($0.path)" })
+        let merged = persisted.filter { !liveKeys.contains("\($0.name)|\($0.domain)|\($0.path)") } + live
+        return merged.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
     }
 }
 

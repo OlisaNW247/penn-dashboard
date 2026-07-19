@@ -35,6 +35,15 @@ enum SessionCookieStore {
         SecItemDelete(baseQuery() as CFDictionary)
     }
 
+    /// Removes only the persisted cookies whose domain contains `needle`
+    /// (case-insensitive) — e.g. purging a lapsed Canvas session without
+    /// touching Gradescope's cookies in the same blob, or vice versa.
+    static func remove(domainContains needle: String) {
+        var stored = loadDicts()
+        stored.removeAll { ($0["domain"] ?? "").localizedCaseInsensitiveContains(needle) }
+        write(stored)
+    }
+
     // MARK: - Keychain
 
     private static func baseQuery() -> [String: Any] {
