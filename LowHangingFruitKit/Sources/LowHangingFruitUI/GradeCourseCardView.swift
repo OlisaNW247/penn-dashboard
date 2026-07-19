@@ -12,11 +12,20 @@ struct GradeCourseCardView: View {
     let courseName: String
 
     @State private var isExpanded = false
+    @State private var isUnmatchedExpanded = false
 
     private let corner: CGFloat = 13
 
     private var breakdown: GradeBreakdown? {
         store.breakdown(courseID: courseID)
+    }
+
+    /// Gradescope scores that named an assignment but never made it into this
+    /// course's math (docs/grades.md §4) — no candidate, ambiguous, or a
+    /// duplicate of an already-filled item. Never counted; shown so the user
+    /// can see what Gradescope has that Grade Watcher didn't apply.
+    private var unmatchedScores: [GradescopeOverlay.UnmatchedItem] {
+        store.unmatchedGradescopeScores(courseID: courseID)
     }
 
     private var hasSnapshot: Bool {
@@ -214,6 +223,53 @@ struct GradeCourseCardView: View {
                     .font(.lhfSans(10.5))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !unmatchedScores.isEmpty {
+                unmatchedDisclosure
+            }
+        }
+    }
+
+    // MARK: - Unmatched Gradescope scores
+
+    private var unmatchedDisclosure: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isUnmatchedExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isUnmatchedExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("\(unmatchedScores.count) unmatched Gradescope \(unmatchedScores.count == 1 ? "score" : "scores")")
+                        .font(.lhfSans(10.5, weight: .medium))
+                }
+                .foregroundStyle(Color.v2RingSub)
+            }
+            .buttonStyle(.plain)
+
+            if isUnmatchedExpanded {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(unmatchedScores.enumerated()), id: \.offset) { _, item in
+                        HStack(alignment: .top) {
+                            Text(item.title)
+                                .font(.lhfSans(10.5))
+                                .foregroundStyle(Color.v2Ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            Text("\(formatPoints(item.scoreEarned))/\(formatPoints(item.scoreMax))")
+                                .font(.lhfSans(10.5))
+                                .foregroundStyle(Color.v2RingSub)
+                        }
+                    }
+                    Text("Not counted \u{2014} no matching Canvas assignment.")
+                        .font(.lhfSans(9.5))
+                        .foregroundStyle(Color.v2RingSub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
             }
         }
     }

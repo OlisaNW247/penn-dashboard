@@ -38,6 +38,15 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     /// Canvas course descriptor. Used to scope the dashboard to the current term.
     public let term: Term?
     public let submitted: Bool
+    /// The graded score Gradescope already shows (e.g. the "87.5" in
+    /// "87.5 / 100"), when the assignment's status string carries one. Nil
+    /// when ungraded or the source isn't Gradescope. Feeds the Grade Watcher
+    /// early-score overlay (docs/grades.md §4) — never used to imply
+    /// "submitted" on its own; see `GradescopeHTMLParser.isCompletedStatus`.
+    public let scoreEarned: Double?
+    /// The denominator alongside `scoreEarned` (the "100" in "87.5 / 100").
+    /// Always nil exactly when `scoreEarned` is nil.
+    public let scoreMax: Double?
 
     public var isAssignment: Bool {
         kind == .assignment
@@ -52,7 +61,9 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         dueAt: Date?,
         url: URL?,
         term: Term? = nil,
-        submitted: Bool = false
+        submitted: Bool = false,
+        scoreEarned: Double? = nil,
+        scoreMax: Double? = nil
     ) {
         self.source = source
         self.sourceID = sourceID
@@ -63,5 +74,7 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         self.url = url
         self.term = term
         self.submitted = submitted
+        self.scoreEarned = scoreEarned
+        self.scoreMax = scoreMax
     }
 }

@@ -269,7 +269,14 @@ final class AppState: ObservableObject {
     /// picker is also skipped here, so we never fetch grades for a course
     /// nobody asked to see.
     func refreshGradeWatcher(cookies: [HTTPCookie]) async {
-        await gradeWatcher.refresh(courseIDs: selectedCanvasCourseIDs(), cookies: cookies)
+        // Piggyback on Gradescope items this launch's throttled AutoSyncCoordinator
+        // sync already fetched (docs/grades.md §4/§9) — never a second, unthrottled
+        // Gradescope scrape just for the overlay.
+        await gradeWatcher.refresh(
+            courseIDs: selectedCanvasCourseIDs(),
+            cookies: cookies,
+            gradescopeItems: isGradescopeConnected ? gradescopeItems : []
+        )
     }
 
     /// Rewrites an item's course label to the canonical `CourseCode` form so
@@ -279,7 +286,8 @@ final class AppState: ObservableObject {
         guard cleaned != a.course else { return a }
         return Assignment(source: a.source, sourceID: a.sourceID, kind: a.kind,
                           course: cleaned, title: a.title, dueAt: a.dueAt,
-                          url: a.url, term: a.term, submitted: a.submitted)
+                          url: a.url, term: a.term, submitted: a.submitted,
+                          scoreEarned: a.scoreEarned, scoreMax: a.scoreMax)
     }
 
     // MARK: Course selection (class picker)

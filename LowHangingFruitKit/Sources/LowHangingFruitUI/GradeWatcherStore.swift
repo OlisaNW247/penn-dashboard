@@ -21,6 +21,12 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var isSessionExpired = false
     @Published var error: String?
 
+    /// Gradescope items that named an assignment but never made it into a
+    /// course's math (docs/grades.md §4) — no candidate, an ambiguous name
+    /// match, or a candidate another Gradescope item already filled. Keyed by
+    /// Canvas course id, replaced wholesale on each `refresh`.
+    @Published private(set) var unmatchedGradescopeScoresByCourse: [String: [GradescopeOverlay.UnmatchedItem]] = [:]
+
     /// Manual category-weight overrides (CP4 UI), keyed courseID -> categoryID
     /// -> percent. This is the ONLY fallback when Canvas has no weights
     /// (docs/grades.md §6), so it's always editable regardless of course mode.
@@ -37,7 +43,20 @@ final class GradeWatcherStore: ObservableObject {
     /// Refreshes grades for exactly the courses the caller passes in — this
     /// store never decides course selection itself. Pass
     /// `AppState.selectedCanvasCourseIDs()` to honor the class picker.
-    func refresh(courseIDs: [String: String], cookies: [HTTPCookie], now: Date = Date()) async {
+    ///
+    /// `gradescopeItems` is whatever Gradescope has already scraped this
+    /// launch (`AppState.gradescopeItems`, itself gated by
+    /// `AutoSyncCoordinator`'s 15-minute throttle) — this piggybacks on that
+    /// data rather than triggering a second, unthrottled Gradescope fetch of
+    /// its own (docs/grades.md §4/§9). If Gradescope isn't connected
+    /// (`SessionCookieStore` has no Gradescope cookies), the overlay is
+    /// skipped entirely and courses fall back to Canvas-only scores.
+    func refresh(
+        courseIDs: [String: String],
+        cookies: [HTTPCookie],
+        gradescopeItems: [Assignment] = [],
+        now: Date = Date()
+    ) async {
         guard !isRefreshing else { return }
         guard !cookies.isEmpty else {
             error = "No Canvas session was found yet. Finish logging in to Canvas, then try again."
@@ -53,10 +72,29 @@ final class GradeWatcherStore: ObservableObject {
         var sawSessionExpired = false
         var lastFailure: Swift.Error?
         var fetchedAny = false
+        var unmatchedByCourse: [String: [GradescopeOverlay.UnmatchedItem]] = [:]
+
+        let gradescopeConnected = SessionCookieStore.load()
+            .contains { $0.domain.localizedCaseInsensitiveContains("gradescope") }
 
         for courseID in courseIDs.keys.sorted() {
             do {
-                let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+                var snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+
+                if gradescopeConnected, let courseName = courseIDs[courseID] {
+                    let courseItems = gradescopeItems.filter { $0.course == courseName }
+                    let overlay = GradescopeOverlay.apply(categories: snapshot.categories, gradescopeItems: courseItems)
+                    snapshot = CourseGradeSnapshot(
+                        courseID: snapshot.courseID,
+                        courseUsesWeights: snapshot.courseUsesWeights,
+                        categories: overlay.categories,
+                        canvasComputedCurrentScore: snapshot.canvasComputedCurrentScore,
+                        submissions: snapshot.submissions,
+                        fetchedAt: snapshot.fetchedAt
+                    )
+                    unmatchedByCourse[courseID] = overlay.unmatched
+                }
+
                 snapshots[courseID] = snapshot
                 fetchedAny = true
             } catch CanvasGradesClient.Error.sessionExpired {
@@ -66,6 +104,7 @@ final class GradeWatcherStore: ObservableObject {
             }
         }
 
+        unmatchedGradescopeScoresByCourse = unmatchedByCourse
         isSessionExpired = sawSessionExpired
         if fetchedAny {
             lastRefreshed = now
@@ -76,6 +115,12 @@ final class GradeWatcherStore: ObservableObject {
         } else if let lastFailure {
             error = "Grade Watcher sync failed: \(lastFailure.localizedDescription)"
         }
+    }
+
+    /// This course's unmatched Gradescope scores from the last refresh (empty
+    /// if Gradescope isn't connected or nothing was unmatched).
+    func unmatchedGradescopeScores(courseID: String) -> [GradescopeOverlay.UnmatchedItem] {
+        unmatchedGradescopeScoresByCourse[courseID] ?? []
     }
 
     /// Runs `GradeEngine.compute()` over the stored snapshot for one course,

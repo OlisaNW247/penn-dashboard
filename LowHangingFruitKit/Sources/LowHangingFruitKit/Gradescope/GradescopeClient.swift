@@ -382,6 +382,7 @@ public enum GradescopeHTMLParser {
         let cells = matches(#"<t[dh]\b[^>]*>(.*?)</t[dh]>"#, in: row).map { cleanText($0[0]) }
         let dueAt = dueDate(from: row, cells: cells, referenceDate: referenceDate)
         let submitted = isCompletedStatus(in: cells) || isCompletedStatus(in: [cleanText(row)])
+        let score = scoreValues(in: cells + [cleanText(row)])
 
         return Assignment(
             source: .gradescope,
@@ -391,9 +392,51 @@ public enum GradescopeHTMLParser {
             title: title,
             dueAt: dueAt,
             url: url,
-            submitted: submitted
+            submitted: submitted,
+            scoreEarned: score?.earned,
+            scoreMax: score?.max
         )
     }
+
+    /// Extracts the earned/max numbers from a Gradescope score string (e.g.
+    /// "87.5 / 100", "Score: 0 / 100") without changing what `isCompletedStatus`
+    /// already treats as "submitted" — this is purely additive parsing over the
+    /// same cell/row text it already scans. Nil when no score fraction is
+    /// present (ungraded, "Not Submitted", etc.).
+    ///
+    /// Tries two shapes, most specific first:
+    /// 1. A cell that IS the score, nothing else (Gradescope's dedicated Grade
+    ///    column typically renders exactly `"10.0 / 10.0"`, optionally with a
+    ///    trailing "pts"/"points" unit) — this can't collide with a due-date
+    ///    cell, which always carries more text (a month name, "at", "AM/PM"…).
+    /// 2. A "score"/"grade"-labelled fraction anywhere in the text, mirroring
+    ///    the keyword-gated fallback `isCompletedStatus` already uses to detect
+    ///    a score is present, just capturing the numbers this time.
+    static func scoreValues(in texts: [String]) -> (earned: Double, max: Double)? {
+        for text in texts {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let groups = matches(bareScorePattern, in: trimmed).first,
+               groups.count >= 2,
+               let earned = Double(groups[0]),
+               let max = Double(groups[1]) {
+                return (earned, max)
+            }
+        }
+        for text in texts {
+            if let groups = matches(labelledScorePattern, in: text).first,
+               groups.count >= 2,
+               let earned = Double(groups[0]),
+               let max = Double(groups[1]) {
+                return (earned, max)
+            }
+        }
+        return nil
+    }
+
+    private static let bareScorePattern =
+        #"^(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*(?:points?|pts?)?$"#
+    private static let labelledScorePattern =
+        #"(?i)\b(?:score|grade)\b\s*:?\s*.{0,40}?(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\b"#
 
     /// The numeric course id from a `…/courses/<id>` URL.
     private static func courseID(from url: URL) -> String? {
@@ -641,7 +684,10 @@ private extension Assignment {
             title: title,
             dueAt: dueAt,
             url: url,
-            submitted: submitted
+            term: term,
+            submitted: submitted,
+            scoreEarned: scoreEarned,
+            scoreMax: scoreMax
         )
     }
 }

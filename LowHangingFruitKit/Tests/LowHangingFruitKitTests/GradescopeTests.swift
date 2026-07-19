@@ -296,6 +296,98 @@ struct GradescopeTests {
         #expect(!GradescopeHTMLParser.isCompletedAssignmentPage(missingHTML))
     }
 
+    // MARK: - Score extraction (docs/grades.md §4, CP5)
+
+    @Test("extracts earned/max from a labelled score string")
+    func extractsLabelledScore() {
+        let values = GradescopeHTMLParser.scoreValues(in: ["Score: 87.5 / 100"])
+        #expect(values?.earned == 87.5)
+        #expect(values?.max == 100)
+    }
+
+    @Test("extracts earned/max from a bare score cell")
+    func extractsBareScoreCell() {
+        let values = GradescopeHTMLParser.scoreValues(in: ["10.0 / 10.0"])
+        #expect(values?.earned == 10.0)
+        #expect(values?.max == 10.0)
+    }
+
+    @Test("extracts a decimal score")
+    func extractsDecimalScore() {
+        let values = GradescopeHTMLParser.scoreValues(in: ["Grade: 92.75 / 100"])
+        #expect(values?.earned == 92.75)
+        #expect(values?.max == 100)
+    }
+
+    @Test("extracts a genuine zero score, not confused with ungraded")
+    func extractsZeroScore() {
+        let values = GradescopeHTMLParser.scoreValues(in: ["0 / 100"])
+        #expect(values?.earned == 0)
+        #expect(values?.max == 100)
+    }
+
+    @Test("returns nil for an ungraded cell")
+    func returnsNilForUngraded() {
+        #expect(GradescopeHTMLParser.scoreValues(in: ["Ungraded"]) == nil)
+        #expect(GradescopeHTMLParser.scoreValues(in: ["Not Submitted"]) == nil)
+        #expect(GradescopeHTMLParser.scoreValues(in: ["Submitted"]) == nil)
+    }
+
+    @Test("tolerates weird whitespace around the slash")
+    func toleratesWeirdWhitespace() {
+        let values = GradescopeHTMLParser.scoreValues(in: ["  87.5   /   100  "])
+        #expect(values?.earned == 87.5)
+        #expect(values?.max == 100)
+
+        let labelled = GradescopeHTMLParser.scoreValues(in: ["Score:    9  /  10   pts"])
+        #expect(labelled?.earned == 9)
+        #expect(labelled?.max == 10)
+    }
+
+    @Test("a due-date-shaped cell never false-positives as a score")
+    func dueDateCellIsNotAScore() {
+        #expect(GradescopeHTMLParser.scoreValues(in: ["5/24/2026"]) == nil)
+        #expect(GradescopeHTMLParser.scoreValues(in: ["Due May 24 at 11:59 PM"]) == nil)
+    }
+
+    @Test("parses assignment rows with a graded score into scoreEarned/scoreMax")
+    func parsesScoreIntoAssignment() throws {
+        let html = """
+        <table>
+          <tr>
+            <th>Name</th><th>Status</th><th>Grade</th><th>Due</th>
+          </tr>
+          <tr>
+            <td><a href="/courses/12345/assignments/111">Homework 3</a></td>
+            <td>Graded</td>
+            <td>87.5 / 100</td>
+            <td>May 24 at 11:59 PM</td>
+          </tr>
+          <tr>
+            <td><a href="/courses/12345/assignments/222">Homework 4</a></td>
+            <td>Not Submitted</td>
+            <td></td>
+            <td>June 1 at 11:59 PM</td>
+          </tr>
+        </table>
+        """
+
+        let assignments = GradescopeHTMLParser.assignments(
+            from: html,
+            courseName: "CIS 5050 Software Systems",
+            courseURL: URL(string: "https://www.gradescope.com/courses/12345")!
+        )
+
+        let graded = try #require(assignments.first { $0.sourceID == "course-12345-assignment-111" })
+        #expect(graded.scoreEarned == 87.5)
+        #expect(graded.scoreMax == 100)
+        #expect(graded.submitted == true)
+
+        let ungraded = try #require(assignments.first { $0.sourceID == "course-12345-assignment-222" })
+        #expect(ungraded.scoreEarned == nil)
+        #expect(ungraded.scoreMax == nil)
+    }
+
     @Test("detects Gradescope login pages")
     func detectsLoginPages() {
         let html = """
