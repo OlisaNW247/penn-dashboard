@@ -36,6 +36,11 @@ final class AppState: ObservableObject {
     @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
 
+    /// Canvas grade snapshots for the selected courses (Settings → Grade
+    /// Watcher). Its own `ObservableObject` so CP4's view can observe it
+    /// directly; `refreshGradeWatcher` is the only thing that drives it here.
+    let gradeWatcher = GradeWatcherStore()
+
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
@@ -257,6 +262,14 @@ final class AppState: ObservableObject {
     func setGradescopeConnected(_ connected: Bool) {
         isGradescopeConnected = connected
         UserDefaults.standard.set(connected, forKey: Self.gradescopeConnectedKey)
+    }
+
+    /// Refreshes Grade Watcher for the SELECTED courses only (docs/grades.md
+    /// Decision 4) — a course the user hid from the dashboard via the class
+    /// picker is also skipped here, so we never fetch grades for a course
+    /// nobody asked to see.
+    func refreshGradeWatcher(cookies: [HTTPCookie]) async {
+        await gradeWatcher.refresh(courseIDs: selectedCanvasCourseIDs(), cookies: cookies)
     }
 
     /// Rewrites an item's course label to the canonical `CourseCode` form so
@@ -490,6 +503,13 @@ final class AppState: ObservableObject {
             courses[courseID] = item.course
         }
         return courses
+    }
+
+    /// Canvas course id -> display name, filtered to the class-picker's
+    /// selected set. Drives Grade Watcher (docs/grades.md Decision 4) so a
+    /// hidden course is never fetched.
+    func selectedCanvasCourseIDs() -> [String: String] {
+        canvasCourseIDs().filter { isCourseSelected($0.value) }
     }
 
     private static func courseID(from url: URL) -> String? {

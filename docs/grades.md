@@ -285,4 +285,21 @@ the cookie lapses:
    remains as override/fallback. The **≥ 2-scored-items suppression applies
    regardless of source.** `rules.never_drop` ids are honored — items pinned
    by the professor are never dropped.
+
+## Decisions (CP2 review, 2026-07-19)
+
+6. **% decided ignores drop rules.** It's computed over each category's raw
+   scored-possible points *before* drop-lowest/drop-highest are applied, so it
+   stays monotonic with grading progress (rises only as items get scored) and
+   never swings because a drop policy removed an item from the math.
+7. **Pending-grading count excludes zero-weight categories** (weighted mode
+   only). A category with `effectiveWeight == 0` doesn't count toward the
+   current grade or % decided (Decision above the fold), so its unscored
+   past-due items don't inflate the "N items pending grading" chip either —
+   consistent with "weight 0 means it doesn't count."
+8. **Pure-extra-credit category yields `nil`, not `0%`.** When every scored
+   item in a category has `points_possible == 0` (all extra credit, no real
+   denominator), `CategoryResult.percent` is `nil` — an undefined ratio, not a
+   zero grade — matching the "no scores yet" honesty rule elsewhere in the
+   spec.
 </content>
