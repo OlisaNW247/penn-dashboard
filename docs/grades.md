@@ -268,22 +268,21 @@ the cookie lapses:
 
 ---
 
-## Open questions (for CP1 review)
+## Decisions (CP1 review, 2026-07-19)
 
-1. **Past-due-unscored policy:** spec defaults to *exclude + surface a count*.
-   Confirm we do NOT auto-zero. If any Penn course uses Canvas's "missing =
-   0" late policy, our number will read higher than Canvas's — the cross-check
-   note (§1) will catch it, but do we want a per-course "count missing as 0"
-   toggle later?
-2. **"Differs from Canvas" threshold:** what delta triggers the note — 1.0 pp?
-   0.5 pp? (Canvas rounds; we don't want false alarms from rounding.)
-3. **Letter grades:** percentages only for now — confirm no letter mapping
-   needed this version (cutoffs vary per professor and aren't in the API).
-4. **Which courses appear in Grade Watcher:** the selected-course set from the
-   class picker (HANDOFF Priority 1), or all active-enrollment courses? Spec
-   assumes the selected set; confirm.
-5. **Drop-lowest discovery:** Canvas exposes `rules.drop_lowest` per assignment
-   group. Do we read it from Canvas when present (auto), and only fall back to
-   the manual per-category toggle otherwise? (Spec currently treats it as a
-   manual toggle; auto-reading it is a cheap win.)
+1. **Past-due-unscored:** exclude from the math + surface "N pending grading."
+   **No auto-zero.** The cross-check note covers the case where a course's
+   Canvas late policy auto-zeroes missing work and the numbers diverge.
+2. **"Differs from Canvas" threshold: 1.0 percentage point.** Below that, stay
+   silent (rounding noise). Compare only when `computed_current_score` is
+   non-nil.
+3. **Letter grades: confirmed cut.** Percentages only this version.
+4. **Courses shown:** the **selected-course set from the class picker.** A class
+   hidden from the dashboard is also hidden from Grade Watcher (consistent
+   mental model; no fetching for deselected courses).
+5. **Drop rules:** auto-read `rules.drop_lowest` (and `drop_highest`) from the
+   `assignment_groups` payload when present; the manual per-category toggle
+   remains as override/fallback. The **≥ 2-scored-items suppression applies
+   regardless of source.** `rules.never_drop` ids are honored — items pinned
+   by the professor are never dropped.
 </content>
