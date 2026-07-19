@@ -21,6 +21,19 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var isSessionExpired = false
     @Published var error: String?
 
+    /// Manual category-weight overrides (CP4 UI), keyed courseID -> categoryID
+    /// -> percent. This is the ONLY fallback when Canvas has no weights
+    /// (docs/grades.md §6), so it's always editable regardless of course mode.
+    /// Persisted the same way as `AppState.manualAssignments` — JSON-encoded
+    /// into UserDefaults — since these are small, non-secret UI preferences,
+    /// not session credentials (unlike `SessionCookieStore`, which is Keychain).
+    @Published private(set) var manualWeights: [String: [String: Double]] = [:]
+    private static let manualWeightsKey = "gradeWatcherManualWeights"
+
+    init() {
+        self.manualWeights = Self.loadManualWeights()
+    }
+
     /// Refreshes grades for exactly the courses the caller passes in — this
     /// store never decides course selection itself. Pass
     /// `AppState.selectedCanvasCourseIDs()` to honor the class picker.
@@ -81,5 +94,63 @@ final class GradeWatcherStore: ObservableObject {
             dropLowestOverrides: dropLowestOverrides,
             now: now
         ))
+    }
+
+    /// Convenience overload the UI uses: reads this course's persisted manual
+    /// weight overrides (if any) and feeds them into the engine automatically,
+    /// so views don't have to thread `manualWeights(courseID:)` through by hand.
+    func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
+        breakdown(courseID: courseID, manualWeights: manualWeights(courseID: courseID), now: now)
+    }
+
+    // MARK: - Manual weight overrides (CP4)
+
+    func manualWeights(courseID: String) -> [String: Double] {
+        manualWeights[courseID] ?? [:]
+    }
+
+    /// Sets (or, with `weight: nil`, clears) a manual weight override for one
+    /// category. Clearing falls back to Canvas's weight (or 0 in points mode).
+    func setManualWeight(courseID: String, categoryID: String, weight: Double?) {
+        var courseWeights = manualWeights[courseID] ?? [:]
+        if let weight {
+            courseWeights[categoryID] = weight
+        } else {
+            courseWeights.removeValue(forKey: categoryID)
+        }
+        if courseWeights.isEmpty {
+            manualWeights.removeValue(forKey: courseID)
+        } else {
+            manualWeights[courseID] = courseWeights
+        }
+        persistManualWeights()
+    }
+
+    private func persistManualWeights() {
+        guard let data = try? JSONEncoder().encode(manualWeights) else { return }
+        UserDefaults.standard.set(data, forKey: Self.manualWeightsKey)
+    }
+
+    private static func loadManualWeights() -> [String: [String: Double]] {
+        guard let data = UserDefaults.standard.data(forKey: manualWeightsKey),
+              let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    // MARK: - Canvas cross-check (docs/grades.md §1, Decision 2)
+
+    /// Canvas's own `computed_current_score` for this course, when available
+    /// (nil when the professor hides totals — not an error).
+    func canvasComputedScore(courseID: String) -> Double? {
+        snapshots[courseID]?.canvasComputedCurrentScore
+    }
+
+    /// Whether our computed grade materially disagrees with Canvas's own
+    /// number (> 1.0 percentage point). False whenever there's no Canvas
+    /// number to compare against, or we don't have a computed grade yet.
+    func differsFromCanvas(courseID: String, currentPercent: Double?) -> Bool {
+        guard let currentPercent else { return false }
+        return GradeEngine.differsFromCanvas(computed: currentPercent, canvasScore: canvasComputedScore(courseID: courseID))
     }
 }
