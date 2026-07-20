@@ -49,9 +49,24 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var confirmedGradescopeMappings: [String: [String: String]] = [:]
     private static let confirmedGradescopeMappingsKey = "gradeWatcherConfirmedGradescopeMappings"
 
+    /// Observed grade history — one (day, percent) entry per course per
+    /// calendar day, appended on each successful refresh. This is the memory
+    /// behind the "this week" delta chip (docs/grades.md §11): the trajectory
+    /// chart is *reconstructed* from due dates, but "what changed since I
+    /// last looked" needs real observations. Persisted like `manualWeights`;
+    /// pruned to the most recent 180 entries per course.
+    @Published private(set) var history: [String: [GradeHistoryPoint]] = [:]
+    private static let historyKey = "gradeWatcherHistory"
+
+    struct GradeHistoryPoint: Codable, Hashable, Sendable {
+        let date: Date
+        let percent: Double
+    }
+
     init() {
         self.manualWeights = Self.loadManualWeights()
         self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
+        self.history = Self.loadHistory()
     }
 
     /// Refreshes grades for exactly the courses the caller passes in — this
@@ -106,6 +121,7 @@ final class GradeWatcherStore: ObservableObject {
                 }
 
                 fetchedAny = true
+                recordHistory(courseID: courseID, now: now)
             } catch CanvasGradesClient.Error.sessionExpired {
                 sawSessionExpired = true
             } catch {
@@ -240,6 +256,62 @@ final class GradeWatcherStore: ObservableObject {
     private static func loadManualWeights() -> [String: [String: Double]] {
         guard let data = UserDefaults.standard.data(forKey: manualWeightsKey),
               let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    // MARK: - Trajectory, history & week delta (docs/grades.md §11)
+
+    /// The course's reconstructed grade-over-time line, overlay-applied and
+    /// honoring persisted manual weights — the same inputs as `breakdown`, so
+    /// the line's endpoint always equals the card's headline number.
+    func trajectory(courseID: String, now: Date = Date()) -> [GradeEngine.TrajectoryPoint] {
+        guard let snapshot = snapshots[courseID] else { return [] }
+        return GradeEngine.trajectory(.init(
+            courseUsesWeights: snapshot.courseUsesWeights,
+            categories: gradeCategories(courseID: courseID),
+            manualWeights: manualWeights(courseID: courseID),
+            now: now
+        ))
+    }
+
+    /// Change in the course grade vs ~a week ago: current minus the recorded
+    /// observation closest to 7 days back. Requires a baseline at least 24h
+    /// old so a refresh can't compare against itself; nil until one exists
+    /// (i.e. the chip stays hidden on day one of watching).
+    func weekDelta(courseID: String, now: Date = Date()) -> Double? {
+        guard let current = breakdown(courseID: courseID, now: now)?.currentPercent else { return nil }
+        let target = now.addingTimeInterval(-7 * 86_400)
+        let baseline = (history[courseID] ?? [])
+            .filter { $0.date <= now.addingTimeInterval(-86_400) }
+            .min { abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target)) }
+        guard let baseline else { return nil }
+        return current - baseline.percent
+    }
+
+    /// Records today's computed grade for one course, replacing an earlier
+    /// entry from the same calendar day so repeated refreshes can't flood
+    /// the history.
+    private func recordHistory(courseID: String, now: Date) {
+        guard let percent = breakdown(courseID: courseID, now: now)?.currentPercent else { return }
+        var entries = history[courseID] ?? []
+        if let last = entries.last, Calendar.current.isDate(last.date, inSameDayAs: now) {
+            entries[entries.count - 1] = GradeHistoryPoint(date: now, percent: percent)
+        } else {
+            entries.append(GradeHistoryPoint(date: now, percent: percent))
+        }
+        history[courseID] = Array(entries.suffix(180))
+        persistHistory()
+    }
+
+    private func persistHistory() {
+        guard let data = try? JSONEncoder().encode(history) else { return }
+        UserDefaults.standard.set(data, forKey: Self.historyKey)
+    }
+
+    private static func loadHistory() -> [String: [GradeHistoryPoint]] {
+        guard let data = UserDefaults.standard.data(forKey: historyKey),
+              let dict = try? JSONDecoder().decode([String: [GradeHistoryPoint]].self, from: data)
         else { return [:] }
         return dict
     }

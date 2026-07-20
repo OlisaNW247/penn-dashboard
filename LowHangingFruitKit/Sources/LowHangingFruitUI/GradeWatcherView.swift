@@ -82,6 +82,7 @@ struct GradeWatcherView: View {
                     staleBanner
                 }
 
+                termSummary
                 lastRefreshedLine
 
                 VStack(spacing: 12) {
@@ -100,6 +101,27 @@ struct GradeWatcherView: View {
         }
         .background(Color.v2Bg)
         .refreshable { await performRefresh() }
+    }
+
+    /// The dashboard opens with a serif greeting; this gives Grades the same
+    /// opening moment (docs/grades.md §11): a big serif unweighted mean over
+    /// the classes that have a grade, with an honest caption — deliberately
+    /// not credit-weighted and not a GPA. Hidden until ≥ 2 classes have one,
+    /// since an "average" of a single course is just that course's number.
+    @ViewBuilder
+    private var termSummary: some View {
+        let percents = courses.compactMap { store.breakdown(courseID: $0.id)?.currentPercent }
+        if percents.count >= 2 {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(formatPercent(percents.reduce(0, +) / Double(percents.count)))
+                    .font(.lhfSerif(34))
+                    .foregroundStyle(Color.v2Ink)
+                Text("average across your \(percents.count) classes")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2RingSub)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private var staleBanner: some View {

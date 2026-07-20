@@ -303,3 +303,36 @@ the cookie lapses:
    zero grade — matching the "no scores yet" honesty rule elsewhere in the
    spec.
 </content>
+
+---
+
+## 11. Trajectory, week delta & term summary (addendum, 2026-07-20)
+
+Three read-only additions on top of CP1–CP5. No new endpoints, no new modes;
+what-if / projections remain cut (§8) — everything here describes scores that
+already exist.
+
+- **Trajectory (grade over time).** `GradeEngine.trajectory(_:)` replays the
+  course's scored items in due-date order: one point per scored due date
+  (scores due later are masked), plus a final unmasked point at `now`, so the
+  line's endpoint always equals the headline grade. Undated scores count from
+  the first point (they can't be placed in time); a score due in the future —
+  a Gradescope early fill, say — appears only in the final point; "no scores
+  yet" points are skipped, never rendered as 0. This is *reconstruction*, not
+  history: the chart is complete from the first sync, and every point inherits
+  §2–3 (drops, excused, extra credit, both modes) because each point is a full
+  `compute` call. Rendered as a 64×26pt hand-rolled sparkline trailing the big
+  number (index-spaced — a trend glyph, not an axis chart); endpoint dot
+  green/red/neutral by direction.
+- **Week delta.** `GradeWatcherStore` persists one observed (day, percent)
+  entry per course per refresh day (UserDefaults, same pattern as
+  `manualWeights`; pruned to 180 entries per course). The card's chip shows
+  current minus the observation closest to 7 days back — a real "since you
+  last looked" number, unlike the reconstructed trajectory. It needs a
+  baseline ≥ 24h old (a refresh can't compare against itself) and hides while
+  |Δ| < 0.1 pt. The chip carries arrow + number, so color is never the only
+  signal.
+- **Term summary.** Atop the course list, a serif unweighted mean over the
+  classes that currently have a grade, captioned "average across your N
+  classes." Shown once ≥ 2 classes have one. Deliberately not credit-weighted
+  and not a GPA (§8's letter-grade/GPA cut stands).

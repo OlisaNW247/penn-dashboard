@@ -93,13 +93,59 @@ struct GradeCourseCardView: View {
                     .accessibilityHidden(true)
             }
 
-            currentGradeLine(breakdown)
+            gradeRow(breakdown)
             decidedBar(breakdown)
 
             if breakdown.pendingGradingCount > 0 || differsFromCanvas(breakdown) {
                 chipsRow(breakdown)
             }
         }
+    }
+
+    /// Big number + "this week" delta chip + trajectory sparkline
+    /// (docs/grades.md §11). Chip and sparkline appear only once their data
+    /// exists, so a fresh course degrades to just the number.
+    private func gradeRow(_ breakdown: GradeBreakdown) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            currentGradeLine(breakdown)
+
+            if let delta = displayedWeekDelta {
+                Chip(
+                    text: String(format: "%@ %.1f this week", delta > 0 ? "\u{25B2}" : "\u{25BC}", abs(delta)),
+                    color: delta > 0 ? .v2SpineGreen : .v2SpineRed
+                )
+                .accessibilityLabel(String(format: "%@ %.1f points since last week", delta > 0 ? "Up" : "Down", abs(delta)))
+            }
+
+            Spacer(minLength: 8)
+
+            if trajectory.count >= 2 {
+                GradeSparkline(points: trajectory, endpointColor: sparklineEndpointColor)
+                    .frame(width: 64, height: 26)
+            }
+        }
+    }
+
+    /// Hidden while |Δ| < 0.1 — rounding noise isn't a trend.
+    private var displayedWeekDelta: Double? {
+        guard let delta = store.weekDelta(courseID: courseID), abs(delta) >= 0.1 else { return nil }
+        return delta
+    }
+
+    private var trajectory: [GradeEngine.TrajectoryPoint] {
+        store.trajectory(courseID: courseID)
+    }
+
+    /// Direction tint: the observed week delta when there is one, otherwise
+    /// the trajectory's own overall slope; neutral course-code grey when flat.
+    private var sparklineEndpointColor: Color {
+        if let delta = displayedWeekDelta {
+            return delta > 0 ? .v2SpineGreen : .v2SpineRed
+        }
+        guard let first = trajectory.first, let last = trajectory.last else { return .v2CourseCode }
+        if last.percent - first.percent > 0.05 { return .v2SpineGreen }
+        if first.percent - last.percent > 0.05 { return .v2SpineRed }
+        return .v2CourseCode
     }
 
     @ViewBuilder
