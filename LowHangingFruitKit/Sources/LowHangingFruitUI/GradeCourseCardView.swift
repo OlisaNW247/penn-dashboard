@@ -13,6 +13,7 @@ struct GradeCourseCardView: View {
 
     @State private var isExpanded = false
     @State private var isUnmatchedExpanded = false
+    @State private var isSuggestedExpanded = false
 
     private let corner: CGFloat = 13
 
@@ -26,6 +27,12 @@ struct GradeCourseCardView: View {
     /// can see what Gradescope has that Grade Watcher didn't apply.
     private var unmatchedScores: [GradescopeOverlay.UnmatchedItem] {
         store.unmatchedGradescopeScores(courseID: courseID)
+    }
+
+    /// Lower-confidence fuzzy name matches (docs/grades.md §5 item 4) — never
+    /// counted until the user explicitly confirms one via `suggestedMatchRow`.
+    private var suggestedMatches: [GradescopeOverlay.SuggestedMatch] {
+        store.suggestedGradescopeMatches(courseID: courseID)
     }
 
     private var hasSnapshot: Bool {
@@ -214,20 +221,100 @@ struct GradeCourseCardView: View {
                 GradeCategoryRow(
                     store: store,
                     courseID: courseID,
-                    category: category
+                    category: category,
+                    hasGradescopeEarlyScore: hasGradescopeEarlyScore(for: category)
                 )
             }
 
             if breakdown.mode == .points {
-                Text("This class uses points, not weights. Set a weight for every category above to switch it to weighted grading.")
+                Text("This class uses points, not weights. Manual weights only apply once every category above has one \u{2014} a partial set is ignored, so this class stays points-based until then.")
                     .font(.lhfSans(10.5))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if !suggestedMatches.isEmpty {
+                suggestedMatchesDisclosure
+            }
+
             if !unmatchedScores.isEmpty {
                 unmatchedDisclosure
             }
+        }
+    }
+
+    /// Whether any scored, kept (post-drop) item in this category came from
+    /// the Gradescope early overlay (docs/grades.md §6 "Per-number source
+    /// badges"). `GradeBreakdown.CategoryResult` only carries aggregates, so
+    /// this looks the category back up in the overlay-applied `GradeCategory`
+    /// list (which does carry per-item `scoreSource`) via `store.gradeCategories`.
+    private func hasGradescopeEarlyScore(for category: GradeBreakdown.CategoryResult) -> Bool {
+        guard let liveCategory = store.gradeCategories(courseID: courseID).first(where: { $0.id == category.id }) else {
+            return false
+        }
+        return liveCategory.items.contains { item in
+            !item.isExcused && !item.omitFromFinalGrade
+                && item.score != nil
+                && item.scoreSource == .gradescopeEarly
+                && !category.droppedItemIDs.contains(item.id)
+        }
+    }
+
+    // MARK: - Suggested Gradescope matches (docs/grades.md §5 item 4 — fuzzy tier, user-confirmable)
+
+    private var suggestedMatchesDisclosure: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSuggestedExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isSuggestedExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("\(suggestedMatches.count) suggested Gradescope \(suggestedMatches.count == 1 ? "match" : "matches")")
+                        .font(.lhfSans(10.5, weight: .medium))
+                }
+                .foregroundStyle(Color.v2SpineAmber)
+            }
+            .buttonStyle(.plain)
+
+            if isSuggestedExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(suggestedMatches.enumerated()), id: \.offset) { _, match in
+                        suggestedMatchRow(match)
+                    }
+                    Text("Not counted yet \u{2014} confirm a match to apply its score.")
+                        .font(.lhfSans(9.5))
+                        .foregroundStyle(Color.v2RingSub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    private func suggestedMatchRow(_ match: GradescopeOverlay.SuggestedMatch) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\u{201c}\(match.gradescopeTitle)\u{201d} \u{2192} \(match.itemName)")
+                    .font(.lhfSans(10.5))
+                    .foregroundStyle(Color.v2Ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(formatPoints(match.scoreEarned))/\(formatPoints(match.scoreMax))")
+                    .font(.lhfSans(9.5))
+                    .foregroundStyle(Color.v2RingSub)
+            }
+            Spacer(minLength: 8)
+            Button {
+                store.confirmSuggestedMatch(courseID: courseID, match: match)
+            } label: {
+                Label("Confirm", systemImage: "checkmark.circle.fill")
+                    .font(.lhfSans(10.5, weight: .medium))
+                    .foregroundStyle(Color.v2SpineGreen)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Confirm \(match.gradescopeTitle) matches \(match.itemName)")
         }
     }
 
@@ -295,9 +382,11 @@ struct Chip: View {
     }
 }
 
-/// Per-number provenance badge. `ScoreSource` already has all three cases
-/// (`canvas` / `gradescopeEarly` / `manual`) from CP2 — switching over all of
-/// them now means CP5's Gradescope overlay is a no-op here.
+/// Per-number provenance badge. `ScoreSource` has all three cases (`canvas` /
+/// `gradescopeEarly` / `manual`) from CP2; used both for a category's weight
+/// source (`GradeCategoryRow`'s weight column) and, since the CP5 fuzzy-tier
+/// fix, for the category's scored-numbers line whenever a Gradescope-early
+/// score contributes to it (docs/grades.md §6 "Per-number source badges").
 struct GradeSourceBadge: View {
     let source: ScoreSource
 

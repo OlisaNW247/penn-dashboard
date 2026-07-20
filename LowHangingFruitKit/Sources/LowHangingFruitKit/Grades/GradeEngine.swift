@@ -20,10 +20,13 @@ public enum GradeEngine {
         public let courseUsesWeights: Bool
         public let categories: [GradeCategory]
         /// User-entered weight overrides (category id → percent). Overrides
-        /// Canvas weights per category; on a points-mode course, any manual
-        /// weights switch the whole course into weighted mode (the ONLY
-        /// fallback when Canvas has no weights). Categories without an entry
-        /// fall back to their Canvas weight (weighted courses) or 0.
+        /// Canvas weights per category. On a points-mode course this is
+        /// all-or-nothing: manual weights only switch the course into
+        /// weighted mode (the ONLY fallback when Canvas has no weights) once
+        /// EVERY category has a manual entry — a partial set is ignored
+        /// entirely rather than silently zeroing out the categories that
+        /// don't have one. Categories without an entry fall back to their
+        /// Canvas weight (weighted courses) or 0.
         public let manualWeights: [String: Double]
         /// User overrides for drop-lowest (category id → count). Falls back to
         /// the category's Canvas `rules.drop_lowest`.
@@ -59,7 +62,7 @@ public enum GradeEngine {
     }
 
     public static func compute(_ input: Input) -> GradeBreakdown {
-        let weighted = input.courseUsesWeights || !input.manualWeights.isEmpty
+        let weighted = input.courseUsesWeights || manualWeightsCoverEveryCategory(input)
         let tallies = input.categories.map { tally($0, input: input, weighted: weighted) }
         let results = tallies.map(\.result)
 
@@ -80,6 +83,18 @@ public enum GradeEngine {
             pendingGradingCount: pending,
             categories: results
         )
+    }
+
+    /// All-or-nothing gate for the points-mode → weighted-mode switch: manual
+    /// weights only take effect once EVERY category has one. A partial set
+    /// used to flip the whole course to weighted mode while leaving
+    /// no-manual-weight categories at `effectiveWeight == 0` — silently
+    /// dropping them from the grade. Requiring full coverage means a
+    /// half-finished manual-weight edit just leaves the course in points
+    /// mode (manual weights ignored) instead of silently corrupting it.
+    private static func manualWeightsCoverEveryCategory(_ input: Input) -> Bool {
+        guard !input.categories.isEmpty, !input.manualWeights.isEmpty else { return false }
+        return input.categories.allSatisfy { input.manualWeights[$0.id] != nil }
     }
 
     // MARK: - Per-category tally

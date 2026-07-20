@@ -13,19 +13,24 @@ import LowHangingFruitKit
 /// CP4's job. CP3 only makes real per-course data reachable.
 @MainActor
 final class GradeWatcherStore: ObservableObject {
-    /// Latest snapshot per Canvas course id. Kept across a failed refresh so a
-    /// lapsed session degrades to "stale," never to blank.
+    /// This course's Canvas-only assignment groups (`fetchSnapshot`'s output,
+    /// no Gradescope overlay applied). Kept across a failed refresh so a
+    /// lapsed session degrades to "stale," never to blank. The overlay is
+    /// recomputed on demand by `overlayResult(courseID:)` instead of being
+    /// baked in here, so confirming a suggested match (which only changes
+    /// `confirmedGradescopeMappings`) recomputes the fill without a network
+    /// refresh.
     @Published private(set) var snapshots: [String: CourseGradeSnapshot] = [:]
     @Published private(set) var lastRefreshed: Date?
     @Published private(set) var isRefreshing = false
     @Published private(set) var isSessionExpired = false
     @Published var error: String?
 
-    /// Gradescope items that named an assignment but never made it into a
-    /// course's math (docs/grades.md §4) — no candidate, an ambiguous name
-    /// match, or a candidate another Gradescope item already filled. Keyed by
-    /// Canvas course id, replaced wholesale on each `refresh`.
-    @Published private(set) var unmatchedGradescopeScoresByCourse: [String: [GradescopeOverlay.UnmatchedItem]] = [:]
+    /// This course's Gradescope items, already scoped by course name — the
+    /// raw input `overlayResult(courseID:)` re-applies the overlay against on
+    /// every read. Empty when Gradescope isn't connected. Not `@Published`:
+    /// it only ever changes in lockstep with `snapshots` inside `refresh`.
+    private var gradescopeItemsByCourse: [String: [Assignment]] = [:]
 
     /// Manual category-weight overrides (CP4 UI), keyed courseID -> categoryID
     /// -> percent. This is the ONLY fallback when Canvas has no weights
@@ -36,8 +41,17 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var manualWeights: [String: [String: Double]] = [:]
     private static let manualWeightsKey = "gradeWatcherManualWeights"
 
+    /// User-confirmed Gradescope → Canvas fuzzy matches (docs/grades.md §5,
+    /// last paragraph), keyed courseID -> `GradescopeOverlay.normalizedKey` ->
+    /// Canvas item id. Once confirmed, a mapping auto-applies exactly like an
+    /// exact match on every subsequent `overlayResult`/`refresh`, so the user
+    /// isn't re-asked each sync. Persisted the same way as `manualWeights`.
+    @Published private(set) var confirmedGradescopeMappings: [String: [String: String]] = [:]
+    private static let confirmedGradescopeMappingsKey = "gradeWatcherConfirmedGradescopeMappings"
+
     init() {
         self.manualWeights = Self.loadManualWeights()
+        self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
     }
 
     /// Refreshes grades for exactly the courses the caller passes in — this
@@ -72,30 +86,25 @@ final class GradeWatcherStore: ObservableObject {
         var sawSessionExpired = false
         var lastFailure: Swift.Error?
         var fetchedAny = false
-        var unmatchedByCourse: [String: [GradescopeOverlay.UnmatchedItem]] = [:]
 
         let gradescopeConnected = SessionCookieStore.load()
             .contains { $0.domain.localizedCaseInsensitiveContains("gradescope") }
 
         for courseID in courseIDs.keys.sorted() {
             do {
-                var snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+                let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+                snapshots[courseID] = snapshot
 
+                // Store the Canvas-only snapshot alongside its raw (course-
+                // scoped) Gradescope items; `overlayResult` applies the
+                // overlay fresh on every read instead of baking it in here,
+                // so a later confirmed match recomputes without a refetch.
                 if gradescopeConnected, let courseName = courseIDs[courseID] {
-                    let courseItems = gradescopeItems.filter { $0.course == courseName }
-                    let overlay = GradescopeOverlay.apply(categories: snapshot.categories, gradescopeItems: courseItems)
-                    snapshot = CourseGradeSnapshot(
-                        courseID: snapshot.courseID,
-                        courseUsesWeights: snapshot.courseUsesWeights,
-                        categories: overlay.categories,
-                        canvasComputedCurrentScore: snapshot.canvasComputedCurrentScore,
-                        submissions: snapshot.submissions,
-                        fetchedAt: snapshot.fetchedAt
-                    )
-                    unmatchedByCourse[courseID] = overlay.unmatched
+                    gradescopeItemsByCourse[courseID] = gradescopeItems.filter { $0.course == courseName }
+                } else {
+                    gradescopeItemsByCourse[courseID] = []
                 }
 
-                snapshots[courseID] = snapshot
                 fetchedAny = true
             } catch CanvasGradesClient.Error.sessionExpired {
                 sawSessionExpired = true
@@ -104,7 +113,6 @@ final class GradeWatcherStore: ObservableObject {
             }
         }
 
-        unmatchedGradescopeScoresByCourse = unmatchedByCourse
         isSessionExpired = sawSessionExpired
         if fetchedAny {
             lastRefreshed = now
@@ -117,14 +125,44 @@ final class GradeWatcherStore: ObservableObject {
         }
     }
 
+    // MARK: - Gradescope overlay (recomputed on demand — see `snapshots` doc comment)
+
+    /// Applies the Gradescope overlay fresh against this course's stored
+    /// Canvas-only categories, using whatever mappings have been confirmed so
+    /// far. Nil if the course hasn't been fetched yet.
+    private func overlayResult(courseID: String) -> GradescopeOverlay.Result? {
+        guard let snapshot = snapshots[courseID] else { return nil }
+        return GradescopeOverlay.apply(
+            categories: snapshot.categories,
+            gradescopeItems: gradescopeItemsByCourse[courseID] ?? [],
+            confirmedMappings: confirmedGradescopeMappings[courseID] ?? [:]
+        )
+    }
+
+    /// This course's grade categories with the Gradescope overlay applied
+    /// (falls back to the Canvas-only categories if there's no overlay data,
+    /// and to `[]` if the course hasn't been fetched yet at all). Used both
+    /// by `breakdown(courseID:)` and by the UI to look up a category's raw
+    /// items (e.g. to detect a `.gradescopeEarly` score for a source badge).
+    func gradeCategories(courseID: String) -> [GradeCategory] {
+        overlayResult(courseID: courseID)?.categories ?? snapshots[courseID]?.categories ?? []
+    }
+
     /// This course's unmatched Gradescope scores from the last refresh (empty
     /// if Gradescope isn't connected or nothing was unmatched).
     func unmatchedGradescopeScores(courseID: String) -> [GradescopeOverlay.UnmatchedItem] {
-        unmatchedGradescopeScoresByCourse[courseID] ?? []
+        overlayResult(courseID: courseID)?.unmatched ?? []
     }
 
-    /// Runs `GradeEngine.compute()` over the stored snapshot for one course,
-    /// or nil if that course hasn't been fetched yet.
+    /// Lower-confidence fuzzy matches awaiting user confirmation
+    /// (docs/grades.md §5 item 4) — never counted until confirmed via
+    /// `confirmSuggestedMatch`.
+    func suggestedGradescopeMatches(courseID: String) -> [GradescopeOverlay.SuggestedMatch] {
+        overlayResult(courseID: courseID)?.suggested ?? []
+    }
+
+    /// Runs `GradeEngine.compute()` over this course's overlay-applied
+    /// categories, or nil if that course hasn't been fetched yet.
     func breakdown(
         courseID: String,
         manualWeights: [String: Double] = [:],
@@ -134,7 +172,7 @@ final class GradeWatcherStore: ObservableObject {
         guard let snapshot = snapshots[courseID] else { return nil }
         return GradeEngine.compute(.init(
             courseUsesWeights: snapshot.courseUsesWeights,
-            categories: snapshot.categories,
+            categories: gradeCategories(courseID: courseID),
             manualWeights: manualWeights,
             dropLowestOverrides: dropLowestOverrides,
             now: now
@@ -146,6 +184,29 @@ final class GradeWatcherStore: ObservableObject {
     /// so views don't have to thread `manualWeights(courseID:)` through by hand.
     func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
         breakdown(courseID: courseID, manualWeights: manualWeights(courseID: courseID), now: now)
+    }
+
+    /// Confirms a fuzzy-matched suggestion (docs/grades.md §5 item 4): fills
+    /// the Canvas item with the Gradescope score right away by persisting the
+    /// mapping, which the next `overlayResult` read (immediate, since this
+    /// mutates a `@Published` property) applies exactly like an exact match.
+    func confirmSuggestedMatch(courseID: String, match: GradescopeOverlay.SuggestedMatch) {
+        var courseMappings = confirmedGradescopeMappings[courseID] ?? [:]
+        courseMappings[GradescopeOverlay.normalizedKey(match.gradescopeTitle)] = match.itemID
+        confirmedGradescopeMappings[courseID] = courseMappings
+        persistConfirmedGradescopeMappings()
+    }
+
+    private func persistConfirmedGradescopeMappings() {
+        guard let data = try? JSONEncoder().encode(confirmedGradescopeMappings) else { return }
+        UserDefaults.standard.set(data, forKey: Self.confirmedGradescopeMappingsKey)
+    }
+
+    private static func loadConfirmedGradescopeMappings() -> [String: [String: String]] {
+        guard let data = UserDefaults.standard.data(forKey: confirmedGradescopeMappingsKey),
+              let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
+        else { return [:] }
+        return dict
     }
 
     // MARK: - Manual weight overrides (CP4)

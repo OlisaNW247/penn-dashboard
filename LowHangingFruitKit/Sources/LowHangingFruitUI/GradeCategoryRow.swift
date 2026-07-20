@@ -10,6 +10,13 @@ struct GradeCategoryRow: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let category: GradeBreakdown.CategoryResult
+    /// True when any scored, kept (post-drop) item in this category came from
+    /// the Gradescope early overlay — drives the "Gradescope early" source
+    /// badge next to the category's numbers (docs/grades.md §6 "Per-number
+    /// source badges"). Computed by the caller from the underlying
+    /// `GradeCategory.items`, which `GradeBreakdown.CategoryResult` doesn't
+    /// carry per-item provenance for.
+    let hasGradescopeEarlyScore: Bool
 
     @State private var isEditing = false
     @State private var editText = ""
@@ -27,6 +34,9 @@ struct GradeCategoryRow: View {
                         .font(.lhfSans(10.5))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
+                    if hasGradescopeEarlyScore {
+                        GradeSourceBadge(source: .gradescopeEarly)
+                    }
                 }
 
                 Spacer(minLength: 8)

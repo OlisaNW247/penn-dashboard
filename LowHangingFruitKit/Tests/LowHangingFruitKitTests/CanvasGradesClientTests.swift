@@ -291,6 +291,40 @@ struct CanvasGradesClientTests {
         #expect(CanvasGradesClient.nextPageURL(fromLinkHeader: nil) == nil)
     }
 
+    // MARK: - Security: next-page URL must be same-host https, or cookies would leak
+
+    private static let base = URL(string: "https://canvas.upenn.edu")!
+
+    @Test("same-host https next-page URL is trusted")
+    func nextPageURLSameHostHTTPSTrusted() {
+        let url = URL(string: "https://canvas.upenn.edu/api/v1/courses/1/assignment_groups?page=2")!
+        #expect(CanvasGradesClient.isTrustedNextPageURL(url, baseURL: Self.base))
+    }
+
+    @Test("same-host https next-page URL is trusted case-insensitively")
+    func nextPageURLHostCaseInsensitive() {
+        let url = URL(string: "https://CANVAS.UPENN.EDU/api/v1/courses/1/assignment_groups?page=2")!
+        #expect(CanvasGradesClient.isTrustedNextPageURL(url, baseURL: Self.base))
+    }
+
+    @Test("off-host next-page URL is rejected (would leak the session cookie to a third party)")
+    func nextPageURLOffHostRejected() {
+        let url = URL(string: "https://evil.example.com/api/v1/courses/1/assignment_groups?page=2")!
+        #expect(!CanvasGradesClient.isTrustedNextPageURL(url, baseURL: Self.base))
+    }
+
+    @Test("suffix-trick host (canvas.upenn.edu.evil.com) is rejected, not just a substring match")
+    func nextPageURLSuffixTrickRejected() {
+        let url = URL(string: "https://canvas.upenn.edu.evil.com/api/v1/courses/1/assignment_groups?page=2")!
+        #expect(!CanvasGradesClient.isTrustedNextPageURL(url, baseURL: Self.base))
+    }
+
+    @Test("plain http next-page URL is rejected even on the same host")
+    func nextPageURLHTTPRejected() {
+        let url = URL(string: "http://canvas.upenn.edu/api/v1/courses/1/assignment_groups?page=2")!
+        #expect(!CanvasGradesClient.isTrustedNextPageURL(url, baseURL: Self.base))
+    }
+
     // MARK: - XSSI prefix + session-expiry detection
 
     @Test("stripXSSIPrefix removes Canvas's while(1); guard, and is a no-op without it")

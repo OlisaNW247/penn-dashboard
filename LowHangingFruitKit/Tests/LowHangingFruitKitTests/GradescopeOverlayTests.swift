@@ -246,6 +246,146 @@ struct GradescopeOverlayTests {
         #expect(result.categories[0].items[0].score == nil)
     }
 
+    // MARK: - Fuzzy tier (docs/grades.md §5 item 4) — proposed, never auto-applied
+
+    @Test("fuzzy match ('HW 3 — Recursion' vs 'Homework 3') is proposed as a suggestion, not auto-applied")
+    func fuzzyMatchIsSuggestedNotApplied() throws {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3", points: 100),
+            ]),
+        ]
+        let gs = [Self.gsItem("HW 3 \u{2014} Recursion", earned: 90, max: 100)]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs)
+
+        // Not auto-applied: the Canvas item stays unscored...
+        #expect(result.categories[0].items[0].score == nil)
+        #expect(result.unmatched.isEmpty)
+        // ...but surfaced as a suggestion for the user to confirm.
+        #expect(result.suggested.count == 1)
+        let suggestion = try #require(result.suggested.first)
+        #expect(suggestion.itemID == "a1")
+        #expect(suggestion.itemName == "Homework 3")
+        #expect(suggestion.gradescopeTitle == "HW 3 \u{2014} Recursion")
+        #expect(suggestion.scoreEarned == 90)
+        #expect(suggestion.scoreMax == 100)
+        #expect(suggestion.confidence > 0 && suggestion.confidence < 1)
+    }
+
+    @Test("a title with no meaningful token overlap at all stays unmatched, not suggested")
+    func belowThresholdStaysUnmatched() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3", points: 100),
+            ]),
+        ]
+        let gs = [Self.gsItem("Final Project Writeup", earned: 90, max: 100)]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs)
+
+        #expect(result.suggested.isEmpty)
+        #expect(result.unmatched.count == 1)
+        #expect(result.unmatched.first?.reason == .noCandidate)
+    }
+
+    @Test("fuzzy candidates tied on similarity are disambiguated by the max-points tiebreaker, then proposed (not applied)")
+    func fuzzyTieBrokenByMaxPointsIsStillOnlySuggested() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3 Recursion", points: 50),
+                Self.canvasItem(id: "a2", name: "Homework 3 Recursion", points: 100),
+            ]),
+        ]
+        // "HW3" fuzzy-matches both equally (same Jaccard score against each
+        // identical name); the 100-point Gradescope max should disambiguate.
+        let gs = [Self.gsItem("HW3", earned: 90, max: 100)]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs)
+
+        #expect(result.categories.flatMap(\.items).allSatisfy { $0.score == nil })
+        #expect(result.suggested.count == 1)
+        #expect(result.suggested.first?.itemID == "a2")
+        #expect(result.unmatched.isEmpty)
+    }
+
+    @Test("fuzzy candidates tied on similarity with no max-points tiebreak either land as ambiguous, not suggested")
+    func fuzzyTieUnresolvedIsAmbiguous() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3 Recursion", points: 40),
+                Self.canvasItem(id: "a2", name: "Homework 3 Recursion", points: 75),
+            ]),
+        ]
+        let gs = [Self.gsItem("HW3", earned: 90, max: 100)]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs)
+
+        #expect(result.suggested.isEmpty)
+        #expect(result.unmatched.count == 1)
+        #expect(result.unmatched.first?.reason == .ambiguous)
+    }
+
+    @Test("a fuzzy match is never proposed for a Canvas item Canvas already scored")
+    func fuzzyMatchNeverProposedOverCanvasScore() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3", points: 100, score: 95),
+            ]),
+        ]
+        let gs = [Self.gsItem("HW 3 \u{2014} Recursion", earned: 90, max: 100)]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs)
+
+        #expect(result.categories[0].items[0].score == 95) // untouched
+        #expect(result.suggested.isEmpty)
+        #expect(result.unmatched.isEmpty) // Canvas already agreed -- not even listed
+    }
+
+    // MARK: - Confirmed mappings (docs/grades.md §5, last paragraph)
+
+    @Test("a confirmed mapping auto-applies exactly like an exact match, keyed by normalizedKey(gradescopeTitle)")
+    func confirmedMappingAutoApplies() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3", points: 100),
+            ]),
+        ]
+        let gs = [Self.gsItem("HW 3 \u{2014} Recursion", earned: 90, max: 100)]
+        let confirmed = [GradescopeOverlay.normalizedKey("HW 3 \u{2014} Recursion"): "a1"]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs, confirmedMappings: confirmed)
+
+        #expect(result.categories[0].items[0].score == 90)
+        #expect(result.categories[0].items[0].scoreSource == .gradescopeEarly)
+        #expect(result.suggested.isEmpty)
+        #expect(result.unmatched.isEmpty)
+    }
+
+    @Test("a confirmed mapping is ignored (falls through to normal matching) once the target item already has a Canvas score")
+    func confirmedMappingIgnoredWhenTargetAlreadyScored() {
+        let categories = [
+            GradeCategory(id: "c1", name: "Homework", items: [
+                Self.canvasItem(id: "a1", name: "Homework 3", points: 100, score: 95),
+            ]),
+        ]
+        let gs = [Self.gsItem("HW 3 \u{2014} Recursion", earned: 90, max: 100)]
+        let confirmed = [GradescopeOverlay.normalizedKey("HW 3 \u{2014} Recursion"): "a1"]
+
+        let result = GradescopeOverlay.apply(categories: categories, gradescopeItems: gs, confirmedMappings: confirmed)
+
+        #expect(result.categories[0].items[0].score == 95) // iron rule still holds
+        #expect(result.suggested.isEmpty)
+        #expect(result.unmatched.isEmpty)
+    }
+
+    @Test("normalizedKey is stable across superficial title differences the same way namesMatch is")
+    func normalizedKeyMatchesNamesMatchEquivalence() {
+        #expect(GradescopeOverlay.normalizedKey("HW3") == GradescopeOverlay.normalizedKey("Homework 3"))
+        #expect(GradescopeOverlay.normalizedKey("HW3") == GradescopeOverlay.normalizedKey("hw 03"))
+        #expect(GradescopeOverlay.normalizedKey("Homework 3") != GradescopeOverlay.normalizedKey("Homework 4"))
+    }
+
     @Test("matching is scoped to the items passed in — caller pre-filters by course")
     func matchingIsPerCourseInputOnly() {
         // No cross-course concept inside the overlay itself: it only ever sees

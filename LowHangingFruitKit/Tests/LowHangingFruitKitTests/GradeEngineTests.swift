@@ -332,7 +332,7 @@ struct GradeEngineTests {
         #expect(catResult.weightSource == .manual)
     }
 
-    @Test("manual weights on a points-mode course switch the whole course to weighted mode")
+    @Test("manual weights on a points-mode course switch the whole course to weighted mode when they cover the only category")
     func manualWeightsSwitchModeToWeighted() {
         let cat = category("hw", items: [item("h1", points: 10, score: 5)])
         let result = GradeEngine.compute(.init(
@@ -340,6 +340,61 @@ struct GradeEngineTests {
             manualWeights: ["hw": 100], now: now
         ))
         #expect(result.mode == .weighted)
+    }
+
+    @Test("a manual weight on only SOME categories of a points-mode course is ignored entirely -- stays points mode, nothing dropped")
+    func partialManualWeightsIgnoredOnPointsModeCourse() {
+        let hw = category("hw", items: [item("h1", points: 10, score: 8)])
+        let exam = category("exam", items: [item("e1", points: 100, score: 90)])
+        // Only "hw" has a manual weight -- "exam" doesn't. Before the fix this
+        // flipped the whole course to weighted mode with "exam" silently at
+        // effectiveWeight 0 (dropped from the grade). Now it must stay points mode.
+        let result = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: [hw, exam],
+            manualWeights: ["hw": 40], now: now
+        ))
+        #expect(result.mode == .points)
+        // Points mode: both categories' points still count toward the grade.
+        // (8+90)/(10+100) = 98/110.
+        #expect(result.currentPercent.map { approx($0, 98.0 / 110.0 * 100) } ?? false)
+        let examResult = result.categories.first { $0.id == "exam" }!
+        #expect(examResult.effectiveWeight == nil) // no weight concept in points mode
+        #expect(examResult.earned == 90) // NOT dropped from the grade
+    }
+
+    @Test("manual weights covering EVERY category of a points-mode course switch it to weighted mode, using each manual weight")
+    func fullManualWeightsSwitchMultiCategoryCourseToWeighted() {
+        let hw = category("hw", items: [item("h1", points: 10, score: 8)])
+        let exam = category("exam", items: [item("e1", points: 100, score: 90)])
+        let result = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: [hw, exam],
+            manualWeights: ["hw": 40, "exam": 60], now: now
+        ))
+        #expect(result.mode == .weighted)
+        // Homework 80% @ 40, Exam 90% @ 60 -> (40*80 + 60*90)/100 = 86.
+        #expect(result.currentPercent.map { approx($0, 86) } ?? false)
+        let hwResult = result.categories.first { $0.id == "hw" }!
+        #expect(hwResult.effectiveWeight == 40)
+        #expect(hwResult.weightSource == .manual)
+    }
+
+    @Test("weighted-mode course keeps per-category manual override behavior even when only some categories have one")
+    func weightedModeCoursePartialManualOverrideStillApplies() {
+        let hw = category("hw", weight: 40, items: [item("h1", points: 10, score: 8)])
+        let exam = category("exam", weight: 60, items: [item("e1", points: 100, score: 90)])
+        // Only "hw" gets a manual override; "exam" keeps its Canvas weight --
+        // the all-or-nothing gate is points-mode-only.
+        let result = GradeEngine.compute(.init(
+            courseUsesWeights: true, categories: [hw, exam],
+            manualWeights: ["hw": 20], now: now
+        ))
+        #expect(result.mode == .weighted)
+        let hwResult = result.categories.first { $0.id == "hw" }!
+        let examResult = result.categories.first { $0.id == "exam" }!
+        #expect(hwResult.effectiveWeight == 20)
+        #expect(hwResult.weightSource == .manual)
+        #expect(examResult.effectiveWeight == 60)
+        #expect(examResult.weightSource == .canvas)
     }
 
     // MARK: - differsFromCanvas

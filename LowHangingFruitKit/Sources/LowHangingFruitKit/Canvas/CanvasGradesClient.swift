@@ -90,7 +90,23 @@ public struct CanvasGradesClient: Sendable {
             guard pagesFetched <= maxPages else { break }
             let (data, http) = try await fetchRaw(url)
             pages.append(data)
-            nextURL = Self.nextPageURL(fromLinkHeader: http.value(forHTTPHeaderField: "Link"))
+
+            guard let candidate = Self.nextPageURL(fromLinkHeader: http.value(forHTTPHeaderField: "Link")) else {
+                nextURL = nil
+                continue
+            }
+            // Security: a `Link: rel="next"` header is server-controlled input.
+            // `fetchRaw` unconditionally attaches the stored Canvas session
+            // cookies to whatever URL it's given, so a next-page URL pointing
+            // off-host would leak the session cookie to a third party. Refuse
+            // to follow it — stop pagination rather than fetch a truncated-but-
+            // safe result silently; this only ever costs the tail of a very
+            // large course's assignment list.
+            guard Self.isTrustedNextPageURL(candidate, baseURL: baseURL) else {
+                nextURL = nil
+                continue
+            }
+            nextURL = candidate
         }
         return pages
     }
@@ -149,6 +165,18 @@ public struct CanvasGradesClient: Sendable {
             return false
         }
         return firstNonWhitespace == UInt8(ascii: "<")
+    }
+
+    /// Whether a candidate `Link: rel="next"` URL is safe to both fetch AND
+    /// attach the Canvas session cookies to: must be `https` and share
+    /// `baseURL`'s host exactly (case-insensitively — Canvas hosts aren't
+    /// case-sensitive, but a subdomain like `evil.canvas.upenn.edu` or a
+    /// suffix trick like `canvas.upenn.edu.evil.com` must NOT pass). Public so
+    /// the pagination guard above and the test suite exercise the same logic.
+    public static func isTrustedNextPageURL(_ url: URL, baseURL: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https" else { return false }
+        guard let host = url.host, let baseHost = baseURL.host else { return false }
+        return host.caseInsensitiveCompare(baseHost) == .orderedSame
     }
 
     /// Parses a `Link` response header (RFC 5988 style) for the `rel="next"` URL.
