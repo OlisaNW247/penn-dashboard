@@ -65,6 +65,7 @@ struct EditDueSheet: View {
                 }
             }
         }
+        .lhfSheetTheme()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }

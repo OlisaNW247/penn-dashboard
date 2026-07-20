@@ -58,6 +58,7 @@ struct RecurringTaskSheet: View {
         }
         .padding(18)
         .frame(width: 420)
+        .lhfSheetTheme()
     }
 
     private func addTask() {

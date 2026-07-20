@@ -103,6 +103,7 @@ struct SettingsSheet: View {
             }
             .task { await scheduler.refreshAuthStatus() }
         }
+        .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
     }
 

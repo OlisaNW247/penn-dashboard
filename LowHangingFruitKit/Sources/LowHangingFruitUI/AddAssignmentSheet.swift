@@ -54,6 +54,7 @@ struct AddAssignmentSheet: View {
                 }
             }
         }
+        .lhfSheetTheme()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
