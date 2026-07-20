@@ -15,8 +15,21 @@ struct SplashView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Matches the video's background (#FCF5EC) so there are no visible edges.
-    static let background = Color(hex: 0xFCF5EC)
+    /// The clip's actual decoded background, measured from its edge pixels
+    /// (~#FDF8EF ±2 of compression noise). The previous #FCF5EC was a few
+    /// levels darker, which showed the square clip as a faint box on screen.
+    static let background = Color(hex: 0xFDF8EF)
+
+    /// The clip's background isn't perfectly uniform (compression noise, a
+    /// slight vignette), so no constant can match it everywhere. Fading the
+    /// outer ~5% of the clip into the field hides any residual step — and
+    /// softens the hard crop line when artwork crosses the clip's edge.
+    private static let featherStops: [Gradient.Stop] = [
+        .init(color: .clear, location: 0),
+        .init(color: .black, location: 0.05),
+        .init(color: .black, location: 0.95),
+        .init(color: .clear, location: 1),
+    ]
 
     var body: some View {
         ZStack {
@@ -30,6 +43,9 @@ struct SplashView: View {
             } else {
                 SplashPlayer(onFinished: onFinished)
                     .aspectRatio(1, contentMode: .fit)   // the clip is 1:1
+                    // Two axis masks multiply into a four-edge feather.
+                    .mask(LinearGradient(stops: Self.featherStops, startPoint: .leading, endPoint: .trailing))
+                    .mask(LinearGradient(stops: Self.featherStops, startPoint: .top, endPoint: .bottom))
                     .padding(.horizontal, 24)
             }
         }
