@@ -332,7 +332,12 @@ already exist.
   baseline ≥ 24h old (a refresh can't compare against itself) and hides while
   |Δ| < 0.1 pt. The chip carries arrow + number, so color is never the only
   signal.
-- **Term summary.** Atop the course list, a serif unweighted mean over the
-  classes that currently have a grade, captioned "average across your N
-  classes." Shown once ≥ 2 classes have one. Deliberately not credit-weighted
-  and not a GPA (§8's letter-grade/GPA cut stands).
+- **Term summary (revised 2026-07-20, owner decision).** Atop the course list,
+  an **estimated GPA**: each class's percent stepped through `GradeScale`
+  (standard cutoffs mapped to Penn's 4.0 scale — A/A+ 4.0, A− 3.7 … D 1.0, no
+  D−), then averaged unweighted (credit hours aren't in the data). Always
+  labeled "estimated · standard cutoffs" — professors' real cutoffs are
+  unknowable, so the number is honest about being an approximation. Shown once
+  ≥ 2 classes have a grade. This narrows §8's letter/GPA cut: the term
+  headline converts to the 4.0 scale, but per-class numbers stay percentages
+  and no per-class letters are shown.

@@ -104,23 +104,26 @@ struct GradeWatcherView: View {
     }
 
     /// The dashboard opens with a serif greeting; this gives Grades the same
-    /// opening moment (docs/grades.md §11): a big serif unweighted mean over
-    /// the classes that have a grade, with an honest caption — deliberately
-    /// not credit-weighted and not a GPA. Hidden until ≥ 2 classes have one,
-    /// since an "average" of a single course is just that course's number.
+    /// opening moment (docs/grades.md §11): a big serif **estimated GPA** —
+    /// each class's percent stepped through `GradeScale` (standard cutoffs;
+    /// professors' real cutoffs are unknowable, hence "estimated"), averaged
+    /// unweighted (credit hours aren't in the data). Hidden until ≥ 2 classes
+    /// have a grade, since an "average" of one course is just that course.
     @ViewBuilder
     private var termSummary: some View {
         let percents = courses.compactMap { store.breakdown(courseID: $0.id)?.currentPercent }
         if percents.count >= 2 {
+            let gpa = percents.map(GradeScale.gpa(forPercent:)).reduce(0, +) / Double(percents.count)
             VStack(alignment: .leading, spacing: 2) {
-                Text(formatPercent(percents.reduce(0, +) / Double(percents.count)))
+                Text(String(format: "%.2f", gpa))
                     .font(.lhfSerif(34))
                     .foregroundStyle(Color.v2Ink)
-                Text("average across your \(percents.count) classes")
+                Text("estimated GPA across your \(percents.count) classes \u{00b7} standard cutoffs")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
             }
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(String(format: "Estimated GPA %.2f across %d classes, using standard cutoffs", gpa, percents.count))
         }
     }
 
