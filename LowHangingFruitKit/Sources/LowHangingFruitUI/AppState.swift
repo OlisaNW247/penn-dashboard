@@ -1,5 +1,8 @@
 import Foundation
 import LowHangingFruitKit
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 @MainActor
 final class AppState: ObservableObject {
@@ -431,6 +434,23 @@ final class AppState: ObservableObject {
         let coursework = incomplete.filter { !Self.isAssessment($0) }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
+        publishWidgetSnapshot()
+    }
+
+    /// Publishes the "next due" snapshot to the shared App Group container and
+    /// asks WidgetKit to refresh. The widget extension is a separate process
+    /// that can't read AppState, so this file is the bridge. Cheap (a few items
+    /// as JSON) and safe when the App Group isn't configured (the store no-ops).
+    private func publishWidgetSnapshot() {
+        let nextDue = (assignments + assessments + laterAssignments)
+            .filter { $0.dueAt != nil }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+            .prefix(5)
+            .map { WidgetItem(title: $0.title, course: $0.course, dueAt: $0.dueAt) }
+        WidgetSnapshotStore.write(WidgetSnapshot(items: Array(nextDue), generatedAt: Date()))
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
     }
 
     #if DEBUG

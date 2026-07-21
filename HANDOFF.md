@@ -177,6 +177,7 @@ acceptable for a Penn-first launch, not the long-term answer.
 
 ```text
 App/                       # Xcode app target (@main, Info.plist, PrivacyInfo, icon)
+LHFWidget/                 # iOS WidgetKit extension (Home + Lock Screen "Next Due")
 project.yml                # xcodegen source of truth → LowHangingFruit.xcodeproj
 LowHangingFruitKit/
   Sources/
@@ -202,6 +203,15 @@ cd LowHangingFruitKit && swift test        # 13/13 passing as of this session
 xcodegen generate                          # regenerate project after editing project.yml
 ```
 
+- **Widget (`LHFWidget/`)** — a separate iOS process, so it can't read
+  `AppState`. The app writes a small "next due" snapshot to a shared **App
+  Group** container (`WidgetSnapshotStore` in `LowHangingFruitKit`) on every
+  dashboard rebuild and calls `WidgetCenter.reloadAllTimelines()`; the widget
+  reads it. **Manual step before it works:** in Xcode → Signing &
+  Capabilities, add the **App Groups** capability `group.com.lhf.lowhangingfruit`
+  to *both* the `LowHangingFruit` and `LHFWidgetExtension` targets (entitlements
+  files already reference it; this registers the group with your Apple ID).
+  Without it the container URL is nil and the widget shows its empty state.
 - **DEBUG seam:** launch with `-LHFDemoData` (populated dashboard, skips
   onboarding), plus `-LHFTabAll`, `-LHFTabDone`, `-LHFShowSettings`.
 
