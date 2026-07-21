@@ -209,9 +209,10 @@ xcodegen generate                          # regenerate project after editing pr
 
 - **Canvas developer/OAuth API is denied by Penn IT** → the assignment list comes
   from the user's Canvas **calendar ICS feed** (no submission state in ICS).
-  **NOTE (this session):** the *self-scoped session API* (`/api/v1/...` with the
-  user's own login cookies) **is reachable** and is the basis for submission
-  detection + the class picker. That is distinct from the denied developer keys.
+  Submission state for true assignments (quizzes excepted, since their ICS URLs
+  use a different id space) is now recovered instead from the self-scoped grades
+  fetch (`/api/v1/...` with the user's own login cookies, docs/grades.md §12) —
+  distinct from the denied developer keys.
 - No backend of ours; everything on-device. No analytics/tracking/ads.
   `PrivacyInfo.xcprivacy` declares no collection (UserDefaults reason CA92.1).
 - Generated artifacts (`build/`, `LowHangingFruitKit/dist*/`, `.iosbuild/`) are

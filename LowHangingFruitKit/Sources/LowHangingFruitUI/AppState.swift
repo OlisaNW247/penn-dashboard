@@ -26,6 +26,12 @@ final class AppState: ObservableObject {
     /// relaunch). IDs completed before this map existed simply have no entry;
     /// the Done view falls back to the due date to place them.
     @Published private(set) var completionDates: [String: Date]
+    /// Canvas assignment ids the grades fetch reports as submitted (see
+    /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
+    /// from grade snapshots on every refresh and NOT persisted — so a Canvas
+    /// correction (a retracted submission) self-heals on the next sync instead of
+    /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
+    @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
     /// Courses the user has switched OFF (no dashboard items, no notifications).
     /// Stored as the *hidden* set so the default — empty — means every course is
     /// shown, and any newly-discovered course shows up automatically.
@@ -277,6 +283,7 @@ final class AppState: ObservableObject {
             cookies: cookies,
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
+        updateSubmissionState()
     }
 
     /// Rewrites an item's course label to the canonical `CourseCode` form so
@@ -452,7 +459,27 @@ final class AppState: ObservableObject {
     }
 
     func isCompleted(_ assignment: Assignment) -> Bool {
-        assignment.submitted || completedAssignmentIDs.contains(assignment.id)
+        if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
+        if let canvasID = assignment.canvasAssignmentID,
+           submittedCanvasAssignmentIDs.contains(canvasID) {
+            return true
+        }
+        return false
+    }
+
+    /// Recomputes `submittedCanvasAssignmentIDs` from the Grade Watcher snapshots'
+    /// submission side-channel and rebuilds the dashboard. Called after any grade
+    /// refresh. Reads every fetched course's submissions (Grade Watcher only
+    /// fetches selected courses, which is exactly the set the dashboard shows).
+    func updateSubmissionState() {
+        var ids: Set<String> = []
+        for snapshot in gradeWatcher.snapshots.values {
+            for submission in snapshot.submissions where submission.indicatesSubmitted {
+                ids.insert(submission.assignmentID)
+            }
+        }
+        submittedCanvasAssignmentIDs = ids
+        rebuildDashboardItems()
     }
 
     /// When this item was marked done, if known. Items completed before the app

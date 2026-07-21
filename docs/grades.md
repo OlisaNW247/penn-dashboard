@@ -341,3 +341,32 @@ already exist.
   ≥ 2 classes have a grade. This narrows §8's letter/GPA cut: the term
   headline converts to the 4.0 scale, but per-class numbers stay percentages
   and no per-class letters are shown.
+
+## 12. Submission detection (addendum)
+
+The submission side-channel `CanvasGradesClient` already fetches alongside
+grades (§1, §9) now drives the dashboard, not just Grade Watcher: it decides
+which items auto-file under Done without the user tapping anything.
+
+- **The rule (`AssignmentSubmissionInfo.indicatesSubmitted`).** Conservative by
+  design — only a positive signal flips an item to submitted, so real work
+  never gets auto-marked incomplete by accident. `isMissing` is excluded up
+  front (a professor-entered score on missing work arrives as `graded` with no
+  `submittedAt`), then either a real `submittedAt` or `workflowState` of
+  `submitted`/`pending_review` counts.
+- **The join (`Assignment.canvasAssignmentID`).** Canvas's ICS feed embeds the
+  numeric assignment id in both the event URL (`/assignments/12345`) and the
+  UID (`event-assignment-12345@…`); the URL is preferred, the UID is the
+  fallback. Scoped to `.canvas`-sourced true assignments only — quizzes,
+  discussions, and events use a different id space in their URLs, so the join
+  key comes back nil for them rather than mis-joining.
+- **Derived, not persisted.** `AppState.submittedCanvasAssignmentIDs` is
+  recomputed from the latest grade snapshots on every refresh
+  (`updateSubmissionState()`) and never written to disk — a Canvas correction
+  (a retracted submission) self-heals on the next sync instead of sticking.
+  `isCompleted(_:)` consults it alongside the existing manual-completion set.
+- **Refresh timing.** Grades otherwise only refresh when the user opens Grade
+  Watcher (§6, §8). `AutoSyncCoordinator.refreshCanvasGrades` now also runs at
+  launch/activation off `ContentView`'s existing refresh loop, throttled to
+  once per 15 minutes (mirroring the Gradescope throttle), so submission
+  detection works on the dashboard without a Grade Watcher visit.

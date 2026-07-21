@@ -6,8 +6,8 @@ import Foundation
 /// `GradeEngine.compute()` consumes (see docs/grades.md §1, §9).
 ///
 /// **One client, two concerns:** the `include[]=submission` payload also
-/// carries `workflow_state` / `submitted_at`, which the paused submission-
-/// detection work (see HANDOFF.md) needs — `CourseGradeSnapshot.submissions`
+/// carries `workflow_state` / `submitted_at`, which automatic submission
+/// detection needs (docs/grades.md §12) — `CourseGradeSnapshot.submissions`
 /// exposes that alongside the grade categories instead of a second client
 /// re-fetching the same endpoint.
 public struct CanvasGradesClient: Sendable {
@@ -298,10 +298,11 @@ public struct CanvasGradesClient: Sendable {
     }
 }
 
-// MARK: - Submission state (shared with the paused submission-detection work; see HANDOFF.md)
+// MARK: - Submission state (drives automatic submission detection; see docs/grades.md §12)
 
-/// Canvas's `submission.workflow_state`. Exposed so a future feature can drive
-/// "submitted" state from the same fetch this client already does for grades.
+/// Canvas's `submission.workflow_state`. Exposed so automatic submission
+/// detection can drive "submitted" state from the same fetch this client
+/// already does for grades (see `AssignmentSubmissionInfo.indicatesSubmitted`).
 public enum CanvasSubmissionState: String, Sendable, Codable, Hashable {
     case submitted
     case unsubmitted
@@ -331,6 +332,19 @@ public struct AssignmentSubmissionInfo: Sendable, Hashable, Codable {
         self.submittedAt = submittedAt
         self.isMissing = isMissing
         self.isLate = isLate
+    }
+
+    /// Whether this submission record indicates the student actually turned the
+    /// work in — the signal that drives auto "submitted" state on the dashboard.
+    /// Conservative by design: only positive signals flip to submitted, so we
+    /// never auto-mark real work incomplete. A professor-entered score on missing
+    /// work arrives as `graded` with `isMissing == true` and no `submittedAt`, so
+    /// `isMissing` is excluded up front and `graded` counts only when it carries a
+    /// real submission timestamp.
+    public var indicatesSubmitted: Bool {
+        guard !isMissing else { return false }
+        if submittedAt != nil { return true }
+        return workflowState == .submitted || workflowState == .pendingReview
     }
 }
 

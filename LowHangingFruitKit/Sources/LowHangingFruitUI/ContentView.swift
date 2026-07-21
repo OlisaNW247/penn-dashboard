@@ -193,6 +193,7 @@ struct ContentView: View {
     private func refresh() async {
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)
+        await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
     }

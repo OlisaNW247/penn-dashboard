@@ -52,6 +52,30 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         kind == .assignment
     }
 
+    /// The numeric Canvas assignment id, when this is a Canvas assignment whose
+    /// identity can be recovered — the join key to `AssignmentSubmissionInfo`
+    /// (which Canvas keys by that id). Canvas's ICS feed embeds it in both the
+    /// event URL (`/assignments/12345`) and the UID (`event-assignment-12345@…`);
+    /// we prefer the URL and fall back to the UID. Nil for non-Canvas items and
+    /// for quizzes/discussions/events (their URLs use a different id space), so
+    /// auto-detection is scoped to true assignments and never mis-joins.
+    public var canvasAssignmentID: String? {
+        guard source == .canvas else { return nil }
+        if let url, let id = Self.firstMatch(#"/assignments/(\d+)"#, in: url.absoluteString) {
+            return id
+        }
+        return Self.firstMatch(#"assignment-(\d+)"#, in: sourceID)
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges >= 2,
+              let range = Range(match.range(at: 1), in: text)
+        else { return nil }
+        return String(text[range])
+    }
+
     public init(
         source: Source,
         sourceID: String,
