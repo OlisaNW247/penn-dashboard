@@ -45,7 +45,11 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
+        # iOS keeps its own entitlements untouched; the macOS build gets the
+        # App Sandbox (required by the Mac App Store). SDK-conditioned so this
+        # is purely additive — the iPhone build never sees it.
         CODE_SIGN_ENTITLEMENTS: App/LHFApp.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/LHFApp-macOS.entitlements
 
   # Home Screen + Lock Screen widget. iOS-only WidgetKit extension; reads the
   # "next due" snapshot the app writes to the shared App Group container.
