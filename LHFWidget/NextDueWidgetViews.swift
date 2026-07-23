@@ -1,9 +1,12 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 import LowHangingFruitKit
 
 // The widget extension can't import LowHangingFruitUI (see project.yml), so
-// this is a small, deliberate duplicate of `Color(hex:)` from DesignSystem.swift.
+// these are small, deliberate duplicates of the app's color helpers
+// (DesignSystem.swift). `Color(light:dark:)` gives the widget the same
+// light/dark adaptation as the rest of v2.5.
 extension Color {
     init(hex: UInt32) {
         let r = Double((hex >> 16) & 0xFF) / 255
@@ -11,14 +14,32 @@ extension Color {
         let b = Double( hex        & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
     }
+
+    init(light: UInt32, dark: UInt32) {
+        self = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgbHex: dark) : UIColor(rgbHex: light) })
+    }
 }
 
-/// The app's palette, scoped to what the widget needs. Kept in one place so
-/// the Home Screen views read as calm and consistent with the main app.
+private extension UIColor {
+    convenience init(rgbHex hex: UInt32) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+}
+
+/// The app's palette, scoped to what the widget needs, as light/dark pairs so
+/// the Home Screen widget matches v2.5's white and dark modes.
 private enum Palette {
-    static let paper = Color(hex: 0xF4F1EC)
-    static let ink = Color(hex: 0x211F1B)
-    static let courseGrey = Color(hex: 0xA39C8E)
+    static let paper = Color(light: 0xFAFAFA, dark: 0x1A1A1D)
+    static let ink = Color(light: 0x1C1C1E, dark: 0xF2F2F4)
+    static let courseGrey = Color(light: 0x9A9AA0, dark: 0x7E7E86)
+
+    /// The urgency spine color for the current appearance (light spine on a
+    /// light widget, brightened on a dark one) — mirrors `Color.v2Spine*`.
+    static func spine(_ urgency: WidgetUrgency) -> Color {
+        Color(light: urgency.spineHex, dark: urgency.spineHexDark)
+    }
 }
 
 struct NextDueEntryView: View {
@@ -60,7 +81,7 @@ private struct SmallView: View {
     @ViewBuilder
     private var spine: some View {
         if let item {
-            Color(hex: WidgetUrgency(due: item.dueAt).spineHex)
+            Palette.spine(WidgetUrgency(due: item.dueAt))
                 .frame(width: 4)
         }
     }
@@ -81,7 +102,7 @@ private struct SmallView: View {
                 if let due = item.dueAt {
                     Text(due, style: .relative)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(hex: WidgetUrgency(due: due).spineHex))
+                        .foregroundStyle(Palette.spine(WidgetUrgency(due: due)))
                 }
             }
             .padding(12)
@@ -144,7 +165,7 @@ private struct NextDueRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(Color(hex: urgency.spineHex))
+                .fill(Palette.spine(urgency))
                 .frame(width: 6, height: 6)
             Text(item.course)
                 .font(.system(size: 10, weight: .semibold))
@@ -157,7 +178,7 @@ private struct NextDueRow: View {
             if let due = item.dueAt {
                 Text(due, style: .relative)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color(hex: urgency.spineHex))
+                    .foregroundStyle(Palette.spine(urgency))
             }
         }
     }

@@ -6,52 +6,54 @@ import UIKit
 import AppKit
 #endif
 
-// MARK: – Palette (UI redesign v2)
+// MARK: – Palette (UI redesign v2.5 — white + dark)
 //
-// A warm-greige, paper-like system. Cards are white with a colored "spine"
-// on the left whose color encodes due-date urgency. All values are taken
-// straight from the design spec. `Color(hex:)` is defined in DesignSystem.swift.
+// A clean white/neutral system with a designed dark mode. Cards carry a
+// colored "spine" whose color encodes due-date urgency. Every token is a
+// (light, dark) pair via `Color(light:dark:)` (DesignSystem.swift), so the
+// whole UI follows the system appearance. The four urgency hues are the app's
+// identity: kept as-is on white, brightened on dark so they still pop.
 
 extension Color {
-    static let v2Bg          = Color(hex: 0xF4F1EC)  // warm greige background
-    static let v2Card        = Color(hex: 0xFFFFFF)  // active card surface
-    static let v2CardShadow  = Color(hex: 0x786E5A)  // soft shadow tint (used at ~6%)
-    static let v2Ink         = Color(hex: 0x211F1B)  // primary text / titles
-    static let v2DateText    = Color(hex: 0x5C574E)  // header date / serif footer
-    static let v2CourseCode  = Color(hex: 0xA39C8E)  // course code on active cards
+    static let v2Bg          = Color(light: 0xFAFAFA, dark: 0x1A1A1D)  // near-white / dark neutral canvas
+    static let v2Card        = Color(light: 0xFFFFFF, dark: 0x242428)  // active card surface
+    static let v2CardShadow  = Color(light: 0x5A5A60, dark: 0x000000)  // soft shadow tint (used at ~6%)
+    static let v2Ink         = Color(light: 0x1C1C1E, dark: 0xF2F2F4)  // primary text / titles
+    static let v2DateText    = Color(light: 0x55555A, dark: 0xB0B0B6)  // header date / serif footer
+    static let v2CourseCode  = Color(light: 0x9A9AA0, dark: 0x7E7E86)  // course code on active cards
 
     // Urgency — spines (hot → cool: overdue → today → soon → later)
-    static let v2SpineRed    = Color(hex: 0xC8443A)  // overdue
-    static let v2SpineAmber  = Color(hex: 0xD98C2B)  // due <24h
-    static let v2SpineBlue   = Color(hex: 0x3A6EA5)  // due 1–3 days (upcoming)
-    static let v2SpineGreen  = Color(hex: 0x2E7D6B)  // due 4+ days / later
+    static let v2SpineRed    = Color(light: 0xC8443A, dark: 0xE5675C)  // overdue
+    static let v2SpineAmber  = Color(light: 0xD98C2B, dark: 0xE8A34A)  // due <24h
+    static let v2SpineBlue   = Color(light: 0x3A6EA5, dark: 0x6B9BD1)  // due 1–3 days (upcoming)
+    static let v2SpineGreen  = Color(light: 0x2E7D6B, dark: 0x4CA891)  // due 4+ days / later
 
-    // Urgency — due text (slightly darker than the spine)
-    static let v2DueRed      = Color(hex: 0xC8443A)
-    static let v2DueAmber    = Color(hex: 0xC2861A)
-    static let v2DueBlue     = Color(hex: 0x2F5C8A)
-    static let v2DueGreen    = Color(hex: 0x2E7D6B)
+    // Urgency — due text (darkened on white for legibility; the bright spine on dark)
+    static let v2DueRed      = Color(light: 0xC8443A, dark: 0xE5675C)
+    static let v2DueAmber    = Color(light: 0xA66E12, dark: 0xE8A34A)
+    static let v2DueBlue     = Color(light: 0x2F5C8A, dark: 0x6B9BD1)
+    static let v2DueGreen    = Color(light: 0x2E7D6B, dark: 0x4CA891)
 
     // Ring
-    static let v2RingTrack   = Color(hex: 0xE5DDCE)
-    static let v2RingSub     = Color(hex: 0x928C80)  // "done" caption under ring number
+    static let v2RingTrack   = Color(light: 0xECECEE, dark: 0x303036)
+    static let v2RingSub     = Color(light: 0x9A9AA0, dark: 0x8A8A90)  // "done" caption under ring number
 
     // Segmented toggle
-    static let v2ToggleBg       = Color(hex: 0xE9E3D8)
-    static let v2ToggleActive   = Color(hex: 0x211F1B)
-    static let v2ToggleActiveTx = Color(hex: 0xF4F1EC)
-    static let v2ToggleInactive = Color(hex: 0x928C80)
+    static let v2ToggleBg       = Color(light: 0xF0F0F2, dark: 0x2A2A2F)
+    static let v2ToggleActive   = Color(light: 0x1C1C1E, dark: 0xF2F2F4)
+    static let v2ToggleActiveTx = Color(light: 0xFFFFFF, dark: 0x1A1A1D)
+    static let v2ToggleInactive = Color(light: 0x9A9AA0, dark: 0x8A8A90)
 
     // Section headers
-    static let v2Divider       = Color(hex: 0xE2DBCE)
-    static let v2SectionMuted  = Color(hex: 0x7A6F50)  // TODAY / REST OF WEEK / LATER labels
-    static let v2SectionCount  = Color(hex: 0xB0A892)  // per-section count
+    static let v2Divider       = Color(light: 0xECECEE, dark: 0x2E2E34)
+    static let v2SectionMuted  = Color(light: 0x7A7A80, dark: 0x9A9AA2)  // TODAY / REST OF WEEK / LATER labels
+    static let v2SectionCount  = Color(light: 0xB8B8BE, dark: 0x66666E)  // per-section count
 
     // Done (archived) cards
-    static let v2DoneCard    = Color(hex: 0xF0EDE6)
-    static let v2DoneSpine   = Color(hex: 0xB6B0A2)
-    static let v2DoneTitle   = Color(hex: 0x8A8478)
-    static let v2DoneCourse  = Color(hex: 0xAEA899)
+    static let v2DoneCard    = Color(light: 0xF4F4F5, dark: 0x202024)
+    static let v2DoneSpine   = Color(light: 0xC4C4C8, dark: 0x4A4A52)
+    static let v2DoneTitle   = Color(light: 0x8A8A90, dark: 0x7E7E86)
+    static let v2DoneCourse  = Color(light: 0xB0B0B6, dark: 0x5E5E66)
 }
 
 // MARK: – Fonts (Instrument Serif display, Geist body)

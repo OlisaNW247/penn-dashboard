@@ -1,6 +1,8 @@
 import SwiftUI
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 // MARK: – Colors
@@ -20,7 +22,39 @@ extension Color {
         let b = Double( hex        & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
     }
+
+    /// A hex color that resolves to `light` or `dark` for the active
+    /// appearance. Every v2.5 palette token (RedesignTokens.swift) is a
+    /// light/dark pair built with this, so the whole UI follows the system
+    /// light/dark setting with no per-view `colorScheme` checks.
+    init(light: UInt32, dark: UInt32) {
+        #if os(iOS)
+        self = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgbHex: dark) : UIColor(rgbHex: light) })
+        #elseif os(macOS)
+        self = Color(NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(rgbHex: dark) : NSColor(rgbHex: light) })
+        #else
+        self.init(hex: light)
+        #endif
+    }
 }
+
+#if os(iOS)
+private extension UIColor {
+    convenience init(rgbHex hex: UInt32) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+}
+#elseif os(macOS)
+private extension NSColor {
+    convenience init(rgbHex hex: UInt32) {
+        self.init(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+}
+#endif
 
 // MARK: – Fonts
 //

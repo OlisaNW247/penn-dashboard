@@ -37,9 +37,12 @@ struct SplashView: View {
 
             if reduceMotion {
                 // Respect Reduce Motion: no autoplaying clip — show the wordmark.
+                // Fixed dark ink (not the dynamic v2Ink): the splash field is a
+                // fixed cream that matches the intro clip, so the wordmark must
+                // stay dark in dark mode too, or it would vanish on the cream.
                 Text("LHF")
                     .font(.lhfSerif(56))
-                    .foregroundStyle(Color.v2Ink)
+                    .foregroundStyle(Color(hex: 0x211F1B))
             } else {
                 SplashPlayer(onFinished: onFinished)
                     .aspectRatio(1, contentMode: .fit)   // the clip is 1:1

@@ -89,13 +89,25 @@ public enum WidgetUrgency: String, Codable, Sendable {
         else { self = .later }
     }
 
-    /// Matches the app's urgency spine palette (overdue/today/soon/later).
+    /// Matches the app's urgency spine palette (overdue/today/soon/later) on a
+    /// light background. Kept in sync with RedesignTokens' `v2Spine*` light values.
     public var spineHex: UInt32 {
         switch self {
         case .overdue: return 0xC8443A
         case .today: return 0xD98C2B
         case .soon: return 0x3A6EA5
         case .later: return 0x2E7D6B
+        }
+    }
+
+    /// The brightened spine colors for a dark background — matches the tokens'
+    /// `v2Spine*` dark values so the widget's dark mode agrees with the app.
+    public var spineHexDark: UInt32 {
+        switch self {
+        case .overdue: return 0xE5675C
+        case .today: return 0xE8A34A
+        case .soon: return 0x6B9BD1
+        case .later: return 0x4CA891
         }
     }
 
