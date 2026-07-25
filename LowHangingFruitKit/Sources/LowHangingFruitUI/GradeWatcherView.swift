@@ -28,9 +28,24 @@ struct GradeWatcherView: View {
         store.lastRefreshed == nil && store.snapshots.isEmpty && store.isRefreshing
     }
 
+    /// `courses` is derived from `state.canvasItems`, the same dashboard feed
+    /// `ContentView` syncs on launch/activation. If this view is reached
+    /// before that sync has ever completed, `canvasItems` — and therefore
+    /// `courses` — is legitimately empty even though the user has classes
+    /// selected (the class picker's toggles default to ON). Previously that
+    /// state rendered the same "no classes selected" empty state as an
+    /// actually-empty, all-off class picker, which is misleading. Distinguish
+    /// "haven't synced yet" (show a loading state) from "synced, and nothing
+    /// is selected/enrolled" (show the real empty state).
+    private var isAwaitingCourseData: Bool {
+        courses.isEmpty && state.lastSync == nil && (state.isLoading || state.isCanvasConnected)
+    }
+
     var body: some View {
         Group {
-            if courses.isEmpty {
+            if isAwaitingCourseData {
+                loadingState
+            } else if courses.isEmpty {
                 emptyCoursesState
             } else if isFirstLoad {
                 loadingState

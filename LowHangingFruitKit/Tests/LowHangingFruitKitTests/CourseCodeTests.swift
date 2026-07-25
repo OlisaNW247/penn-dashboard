@@ -31,6 +31,12 @@ struct CourseCodeTests {
               term: Term(year: 2025, season: .fall)),
         // 4-letter dept, 4-digit number.
         .init(raw: "MGMT 2370-403 Management", code: "MGMT 2370", term: nil),
+        // Cross-listing prefix ahead of the real dept — regression for the
+        // old start-anchored regex matching (or falling through on) "ban-".
+        .init(raw: "ban-cis-3200-001 202630 Cross-Listed Seminar", code: "CIS 3200",
+              term: Term(year: 2026, season: .fall)),
+        // Same shape without a term/title suffix.
+        .init(raw: "ban-cis-3200", code: "CIS 3200", term: nil),
         // Non-course cohort / diagnostic space → keep the label, no term.
         .init(raw: "Class of 2028", code: "Class of 2028", term: nil),
         // Unknown-course fallback passes through unchanged.

@@ -48,6 +48,15 @@ struct DoneView: View {
                 Text("nice pace.")
                     .font(.lhfSans(10))
                     .foregroundStyle(Color.v2RingSub)
+            } else if !sections.isEmpty {
+                // Completed work exists (shown above), it just wasn't
+                // finished this week — don't claim "nothing done yet.".
+                Text("nothing new this week.")
+                    .font(.lhfSerif(15))
+                    .foregroundStyle(Color.v2DateText)
+                Text("your archive says otherwise.")
+                    .font(.lhfSans(10))
+                    .foregroundStyle(Color.v2RingSub)
             } else {
                 Text("nothing done yet.")
                     .font(.lhfSerif(15))

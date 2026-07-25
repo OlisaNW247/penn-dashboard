@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showSettings = false
     @State private var showAddSheet = false
+    @State private var showGradeWatcher = false
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
@@ -112,6 +113,16 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
+        .sheet(isPresented: $showGradeWatcher) {
+            // Grade Watcher is designed as a NavigationLink push target (from
+            // Settings → Classes), so it doesn't own a NavigationStack itself;
+            // wrap it here so it can also be reached directly from the
+            // dashboard.
+            NavigationStack {
+                GradeWatcherView(store: state.gradeWatcher)
+            }
+            .environmentObject(state)
+        }
     }
 
     /// Floating "+" to add a user-created assignment (one-off or recurring).
@@ -155,8 +166,9 @@ struct ContentView: View {
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
 
-                    // The only header control: a clearly-labeled Settings button.
-                    // There's no manual reload — opening the app auto-refreshes.
+                    // The header's two controls: Settings, then Grade Watcher
+                    // right beside it. There's no manual reload — opening the
+                    // app auto-refreshes.
                     Button { showSettings = true } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "gearshape.fill")
@@ -173,6 +185,20 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Settings and accounts")
                     .help("Settings & accounts")
+
+                    // Grade Watcher, reachable directly from the dashboard
+                    // (also still available via Settings → Grades).
+                    Button { showGradeWatcher = true } label: {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.v2DateText)
+                            .padding(8)
+                            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Grade Watcher")
+                    .help("Grade Watcher")
                 }
                 .padding(.top, 2)
             }
