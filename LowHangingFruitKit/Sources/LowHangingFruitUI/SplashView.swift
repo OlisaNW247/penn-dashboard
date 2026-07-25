@@ -1,7 +1,5 @@
 import SwiftUI
 import AVFoundation
-import CoreImage
-import CoreImage.CIFilterBuiltins
 import Combine
 #if canImport(UIKit)
 import UIKit
@@ -9,8 +7,8 @@ import UIKit
 import AppKit
 #endif
 
-/// First-launch splash: plays the bundled intro clip once on a cream field that
-/// matches the video's own background, so the square clip sits seamlessly, then
+/// First-launch splash: plays the bundled intro clip once on a field that
+/// matches the clip's own background, so the square clip sits seamlessly, then
 /// hands off to the app. A timeout guards against a clip that never loads.
 struct SplashView: View {
     let onFinished: () -> Void
@@ -18,12 +16,14 @@ struct SplashView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
-    /// The clip's actual decoded background, measured from its edge pixels
-    /// (~#FDF8EF ±2 of compression noise). The previous #FCF5EC was a few
+    /// Light mode plays the original clip, whose decoded background measures
+    /// ~#FDF8EF (±2 of compression noise); the previous #FCF5EC was a few
     /// levels darker, which showed the square clip as a faint box on screen.
-    /// There's no dark-mode video asset, so in Light mode this (and playback)
-    /// stays byte-identical to before; in Dark mode the field instead matches
-    /// `v2Bg` so letterboxing around the recolored clip doesn't flash white.
+    /// Dark mode plays a separate pre-rendered asset (`splash_dark.mp4`,
+    /// generated offline by flood-filling the clip's cream background to
+    /// `v2Bg` while leaving the artwork's own colors untouched — see
+    /// `SplashPlayer`), so this field matches `v2Bg` too and there's no
+    /// visible seam around the clip.
     private var background: Color {
         colorScheme == .dark ? .v2Bg : Color(hex: 0xFDF8EF)
     }
@@ -74,10 +74,14 @@ struct SplashView: View {
 
 private struct SplashPlayer {
     let onFinished: () -> Void
-    /// No dark-mode video asset exists, so Dark mode recolors the same clip
-    /// in code via a Core Image video composition (see `Coordinator.start`).
-    /// When `false` this whole path is skipped, so Light-mode playback stays
-    /// byte-identical to the original implementation.
+    /// Selects which bundled clip to play. Dark mode plays a distinct
+    /// pre-rendered asset (`splash_dark.mp4`) rather than recoloring the
+    /// light clip at runtime — an earlier CIFalseColor video composition
+    /// attempt didn't reliably apply on-device and, worse, desaturated the
+    /// artwork itself (killing the persimmon's orange). The dark asset is
+    /// generated offline by flood-filling only the clip's cream *background*
+    /// to `v2Bg`, leaving the hand/fruit/leaves at their original colors.
+    /// When `false` playback is byte-identical to the original implementation.
     var isDarkMode: Bool = false
 
     @MainActor
@@ -96,12 +100,10 @@ private struct SplashPlayer {
             // If the clip is somehow missing (a packaging regression), do nothing
             // here — calling back synchronously would mutate parent state mid
             // view-update. SplashView's safety-net timeout dismisses instead.
-            guard let url = Bundle.module.url(forResource: "splash", withExtension: "mp4") else { return }
+            let name = isDarkMode ? "splash_dark" : "splash"
+            guard let url = Bundle.module.url(forResource: name, withExtension: "mp4") else { return }
             let asset = AVURLAsset(url: url)
             let item = AVPlayerItem(asset: asset)
-            if isDarkMode {
-                item.videoComposition = Self.darkVideoComposition(asset: asset)
-            }
             player.replaceCurrentItem(with: item)
             player.actionAtItemEnd = .pause
             player.isMuted = true
@@ -120,30 +122,6 @@ private struct SplashPlayer {
             guard !didFinish else { return }
             didFinish = true
             onFinished()
-        }
-
-        /// Recolors the light-mode clip to match the dark palette instead of
-        /// showing it as-is (which would flash a bright cream square) or
-        /// naively inverting it (which flips hue on any colored content).
-        /// `CIFalseColor` remaps luminance onto the app's own two dark-mode
-        /// tokens — `v2Ink` (light, for what was dark ink) at the shadow end
-        /// and `v2Bg` (near-black, for what was the cream field) at the
-        /// highlight end — so the treatment reads as a deliberate dark variant
-        /// of the same mark, not a photo-negative effect.
-        private static func darkVideoComposition(asset: AVAsset) -> AVVideoComposition {
-            let inkColor = CIColor(red: 0xEF / 255, green: 0xEC / 255, blue: 0xE6 / 255)   // v2Ink (dark mode)
-            let bgColor  = CIColor(red: 0x1C / 255, green: 0x1A / 255, blue: 0x17 / 255)   // v2Bg  (dark mode)
-            return AVMutableVideoComposition(asset: asset) { request in
-                let source = request.sourceImage.clampedToExtent()
-                let desaturated = source.applyingFilter("CIColorControls", parameters: [
-                    kCIInputSaturationKey: 0.0,
-                ])
-                let falseColor = desaturated.applyingFilter("CIFalseColor", parameters: [
-                    "inputColor0": inkColor,
-                    "inputColor1": bgColor,
-                ])
-                request.finish(with: falseColor.cropped(to: request.sourceImage.extent), context: nil)
-            }
         }
     }
 }
