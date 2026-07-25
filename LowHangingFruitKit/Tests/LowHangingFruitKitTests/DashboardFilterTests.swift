@@ -84,4 +84,46 @@ struct DashboardFilterTests {
         state.setCourse("CIS 1200", selected: true)
         #expect(state.isCourseSelected("CIS 1200"))
     }
+
+    @Test("deleting a course drops it from the classes list and hides it like a toggle-off; restore undoes both")
+    func courseDeletionAndRestore() {
+        let state = AppState()
+        // Clean slate: undo any deletions/hides a prior run left behind.
+        state.deletedCourseCodes().forEach { state.restoreCourse($0) }
+        state.hiddenCourseKeys.forEach { state.setCourse($0, selected: true) }
+
+        state.canvasItems = [
+            Assignment(source: .canvas, sourceID: "1", kind: .assignment,
+                       course: "CIS 1200", title: "HW1", dueAt: Date(), url: nil),
+            Assignment(source: .canvas, sourceID: "2", kind: .assignment,
+                       course: "MATH 1400", title: "HW1", dueAt: Date(), url: nil),
+        ]
+
+        #expect(!state.isCourseDeleted("CIS 1200"))
+        #expect(state.visibleCourseCodes().contains("CIS 1200"))
+
+        state.deleteCourse("CIS 1200")
+
+        // Deleted: gone from the classes list, excluded like a hidden course,
+        // and listed for restore.
+        #expect(state.isCourseDeleted("CIS 1200"))
+        #expect(!state.visibleCourseCodes().contains("CIS 1200"))
+        #expect(!state.isCourseSelected("CIS 1200"))
+        #expect(state.deletedCourseCodes() == ["CIS 1200"])
+        // Unrelated course is untouched.
+        #expect(state.visibleCourseCodes().contains("MATH 1400"))
+        #expect(state.isCourseSelected("MATH 1400"))
+
+        // Persisted: a fresh AppState instance (reading the same UserDefaults)
+        // still sees it deleted.
+        let reloaded = AppState()
+        #expect(reloaded.isCourseDeleted("CIS 1200"))
+
+        state.restoreCourse("CIS 1200")
+
+        #expect(!state.isCourseDeleted("CIS 1200"))
+        #expect(state.visibleCourseCodes().contains("CIS 1200"))
+        #expect(state.isCourseSelected("CIS 1200"))
+        #expect(state.deletedCourseCodes().isEmpty)
+    }
 }

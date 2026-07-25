@@ -110,23 +110,65 @@ struct SettingsSheet: View {
     // MARK: Classes
 
     /// Same class picker as onboarding, so a course can be turned off any time.
-    /// Off = hidden from the dashboard and from reminders.
+    /// Off = hidden from the dashboard and from reminders. Swipe to delete a
+    /// class entirely (it drops out of this list, not just off); "Deleted
+    /// classes" below lists anything deleted so it can be brought back.
     @ViewBuilder
     private var classesSection: some View {
-        let courses = state.allCourseCodes()
-        if !courses.isEmpty {
+        let courses = state.visibleCourseCodes()
+        let deletedCourses = state.deletedCourseCodes()
+        if !courses.isEmpty || !deletedCourses.isEmpty {
             Section {
                 ForEach(courses, id: \.self) { course in
                     Toggle(course, isOn: Binding(
                         get: { state.isCourseSelected(course) },
                         set: { state.setCourse(course, selected: $0) }
                     ))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            state.deleteCourse(course)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            state.deleteCourse(course)
+                        } label: {
+                            Label("Delete class", systemImage: "trash")
+                        }
+                    }
+                }
+
+                if !deletedCourses.isEmpty {
+                    deletedClassesRow(deletedCourses)
                 }
             } header: {
                 Text("Classes")
             } footer: {
-                Text("Turn a class off to hide its assignments and its reminders.")
+                Text("Turn a class off to hide its assignments and its reminders. Swipe to delete a class you don\u{2019}t want to see at all.")
             }
+        }
+    }
+
+    private func deletedClassesRow(_ deletedCourses: [String]) -> some View {
+        DisclosureGroup {
+            ForEach(deletedCourses, id: \.self) { course in
+                HStack {
+                    Text(course)
+                        .font(.lhfSans(14))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Restore") {
+                        state.restoreCourse(course)
+                    }
+                    .font(.lhfSans(13))
+                }
+            }
+        } label: {
+            Label("Deleted classes (\(deletedCourses.count))", systemImage: "trash")
+                .font(.lhfSans(13))
+                .foregroundStyle(.secondary)
         }
     }
 

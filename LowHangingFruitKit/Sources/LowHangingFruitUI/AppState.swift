@@ -39,6 +39,13 @@ final class AppState: ObservableObject {
     /// Stored as the *hidden* set so the default — empty — means every course is
     /// shown, and any newly-discovered course shows up automatically.
     @Published private(set) var hiddenCourseKeys: Set<String>
+    /// Courses the user deleted from the classes list. Deletion is a superset of
+    /// hiding: a deleted course is excluded everywhere a hidden course is
+    /// (dashboard, notifications, Grade Watcher) AND is also removed from the
+    /// classes list itself — unlike a merely-hidden course, which still shows
+    /// there with its toggle off. There's no server-side course to delete (it's
+    /// synced from Canvas), so this is purely a local filter the user can undo.
+    @Published private(set) var deletedCourseKeys: Set<String>
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
@@ -55,6 +62,7 @@ final class AppState: ObservableObject {
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let completionDatesKey = "completionDates"
     private static let hiddenCoursesKey = "hiddenCourseKeys"
+    private static let deletedCoursesKey = "deletedCourseKeys"
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -67,6 +75,7 @@ final class AppState: ObservableObject {
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
         self.completionDates = Self.loadCompletionDates()
         self.hiddenCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
+        self.deletedCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.deletedCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
@@ -310,8 +319,10 @@ final class AppState: ObservableObject {
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// False if the course is hidden OR deleted — both keep it out of the
+    /// dashboard, notifications, and Grade Watcher (see `selectedCanvasCourseIDs`).
     func isCourseSelected(_ course: String) -> Bool {
-        !hiddenCourseKeys.contains(course)
+        !hiddenCourseKeys.contains(course) && !deletedCourseKeys.contains(course)
     }
 
     /// Toggle a course on/off. Off = hidden from the dashboard and notifications.
@@ -324,6 +335,42 @@ final class AppState: ObservableObject {
 
     private func persistHiddenCourses() {
         UserDefaults.standard.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
+    }
+
+    /// Courses to render in the Settings classes list — every known course
+    /// minus deleted ones. (Hidden-but-not-deleted courses still appear here,
+    /// toggled off.)
+    func visibleCourseCodes() -> [String] {
+        allCourseCodes().filter { !deletedCourseKeys.contains($0) }
+    }
+
+    /// Deleted courses, sorted for a stable "Deleted classes" restore list.
+    func deletedCourseCodes() -> [String] {
+        allCourseCodes().filter { deletedCourseKeys.contains($0) }
+    }
+
+    func isCourseDeleted(_ course: String) -> Bool {
+        deletedCourseKeys.contains(course)
+    }
+
+    /// Removes a course from the classes list. Purely local — there's nothing
+    /// to delete on Canvas's end — so it's fully reversible with `restoreCourse`.
+    func deleteCourse(_ course: String) {
+        deletedCourseKeys.insert(course)
+        persistDeletedCourses()
+        rebuildDashboardItems()
+    }
+
+    /// Undoes `deleteCourse`. The course reappears in the classes list at
+    /// whatever hidden/shown state it had before deletion.
+    func restoreCourse(_ course: String) {
+        deletedCourseKeys.remove(course)
+        persistDeletedCourses()
+        rebuildDashboardItems()
+    }
+
+    private func persistDeletedCourses() {
+        UserDefaults.standard.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
     }
 
     func addRecurringTask(_ task: RecurringTask) {
