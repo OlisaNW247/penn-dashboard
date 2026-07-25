@@ -76,14 +76,12 @@ final class DashboardViewModel: ObservableObject {
         reload(preservingEdits: true)
     }
 
-    #if DEBUG
-    /// Preview-only: populate from bundled fixtures. The running app never calls
-    /// this — it always reads real scraped data via `reload()`.
+    /// Populate from bundled fixtures. Used by SwiftUI previews and by the in-app
+    /// Preview mode (reviewer demo). Real usage reads scraped data via `reload()`.
     func loadSampleData() {
         usingSampleData = true
         items = SampleData.items()
     }
-    #endif
 
     func reload(preservingEdits: Bool = false) {
         guard let state = appState else { return }
@@ -105,17 +103,20 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: nil))
         }
 
-        // Completed pool: reconstruct from the source feeds, since the grouped
-        // arrays exclude completed items. Completion time isn't tracked by the
-        // model, so reuse a prior session timestamp if we have one.
-        let pool = state.canvasItems
+        // Completed pool: reconstruct from every source feed, since the grouped
+        // arrays exclude completed items. Completion time comes from AppState's
+        // persisted map (so completed work survives relaunch); a prior session
+        // timestamp is the fallback for the current run.
+        let pool = state.canvasItems + state.gradescopeItems + state.manualAssignments.map { $0.asAssignment() }
         var seen = Set(active.map { $0.id })
-        for a in pool where state.isCompleted(a) && !seen.contains(a.id) {
+        // Respect the class picker here too, so a hidden course's completed work
+        // doesn't linger on the Done tab after the user turned the course off.
+        for a in pool where state.isCompleted(a) && !seen.contains(a.id) && state.isCourseSelected(a.course) {
             seen.insert(a.id)
             built.append(DashItem(assignment: a,
                                   dueOverride: priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
-                                  completedAt: priorByID[a.id]?.completedAt))
+                                  completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt))
         }
 
         items = built
@@ -150,17 +151,19 @@ final class DashboardViewModel: ObservableObject {
 
     private var activeItems: [DashItem] { items.filter { !$0.isCompleted } }
 
-    /// "This week" = overdue + due within 7 days, in three sections.
+    /// "This week" = overdue (pinned on top) + everything due in the next 7 days.
+    /// Nothing beyond a week out appears here.
     func thisWeekSections(now: Date = Date()) -> [DashSection] {
-        timelineSections(now: now, includeLater: false)
+        timelineSections(now: now, includeOverdue: true, includeLater: false)
     }
 
-    /// "All" = the same three sections plus a LATER bucket (8+ days out).
+    /// "All" = strictly future work through the end of the current term (the pool
+    /// is already term-capped). Overdue items live only on the This-week tab.
     func allSections(now: Date = Date()) -> [DashSection] {
-        timelineSections(now: now, includeLater: true)
+        timelineSections(now: now, includeOverdue: false, includeLater: true)
     }
 
-    private func timelineSections(now: Date, includeLater: Bool) -> [DashSection] {
+    private func timelineSections(now: Date, includeOverdue: Bool, includeLater: Bool) -> [DashSection] {
         var overdue: [DashItem] = []
         var today: [DashItem] = []
         var rest: [DashItem] = []
@@ -169,7 +172,10 @@ final class DashboardViewModel: ObservableObject {
         // Section thresholds are independent of the per-card color tiers:
         // overdue / today (<24h) / rest of week (1–7d) / later (8d+).
         for item in activeItems {
-            guard let due = item.due else { later.append(item); continue }
+            guard let due = item.due else {
+                if includeLater { later.append(item) }   // undated → "later" only
+                continue
+            }
             let s = due.timeIntervalSince(now)
             if s < 0 {
                 overdue.append(item)
@@ -192,7 +198,7 @@ final class DashboardViewModel: ObservableObject {
         later.sort(by: byDueAscending)
 
         var sections: [DashSection] = []
-        if !overdue.isEmpty {
+        if includeOverdue && !overdue.isEmpty {
             sections.append(.init(id: "overdue", label: "OVERDUE",
                                   labelColor: .v2SpineRed, items: overdue))
         }
@@ -201,7 +207,7 @@ final class DashboardViewModel: ObservableObject {
                                   labelColor: .v2SectionMuted, items: today))
         }
         if !rest.isEmpty {
-            sections.append(.init(id: "rest", label: "REST OF WEEK",
+            sections.append(.init(id: "rest", label: includeLater ? "THIS WEEK" : "REST OF WEEK",
                                   labelColor: .v2SectionMuted, items: rest))
         }
         if includeLater && !later.isEmpty {
@@ -213,39 +219,58 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: Derived — done sections
 
+    /// Done tab: everything finished this week up top, then (on scroll) everything
+    /// finished earlier this semester. Placement uses the persisted completion
+    /// time, falling back to the due date for items completed before timestamps
+    /// were tracked — so completed work is never dropped.
     func doneSections(now: Date = Date()) -> [DashSection] {
         let completed = items.filter { $0.isCompleted }
         let cal = Calendar.current
+        let semesterStart = Term(date: now).startDate()
 
-        let todayItems = completed
-            .filter { isSameDay($0.completedAt, now, cal) }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        func placed(_ item: DashItem) -> Date? { item.completedAt ?? item.due }
+        let newestFirst: (DashItem, DashItem) -> Bool = {
+            (placed($0) ?? .distantPast) > (placed($1) ?? .distantPast)
+        }
 
-        let earlierItems = completed
-            .filter { item in
-                guard let c = item.completedAt else { return false }
-                return !isSameDay(c, now, cal) && isSameWeek(c, now, cal)
-            }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        let thisWeek = completed
+            .filter { placed($0).map { isSameWeek($0, now, cal) } ?? false }
+            .sorted(by: newestFirst)
 
-        let dayLabel: (DashItem) -> String? = { item in
-            guard let c = item.completedAt else { return nil }
-            let f = DateFormatter()
-            f.dateFormat = "EEE"          // "Mon", "Sun"
-            return f.string(from: c)
+        let thisWeekIDs = Set(thisWeek.map(\.id))
+        let semester = completed
+            .filter { !thisWeekIDs.contains($0.id) }
+            // Keep the current term (plus any item whose date we can't place, so
+            // it still shows) and drop older leftovers.
+            .filter { item in placed(item).map { $0 >= semesterStart } ?? true }
+            .sorted(by: newestFirst)
+
+        // Weekday for this week ("Mon"); month/day for older items ("Apr 3").
+        let weekdayLabel: (DashItem) -> String? = { item in
+            placed(item).map { Self.string($0, "EEE") }
+        }
+        let dateLabel: (DashItem) -> String? = { item in
+            placed(item).map { Self.string($0, "MMM d") }
         }
 
         var sections: [DashSection] = []
-        if !todayItems.isEmpty {
-            sections.append(.init(id: "doneToday", label: "COMPLETED TODAY",
-                                  labelColor: .v2SectionMuted, items: todayItems))
+        if !thisWeek.isEmpty {
+            sections.append(.init(id: "doneWeek", label: "THIS WEEK",
+                                  labelColor: .v2SectionMuted, items: thisWeek,
+                                  dayLabel: weekdayLabel))
         }
-        if !earlierItems.isEmpty {
-            sections.append(.init(id: "doneEarlier", label: "EARLIER THIS WEEK",
-                                  labelColor: .v2SectionMuted, items: earlierItems,
-                                  dayLabel: dayLabel))
+        if !semester.isEmpty {
+            sections.append(.init(id: "doneSemester", label: "EARLIER THIS SEMESTER",
+                                  labelColor: .v2SectionMuted, items: semester,
+                                  dayLabel: dateLabel))
         }
         return sections
+    }
+
+    private static func string(_ date: Date, _ format: String) -> String {
+        let f = DateFormatter()
+        f.dateFormat = format
+        return f.string(from: date)
     }
 
     // MARK: Derived — weekly progress ring
@@ -256,8 +281,13 @@ final class DashboardViewModel: ObservableObject {
         let cal = Calendar.current
         let weekEnd = now.addingTimeInterval(7 * 86_400)
 
+        // Only items with a real completion timestamp in this week count. (Don't
+        // fall back to `now`: source-`submitted` items — e.g. Gradescope — carry
+        // no timestamp and would otherwise inflate the ring to the whole term's
+        // submitted work, every week.)
         let doneThisWeek = items.filter {
-            $0.isCompleted && isSameWeek($0.completedAt ?? now, now, cal)
+            guard $0.isCompleted, let completedAt = $0.completedAt else { return false }
+            return isSameWeek(completedAt, now, cal)
         }.count
 
         let dueThisWeek = items.filter {
@@ -269,11 +299,6 @@ final class DashboardViewModel: ObservableObject {
     }
 
     // MARK: Date helpers
-
-    private func isSameDay(_ a: Date?, _ b: Date, _ cal: Calendar) -> Bool {
-        guard let a else { return false }
-        return cal.isDate(a, inSameDayAs: b)
-    }
 
     private func isSameWeek(_ a: Date, _ b: Date, _ cal: Calendar) -> Bool {
         cal.isDate(a, equalTo: b, toGranularity: .weekOfYear)

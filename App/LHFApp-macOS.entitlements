@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mac App Store requires the App Sandbox. The app only needs outbound
+	     network access (Canvas ICS feed, Canvas grades, Gradescope + their
+	     WebView logins) — no file, camera, or location access. The iOS build
+	     keeps its own entitlements (App/LHFApp.entitlements); this file is
+	     applied only for the macOS SDK, so it can't affect the iPhone app. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

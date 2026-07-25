@@ -38,6 +38,28 @@ struct SettingsSheet: View {
                             Label("Connect Canvas", systemImage: "link")
                         }
                     }
+
+                    statusRow(label: "Gradescope",
+                              connected: state.isGradescopeConnected,
+                              working: state.isGradescopeLoading)
+
+                    Button {
+                        dismiss()
+                        state.restartOnboarding()
+                    } label: {
+                        Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
+                              systemImage: "link")
+                    }
+                }
+
+                classesSection
+
+                Section("Grades") {
+                    NavigationLink {
+                        GradeWatcherView(store: state.gradeWatcher)
+                    } label: {
+                        Label("Grade Watcher", systemImage: "chart.bar.fill")
+                    }
                 }
 
                 Section("Tasks") {
@@ -49,30 +71,6 @@ struct SettingsSheet: View {
                 }
 
                 remindersSection
-
-                if !state.canvasRequirementSuggestions.isEmpty {
-                    Section("Suggestions") {
-                        ForEach(state.canvasRequirementSuggestions) { suggestion in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("\(suggestion.title) · \(suggestion.course)")
-                                    .font(.lhfSans(13, weight: .medium))
-                                Text("\(suggestion.source.rawValue): \(suggestion.evidence)")
-                                    .font(.lhfSans(11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                HStack {
-                                    Button("Add") { state.addCanvasSuggestion(suggestion) }
-                                    Button("Ignore", role: .destructive) {
-                                        state.dismissCanvasSuggestion(suggestion)
-                                    }
-                                }
-                                .font(.lhfSans(12, weight: .medium))
-                                .padding(.top, 2)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
 
                 #if DEBUG
                 // Hidden in demo/screenshot mode so store assets stay clean.
@@ -105,7 +103,31 @@ struct SettingsSheet: View {
             }
             .task { await scheduler.refreshAuthStatus() }
         }
+        .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    // MARK: Classes
+
+    /// Same class picker as onboarding, so a course can be turned off any time.
+    /// Off = hidden from the dashboard and from reminders.
+    @ViewBuilder
+    private var classesSection: some View {
+        let courses = state.allCourseCodes()
+        if !courses.isEmpty {
+            Section {
+                ForEach(courses, id: \.self) { course in
+                    Toggle(course, isOn: Binding(
+                        get: { state.isCourseSelected(course) },
+                        set: { state.setCourse(course, selected: $0) }
+                    ))
+                }
+            } header: {
+                Text("Classes")
+            } footer: {
+                Text("Turn a class off to hide its assignments and its reminders.")
+            }
+        }
     }
 
     // MARK: Reminders

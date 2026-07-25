@@ -15,7 +15,6 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showSettings = false
     @State private var showAddSheet = false
-    @State private var isSyncing = false
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
@@ -64,11 +63,19 @@ struct ContentView: View {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
+                // Seed AppState too, so the Settings class list has courses.
+                state.loadSampleData()
                 vm.loadSampleData()
                 if args.contains("-LHFShowSettings") { showSettings = true }
                 return
             }
             #endif
+            // Reviewer/demo preview: show bundled sample data instead of binding
+            // to the (empty, un-synced) real store. No network, no login.
+            if state.isPreviewMode {
+                vm.loadSampleData()
+                return
+            }
             vm.bind(to: state)
         }
         .task {
@@ -76,14 +83,14 @@ struct ContentView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
                 if Task.isCancelled { break }
-                await refresh(showSpinner: false)
+                await refresh()
             }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task {
                     await scheduler.refreshAuthStatus()
-                    await refresh(showSpinner: false)
+                    await refresh()
                 }
             }
         }
@@ -118,6 +125,7 @@ struct ContentView: View {
                 .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Add assignment")
         .padding(.trailing, 22)
         .padding(.bottom, 24)
     }
@@ -142,34 +150,31 @@ struct ContentView: View {
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.v2Ink)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Text(Self.dateText(Date()))
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
 
-                    Button { syncNow() } label: {
-                        if isSyncing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(Color.v2DateText.opacity(0.7))
+                    // The only header control: a clearly-labeled Settings button.
+                    // There's no manual reload — opening the app auto-refreshes.
+                    Button { showSettings = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Settings")
+                                .font(.lhfSans(12, weight: .semibold))
                         }
+                        .foregroundStyle(Color.v2DateText)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.v2Ink.opacity(0.07)))
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .disabled(isSyncing)
-                    .help("Sync now")
-
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(Color.v2DateText.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings and accounts")
                     .help("Settings & accounts")
                 }
+                .padding(.top, 2)
             }
 
             Spacer()
@@ -182,27 +187,15 @@ struct ContentView: View {
         state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
     }
 
-    /// Manual refresh (header button): shows the spinner.
-    private func syncNow() {
-        guard !isSyncing else { return }
-        Task { await refresh(showSpinner: true) }
-    }
-
-    /// Re-sync Canvas using the persisted session, then reload the dashboard.
-    /// `showSpinner` is false for the silent auto-refresh.
-    private func refresh(showSpinner: Bool) async {
-        if showSpinner {
-            guard !isSyncing else { return }
-            isSyncing = true
-        }
-        // The calendar-feed fetch and the syllabus/announcement scan are
-        // independent, so run them concurrently rather than serially.
-        async let canvas: Void = state.syncIfConfigured()
-        async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
-        _ = await (canvas, services)
+    /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
+    /// from its persisted session, then reload the dashboard. Runs on launch,
+    /// on activation, and on the 5-minute loop — there's no manual sync button.
+    private func refresh() async {
+        await state.syncIfConfigured()
+        await AutoSyncCoordinator.syncConnectedServices(state: state)
+        await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
-        if showSpinner { isSyncing = false }
     }
 
     // MARK: List
@@ -257,12 +250,13 @@ struct ContentView: View {
                     .frame(maxWidth: 320)
                     .blendMode(.multiply)
                     .opacity(0.35)
+                    .accessibilityHidden(true)
             }
             VStack(spacing: 8) {
-                Text("Touch Grass")
+                Text("Go enjoy Life")
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
-                Text("go enjoy life")
+                Text("you're all caught up")
                     .font(.lhfSans(15))
                     .foregroundStyle(Color.v2DateText.opacity(0.85))
             }

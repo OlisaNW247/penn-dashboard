@@ -38,6 +38,23 @@ final class NotificationSchedulerTests: XCTestCase {
         XCTAssertEqual(reqs.count, 0)
     }
 
+    func testTitlesCarryUrgencyEmojiAndInterruptionLevel() {
+        let s = NotificationScheduler()   // defaults: [.h24, .h1]
+        let now = Date()
+        // Due in 3 days → a 24h-before (soon/🔵) and a 1h-before (today/🟠) reminder.
+        let reqs = s.plannedRequests(from: [item("1", due: now.addingTimeInterval(3 * 86_400))], now: now)
+        XCTAssertEqual(reqs.count, 2)
+
+        let dots: Set<Character> = ["🔴", "🟠", "🔵", "🟢"]
+        for r in reqs {
+            guard let first = r.content.title.first else { return XCTFail("empty title") }
+            XCTAssertTrue(dots.contains(first), "title should lead with an urgency dot: \(r.content.title)")
+        }
+        // The 1h-before reminder is time-sensitive; the 24h-before one is not.
+        XCTAssertTrue(reqs.contains { $0.content.interruptionLevel == .timeSensitive })
+        XCTAssertTrue(reqs.contains { $0.content.interruptionLevel == .active })
+    }
+
     func testCapsAtMaxPending() {
         let s = NotificationScheduler()
         let now = Date()

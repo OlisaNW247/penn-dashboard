@@ -6,6 +6,7 @@ import Foundation
 public struct Assignment: Sendable, Hashable, Identifiable {
     public enum Source: String, Sendable, Codable, Hashable {
         case canvas
+        case gradescope
         case manual
         case canvasSuggestion
     }
@@ -27,14 +28,52 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     public let source: Source
     public let sourceID: String
     public let kind: Kind
+    /// Clean display course code, e.g. "FNAR 3230" (see `CourseCode`). Doubles as
+    /// the grouping key for the class picker.
     public let course: String
     public let title: String
     public let dueAt: Date?
     public let url: URL?
+    /// The academic term this item belongs to, when it could be parsed from the
+    /// Canvas course descriptor. Used to scope the dashboard to the current term.
+    public let term: Term?
     public let submitted: Bool
+    /// The graded score Gradescope already shows (e.g. the "87.5" in
+    /// "87.5 / 100"), when the assignment's status string carries one. Nil
+    /// when ungraded or the source isn't Gradescope. Feeds the Grade Watcher
+    /// early-score overlay (docs/grades.md §4) — never used to imply
+    /// "submitted" on its own; see `GradescopeHTMLParser.isCompletedStatus`.
+    public let scoreEarned: Double?
+    /// The denominator alongside `scoreEarned` (the "100" in "87.5 / 100").
+    /// Always nil exactly when `scoreEarned` is nil.
+    public let scoreMax: Double?
 
     public var isAssignment: Bool {
         kind == .assignment
+    }
+
+    /// The numeric Canvas assignment id, when this is a Canvas assignment whose
+    /// identity can be recovered — the join key to `AssignmentSubmissionInfo`
+    /// (which Canvas keys by that id). Canvas's ICS feed embeds it in both the
+    /// event URL (`/assignments/12345`) and the UID (`event-assignment-12345@…`);
+    /// we prefer the URL and fall back to the UID. Nil for non-Canvas items and
+    /// for quizzes/discussions/events (their URLs use a different id space), so
+    /// auto-detection is scoped to true assignments and never mis-joins.
+    public var canvasAssignmentID: String? {
+        guard source == .canvas else { return nil }
+        if let url, let id = Self.firstMatch(#"/assignments/(\d+)"#, in: url.absoluteString) {
+            return id
+        }
+        return Self.firstMatch(#"assignment-(\d+)"#, in: sourceID)
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges >= 2,
+              let range = Range(match.range(at: 1), in: text)
+        else { return nil }
+        return String(text[range])
     }
 
     public init(
@@ -45,7 +84,10 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         title: String,
         dueAt: Date?,
         url: URL?,
-        submitted: Bool = false
+        term: Term? = nil,
+        submitted: Bool = false,
+        scoreEarned: Double? = nil,
+        scoreMax: Double? = nil
     ) {
         self.source = source
         self.sourceID = sourceID
@@ -54,6 +96,9 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         self.title = title
         self.dueAt = dueAt
         self.url = url
+        self.term = term
         self.submitted = submitted
+        self.scoreEarned = scoreEarned
+        self.scoreMax = scoreMax
     }
 }

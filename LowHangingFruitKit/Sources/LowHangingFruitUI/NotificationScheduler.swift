@@ -170,9 +170,13 @@ final class NotificationScheduler: ObservableObject {
 
         var requests: [UNNotificationRequest] = pairs.prefix(budget).map { pair in
             let content = UNMutableNotificationContent()
-            content.title = "\(pair.offset.headline): \(pair.item.assignment.title)"
+            // Lead the title with a colored urgency dot (iOS won't let us tint
+            // notification text, so the emoji carries the tier through).
+            let urgency = DueState(due: pair.item.due, now: pair.fireDate)
+            content.title = "\(urgency.urgencyEmoji) \(pair.offset.headline): \(pair.item.assignment.title)"
             content.body = "\(pair.item.assignment.course) · due \(Self.format(pair.item.due ?? pair.fireDate))"
             content.sound = .default
+            content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
             let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             let id = "due:\(pair.item.assignment.id):\(pair.offset.rawValue)"

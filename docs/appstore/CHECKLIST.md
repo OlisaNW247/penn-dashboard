@@ -1,6 +1,11 @@
-# App Store submission checklist — LHF 1.0.0 (iOS)
+# App Store submission checklist — LHF 1.0.0 (iOS + macOS)
 
 Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple) · ⬜ to do
+
+> The iOS submission steps are unchanged and below. The **macOS (native Mac
+> App Store) app** is a separate section at the bottom — it ships from the same
+> project and shares the bundle id, and all of its build changes are scoped to
+> the macOS SDK so **the iPhone app is not altered in any way**.
 
 ## Code & build — ✅ done
 - ✅ Canvas-only: all Gradescope code stripped from the binary
@@ -45,8 +50,61 @@ xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
      reminder-permission flow once on device)
 - ⬜ Submit for review
 
-## Known review risk (your call — you chose reviewer-notes + video)
-Reviewers can't pass Penn SSO. The review notes + video address this, but Apple
-sometimes still asks for an in-app demo path. If they push back, I can add an
-"Explore with sample data" button to onboarding in ~1–2 hrs (the sample data and
-the `-LHFDemoData` seam already exist).
+## macOS (native Mac App Store app)
+
+The macOS build already exists — the UI was written for Mac first, and the app
+still targets macOS (`supportedDestinations: [iOS, macOS]`, deployment target
+14.0). These are the only things needed to ship it, and **none of them change
+the iPhone app** (the entitlements change is scoped to `[sdk=macosx*]`).
+
+### Code & build — ✅ done in repo
+- ✅ **App Sandbox** for the Mac App Store: `App/LHFApp-macOS.entitlements`
+  (sandbox + `network.client` only — no file/camera/location access), wired in
+  `project.yml` as `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]`. The iOS entitlements
+  (`App/LHFApp.entitlements`) are untouched.
+- ✅ The widget stays iOS-only (`platforms: [iOS]`), so the Mac build simply
+  omits it — nothing to configure there.
+
+### Before you can upload — 🟡 you
+- 🟡 **macOS app icon.** The asset catalog currently has only the 1024px icon
+  (iOS). Generate the macOS sizes **on your Mac** (has `sips` built in) — this
+  touches only the icon set, not the iPhone icon config:
+  ```sh
+  cd App/Assets.xcassets/AppIcon.appiconset
+  for s in 16 32 64 128 256 512; do
+    sips -z $s $s   icon-1024.png --out mac-$s.png
+    sips -z $((s*2)) $((s*2)) icon-1024.png --out mac-${s}@2x.png
+  done
+  ```
+  Then in Xcode's asset catalog, drag each into the matching **Mac** icon slot
+  (16pt…512pt, 1x/2x). Alternatively add a separate `AppIcon-macOS` set and set
+  `ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]` — either keeps the iOS icon
+  as-is.
+- 🟡 **Add macOS to the app record.** In App Store Connect, the existing
+  `com.lhf.lowhangingfruit` app can offer a **macOS** version under the same
+  record (same bundle id) — enable the macOS platform there.
+- 🟡 **App Category** (Mac App Store shows one): set it on the macOS target in
+  Xcode → General → App Category (Productivity or Education), or in App Store
+  Connect. Left out of the shared Info.plist on purpose so the iPhone plist
+  isn't touched.
+- 🟡 Same **Team ID** and privacy-policy / support URLs as iOS (shared).
+
+### Archive & upload — ⬜ (needs Team ID + icon first)
+```sh
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+  -configuration Release -destination 'generic/platform=macOS' \
+  -archivePath build/LHF-mac.xcarchive archive
+# Then Xcode Organizer → Distribute App → App Store Connect (Mac App Store).
+```
+- ⬜ Validate + upload the macOS archive in Organizer
+- ⬜ Verify the login → dashboard → reminders flow once on a Mac (the sandbox
+     allows outbound network + the WebView logins; nothing else is needed)
+- ⬜ The **Preview with sample data** review path works on Mac too (same code)
+
+## Review access — solved with an in-app preview
+Reviewers can't pass Penn SSO, so onboarding now has a **"Preview with sample
+data"** link (first screen) that loads a populated demo — sample courses across
+This week / All / Done, progress ring, working completion + reminders — with no
+login and no network. This is the primary review path; the demo video is
+supporting evidence. Instructions are in `REVIEW_NOTES.md`. Ships in Release
+(the fixtures are no longer DEBUG-gated).

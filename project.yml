@@ -19,6 +19,11 @@ targets:
     dependencies:
       - package: LowHangingFruitKit
         product: LowHangingFruitUI
+      # The widget extension is an iOS-only app-extension embedded in the app.
+      # macOS builds skip it (no Lock/Home Screen widgets there) via the platform filter.
+      - target: LHFWidgetExtension
+        embed: true
+        platforms: [iOS]
     info:
       path: App/Info.plist
       properties:
@@ -39,3 +44,35 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
+        # iOS keeps its own entitlements untouched; the macOS build gets the
+        # App Sandbox (required by the Mac App Store). SDK-conditioned so this
+        # is purely additive — the iPhone build never sees it.
+        CODE_SIGN_ENTITLEMENTS: App/LHFApp.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/LHFApp-macOS.entitlements
+
+  # Home Screen + Lock Screen widget. iOS-only WidgetKit extension; reads the
+  # "next due" snapshot the app writes to the shared App Group container.
+  LHFWidgetExtension:
+    type: app-extension
+    supportedDestinations: [iOS]
+    sources:
+      - path: LHFWidget
+        excludes:
+          - "*.entitlements"
+    dependencies:
+      - package: LowHangingFruitKit
+        product: LowHangingFruitKit
+    info:
+      path: LHFWidget/Info.plist
+      properties:
+        CFBundleDisplayName: LHF
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: LHFWidget/LHFWidget.entitlements
