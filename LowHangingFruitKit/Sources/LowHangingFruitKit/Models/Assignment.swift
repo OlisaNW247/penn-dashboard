@@ -47,6 +47,15 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     /// The denominator alongside `scoreEarned` (the "100" in "87.5 / 100").
     /// Always nil exactly when `scoreEarned` is nil.
     public let scoreMax: Double?
+    /// The `id` of this item's matched counterpart on the OTHER platform, when
+    /// `AssignmentDeduplicator` has determined the professor posted the same
+    /// assignment on both Canvas and Gradescope (e.g. a Canvas item whose
+    /// `linkedID` is `"gradescope:…"`). Nil for everything else — most items
+    /// never have a cross-platform twin. Set only by `AssignmentDeduplicator
+    /// .merge`, never by the raw source clients. Lets completion (see
+    /// `AppState.markCompleted`) propagate to both identities so the pair
+    /// stays consistent if a later sync no longer matches them.
+    public let linkedID: String?
 
     public var isAssignment: Bool {
         kind == .assignment
@@ -87,7 +96,8 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         term: Term? = nil,
         submitted: Bool = false,
         scoreEarned: Double? = nil,
-        scoreMax: Double? = nil
+        scoreMax: Double? = nil,
+        linkedID: String? = nil
     ) {
         self.source = source
         self.sourceID = sourceID
@@ -100,5 +110,6 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         self.submitted = submitted
         self.scoreEarned = scoreEarned
         self.scoreMax = scoreMax
+        self.linkedID = linkedID
     }
 }

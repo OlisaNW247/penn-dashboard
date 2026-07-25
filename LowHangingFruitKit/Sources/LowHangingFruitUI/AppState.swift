@@ -503,7 +503,12 @@ final class AppState: ObservableObject {
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams). Gradescope items are already assignments.
         let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
-        let allItems = (canvasRelevant + gradescopeItems + recurringAssignments + manualItems)
+        // Collapse anything a professor posted on BOTH Canvas and Gradescope
+        // (same course, matching title/due date — see `AssignmentDeduplicator`)
+        // into a single Canvas-anchored item before it ever reaches the
+        // dashboard buckets below.
+        let dedupedCoursework = AssignmentDeduplicator.merge(canvasItems: canvasRelevant, gradescopeItems: gradescopeItems)
+        let allItems = (dedupedCoursework + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
         let incomplete = allItems.filter { item in
@@ -549,9 +554,17 @@ final class AppState: ObservableObject {
     }
     #endif
 
+    /// Marks `assignment` done. When it's a merged cross-platform item
+    /// (`linkedID` set — see `AssignmentDeduplicator`), also marks its
+    /// Gradescope counterpart done directly, so completion stays correct for
+    /// both identities even if a later sync no longer matches the pair.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         completedAssignmentIDs.insert(assignment.id)
         completionDates[assignment.id] = date
+        if let linkedID = assignment.linkedID {
+            completedAssignmentIDs.insert(linkedID)
+            completionDates[linkedID] = date
+        }
         persistCompletedIDs()
         rebuildDashboardItems()
     }
@@ -559,12 +572,22 @@ final class AppState: ObservableObject {
     func markActive(_ assignment: Assignment) {
         completedAssignmentIDs.remove(assignment.id)
         completionDates[assignment.id] = nil
+        if let linkedID = assignment.linkedID {
+            completedAssignmentIDs.remove(linkedID)
+            completionDates[linkedID] = nil
+        }
         persistCompletedIDs()
         rebuildDashboardItems()
     }
 
+    /// True if EITHER platform reports this done: this item's own submitted
+    /// flag/manual completion, its cross-platform counterpart's manual
+    /// completion (`linkedID` — e.g. the user completed the Gradescope copy
+    /// before the two were ever merged), or Canvas's own submission
+    /// side-channel (`submittedCanvasAssignmentIDs`).
     func isCompleted(_ assignment: Assignment) -> Bool {
         if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
+        if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
         if let canvasID = assignment.canvasAssignmentID,
            submittedCanvasAssignmentIDs.contains(canvasID) {
             return true
