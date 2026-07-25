@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import os
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -11,10 +12,19 @@ import AppKit
 /// matches the clip's own background, so the square clip sits seamlessly, then
 /// hands off to the app. A timeout guards against a clip that never loads.
 struct SplashView: View {
+    /// Resolved by the caller (`RootView`) from `AppState.appearanceMode`
+    /// directly — NOT from `@Environment(\.colorScheme)`. The splash is the
+    /// very first view on screen, and on first launch `.preferredColorScheme`
+    /// (applied at the ZStack root, from the same `AppState`) doesn't finish
+    /// propagating into the environment until after this view's first render
+    /// pass. Reading straight from the already-loaded `AppState` instead is
+    /// synchronous and available before the first render, so there's no race.
+    /// See `SplashPlayer.Coordinator.start` for why runtime changes don't
+    /// need to be handled here.
+    let isDarkMode: Bool
     let onFinished: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     /// Light mode plays the original clip, whose decoded background measures
     /// ~#FDF8EF (±2 of compression noise); the previous #FCF5EC was a few
@@ -25,7 +35,7 @@ struct SplashView: View {
     /// `SplashPlayer`), so this field matches `v2Bg` too and there's no
     /// visible seam around the clip.
     private var background: Color {
-        colorScheme == .dark ? .v2Bg : Color(hex: 0xFDF8EF)
+        isDarkMode ? .v2Bg : Color(hex: 0xFDF8EF)
     }
 
     /// The clip's background isn't perfectly uniform (compression noise, a
@@ -49,7 +59,7 @@ struct SplashView: View {
                     .font(.lhfSerif(56))
                     .foregroundStyle(Color.v2Ink)
             } else {
-                SplashPlayer(onFinished: onFinished, isDarkMode: colorScheme == .dark)
+                SplashPlayer(onFinished: onFinished, isDarkMode: isDarkMode)
                     .aspectRatio(1, contentMode: .fit)   // the clip is 1:1
                     // Two axis masks multiply into a four-edge feather.
                     .mask(LinearGradient(stops: Self.featherStops, startPoint: .leading, endPoint: .trailing))
@@ -82,6 +92,13 @@ private struct SplashPlayer {
     /// generated offline by flood-filling only the clip's cream *background*
     /// to `v2Bg`, leaving the hand/fruit/leaves at their original colors.
     /// When `false` playback is byte-identical to the original implementation.
+    /// Resolved once by `SplashView` from `AppState.appearanceMode` (not the
+    /// SwiftUI environment's `colorScheme`) — see that file's `isDarkMode` doc
+    /// for why. `Coordinator.start` runs once, at `makeUIView`/`makeNSView`
+    /// time, and the appearance setting isn't reachable from Settings while
+    /// the splash is covering the screen, so there's no in-flight value for
+    /// this run to go stale against — a runtime swap-the-item path would be
+    /// dead code.
     var isDarkMode: Bool = false
 
     @MainActor
@@ -89,6 +106,8 @@ private struct SplashPlayer {
 
     @MainActor
     final class Coordinator {
+        private static let logger = Logger(subsystem: "com.lhf.lowhangingfruit", category: "SplashPlayer")
+
         private let onFinished: () -> Void
         private var didFinish = false
         private var endObservation: AnyCancellable?
@@ -101,7 +120,9 @@ private struct SplashPlayer {
             // here — calling back synchronously would mutate parent state mid
             // view-update. SplashView's safety-net timeout dismisses instead.
             let name = isDarkMode ? "splash_dark" : "splash"
-            guard let url = Bundle.module.url(forResource: name, withExtension: "mp4") else { return }
+            let url = Bundle.module.url(forResource: name, withExtension: "mp4")
+            Self.logger.log("splash asset selection: isDarkMode=\(isDarkMode, privacy: .public) resource=\(name, privacy: .public) bundleURLFound=\(url != nil, privacy: .public) url=\(url?.absoluteString ?? "nil", privacy: .public)")
+            guard let url else { return }
             let asset = AVURLAsset(url: url)
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)

@@ -22,7 +22,13 @@ public struct RootView: View {
             mainContent
 
             if showSplash {
-                SplashView {
+                // isDarkMode is read straight from `state.appearanceMode`
+                // (already loaded from UserDefaults in `AppState.init()`),
+                // not from `@Environment(\.colorScheme)` — see
+                // `SplashView.isDarkMode`'s doc comment for why: this
+                // environment key isn't safely readable at the splash's own
+                // first render.
+                SplashView(isDarkMode: state.appearanceMode == .dark) {
                     withAnimation(.easeOut(duration: 0.45)) { showSplash = false }
                 }
                 .transition(.opacity)
