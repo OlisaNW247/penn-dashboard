@@ -46,22 +46,23 @@ struct GradescopeTests {
         """
 
         let now = try #require(Self.utcDate(year: 2026, month: 5, day: 21, hour: 12, minute: 0))
-        let courses = GradescopeHTMLParser.currentTermCourses(
+        let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
             baseURL: URL(string: "https://www.gradescope.com")!,
             now: now
         )
 
-        #expect(courses.count == 2)
-        let ids = Set(courses.map(\.url.absoluteString))
+        #expect(result.courses.count == 2)
+        #expect(result.isFallback == false)
+        let ids = Set(result.courses.map(\.url.absoluteString))
         #expect(ids.contains("https://www.gradescope.com/courses/111"))
         #expect(ids.contains("https://www.gradescope.com/courses/222"))
         #expect(!ids.contains("https://www.gradescope.com/courses/333"))
         #expect(!ids.contains("https://www.gradescope.com/courses/444"))
     }
 
-    @Test("falls back to the most recent term when none matches today")
-    func fallsBackToMostRecentTerm() throws {
+    @Test("falls back to the most recent term within the grace window after a new term starts")
+    func fallsBackToMostRecentTermWithinGraceWindow() throws {
         let html = """
         <div class="courseList">
           <div class="courseList--term">Fall 2025</div>
@@ -75,16 +76,69 @@ struct GradescopeTests {
         </div>
         """
 
-        // July 2026 (summer) — no matching term, so the newest (Fall 2025) wins.
-        let now = try #require(Self.utcDate(year: 2026, month: 7, day: 1, hour: 12, minute: 0))
-        let courses = GradescopeHTMLParser.currentTermCourses(
+        // June 10, 2026 — 9 days into summer term (starts Jun 1), still within
+        // the 21-day grace window, so the newest dated group (Fall 2025) wins.
+        let now = try #require(Self.utcDate(year: 2026, month: 6, day: 10, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
             baseURL: URL(string: "https://www.gradescope.com")!,
             now: now
         )
 
-        #expect(courses.count == 1)
-        #expect(courses.first?.url.absoluteString == "https://www.gradescope.com/courses/333")
+        #expect(result.courses.count == 1)
+        #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/333")
+        #expect(result.isFallback == true)
+    }
+
+    @Test("does not fall back once well past the grace window, even with a lone stale term")
+    func doesNotFallBackOutsideGraceWindow() throws {
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Spring 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+          </div>
+        </div>
+        """
+
+        // July 25, 2026 — well past summer's 21-day grace window (starts Jun 1),
+        // and no summer courses exist, so the completed Spring 2026 group must
+        // NOT be surfaced.
+        let now = try #require(Self.utcDate(year: 2026, month: 7, day: 25, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.isEmpty)
+        #expect(result.isFallback == false)
+    }
+
+    @Test("falls back within a new term's grace window even with only an older labeled group")
+    func fallsBackWithinGraceWindowForNewTerm() throws {
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Spring 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+          </div>
+        </div>
+        """
+
+        // Sept 5, 2026 — 4 days into fall (starts Sep 1), still within grace,
+        // so the only dated group (Spring 2026) is used as a fallback even
+        // though it isn't the current term.
+        let now = try #require(Self.utcDate(year: 2026, month: 9, day: 5, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 1)
+        #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/111")
+        #expect(result.isFallback == true)
     }
 
     @Test("falls back to all courses when there are no term headings")
@@ -96,12 +150,46 @@ struct GradescopeTests {
         </main>
         """
 
-        let courses = GradescopeHTMLParser.currentTermCourses(
+        let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
             baseURL: URL(string: "https://www.gradescope.com")!
         )
 
-        #expect(courses.count == 2)
+        #expect(result.courses.count == 2)
+        // No term grouping at all is not a "fallback" in the stale-term sense —
+        // there's nothing to distrust it against, so undated assignments are
+        // left alone.
+        #expect(result.isFallback == false)
+    }
+
+    @Test("fallback courses drop undated assignments; current-term courses keep them")
+    func filterFallbackAssignmentsDropsUndated() throws {
+        let dated = Assignment(
+            source: .gradescope,
+            sourceID: "course-1-assignment-1",
+            kind: .assignment,
+            course: "CIS 5500",
+            title: "Homework 1",
+            dueAt: Date(),
+            url: nil,
+            submitted: false
+        )
+        let undated = Assignment(
+            source: .gradescope,
+            sourceID: "course-1-assignment-2",
+            kind: .assignment,
+            course: "CIS 5500",
+            title: "Quiz 1",
+            dueAt: nil,
+            url: nil,
+            submitted: false
+        )
+
+        let fallbackFiltered = GradescopeHTMLParser.filterFallbackAssignments([dated, undated], isFallback: true)
+        #expect(fallbackFiltered.map(\.sourceID) == ["course-1-assignment-1"])
+
+        let currentTermFiltered = GradescopeHTMLParser.filterFallbackAssignments([dated, undated], isFallback: false)
+        #expect(Set(currentTermFiltered.map(\.sourceID)) == ["course-1-assignment-1", "course-1-assignment-2"])
     }
 
     @Test("parses assignments from a course table")

@@ -41,9 +41,9 @@ public struct GradescopeClient: Sendable {
         guard !GradescopeHTMLParser.isLoginPage(accountHTML) else {
             throw Error.notLoggedIn
         }
-        let courses = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
+        let result = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
 
-        if courses.isEmpty {
+        if result.courses.isEmpty {
             let assignments = GradescopeHTMLParser.assignments(
                 from: accountHTML,
                 courseName: "Gradescope",
@@ -53,12 +53,16 @@ public struct GradescopeClient: Sendable {
         }
 
         var assignments: [Assignment] = []
-        for course in courses {
+        for course in result.courses {
             let html = try await fetchHTML(course.url)
-            assignments.append(contentsOf: GradescopeHTMLParser.assignments(
+            let courseAssignments = GradescopeHTMLParser.assignments(
                 from: html,
                 courseName: course.name,
                 courseURL: course.url
+            )
+            assignments.append(contentsOf: GradescopeHTMLParser.filterFallbackAssignments(
+                courseAssignments,
+                isFallback: result.isFallback
             ))
         }
         return try await refineCompletionStatus(assignments).sorted(by: Self.byDueDate)
@@ -159,19 +163,54 @@ public enum GradescopeHTMLParser {
             .replacingOccurrences(of: #"(?i)\s*\d+\s+assignments?$"#, with: "", options: .regularExpression)
     }
 
+    /// The outcome of resolving which courses belong to "now". `isFallback` is
+    /// true whenever `courses` were NOT matched to today's term by an exact
+    /// label match — i.e. they were recovered via the grace-window fallback
+    /// (most-recent dated term, or the first unlabeled group). Fallback courses
+    /// are frequently finished classes whose assignments were published
+    /// without a due date, so callers should treat their undated assignments
+    /// with suspicion (see `filterFallbackAssignments`).
+    public struct CurrentTermResult: Sendable {
+        public let courses: [CourseLink]
+        public let isFallback: Bool
+
+        public init(courses: [CourseLink], isFallback: Bool) {
+            self.courses = courses
+            self.isFallback = isFallback
+        }
+    }
+
+    /// How long after a term's start date the fallback below is trusted. New
+    /// terms sometimes begin before Gradescope updates its term headings, or
+    /// a prior term's finals spill a few weeks past the boundary — the grace
+    /// window keeps that legitimate case working. Beyond it, a lack of a
+    /// matching heading means the student simply has no courses this term
+    /// (e.g. summer break), and falling back would resurface a finished
+    /// class's stale backlog instead.
+    private static let fallbackGraceWindow: TimeInterval = 21 * 86_400
+
     /// Courses belonging to the current term only. Gradescope groups the account
     /// page's courses under term headings ("Spring 2026", "Fall 2025", …); past
     /// terms are finished classes whose stale, often-undated assignments would
-    /// otherwise clog the dashboard. Falls back to all courses if the page has no
-    /// recognizable term grouping.
+    /// otherwise clog the dashboard.
+    ///
+    /// If no group's label matches today's term exactly, this falls back to the
+    /// most recent dated group (or, failing that, the first listed group) — but
+    /// only within `fallbackGraceWindow` of the current term's start. Outside
+    /// that window, an unmatched term returns no courses at all: the student
+    /// has no courses this term, and picking a completed term's group would
+    /// resurface its old, often undated assignments. The returned
+    /// `CurrentTermResult.isFallback` flag tells callers whether the courses
+    /// came from this fallback path, so they can filter out undated
+    /// assignments from stale-looking courses.
     public static func currentTermCourses(
         from html: String,
         baseURL: URL,
         now: Date = Date()
-    ) -> [CourseLink] {
+    ) -> CurrentTermResult {
         let groups = coursesByTerm(from: html, baseURL: baseURL)
         guard !groups.isEmpty else {
-            return courseLinks(from: html, baseURL: baseURL)
+            return CurrentTermResult(courses: courseLinks(from: html, baseURL: baseURL), isFallback: false)
         }
 
         let current = GradescopeTerm(date: now)
@@ -181,7 +220,12 @@ public enum GradescopeHTMLParser {
             .filter { GradescopeTerm(label: $0.term) == current }
             .flatMap(\.courses)
         if !currentCourses.isEmpty {
-            return dedupedByURL(currentCourses)
+            return CurrentTermResult(courses: dedupedByURL(currentCourses), isFallback: false)
+        }
+
+        // Outside the grace window, don't fall back at all.
+        guard now < current.startDate.addingTimeInterval(fallbackGraceWindow) else {
+            return CurrentTermResult(courses: [], isFallback: false)
         }
 
         // Otherwise fall back to the most recent term we can identify…
@@ -190,12 +234,24 @@ public enum GradescopeHTMLParser {
             return (term, group.courses)
         }
         if let newest = datedGroups.max(by: { $0.term < $1.term }) {
-            return dedupedByURL(newest.courses)
+            return CurrentTermResult(courses: dedupedByURL(newest.courses), isFallback: true)
         }
 
         // …or, if no term label could be parsed, the first listed group
         // (Gradescope lists the newest term first).
-        return dedupedByURL(groups.first?.courses ?? [])
+        return CurrentTermResult(courses: dedupedByURL(groups.first?.courses ?? []), isFallback: true)
+    }
+
+    /// Drops assignments with no due date when they came from a fallback term
+    /// match (see `currentTermCourses`). A finished class's assignments that
+    /// were published without a due date are exactly the stale junk that
+    /// otherwise gets stuck in the dashboard's undated section forever; dated
+    /// assignments from the same course are left alone since the existing
+    /// stale-due-date filtering downstream already handles those. A no-op
+    /// when `isFallback` is false.
+    public static func filterFallbackAssignments(_ assignments: [Assignment], isFallback: Bool) -> [Assignment] {
+        guard isFallback else { return assignments }
+        return assignments.filter { $0.dueAt != nil }
     }
 
     private static func coursesByTerm(
@@ -648,6 +704,22 @@ private struct GradescopeTerm: Comparable, Equatable {
         else { return nil }
 
         year = parsedYear
+    }
+
+    /// The first calendar day of this term, matching the season boundaries
+    /// `init(date:)` uses (spring = Jan 1, summer = Jun 1, fall = Sep 1).
+    /// `init(date:)` never produces `.winter` — that only arises from a parsed
+    /// label — but Dec 1 is included for completeness/consistency.
+    var startDate: Date {
+        let month: Int
+        switch season {
+        case .winter: month = 12
+        case .spring: month = 1
+        case .summer: month = 6
+        case .fall:   month = 9
+        }
+        let calendar = Calendar(identifier: .gregorian)
+        return calendar.date(from: DateComponents(year: year, month: month, day: 1)) ?? .distantPast
     }
 
     static func < (lhs: GradescopeTerm, rhs: GradescopeTerm) -> Bool {
