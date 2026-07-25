@@ -52,6 +52,19 @@ struct SettingsSheet: View {
                     }
                 }
 
+                Section("Appearance") {
+                    Picker("Appearance", selection: Binding(
+                        get: { state.appearanceMode },
+                        set: { state.setAppearanceMode($0) }
+                    )) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
                 classesSection
 
                 Section("Grades") {

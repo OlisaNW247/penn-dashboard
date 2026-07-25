@@ -29,6 +29,12 @@ public struct RootView: View {
                 .zIndex(1)
             }
         }
+        // Applied at the root so both the dashboard and the splash (which
+        // lives in this same ZStack, ahead of onboarding/dashboard) pick up
+        // the user's Light/Dark choice. Sheets are a separate presentation
+        // context that doesn't inherit this automatically — see
+        // `SheetTheme.swift`, which re-applies it there.
+        .preferredColorScheme(state.appearanceMode.colorScheme)
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
 #endif

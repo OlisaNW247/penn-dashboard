@@ -1,8 +1,33 @@
 import Foundation
+import SwiftUI
 import LowHangingFruitKit
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
+
+/// The app's Light/Dark appearance setting (Settings → Appearance). Default
+/// is `.light`, matching the original fixed warm-greige palette exactly, so
+/// existing users see zero visual change until they opt in.
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .light: return "Light"
+        case .dark:  return "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme {
+        switch self {
+        case .light: return .light
+        case .dark:  return .dark
+        }
+    }
+}
 
 @MainActor
 final class AppState: ObservableObject {
@@ -51,6 +76,9 @@ final class AppState: ObservableObject {
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
+    /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
+    /// the root. Persisted like every other user preference here.
+    @Published private(set) var appearanceMode: AppearanceMode
 
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
@@ -69,6 +97,7 @@ final class AppState: ObservableObject {
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
     private static let previewModeKey = "isPreviewMode"
+    private static let appearanceModeKey = "appearanceMode"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
@@ -81,6 +110,9 @@ final class AppState: ObservableObject {
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
+        self.appearanceMode = AppearanceMode(
+            rawValue: UserDefaults.standard.string(forKey: Self.appearanceModeKey) ?? ""
+        ) ?? .light
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
         rebuildDashboardItems()
@@ -118,6 +150,12 @@ final class AppState: ObservableObject {
     func updateName(_ name: String) {
         userName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(userName, forKey: Self.userNameKey)
+    }
+
+    /// Switches the app's Light/Dark appearance (Settings → Appearance).
+    func setAppearanceMode(_ mode: AppearanceMode) {
+        appearanceMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect

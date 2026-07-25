@@ -11,47 +11,76 @@ import AppKit
 // A warm-greige, paper-like system. Cards are white with a colored "spine"
 // on the left whose color encodes due-date urgency. All values are taken
 // straight from the design spec. `Color(hex:)` is defined in DesignSystem.swift.
+//
+// Every token below is a *dynamic* color (see `Color.dynamic(light:dark:)`):
+// it resolves per interface style, so anything that reads e.g. `.v2Bg` just
+// works in both Light and Dark without touching call sites. Light values are
+// the original, unchanged palette (zero visual diff for existing users);
+// dark values are a tasteful inversion — near-black warm charcoal surfaces,
+// warm off-white text, and the same four urgency hues brightened/desaturated
+// slightly for legibility on a dark background.
 
 extension Color {
-    static let v2Bg          = Color(hex: 0xF4F1EC)  // warm greige background
-    static let v2Card        = Color(hex: 0xFFFFFF)  // active card surface
-    static let v2CardShadow  = Color(hex: 0x786E5A)  // soft shadow tint (used at ~6%)
-    static let v2Ink         = Color(hex: 0x211F1B)  // primary text / titles
-    static let v2DateText    = Color(hex: 0x5C574E)  // header date / serif footer
-    static let v2CourseCode  = Color(hex: 0xA39C8E)  // course code on active cards
+    static let v2Bg          = Color.dynamic(light: 0xF4F1EC, dark: 0x1C1A17)  // warm greige background
+    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)  // active card surface
+    static let v2CardShadow  = Color.dynamic(light: 0x786E5A, dark: 0x000000)  // soft shadow tint (used at ~6%)
+    static let v2Ink         = Color.dynamic(light: 0x211F1B, dark: 0xEFECE6)  // primary text / titles
+    static let v2DateText    = Color.dynamic(light: 0x5C574E, dark: 0xB9B3A8)  // header date / serif footer
+    static let v2CourseCode  = Color.dynamic(light: 0xA39C8E, dark: 0x9A9384)  // course code on active cards
 
     // Urgency — spines (hot → cool: overdue → today → soon → later)
-    static let v2SpineRed    = Color(hex: 0xC8443A)  // overdue
-    static let v2SpineAmber  = Color(hex: 0xD98C2B)  // due <24h
-    static let v2SpineBlue   = Color(hex: 0x3A6EA5)  // due 1–3 days (upcoming)
-    static let v2SpineGreen  = Color(hex: 0x2E7D6B)  // due 4+ days / later
+    static let v2SpineRed    = Color.dynamic(light: 0xC8443A, dark: 0xE0574C)  // overdue
+    static let v2SpineAmber  = Color.dynamic(light: 0xD98C2B, dark: 0xE6A248)  // due <24h
+    static let v2SpineBlue   = Color.dynamic(light: 0x3A6EA5, dark: 0x5B8FC7)  // due 1–3 days (upcoming)
+    static let v2SpineGreen  = Color.dynamic(light: 0x2E7D6B, dark: 0x4FA08D)  // due 4+ days / later
 
     // Urgency — due text (slightly darker than the spine)
-    static let v2DueRed      = Color(hex: 0xC8443A)
-    static let v2DueAmber    = Color(hex: 0xC2861A)
-    static let v2DueBlue     = Color(hex: 0x2F5C8A)
-    static let v2DueGreen    = Color(hex: 0x2E7D6B)
+    static let v2DueRed      = Color.dynamic(light: 0xC8443A, dark: 0xE0574C)
+    static let v2DueAmber    = Color.dynamic(light: 0xC2861A, dark: 0xD9A13F)
+    static let v2DueBlue     = Color.dynamic(light: 0x2F5C8A, dark: 0x5B8FC7)
+    static let v2DueGreen    = Color.dynamic(light: 0x2E7D6B, dark: 0x4FA08D)
 
     // Ring
-    static let v2RingTrack   = Color(hex: 0xE5DDCE)
-    static let v2RingSub     = Color(hex: 0x928C80)  // "done" caption under ring number
+    static let v2RingTrack   = Color.dynamic(light: 0xE5DDCE, dark: 0x35322B)
+    static let v2RingSub     = Color.dynamic(light: 0x928C80, dark: 0x9A9384)  // "done" caption under ring number
 
     // Segmented toggle
-    static let v2ToggleBg       = Color(hex: 0xE9E3D8)
-    static let v2ToggleActive   = Color(hex: 0x211F1B)
-    static let v2ToggleActiveTx = Color(hex: 0xF4F1EC)
-    static let v2ToggleInactive = Color(hex: 0x928C80)
+    static let v2ToggleBg       = Color.dynamic(light: 0xE9E3D8, dark: 0x2E2B25)
+    static let v2ToggleActive   = Color.dynamic(light: 0x211F1B, dark: 0xEFECE6)
+    static let v2ToggleActiveTx = Color.dynamic(light: 0xF4F1EC, dark: 0x1C1A17)
+    static let v2ToggleInactive = Color.dynamic(light: 0x928C80, dark: 0x8B8477)
 
     // Section headers
-    static let v2Divider       = Color(hex: 0xE2DBCE)
-    static let v2SectionMuted  = Color(hex: 0x7A6F50)  // TODAY / REST OF WEEK / LATER labels
-    static let v2SectionCount  = Color(hex: 0xB0A892)  // per-section count
+    static let v2Divider       = Color.dynamic(light: 0xE2DBCE, dark: 0x322F28)
+    static let v2SectionMuted  = Color.dynamic(light: 0x7A6F50, dark: 0xA79C7E)  // TODAY / REST OF WEEK / LATER labels
+    static let v2SectionCount  = Color.dynamic(light: 0xB0A892, dark: 0x7D7666)  // per-section count
 
     // Done (archived) cards
-    static let v2DoneCard    = Color(hex: 0xF0EDE6)
-    static let v2DoneSpine   = Color(hex: 0xB6B0A2)
-    static let v2DoneTitle   = Color(hex: 0x8A8478)
-    static let v2DoneCourse  = Color(hex: 0xAEA899)
+    static let v2DoneCard    = Color.dynamic(light: 0xF0EDE6, dark: 0x201E1A)
+    static let v2DoneSpine   = Color.dynamic(light: 0xB6B0A2, dark: 0x4A473E)
+    static let v2DoneTitle   = Color.dynamic(light: 0x8A8478, dark: 0x6E6A5D)
+    static let v2DoneCourse  = Color.dynamic(light: 0xAEA899, dark: 0x7A755F)
+
+    /// A color that resolves to `light` or `dark` hex based on the active
+    /// interface style, wherever it's drawn. Backed by a `UIColor`/`NSColor`
+    /// dynamic provider so it keys off the trait collection / appearance in
+    /// effect at draw time — which `.preferredColorScheme` sets for the whole
+    /// view hierarchy it's applied to — with no environment threading needed
+    /// at each call site.
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
+#if canImport(UIKit)
+        return Color(UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(Color(hex: dark)) : UIColor(Color(hex: light))
+        })
+#elseif canImport(AppKit)
+        return Color(NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(Color(hex: isDark ? dark : light))
+        })
+#else
+        return Color(hex: light)
+#endif
+    }
 }
 
 // MARK: – Fonts (Instrument Serif display, Geist body)

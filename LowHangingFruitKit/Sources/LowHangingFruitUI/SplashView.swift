@@ -1,5 +1,7 @@
 import SwiftUI
 import AVFoundation
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import Combine
 #if canImport(UIKit)
 import UIKit
@@ -14,11 +16,17 @@ struct SplashView: View {
     let onFinished: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     /// The clip's actual decoded background, measured from its edge pixels
     /// (~#FDF8EF ±2 of compression noise). The previous #FCF5EC was a few
     /// levels darker, which showed the square clip as a faint box on screen.
-    static let background = Color(hex: 0xFDF8EF)
+    /// There's no dark-mode video asset, so in Light mode this (and playback)
+    /// stays byte-identical to before; in Dark mode the field instead matches
+    /// `v2Bg` so letterboxing around the recolored clip doesn't flash white.
+    private var background: Color {
+        colorScheme == .dark ? .v2Bg : Color(hex: 0xFDF8EF)
+    }
 
     /// The clip's background isn't perfectly uniform (compression noise, a
     /// slight vignette), so no constant can match it everywhere. Fading the
@@ -33,7 +41,7 @@ struct SplashView: View {
 
     var body: some View {
         ZStack {
-            Self.background.ignoresSafeArea()
+            background.ignoresSafeArea()
 
             if reduceMotion {
                 // Respect Reduce Motion: no autoplaying clip — show the wordmark.
@@ -41,7 +49,7 @@ struct SplashView: View {
                     .font(.lhfSerif(56))
                     .foregroundStyle(Color.v2Ink)
             } else {
-                SplashPlayer(onFinished: onFinished)
+                SplashPlayer(onFinished: onFinished, isDarkMode: colorScheme == .dark)
                     .aspectRatio(1, contentMode: .fit)   // the clip is 1:1
                     // Two axis masks multiply into a four-edge feather.
                     .mask(LinearGradient(stops: Self.featherStops, startPoint: .leading, endPoint: .trailing))
@@ -66,9 +74,16 @@ struct SplashView: View {
 
 private struct SplashPlayer {
     let onFinished: () -> Void
+    /// No dark-mode video asset exists, so Dark mode recolors the same clip
+    /// in code via a Core Image video composition (see `Coordinator.start`).
+    /// When `false` this whole path is skipped, so Light-mode playback stays
+    /// byte-identical to the original implementation.
+    var isDarkMode: Bool = false
 
+    @MainActor
     func makeCoordinator() -> Coordinator { Coordinator(onFinished: onFinished) }
 
+    @MainActor
     final class Coordinator {
         private let onFinished: () -> Void
         private var didFinish = false
@@ -77,12 +92,16 @@ private struct SplashPlayer {
 
         init(onFinished: @escaping () -> Void) { self.onFinished = onFinished }
 
-        func start() {
+        func start(isDarkMode: Bool) {
             // If the clip is somehow missing (a packaging regression), do nothing
             // here — calling back synchronously would mutate parent state mid
             // view-update. SplashView's safety-net timeout dismisses instead.
             guard let url = Bundle.module.url(forResource: "splash", withExtension: "mp4") else { return }
-            let item = AVPlayerItem(url: url)
+            let asset = AVURLAsset(url: url)
+            let item = AVPlayerItem(asset: asset)
+            if isDarkMode {
+                item.videoComposition = Self.darkVideoComposition(asset: asset)
+            }
             player.replaceCurrentItem(with: item)
             player.actionAtItemEnd = .pause
             player.isMuted = true
@@ -102,6 +121,30 @@ private struct SplashPlayer {
             didFinish = true
             onFinished()
         }
+
+        /// Recolors the light-mode clip to match the dark palette instead of
+        /// showing it as-is (which would flash a bright cream square) or
+        /// naively inverting it (which flips hue on any colored content).
+        /// `CIFalseColor` remaps luminance onto the app's own two dark-mode
+        /// tokens — `v2Ink` (light, for what was dark ink) at the shadow end
+        /// and `v2Bg` (near-black, for what was the cream field) at the
+        /// highlight end — so the treatment reads as a deliberate dark variant
+        /// of the same mark, not a photo-negative effect.
+        private static func darkVideoComposition(asset: AVAsset) -> AVVideoComposition {
+            let inkColor = CIColor(red: 0xEF / 255, green: 0xEC / 255, blue: 0xE6 / 255)   // v2Ink (dark mode)
+            let bgColor  = CIColor(red: 0x1C / 255, green: 0x1A / 255, blue: 0x17 / 255)   // v2Bg  (dark mode)
+            return AVMutableVideoComposition(asset: asset) { request in
+                let source = request.sourceImage.clampedToExtent()
+                let desaturated = source.applyingFilter("CIColorControls", parameters: [
+                    kCIInputSaturationKey: 0.0,
+                ])
+                let falseColor = desaturated.applyingFilter("CIFalseColor", parameters: [
+                    "inputColor0": inkColor,
+                    "inputColor1": bgColor,
+                ])
+                request.finish(with: falseColor.cropped(to: request.sourceImage.extent), context: nil)
+            }
+        }
     }
 }
 
@@ -112,7 +155,7 @@ extension SplashPlayer: UIViewRepresentable {
         view.playerLayer.player = context.coordinator.player
         view.playerLayer.videoGravity = .resizeAspect
         view.backgroundColor = .clear
-        context.coordinator.start()
+        context.coordinator.start(isDarkMode: isDarkMode)
         return view
     }
     func updateUIView(_ uiView: PlayerHostView, context: Context) {}
@@ -130,7 +173,7 @@ extension SplashPlayer: NSViewRepresentable {
         let view = PlayerHostView()
         view.playerLayer.player = context.coordinator.player
         view.playerLayer.videoGravity = .resizeAspect
-        context.coordinator.start()
+        context.coordinator.start(isDarkMode: isDarkMode)
         return view
     }
     func updateNSView(_ nsView: PlayerHostView, context: Context) {}
