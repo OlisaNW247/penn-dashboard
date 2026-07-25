@@ -61,7 +61,7 @@ struct GradescopeTests {
         #expect(!ids.contains("https://www.gradescope.com/courses/444"))
     }
 
-    @Test("falls back to the most recent term within the grace window after a new term starts")
+    @Test("falls back to the most recent term within the grace window after its own window ends")
     func fallsBackToMostRecentTermWithinGraceWindow() throws {
         let html = """
         <div class="courseList">
@@ -76,9 +76,11 @@ struct GradescopeTests {
         </div>
         """
 
-        // June 10, 2026 — 9 days into summer term (starts Jun 1), still within
-        // the 21-day grace window, so the newest dated group (Fall 2025) wins.
-        let now = try #require(Self.utcDate(year: 2026, month: 6, day: 10, hour: 12, minute: 0))
+        // Jan 10, 2026 — no group's window covers this date (Fall 2025's window
+        // ends Dec 31, 2025; Spring 2025's ended long before that), but it's
+        // still within the 21-day grace window past Fall 2025's window ending,
+        // so the newest dated group (Fall 2025) wins as a fallback.
+        let now = try #require(Self.utcDate(year: 2026, month: 1, day: 10, hour: 12, minute: 0))
         let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
             baseURL: URL(string: "https://www.gradescope.com")!,
@@ -101,9 +103,9 @@ struct GradescopeTests {
         </div>
         """
 
-        // July 25, 2026 — well past summer's 21-day grace window (starts Jun 1),
-        // and no summer courses exist, so the completed Spring 2026 group must
-        // NOT be surfaced.
+        // July 25, 2026 — Spring 2026's window ends Jun 30, and its 21-day
+        // grace period expires Jul 21; no group's window covers Jul 25 either.
+        // The completed Spring 2026 group must NOT be surfaced this late.
         let now = try #require(Self.utcDate(year: 2026, month: 7, day: 25, hour: 12, minute: 0))
         let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
@@ -115,7 +117,7 @@ struct GradescopeTests {
         #expect(result.isFallback == false)
     }
 
-    @Test("falls back within a new term's grace window even with only an older labeled group")
+    @Test("falls back within the grace window right after a lone term's window ends")
     func fallsBackWithinGraceWindowForNewTerm() throws {
         let html = """
         <div class="courseList">
@@ -126,10 +128,11 @@ struct GradescopeTests {
         </div>
         """
 
-        // Sept 5, 2026 — 4 days into fall (starts Sep 1), still within grace,
-        // so the only dated group (Spring 2026) is used as a fallback even
-        // though it isn't the current term.
-        let now = try #require(Self.utcDate(year: 2026, month: 9, day: 5, hour: 12, minute: 0))
+        // July 5, 2026 — Spring 2026's window ends Jun 30, and this is only 5
+        // days past that, well within the 21-day grace window, so the only
+        // dated group (Spring 2026) is used as a fallback. Assignments from
+        // it should have undated ones dropped (isFallback == true).
+        let now = try #require(Self.utcDate(year: 2026, month: 7, day: 5, hour: 12, minute: 0))
         let result = GradescopeHTMLParser.currentTermCourses(
             from: html,
             baseURL: URL(string: "https://www.gradescope.com")!,
@@ -139,6 +142,148 @@ struct GradescopeTests {
         #expect(result.courses.count == 1)
         #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/111")
         #expect(result.isFallback == true)
+    }
+
+    @Test("keeps an active Winter term for quarter-system schools")
+    func keepsActiveWinterTermForQuarterSchools() throws {
+        // The key regression test: a quarter school's "Winter 2026" heading
+        // has no equivalent under the old single-current-term logic (which
+        // could only ever compute spring/summer/fall from today's month), so
+        // it would vanish entirely past the old grace window. Winter 2026's
+        // window (Dec 1, 2025 – Mar 31, 2026) covers Feb 15, 2026.
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Winter 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 2, day: 15, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 1)
+        #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/111")
+        #expect(result.isFallback == false)
+    }
+
+    @Test("keeps both Winter and Spring terms when both are active in February")
+    func keepsBothWinterAndSpringInFebruary() throws {
+        // Some students (or the same account across different schools' data)
+        // can have both a quarter school's Winter heading and a semester
+        // school's Spring heading; both windows cover Feb 15, so both should
+        // be kept rather than the app picking just one.
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Winter 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/111">CIS 5500 Databases</a>
+          </div>
+          <div class="courseList--term">Spring 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/222">CIS 5050 Software Systems</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 2, day: 15, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 2)
+        #expect(result.isFallback == false)
+        let ids = Set(result.courses.map(\.url.absoluteString))
+        #expect(ids.contains("https://www.gradescope.com/courses/111"))
+        #expect(ids.contains("https://www.gradescope.com/courses/222"))
+    }
+
+    @Test("keeps an early-starting Fall term for semester schools")
+    func keepsEarlyStartingFallTerm() throws {
+        // Many semester schools start Fall in mid-to-late August; Fall
+        // YYYY's window starts Aug 1 to cover that lead-in.
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/333">CIS 4000 Senior Design</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 8, day: 20, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 1)
+        #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/333")
+        #expect(result.isFallback == false)
+    }
+
+    @Test("keeps both Summer and Spring terms when both are active in May")
+    func keepsBothSummerAndSpringInMay() throws {
+        // A mid-May summer session can start while Spring finals are still
+        // wrapping up; both windows cover May 15, so both should be kept.
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Summer 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/555">CIS 5960 Summer Seminar</a>
+          </div>
+          <div class="courseList--term">Spring 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/222">CIS 5050 Software Systems</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 5, day: 15, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 2)
+        #expect(result.isFallback == false)
+        let ids = Set(result.courses.map(\.url.absoluteString))
+        #expect(ids.contains("https://www.gradescope.com/courses/555"))
+        #expect(ids.contains("https://www.gradescope.com/courses/222"))
+    }
+
+    @Test("Winter term window reaches back into the prior December")
+    func winterWindowReachesBackIntoDecember() throws {
+        // "Winter 2027" enrollment/orientation can begin in December 2026 —
+        // the window starts Dec 1 of the prior year to cover that lead-in.
+        let html = """
+        <div class="courseList">
+          <div class="courseList--term">Winter 2027</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/666">CIS 6100 Advanced Topics</a>
+          </div>
+        </div>
+        """
+
+        let now = try #require(Self.utcDate(year: 2026, month: 12, day: 10, hour: 12, minute: 0))
+        let result = GradescopeHTMLParser.currentTermCourses(
+            from: html,
+            baseURL: URL(string: "https://www.gradescope.com")!,
+            now: now
+        )
+
+        #expect(result.courses.count == 1)
+        #expect(result.courses.first?.url.absoluteString == "https://www.gradescope.com/courses/666")
+        #expect(result.isFallback == false)
     }
 
     @Test("falls back to all courses when there are no term headings")

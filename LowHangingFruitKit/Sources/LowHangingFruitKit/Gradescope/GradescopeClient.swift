@@ -180,26 +180,37 @@ public enum GradescopeHTMLParser {
         }
     }
 
-    /// How long after a term's start date the fallback below is trusted. New
-    /// terms sometimes begin before Gradescope updates its term headings, or
-    /// a prior term's finals spill a few weeks past the boundary — the grace
-    /// window keeps that legitimate case working. Beyond it, a lack of a
-    /// matching heading means the student simply has no courses this term
-    /// (e.g. summer break), and falling back would resurface a finished
-    /// class's stale backlog instead.
+    /// How long after a dated group's season window ends the fallback below is
+    /// still trusted. A prior term's finals (or its Gradescope postings) can
+    /// spill a few weeks past its own window before the next term's heading
+    /// shows up — the grace window keeps that legitimate spillover working.
+    /// Beyond it, a lack of any group whose window covers "now" means the
+    /// student simply has no courses right now (e.g. a break between terms),
+    /// and falling back would resurface a finished class's stale backlog
+    /// instead.
     private static let fallbackGraceWindow: TimeInterval = 21 * 86_400
 
-    /// Courses belonging to the current term only. Gradescope groups the account
-    /// page's courses under term headings ("Spring 2026", "Fall 2025", …); past
-    /// terms are finished classes whose stale, often-undated assignments would
-    /// otherwise clog the dashboard.
+    /// Courses belonging to the current term(s) only. Gradescope groups the
+    /// account page's courses under term headings ("Spring 2026", "Fall 2025",
+    /// "Winter 2026", …); past terms are finished classes whose stale,
+    /// often-undated assignments would otherwise clog the dashboard.
     ///
-    /// If no group's label matches today's term exactly, this falls back to the
-    /// most recent dated group (or, failing that, the first listed group) — but
-    /// only within `fallbackGraceWindow` of the current term's start. Outside
-    /// that window, an unmatched term returns no courses at all: the student
-    /// has no courses this term, and picking a completed term's group would
-    /// resurface its old, often undated assignments. The returned
+    /// Unlike a single "the current term", each season+year label is given a
+    /// generous *validity window* (see `GradescopeTerm.window`) wide enough to
+    /// cover both semester and quarter systems, plus enrollment lead-in. Any
+    /// dated group whose window contains `now` is kept — deliberately not
+    /// exclusive, since a quarter school's "Winter 2026" and a semester
+    /// school's "Spring 2026" can both be genuinely active in February, and a
+    /// student can simultaneously have both a wrapping-up "Spring 2026" and a
+    /// starting "Summer 2026" in June. None of this is treated as a fallback:
+    /// it's a normal, confident match.
+    ///
+    /// If no group's window contains `now`, this falls back to the single
+    /// newest dated group (or, failing that, the first listed group) — but
+    /// only within `fallbackGraceWindow` of that group's window *ending*.
+    /// Outside that window, an unmatched date returns no courses at all: the
+    /// student has no active courses, and picking a completed term's group
+    /// would resurface its old, often undated assignments. The returned
     /// `CurrentTermResult.isFallback` flag tells callers whether the courses
     /// came from this fallback path, so they can filter out undated
     /// assignments from stale-looking courses.
@@ -213,33 +224,35 @@ public enum GradescopeHTMLParser {
             return CurrentTermResult(courses: courseLinks(from: html, baseURL: baseURL), isFallback: false)
         }
 
-        let current = GradescopeTerm(date: now)
-
-        // Prefer courses whose term matches today's term.
-        let currentCourses = groups
-            .filter { GradescopeTerm(label: $0.term) == current }
-            .flatMap(\.courses)
-        if !currentCourses.isEmpty {
-            return CurrentTermResult(courses: dedupedByURL(currentCourses), isFallback: false)
-        }
-
-        // Outside the grace window, don't fall back at all.
-        guard now < current.startDate.addingTimeInterval(fallbackGraceWindow) else {
-            return CurrentTermResult(courses: [], isFallback: false)
-        }
-
-        // Otherwise fall back to the most recent term we can identify…
         let datedGroups = groups.compactMap { group -> (term: GradescopeTerm, courses: [CourseLink])? in
             guard let term = GradescopeTerm(label: group.term) else { return nil }
             return (term, group.courses)
         }
+
+        // Keep every dated group whose season window covers `now` — this can
+        // be more than one group at once (see doc comment above).
+        let activeCourses = datedGroups
+            .filter { $0.term.window.contains(now) }
+            .flatMap(\.courses)
+        if !activeCourses.isEmpty {
+            return CurrentTermResult(courses: dedupedByURL(activeCourses), isFallback: false)
+        }
+
+        // No group's window covers `now` — fall back to the most recent term
+        // we can identify, but only within the grace window of its own
+        // window ending (covers "term just ended, next term's heading isn't
+        // up yet" spillover).
         if let newest = datedGroups.max(by: { $0.term < $1.term }) {
+            guard now < newest.term.window.upperBound.addingTimeInterval(fallbackGraceWindow) else {
+                return CurrentTermResult(courses: [], isFallback: false)
+            }
             return CurrentTermResult(courses: dedupedByURL(newest.courses), isFallback: true)
         }
 
-        // …or, if no term label could be parsed, the first listed group
-        // (Gradescope lists the newest term first).
-        return CurrentTermResult(courses: dedupedByURL(groups.first?.courses ?? []), isFallback: true)
+        // …or, if no term label could be parsed at all, the first listed
+        // group (Gradescope lists the newest term first). There's no dated
+        // group to distrust this against, so it isn't treated as a fallback.
+        return CurrentTermResult(courses: dedupedByURL(groups.first?.courses ?? []), isFallback: false)
     }
 
     /// Drops assignments with no due date when they came from a fallback term
@@ -674,22 +687,15 @@ public enum GradescopeHTMLParser {
     }
 }
 
-/// An academic term, used to keep only the current term's Gradescope courses.
+/// An academic term, used to keep only the current term(s)' Gradescope
+/// courses. Seasons here describe a Gradescope term *label* ("Winter 2026"),
+/// not a fixed calendar quarter — see `window` for how a label maps to the
+/// span of real-world dates it should be considered "current" for.
 private struct GradescopeTerm: Comparable, Equatable {
     enum Season: Int { case winter = 0, spring = 1, summer = 2, fall = 3 }
 
     let year: Int
     let season: Season
-
-    init(date: Date) {
-        let calendar = Calendar(identifier: .gregorian)
-        year = calendar.component(.year, from: date)
-        switch calendar.component(.month, from: date) {
-        case 1...5: season = .spring
-        case 6...8: season = .summer
-        default:    season = .fall
-        }
-    }
 
     init?(label: String) {
         let lower = label.lowercased()
@@ -706,20 +712,47 @@ private struct GradescopeTerm: Comparable, Equatable {
         year = parsedYear
     }
 
-    /// The first calendar day of this term, matching the season boundaries
-    /// `init(date:)` uses (spring = Jan 1, summer = Jun 1, fall = Sep 1).
-    /// `init(date:)` never produces `.winter` — that only arises from a parsed
-    /// label — but Dec 1 is included for completeness/consistency.
-    var startDate: Date {
-        let month: Int
-        switch season {
-        case .winter: month = 12
-        case .spring: month = 1
-        case .summer: month = 6
-        case .fall:   month = 9
-        }
+    /// The span of real-world dates this term label should be treated as
+    /// "current" for. Deliberately wide and overlapping between adjacent
+    /// seasons: Gradescope's term labels are used by both semester schools
+    /// (two long terms plus an optional summer session) and quarter schools
+    /// (four roughly-equal terms), and a label alone doesn't say which system
+    /// produced it. Each window is sized to cover the corresponding season on
+    /// *either* calendar, plus a lead-in for early enrollment/orientation:
+    ///
+    /// - Winter YYYY: Dec 1 (YYYY-1) – Mar 31 YYYY (quarter Jan–Mar; winter
+    ///   session Dec–Jan)
+    /// - Spring YYYY: Jan 1 – Jun 30 YYYY (semester Jan–May; quarter Mar–Jun)
+    /// - Summer YYYY: May 1 – Aug 31 YYYY
+    /// - Fall YYYY: Aug 1 – Dec 31 YYYY (semester mid-Aug start; quarter
+    ///   late-Sep start)
+    ///
+    /// The result is that several labels can be simultaneously "current" —
+    /// e.g. a quarter school's "Winter 2026" and a semester school's "Spring
+    /// 2026" both cover February — which is intentional: `currentTermCourses`
+    /// keeps every group whose window contains `now`, not just one.
+    var window: ClosedRange<Date> {
         let calendar = Calendar(identifier: .gregorian)
-        return calendar.date(from: DateComponents(year: year, month: month, day: 1)) ?? .distantPast
+        func day(_ year: Int, _ month: Int, _ day: Int, endOfDay: Bool = false) -> Date {
+            var components = DateComponents(year: year, month: month, day: day)
+            if endOfDay {
+                components.hour = 23
+                components.minute = 59
+                components.second = 59
+            }
+            return calendar.date(from: components) ?? (endOfDay ? .distantFuture : .distantPast)
+        }
+
+        switch season {
+        case .winter:
+            return day(year - 1, 12, 1) ... day(year, 3, 31, endOfDay: true)
+        case .spring:
+            return day(year, 1, 1) ... day(year, 6, 30, endOfDay: true)
+        case .summer:
+            return day(year, 5, 1) ... day(year, 8, 31, endOfDay: true)
+        case .fall:
+            return day(year, 8, 1) ... day(year, 12, 31, endOfDay: true)
+        }
     }
 
     static func < (lhs: GradescopeTerm, rhs: GradescopeTerm) -> Bool {
