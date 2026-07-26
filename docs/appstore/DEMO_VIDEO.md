@@ -1,13 +1,17 @@
 # Demo / App-Review video — script + how to record
 
+_Last updated: 2026-07-26 (v2.5). The 1.0 script is superseded — it showed a
+weekly progress ring that no longer exists on the dashboard._
+
 This is the screen recording you'll attach to App Review (and can trim into an
-App Preview later). Target length **40–75 seconds**. Record on the **iPhone 17
+App Preview later). Target length **50–75 seconds**. Record on the **iPhone 17
 Pro Max** simulator (6.9", the size the App Store requires) for a clean frame.
 
 ## Why a video
-App Review can't sign in (Penn SSO — see REVIEW_NOTES.md), so this recording is
-how they see full functionality. Show the real login screen briefly to prove
-the flow, then the populated app.
+
+App Review can't sign in (Penn SSO — see REVIEW_NOTES.md). The **in-app preview
+mode is the primary review path**; this recording is supporting evidence that
+shows the real login working end to end.
 
 ---
 
@@ -18,37 +22,40 @@ the flow, then the populated app.
    *Caption: "Sign in once with your school Canvas."*
 
 2. **Canvas login (real)** · 0:07–0:14
-   Penn's Canvas login page loads in the app. Enter credentials and submit.
+   The school's Canvas login page loads in the app. Enter credentials and submit.
    *(Blur/scrub the password field in post.)*
    *Caption: "We never see your password."*
 
-3. **Dashboard fills in — This Week** · 0:14–0:26
+3. **Dashboard fills in — This Week** · 0:14–0:24
    The list populates, sorted by urgency. Slowly scroll. Point out the colored
-   spines (red overdue → amber today → blue soon → green later) and due times.
+   spines (red overdue → amber today → blue soon → green later).
    *Caption: "Everything due, sorted by what's next."*
 
-4. **Complete an item** · 0:26–0:33
-   Tap a card. It animates out and the weekly **progress ring** fills.
-   *Caption: "Tap to check it off."*
+4. **Complete an item** · 0:24–0:30
+   Tap a card. It animates out into Done.
+   *Caption: "Tap to check it off — or let Canvas submissions file themselves."*
 
-5. **All / Done tabs** · 0:33–0:42
+5. **All / Done tabs** · 0:30–0:37
    Tap **All** (shows later items too), then **Done** (completed, grouped by day).
    *Caption: "This Week · All · Done."*
 
-6. **Add your own task** · 0:42–0:50
-   Tap the **+** button, add a one-off task with a due date (mention "Repeats
-   weekly" toggle), Add. It appears in the list.
-   *Caption: "Add your own tasks too."*
+6. **Grades** · 0:37–0:48
+   Tap the chart icon in the header. Show the estimated term GPA, then a class
+   card: current grade, the "% of your grade is decided" bar, the week delta and
+   sparkline. Expand one card's category breakdown.
+   *Caption: "Your real grade — and how much of it is already decided."*
 
-7. **Reminders** · 0:50–0:62
-   Open the gear → **Settings**. Toggle **Due-date reminders** on, show the
-   lead-time options and the daily digest.
+7. **Widget + appearance** · 0:48–0:58
+   Back out, show the Home Screen widget, then Settings → Appearance → Dark.
+   *Caption: "Next due on your Home Screen. Light or dark."*
+
+8. **Reminders** · 0:58–1:08
+   Settings → toggle **Due-date reminders**, show lead times and the daily digest.
    *Caption: "Optional local reminders — all on-device."*
 
-8. **Close** · 0:62–0:70
-   Back to the dashboard. End on the clean list (or the "Touch Grass" all-clear
-   state if you complete everything).
-   *Caption: "Low Hanging Fruit."*
+9. **Close** · 1:08–1:15
+    End on the clean dashboard (or the "Touch Grass" all-clear state).
+    *Caption: "Low Hanging Fruit."*
 
 ---
 
@@ -68,7 +75,7 @@ xcrun simctl install booted \
 # 3a. For the REAL login shots (scenes 1–2): launch with no flags (fresh onboarding)
 xcrun simctl launch booted com.lhf.lowhangingfruit
 
-# 3b. For the populated app (scenes 3–8): relaunch with demo data
+# 3b. For the populated app (scenes 3–9): relaunch with demo data
 xcrun simctl terminate booted com.lhf.lowhangingfruit
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData
 
@@ -77,12 +84,13 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 #   …perform the interactions…  Ctrl-C to stop.
 ```
 
-> The `-LHFDemoData` flag (DEBUG builds only) skips onboarding and loads a full
-> set of sample assignments so every screen looks alive without needing a real
-> login. It is compiled out of release builds.
+> DEBUG launch flags: `-LHFDemoData`, `-LHFTabAll`, `-LHFTabDone`,
+> `-LHFShowSettings`, `-LHFShowGrades`. These are compiled out
+> of release builds — the **reviewer-facing** demo is preview mode, which ships
+> in Release and needs no flags.
 
 ## Tips
+
 - Record at 1x scale, device bezel off, for a clean App Store frame.
 - Keep cursor movements slow and deliberate; pause ~1s on each screen.
-- If you want a fully hands-off recording, I can add a UI-test that drives the
-  whole flow automatically and records it — ask and I'll wire it up.
+- Scene 6 is the one that sells the app — don't rush the grade cards.

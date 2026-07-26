@@ -7,8 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		071643355092CD17808E7251 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 91DB2A6DDA741DE34D50D036 /* PrivacyInfo.xcprivacy */; };
 		32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 81469103D4BF3FC55D12744D /* Assets.xcassets */; };
 		384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */; };
+		4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */; };
 		7EBFF15B18E4FD732FFE5CD6 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */; };
 		C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */; };
@@ -16,6 +18,30 @@
 		D4423A175D42F440EF1A7B26 /* LHFApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC183EBB281825AF54C0509 /* LHFApp.swift */; };
 		DCE53F8C58169177C24DB343 /* LowHangingFruitUI in Frameworks */ = {isa = PBXBuildFile; productRef = F3B9C910C2C26AEF4BB71C2F /* LowHangingFruitUI */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7804C6D4F40C381A9B77BE97 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6FD65FD2BAF22BFD1465B937 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AFAF0ABD5130C2804488E807;
+			remoteInfo = LHFWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A83D400BF95F644A4AF311A8 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextDueWidgetViews.swift; sourceTree = "<group>"; };
@@ -25,6 +51,7 @@
 		3E88A5FCA88FE663462B6EAA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		81469103D4BF3FC55D12744D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		91DB2A6DDA741DE34D50D036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextDueWidget.swift; sourceTree = "<group>"; };
 		AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LHFApp.entitlements; sourceTree = "<group>"; };
 		B2FB5A48F750018E0BC603A6 /* LowHangingFruit.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LowHangingFruit.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -98,6 +125,7 @@
 				1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */,
 				9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */,
 				15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */,
+				91DB2A6DDA741DE34D50D036 /* PrivacyInfo.xcprivacy */,
 			);
 			path = LHFWidget;
 			sourceTree = "<group>";
@@ -112,10 +140,12 @@
 				316A8E8DEFEB3DE7F5FA052E /* Sources */,
 				DFD5CFF3557929FA86401546 /* Resources */,
 				A832906EE810FE80787B6027 /* Frameworks */,
+				A83D400BF95F644A4AF311A8 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B48A3040576496CAEB4EC903 /* PBXTargetDependency */,
 			);
 			name = LowHangingFruit;
 			packageProductDependencies = (
@@ -130,6 +160,7 @@
 			buildConfigurationList = 32A10C3B55F8BEE94CF0C81E /* Build configuration list for PBXNativeTarget "LHFWidgetExtension" */;
 			buildPhases = (
 				71347025BF31C4BADB4CE131 /* Sources */,
+				CE28EE0BA22847C3F242A40A /* Resources */,
 				3F5B2490962636F80A5DC171 /* Frameworks */,
 			);
 			buildRules = (
@@ -187,6 +218,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		CE28EE0BA22847C3F242A40A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				071643355092CD17808E7251 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DFD5CFF3557929FA86401546 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -218,6 +257,15 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B48A3040576496CAEB4EC903 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = AFAF0ABD5130C2804488E807 /* LHFWidgetExtension */;
+			targetProxy = 7804C6D4F40C381A9B77BE97 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		491DF775B5156F302FEA4C88 /* Debug */ = {

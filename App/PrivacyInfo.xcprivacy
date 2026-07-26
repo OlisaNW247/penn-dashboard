@@ -13,14 +13,28 @@
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<!-- The app stores the user's name, captured Canvas calendar-feed URL,
-		     completed/edited items, reminder preferences, and self-created
-		     tasks in UserDefaults. This data is only ever read by this app. -->
+		     completed/edited items, reminder preferences, self-created tasks,
+		     grade settings (category weights, confirmed matches, an attached
+		     syllabus's grading scheme) and observed grade history in
+		     UserDefaults. Live session cookies go to the Keychain instead
+		     (SessionCookieStore), never here. This data is only ever read by
+		     this app and its widget. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<!-- WidgetSnapshotStore writes the "next due" snapshot into the shared
+		     App Group container for the widget to read. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
 			</array>
 		</dict>
 	</array>

@@ -22,6 +22,24 @@ struct SettingsPage: View {
     /// renamed (never the display name, which is what's being edited).
     @State private var renamingCourse: String?
     @State private var renameDraft = ""
+    /// Which service the "are you sure" confirmation is up for, if any.
+    /// Disconnecting throws away a login the user can only get back by passing
+    /// SSO again, so it asks first.
+    @State private var disconnecting: DisconnectTarget?
+
+    enum DisconnectTarget: String, Identifiable {
+        case canvas, gradescope
+        var id: String { rawValue }
+        var label: String { self == .canvas ? "Canvas" : "Gradescope" }
+        var message: String {
+            switch self {
+            case .canvas:
+                return "Removes your saved Canvas login and calendar feed from this device, along with your synced assignments and grades. Your own tasks, completions and reminders stay. You'll need to sign in to Canvas again to reconnect."
+            case .gradescope:
+                return "Removes your saved Gradescope login from this device, along with anything synced from it. Canvas stays connected."
+            }
+        }
+    }
 
     var body: some View {
         Form {
@@ -32,12 +50,18 @@ struct SettingsPage: View {
                 ))
             }
 
-            Section("Account") {
+            Section {
                 statusRow(label: "Canvas",
                           connected: state.isCanvasConnected,
                           working: state.isLoading || state.isCanvasDiscoveryLoading)
 
-                if !state.isCanvasConnected {
+                if state.isCanvasConnected {
+                    Button(role: .destructive) {
+                        disconnecting = .canvas
+                    } label: {
+                        Label("Disconnect Canvas", systemImage: "link.badge.plus")
+                    }
+                } else {
                     Button {
                         dismiss()
                         state.restartOnboarding()
@@ -57,6 +81,18 @@ struct SettingsPage: View {
                     Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
                           systemImage: "link")
                 }
+
+                if state.isGradescopeConnected {
+                    Button(role: .destructive) {
+                        disconnecting = .gradescope
+                    } label: {
+                        Label("Disconnect Gradescope", systemImage: "link.badge.plus")
+                    }
+                }
+            } header: {
+                Text("Account")
+            } footer: {
+                Text("Disconnecting erases that service\u{2019}s saved login from this device. LHF has no account and no server \u{2014} everything it knows lives on your phone.")
             }
 
             Section("Appearance") {
@@ -121,6 +157,19 @@ struct SettingsPage: View {
             Button("Cancel", role: .cancel) { renamingCourse = nil }
         } message: {
             Text("Shown in place of \(renamingCourse ?? "the class code"). Leave it empty to go back to the original.")
+        }
+        .alert(item: $disconnecting) { target in
+            Alert(
+                title: Text("Disconnect \(target.label)?"),
+                message: Text(target.message),
+                primaryButton: .destructive(Text("Disconnect")) {
+                    switch target {
+                    case .canvas:     state.disconnectCanvas()
+                    case .gradescope: state.disconnectGradescope()
+                    }
+                },
+                secondaryButton: .cancel()
+            )
         }
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()

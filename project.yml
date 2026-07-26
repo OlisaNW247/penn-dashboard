@@ -20,10 +20,21 @@ targets:
       - package: LowHangingFruitKit
         product: LowHangingFruitUI
       # The widget extension is an iOS-only app-extension embedded in the app.
-      # macOS builds skip it (no Lock/Home Screen widgets there) via the platform filter.
+      #
+      # Do NOT use `platforms: [iOS]` here. xcodegen 2.45.4 does not filter
+      # such a dependency per-platform — it silently discards the dependency
+      # entirely, leaving zero target dependencies and zero copy-files phases,
+      # so the .appex is built and thrown away and the widget never appears on
+      # device.
+      #
+      # `platformFilter: iOS` is the spelling that works: it keeps the
+      # dependency AND writes Xcode's `platformFilter` attribute, so the macOS
+      # destination skips embedding an iOS-only appex (which is a hard build
+      # error). It is case-sensitive — lowercase `ios` is silently ignored,
+      # and `platformFilters` (plural) is not supported at all.
       - target: LHFWidgetExtension
         embed: true
-        platforms: [iOS]
+        platformFilter: iOS
     info:
       path: App/Info.plist
       properties:
@@ -31,7 +42,10 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
-        UIUserInterfaceStyle: Light
+        # No UIUserInterfaceStyle here on purpose: pinning it to Light at the
+        # system level overrides the in-app Light/Dark appearance setting, so
+        # dark mode could never actually engage. The app applies its own
+        # preferred scheme from `AppState.appearance` instead.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
@@ -60,10 +74,17 @@ targets:
     dependencies:
       - package: LowHangingFruitKit
         product: LowHangingFruitKit
+    # `xcodegen generate` rewrites this file from scratch from `properties`
+    # below — it does not merge with what's on disk. The NSExtension block is
+    # what makes this bundle a WidgetKit extension at all, so it MUST live
+    # here; when it only lived in the .plist, every regeneration deleted it and
+    # silently produced a non-widget app-extension.
     info:
       path: LHFWidget/Info.plist
       properties:
         CFBundleDisplayName: LHF
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
