@@ -54,9 +54,6 @@ struct DoneView: View {
                 Text("nothing new this week.")
                     .font(.lhfSerif(15))
                     .foregroundStyle(Color.v2DateText)
-                Text("your archive says otherwise.")
-                    .font(.lhfSans(10))
-                    .foregroundStyle(Color.v2RingSub)
             } else {
                 Text("nothing done yet.")
                     .font(.lhfSerif(15))
@@ -74,6 +71,8 @@ struct DoneCardView: View {
     let item: DashItem
     let dayLabel: String?
     let onTap: () -> Void
+
+    @Environment(\.courseNameOverrides) private var courseNameOverrides
 
     private let corner: CGFloat = 13
 
@@ -93,7 +92,7 @@ struct DoneCardView: View {
                     .foregroundStyle(Color.v2SpineGreen)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.assignment.displayCourse.uppercased())
+                    Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
                         .font(.lhfSans(9, weight: .medium))
                         .tracking(1.2)
                         .foregroundStyle(Color.v2DoneCourse)

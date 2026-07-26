@@ -33,6 +33,11 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeItems: [Assignment] = []
+    /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
+    /// incomplete buckets below are filtered out of, but kept whole so callers
+    /// that need completed work (the Done tab) see one item per assignment
+    /// instead of the two raw feed entries a merge hid.
+    @Published private(set) var mergedCoursework: [Assignment] = []
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
@@ -79,6 +84,16 @@ final class AppState: ObservableObject {
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
     /// the root. Persisted like every other user preference here.
     @Published private(set) var appearanceMode: AppearanceMode
+    /// User-chosen display names, keyed by the canonical course code the rest of
+    /// the app identifies a class by. Renaming is deliberately cosmetic: hiding,
+    /// deletion, notifications and grades all still key on the code, so a
+    /// renamed class keeps working and a re-sync can't undo the rename.
+    @Published private(set) var courseNameOverrides: [String: String]
+    /// Course code -> Canvas numeric course id, remembered once resolved. Ids
+    /// only ever arrive attached to an ICS item's URL, so a course whose current
+    /// feed entries carry no usable URL would otherwise be invisible to Grade
+    /// Watcher even while selected. Caching keeps a selected class fetchable.
+    @Published private(set) var canvasCourseIDsByCode: [String: String]
 
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
@@ -98,6 +113,8 @@ final class AppState: ObservableObject {
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
+    private static let courseNameOverridesKey = "courseNameOverrides"
+    private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
 
     init() {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
@@ -113,6 +130,8 @@ final class AppState: ObservableObject {
         self.appearanceMode = AppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light
+        self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
+        self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
         rebuildDashboardItems()
@@ -411,6 +430,65 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
     }
 
+    /// Classes currently switched on, by code. Kept separate from
+    /// `selectedCanvasCourseIDs` so callers can tell "nothing is selected" apart
+    /// from "things are selected but have no Canvas id yet" — states that used to
+    /// be indistinguishable and produced a misleading empty screen in Grades.
+    func selectedCourseCodes() -> [String] {
+        visibleCourseCodes().filter { isCourseSelected($0) }
+    }
+
+    // MARK: Course names
+
+    /// What to show for a class: the user's own name if they set one, otherwise
+    /// the code parsed from Canvas/Gradescope.
+    func courseDisplayName(_ course: String) -> String {
+        guard let custom = courseNameOverrides[course]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !custom.isEmpty
+        else { return course }
+        return custom
+    }
+
+    func hasCustomName(_ course: String) -> Bool {
+        courseNameOverrides[course] != nil
+    }
+
+    /// Renames a class for display only — every other system (hiding, deletion,
+    /// reminders, grades) still keys on `course`, so the rename survives a
+    /// re-sync and can't orphan the class. Clearing the field restores the code.
+    func renameCourse(_ course: String, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == course {
+            courseNameOverrides.removeValue(forKey: course)
+        } else {
+            courseNameOverrides[course] = trimmed
+        }
+        UserDefaults.standard.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+    }
+
+    /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
+    /// from `rebuildDashboardItems` (i.e. when items change) rather than from the
+    /// `canvasCourseIDs` read path, because that read happens inside SwiftUI body
+    /// evaluation and must not publish changes.
+    private func updateCanvasCourseIDCache() {
+        var byCode = canvasCourseIDsByCode
+        for item in canvasItems {
+            guard item.course != Self.unknownCourse,
+                  let url = item.url,
+                  let id = Self.courseID(from: url)
+            else { continue }
+            byCode[item.course] = id
+        }
+        guard byCode != canvasCourseIDsByCode else { return }
+        canvasCourseIDsByCode = byCode
+        UserDefaults.standard.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+    }
+
+    private static func loadStringMap(_ key: String) -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
+
     func addRecurringTask(_ task: RecurringTask) {
         recurringTasks.append(task)
         persistRecurringTasks()
@@ -498,6 +576,7 @@ final class AppState: ObservableObject {
     }
 
     private func rebuildDashboardItems(now: Date = Date()) {
+        updateCanvasCourseIDCache()
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
@@ -508,6 +587,7 @@ final class AppState: ObservableObject {
         // into a single Canvas-anchored item before it ever reaches the
         // dashboard buckets below.
         let dedupedCoursework = AssignmentDeduplicator.merge(canvasItems: canvasRelevant, gradescopeItems: gradescopeItems)
+        mergedCoursework = dedupedCoursework
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
@@ -657,15 +737,24 @@ final class AppState: ObservableObject {
         return items
     }
 
+    /// Canvas course id -> course code. Built from this sync's items **folded
+    /// over** everything resolved on earlier syncs, because a course id only
+    /// ever reaches us attached to an ICS item's URL: a class with nothing due
+    /// right now, or whose entries carry a calendar-style URL, contributes no id
+    /// this time round and would otherwise silently drop out of Grade Watcher.
+    /// Pure read — the cache is written by `updateCanvasCourseIDCache`.
     private func canvasCourseIDs() -> [String: String] {
-        var courses: [String: String] = [:]
+        var byCode = canvasCourseIDsByCode
         for item in canvasItems {
-            guard let url = item.url,
-                  let courseID = Self.courseID(from: url)
+            guard item.course != Self.unknownCourse,
+                  let url = item.url,
+                  let id = Self.courseID(from: url)
             else { continue }
-            courses[courseID] = item.course
+            byCode[item.course] = id
         }
-        return courses
+        // Invert to id -> code. Two codes can theoretically point at one id
+        // (a cross-listed section); keep the first rather than trapping.
+        return Dictionary(byCode.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Canvas course id -> display name, filtered to the class-picker's
@@ -675,12 +764,30 @@ final class AppState: ObservableObject {
         canvasCourseIDs().filter { isCourseSelected($0.value) }
     }
 
-    private static func courseID(from url: URL) -> String? {
+    /// Pulls a Canvas course id out of an ICS item's URL. Canvas emits two
+    /// shapes: a direct `/courses/<id>/assignments/<id>` link, and — for items
+    /// surfaced through the calendar rather than the course — a
+    /// `/calendar?include_contexts=course_<id>` link. Only the first was handled
+    /// before, so a feed of the second kind resolved no courses at all and Grade
+    /// Watcher reported that nothing was selected.
+    static func courseID(from url: URL) -> String? {
         let parts = url.pathComponents
-        guard let index = parts.firstIndex(of: "courses"),
-              parts.indices.contains(parts.index(after: index))
+        if let index = parts.firstIndex(of: "courses"),
+           parts.indices.contains(parts.index(after: index)) {
+            let candidate = parts[parts.index(after: index)]
+            if !candidate.isEmpty, candidate.allSatisfy(\.isNumber) { return candidate }
+        }
+
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let contexts = components.queryItems?
+                .first(where: { $0.name == "include_contexts" })?.value
         else { return nil }
-        return parts[parts.index(after: index)]
+
+        for context in contexts.split(separator: ",") where context.hasPrefix("course_") {
+            let id = context.dropFirst("course_".count)
+            if !id.isEmpty, id.allSatisfy(\.isNumber) { return String(id) }
+        }
+        return nil
     }
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {

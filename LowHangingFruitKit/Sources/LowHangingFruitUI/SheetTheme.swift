@@ -10,6 +10,10 @@ import SwiftUI
 /// Each sheet needs its own application — `preferredColorScheme` only reaches
 /// the nearest enclosing presentation, so a parent sheet's theme does not
 /// cover a sheet presented from inside it.
+///
+/// Pushed pages (Settings, Grades) use it too: they don't have the appearance
+/// problem, but a bare `Form`/`ScrollView` still paints the *system* grouped
+/// background, which reads as grey next to the app's paper field.
 private struct LHFSheetTheme: ViewModifier {
     @EnvironmentObject private var state: AppState
 

@@ -103,11 +103,17 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: nil))
         }
 
-        // Completed pool: reconstruct from every source feed, since the grouped
+        // Completed pool: reconstruct from the source feeds, since the grouped
         // arrays exclude completed items. Completion time comes from AppState's
         // persisted map (so completed work survives relaunch); a prior session
         // timestamp is the fallback for the current run.
-        let pool = state.canvasItems + state.gradescopeItems + state.manualAssignments.map { $0.asAssignment() }
+        //
+        // This reads the DEDUPLICATED coursework, not the raw Canvas and
+        // Gradescope arrays. Completing a cross-posted item marks *both*
+        // underlying ids complete (`markCompleted` follows `linkedID`), so
+        // pulling from the raw feeds put the Canvas copy and the Gradescope copy
+        // in Done as two separate cards — one tap, two entries.
+        let pool = state.mergedCoursework + state.manualAssignments.map { $0.asAssignment() }
         var seen = Set(active.map { $0.id })
         // Respect the class picker here too, so a hidden course's completed work
         // doesn't linger on the Done tab after the user turned the course off.

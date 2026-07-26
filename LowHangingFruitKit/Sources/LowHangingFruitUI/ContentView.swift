@@ -13,9 +13,15 @@ struct ContentView: View {
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
-    @State private var showSettings = false
     @State private var showAddSheet = false
-    @State private var showGradeWatcher = false
+    /// The pushed pages behind the header's two buttons. A path rather than two
+    /// booleans so the screenshot flag can open Settings directly.
+    @State private var path: [DashRoute] = []
+
+    /// Where the header's buttons lead. Both are pushes onto the dashboard's own
+    /// stack, so Settings and Grades are full screens with a back button rather
+    /// than cards presented over the list.
+    enum DashRoute: Hashable { case settings, grades }
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
@@ -35,31 +41,45 @@ struct ContentView: View {
     }
 
     var body: some View {
-        let progress = vm.weeklyProgress()
+        NavigationStack(path: $path) {
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    header
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
 
-        ZStack(alignment: .bottomTrailing) {
-        VStack(spacing: 0) {
-            header(progress: progress)
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
+                    SegmentedToggle(selection: $filter)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
 
-            SegmentedToggle(selection: $filter)
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 4)
+                    ScrollView {
+                        listContent
+                            .padding(.horizontal, 20)
+                            .padding(.top, 18)
+                            .padding(.bottom, 40)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+                    }
+                }
 
-            ScrollView {
-                listContent
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 40)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+                addButton
+            }
+            .background(Color.v2Bg.ignoresSafeArea())
+            .navigationDestination(for: DashRoute.self) { route in
+                switch route {
+                case .settings:
+                    SettingsPage()
+                        .environmentObject(state)
+                        .environmentObject(scheduler)
+                case .grades:
+                    GradeWatcherView(store: state.gradeWatcher)
+                        .environmentObject(state)
+                }
             }
         }
-
-            addButton
-        }
-        .background(Color.v2Bg.ignoresSafeArea())
+        // Class renames live in AppState but are read by the cards, which are
+        // deliberately AppState-free so they still render in previews.
+        .environment(\.courseNameOverrides, state.courseNameOverrides)
         .onAppear {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
@@ -67,7 +87,7 @@ struct ContentView: View {
                 // Seed AppState too, so the Settings class list has courses.
                 state.loadSampleData()
                 vm.loadSampleData()
-                if args.contains("-LHFShowSettings") { showSettings = true }
+                if args.contains("-LHFShowSettings") { path = [.settings] }
                 return
             }
             #endif
@@ -104,24 +124,17 @@ struct ContentView: View {
                 )
             )
         }
-        .sheet(isPresented: $showSettings, onDismiss: rescheduleNotifications) {
-            SettingsSheet()
-                .environmentObject(state)
-                .environmentObject(scheduler)
-        }
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
-        .sheet(isPresented: $showGradeWatcher) {
-            // Grade Watcher is designed as a NavigationLink push target (from
-            // Settings → Classes), so it doesn't own a NavigationStack itself;
-            // wrap it here so it can also be reached directly from the
-            // dashboard.
-            NavigationStack {
-                GradeWatcherView(store: state.gradeWatcher)
-            }
-            .environmentObject(state)
+        // Settings is a push now, so there's no sheet-dismiss hook to hang this
+        // on: returning to the dashboard is the moment class toggles, deletions
+        // and renames need to be reflected in the list and in reminders.
+        .onChange(of: path) { _, newPath in
+            guard newPath.isEmpty else { return }
+            vm.reload(preservingEdits: true)
+            rescheduleNotifications()
         }
     }
 
@@ -149,7 +162,10 @@ struct ContentView: View {
 
     // MARK: Header
 
-    private func header(progress: (done: Int, total: Int)) -> some View {
+    /// Wordmark, greeting and date on the left; the two destinations stacked on
+    /// the right, where the weekly ring used to sit. There's no manual reload —
+    /// opening the app auto-refreshes — so these are the only header controls.
+    private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("LHF")
@@ -161,52 +177,37 @@ struct ContentView: View {
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.v2Ink)
 
-                HStack(spacing: 10) {
-                    Text(Self.dateText(Date()))
-                        .font(.lhfSerif(15))
-                        .foregroundStyle(Color.v2DateText)
-
-                    // The header's two controls: Settings, then Grade Watcher
-                    // right beside it. There's no manual reload — opening the
-                    // app auto-refreshes.
-                    Button { showSettings = true } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Settings")
-                                .font(.lhfSans(12, weight: .semibold))
-                        }
-                        .foregroundStyle(Color.v2DateText)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color.v2Ink.opacity(0.07)))
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Settings and accounts")
-                    .help("Settings & accounts")
-
-                    // Grade Watcher, reachable directly from the dashboard
-                    // (also still available via Settings → Grades).
-                    Button { showGradeWatcher = true } label: {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.v2DateText)
-                            .padding(8)
-                            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Grade Watcher")
-                    .help("Grade Watcher")
-                }
-                .padding(.top, 2)
+                Text(Self.dateText(Date()))
+                    .font(.lhfSerif(15))
+                    .foregroundStyle(Color.v2DateText)
+                    .padding(.top, 2)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            ProgressRingView(done: progress.done, total: progress.total)
+            HStack(spacing: 10) {
+                navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                navButton(to: .settings, icon: "gearshape.fill", title: "Settings")
+            }
+            .padding(.top, 2)
         }
+    }
+
+    /// Matching circular icons, side by side, so neither destination reads as
+    /// secondary to the other; Settings sits in the corner. Labels live in the
+    /// accessibility layer only.
+    private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
+        NavigationLink(value: route) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.v2DateText)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     private var greeting: String {

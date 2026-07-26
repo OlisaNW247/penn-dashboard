@@ -88,7 +88,11 @@ final class GradeWatcherStore: ObservableObject {
     ) async {
         guard !isRefreshing else { return }
         guard !cookies.isEmpty else {
-            error = "No Canvas session was found yet. Finish logging in to Canvas, then try again."
+            // Being "logged in" to the dashboard isn't enough: the assignment
+            // list rides a cookieless ICS feed, while grades need a real Canvas
+            // session. An account connected before this app stored Canvas
+            // cookies has none, so say what actually fixes it.
+            error = "No saved Canvas session. Grades need a live Canvas login \u{2014} the assignment list doesn\u{2019}t. Reconnect Canvas in Settings to enable grades."
             return
         }
         guard !courseIDs.isEmpty else { return }

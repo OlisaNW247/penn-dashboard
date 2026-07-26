@@ -1,175 +1,147 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-06-30_
+_Last updated: 2026-07-26 (branch `v2.5`)_
 
 **LHF (Low Hanging Fruit)** is a personal academic dashboard for Penn students.
-It reads the student's own **Canvas** calendar feed and shows assignments and
-deadlines as one chronological "what's due next" list, with local reminders.
-SwiftUI, iPhone (+ macOS from the same code). **Canvas-only** as of v1.0.0.
+It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and in
+v2.5 Canvas **grades**) and shows assignments as one chronological "what's due
+next" list, with local reminders. SwiftUI, iPhone-first (+ macOS from the same
+code), everything on-device.
 
 ---
 
-## ⚠️ Where things stand right now (read this first)
+## ⚠️ Read this first
 
-The app is code-complete at **v1.0.0 / build 1** (commit `5c5354b`) with a full
-App Store package (see the bottom of this doc). **But active development has
-reopened** on two fronts decided this session:
+Work is happening on branch **`v2.5`**, which builds on `V2` (PR #1) and adds
+Grade Watcher, a Home/Lock Screen widget, submission auto-detection, and a
+Light/Dark reskin. `v2.5` has been **force-pushed before** — always
+`git fetch` and check divergence before pushing.
 
-1. **Real Canvas submission detection** — a NEW feature. Feasibility
-   investigation is in progress (results below).
-2. **Sync-bloat fix** (Priority 1 bug) — **root cause is now identified**
-   (details below).
+- `cd LowHangingFruitKit && swift test` → **183 tests / 15 suites passing.**
+- iOS device + simulator builds green. **Signing is resolved** (see below).
+- The app is installed and running on Marco's iPhone.
 
-The Priority 1–3 task list (further down) is **PAUSED by user decision:
-"submission feasibility first."** Do not resume Priority work until the
-submission question below is closed.
-
-> **Core model — corrected this session.** Two framings that were floating
-> around are wrong: (a) LHF is **Canvas-only**; Gradescope was deliberately
-> removed (commit `a5141e2`). (b) The app does **not** currently know
-> "submitted" — the ICS feed carries no submission state
-> (`CanvasICSClient.normalize` hardcodes `submitted: false`). Items show until
-> the **user taps to mark them done** (`completedAssignmentIDs`), and
-> notifications are **due-date reminders**. "Notify when not submitted" was a
-> **Gradescope** capability (it scraped submit-vs-submitted from HTML) and left
-> with Gradescope.
+**The one open question blocking verification:** Grade Watcher needs a **live
+Canvas cookie session**, which is separate from the cookieless ICS feed the
+assignment list uses. Marco's device currently has **no stored Canvas session**
+(he connected Canvas before v2.5 started persisting Canvas cookies), so Grades
+is empty and Canvas submission detection is inert. The fix is for him to tap
+**Reconnect Canvas** in Grade Watcher. Until he does, grades and submission
+tracking cannot be verified end-to-end against real data.
 
 ---
 
-## 🔬 Submission detection — feasibility investigation (NEW, in progress)
+## 🆕 What changed in this session (2026-07-26)
 
-**Goal (user):** the app should read real Canvas submission state, drive app
-state from it, and send notifications based on whether assignments are submitted.
+**Bug fixes**
 
-### Key finding: the self-scoped Canvas session API is OPEN at Penn ✅
+- **Grade Watcher resolved no courses.** Canvas course ids only ever arrive
+  attached to an ICS item's URL, and the parser understood only direct
+  `/courses/<id>/assignments/<id>` links. Canvas also emits calendar-style
+  `/calendar?include_contexts=course_<id>` URLs, which resolved to nothing — so
+  every class vanished and the screen claimed "no classes selected" while the
+  picker showed them all switched on. `AppState.courseID(from:)` now reads both
+  shapes; resolved ids are cached in `canvasCourseIDsByCode` (persisted) so a
+  class stays fetchable in a week when it has nothing due and contributes no URL.
+- **Completing a cross-posted assignment produced two Done cards.**
+  `DashboardViewModel.reload` rebuilt its completed pool from the **raw**
+  `canvasItems + gradescopeItems`, not the deduplicated pool. Since completing a
+  merged item marks *both* underlying ids done (via `linkedID`), both originals
+  qualified for Done. `AppState` now publishes `mergedCoursework` and Done reads
+  that. Covered by `DoneDuplicationTests` — verified to fail (2 cards) without
+  the fix.
+- **Grade Watcher failed silently.** `GradeWatcherStore.error` was set on every
+  non-expiry failure and **never rendered**, so a missing Canvas session looked
+  identical to "no grades yet": empty cards, no explanation. Now surfaced as an
+  amber banner with **Reconnect Canvas** + **Try again** actions (also on the
+  expired-session banner and the "can't match your classes" empty state).
 
-Run in the user's **logged-in browser** (their session, not ours):
+**Features / UI**
 
-```
-GET https://canvas.upenn.edu/api/v1/users/self/courses?enrollment_state=active&per_page=100
-→ returned full JSON (all enrollments). PROVEN reachable with session cookies.
-```
-
-This **does not contradict** the "Penn IT denied Canvas API access" constraint.
-That denial was of **developer / OAuth keys** (third-party integrations).
-Reading *your own* data through *your own* logged-in session is a different door,
-and it is open — the **same auth the syllabus scanner already uses**
-(`SessionCookieStore` + `CanvasDiscoveryClient`, cookie-authenticated GETs).
-
-### The hard ceiling (tell the user before building)
-
-- Submission state is only knowable **while the Canvas session is alive.** Penn
-  SSO cookies expire server-side; when they lapse the app falls back to the
-  cookieless ICS feed (no submission field), so submission state **goes stale
-  until re-login.** "At all times" is not achievable. Realistic model:
-  *refresh on each sync while logged in; degrade gracefully otherwise.*
-- Canvas does not push changes, so "notify when it flips to submitted" means
-  **polling on each sync**, not real-time.
-- **Notifications stay regardless** (user: "a notification about an assignment
-  is still helpful, regardless of if you submitted it"). If submission lands,
-  submitted items just get their reminder suppressed.
-
-### One confirmation step still open
-
-The submission field itself has **not yet been observed**, only the auth path:
-
-```
-GET https://canvas.upenn.edu/api/v1/courses/:id/assignments?include[]=submission&per_page=5
-```
-
-Each assignment *should* carry `submission.workflow_state`
-(`unsubmitted` / `submitted` / `graded` / `pending_review`) + `submitted_at`.
-Tested so far:
-- **CIS 3200** (id `1925208`, the only current real course) → returned `[]`
-  (Summer 2026 course, no assignments posted yet — not a failure).
-- A cohort/diagnostic course → `404 "resource does not exist"` (Assignments tab
-  disabled; auth still worked).
-
-**NEXT:** rerun `include[]=submission` against a course that actually **has
-assignments** — e.g. **MATH 1400** (id `1830605`, completed Spring 2025). That
-single result confirms the `submission` object shape and closes feasibility.
-
-### Build sketch (once confirmed)
-
-- New `CanvasSubmissionClient` in `Sources/LowHangingFruitKit/Canvas/`, mirroring
-  `CanvasDiscoveryClient` (cookie auth, `URLSession`). Strip any leading
-  `while(1);` XSSI prefix before JSON decode.
-- On each sync, fetch submissions per **selected** course, map assignment
-  id/URL → `workflow_state`, and set `Assignment.submitted` (today hardcoded
-  `false` at `CanvasICSClient.swift:51`).
-- Keep notifications as due-date reminders; suppress reminders for submitted items.
+- **Edit classes** (Settings → Classes): swipe to **Rename** or **Delete**,
+  long-press for a menu that adds "Reset to <code>"; deleted classes still
+  collapse into a restore list. Renaming is **cosmetic only** — selection,
+  reminders, grades and dedup all still key on the Canvas course code, so a
+  re-sync can't undo a rename or orphan a class. Renamed labels show on the
+  dashboard and Done cards via `EnvironmentValues.courseNameOverrides`
+  (an empty map = old behaviour, so previews stay AppState-free).
+- **Settings and Grades are pushed pages, not sheets.** Both hang off the
+  dashboard's `NavigationStack` via `ContentView.DashRoute`. `SettingsSheet` was
+  renamed to **`SettingsPage`** and no longer owns a `NavigationStack` or a
+  modal "Done" button. Both pages carry `.lhfSheetTheme()` so they use the app's
+  paper palette instead of the system grouped background.
+- **Header redesign.** The weekly progress ring is gone from the top right,
+  replaced by two circular icon buttons on one line — Grades, then **Settings in
+  the corner**. `ProgressRingView` still exists but is no longer on the
+  dashboard.
+- **Splash plays 1.4× (40% faster)** via `SplashPlayer.playbackRate`. The
+  safety-net timeout (6s → ~4.3s) and the handoff fade (0.45s → 0.32s) are
+  scaled to match. Reading "40% faster" as 1.4× speed; if it should mean "40%
+  less time" that's 1.667 in one constant.
+- Removed the "your archive says otherwise." line from the Done footer and the
+  **Debug** section from Settings.
 
 ---
 
-## 🐛 Priority 1 — Sync bloat: ROOT CAUSE FOUND
+## 🐛 Known bugs NOT fixed (inherited, still live)
 
-**Symptom:** the list gets polluted with assignments from past terms.
+**The v2.5 widget cannot work as committed — two independent defects:**
 
-**Root cause (empirical, from probe #1):** the user is enrolled in **9 "active"
-Canvas courses spanning 4 terms**, but only **CIS 3200-920 (`202620` / Summer
-2026)** is a real current class. The rest are **diagnostics, "Class of 2028"
-cohort spaces, and old courses Canvas never marked "concluded"** — so they stay
-`active` forever and the ICS feed dutifully pulls all their assignments. It is
-**not** primarily a parser bug; it's un-scoped course inclusion. The existing
-5-month `isTooOld` cutoff (`AppState.isTooOld`) can't catch a never-ending
-diagnostic space or a recent past term.
+1. `project.yml` declares the widget dependency with `platforms: [iOS]`.
+   xcodegen 2.45.4 **silently discards the whole dependency**: the generated
+   project has zero copy-files phases and zero target dependencies, so the
+   `.appex` is built and thrown away. Verified by removing that one line —
+   dependencies go 0 → 5, copy phases 0 → 3.
+2. The widget target points `info.path` at `LHFWidget/Info.plist` while listing
+   only `CFBundleDisplayName`, so **every `xcodegen generate` rewrites that file
+   from scratch and deletes the `NSExtension` /
+   `NSExtensionPointIdentifier = com.apple.widgetkit-extension` block** — the
+   declaration that makes it a WidgetKit extension at all. Commit `e8d4bc6`
+   restored the file but did not disarm this, so the trap is still set. **If you
+   run `xcodegen generate`, immediately `git checkout -- LHFWidget/Info.plist`.**
 
-### Chosen fix — Option 3, hybrid class picker (user approved: "I like 3")
+Fixes: drop the `platforms` filter (or upgrade xcodegen), and move the
+`NSExtension` keys into `project.yml`'s `info.properties` so they survive
+regeneration.
 
-- On connect, **auto-detect current-term courses and pre-select them**; also show
-  the **full class list** so the user can uncheck junk / add a summer class. Only
-  **selected** courses' assignments surface. This is the "guard so stale-term
-  items can't reappear."
-- **Term detection:** Penn `course_code` suffix is `YYYYTT` where
-  `TT = 10 Spring / 20 Summer / 30 Fall` (June 2026 → `202620`). Or use
-  `enrollment_term_id` from the courses API.
-- **Data source:** `/api/v1/users/self/courses?enrollment_state=active` (proven)
-  gives `id`, `name`, `course_code`, `enrollment_term_id` per course. Map each
-  ICS assignment → its course via the `/courses/<id>/` segment in the item's URL.
-- **Persist** the selected-course set in `AppState` + `UserDefaults` (same pattern
-  as `completedAssignmentIDs` / `manualAssignments`).
+**Also worth checking:** the same commit range that added the Light/Dark setting
+also added `UIUserInterfaceStyle: Light` to the app's Info.plist, which pins the
+interface style at the system level. Confirm dark mode actually engages on
+device — this was never verified.
 
 ---
 
-## 📋 Priority 1–3 task list (PAUSED — original brief, resume after submission)
+## 🔐 How login / session works (three different auth paths — don't conflate them)
 
-**P1 — Bugs** (drive WITH the user, do not loop autonomously):
-- **Sync bloat** — root-caused above; fix = the class picker.
-- **Sync + manual-add seamless** — rigorously test the full sync path and the
-  add-assignment flow. Edge cases to cover: duplicate items across sources,
-  manual item colliding with a synced one, offline add, deleted-on-Canvas item.
+- **Assignments — no login after onboarding.** Onboarding captures the personal
+  Canvas **calendar-feed URL** (`…/feeds/calendars/user_<token>.ics`, a
+  self-authenticating secret URL). Every sync is a plain cookieless HTTPS GET.
+  ICS carries **no submission state** (`CanvasICSClient.normalize` hardcodes
+  `submitted: false`).
+- **Grades + Canvas submission detection — need a live cookie session.**
+  `CanvasGradesClient` replays persisted Canvas cookies
+  (`SessionCookieStore`, Keychain; gathered via `AutoSyncCoordinator.canvasCookies()`).
+  Penn SSO expires server-side and **cannot be refreshed silently** — the WebView
+  login has to run again, which is what the Reconnect button does.
+- **Gradescope** — no student API, so login cookies are persisted and replayed
+  (`GradescopeClient`), throttled to ≤ 1 sync / 15 min.
 
-**P2 — Defined changes** (may loop against a real test gate; stop after the same
-error twice):
-- Show item **provenance** on each card (Canvas vs manual).
-- Parse the raw course string into a clean **code + number**
-  (`FNAR 3230-401 202610 PSYCHEDELIC…` → `FNAR 3230`); build a test table of
-  messy strings → expected output and loop until all pass.
-- Progress ring **total reflects the active filter** (This Week vs All).
-- Remove the "A one-time assignment" helper text, or make it reflect the
-  Repeats-weekly toggle (recommend which + why).
+### Submission state — what the app does and doesn't know
 
-**P3 — Quality pass** (run once, findings report only, NO edits): run the UI/UX
-frontend skill across the app and surface every improvement with reasoning.
+Three independent notions of "done", and they are **not** interchangeable:
 
-**Backlog (noted, not now):** the app deep-links straight to Penn Canvas —
-acceptable for a Penn-first launch, not the long-term answer.
+| Signal | Source | Persisted? |
+|---|---|---|
+| Manual tick | user taps a card → `completedAssignmentIDs` + `completionDates` | **Yes** (UserDefaults) |
+| Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | with the item |
+| Canvas submitted | `submittedCanvasAssignmentIDs`, derived by `updateSubmissionState()` from Grade Watcher snapshots | **No — recomputed every refresh** |
 
----
-
-## 🔐 How login / session works
-
-**Log in once — they stay logged in.**
-- **Onboarding never reappears** (`hasCompletedOnboarding` in `UserDefaults`).
-- **Assignments need no re-login.** Onboarding captures the personal Canvas
-  **calendar-feed URL** (`…/feeds/calendars/user_<token>.ics`, a self-
-  authenticating secret token URL). Every launch + the 5-min auto-refresh fetch
-  it with a plain HTTPS GET — no cookies, no session (`CanvasICSClient`,
-  `AppState.sync()`).
-- **Only the syllabus/announcement "suggestions" scanner uses login cookies**
-  (`SessionCookieStore` persists + replays them). Penn SSO cookies expire
-  server-side; when they do, only that feature asks to reconnect. **The
-  submission-detection feature (above) will ride on this same cookie session.**
+The Canvas set is deliberately **not** persisted so a retracted/corrected
+submission self-heals. Visible consequence: on a cold launch an auto-filed item
+sits in the active list until the first successful grade refresh lands, then
+moves to Done. And because it is derived from the grades fetch, **no Canvas
+session ⇒ the app does not know what's submitted.** Canvas doesn't push, so this
+is polling while the session is alive — best-effort, never real-time.
 
 ---
 
@@ -181,81 +153,89 @@ LHFWidget/                 # iOS WidgetKit extension (Home + Lock Screen "Next D
 project.yml                # xcodegen source of truth → LowHangingFruit.xcodeproj
 LowHangingFruitKit/
   Sources/
-    LowHangingFruitUI/     # SwiftUI: RootView, ContentView, AppState,
-                           #   DashboardViewModel, Onboarding, Settings,
-                           #   NotificationScheduler, cards, design tokens…
-    LowHangingFruitKit/    # data layer (no UI)
-      Models/Assignment.swift
-      Canvas/{CanvasICSClient,ICSParser}.swift
-      CanvasDiscovery/{CanvasDiscoveryClient,CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/
-docs/appstore/             # App Store submission package
+    LowHangingFruitUI/     # SwiftUI + app logic (Marco)
+      RootView, ContentView, AppState, DashboardViewModel
+      OnboardingView, SettingsPage, SplashView
+      GradeWatcherView / GradeWatcherStore / GradeCourseCardView
+      NotificationScheduler, AutoSyncCoordinator, SessionCookieStore
+    LowHangingFruitKit/    # data layer, no UI (Olisa)
+      Models/{Assignment, CourseCode, Term, AssignmentDeduplicator}.swift
+      Canvas/{CanvasICSClient, ICSParser, CanvasGradesClient}.swift
+      Gradescope/GradescopeClient.swift
+      CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
+  Tests/LowHangingFruitKitTests/   # 183 tests
+docs/grades.md             # Grade Watcher design brief
+docs/appstore/             # App Store package (STALE — describes Canvas-only 1.0)
 ```
 
-- **Marco** owns the UI layer; **Olisa** owns the data layer. Cross-cutting
-  changes (e.g. the `Assignment` model) get a quick sync first.
+- **Marco** owns the UI/app layer; **Olisa** owns the data layer. Cross-cutting
+  model changes get a quick sync first.
+- **Tests share `UserDefaults.standard`.** `AppState` persists there, so any test
+  that toggles selection/completion must normalize on the way **in and out** —
+  an interrupted run otherwise leaves state that fails the next one. See
+  `GradeWatcherCourseResolutionTests`.
 
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test        # 13/13 passing as of this session
-# Run: open LowHangingFruit.xcodeproj, pick an iPhone SIMULATOR (no signing), ⌘R
-xcodegen generate                          # regenerate project after editing project.yml
+cd LowHangingFruitKit && swift test              # 183 passing
+xcodegen generate                                # then: git checkout -- LHFWidget/Info.plist
 ```
 
-- **Widget (`LHFWidget/`)** — a separate iOS process, so it can't read
-  `AppState`. The app writes a small "next due" snapshot to a shared **App
-  Group** container (`WidgetSnapshotStore` in `LowHangingFruitKit`) on every
-  dashboard rebuild and calls `WidgetCenter.reloadAllTimelines()`; the widget
-  reads it. **Manual step before it works:** in Xcode → Signing &
-  Capabilities, add the **App Groups** capability `group.com.lhf.lowhangingfruit`
-  to *both* the `LowHangingFruit` and `LHFWidgetExtension` targets (entitlements
-  files already reference it; this registers the group with your Apple ID).
-  Without it the container URL is nil and the widget shows its empty state.
-- **DEBUG seam:** launch with `-LHFDemoData` (populated dashboard, skips
-  onboarding), plus `-LHFTabAll`, `-LHFTabDone`, `-LHFShowSettings`.
+**Signing is resolved.** `project.yml` carries `DEVELOPMENT_TEAM: 24A3TDB277`
+(Olisa's team, "GABRIEL NKOLISA NWOGUGU") on **both** the app and widget targets.
+Marco's iPhone (`00008150-000A25D63428401C`) is registered in the provisioning
+profile. Xcode has the team signed in, so `-allowProvisioningUpdates` can
+register new devices.
+
+**Install to the device** (requires **Developer Mode ON** — Settings → Privacy &
+Security → Developer Mode → restart; it cannot be enabled from the Mac, and the
+phone must be **unlocked** to launch):
+
+```sh
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+  -configuration Debug -destination 'generic/platform=iOS' \
+  -allowProvisioningUpdates -derivedDataPath /tmp/DD build
+xcrun devicectl device install app --device 00008150-000A25D63428401C \
+  /tmp/DD/Build/Products/Debug-iphoneos/LowHangingFruit.app
+xcrun devicectl device process launch --device 00008150-000A25D63428401C \
+  --terminate-existing com.lhf.lowhangingfruit
+```
+
+Debug builds are development-signed and **expire in ~7 days** — reinstall to
+refresh. `CompileAssetCatalogVariant` has failed transiently once; a straight
+retry fixed it.
+
+- **DEBUG launch flags:** `-LHFDemoData` (populated dashboard, skips splash +
+  onboarding), `-LHFTabAll`, `-LHFTabDone`, `-LHFShowSettings`.
+- **Widget App Group:** automatic provisioning registers
+  `group.com.lhf.lowhangingfruit`; without it the container URL is nil and the
+  widget shows its empty state. (Moot until the two widget bugs above are fixed.)
 
 ## 📌 Important constraints
 
 - **Canvas developer/OAuth API is denied by Penn IT** → the assignment list comes
-  from the user's Canvas **calendar ICS feed** (no submission state in ICS).
-  Submission state for true assignments (quizzes excepted, since their ICS URLs
-  use a different id space) is now recovered instead from the self-scoped grades
-  fetch (`/api/v1/...` with the user's own login cookies, docs/grades.md §12) —
-  distinct from the denied developer keys.
+  from the **calendar ICS feed**. The *self-scoped session API* (the user's own
+  login cookies) is reachable and is what grades/discovery use — that is a
+  different door from the denied developer keys.
 - No backend of ours; everything on-device. No analytics/tracking/ads.
-  `PrivacyInfo.xcprivacy` declares no collection (UserDefaults reason CA92.1).
-- Generated artifacts (`build/`, `LowHangingFruitKit/dist*/`, `.iosbuild/`) are
-  gitignored.
+  `PrivacyInfo.xcprivacy` declares no collection.
+- **Do NOT commit real Canvas/Gradescope data** — user ids, secret feed-token
+  URLs, cookies. Use synthetic values in tests and fixtures.
+- **Pushing** needs the **`Marcomercader`** gh account
+  (`gh auth switch --user Marcomercader`); `marco-opertti-lightfeatherio` has no
+  access to `OlisaNW247/penn-dashboard`.
 
-## 🔒 Do NOT commit real Canvas data
+## 🔭 Follow-ups
 
-The feasibility probes returned the user's **real** Canvas data (user id, secret
-per-course `…/feeds/calendars/course_<token>.ics` URLs). Keep these out of git,
-this handoff, memory, and any fixtures. Use synthetic values in tests.
-
----
-
-## 🚀 App Store status (still the eventual destination, after the work above)
-
-- Version **1.0.0 / build 1**, commit `5c5354b`. `swift test` passes; iOS
-  **Release** builds succeed in the simulator; onboarding → dashboard verified.
-- **The one blocker: code signing.** Device/Archive builds fail with _"Signing
-  requires a development team"_ — no Apple Developer account is signed into Xcode
-  on this Mac. Fix: Xcode → Settings → Accounts → add Apple ID → target
-  **LowHangingFruit** → Signing & Capabilities → automatic signing → pick Team,
-  then add `DEVELOPMENT_TEAM` to `project.yml` so it survives `xcodegen generate`.
-- **Git push:** remote is `OlisaNW247/penn-dashboard`; pushing needs the
-  **`Marcomercader`** account (`gh auth switch --user Marcomercader`).
-- Full submission runbook: **`docs/appstore/CHECKLIST.md`** (App Store Connect
-  record, privacy hosting, listing/assets, review notes + demo video, archive &
-  submit). **Review-access decision:** reviewers can't pass Penn SSO → handled
-  with review notes + demo video, not an in-app sample-data path.
-
-## 🔭 Known follow-ups
-
-- No in-app "Log out / disconnect" control; sync errors surface in Settings only.
-- Sample-data demo path for onboarding (review insurance) — not built.
-- macOS ("My Mac") destination not yet exercised post-Gradescope-removal.
-</content>
-</invoke>
+- **Fix the two widget defects** above — highest value, they make a shipped
+  feature dead.
+- **Verify grades + submission detection** once Marco reconnects Canvas.
+- **`docs/appstore/` is stale** — it still describes the Canvas-only 1.0.
+  Gradescope, grades and cookie persistence all change the compliance story;
+  update before any submission.
+- `.timeSensitive` notifications need the *Time Sensitive Notifications*
+  capability enabled in Xcode to break through Focus (harmless without it).
+- No explicit "Disconnect Gradescope"; `SessionCookieStore.clear()` exists but is
+  not wired to any UI.
+- `ProgressRingView` is now unused by the dashboard — delete it or find it a home.

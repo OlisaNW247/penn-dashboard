@@ -12,6 +12,8 @@ struct AssignmentCardView: View {
     let onComplete: () -> Void
     let onEdit: () -> Void
 
+    @Environment(\.courseNameOverrides) private var courseNameOverrides
+
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
 
@@ -57,7 +59,7 @@ struct AssignmentCardView: View {
     private func content(state: DueState, now: Date) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(item.assignment.displayCourse.uppercased())
+                Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)

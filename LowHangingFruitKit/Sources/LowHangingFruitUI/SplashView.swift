@@ -73,8 +73,10 @@ struct SplashView: View {
             // Reduce Motion shows a brief static beat; otherwise a safety net so
             // a clip that never loads or ends can't strand the user. The cancel
             // check avoids a redundant fire once the video already dismissed us.
-            let seconds: UInt64 = reduceMotion ? 1 : 6
-            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            // Scaled by the same factor as playback so the net stays a safety
+            // net — a fixed 6s would now outlast the sped-up clip by seconds.
+            let seconds = reduceMotion ? 1 : 6 / Double(SplashPlayer.playbackRate)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             if !Task.isCancelled { onFinished() }
         }
     }
@@ -83,6 +85,11 @@ struct SplashView: View {
 // MARK: - AVPlayer host (no transport controls)
 
 private struct SplashPlayer {
+    /// Playback speed for the intro clip. 1.4 = 40% faster than recorded; the
+    /// asset itself is untouched, so this is reversible by changing one number.
+    /// `SplashView`'s safety-net timeout divides by this, keeping the two in step.
+    static let playbackRate: Float = 1.4
+
     let onFinished: () -> Void
     /// Selects which bundled clip to play. Dark mode plays a distinct
     /// pre-rendered asset (`splash_dark.mp4`) rather than recoloring the
@@ -136,7 +143,9 @@ private struct SplashPlayer {
                 .publisher(for: .AVPlayerItemDidPlayToEndTime, object: item)
                 .receive(on: RunLoop.main)
                 .sink { [weak self] _ in self?.finishOnce() }
-            player.play()
+            // Setting a positive rate starts playback, so this replaces play()
+            // rather than following it (play() would reset the rate to 1).
+            player.rate = SplashPlayer.playbackRate
         }
 
         private func finishOnce() {

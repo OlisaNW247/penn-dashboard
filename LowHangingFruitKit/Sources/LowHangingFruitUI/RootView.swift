@@ -29,7 +29,8 @@ public struct RootView: View {
                 // environment key isn't safely readable at the splash's own
                 // first render.
                 SplashView(isDarkMode: state.appearanceMode == .dark) {
-                    withAnimation(.easeOut(duration: 0.45)) { showSplash = false }
+                    // Handoff fade, sped up to match the clip (0.45 / 1.4).
+                    withAnimation(.easeOut(duration: 0.32)) { showSplash = false }
                 }
                 .transition(.opacity)
                 .zIndex(1)

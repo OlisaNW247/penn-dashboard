@@ -45,6 +45,7 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24A3TDB277
         CODE_SIGN_ENTITLEMENTS: App/LHFApp.entitlements
 
   # Home Screen + Lock Screen widget. iOS-only WidgetKit extension; reads the
@@ -72,4 +73,5 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24A3TDB277
         CODE_SIGN_ENTITLEMENTS: LHFWidget/LHFWidget.entitlements
