@@ -141,6 +141,7 @@ final class AppState: ObservableObject {
         if isPreviewMode {
             hasCompletedOnboarding = true
             if userName.isEmpty { userName = "there" }
+            loadPreviewData()
         }
 
         #if DEBUG
@@ -155,6 +156,19 @@ final class AppState: ObservableObject {
 
     /// First-run onboarding is required until both core data sources are connected.
     var needsOnboarding: Bool { !hasCompletedOnboarding }
+
+    /// True when the store is showing bundled fixtures rather than a real
+    /// account: the reviewer-facing preview, or the DEBUG screenshot seam.
+    /// Both need the same treatment everywhere the app would otherwise reach
+    /// for the network or for Canvas-derived identifiers.
+    var isUsingFixtureData: Bool {
+        if isPreviewMode { return true }
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
+        #else
+        return false
+        #endif
+    }
 
     /// True once the Canvas calendar feed has been captured automatically.
     var isCanvasConnected: Bool { !canvasICSURL.isEmpty }
@@ -184,17 +198,53 @@ final class AppState: ObservableObject {
         UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
         // student who tapped Preview can switch to their own Canvas cleanly.
+        let wasPreview = isPreviewMode
         isPreviewMode = false
         UserDefaults.standard.set(false, forKey: Self.previewModeKey)
+        if wasPreview {
+            // Drop the fixtures on the way out. They'd never render again
+            // (their course ids leave with preview mode), but leaving demo
+            // grades in the store means the first real refresh merges into
+            // sample data rather than starting clean.
+            canvasItems = []
+            gradeWatcher.clearAll()
+            rebuildDashboardItems()
+        }
     }
 
     /// Enters a read-only demo populated with sample courses and assignments, so
     /// anyone who can't pass Penn SSO (notably an App Store reviewer) can explore
     /// the full app. No network, no login; the dashboard reads bundled fixtures.
+    /// Populates the demo's *shared* state — the class list, the widget
+    /// snapshot, and Grade Watcher — from the bundled fixtures.
+    ///
+    /// The dashboard itself doesn't come through here: `ContentView` hands
+    /// `DashboardViewModel` its own `SampleData` items and never binds to this
+    /// store in preview. But everything that reads `AppState` directly
+    /// (Settings → Classes, the class picker, Grade Watcher's course list) was
+    /// reading an empty store and rendering an empty screen, which is exactly
+    /// the "app looks broken" impression preview mode exists to prevent.
+    ///
+    /// Deliberately non-destructive: it never touches `completedAssignmentIDs`
+    /// or `completionDates` (unlike DEBUG's `loadSampleData`), so a real
+    /// student who taps Preview out of curiosity doesn't lose their own
+    /// completion history.
+    func loadPreviewData() {
+        canvasItems = SampleData.items().map(\.assignment)
+        rebuildDashboardItems()
+        gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
+    }
+
     func enterPreviewMode() {
         isPreviewMode = true
         UserDefaults.standard.set(true, forKey: Self.previewModeKey)
         if userName.isEmpty { userName = "there" }
+        // Seed immediately, not just on the next launch: `init` only reaches
+        // `loadPreviewData` when preview mode was already persisted, so
+        // without this the reviewer who just tapped "Preview with sample data"
+        // gets an empty class list and an empty Grade Watcher until they
+        // relaunch the app.
+        loadPreviewData()
         completeOnboarding()
     }
 
@@ -207,6 +257,39 @@ final class AppState: ObservableObject {
             error = nil
             lastSync = nil
         }
+    }
+
+    // MARK: - Disconnecting (Settings → Account)
+
+    /// Signs out of Canvas: drops the captured calendar feed, purges the
+    /// Keychain session cookies, and clears everything derived from them.
+    ///
+    /// There's no account to delete on our side (no backend, no sign-up), but
+    /// the app does hold live credentials for two services, and until now the
+    /// only way to get rid of them was to delete the app — `SessionCookieStore`
+    /// had no caller in the UI at all.
+    ///
+    /// Gradescope's cookies live in the same Keychain blob and are left alone
+    /// (`remove(domainContains:)`, not `clear()`), so disconnecting one service
+    /// never silently signs the user out of the other.
+    func disconnectCanvas() {
+        SessionCookieStore.remove(domainContains: "canvas")
+        SessionCookieStore.remove(domainContains: "upenn")
+        updateCanvasICSURL("")
+        canvasCourseIDsByCode = [:]
+        UserDefaults.standard.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        submittedCanvasAssignmentIDs = []
+        gradeWatcher.clearAll()
+        rebuildDashboardItems()
+    }
+
+    /// Signs out of Gradescope: purges its cookies and everything scraped with
+    /// them. Canvas stays connected.
+    func disconnectGradescope() {
+        SessionCookieStore.remove(domainContains: "gradescope")
+        setGradescopeConnected(false)
+        gradescopeItems = []
+        rebuildDashboardItems()
     }
 
     func syncIfConfigured() async {
@@ -344,6 +427,14 @@ final class AppState: ObservableObject {
     /// picker is also skipped here, so we never fetch grades for a course
     /// nobody asked to see.
     func refreshGradeWatcher(cookies: [HTTPCookie]) async {
+        // The demo has no session and must never reach the network. Re-seed
+        // the fixtures instead of falling through to a refresh that would set
+        // the "No saved Canvas session" banner over the sample grades.
+        guard !isUsingFixtureData else {
+            gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
+            return
+        }
+
         // Piggyback on Gradescope items this launch's throttled AutoSyncCoordinator
         // sync already fetched (docs/grades.md §4/§9) — never a second, unthrottled
         // Gradescope scrape just for the overlay.
@@ -744,6 +835,14 @@ final class AppState: ObservableObject {
     /// this time round and would otherwise silently drop out of Grade Watcher.
     /// Pure read — the cache is written by `updateCanvasCourseIDCache`.
     private func canvasCourseIDs() -> [String: String] {
+        // Preview mode's sample assignments carry no Canvas URLs, so nothing
+        // ever resolved a course id and Grade Watcher showed "Can't reach
+        // Canvas for your classes" — the demo's most visible dead end. Serve
+        // the fixture ids instead, in memory only: writing them into
+        // `canvasCourseIDsByCode` would outlive the demo and later point a
+        // real refresh at course ids that don't exist.
+        if isUsingFixtureData { return SampleData.previewCourseIDsByID }
+
         var byCode = canvasCourseIDsByCode
         for item in canvasItems {
             guard item.course != Self.unknownCourse,

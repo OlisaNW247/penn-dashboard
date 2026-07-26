@@ -87,7 +87,9 @@ struct ContentView: View {
                 // Seed AppState too, so the Settings class list has courses.
                 state.loadSampleData()
                 vm.loadSampleData()
+                state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.settings] }
+                if args.contains("-LHFShowGrades") { path = [.grades] }
                 return
             }
             #endif

@@ -204,18 +204,24 @@ struct GradeWatcherView: View {
     /// fine and the fetch just failed (offline, Canvas hiccup).
     private var recoveryActions: some View {
         HStack(spacing: 16) {
-            Button {
-                state.restartOnboarding()
-            } label: {
-                Text("Reconnect Canvas")
-                    .font(.lhfSans(12, weight: .semibold))
-                    .foregroundStyle(Color.v2ToggleActiveTx)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.v2Ink))
-                    .contentShape(Capsule())
+            // Hidden in preview mode: `restartOnboarding()` clears
+            // `isPreviewMode` and drops the tapper into Penn SSO. For an App
+            // Store reviewer exploring the demo that's a one-way exit into a
+            // login they cannot pass — the opposite of what this button is for.
+            if !state.isPreviewMode {
+                Button {
+                    state.restartOnboarding()
+                } label: {
+                    Text("Reconnect Canvas")
+                        .font(.lhfSans(12, weight: .semibold))
+                        .foregroundStyle(Color.v2ToggleActiveTx)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(Capsule().fill(Color.v2Ink))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Button {
                 Task { await performRefresh() }
