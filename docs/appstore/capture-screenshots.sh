@@ -41,7 +41,8 @@ shot "2-dashboard-thisweek" -LHFDemoData
 shot "3-dashboard-all"      -LHFDemoData -LHFTabAll
 shot "4-dashboard-done"     -LHFDemoData -LHFTabDone
 shot "5-grades"             -LHFDemoData -LHFShowGrades
-shot "6-settings-reminders" -LHFDemoData -LHFShowSettings
+shot "6-grade-report"       -LHFDemoData -LHFShowReport
+shot "7-settings-reminders" -LHFDemoData -LHFShowSettings
 
 xcrun simctl terminate "$DEVICE" "$BUNDLE" 2>/dev/null || true
 echo "Done → $OUT"

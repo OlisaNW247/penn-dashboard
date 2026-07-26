@@ -7,6 +7,20 @@ public enum ScoreSource: String, Sendable, Codable, Hashable {
     case canvas
     case gradescopeEarly
     case manual
+    /// A category weight read from the user's own syllabus and confirmed by
+    /// them. Distinct from `.manual` so the UI can say where a number came
+    /// from — "your syllabus" is checkable against a document; "manual" isn't.
+    case syllabus
+
+    /// Short, user-facing provenance label.
+    public var label: String {
+        switch self {
+        case .canvas:          return "Canvas"
+        case .gradescopeEarly: return "Gradescope early"
+        case .manual:          return "manual"
+        case .syllabus:        return "your syllabus"
+        }
+    }
 }
 
 /// One gradeable Canvas assignment as the grade engine sees it. Gradescope
@@ -117,6 +131,12 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         public let possibleScored: Double
         /// Points possible over ALL gradeable items (scored or not, no drops).
         public let possibleTotal: Double
+        /// Points possible over scored items **before** drop rules are applied.
+        /// This — not `possibleScored` — is what "how much of this category is
+        /// decided" means (docs/grades.md Decision 6: % decided ignores drops
+        /// so it stays monotonic), and it's what `GradeProjection` divides by
+        /// to split the final grade into banked vs still-open.
+        public let possibleScoredRaw: Double
         /// Scored gradeable items, before drops.
         public let scoredCount: Int
         /// All gradeable items (excused / omitted excluded).

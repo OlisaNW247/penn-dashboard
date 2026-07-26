@@ -66,7 +66,7 @@ struct PreviewModeTests {
         #expect(!state.gradeWatcher.snapshots.isEmpty)
     }
 
-    @Test("every fixture course computes a grade")
+    @Test("every fixture course computes a grade and a projection")
     func fixturesProduceGrades() {
         withPreviewMode { state in
             let store = state.gradeWatcher
@@ -74,6 +74,7 @@ struct PreviewModeTests {
                 let breakdown = store.breakdown(courseID: courseID)
                 #expect(breakdown != nil, "no breakdown for \(courseID)")
                 #expect(breakdown?.currentPercent != nil, "no grade for \(courseID)")
+                #expect(store.projection(courseID: courseID) != nil, "no projection for \(courseID)")
             }
         }
     }

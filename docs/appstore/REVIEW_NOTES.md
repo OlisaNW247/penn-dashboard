@@ -5,8 +5,8 @@ _Last updated: 2026-07-26 (v2.5). Add a contact name and email before pasting._
 **App:** Low Hanging Fruit (LHF)
 **What it is:** A personal academic dashboard for university students. It reads
 the student's own Canvas assignment deadlines and grades and shows them as one
-chronological "what's due next" list, with local reminders and per-class grades.
-Everything runs on the device; we operate no server.
+chronological "what's due next" list, with local reminders and a per-class grade
+report. Everything runs on the device; we operate no server.
 
 ---
 
@@ -29,9 +29,12 @@ with no account and no network access.
    cards with current grade, a "% of your grade decided" bar, category
    breakdowns, and an estimated term GPA. These are computed by the app's real
    grading engine from bundled sample data.
-3. **Settings** — the gear icon: class list, appearance (light/dark), reminders,
+3. **Full grade report** — tap "Full report" on any class card for the
+   projection view: where the grade lands if you stop now, at your current pace,
+   or with a perfect finish, plus "what you'd need" for a target letter grade.
+4. **Settings** — the gear icon: class list, appearance (light/dark), reminders,
    and account connections.
-4. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
+5. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
 
 The attached screen recording additionally shows the real Canvas login flow
 end-to-end.
@@ -50,7 +53,10 @@ end-to-end.
 5. **Grades (optional):** using the user's own logged-in Canvas session, the app
    reads their own assignment groups, weights, and scores — the same data on
    Canvas's own grades page — and computes a per-class breakdown on-device.
-6. **Reminders (optional):** local notifications before each due date. No
+6. **Syllabus (optional):** the user can attach their course syllabus (from
+   Canvas, a PDF, or pasted text). The app extracts only the grading section on
+   the device. The document is never uploaded.
+7. **Reminders (optional):** local notifications before each due date. No
    remote/push notifications.
 
 ## Data, privacy, and networking
@@ -59,7 +65,8 @@ end-to-end.
   (`canvas.upenn.edu`) and, if the user connects it, `gradescope.com`. We operate
   no server and receive no user data.
 - **Everything is stored on-device.** Assignments, completions, reminder
-  settings, self-created tasks and grade settings live in local storage. Login
+  settings, self-created tasks, grade settings and syllabus data live in local
+  storage. Login
   session cookies are stored in the **iOS Keychain**, encrypted at rest and
   marked this-device-only.
 - **No analytics, tracking, ads, or third-party SDKs.** Privacy manifests are

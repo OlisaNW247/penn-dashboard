@@ -21,6 +21,11 @@ only to the school services you sign in to.
   assignment groups, category weights, and submission status from Canvas using
   your logged-in session — the same information you see on Canvas's own grades
   page.
+- **Your syllabus (optional).** If you attach a syllabus to a class, the app
+  reads it from Canvas (or from a file or text you provide) and extracts only
+  the grading section: category weights, drop rules, expected assignment counts,
+  and letter-grade cutoffs. The document is read on your device. Neither the
+  document nor its text is uploaded anywhere.
 - **Gradescope (optional).** If you connect Gradescope, you sign in through
   Gradescope's own web page inside the app. The app reads your own assignments
   and scores to fill gaps Canvas hasn't graded yet.
@@ -30,8 +35,8 @@ only to the school services you sign in to.
 
 - **On your device only.** Assignments, completions, due-date edits, your name,
   reminder settings, self-created tasks, grade settings (category weights,
-  confirmed matches), and your observed grade history are stored locally on your
-  device.
+  confirmed matches, any attached syllabus's grading scheme), and your observed
+  grade history are stored locally on your device.
 - **Login sessions are stored in the iOS Keychain.** Canvas and Gradescope
   session cookies are kept encrypted at rest, on this device only, and are never
   included in unencrypted backups. They are used solely to re-authenticate you

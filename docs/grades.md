@@ -370,3 +370,130 @@ which items auto-file under Done without the user tapping anything.
   launch/activation off `ContentView`'s existing refresh loop, throttled to
   once per 15 minutes (mirroring the Gradescope throttle), so submission
   detection works on the dashboard without a Grade Watcher visit.
+
+---
+
+## 13. The grade report & syllabus ingestion (addendum, 2026-07-26)
+
+This section **reverses two of §8's cuts** — deliberately, and narrowly.
+Syllabus parsing is back, but only as a *proposal* the user confirms; and
+projections are back, but only as read-only arithmetic over scores that already
+exist (no user-entered hypotheticals).
+
+The reason for the reversal is a gap Canvas cannot close: Canvas knows what has
+been graded, not what it is worth, and not what hasn't been created yet.
+Professors routinely publish assignments a week before they're due, so
+"what's left" computed from Canvas alone is an undercount for most of the term.
+The syllabus is the only place that knows the shape of the whole course.
+
+### 13.1 Watching
+
+Watching a class is opt-in (`GradeWatcherStore.watchedCourseIDs`, persisted).
+Every selected class still gets a card and a grade — watching doesn't gate the
+numbers. It marks the classes the student is actively managing and is where a
+syllabus gets attached. Attaching a syllabus starts watching implicitly.
+
+### 13.2 Projection math (`GradeProjection`, pure)
+
+Per counting category: `w` = normalized weight, `f` = fraction of the
+category's points already scored (**pre-drop**, per Decision 6), `p` = the
+ratio in the scored, post-drop part.
+
+```
+E     = Σ w·f·p           earned share — the floor
+open  = 1 − Σ w·f         still up for grabs (= 1 − decidedFraction)
+floor   = E                    score 0 on everything left
+ceiling = E + open             score 100% on everything left
+pace    = E + open · current   the rest goes like the work so far
+needed(T) = (T − E) / open     required average on the rest to hit T
+```
+
+`needed` returns one of four states, not a bare number: `alreadyReached`,
+`need(percent)`, `unreachable(shortfall)`, `nothingLeft`. Points mode is the
+same formulas with a single implicit category (`w = 1`).
+
+The drop-rule asymmetry (`f` pre-drop, `p` post-drop) is intentional and
+matches Decision 6: dropped points are still decided — they're never coming
+back — while the grade itself correctly ignores them.
+
+### 13.3 Syllabus ingestion
+
+**Sources, best first** (`CanvasSyllabusClient`): `?include[]=syllabus_body`,
+course pages matching "syllabus", course files matching "syllabus" (PDF via
+PDFKit). Paste and file import are always available and are the only route for
+a syllabus hosted off Canvas. Finding nothing is a normal outcome, not an error.
+
+**Parsing is deterministic — no model, no network** (`SyllabusParser`). The app
+has no backend and a privacy manifest that says nothing leaves the device;
+both would have to change to send a student's syllabus somewhere to be read.
+Regex suffices because of one property of the domain:
+
+> **A grading scheme's weights sum to 100.** Accept only 90–110 (normalize to
+> 100); `|sum − 100| ≤ 0.5` with ≥ 2 categories is high confidence, the rest
+> medium, everything else is rejected outright and falls back to manual weights.
+
+That gate is what makes a cheap parser trustworthy: a misread essentially never
+adds up. Two specific traps are handled explicitly because they'd otherwise
+pass it — a `Total 100%` table row (doubles the sum) and comparison phrasing
+("attendance below 80% …", which reads as a category named "attendance below").
+
+Also extracted: drop-lowest counts from prose, **expected item counts**
+("there will be 10 problem sets" — the field Canvas can't provide), letter
+cutoffs (rejected unless ≥ 3 bands and monotonic with letter rank), and curve
+language (narrow markers only; "subject to change" is boilerplate and would
+flag every course).
+
+### 13.4 Mapping to Canvas (`SyllabusMatcher`)
+
+Same three tiers as the Gradescope overlay, sharing one normalizer
+(`TitleNormalizer`, extracted from `GradescopeOverlay` so the two matchers
+can't drift): exact → confirmed → fuzzy (proposed, never auto-applied) →
+unmatched. Ambiguous ties are left unmatched rather than guessed. Heavier
+categories win the greedy assignment.
+
+**Coverage is all-or-nothing.** Syllabus weights reach the engine only when
+every weight-bearing Canvas group is covered, because `GradeEngine`'s manual
+weights are all-or-nothing — a partial set would silently zero the categories
+it doesn't cover. Half a syllabus is worse than none.
+
+### 13.5 Provenance
+
+Syllabus weights flow in through the existing `manualWeights` channel plus
+`Input.syllabusWeightedCategoryIDs`, which changes only the reported
+`weightSource` (new `ScoreSource.syllabus`), never the arithmetic. A
+hand-typed weight always overrides a syllabus weight — the edit is the more
+recent, more deliberate statement of intent.
+
+### 13.6 Honesty rules (encoded, not aspirational)
+
+- Nothing parsed is applied without confirmation; every weight is shown next to
+  the line it was read from.
+- Every projection is labeled a projection.
+- A failed parse says so and hands off to manual weights — it never guesses.
+- Detected curve language is surfaced: cutoffs may not hold.
+- Letter grades say whether they came from the syllabus's cutoffs or the
+  standard estimate.
+
+### 13.7 Placement
+
+```
+Sources/LowHangingFruitKit/Syllabus/
+  SyllabusModels.swift        scheme, category, attached syllabus, candidate
+  SyllabusParser.swift        pure text → scheme; the 90–110 gate lives here
+  SyllabusTextExtractor.swift HTML (structure-preserving) + PDFKit + paste
+  SyllabusMatcher.swift       scheme categories ↔ Canvas groups, 3 tiers
+  SyllabusReconciler.swift    expected-count vs Canvas-listed gaps
+  CanvasSyllabusClient.swift  cookie-authed discovery of syllabus documents
+Sources/LowHangingFruitKit/Grades/
+  GradeProjection.swift       floor/pace/ceiling + needed-for-target
+  GradeCutoffs.swift          bands, standard table, custom (syllabus) tables
+  TitleNormalizer.swift       shared with the Gradescope overlay
+Sources/LowHangingFruitUI/
+  GradeReportView.swift       the report
+  SyllabusSetupView.swift     import → review → map → confirm
+```
+
+Tests: `GradeProjectionTests` (14), `SyllabusParserTests` (20),
+`SyllabusMatcherTests` + `SyllabusReconcilerTests` (14). All syllabus fixtures
+are **synthetic** — the rule against committing real Canvas/Gradescope data
+covers course documents too.

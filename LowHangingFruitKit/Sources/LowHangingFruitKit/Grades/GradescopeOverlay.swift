@@ -310,9 +310,7 @@ public enum GradescopeOverlay {
     /// |A ∩ B| / |A ∪ B|, the standard Jaccard similarity coefficient over two
     /// normalized token sets (docs/grades.md §5 item 4 names this explicitly).
     private static func jaccardSimilarity(_ a: Set<String>, _ b: Set<String>) -> Double {
-        let union = a.union(b).count
-        guard union > 0 else { return 0 }
-        return Double(a.intersection(b).count) / Double(union)
+        TitleNormalizer.jaccard(a, b)
     }
 
     /// docs/grades.md §5.5: when multiple open candidates tie on name, prefer
@@ -355,51 +353,6 @@ public enum GradescopeOverlay {
     }
 
     static func normalize(_ raw: String) -> [String] {
-        var s = raw.lowercased()
-        s = s.replacingOccurrences(of: #"[^a-z0-9\s]"#, with: " ", options: .regularExpression)
-        // Phrase-level collapse before word-splitting so "problem set" (two
-        // words) lines up with single-word "pset"/"homework".
-        s = s.replacingOccurrences(of: #"\bproblem\s+sets?\b"#, with: "hw", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
-
-        guard !s.isEmpty else { return [] }
-
-        var tokens: [String] = []
-        for word in s.split(separator: " ") {
-            tokens.append(contentsOf: splitLetterDigitRuns(String(word)))
-        }
-        return tokens.map(canonicalize)
-    }
-
-    /// Splits a token like "hw3" into ["hw", "3"] at the letter/digit
-    /// boundary, so "HW3" and "HW 3" normalize to the same token sequence.
-    private static func splitLetterDigitRuns(_ word: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        var currentIsDigit: Bool?
-        for ch in word {
-            let isDigit = ch.isNumber
-            if currentIsDigit == nil || currentIsDigit == isDigit {
-                current.append(ch)
-            } else {
-                result.append(current)
-                current = String(ch)
-            }
-            currentIsDigit = isDigit
-        }
-        if !current.isEmpty { result.append(current) }
-        return result
-    }
-
-    private static func canonicalize(_ token: String) -> String {
-        // Numeric tokens compare by value, so leading zeros don't matter.
-        if let intValue = Int(token) { return String(intValue) }
-        switch token {
-        case "hw", "homework", "pset", "psets": return "hw"
-        case "lab", "labs": return "lab"
-        case "quiz", "quizzes": return "quiz"
-        default: return token
-        }
+        TitleNormalizer.tokens(raw)
     }
 }

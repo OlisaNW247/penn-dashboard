@@ -4,7 +4,7 @@ _Last updated: 2026-07-26 (v2.5). The 1.0 script is superseded — it showed a
 weekly progress ring that no longer exists on the dashboard._
 
 This is the screen recording you'll attach to App Review (and can trim into an
-App Preview later). Target length **50–75 seconds**. Record on the **iPhone 17
+App Preview later). Target length **50–85 seconds**. Record on the **iPhone 17
 Pro Max** simulator (6.9", the size the App Store requires) for a clean frame.
 
 ## Why a video
@@ -45,15 +45,21 @@ shows the real login working end to end.
    sparkline. Expand one card's category breakdown.
    *Caption: "Your real grade — and how much of it is already decided."*
 
-7. **Widget + appearance** · 0:48–0:58
+7. **The full report** · 0:48–1:00
+   Tap **Full report** on a class. Show floor / at-this-pace / best case, then
+   move the target picker and read the "what you'd need" number aloud in the
+   caption.
+   *Caption: "What you'd need on the rest to land the grade you want."*
+
+8. **Widget + appearance** · 1:00–1:10
    Back out, show the Home Screen widget, then Settings → Appearance → Dark.
    *Caption: "Next due on your Home Screen. Light or dark."*
 
-8. **Reminders** · 0:58–1:08
+9. **Reminders** · 1:10–1:20
    Settings → toggle **Due-date reminders**, show lead times and the daily digest.
    *Caption: "Optional local reminders — all on-device."*
 
-9. **Close** · 1:08–1:15
+10. **Close** · 1:20–1:25
     End on the clean dashboard (or the "Touch Grass" all-clear state).
     *Caption: "Low Hanging Fruit."*
 
@@ -75,7 +81,7 @@ xcrun simctl install booted \
 # 3a. For the REAL login shots (scenes 1–2): launch with no flags (fresh onboarding)
 xcrun simctl launch booted com.lhf.lowhangingfruit
 
-# 3b. For the populated app (scenes 3–9): relaunch with demo data
+# 3b. For the populated app (scenes 3–10): relaunch with demo data
 xcrun simctl terminate booted com.lhf.lowhangingfruit
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData
 
@@ -85,7 +91,7 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 ```
 
 > DEBUG launch flags: `-LHFDemoData`, `-LHFTabAll`, `-LHFTabDone`,
-> `-LHFShowSettings`, `-LHFShowGrades`. These are compiled out
+> `-LHFShowSettings`, `-LHFShowGrades`, `-LHFShowReport`. These are compiled out
 > of release builds — the **reviewer-facing** demo is preview mode, which ships
 > in Release and needs no flags.
 
@@ -93,4 +99,4 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 
 - Record at 1x scale, device bezel off, for a clean App Store frame.
 - Keep cursor movements slow and deliberate; pause ~1s on each screen.
-- Scene 6 is the one that sells the app — don't rush the grade cards.
+- Scene 7 is the one that sells the app — don't rush the target picker.

@@ -63,10 +63,37 @@ final class GradeWatcherStore: ObservableObject {
         let percent: Double
     }
 
+    /// Courses the user explicitly asked LHF to **watch**. Watching is an
+    /// opt-in per class: it unlocks the full grade report (projections,
+    /// what's-left, target planning) and is where a syllabus gets attached.
+    ///
+    /// Every selected class still gets a card and a grade — watching doesn't
+    /// gate the numbers. It exists because attaching and confirming a syllabus
+    /// is per-course setup work, and asking for it across five classes at once
+    /// is how a feature gets abandoned on first launch.
+    @Published private(set) var watchedCourseIDs: Set<String> = []
+    private static let watchedCoursesKey = "gradeWatcherWatchedCourses"
+
     init() {
         self.manualWeights = Self.loadManualWeights()
         self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
         self.history = Self.loadHistory()
+        self.watchedCourseIDs = Set(UserDefaults.standard.stringArray(forKey: Self.watchedCoursesKey) ?? [])
+        self.syllabusSchemes = Self.loadSyllabusSchemes()
+        self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
+    }
+
+    func isWatching(_ courseID: String) -> Bool {
+        watchedCourseIDs.contains(courseID)
+    }
+
+    func setWatching(_ watching: Bool, courseID: String) {
+        if watching {
+            watchedCourseIDs.insert(courseID)
+        } else {
+            watchedCourseIDs.remove(courseID)
+        }
+        UserDefaults.standard.set(Array(watchedCourseIDs), forKey: Self.watchedCoursesKey)
     }
 
     /// Refreshes grades for exactly the courses the caller passes in — this
@@ -149,8 +176,9 @@ final class GradeWatcherStore: ObservableObject {
     /// disconnects Canvas — grades are downstream of that session, so leaving
     /// snapshots (and the observed-history trail behind the week delta) on
     /// disk after a sign-out would keep showing a signed-out student's grades.
-    /// User-authored settings (manual weights, confirmed Gradescope mappings)
-    /// are preserved: re-connecting shouldn't make the user redo their setup.
+    /// User-authored settings (manual weights, confirmed Gradescope mappings,
+    /// syllabus schemes) are preserved: re-connecting shouldn't make the user
+    /// redo their setup.
     func clearAll() {
         snapshots = [:]
         gradescopeItemsByCourse = [:]
@@ -216,6 +244,7 @@ final class GradeWatcherStore: ObservableObject {
         courseID: String,
         manualWeights: [String: Double] = [:],
         dropLowestOverrides: [String: Int] = [:],
+        syllabusWeightedCategoryIDs: Set<String> = [],
         now: Date = Date()
     ) -> GradeBreakdown? {
         guard let snapshot = snapshots[courseID] else { return nil }
@@ -224,15 +253,28 @@ final class GradeWatcherStore: ObservableObject {
             categories: gradeCategories(courseID: courseID),
             manualWeights: manualWeights,
             dropLowestOverrides: dropLowestOverrides,
+            syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs,
             now: now
         ))
     }
 
-    /// Convenience overload the UI uses: reads this course's persisted manual
-    /// weight overrides (if any) and feeds them into the engine automatically,
-    /// so views don't have to thread `manualWeights(courseID:)` through by hand.
+    /// Convenience overload the UI uses: folds in this course's syllabus
+    /// weights and hand-typed overrides automatically, so views don't have to
+    /// thread weight resolution through by hand.
     func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
-        breakdown(courseID: courseID, manualWeights: manualWeights(courseID: courseID), now: now)
+        breakdown(
+            courseID: courseID,
+            manualWeights: effectiveWeights(courseID: courseID),
+            syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs(courseID: courseID),
+            now: now
+        )
+    }
+
+    /// Where this course can still finish (docs/grades.md §13) — floor,
+    /// ceiling, pace, and what's left. Nil until the course has a snapshot.
+    func projection(courseID: String, now: Date = Date()) -> GradeProjection? {
+        guard let breakdown = breakdown(courseID: courseID, now: now) else { return nil }
+        return GradeProjector.project(breakdown)
     }
 
     /// Confirms a fuzzy-matched suggestion (docs/grades.md §5 item 4): fills
@@ -289,6 +331,128 @@ final class GradeWatcherStore: ObservableObject {
     private static func loadManualWeights() -> [String: [String: Double]] {
         guard let data = UserDefaults.standard.data(forKey: manualWeightsKey),
               let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    // MARK: - Syllabus (docs/grades.md §13)
+
+    /// The syllabus the user attached to each watched course, by course id.
+    @Published private(set) var syllabusSchemes: [String: AttachedSyllabus] = [:]
+    private static let syllabusSchemesKey = "gradeWatcherSyllabusSchemes"
+
+    /// User-confirmed syllabus-category → Canvas-category pairings, keyed
+    /// courseID -> syllabus category id -> Canvas assignment group id. Same
+    /// confirm-once pattern as `confirmedGradescopeMappings`.
+    @Published private(set) var confirmedCategoryMappings: [String: [String: String]] = [:]
+    private static let confirmedCategoryMappingsKey = "gradeWatcherConfirmedCategoryMappings"
+
+    func syllabus(courseID: String) -> AttachedSyllabus? {
+        syllabusSchemes[courseID]
+    }
+
+    /// Attaching also starts watching: you don't add a syllabus to a class you
+    /// aren't following.
+    func attachSyllabus(_ syllabus: AttachedSyllabus, courseID: String) {
+        syllabusSchemes[courseID] = syllabus
+        persistSyllabusSchemes()
+        setWatching(true, courseID: courseID)
+    }
+
+    /// Removes the syllabus and every mapping confirmed against it — those
+    /// pairings are meaningless once the categories they referenced are gone.
+    func detachSyllabus(courseID: String) {
+        syllabusSchemes.removeValue(forKey: courseID)
+        confirmedCategoryMappings.removeValue(forKey: courseID)
+        persistSyllabusSchemes()
+        persistConfirmedCategoryMappings()
+    }
+
+    /// This course's syllabus categories matched against its Canvas assignment
+    /// groups. Nil when no syllabus is attached or the course isn't fetched.
+    func syllabusMatch(courseID: String) -> SyllabusMatcher.Result? {
+        guard let syllabus = syllabusSchemes[courseID] else { return nil }
+        let categories = gradeCategories(courseID: courseID)
+        guard !categories.isEmpty else { return nil }
+        return SyllabusMatcher.match(
+            scheme: syllabus.scheme,
+            canvasCategories: categories,
+            confirmed: confirmedCategoryMappings[courseID] ?? [:]
+        )
+    }
+
+    func confirmCategoryMapping(courseID: String, syllabusCategoryID: String, canvasCategoryID: String) {
+        var forCourse = confirmedCategoryMappings[courseID] ?? [:]
+        forCourse[syllabusCategoryID] = canvasCategoryID
+        confirmedCategoryMappings[courseID] = forCourse
+        persistConfirmedCategoryMappings()
+    }
+
+    func clearCategoryMapping(courseID: String, syllabusCategoryID: String) {
+        guard var forCourse = confirmedCategoryMappings[courseID] else { return }
+        forCourse.removeValue(forKey: syllabusCategoryID)
+        confirmedCategoryMappings[courseID] = forCourse.isEmpty ? nil : forCourse
+        persistConfirmedCategoryMappings()
+    }
+
+    /// Canvas category id → weight for the categories a confirmed syllabus
+    /// covers. Empty unless coverage is complete — a partial syllabus must not
+    /// reach the engine, whose manual weights are all-or-nothing.
+    func syllabusWeights(courseID: String) -> [String: Double] {
+        syllabusMatch(courseID: courseID)?.canvasWeights ?? [:]
+    }
+
+    func syllabusWeightedCategoryIDs(courseID: String) -> Set<String> {
+        Set(syllabusWeights(courseID: courseID).keys)
+    }
+
+    /// The weights actually used for this course: syllabus first, with any
+    /// hand-typed override winning. A user who edits a weight after importing
+    /// a syllabus means it — the edit is the more recent, more deliberate
+    /// statement of intent.
+    func effectiveWeights(courseID: String) -> [String: Double] {
+        syllabusWeights(courseID: courseID).merging(manualWeights(courseID: courseID)) { _, manual in manual }
+    }
+
+    /// This course's letter-grade cutoffs: the syllabus's own table when it
+    /// published one, otherwise the standard estimate.
+    func cutoffs(courseID: String) -> GradeCutoffs {
+        syllabusSchemes[courseID]?.scheme.cutoffs ?? .standard
+    }
+
+    /// Categories where the syllabus promises more items than Canvas lists —
+    /// work that's coming but hasn't been created yet.
+    func countGaps(courseID: String) -> [SyllabusCountGap] {
+        guard let syllabus = syllabusSchemes[courseID],
+              let match = syllabusMatch(courseID: courseID)
+        else { return [] }
+        return SyllabusReconciler.countGaps(
+            match: match,
+            scheme: syllabus.scheme,
+            canvasCategories: gradeCategories(courseID: courseID)
+        )
+    }
+
+    private func persistSyllabusSchemes() {
+        guard let data = try? JSONEncoder().encode(syllabusSchemes) else { return }
+        UserDefaults.standard.set(data, forKey: Self.syllabusSchemesKey)
+    }
+
+    private static func loadSyllabusSchemes() -> [String: AttachedSyllabus] {
+        guard let data = UserDefaults.standard.data(forKey: syllabusSchemesKey),
+              let dict = try? JSONDecoder().decode([String: AttachedSyllabus].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistConfirmedCategoryMappings() {
+        guard let data = try? JSONEncoder().encode(confirmedCategoryMappings) else { return }
+        UserDefaults.standard.set(data, forKey: Self.confirmedCategoryMappingsKey)
+    }
+
+    private static func loadConfirmedCategoryMappings() -> [String: [String: String]] {
+        guard let data = UserDefaults.standard.data(forKey: confirmedCategoryMappingsKey),
+              let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
         return dict
     }

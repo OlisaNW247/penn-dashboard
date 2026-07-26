@@ -13,23 +13,23 @@ code), everything on-device.
 ## ⚠️ Read this first
 
 Work is happening on branch **`v2.5`**, which builds on `V2` (PR #1) and adds
-Grade Watcher, a Home/Lock Screen widget, submission auto-detection, and a
-Light/Dark reskin. `v2.5` has been **force-pushed before** — always
-`git fetch` and check divergence before pushing.
+Grade Watcher, the grade report + syllabus ingestion, a Home/Lock Screen widget,
+submission auto-detection, and a Light/Dark reskin. `v2.5` has been
+**force-pushed before** — always `git fetch` and check divergence before pushing.
 
-- `cd LowHangingFruitKit && swift test` → **183 tests / 15 suites passing.**
-- iOS device + simulator builds green. **Signing is resolved** (see below).
-- The app is installed and running on Marco's iPhone.
+- `cd LowHangingFruitKit && swift test` → **239 tests / 20 suites passing.**
+- iOS **Release** build green; the widget `.appex` is verified embedded in
+  `LowHangingFruit.app/PlugIns/`. Signing is resolved (see below).
+- **`xcodegen generate` is now safe.** The `LHFWidget/Info.plist` trap is
+  disarmed — see "Widget" below.
 
 **The one open question blocking verification:** Grade Watcher needs a **live
 Canvas cookie session**, which is separate from the cookieless ICS feed the
-assignment list uses. Marco's device currently has **no stored Canvas session**
-(he connected Canvas before v2.5 started persisting Canvas cookies), so Grades
-is empty and Canvas submission detection is inert. The fix is for him to tap
-**Reconnect Canvas** in Grade Watcher. Until he does, grades and submission
-tracking cannot be verified end-to-end against real data.
-
----
+assignment list uses. Marco's device has **no stored Canvas session** (he
+connected Canvas before v2.5 started persisting Canvas cookies), so grades are
+empty and Canvas submission detection is inert on his phone. The fix is to tap
+**Reconnect Canvas** in Grade Watcher. Until then, grades and submission
+tracking are proven only against fixtures — never against real Canvas data.
 
 ## 🆕 What changed in this session (2026-07-26)
 
@@ -83,33 +83,76 @@ tracking cannot be verified end-to-end against real data.
 
 ---
 
-## 🐛 Known bugs NOT fixed (inherited, still live)
+### Session 2 (2026-07-26) — App Store prep + the grade report
 
-**The v2.5 widget cannot work as committed — two independent defects:**
+**App Store blockers cleared** (details in `docs/appstore/CHECKLIST.md`, rewritten):
+both widget defects, the dark-mode Info.plist pin, preview mode covering every
+screen, **Disconnect Canvas / Disconnect Gradescope** in Settings → Account
+(`SessionCookieStore` previously had no UI caller at all), privacy manifests
+updated (+ the widget got its first one), `docs/PRIVACY.md` rewritten for
+grades/Keychain/syllabus/widget/Gradescope, and all five `docs/appstore/` files
+brought up to v2.5. Screenshots regenerated, now including Grades and the report.
 
-1. `project.yml` declares the widget dependency with `platforms: [iOS]`.
-   xcodegen 2.45.4 **silently discards the whole dependency**: the generated
-   project has zero copy-files phases and zero target dependencies, so the
-   `.appex` is built and thrown away. Verified by removing that one line —
-   dependencies go 0 → 5, copy phases 0 → 3.
-2. The widget target points `info.path` at `LHFWidget/Info.plist` while listing
-   only `CFBundleDisplayName`, so **every `xcodegen generate` rewrites that file
-   from scratch and deletes the `NSExtension` /
-   `NSExtensionPointIdentifier = com.apple.widgetkit-extension` block** — the
-   declaration that makes it a WidgetKit extension at all. Commit `e8d4bc6`
-   restored the file but did not disarm this, so the trap is still set. **If you
-   run `xcodegen generate`, immediately `git checkout -- LHFWidget/Info.plist`.**
+**The grade report + syllabus ingestion** (new `docs/grades.md` §13). This
+reverses two of §8's cuts on purpose:
 
-Fixes: drop the `platforms` filter (or upgrade xcodegen), and move the
-`NSExtension` keys into `project.yml`'s `info.properties` so they survive
-regeneration.
+- `GradeProjection` / `GradeProjector` — floor / at-this-pace / ceiling, and
+  `requiredAverage(for:)` ("you need 94.7% on what's left for an A"). Pure math
+  over `GradeBreakdown`, no new fetches.
+- `GradeReportView` — pushed from each card's **Full report**; per-class watch
+  toggle.
+- `SyllabusParser` — deterministic, on-device, no model. Trustworthy because of
+  one gate: **weights must sum to 90–110**, and a misread essentially never
+  does. Also reads drop rules, expected item counts, letter cutoffs and curve
+  language.
+- `SyllabusMatcher` — syllabus categories → Canvas groups, exact/confirmed/
+  fuzzy/unmatched, sharing `TitleNormalizer` with the Gradescope overlay.
+  Coverage is all-or-nothing because the engine's manual weights are.
+- `CanvasSyllabusClient` + `SyllabusTextExtractor` — syllabus_body, pages, PDF
+  files, plus paste/import.
+- `GradeCutoffs` — replaces the old `GradeScale` file (which still exists as a
+  thin wrapper), adds custom syllabus cutoffs.
 
-**Also worth checking:** the same commit range that added the Light/Dark setting
-also added `UIUserInterfaceStyle: Light` to the app's Info.plist, which pins the
-interface style at the system level. Confirm dark mode actually engages on
-device — this was never verified.
+**Engine changes are additive:** `CategoryResult.possibleScoredRaw` is now
+exposed (projections need pre-drop decided points), and
+`Input.syllabusWeightedCategoryIDs` changes only the reported `weightSource`
+(new `ScoreSource.syllabus`), never the arithmetic.
 
----
+## 🐛 Known bugs — status
+
+**Both v2.5 widget defects are FIXED** (were: the widget was built and thrown
+away, and every `xcodegen generate` deleted its `NSExtension` block):
+
+1. The widget dependency now uses **`platformFilter: iOS`** instead of
+   `platforms: [iOS]`. xcodegen 2.45.4 doesn't filter a `platforms:` dependency
+   per-platform — it discards it entirely (0 dependencies, 0 copy phases).
+   `platformFilter` is **case-sensitive**: `iOS` writes Xcode's `platformFilter`
+   attribute; lowercase `ios` and plural `platformFilters` are silently ignored.
+   Getting this right matters in both directions — without the filter the macOS
+   destination fails outright ("contains embedded content built for the iOS
+   platform"), which is presumably why the broken `platforms:` line was there.
+   After the fix: dependencies 0 → 5, copy-files phases 0 → 3, **iOS Release and
+   macOS builds both green**.
+2. `NSExtension` / `NSExtensionPointIdentifier` now live in `project.yml`'s
+   `info.properties`, so regeneration can't delete them. **The
+   `git checkout -- LHFWidget/Info.plist` dance is no longer needed.**
+
+Verified end to end: a Release build produces
+`LowHangingFruit.app/PlugIns/LHFWidgetExtension.appex` with the correct
+`NSExtensionPointIdentifier`.
+
+**`UIUserInterfaceStyle: Light` is removed** from the app's Info.plist. It
+pinned the interface style at the system level, so the in-app Light/Dark setting
+could never engage. The app now applies `.preferredColorScheme` from
+`AppState.appearanceMode` alone. **Still unverified on a physical device.**
+
+**Preview (demo) mode was broken past the dashboard** and is fixed:
+`selectedCanvasCourseIDs()` resolved nothing (sample items carry no Canvas
+URLs), so Grade Watcher showed "Can't reach Canvas for your classes" with a
+Reconnect button that ejected the tapper out of preview into Penn SSO. Fixtures
+now cover the class list, grades, the report, and the widget snapshot; the
+Reconnect action is hidden in preview. `PreviewModeTests` also caught that
+entering preview only seeded on the *next* launch.
 
 ## 🔐 How login / session works (three different auth paths — don't conflate them)
 
@@ -157,15 +200,20 @@ LowHangingFruitKit/
       RootView, ContentView, AppState, DashboardViewModel
       OnboardingView, SettingsPage, SplashView
       GradeWatcherView / GradeWatcherStore / GradeCourseCardView
+      GradeReportView / SyllabusSetupView
       NotificationScheduler, AutoSyncCoordinator, SessionCookieStore
     LowHangingFruitKit/    # data layer, no UI (Olisa)
       Models/{Assignment, CourseCode, Term, AssignmentDeduplicator}.swift
       Canvas/{CanvasICSClient, ICSParser, CanvasGradesClient}.swift
+      Grades/{GradeEngine, GradeProjection, GradeCutoffs, TitleNormalizer,
+              GradescopeOverlay}.swift
+      Syllabus/{SyllabusParser, SyllabusMatcher, SyllabusReconciler,
+                SyllabusTextExtractor, CanvasSyllabusClient, SyllabusModels}.swift
       Gradescope/GradescopeClient.swift
       CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/   # 183 tests
-docs/grades.md             # Grade Watcher design brief
-docs/appstore/             # App Store package (STALE — describes Canvas-only 1.0)
+  Tests/LowHangingFruitKitTests/   # 239 tests
+docs/grades.md             # Grade Watcher design brief (§13 = report + syllabus)
+docs/appstore/             # App Store package (current as of 2026-07-26)
 ```
 
 - **Marco** owns the UI/app layer; **Olisa** owns the data layer. Cross-cutting
@@ -178,8 +226,9 @@ docs/appstore/             # App Store package (STALE — describes Canvas-only 
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test              # 183 passing
-xcodegen generate                                # then: git checkout -- LHFWidget/Info.plist
+cd LowHangingFruitKit && swift test              # 239 passing
+xcodegen generate                                # safe now — Info.plist trap disarmed
+bash docs/appstore/capture-screenshots.sh        # regenerate App Store screenshots
 ```
 
 **Signing is resolved.** `project.yml` carries `DEVELOPMENT_TEAM: 24A3TDB277`
@@ -207,10 +256,13 @@ refresh. `CompileAssetCatalogVariant` has failed transiently once; a straight
 retry fixed it.
 
 - **DEBUG launch flags:** `-LHFDemoData` (populated dashboard, skips splash +
-  onboarding), `-LHFTabAll`, `-LHFTabDone`, `-LHFShowSettings`.
+  onboarding), `-LHFTabAll`, `-LHFTabDone`, `-LHFShowSettings`,
+  `-LHFShowGrades`, `-LHFShowReport`. These are DEBUG-only; the
+  **reviewer-facing** demo is preview mode, which ships in Release.
 - **Widget App Group:** automatic provisioning registers
-  `group.com.lhf.lowhangingfruit`; without it the container URL is nil and the
-  widget shows its empty state. (Moot until the two widget bugs above are fixed.)
+  `group.com.lhf.lowhangingfruit` for development, but the **App Store
+  distribution profile needs the App Groups capability on both App IDs** or the
+  container URL is nil in the shipped build and the widget stays empty.
 
 ## 📌 Important constraints
 
@@ -228,14 +280,29 @@ retry fixed it.
 
 ## 🔭 Follow-ups
 
-- **Fix the two widget defects** above — highest value, they make a shipped
-  feature dead.
-- **Verify grades + submission detection** once Marco reconnects Canvas.
-- **`docs/appstore/` is stale** — it still describes the Canvas-only 1.0.
-  Gradescope, grades and cookie persistence all change the compliance story;
-  update before any submission.
+**Blocking a submission (need a person, not a commit):**
+
+- **Verify grades + submission detection on device.** Reconnect Canvas on the
+  iPhone. This is the headline feature and it has never run against real data.
+- **Verify dark mode and the widget on device** — both were unverifiable before
+  this session's fixes and remain unverified on hardware.
+- **Decide the Gradescope question** (Guideline 5.2.2). The prepared
+  justification is in `docs/appstore/REVIEW_NOTES.md`; the alternative is to
+  gate Gradescope out of this submission.
+- **Host `docs/PRIVACY.md`**, fill its contact email, and get a support URL.
+- **Register bundle IDs + the App Group** under team `24A3TDB277`, and settle
+  who owns the App Store Connect record.
+- **Dark-mode screenshots and the widget screenshot** — the capture script
+  can't drive those; it prints a reminder at the end.
+- **Re-record the demo video** to the new `DEMO_VIDEO.md` script.
+
+**Code:**
+
 - `.timeSensitive` notifications need the *Time Sensitive Notifications*
   capability enabled in Xcode to break through Focus (harmless without it).
-- No explicit "Disconnect Gradescope"; `SessionCookieStore.clear()` exists but is
-  not wired to any UI.
-- `ProgressRingView` is now unused by the dashboard — delete it or find it a home.
+- `ProgressRingView` is still unused by the dashboard — delete it or find it a home.
+- The syllabus parser is deliberately conservative. When real syllabi start
+  failing the 90–110 gate, add fixtures to `SyllabusParserTests` **first** — the
+  gate is what makes the parser trustworthy, so loosen it only against evidence.
+- Grade-change notifications are a natural next step: `GradeWatcherStore.history`
+  already records one observation per course per day.

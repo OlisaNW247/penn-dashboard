@@ -53,6 +53,13 @@ struct GradeCourseCardView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { toggleExpanded() }
 
+            if breakdown != nil {
+                Divider().padding(.horizontal, 14)
+                reportLink
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+            }
+
             if isExpanded, let breakdown {
                 Divider().padding(.horizontal, 14)
                 breakdownList(breakdown)
@@ -62,6 +69,46 @@ struct GradeCourseCardView: View {
         .background(Color.v2Card)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+
+    /// Route into the full report, plus the watch toggle.
+    ///
+    /// Watching is opt-in per class because attaching a syllabus is per-course
+    /// setup work; the report itself is always reachable, since everything in
+    /// it except the syllabus parts is computed from data already fetched.
+    private var reportLink: some View {
+        HStack(spacing: 10) {
+            NavigationLink {
+                GradeReportView(store: store, courseID: courseID, courseName: courseName)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Full report")
+                        .font(.lhfSans(12, weight: .semibold))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundStyle(Color.v2SpineBlue)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                store.setWatching(!store.isWatching(courseID), courseID: courseID)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: store.isWatching(courseID) ? "eye.fill" : "eye")
+                        .font(.system(size: 11))
+                    Text(store.isWatching(courseID) ? "Watching" : "Watch")
+                        .font(.lhfSans(11, weight: .medium))
+                }
+                .foregroundStyle(store.isWatching(courseID) ? Color.v2SpinePurple : Color.v2CourseCode)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(store.isWatching(courseID)
+                                ? "Stop watching \(courseName)"
+                                : "Watch \(courseName)")
+        }
     }
 
     // MARK: - Header (collapsed content)
@@ -445,6 +492,7 @@ struct GradeSourceBadge: View {
         case .canvas: return "Canvas"
         case .gradescopeEarly: return "Gradescope early"
         case .manual: return "Manual"
+        case .syllabus: return "Syllabus"
         }
     }
 
@@ -453,6 +501,7 @@ struct GradeSourceBadge: View {
         case .canvas: return .v2SpineBlue
         case .gradescopeEarly: return .v2SpineGreen
         case .manual: return .v2SpineAmber
+        case .syllabus: return .v2SpinePurple
         }
     }
 }

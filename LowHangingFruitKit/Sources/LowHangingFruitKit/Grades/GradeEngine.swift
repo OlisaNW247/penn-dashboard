@@ -31,6 +31,12 @@ public enum GradeEngine {
         /// User overrides for drop-lowest (category id → count). Falls back to
         /// the category's Canvas `rules.drop_lowest`.
         public let dropLowestOverrides: [String: Int]
+        /// Which of `manualWeights` came from a confirmed syllabus rather than
+        /// being typed in. Purely provenance — it changes the reported
+        /// `weightSource`, never the arithmetic — so the UI can distinguish a
+        /// weight the user can check against a document from one they entered
+        /// by hand.
+        public let syllabusWeightedCategoryIDs: Set<String>
         /// Reference time for the past-due-unscored ("pending grading") count.
         public let now: Date
 
@@ -39,12 +45,14 @@ public enum GradeEngine {
             categories: [GradeCategory],
             manualWeights: [String: Double] = [:],
             dropLowestOverrides: [String: Int] = [:],
+            syllabusWeightedCategoryIDs: Set<String> = [],
             now: Date = Date()
         ) {
             self.courseUsesWeights = courseUsesWeights
             self.categories = categories
             self.manualWeights = manualWeights
             self.dropLowestOverrides = dropLowestOverrides
+            self.syllabusWeightedCategoryIDs = syllabusWeightedCategoryIDs
             self.now = now
         }
     }
@@ -101,10 +109,13 @@ public enum GradeEngine {
 
     private struct CategoryTally {
         let result: GradeBreakdown.CategoryResult
-        /// Points possible over scored items BEFORE drops — % decided ignores
-        /// drop rules so it stays monotonic as scores arrive.
-        let possibleScoredRaw: Double
         let pendingCount: Int
+
+        /// Points possible over scored items BEFORE drops — % decided ignores
+        /// drop rules so it stays monotonic as scores arrive. Lives on the
+        /// result itself now (projections need it too); kept as a shorthand
+        /// so the mode math below still reads cleanly.
+        var possibleScoredRaw: Double { result.possibleScoredRaw }
     }
 
     private static func tally(
@@ -129,7 +140,10 @@ public enum GradeEngine {
         if !weighted {
             (effectiveWeight, weightSource) = (nil, nil)
         } else if let manual = input.manualWeights[category.id] {
-            (effectiveWeight, weightSource) = (manual, .manual)
+            (effectiveWeight, weightSource) = (
+                manual,
+                input.syllabusWeightedCategoryIDs.contains(category.id) ? .syllabus : .manual
+            )
         } else {
             (effectiveWeight, weightSource) = (input.courseUsesWeights ? (category.weight ?? 0) : 0, .canvas)
         }
@@ -142,6 +156,7 @@ public enum GradeEngine {
             earned: kept.reduce(0) { $0 + ($1.score ?? 0) },
             possibleScored: kept.reduce(0) { $0 + $1.pointsPossible },
             possibleTotal: gradeable.reduce(0) { $0 + $1.pointsPossible },
+            possibleScoredRaw: scored.reduce(0) { $0 + $1.pointsPossible },
             scoredCount: scored.count,
             totalCount: gradeable.count,
             droppedItemIDs: dropped
@@ -151,11 +166,7 @@ public enum GradeEngine {
             item.score == nil && (item.dueAt.map { $0 < input.now } ?? false)
         }.count
 
-        return CategoryTally(
-            result: result,
-            possibleScoredRaw: scored.reduce(0) { $0 + $1.pointsPossible },
-            pendingCount: pending
-        )
+        return CategoryTally(result: result, pendingCount: pending)
     }
 
     /// Applies drop-lowest / drop-highest to the scored items of one category.

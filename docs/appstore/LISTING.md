@@ -17,7 +17,7 @@ within limits.
 ## Promotional text (≤170, editable anytime)
 
 Every Canvas deadline in one calm list, sorted so the next thing you should do is
-always on top — plus your real grade in every class.
+always on top — plus a grade report that shows where your classes can still land.
 
 ## Description
 
@@ -33,7 +33,16 @@ submitted on Canvas files itself away automatically.
 KNOW WHERE YOU STAND
 Grade Watcher computes your current grade in each class from what's actually
 been scored, and shows how much of your final grade is already decided — so a
-big number off two quizzes reads as provisional, not final.
+big number off two quizzes reads as provisional, not final. Open the full report
+for any class to see where it can still land: your floor if you stopped now,
+your ceiling, and what you'd need to average on the rest to hit the grade you
+want.
+
+ADD YOUR SYLLABUS
+Canvas knows what's graded. Your syllabus knows what it's worth. Attach one and
+LHF reads the grading section — category weights, drop rules, how many
+assignments to expect, and your professor's real letter cutoffs — so the report
+uses your class's actual rules. Nothing is applied until you've checked it.
 
 FEATURES
 • One chronological list of everything due, sorted by what's next
@@ -41,6 +50,8 @@ FEATURES
 • This Week / All / Done views
 • Home Screen and Lock Screen widget showing what's due next
 • Grade Watcher: current grade, how much is decided, and grade trends
+• Full grade report with floor/ceiling projections and target planning
+• Optional syllabus import for real weights and cutoffs
 • Add your own one-off or weekly-recurring tasks
 • Optional local reminders before each due date, plus a daily digest
 • Light and dark appearance
@@ -49,7 +60,8 @@ FEATURES
 PRIVATE BY DESIGN
 Everything stays on your device. LHF has no account system and no server — it
 talks only to your school's Canvas (and Gradescope, if you connect it). We don't
-collect, track, or share anything.
+collect, track, or share anything. Your syllabus is read on your phone and never
+uploaded.
 
 Grades shown in LHF are estimates computed from what Canvas exposes. Professors
 apply curves, late policies, and cutoffs the app can't see — your official grade
@@ -60,7 +72,7 @@ LHF is an independent app and is not affiliated with or endorsed by Instructure
 
 ## Keywords (≤100, comma-separated, no spaces)
 
-canvas,assignments,deadlines,homework,planner,student,college,grades,gpa,due dates
+canvas,assignments,deadlines,homework,planner,student,college,grades,gpa,syllabus
 
 ## URLs
 
@@ -74,9 +86,9 @@ When prompted in App Store Connect → App Privacy:
 
 - **Do you collect data from this app?** → **No, we do not collect data.**
 
-That single answer is the whole label, and it stays correct in v2.5: grades and
-sessions are processed and stored on-device only, and the developer receives
-nothing. It is consistent with the bundled
+That single answer is the whole label, and it stays correct: grades, sessions,
+and syllabus text are all processed and stored on-device only, and the developer
+receives nothing. It is consistent with the bundled
 `PrivacyInfo.xcprivacy` files (app and widget) and with `docs/PRIVACY.md`. Do not
 add any data types.
 

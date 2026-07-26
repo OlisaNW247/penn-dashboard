@@ -36,7 +36,7 @@ one line, and the widget's copy must match.
 - ✅ Privacy manifests updated: the app's now declares App Group file access
   alongside UserDefaults, and **the widget target has one for the first time**
   (`LHFWidget/PrivacyInfo.xcprivacy`).
-- ✅ `swift test` — **189 tests / 16 suites green.**
+- ✅ `swift test` — **239 tests / 20 suites green.**
 - ✅ iOS **Release** build green · macOS build green (both re-verified after the
   widget change)
 - ✅ No tracking / analytics / third-party SDKs · `ITSAppUsesNonExemptEncryption=false`
@@ -48,6 +48,7 @@ Reviewers can't pass Penn SSO, so onboarding's first screen has
 every screen, not just the dashboard:
 
 - Settings → Classes lists the sample courses (was empty).
+- The full grade report, projections, and target planner all work.
 - **Grade Watcher shows real grade cards** computed by the real engine from
   bundled fixture snapshots — weighted and points-mode courses, drop rules,
   extra credit, pending grading, and the estimated-GPA term summary.
@@ -70,9 +71,9 @@ entering preview mode only seeded on the *next* launch.
     widget's container URL is nil in the shipped build and the widget shows its
     empty state forever.
 - 🟡 **Host the privacy policy** publicly and paste the URL into App Store
-  Connect. `docs/PRIVACY.md` is rewritten for v2.5 (grades, Keychain sessions,
-  the widget, Gradescope). **Fill in the contact email at the bottom before
-  publishing.**
+  Connect. `docs/PRIVACY.md` is rewritten (grades, Keychain sessions, syllabus
+  reading, the widget, Gradescope). **Fill in the contact email at the bottom
+  before publishing.**
 - 🟡 **Support URL** — any public page (can be the same site).
 - 🟡 **Verify grades on a real device.** Reconnect Canvas on your iPhone and
   confirm Grade Watcher and submission auto-detection against real data. This
@@ -90,9 +91,9 @@ entering preview mode only seeded on the *next* launch.
   and Gradescope data) — answer yes and see the Gradescope note in
   `REVIEW_NOTES.md`
 - ⬜ Upload the **screenshots** (6.9") from `screenshots/` — regenerated
-  2026-07-26 against the current UI, now 6 shots including **Grades**. Two still
-  need capturing by hand (the script prints a reminder): a **dark mode** shot and
-  the **widget** on the Home Screen.
+  2026-07-26 against the current UI, now 7 shots including **Grades** and the
+  **full grade report**. Two still need capturing by hand (the script prints a
+  reminder): a **dark mode** shot and the **widget** on the Home Screen.
 - ⬜ Paste **App Review notes** → from `REVIEW_NOTES.md` (add a contact name/email)
 - ⬜ Re-record and attach the **demo video** → `DEMO_VIDEO.md` (the old script is
   1.0-era and shows a progress ring that no longer exists)

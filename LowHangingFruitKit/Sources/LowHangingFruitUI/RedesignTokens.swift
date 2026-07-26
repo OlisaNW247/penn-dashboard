@@ -33,6 +33,10 @@ extension Color {
     static let v2SpineAmber  = Color.dynamic(light: 0xD98C2B, dark: 0xE6A248)  // due <24h
     static let v2SpineBlue   = Color.dynamic(light: 0x3A6EA5, dark: 0x5B8FC7)  // due 1–3 days (upcoming)
     static let v2SpineGreen  = Color.dynamic(light: 0x2E7D6B, dark: 0x4FA08D)  // due 4+ days / later
+    /// Provenance accent, not an urgency: marks numbers that came from the
+    /// user's own syllabus. Deliberately outside the hot→cool urgency ramp so
+    /// a syllabus badge can't be misread as a deadline signal.
+    static let v2SpinePurple = Color.dynamic(light: 0x6B5B95, dark: 0x9B8BC4)
 
     // Urgency — due text (slightly darker than the spine)
     static let v2DueRed      = Color.dynamic(light: 0xC8443A, dark: 0xE0574C)

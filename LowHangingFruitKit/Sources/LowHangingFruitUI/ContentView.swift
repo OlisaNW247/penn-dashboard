@@ -21,7 +21,14 @@ struct ContentView: View {
     /// Where the header's buttons lead. Both are pushes onto the dashboard's own
     /// stack, so Settings and Grades are full screens with a back button rather
     /// than cards presented over the list.
-    enum DashRoute: Hashable { case settings, grades }
+    /// `report` carries its own course identity so the stack can be restored
+    /// (or, in DEBUG, seeded straight to the report for screenshots) without
+    /// walking through the cards.
+    enum DashRoute: Hashable {
+        case settings
+        case grades
+        case report(courseID: String, courseName: String)
+    }
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
     /// gentle cadence for an academic dashboard (assignments rarely change minute
@@ -74,6 +81,9 @@ struct ContentView: View {
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
                         .environmentObject(state)
+                case let .report(courseID, courseName):
+                    GradeReportView(store: state.gradeWatcher, courseID: courseID, courseName: courseName)
+                        .environmentObject(state)
                 }
             }
         }
@@ -90,6 +100,16 @@ struct ContentView: View {
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.settings] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
+                if args.contains("-LHFShowReport") {
+                    // Deepest screenshot target: Grades → the full report for
+                    // the richest fixture course.
+                    let course = SampleData.previewCourseIDsByID
+                        .sorted { $0.key < $1.key }
+                        .first
+                    if let course {
+                        path = [.grades, .report(courseID: course.key, courseName: course.value)]
+                    }
+                }
                 return
             }
             #endif
