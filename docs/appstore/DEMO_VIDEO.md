@@ -4,7 +4,7 @@ _Last updated: 2026-07-26 (v2.5). The 1.0 script is superseded — it showed a
 weekly progress ring that no longer exists on the dashboard._
 
 This is the screen recording you'll attach to App Review (and can trim into an
-App Preview later). Target length **50–75 seconds**. Record on the **iPhone 17
+App Preview later). Target length **45–65 seconds**. Record on the **iPhone 17
 Pro Max** simulator (6.9", the size the App Store requires) for a clean frame.
 
 ## Why a video
@@ -39,21 +39,15 @@ shows the real login working end to end.
    Tap **All** (shows later items too), then **Done** (completed, grouped by day).
    *Caption: "This Week · All · Done."*
 
-6. **Grades** · 0:37–0:48
-   Tap the chart icon in the header. Show the estimated term GPA, then a class
-   card: current grade, the "% of your grade is decided" bar, the week delta and
-   sparkline. Expand one card's category breakdown.
-   *Caption: "Your real grade — and how much of it is already decided."*
-
-7. **Widget + appearance** · 0:48–0:58
+6. **Widget + appearance** · 0:37–0:47
    Back out, show the Home Screen widget, then Settings → Appearance → Dark.
    *Caption: "Next due on your Home Screen. Light or dark."*
 
-8. **Reminders** · 0:58–1:08
+7. **Reminders** · 0:47–0:57
    Settings → toggle **Due-date reminders**, show lead times and the daily digest.
    *Caption: "Optional local reminders — all on-device."*
 
-9. **Close** · 1:08–1:15
+8. **Close** · 0:57–1:05
     End on the clean dashboard (or the "Touch Grass" all-clear state).
     *Caption: "Low Hanging Fruit."*
 
@@ -75,7 +69,7 @@ xcrun simctl install booted \
 # 3a. For the REAL login shots (scenes 1–2): launch with no flags (fresh onboarding)
 xcrun simctl launch booted com.lhf.lowhangingfruit
 
-# 3b. For the populated app (scenes 3–9): relaunch with demo data
+# 3b. For the populated app (scenes 3–8): relaunch with demo data
 xcrun simctl terminate booted com.lhf.lowhangingfruit
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData
 
@@ -85,7 +79,7 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 ```
 
 > DEBUG launch flags: `-LHFDemoData`, `-LHFTabAll`, `-LHFTabDone`,
-> `-LHFShowSettings`, `-LHFShowGrades`. These are compiled out
+> `-LHFShowSettings`. These are compiled out
 > of release builds — the **reviewer-facing** demo is preview mode, which ships
 > in Release and needs no flags.
 
@@ -93,4 +87,4 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 
 - Record at 1x scale, device bezel off, for a clean App Store frame.
 - Keep cursor movements slow and deliberate; pause ~1s on each screen.
-- Scene 6 is the one that sells the app — don't rush the grade cards.
+- Scene 4 is the one that sells the app — let the card animate out fully.

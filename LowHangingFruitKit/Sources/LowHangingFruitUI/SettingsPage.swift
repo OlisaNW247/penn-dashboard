@@ -110,11 +110,13 @@ struct SettingsPage: View {
 
             classesSection
 
-            Section("Grades") {
-                NavigationLink {
-                    GradeWatcherView(store: state.gradeWatcher)
-                } label: {
-                    Label("Grade Watcher", systemImage: "chart.bar.fill")
+            if FeatureFlags.gradeWatcher {
+                Section("Grades") {
+                    NavigationLink {
+                        GradeWatcherView(store: state.gradeWatcher)
+                    } label: {
+                        Label("Grade Watcher", systemImage: "chart.bar.fill")
+                    }
                 }
             }
 

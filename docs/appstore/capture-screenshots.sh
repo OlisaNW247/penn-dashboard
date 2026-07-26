@@ -24,6 +24,12 @@ xcrun simctl boot "$DEVICE" 2>/dev/null || true
 xcrun simctl bootstatus "$DEVICE" -b
 xcrun simctl status_bar "$DEVICE" override --time "9:41" --batteryState charged \
   --batteryLevel 100 --cellularBars 4 --wifiBars 3 --dataNetwork wifi 2>/dev/null || true
+# Uninstall first. Installing over an existing copy inherits its UserDefaults,
+# so leftover state from an earlier run — including real course codes from a
+# real Canvas login done in this simulator — leaks into the screenshots. That
+# is both non-deterministic and a data-hygiene problem, since these PNGs get
+# committed.
+xcrun simctl uninstall "$DEVICE" "$BUNDLE" 2>/dev/null || true
 xcrun simctl install "$DEVICE" "$APP"
 
 shot() {
@@ -40,12 +46,11 @@ shot "1-onboarding"
 shot "2-dashboard-thisweek" -LHFDemoData
 shot "3-dashboard-all"      -LHFDemoData -LHFTabAll
 shot "4-dashboard-done"     -LHFDemoData -LHFTabDone
-shot "5-grades"             -LHFDemoData -LHFShowGrades
-shot "6-settings-reminders" -LHFDemoData -LHFShowSettings
+shot "5-settings-reminders" -LHFDemoData -LHFShowSettings
 
 xcrun simctl terminate "$DEVICE" "$BUNDLE" 2>/dev/null || true
 echo "Done → $OUT"
 echo
 echo "Not captured automatically (do these by hand):"
-echo "  • dark mode — Settings → Appearance → Dark, then retake 2 and 5"
+echo "  • dark mode — Settings → Appearance → Dark, then retake 2"
 echo "  • the Home/Lock Screen widget — add it from the widget gallery"

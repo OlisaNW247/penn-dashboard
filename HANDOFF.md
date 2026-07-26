@@ -12,14 +12,23 @@ code), everything on-device.
 
 ## ⚠️ Read this first
 
+> **Branch map (2026-07-26).** `v2.5` is the **App Store submission branch**:
+> release prep is applied and **Grade Watcher is gated off**
+> (`FeatureFlags.gradeWatcher = false`) because it has never worked against a
+> real Canvas session. `v3` is the **beta branch** — same release prep, plus
+> Grade Watcher, the new grade report (floor/ceiling/target projections) and
+> syllabus ingestion. Grade Watcher work continues there, not here.
+
 Work is happening on branch **`v2.5`**, which builds on `V2` (PR #1) and adds
 Grade Watcher, a Home/Lock Screen widget, submission auto-detection, and a
 Light/Dark reskin. `v2.5` has been **force-pushed before** — always
 `git fetch` and check divergence before pushing.
 
-- `cd LowHangingFruitKit && swift test` → **183 tests / 15 suites passing.**
-- iOS device + simulator builds green. **Signing is resolved** (see below).
-- The app is installed and running on Marco's iPhone.
+- `cd LowHangingFruitKit && swift test` → **189 tests / 16 suites passing.**
+- iOS **Release** and macOS builds green; the widget `.appex` is verified
+  embedded in `LowHangingFruit.app/PlugIns/`. **Signing is resolved** (see below).
+- **`xcodegen generate` is now safe** — the `LHFWidget/Info.plist` trap is
+  disarmed (see "Known bugs" below).
 
 **The one open question blocking verification:** Grade Watcher needs a **live
 Canvas cookie session**, which is separate from the cookieless ICS feed the
@@ -83,33 +92,39 @@ tracking cannot be verified end-to-end against real data.
 
 ---
 
-## 🐛 Known bugs NOT fixed (inherited, still live)
+## 🐛 Known bugs — status
 
-**The v2.5 widget cannot work as committed — two independent defects:**
+**Both widget defects are FIXED.** The dependency now uses
+**`platformFilter: iOS`**, not `platforms: [iOS]` — xcodegen 2.45.4 doesn't
+filter the latter per-platform, it discards the dependency entirely (0 target
+dependencies, 0 copy phases, `.appex` built and thrown away). `platformFilter`
+is **case-sensitive**: `iOS` works, lowercase `ios` and plural `platformFilters`
+are silently ignored. It's load-bearing in both directions — without it the
+macOS destination fails outright on an embedded iOS-only appex, which is
+presumably why the broken `platforms:` line was there. The `NSExtension` keys
+now live in `project.yml`'s `info.properties`, so regeneration can't delete
+them; **`git checkout -- LHFWidget/Info.plist` is no longer needed**.
 
-1. `project.yml` declares the widget dependency with `platforms: [iOS]`.
-   xcodegen 2.45.4 **silently discards the whole dependency**: the generated
-   project has zero copy-files phases and zero target dependencies, so the
-   `.appex` is built and thrown away. Verified by removing that one line —
-   dependencies go 0 → 5, copy phases 0 → 3.
-2. The widget target points `info.path` at `LHFWidget/Info.plist` while listing
-   only `CFBundleDisplayName`, so **every `xcodegen generate` rewrites that file
-   from scratch and deletes the `NSExtension` /
-   `NSExtensionPointIdentifier = com.apple.widgetkit-extension` block** — the
-   declaration that makes it a WidgetKit extension at all. Commit `e8d4bc6`
-   restored the file but did not disarm this, so the trap is still set. **If you
-   run `xcodegen generate`, immediately `git checkout -- LHFWidget/Info.plist`.**
+**`UIUserInterfaceStyle: Light` is removed** from the app's Info.plist — it
+pinned the interface style at the system level, so the in-app Light/Dark setting
+could never engage. **Still unverified on a physical device.**
 
-Fixes: drop the `platforms` filter (or upgrade xcodegen), and move the
-`NSExtension` keys into `project.yml`'s `info.properties` so they survive
-regeneration.
+**Preview (demo) mode was broken past the dashboard** and is fixed: sample items
+carry no Canvas URLs, so no course id resolved and Settings → Classes came up
+empty. `PreviewModeTests` also caught that entering preview only seeded on the
+*next* launch.
 
-**Also worth checking:** the same commit range that added the Light/Dark setting
-also added `UIUserInterfaceStyle: Light` to the app's Info.plist, which pins the
-interface style at the system level. Confirm dark mode actually engages on
-device — this was never verified.
+**Grade Watcher is gated off on this branch** (`FeatureFlags.gradeWatcher`). It
+is not a fixed bug — it is a shipped-disabled feature. The engine is well
+tested, but it needs a live Canvas cookie session (the dashboard's ICS feed is
+cookieless) and has never worked end to end on device. Only the entry points are
+hidden; everything behind them stays compiled and tested so `v3` keeps merging
+cleanly, and re-enabling is a one-line change once it's verified.
 
----
+**Note that Canvas grade data is still fetched** even with the UI hidden:
+`AutoSyncCoordinator.refreshCanvasGrades` runs because automatic submission
+detection is derived from the same payload. PRIVACY.md and REVIEW_NOTES.md
+disclose it on those terms.
 
 ## 🔐 How login / session works (three different auth paths — don't conflate them)
 
@@ -163,9 +178,9 @@ LowHangingFruitKit/
       Canvas/{CanvasICSClient, ICSParser, CanvasGradesClient}.swift
       Gradescope/GradescopeClient.swift
       CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/   # 183 tests
+  Tests/LowHangingFruitKitTests/   # 189 tests
 docs/grades.md             # Grade Watcher design brief
-docs/appstore/             # App Store package (STALE — describes Canvas-only 1.0)
+docs/appstore/             # App Store package (current; no-grades 1.0 copy)
 ```
 
 - **Marco** owns the UI/app layer; **Olisa** owns the data layer. Cross-cutting
@@ -178,8 +193,9 @@ docs/appstore/             # App Store package (STALE — describes Canvas-only 
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test              # 183 passing
-xcodegen generate                                # then: git checkout -- LHFWidget/Info.plist
+cd LowHangingFruitKit && swift test              # 189 passing
+xcodegen generate                                # safe now — Info.plist trap disarmed
+bash docs/appstore/capture-screenshots.sh        # regenerate App Store screenshots
 ```
 
 **Signing is resolved.** `project.yml` carries `DEVELOPMENT_TEAM: 24A3TDB277`
@@ -228,14 +244,25 @@ retry fixed it.
 
 ## 🔭 Follow-ups
 
-- **Fix the two widget defects** above — highest value, they make a shipped
-  feature dead.
-- **Verify grades + submission detection** once Marco reconnects Canvas.
-- **`docs/appstore/` is stale** — it still describes the Canvas-only 1.0.
-  Gradescope, grades and cookie persistence all change the compliance story;
-  update before any submission.
+**Blocking submission (need a person, not a commit):**
+
+- **Verify submission auto-filing on device** — reconnect Canvas; it rides the
+  same session Grade Watcher does and has never run against real data.
+- **Verify dark mode and the widget on device** — both were unverifiable before
+  this session's fixes.
+- **Decide the Gradescope question** (Guideline 5.2.2) — prepared justification
+  is in `docs/appstore/REVIEW_NOTES.md`.
+- **Host `docs/PRIVACY.md`**, fill its contact email, get a support URL.
+- **Register bundle IDs + the App Group** under team `24A3TDB277`; settle who
+  owns the App Store Connect record.
+- **Dark-mode and widget screenshots** by hand; re-record the demo video.
+
+**Code:**
+
 - `.timeSensitive` notifications need the *Time Sensitive Notifications*
   capability enabled in Xcode to break through Focus (harmless without it).
-- No explicit "Disconnect Gradescope"; `SessionCookieStore.clear()` exists but is
-  not wired to any UI.
-- `ProgressRingView` is now unused by the dashboard — delete it or find it a home.
+- `ProgressRingView` is unused by the dashboard — delete it or find it a home.
+- Grade Watcher: fix it on `v3`, verify on device, then flip
+  `FeatureFlags.gradeWatcher` and restore the grade copy in
+  `docs/appstore/LISTING.md` / `REVIEW_NOTES.md` (both were trimmed for this
+  build; `v3` has the versions that describe grades).

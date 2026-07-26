@@ -5,8 +5,8 @@ _Last updated: 2026-07-26 (v2.5). Add a contact name and email before pasting._
 **App:** Low Hanging Fruit (LHF)
 **What it is:** A personal academic dashboard for university students. It reads
 the student's own Canvas assignment deadlines and grades and shows them as one
-chronological "what's due next" list, with local reminders and per-class grades.
-Everything runs on the device; we operate no server.
+chronological "what's due next" list, with local reminders. Everything runs on
+the device; we operate no server.
 
 ---
 
@@ -25,13 +25,9 @@ with no account and no network access.
 
 1. **Dashboard** — sample assignments across **This week / All / Done**, colored
    by urgency. Tap a card to complete it.
-2. **Grades** — tap the chart icon in the header. You'll see per-class grade
-   cards with current grade, a "% of your grade decided" bar, category
-   breakdowns, and an estimated term GPA. These are computed by the app's real
-   grading engine from bundled sample data.
-3. **Settings** — the gear icon: class list, appearance (light/dark), reminders,
+2. **Settings** — the gear icon: class list, appearance (light/dark), reminders,
    and account connections.
-4. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
+3. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
 
 The attached screen recording additionally shows the real Canvas login flow
 end-to-end.
@@ -47,9 +43,10 @@ end-to-end.
    fetches their assignment deadlines from it.
 4. **Dashboard:** deadlines sorted by urgency. Tapping a card marks it done. Work
    already submitted on Canvas is filed automatically.
-5. **Grades (optional):** using the user's own logged-in Canvas session, the app
-   reads their own assignment groups, weights, and scores — the same data on
-   Canvas's own grades page — and computes a per-class breakdown on-device.
+5. **Submission state:** using the user's own logged-in Canvas session, the app
+   reads their own submission records — the same information shown on Canvas —
+   so work already turned in files itself under Done without the user tapping
+   anything. Nothing is submitted or changed on Canvas; the app only reads.
 6. **Reminders (optional):** local notifications before each due date. No
    remote/push notifications.
 
@@ -59,7 +56,7 @@ end-to-end.
   (`canvas.upenn.edu`) and, if the user connects it, `gradescope.com`. We operate
   no server and receive no user data.
 - **Everything is stored on-device.** Assignments, completions, reminder
-  settings, self-created tasks and grade settings live in local storage. Login
+  settings and self-created tasks live in local storage. Login
   session cookies are stored in the **iOS Keychain**, encrypted at rest and
   marked this-device-only.
 - **No analytics, tracking, ads, or third-party SDKs.** Privacy manifests are
@@ -78,25 +75,19 @@ LHF is a client for services the **user already has an account with**, using the
   services' own login pages, rendered in a web view. LHF never handles or stores
   passwords.
 - The app reads only data belonging to the signed-in student — their own
-  assignments, their own scores. It cannot access any other user's content.
+  assignments and their own submission records. It cannot access any other
+  user's content.
 - All processing happens on the device. Nothing is re-hosted, republished,
   redistributed, or shown to anyone but the student whose account it is.
 - Canvas's developer API program is not open to us at this institution, so
   assignment data comes from the student's own personal calendar feed URL, a
   standard iCalendar link Canvas generates for each user to consume in outside
-  apps. Grades use the student's own authenticated session.
+  apps. Submission state uses the student's own authenticated session.
 - No third-party branding is used, and the app states in its description and in
   this submission that it is independent and unaffiliated with Instructure
   (Canvas), Turnitin (Gradescope), or any university.
 
 Happy to answer any questions or make changes here — contact below.
-
-## Grade accuracy
-
-Grades in the app are labeled estimates. Professors apply curves, late policies,
-and cutoffs that Canvas does not expose, so the app compares its number against
-Canvas's own computed score where available and flags a material disagreement
-rather than presenting its figure as authoritative.
 
 ## Notifications
 

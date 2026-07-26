@@ -89,7 +89,7 @@ struct ContentView: View {
                 vm.loadSampleData()
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.settings] }
-                if args.contains("-LHFShowGrades") { path = [.grades] }
+                if args.contains("-LHFShowGrades"), FeatureFlags.gradeWatcher { path = [.grades] }
                 return
             }
             #endif
@@ -188,7 +188,9 @@ struct ContentView: View {
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
-                navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                if FeatureFlags.gradeWatcher {
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                }
                 navButton(to: .settings, icon: "gearshape.fill", title: "Settings")
             }
             .padding(.top, 2)

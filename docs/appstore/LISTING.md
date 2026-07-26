@@ -1,6 +1,8 @@
 # App Store listing — copy & metadata
 
-_Last updated: 2026-07-26. Rewritten for v2.5: grades, widget, dark mode._
+_Last updated: 2026-07-26. Rewritten for the 1.0 submission: widget, dark mode,
+automatic submission filing. Grade Watcher is gated off in this build — see
+FeatureFlags.swift — so no grade copy appears here._
 
 Fill these into App Store Connect. Character limits noted; all copy below is
 within limits.
@@ -17,7 +19,7 @@ within limits.
 ## Promotional text (≤170, editable anytime)
 
 Every Canvas deadline in one calm list, sorted so the next thing you should do is
-always on top — plus your real grade in every class.
+always on top. Work you've already turned in files itself away.
 
 ## Description
 
@@ -30,17 +32,12 @@ deadlines straight from your personal Canvas calendar. Each item shows when it's
 due, color-coded by urgency. Tap to check it off — and work you've already
 submitted on Canvas files itself away automatically.
 
-KNOW WHERE YOU STAND
-Grade Watcher computes your current grade in each class from what's actually
-been scored, and shows how much of your final grade is already decided — so a
-big number off two quizzes reads as provisional, not final.
-
 FEATURES
 • One chronological list of everything due, sorted by what's next
 • Urgency colors at a glance — overdue, today, this week, later
 • This Week / All / Done views
 • Home Screen and Lock Screen widget showing what's due next
-• Grade Watcher: current grade, how much is decided, and grade trends
+• Work you've already submitted on Canvas files itself under Done
 • Add your own one-off or weekly-recurring tasks
 • Optional local reminders before each due date, plus a daily digest
 • Light and dark appearance
@@ -51,16 +48,12 @@ Everything stays on your device. LHF has no account system and no server — it
 talks only to your school's Canvas (and Gradescope, if you connect it). We don't
 collect, track, or share anything.
 
-Grades shown in LHF are estimates computed from what Canvas exposes. Professors
-apply curves, late policies, and cutoffs the app can't see — your official grade
-is always the one your school publishes.
-
 LHF is an independent app and is not affiliated with or endorsed by Instructure
 (Canvas), Turnitin (Gradescope), or any university.
 
 ## Keywords (≤100, comma-separated, no spaces)
 
-canvas,assignments,deadlines,homework,planner,student,college,grades,gpa,due dates
+canvas,assignments,deadlines,homework,planner,student,college,due dates,reminders,school
 
 ## URLs
 
@@ -74,9 +67,9 @@ When prompted in App Store Connect → App Privacy:
 
 - **Do you collect data from this app?** → **No, we do not collect data.**
 
-That single answer is the whole label, and it stays correct in v2.5: grades and
-sessions are processed and stored on-device only, and the developer receives
-nothing. It is consistent with the bundled
+That single answer is the whole label, and it stays correct: everything the app
+reads from Canvas — including the submission data behind automatic filing — is
+processed and stored on-device only, and the developer receives nothing. It is consistent with the bundled
 `PrivacyInfo.xcprivacy` files (app and widget) and with `docs/PRIVACY.md`. Do not
 add any data types.
 
