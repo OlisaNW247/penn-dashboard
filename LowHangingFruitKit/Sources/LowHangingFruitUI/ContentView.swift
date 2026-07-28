@@ -43,24 +43,11 @@ struct ContentView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottomTrailing) {
-                VStack(spacing: 0) {
-                    header
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-
-                    SegmentedToggle(selection: $filter)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 4)
-
-                    ScrollView {
-                        listContent
-                            .padding(.horizontal, 20)
-                            .padding(.top, 18)
-                            .padding(.bottom, 40)
-                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
-                    }
-                }
+#if os(macOS)
+                macLayout
+#else
+                phoneLayout
+#endif
 
                 addButton
             }
@@ -139,6 +126,88 @@ struct ContentView: View {
             rescheduleNotifications()
         }
     }
+
+    // MARK: Layouts
+
+    /// The iPhone arrangement, unchanged: stacked header, pill toggle, list.
+    private var phoneLayout: some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+            SegmentedToggle(selection: $filter)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+
+            ScrollView {
+                listContent
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 40)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+            }
+        }
+    }
+
+#if os(macOS)
+    /// The Mac arrangement: identity, ring and view switcher live in a fixed
+    /// left rail (`MacDashboardSidebar`); the timeline gets the main area, in
+    /// a capped column so cards stay readable however wide the window is.
+    /// Same view model, same list content, same routes — a different
+    /// arrangement of the same pieces, not a fork.
+    private var macLayout: some View {
+        HStack(spacing: 0) {
+            MacDashboardSidebar(
+                greeting: greeting,
+                dateText: Self.dateText(Date()),
+                progress: vm.weeklyProgress(),
+                counts: (thisWeek: thisWeekCount, all: allCount, done: doneCount),
+                filter: $filter,
+                showGrades: FeatureFlags.gradeWatcher,
+                lastSync: state.lastSync
+            )
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    macPaneHeader
+                    listContent
+                        .padding(.top, 16)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+                }
+                .frame(maxWidth: 640, alignment: .leading)
+                .padding(.horizontal, 28)
+                .padding(.top, 26)
+                .padding(.bottom, 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var macPaneHeader: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(filter.rawValue)
+                .font(.lhfSerif(26))
+                .foregroundStyle(Color.v2Ink)
+            Text(macPaneSubtitle)
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2RingSub)
+        }
+    }
+
+    private var macPaneSubtitle: String {
+        switch filter {
+        case .thisWeek: return "\(thisWeekCount) open \u{00b7} sorted soonest first"
+        case .all:      return "\(allCount) open \u{00b7} through the end of term"
+        case .done:     return "\(doneCount) finished this semester"
+        }
+    }
+
+    private var thisWeekCount: Int { vm.thisWeekSections().reduce(0) { $0 + $1.items.count } }
+    private var allCount: Int { vm.allSections().reduce(0) { $0 + $1.items.count } }
+    private var doneCount: Int { vm.doneSections().reduce(0) { $0 + $1.items.count } }
+#endif
 
     /// Floating "+" to add a user-created assignment (one-off or recurring).
     private var addButton: some View {

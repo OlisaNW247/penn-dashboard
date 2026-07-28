@@ -43,7 +43,10 @@ public struct RootView: View {
         // `SheetTheme.swift`, which re-applies it there.
         .preferredColorScheme(state.appearanceMode.colorScheme)
 #if os(macOS)
-        .frame(minWidth: 480, minHeight: 600)
+        // Sized for the sidebar-plus-timeline landscape layout (see
+        // ContentView.macLayout) — the old 480pt minimum was the stretched
+        // phone column. ideal* seeds the first-launch window size.
+        .frame(minWidth: 880, idealWidth: 1040, minHeight: 620, idealHeight: 720)
 #endif
     }
 
