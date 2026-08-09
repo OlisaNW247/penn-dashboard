@@ -100,20 +100,24 @@ struct CanvasICSTests {
         #expect(comps.minute == 59)
     }
 
-    @Test("date-only DTSTART becomes end-of-day UTC")
+    @Test("date-only DTSTART becomes end-of-day LOCAL time")
     func dateOnlyEndOfDay() throws {
         let data = Self.sampleICS.data(using: .utf8)!
         let assignments = CanvasICSClient.calendarItems(from: data)
         let proj = try #require(assignments.first { $0.sourceID.contains("67890") })
         let due = try #require(proj.dueAt)
 
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: due)
+        // All-day assignments are due at the end of that day in the user's own
+        // time zone (11:59:59pm local), not 23:59:59 UTC. Asserting in the local
+        // calendar keeps this deterministic on any machine.
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: due)
         #expect(comps.year == 2026)
         #expect(comps.month == 6)
         #expect(comps.day == 1)
         #expect(comps.hour == 23)
+        #expect(comps.minute == 59)
+        #expect(comps.second == 59)
     }
 
     @Test("summary without bracketed course falls back gracefully")
