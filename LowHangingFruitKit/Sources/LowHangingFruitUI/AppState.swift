@@ -272,7 +272,7 @@ final class AppState: ObservableObject {
     /// Gradescope's cookies live in the same Keychain blob and are left alone
     /// (`remove(domainContains:)`, not `clear()`), so disconnecting one service
     /// never silently signs the user out of the other.
-    func disconnectCanvas() {
+    func disconnectCanvas() async {
         SessionCookieStore.remove(domainContains: "canvas")
         SessionCookieStore.remove(domainContains: "upenn")
         updateCanvasICSURL("")
@@ -281,15 +281,21 @@ final class AppState: ObservableObject {
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         rebuildDashboardItems()
+        // Also erase the live WebView session — the Keychain purge above isn't
+        // where the login lives (Penn SSO + Canvas cookies persist in
+        // WKWebsiteDataStore and were otherwise re-merged on the next sync).
+        await AutoSyncCoordinator.purgeWebSession(domainContains: "canvas")
+        await AutoSyncCoordinator.purgeWebSession(domainContains: "upenn")
     }
 
     /// Signs out of Gradescope: purges its cookies and everything scraped with
     /// them. Canvas stays connected.
-    func disconnectGradescope() {
+    func disconnectGradescope() async {
         SessionCookieStore.remove(domainContains: "gradescope")
         setGradescopeConnected(false)
         gradescopeItems = []
         rebuildDashboardItems()
+        await AutoSyncCoordinator.purgeWebSession(domainContains: "gradescope")
     }
 
     func syncIfConfigured() async {

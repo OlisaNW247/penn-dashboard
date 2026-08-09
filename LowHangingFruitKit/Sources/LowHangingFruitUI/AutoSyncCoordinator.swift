@@ -50,6 +50,37 @@ enum AutoSyncCoordinator {
         await state.refreshGradeWatcher(cookies: cookies)
     }
 
+    /// Erases the live in-app WebView session for every domain matching `needle`
+    /// — cookies AND any other cached website data (local/session storage,
+    /// caches). Disconnecting a service previously cleared only the Keychain copy
+    /// (`SessionCookieStore`), but the login actually lives in
+    /// `WKWebsiteDataStore.default()`; the leftover session cookies were folded
+    /// straight back in by `canvasCookies()` / `gradescopeCookies()`, so the user
+    /// was never really signed out and the App Review "erases the stored session"
+    /// claim wasn't true. This closes that gap.
+    static func purgeWebSession(domainContains needle: String) async {
+        let store = WKWebsiteDataStore.default()
+
+        // Cookies for the matching hosts.
+        let cookieStore = store.httpCookieStore
+        let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
+            cookieStore.getAllCookies { continuation.resume(returning: $0) }
+        }
+        for cookie in cookies where cookie.domain.localizedCaseInsensitiveContains(needle) {
+            await cookieStore.deleteCookie(cookie)
+        }
+
+        // Everything else WebKit persists for those hosts (local storage, caches,
+        // IndexedDB) so nothing can silently re-authenticate from a leftover
+        // record. Record display names are hostnames, matched against `needle`.
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        let records = await store.dataRecords(ofTypes: types)
+        let matching = records.filter { $0.displayName.localizedCaseInsensitiveContains(needle) }
+        if !matching.isEmpty {
+            await store.removeData(ofTypes: types, for: matching)
+        }
+    }
+
     private static func gradescopeCookies() async -> [HTTPCookie] {
         let live: [HTTPCookie] = await withCheckedContinuation { continuation in
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies { continuation.resume(returning: $0) }

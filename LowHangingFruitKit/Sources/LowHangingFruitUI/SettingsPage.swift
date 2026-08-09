@@ -163,9 +163,11 @@ struct SettingsPage: View {
                 title: Text("Disconnect \(target.label)?"),
                 message: Text(target.message),
                 primaryButton: .destructive(Text("Disconnect")) {
-                    switch target {
-                    case .canvas:     state.disconnectCanvas()
-                    case .gradescope: state.disconnectGradescope()
+                    Task {
+                        switch target {
+                        case .canvas:     await state.disconnectCanvas()
+                        case .gradescope: await state.disconnectGradescope()
+                        }
                     }
                 },
                 secondaryButton: .cancel()
