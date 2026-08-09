@@ -100,6 +100,15 @@ final class AppState: ObservableObject {
     /// directly; `refreshGradeWatcher` is the only thing that drives it here.
     let gradeWatcher = GradeWatcherStore()
 
+    /// Durable assignment ledger. A sync reconciles into it instead of replacing
+    /// the in-memory arrays wholesale, so previously-seen assignments (and
+    /// completed work) survive a rolling Canvas feed and flaky fetches. Optional
+    /// so that if the SwiftData store can't be created the app degrades to its
+    /// old non-persistent behavior rather than crashing. In unit tests there's no
+    /// App Group entitlement, so each `AppState()` gets its own fresh in-memory
+    /// store — no disk, no cross-test leakage.
+    let assignmentStore: AssignmentStore?
+
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
@@ -116,7 +125,11 @@ final class AppState: ObservableObject {
     private static let courseNameOverridesKey = "courseNameOverrides"
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
 
-    init() {
+    /// `assignmentStore` is injectable so tests can supply a specific in-memory
+    /// or temp-file store (and drive it across simulated launches). The default
+    /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
+    /// app, fresh in-memory in unit tests.
+    init(assignmentStore: AssignmentStore? = nil) {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
         self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
         self.completionDates = Self.loadCompletionDates()
@@ -134,6 +147,18 @@ final class AppState: ObservableObject {
         self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
+
+        // Seed the in-memory pools from the durable ledger so the class list and
+        // dashboard are populated on the very first frame — before any network
+        // sync returns — instead of starting empty every launch.
+        let store = assignmentStore ?? AssignmentStore.makeDefault()
+        self.assignmentStore = store
+        if let store {
+            let persisted = store.currentAssignments()
+            self.canvasItems = persisted.filter { $0.source == .canvas }
+            self.gradescopeItems = persisted.filter { $0.source == .gradescope }
+        }
+
         rebuildDashboardItems()
 
         // Preview (demo) mode persists across launches so an App Store reviewer
@@ -280,6 +305,7 @@ final class AppState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
+        assignmentStore?.purge(source: .canvas)
         rebuildDashboardItems()
         // Also erase the live WebView session — the Keychain purge above isn't
         // where the login lives (Penn SSO + Canvas cookies persist in
@@ -294,6 +320,7 @@ final class AppState: ObservableObject {
         SessionCookieStore.remove(domainContains: "gradescope")
         setGradescopeConnected(false)
         gradescopeItems = []
+        assignmentStore?.purge(source: .gradescope)
         rebuildDashboardItems()
         await AutoSyncCoordinator.purgeWebSession(domainContains: "gradescope")
     }
@@ -314,7 +341,18 @@ final class AppState: ObservableObject {
         do {
             let client = CanvasICSClient(feedURL: url)
             let fetched = try await client.fetchCalendarItems().sorted(by: Self.byDueDate)
-            canvasItems = fetched
+            // Reconcile into the durable ledger rather than replacing the pool:
+            // items that dropped out of the rolling feed are retained, and a
+            // suspiciously empty fetch is refused so one blip can't wipe the list.
+            if let store = assignmentStore {
+                let result = store.reconcile(fetched, source: .canvas)
+                canvasItems = result.items.sorted(by: Self.byDueDate)
+                if result.wasSuspectedPartial {
+                    syncNotice = "Couldn't fully refresh Canvas just now — showing your saved assignments."
+                }
+            } else {
+                canvasItems = fetched
+            }
             rebuildDashboardItems()
             lastSync = Date()
         } catch {
@@ -408,7 +446,13 @@ final class AppState: ObservableObject {
             // Normalize Gradescope's course labels through the same parser as
             // Canvas so a course shared by both sources collapses to one picker
             // entry (e.g. "CIS 2400 Systems Programming" → "CIS 2400").
-            gradescopeItems = try await client.fetchAssignments().map(Self.normalizingCourse)
+            let fetched = try await client.fetchAssignments().map(Self.normalizingCourse)
+            // Same durable reconciliation as Canvas (see `sync()`).
+            if let store = assignmentStore {
+                gradescopeItems = store.reconcile(fetched, source: .gradescope).items
+            } else {
+                gradescopeItems = fetched
+            }
             lastGradescopeSync = Date()
             setGradescopeConnected(true)
             rebuildDashboardItems()
