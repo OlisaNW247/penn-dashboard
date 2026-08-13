@@ -128,6 +128,8 @@ struct SettingsPage: View {
 
             remindersSection
 
+            storageSection
+
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
@@ -176,6 +178,42 @@ struct SettingsPage: View {
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    // MARK: Storage
+
+    /// What the durable ledger is actually holding. This exists because the
+    /// failure mode it guards against is invisible: if the App Group container
+    /// isn't entitled, `AssignmentStore` degrades to an in-memory store and the
+    /// app looks completely normal right up until everything is gone after a
+    /// relaunch. "Saved on this device" vs "Not saving" is the whole point;
+    /// the counts underneath are how you confirm a sync actually landed.
+    @ViewBuilder
+    private var storageSection: some View {
+        if let stats = state.assignmentStore?.stats() {
+            Section("Storage") {
+                LabeledContent("Saved assignments", value: "\(stats.total)")
+                LabeledContent("Canvas / Gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
+                LabeledContent("Finished (kept forever)", value: "\(stats.finished)")
+                if stats.withScores > 0 {
+                    LabeledContent("With a saved score", value: "\(stats.withScores)")
+                }
+                if stats.goneFromFeed > 0 {
+                    LabeledContent("Retained after leaving the feed", value: "\(stats.goneFromFeed)")
+                }
+                if let earliest = stats.earliestFirstSeen {
+                    LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
+                }
+                Label(
+                    stats.isPersistent
+                        ? "Saved on this device."
+                        : "Not saving — assignments will be lost when the app quits.",
+                    systemImage: stats.isPersistent ? "checkmark.circle" : "exclamationmark.triangle"
+                )
+                .font(.lhfSans(12))
+                .foregroundStyle(stats.isPersistent ? Color.secondary : Color.orange)
+            }
+        }
     }
 
     // MARK: Classes

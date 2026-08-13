@@ -249,6 +249,18 @@ struct ContentView: View {
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        await announceGradeChanges()
+    }
+
+    /// Drains any grades the refresh found had changed and posts them. Done
+    /// after `reschedule` on purpose: that call clears pending requests, and
+    /// draining afterwards keeps the ordering obvious even though grade
+    /// notifications are delivered immediately rather than queued.
+    private func announceGradeChanges() async {
+        let changes = state.pendingGradeChanges
+        guard !changes.isEmpty else { return }
+        state.pendingGradeChanges = []
+        await scheduler.notifyGradeChanges(changes)
     }
 
     // MARK: List

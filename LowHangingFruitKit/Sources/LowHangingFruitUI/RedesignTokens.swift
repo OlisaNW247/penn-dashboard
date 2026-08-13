@@ -103,15 +103,75 @@ private func fontIsAvailable(_ name: String) -> Bool {
 #endif
 }
 
+/// Maps one of the design's literal point sizes onto the closest system text
+/// style, which is what Dynamic Type scales against. The design was drawn in
+/// fixed points, so rather than restyle every call site we scale each size
+/// *relative to* the style it most resembles — a 12pt caption and a 32pt title
+/// then grow at the rates users expect, and the visual hierarchy is preserved
+/// at every setting.
+private func lhfTextStyle(for size: CGFloat) -> Font.TextStyle {
+    switch size {
+    case ..<12:    return .caption2
+    case ..<13:    return .caption
+    case ..<15:    return .footnote
+    case ..<16:    return .subheadline
+    case ..<17:    return .callout
+    case ..<20:    return .body
+    case ..<22:    return .title3
+    case ..<28:    return .title2
+    case ..<34:    return .title
+    default:       return .largeTitle
+    }
+}
+
+/// Scales a design point size for the user's current Dynamic Type setting,
+/// keeping the exact base size rather than snapping to the text style's own.
+/// AppKit has no equivalent metrics API, so macOS keeps the fixed size.
+private func lhfScaled(_ size: CGFloat) -> CGFloat {
+#if canImport(UIKit)
+    return UIFontMetrics(forTextStyle: uiTextStyle(for: lhfTextStyle(for: size)))
+        .scaledValue(for: size)
+#else
+    return size
+#endif
+}
+
+#if canImport(UIKit)
+private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
+    switch style {
+    case .largeTitle: return .largeTitle
+    case .title:      return .title1
+    case .title2:     return .title2
+    case .title3:     return .title3
+    case .headline:   return .headline
+    case .callout:    return .callout
+    case .subheadline: return .subheadline
+    case .footnote:   return .footnote
+    case .caption:    return .caption1
+    case .caption2:   return .caption2
+    default:          return .body
+    }
+}
+#endif
+
 extension Font {
-    /// Instrument Serif (display) with a system-serif fallback.
+    /// Instrument Serif (display) with a system-serif fallback. Both paths
+    /// scale with the user's text size.
     static func lhfSerif(_ size: CGFloat) -> Font {
         fontIsAvailable("InstrumentSerif-Regular")
-            ? .custom("InstrumentSerif-Regular", size: size)
-            : .system(size: size, weight: .regular, design: .serif)
+            ? .custom("InstrumentSerif-Regular", size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: .regular, design: .serif)
     }
 
-    /// Geist (body) with a system-sans fallback. Keeps weights.
+    /// Geist (body) with a system-sans fallback. Keeps weights, and scales with
+    /// the user's text size.
+    ///
+    /// The fallback branch is the one that actually ships today — no Geist or
+    /// Instrument Serif files are bundled or registered, so `fontIsAvailable`
+    /// is always false. That is exactly why this needed fixing: `.system(size:)`
+    /// is a fixed point size and ignores Dynamic Type entirely, so every font
+    /// in the app was frozen at its design size no matter what the user chose
+    /// in Accessibility settings.
     static func lhfSans(_ size: CGFloat, weight: Weight = .regular) -> Font {
         let custom: String
         switch weight {
@@ -120,8 +180,8 @@ extension Font {
         default:                               custom = "Geist-Regular"
         }
         return fontIsAvailable(custom)
-            ? .custom(custom, size: size)
-            : .system(size: size, weight: weight, design: .default)
+            ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: weight, design: .default)
     }
 }
 

@@ -22,10 +22,18 @@ public final class AssignmentStore {
     /// ages out. Generous on purpose: the design brief says a lingering
     /// already-removed item is far better than losing real work. Undated items
     /// and anything still in the feed never age out at all.
-    public static let goneGracePeriod: TimeInterval = 14 * 86_400
+    /// `nonisolated` so the widget extension's off-main-actor ledger read
+    /// (`LedgerWidgetReader`) applies the identical rule instead of hardcoding
+    /// its own copy of the number.
+    public nonisolated static let goneGracePeriod: TimeInterval = 14 * 86_400
 
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
+
+    /// False when the ledger is the in-memory fallback — i.e. nothing is
+    /// actually surviving a relaunch. Surfaced in Settings because "persistence
+    /// is silently not persisting" is otherwise indistinguishable from working.
+    public let isPersistent: Bool
 
     public struct ReconcileResult: Sendable {
         /// The current active set for the reconciled source — what the caller
@@ -42,11 +50,13 @@ public final class AssignmentStore {
     public init(inMemory: Bool = false) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
+        self.isPersistent = !inMemory
     }
 
     public init(url: URL) throws {
         let config = ModelConfiguration(url: url)
         self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
+        self.isPersistent = true
     }
 
     /// The store the real app uses: a persistent SwiftData store in the shared
@@ -145,13 +155,180 @@ public final class AssignmentStore {
 
     /// An item ages out only once it's BOTH gone from the feed AND overdue past
     /// the grace period. Still in the feed, or undated, or not yet overdue → kept.
+    ///
+    /// Finished work is exempt outright. Aging exists to stop *abandoned* items
+    /// accumulating, and a completed or submitted assignment is the opposite of
+    /// abandoned — it's the archive the Done tab is built on. Without this an
+    /// assignment you turned in would quietly vanish from your own record two
+    /// weeks after it rolled off the Canvas feed.
     private func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
+        guard !row.isFinished else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
+    }
+
+    // MARK: Completion & submission truth
+
+    /// Records manual completion on the ledger so Done survives both a relaunch
+    /// and the feed dropping the item. `clearing` un-completes rows (the
+    /// markActive path); both sets are applied in one save.
+    public func setCompleted(ids: Set<String>, at date: Date?, clearing: Set<String> = []) {
+        guard !ids.isEmpty || !clearing.isEmpty else { return }
+        for row in allRows() {
+            if ids.contains(row.id) {
+                row.completedAt = date ?? Date()
+            } else if clearing.contains(row.id) {
+                row.completedAt = nil
+            }
+        }
+        try? context.save()
+    }
+
+    /// Writes Grade Watcher's Canvas submission side-channel and per-assignment
+    /// scores onto the ledger, keyed by Canvas assignment id.
+    ///
+    /// Deliberately a full **replace** of the Canvas flag, not a merge: a
+    /// retracted or TA-cleared submission has to be able to go back to
+    /// unsubmitted, which is exactly why the in-memory set was recomputed from
+    /// scratch each refresh. Persisting it keeps that self-healing property
+    /// while also surviving a launch with no Canvas session — the case where the
+    /// app previously knew nothing at all about what you'd turned in.
+    /// A grade that appeared or moved between two refreshes. `previous == nil`
+    /// means this is the first score the ledger has ever held for the item —
+    /// i.e. the grade just posted.
+    public struct ScoreChange: Sendable, Equatable {
+        public let assignmentID: String
+        public let course: String
+        public let title: String
+        public let previous: Double?
+        public let earned: Double
+        public let max: Double?
+
+        /// True for a freshly-posted grade, false for a regrade.
+        public var isNewlyGraded: Bool { previous == nil }
+    }
+
+    @discardableResult
+    public func applySubmissionState(
+        submittedCanvasAssignmentIDs: Set<String>,
+        scores: [String: (earned: Double?, max: Double?)]
+    ) -> [ScoreChange] {
+        var changes: [ScoreChange] = []
+        for row in rows(source: .canvas) {
+            guard let canvasID = row.canvasAssignmentID else { continue }
+            row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
+            guard let score = scores[canvasID] else { continue }
+
+            // Only a real number counts as a grade. Canvas reports ungraded work
+            // as a null score, and a null must never read as "your grade changed".
+            if let earned = score.earned, row.scoreEarned != earned {
+                changes.append(ScoreChange(
+                    assignmentID: canvasID,
+                    course: row.course,
+                    title: row.title,
+                    previous: row.scoreEarned,
+                    earned: earned,
+                    max: score.max ?? row.scoreMax
+                ))
+            }
+            row.scoreEarned = score.earned
+            row.scoreMax = score.max
+        }
+        try? context.save()
+        return changes
+    }
+
+    // MARK: Cross-platform pairings
+
+    /// Every Canvas↔Gradescope pairing the ledger has recorded, for seeding the
+    /// deduplicator so a merge outlives the heuristic that first found it.
+    public func confirmedPairings() -> [AssignmentDeduplicator.Match] {
+        rows(source: .canvas).compactMap { row in
+            guard let linked = row.linkedID else { return nil }
+            return AssignmentDeduplicator.Match(canvasID: row.id, gradescopeID: linked)
+        }
+    }
+
+    /// Writes this rebuild's pairings onto the ledger. Recorded on both rows so
+    /// either side can find its counterpart, and stamped with the time so a
+    /// future policy could expire a pairing that stops re-matching.
+    ///
+    /// Pairings are only ever added here, never cleared: dropping one because
+    /// the live heuristic stopped agreeing is precisely the failure this is
+    /// meant to prevent. `purge(source:)` is what clears them, on disconnect.
+    public func recordPairings(_ matches: [AssignmentDeduplicator.Match], now: Date = Date()) {
+        guard !matches.isEmpty else { return }
+        let gradescopeByID = Dictionary(
+            rows(source: .gradescope).map { ($0.id, $0) },
+            uniquingKeysWith: { a, _ in a }
+        )
+        let canvasByID = Dictionary(
+            rows(source: .canvas).map { ($0.id, $0) },
+            uniquingKeysWith: { a, _ in a }
+        )
+        var changed = false
+        for match in matches {
+            if let row = canvasByID[match.canvasID], row.linkedID != match.gradescopeID {
+                row.linkedID = match.gradescopeID
+                row.pairingConfirmedAt = now
+                changed = true
+            }
+            if let row = gradescopeByID[match.gradescopeID], row.linkedID != match.canvasID {
+                row.linkedID = match.canvasID
+                row.pairingConfirmedAt = now
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
+    }
+
+    /// The persisted Canvas submission set, for seeding `AppState` at launch
+    /// before (or without) any grade refresh.
+    public func submittedCanvasAssignmentIDs() -> Set<String> {
+        var ids: Set<String> = []
+        for row in rows(source: .canvas) where row.canvasSubmitted {
+            if let canvasID = row.canvasAssignmentID { ids.insert(canvasID) }
+        }
+        return ids
     }
 
     // MARK: Test/diagnostic access
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.
     public func rowCount() -> Int { allRows().count }
+
+    /// A snapshot of what the ledger is actually holding. Backs the Settings →
+    /// Storage panel: without it, "the database is working" and "the database
+    /// silently fell back to memory and you'll lose everything on quit" look
+    /// exactly the same from inside the app.
+    public struct LedgerStats: Sendable, Equatable {
+        public let isPersistent: Bool
+        public let total: Int
+        public let canvas: Int
+        public let gradescope: Int
+        /// Retained but no longer published by the source feed.
+        public let goneFromFeed: Int
+        /// Ticked off, or reported submitted by either platform — the rows that
+        /// are now exempt from aging.
+        public let finished: Int
+        public let withScores: Int
+        /// When the ledger first saw anything: how far back the archive reaches.
+        public let earliestFirstSeen: Date?
+        public let latestSeenInFeed: Date?
+    }
+
+    public func stats() -> LedgerStats {
+        let rows = allRows()
+        return LedgerStats(
+            isPersistent: isPersistent,
+            total: rows.count,
+            canvas: rows.filter { $0.sourceRaw == Assignment.Source.canvas.rawValue }.count,
+            gradescope: rows.filter { $0.sourceRaw == Assignment.Source.gradescope.rawValue }.count,
+            goneFromFeed: rows.filter(\.isGoneFromFeed).count,
+            finished: rows.filter(\.isFinished).count,
+            withScores: rows.filter { $0.scoreEarned != nil }.count,
+            earliestFirstSeen: rows.map(\.firstSeen).min(),
+            latestSeenInFeed: rows.map(\.lastSeenInFeed).max()
+        )
+    }
 }

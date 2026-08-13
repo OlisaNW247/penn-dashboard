@@ -39,6 +39,12 @@ public final class StoredAssignment {
     /// or briefly hiding an item, or a partial fetch, must never lose it.
     public var isGoneFromFeed: Bool
 
+    /// When the user ticked this item off (or its cross-platform counterpart).
+    /// Mirrors `AppState.completionDates` onto the ledger for one reason: a
+    /// finished assignment is what the Done tab exists to remember, so aging
+    /// must never reclaim it. Nil means not completed.
+    public var completedAt: Date?
+
     // MARK: Submission / grade truth (persisted, not recomputed from scratch)
     /// Canvas's own submission signal (from Grade Watcher's `workflow_state`),
     /// stored so it survives launches instead of being blank until a live grade
@@ -69,6 +75,7 @@ public final class StoredAssignment {
         firstSeen: Date,
         lastSeenInFeed: Date,
         isGoneFromFeed: Bool = false,
+        completedAt: Date? = nil,
         canvasSubmitted: Bool = false,
         gradescopeSubmitted: Bool = false,
         scoreEarned: Double? = nil,
@@ -89,6 +96,7 @@ public final class StoredAssignment {
         self.firstSeen = firstSeen
         self.lastSeenInFeed = lastSeenInFeed
         self.isGoneFromFeed = isGoneFromFeed
+        self.completedAt = completedAt
         self.canvasSubmitted = canvasSubmitted
         self.gradescopeSubmitted = gradescopeSubmitted
         self.scoreEarned = scoreEarned
@@ -127,6 +135,19 @@ extension StoredAssignment {
             linkedID: linkedID
         )
     }
+
+    /// Work the student actually finished — ticked off, or reported turned in by
+    /// either platform. The ledger treats this as archive material: it is exempt
+    /// from aging, because losing a completed assignment silently rewrites the
+    /// student's own record of what they did.
+    var isFinished: Bool {
+        completedAt != nil || canvasSubmitted || gradescopeSubmitted
+    }
+
+    /// The Canvas assignment id this row joins to Grade Watcher's submission
+    /// side-channel on — the same derivation the value type uses, so the two
+    /// can't drift apart.
+    var canvasAssignmentID: String? { assignment.canvasAssignmentID }
 
     /// Copies the feed-supplied fields of `assignment` onto this row, preserving
     /// everything the ledger owns (`firstSeen`, submission flags, pairing). Used

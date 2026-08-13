@@ -65,6 +65,16 @@ final class AppState: ObservableObject {
     /// correction (a retracted submission) self-heals on the next sync instead of
     /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
+
+    /// Grade changes detected by the last refresh and not yet announced. The
+    /// view layer drains this (it owns the `NotificationScheduler`), so the
+    /// store stays free of notification plumbing.
+    @Published var pendingGradeChanges: [AssignmentStore.ScoreChange] = []
+
+    /// Courses whose grades have been fetched at least once, so the very first
+    /// fetch can establish a baseline silently instead of announcing a whole
+    /// term of existing scores. See `notifiableGradeChanges`.
+    private var gradeBaselinedCourses: Set<String> = []
     /// Courses the user has switched OFF (no dashboard items, no notifications).
     /// Stored as the *hidden* set so the default — empty — means every course is
     /// shown, and any newly-discovered course shows up automatically.
@@ -124,6 +134,7 @@ final class AppState: ObservableObject {
     private static let appearanceModeKey = "appearanceMode"
     private static let courseNameOverridesKey = "courseNameOverrides"
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
+    private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -145,6 +156,9 @@ final class AppState: ObservableObject {
         ) ?? .light
         self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
         self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
+        self.gradeBaselinedCourses = Set(
+            UserDefaults.standard.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
+        )
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
 
@@ -157,6 +171,12 @@ final class AppState: ObservableObject {
             let persisted = store.currentAssignments()
             self.canvasItems = persisted.filter { $0.source == .canvas }
             self.gradescopeItems = persisted.filter { $0.source == .gradescope }
+            // Submission state used to be blank until the first successful grade
+            // refresh landed — so auto-filed work sat back on the active list on
+            // every cold launch, and stayed there forever if the Canvas session
+            // had lapsed. Seed it from the ledger instead; a live refresh still
+            // overwrites this with Canvas's current truth.
+            self.submittedCanvasAssignmentIDs = store.submittedCanvasAssignmentIDs()
         }
 
         rebuildDashboardItems()
@@ -727,7 +747,24 @@ final class AppState: ObservableObject {
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
         // into a single Canvas-anchored item before it ever reaches the
         // dashboard buckets below.
-        let dedupedCoursework = AssignmentDeduplicator.merge(canvasItems: canvasRelevant, gradescopeItems: gradescopeItems)
+        // Pairings already on the ledger are honored before the live heuristic
+        // re-runs, so a merge survives a professor moving one platform's due
+        // date out of the heuristic's tolerance; this rebuild's pairings are
+        // written back so the merge is durable from here on.
+        let storedPairings = assignmentStore?.confirmedPairings() ?? []
+        let pairings = AssignmentDeduplicator.matchPairs(
+            canvasItems: canvasRelevant,
+            gradescopeItems: gradescopeItems,
+            confirmedPairings: storedPairings
+        )
+        assignmentStore?.recordPairings(pairings)
+        // Passing the resolved pairings straight through means the heuristic
+        // isn't run a second time inside `merge`.
+        let dedupedCoursework = AssignmentDeduplicator.merge(
+            canvasItems: canvasRelevant,
+            gradescopeItems: gradescopeItems,
+            confirmedPairings: pairings
+        )
         mergedCoursework = dedupedCoursework
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
@@ -780,23 +817,30 @@ final class AppState: ObservableObject {
     /// Gradescope counterpart done directly, so completion stays correct for
     /// both identities even if a later sync no longer matches the pair.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
+        var touched: Set<String> = [assignment.id]
         completedAssignmentIDs.insert(assignment.id)
         completionDates[assignment.id] = date
         if let linkedID = assignment.linkedID {
             completedAssignmentIDs.insert(linkedID)
             completionDates[linkedID] = date
+            touched.insert(linkedID)
         }
+        // Mirror onto the ledger so aging can't reclaim finished work.
+        assignmentStore?.setCompleted(ids: touched, at: date)
         persistCompletedIDs()
         rebuildDashboardItems()
     }
 
     func markActive(_ assignment: Assignment) {
+        var touched: Set<String> = [assignment.id]
         completedAssignmentIDs.remove(assignment.id)
         completionDates[assignment.id] = nil
         if let linkedID = assignment.linkedID {
             completedAssignmentIDs.remove(linkedID)
             completionDates[linkedID] = nil
+            touched.insert(linkedID)
         }
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
         persistCompletedIDs()
         rebuildDashboardItems()
     }
@@ -827,8 +871,75 @@ final class AppState: ObservableObject {
                 ids.insert(submission.assignmentID)
             }
         }
-        submittedCanvasAssignmentIDs = ids
+        // Merge rather than replace: the ledger may know about work turned in
+        // for a course that isn't in this refresh (deselected, or a fetch that
+        // failed mid-loop), and dropping it would bounce finished items back
+        // onto the dashboard.
+        submittedCanvasAssignmentIDs = ids.union(persistedSubmittedIDsForUnfetchedCourses())
+
+        // Persist onto the ledger so the next cold launch already knows what's
+        // turned in — and, more importantly, so a launch with a lapsed Canvas
+        // session still does. Only write when a refresh actually produced
+        // snapshots; an empty run (no session, nothing selected) must not be
+        // read as "nothing is submitted any more" and wipe the persisted truth.
+        if !gradeWatcher.snapshots.isEmpty {
+            var scores: [String: (earned: Double?, max: Double?)] = [:]
+            for snapshot in gradeWatcher.snapshots.values {
+                for category in snapshot.categories {
+                    for item in category.items {
+                        scores[item.id] = (earned: item.score, max: item.pointsPossible)
+                    }
+                }
+            }
+            let changes = assignmentStore?.applySubmissionState(
+                submittedCanvasAssignmentIDs: ids,
+                scores: scores
+            ) ?? []
+            pendingGradeChanges = notifiableGradeChanges(changes)
+        }
         rebuildDashboardItems()
+    }
+
+    /// Grade changes worth telling the user about, and the baseline bookkeeping
+    /// that makes that possible.
+    ///
+    /// The first time a course's grades are ever fetched, every scored item
+    /// transitions from "no score on the ledger" to "scored" at once — a whole
+    /// semester of homework. Announcing that would mean a wall of notifications
+    /// the moment someone connects Canvas. So the first sync for a course only
+    /// *records* the baseline and stays silent; from then on a change is real
+    /// news.
+    private func notifiableGradeChanges(
+        _ changes: [AssignmentStore.ScoreChange]
+    ) -> [AssignmentStore.ScoreChange] {
+        guard !changes.isEmpty else { return [] }
+        var baselined = gradeBaselinedCourses
+        let notifiable = changes.filter { baselined.contains($0.course) }
+        let seen = Set(changes.map(\.course))
+        if !seen.isSubset(of: baselined) {
+            baselined.formUnion(seen)
+            gradeBaselinedCourses = baselined
+            UserDefaults.standard.set(Array(baselined).sorted(), forKey: Self.gradeBaselinedCoursesKey)
+        }
+        return notifiable
+    }
+
+    /// Persisted submissions belonging to courses this refresh didn't cover, so
+    /// a partial or deselected refresh can't un-submit them in memory.
+    private func persistedSubmittedIDsForUnfetchedCourses() -> Set<String> {
+        guard let store = assignmentStore else { return [] }
+        guard !gradeWatcher.snapshots.isEmpty else { return store.submittedCanvasAssignmentIDs() }
+
+        // Anything this refresh actually saw is authoritative (including a
+        // now-retracted submission, which must be allowed to clear). Everything
+        // else keeps whatever the ledger last recorded.
+        let refreshedAssignmentIDs = Set(
+            gradeWatcher.snapshots.values
+                .flatMap(\.categories)
+                .flatMap(\.items)
+                .map(\.id)
+        )
+        return store.submittedCanvasAssignmentIDs().subtracting(refreshedAssignmentIDs)
     }
 
     /// When this item was marked done, if known. Items completed before the app

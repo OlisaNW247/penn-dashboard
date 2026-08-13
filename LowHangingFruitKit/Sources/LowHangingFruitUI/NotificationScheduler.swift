@@ -149,6 +149,81 @@ final class NotificationScheduler: ObservableObject {
         center.removeAllPendingNotificationRequests()
     }
 
+    // MARK: Grade changes
+
+    /// How many individual grade notifications to post before collapsing the
+    /// rest into one summary. A professor publishing a whole assignment group at
+    /// once is normal; five separate banners for it is not.
+    static let maxGradeNotifications = 3
+
+    /// Posts "your grade posted" notifications for grades that changed since the
+    /// last refresh. Delivered immediately rather than scheduled — the grade has
+    /// *already* changed, so there is nothing to wait for.
+    ///
+    /// Safe against `reschedule`'s `cancelAll()`, which only clears *pending*
+    /// requests: these have no trigger and are delivered on arrival.
+    func notifyGradeChanges(_ changes: [AssignmentStore.ScoreChange]) async {
+        guard isEnabled, !changes.isEmpty else { return }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return }
+        for request in Self.gradeRequests(changes) {
+            try? await center.add(request)
+        }
+    }
+
+    /// Pure request-building, so the wording and the collapse rule are testable
+    /// without touching `UNUserNotificationCenter`.
+    static func gradeRequests(_ changes: [AssignmentStore.ScoreChange]) -> [UNNotificationRequest] {
+        guard !changes.isEmpty else { return [] }
+
+        // Newly-posted grades are the news; regrades are a quieter follow-up.
+        let ordered = changes.sorted { lhs, rhs in
+            if lhs.isNewlyGraded != rhs.isNewlyGraded { return lhs.isNewlyGraded }
+            return lhs.course < rhs.course
+        }
+
+        if ordered.count > maxGradeNotifications {
+            let courses = Set(ordered.map(\.course)).sorted()
+            let content = UNMutableNotificationContent()
+            content.title = "📊 \(ordered.count) new grades"
+            content.body = courses.count == 1
+                ? "\(courses[0]) posted \(ordered.count) grades."
+                : "Across \(courses.joined(separator: ", "))."
+            content.sound = .default
+            return [UNNotificationRequest(identifier: "grade:batch:\(Int(Date().timeIntervalSince1970))",
+                                          content: content, trigger: nil)]
+        }
+
+        return ordered.map { change in
+            let content = UNMutableNotificationContent()
+            content.title = change.isNewlyGraded
+                ? "📊 \(change.course) grade posted"
+                : "📊 \(change.course) grade updated"
+            content.body = "\(change.title) — \(Self.formatScore(change))"
+            content.sound = .default
+            return UNNotificationRequest(
+                identifier: "grade:\(change.assignmentID):\(change.earned)",
+                content: content,
+                trigger: nil
+            )
+        }
+    }
+
+    /// "18/20 (90%)", or just the raw number when the total isn't known or is
+    /// zero (an ungraded-points item would otherwise divide by zero).
+    static func formatScore(_ change: AssignmentStore.ScoreChange) -> String {
+        let earned = Self.trim(change.earned)
+        guard let max = change.max, max > 0 else { return earned }
+        let percent = Int((change.earned / max * 100).rounded())
+        return "\(earned)/\(Self.trim(max)) (\(percent)%)"
+    }
+
+    private static func trim(_ value: Double) -> String {
+        value == value.rounded()
+            ? String(Int(value))
+            : String(format: "%.1f", value)
+    }
+
     // MARK: Planning (pure; no UNUserNotificationCenter access — unit-testable)
 
     func plannedRequests(from items: [DashItem], now: Date = Date()) -> [UNNotificationRequest] {

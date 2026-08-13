@@ -127,4 +127,145 @@ struct AssignmentLedgerScenarioTests {
         #expect(matches.count == 1)
         #expect(matches.first?.linkedID == "gradescope:e9")
     }
+
+    /// The gap persisted pairings close. The similar-title tier requires both
+    /// due dates within ~26h; when a professor pushes the deadline on Canvas
+    /// only, that test starts failing and a pair the student has been treating
+    /// as one assignment splits into two cards — with their completion tick
+    /// stranded on one half.
+    @Test("a confirmed pair stays merged after a due date moves on one platform")
+    func confirmedPairSurvivesDateMove() throws {
+        let store = try AssignmentStore(inMemory: true)
+        let course = "SCEN-G 100"
+        let due = Date().addingTimeInterval(4 * 86_400)
+
+        // Titles are similar but NOT identical, so this pair lives entirely on
+        // the date-gated tier.
+        let canvasItem = canvas("g1", course: course, title: "Homework 3 (Written)", due: due)
+        let gradescopeItem = Assignment(source: .gradescope, sourceID: "g9", kind: .assignment,
+                                        course: course, title: "Written Homework 3",
+                                        dueAt: due, url: nil)
+        _ = store.reconcile([canvasItem], source: .canvas)
+        _ = store.reconcile([gradescopeItem], source: .gradescope)
+
+        let state = AppState(assignmentStore: store)
+        state.markActive(canvasItem)   // clean slate
+        #expect(state.assignments.filter { $0.course == course }.count == 1)
+
+        // The professor pushes the Canvas deadline a week; Gradescope keeps the
+        // original. The live heuristic can no longer see these as a pair.
+        let moved = canvas("g1", course: course, title: "Homework 3 (Written)",
+                           due: due.addingTimeInterval(7 * 86_400))
+        #expect(!AssignmentDeduplicator.isLikelyDuplicate(
+            titleA: moved.title, dueA: moved.dueAt,
+            titleB: gradescopeItem.title, dueB: gradescopeItem.dueAt
+        ), "precondition: the heuristic alone would now split this pair")
+
+        _ = store.reconcile([moved], source: .canvas)
+        let after = AppState(assignmentStore: store)
+        // `mergedCoursework`, not `assignments`: pushing the date a week moves
+        // the item out of the dashboard's "this week" bucket, which is a
+        // separate concern from whether the pair is still merged.
+        let matches = after.mergedCoursework.filter { $0.course == course }
+        #expect(matches.count == 1, "the stored pairing should hold the merge together")
+        #expect(matches.first?.linkedID == "gradescope:g9")
+
+        after.markActive(moved)   // cleanup
+    }
+
+    // MARK: The real-world case — a term's finished coursework, months later
+
+    /// The scenario this branch exists for, end to end: a completed homework and
+    /// a graded midterm from earlier in the term, long past due and long gone
+    /// from the rolling Canvas feed, on a launch where the Canvas session has
+    /// lapsed so no grade refresh can run.
+    ///
+    /// Before the ledger this lost everything: the pools started empty, the
+    /// feed no longer carried the items, and submission state was recomputed
+    /// per-launch from a fetch that couldn't happen. All three had to be fixed
+    /// for this to hold.
+    @Test("a term's completed coursework survives aging, a rolling feed, and a dead session")
+    func completedTermCourseworkSurvivesEverything() throws {
+        let (store1, url) = try tempStore()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let course = "SCEN-F 3200"
+
+        // Earlier in the term: a homework and a midterm, both now 45 days past
+        // due — well beyond the 14-day gone-grace window.
+        let longAgo = Date().addingTimeInterval(-45 * 86_400)
+        let hw = canvas("43001", course: course, title: "Homework 4", due: longAgo)
+        let midterm = canvas("43002", course: course, title: "Midterm", due: longAgo)
+        let current = canvas("43003", course: course, title: "Homework 9",
+                             due: Date().addingTimeInterval(3 * 86_400))
+        _ = store1.reconcile([hw, midterm, current], source: .canvas)
+
+        // A grade refresh back when the session was alive: Canvas reported both
+        // submitted and scored.
+        let live = AppState(assignmentStore: store1)
+        live.markActive(hw)          // clean slate in shared UserDefaults
+        live.markActive(midterm)
+        live.gradeWatcher.loadPreviewSnapshots([
+            "1": snapshot(courseID: "1", graded: [("43001", 92, 100), ("43002", 78, 100)])
+        ])
+        live.updateSubmissionState()
+        #expect(live.isCompleted(hw))
+        #expect(live.isCompleted(midterm))
+
+        // Weeks pass. Both roll off the rolling Canvas feed; only current work
+        // is still published.
+        _ = store1.reconcile([current], source: .canvas)
+
+        // Relaunch — and this time the Canvas session is dead, so Grade Watcher
+        // never runs and the submission side-channel is empty.
+        let store2 = try AssignmentStore(url: url)
+        let relaunched = AppState(assignmentStore: store2)
+
+        let ids = Set(relaunched.canvasItems.map(\.id))
+        #expect(ids.isSuperset(of: ["canvas:43001", "canvas:43002"]),
+                "finished work must not age out of the ledger")
+
+        // Still known-submitted with its scores, from the ledger alone.
+        #expect(relaunched.submittedCanvasAssignmentIDs.isSuperset(of: ["43001", "43002"]))
+        let storedHW = try #require(relaunched.canvasItems.first { $0.id == "canvas:43001" })
+        #expect(storedHW.scoreEarned == 92)
+        #expect(storedHW.scoreMax == 100)
+        #expect(relaunched.isCompleted(storedHW), "it should still be filed under Done, not back on the active list")
+
+        // And it is genuinely off the active dashboard, not just present.
+        #expect(!relaunched.assignments.contains { $0.id == "canvas:43001" })
+        #expect(relaunched.mergedCoursework.contains { $0.id == "canvas:43002" })
+    }
+
+    /// Builds a Grade Watcher snapshot for `graded` = (canvas assignment id,
+    /// earned, possible), with a matching submitted `workflow_state` for each —
+    /// the shape a real `CanvasGradesClient.fetchSnapshot` returns.
+    private func snapshot(
+        courseID: String,
+        graded: [(id: String, earned: Double, possible: Double)]
+    ) -> CourseGradeSnapshot {
+        CourseGradeSnapshot(
+            courseID: courseID,
+            courseUsesWeights: false,
+            categories: [GradeCategory(
+                id: "g1",
+                name: "Assignments",
+                weight: nil,
+                dropLowest: 0,
+                dropHighest: 0,
+                neverDropIDs: [],
+                items: graded.map {
+                    GradeItem(id: $0.id, name: $0.id, pointsPossible: $0.possible,
+                              score: $0.earned, scoreSource: .canvas,
+                              isExcused: false, omitFromFinalGrade: false, dueAt: nil)
+                }
+            )],
+            canvasComputedCurrentScore: nil,
+            submissions: graded.map {
+                AssignmentSubmissionInfo(assignmentID: $0.id, workflowState: .graded,
+                                         submittedAt: Date().addingTimeInterval(-46 * 86_400),
+                                         isMissing: false, isLate: false)
+            },
+            fetchedAt: Date()
+        )
+    }
 }

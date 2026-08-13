@@ -127,6 +127,83 @@ struct AssignmentStoreTests {
         #expect(Set(result.items.map(\.id)) == ["canvas:1", "canvas:2"])
     }
 
+    @Test("completed work is never aged out — Done is an archive")
+    func completedItemNeverAgesOut() throws {
+        let store = try store()
+        let longAgo = Date().addingTimeInterval(-60 * 86_400)   // 60 days overdue
+        _ = store.reconcile([canvas("1", due: longAgo), canvas("2", due: longAgo)], source: .canvas)
+
+        // The student turned "1" in and ticked it off. Months later it rolls out
+        // of the Canvas feed — but a finished assignment is exactly what the Done
+        // tab exists to remember, so aging must not reclaim it.
+        store.setCompleted(ids: ["canvas:1"], at: longAgo)
+
+        let result = store.reconcile([canvas("2", due: longAgo)], source: .canvas)
+        #expect(Set(result.items.map(\.id)) == ["canvas:1", "canvas:2"])
+    }
+
+    @Test("work Canvas says was submitted is never aged out")
+    func submittedItemNeverAgesOut() throws {
+        let store = try store()
+        let longAgo = Date().addingTimeInterval(-60 * 86_400)
+        _ = store.reconcile([canvas("1", due: longAgo), canvas("2", due: longAgo)], source: .canvas)
+
+        // No manual tick — Canvas's own submission signal is enough. This is the
+        // auto-filed case: the student submitted on Canvas and never touched LHF.
+        store.applySubmissionState(submittedCanvasAssignmentIDs: ["1"], scores: [:])
+
+        let result = store.reconcile([canvas("2", due: longAgo)], source: .canvas)
+        #expect(Set(result.items.map(\.id)) == ["canvas:1", "canvas:2"])
+    }
+
+    @Test("un-completing an item lets it age out again")
+    func unCompletingRestoresAging() throws {
+        let store = try store()
+        let longAgo = Date().addingTimeInterval(-60 * 86_400)
+        _ = store.reconcile([canvas("1", due: longAgo), canvas("2", due: longAgo)], source: .canvas)
+        store.setCompleted(ids: ["canvas:1"], at: longAgo)
+        store.setCompleted(ids: [], at: nil, clearing: ["canvas:1"])
+
+        let result = store.reconcile([canvas("2", due: longAgo)], source: .canvas)
+        #expect(result.items.map(\.id) == ["canvas:2"])
+    }
+
+    // MARK: Canvas submission state & scores (persisted, not recomputed per launch)
+
+    @Test("Canvas submission state survives a relaunch")
+    func canvasSubmissionPersisted() throws {
+        let url = URL.temporaryDirectory.appending(path: "submission-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store1 = try AssignmentStore(url: url)
+        _ = store1.reconcile([canvas("77", due: Date().addingTimeInterval(86_400))], source: .canvas)
+        store1.applySubmissionState(
+            submittedCanvasAssignmentIDs: ["77"],
+            scores: ["77": (earned: 92, max: 100)]
+        )
+
+        // Relaunch with no Canvas session at all: the grade fetch can't run, so
+        // the only way to know "77" is turned in is the ledger.
+        let store2 = try AssignmentStore(url: url)
+        #expect(store2.submittedCanvasAssignmentIDs() == ["77"])
+        let item = try #require(store2.currentAssignments().first { $0.id == "canvas:77" })
+        #expect(item.scoreEarned == 92)
+        #expect(item.scoreMax == 100)
+    }
+
+    @Test("a retracted submission clears on the next grade refresh")
+    func retractedSubmissionSelfHeals() throws {
+        let store = try store()
+        _ = store.reconcile([canvas("77", due: Date().addingTimeInterval(86_400))], source: .canvas)
+        store.applySubmissionState(submittedCanvasAssignmentIDs: ["77"], scores: [:])
+        #expect(store.submittedCanvasAssignmentIDs() == ["77"])
+
+        // Canvas no longer reports it submitted (retracted / cleared by the TA).
+        // The persisted flag must follow Canvas rather than latching on forever.
+        store.applySubmissionState(submittedCanvasAssignmentIDs: [], scores: [:])
+        #expect(store.submittedCanvasAssignmentIDs().isEmpty)
+    }
+
     // MARK: Gradescope submission flag
 
     @Test("Gradescope submitted flag is persisted and rebuilt")
