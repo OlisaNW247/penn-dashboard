@@ -94,7 +94,21 @@ public enum AssignmentDeduplicator {
     /// similar-title match) and assigned highest-confidence first, skipping
     /// any item already claimed by an earlier, better pairing — so no item
     /// is ever merged twice.
-    public static func matchPairs(canvasItems: [Assignment], gradescopeItems: [Assignment]) -> [Match] {
+    /// `confirmedPairings` are pairings this app has already established on a
+    /// previous sync and written to the ledger. They are honored **before** the
+    /// heuristic runs and are not re-tested against it.
+    ///
+    /// This is what makes a merge survive a professor moving a due date. The
+    /// similar-title tier requires both dates within ~26h (rule 3); if the date
+    /// moves on Canvas but not on Gradescope, that test starts failing and a
+    /// pair the user has been treating as one assignment silently splits into
+    /// two cards — with completion state stranded on whichever half they had
+    /// ticked. Once we've seen the two together, we keep them together.
+    public static func matchPairs(
+        canvasItems: [Assignment],
+        gradescopeItems: [Assignment],
+        confirmedPairings: [Match] = []
+    ) -> [Match] {
         guard !canvasItems.isEmpty, !gradescopeItems.isEmpty else { return [] }
 
         struct Candidate {
@@ -103,9 +117,30 @@ public enum AssignmentDeduplicator {
             let score: Double
         }
 
+        // Honor stored pairings first, but only while BOTH sides are still
+        // present — a pairing referencing an item that's gone is stale, and
+        // reviving it would resurrect an assignment the ledger has retired.
+        let canvasIDs = Set(canvasItems.map(\.id))
+        let gradescopeIDs = Set(gradescopeItems.map(\.id))
+        var matches: [Match] = []
+        var usedCanvasIDs: Set<String> = []
+        var usedGradescopeIDs: Set<String> = []
+        for pairing in confirmedPairings {
+            guard canvasIDs.contains(pairing.canvasID),
+                  gradescopeIDs.contains(pairing.gradescopeID),
+                  !usedCanvasIDs.contains(pairing.canvasID),
+                  !usedGradescopeIDs.contains(pairing.gradescopeID)
+            else { continue }
+            usedCanvasIDs.insert(pairing.canvasID)
+            usedGradescopeIDs.insert(pairing.gradescopeID)
+            matches.append(pairing)
+        }
+
         var candidates: [Candidate] = []
-        for canvasItem in canvasItems {
-            for gradescopeItem in gradescopeItems where gradescopeItem.course == canvasItem.course {
+        for canvasItem in canvasItems where !usedCanvasIDs.contains(canvasItem.id) {
+            for gradescopeItem in gradescopeItems
+            where gradescopeItem.course == canvasItem.course
+                && !usedGradescopeIDs.contains(gradescopeItem.id) {
                 guard isLikelyDuplicate(
                     titleA: canvasItem.title, dueA: canvasItem.dueAt,
                     titleB: gradescopeItem.title, dueB: gradescopeItem.dueAt
@@ -128,9 +163,6 @@ public enum AssignmentDeduplicator {
             return a.canvas.id < b.canvas.id
         }
 
-        var usedCanvasIDs: Set<String> = []
-        var usedGradescopeIDs: Set<String> = []
-        var matches: [Match] = []
         for candidate in ordered {
             guard !usedCanvasIDs.contains(candidate.canvas.id),
                   !usedGradescopeIDs.contains(candidate.gradescope.id)
@@ -162,8 +194,16 @@ public enum AssignmentDeduplicator {
     /// completion can propagate to the Gradescope identity too. Everything
     /// that doesn't match passes through unchanged. Order is not
     /// guaranteed — callers sort separately.
-    public static func merge(canvasItems: [Assignment], gradescopeItems: [Assignment]) -> [Assignment] {
-        let matches = matchPairs(canvasItems: canvasItems, gradescopeItems: gradescopeItems)
+    public static func merge(
+        canvasItems: [Assignment],
+        gradescopeItems: [Assignment],
+        confirmedPairings: [Match] = []
+    ) -> [Assignment] {
+        let matches = matchPairs(
+            canvasItems: canvasItems,
+            gradescopeItems: gradescopeItems,
+            confirmedPairings: confirmedPairings
+        )
         guard !matches.isEmpty else { return canvasItems + gradescopeItems }
 
         let gradescopeByID = Dictionary(uniqueKeysWithValues: gradescopeItems.map { ($0.id, $0) })

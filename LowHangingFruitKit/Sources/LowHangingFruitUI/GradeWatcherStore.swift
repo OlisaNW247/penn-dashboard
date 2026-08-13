@@ -132,6 +132,7 @@ final class GradeWatcherStore: ObservableObject {
         var sawSessionExpired = false
         var lastFailure: Swift.Error?
         var fetchedAny = false
+        var succeeded = 0
 
         let gradescopeConnected = SessionCookieStore.load()
             .contains { $0.domain.localizedCaseInsensitiveContains("gradescope") }
@@ -152,6 +153,7 @@ final class GradeWatcherStore: ObservableObject {
                 }
 
                 fetchedAny = true
+                succeeded += 1
                 recordHistory(courseID: courseID, now: now)
             } catch CanvasGradesClient.Error.sessionExpired {
                 sawSessionExpired = true
@@ -160,16 +162,68 @@ final class GradeWatcherStore: ObservableObject {
             }
         }
 
-        isSessionExpired = sawSessionExpired
         if fetchedAny {
             lastRefreshed = now
         }
 
-        if sawSessionExpired {
-            error = "Your Canvas session expired — grades are showing the last refresh until you reconnect."
-        } else if let lastFailure {
-            error = "Grade Watcher sync failed: \(lastFailure.localizedDescription)"
+        let outcome = Self.outcome(
+            total: courseIDs.count,
+            succeeded: succeeded,
+            sawSessionExpired: sawSessionExpired,
+            lastFailure: lastFailure
+        )
+        isSessionExpired = outcome.isSessionExpired
+        error = outcome.error
+    }
+
+    struct RefreshOutcome: Equatable {
+        let isSessionExpired: Bool
+        let error: String?
+    }
+
+    /// Turns a per-course refresh tally into the banner state. Pure and
+    /// `static` so it can be tested without a live Canvas session (the same
+    /// seam `CanvasGradesClient.decodeSnapshot` uses).
+    ///
+    /// Two judgements live here:
+    ///
+    /// 1. **A Canvas session is global.** If even one course fetched with these
+    ///    cookies, the login is alive — so a 401 on another course means *that
+    ///    course* is restricted, not that the session lapsed. Canvas commonly
+    ///    does this for a concluded term, which is precisely when a student is
+    ///    looking back at a class they just finished. Reporting "your session
+    ///    expired" there dims every grade on the screen and sends them through
+    ///    an SSO login that fixes nothing.
+    /// 2. **A partial failure is not a failed sync.** Four classes refreshing
+    ///    and one failing used to raise the same blanket error as a total
+    ///    outage, over cards that had just updated correctly.
+    static func outcome(
+        total: Int,
+        succeeded: Int,
+        sawSessionExpired: Bool,
+        lastFailure: Swift.Error?
+    ) -> RefreshOutcome {
+        let failed = max(0, total - succeeded)
+        guard failed > 0 else { return RefreshOutcome(isSessionExpired: false, error: nil) }
+
+        if succeeded > 0 {
+            let noun = failed == 1 ? "class" : "classes"
+            return RefreshOutcome(
+                isSessionExpired: false,
+                error: "Couldn\u{2019}t refresh \(failed) of \(total) \(noun) — those are showing their last grades."
+            )
         }
+
+        if sawSessionExpired {
+            return RefreshOutcome(
+                isSessionExpired: true,
+                error: "Your Canvas session expired — grades are showing the last refresh until you reconnect."
+            )
+        }
+        return RefreshOutcome(
+            isSessionExpired: false,
+            error: "Grade Watcher sync failed: \(lastFailure?.localizedDescription ?? "unknown error")"
+        )
     }
 
     /// Drops every fetched and derived grade artifact. Called when the user

@@ -55,6 +55,10 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 8)
 
+                    syncErrorBanner
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+
                     SegmentedToggle(selection: $filter)
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
@@ -245,6 +249,18 @@ struct ContentView: View {
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        await announceGradeChanges()
+    }
+
+    /// Drains any grades the refresh found had changed and posts them. Done
+    /// after `reschedule` on purpose: that call clears pending requests, and
+    /// draining afterwards keeps the ordering obvious even though grade
+    /// notifications are delivered immediately rather than queued.
+    private func announceGradeChanges() async {
+        let changes = state.pendingGradeChanges
+        guard !changes.isEmpty else { return }
+        state.pendingGradeChanges = []
+        await scheduler.notifyGradeChanges(changes)
     }
 
     // MARK: List
@@ -268,10 +284,40 @@ struct ContentView: View {
         }
     }
 
+    /// What the dashboard should show when there are no timeline sections to
+    /// render. Distinguishes "still loading" and "sync failed" from a genuine
+    /// "all caught up" — the old code always showed the celebratory empty state,
+    /// so a student who opened the app mid-sync (or after a failed sync) with
+    /// pending work was falsely told they were done.
+    private enum DashboardStatus: Equatable {
+        case loading
+        case error(String)
+        case caughtUp
+    }
+
+    /// Only meaningful when the visible tab has no sections. Uses the whole
+    /// `vm.items` pool (not the filtered sections) so a background refresh can't
+    /// flip an already-populated screen back to a spinner: once we have ANY real
+    /// item, an empty "this week" genuinely means caught up for the week.
+    private var emptyStateStatus: DashboardStatus {
+        if !vm.items.isEmpty { return .caughtUp }
+        if state.isLoading || state.isGradescopeLoading { return .loading }
+        if let error = state.error { return .error(error) }
+        // Connected but the first sync hasn't landed yet: treat as loading, not
+        // "all caught up", so the very first frame after launch isn't a false
+        // celebration before `refresh()` sets `isLoading`.
+        if state.isCanvasConnected && state.lastSync == nil { return .loading }
+        return .caughtUp
+    }
+
     @ViewBuilder
     private func timeline(sections: [DashSection]) -> some View {
         if sections.isEmpty {
-            allDoneState
+            switch emptyStateStatus {
+            case .loading:            loadingState
+            case let .error(message): errorState(message)
+            case .caughtUp:           allDoneState
+            }
         } else {
             VStack(alignment: .leading, spacing: 24) {
                 ForEach(sections) { section in
@@ -312,6 +358,86 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+    }
+
+    /// Shown in place of the "all caught up" art while the first sync is still in
+    /// flight, so an empty screen doesn't read as "you're done".
+    private var loadingState: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+            Text("Loading your assignments…")
+                .font(.lhfSans(15))
+                .foregroundStyle(Color.v2DateText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 90)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Loading your assignments")
+    }
+
+    /// Full-screen failure state, shown only when a sync failed AND there's
+    /// nothing cached to fall back on. When we do have items, the slimmer
+    /// `syncErrorBanner` surfaces the error without hiding the list.
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(Color.v2SpineRed)
+            Text("Couldn't sync")
+                .font(.lhfSerif(30))
+                .foregroundStyle(Color.v2Ink)
+            Text(message)
+                .font(.lhfSans(14))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 28)
+            Button { Task { await refresh() } } label: {
+                Text("Try again")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 11)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 70)
+    }
+
+    /// A slim, dismissible notice shown above the list when a refresh failed but
+    /// we still have (possibly stale) data to show. Makes sync failures visible
+    /// on the dashboard itself — previously they only surfaced in Settings.
+    @ViewBuilder
+    private var syncErrorBanner: some View {
+        if !vm.items.isEmpty, let error = state.error {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.v2SpineRed)
+                    .padding(.top, 1)
+                Text(error)
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2Ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button("Retry") { Task { await refresh() } }
+                    .font(.lhfSans(13, weight: .semibold))
+                    .foregroundStyle(Color.v2SpineRed)
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.v2SpineRed.opacity(0.10))
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Sync failed. \(error). Double-tap to retry.")
+            .accessibilityAddTraits(.isButton)
+        }
     }
 
     // MARK: Date

@@ -122,14 +122,23 @@ public enum ICSParser {
     }
 
     private static func parseDate(value: String, params: [String: String]) -> Date? {
-        // Date-only: YYYYMMDD, normalized to end-of-day UTC so it sorts after dated events.
+        // Date-only: YYYYMMDD. Canvas uses these for all-day assignments, meaning
+        // "due by the end of that calendar day". Resolve to 23:59:59 in the
+        // user's LOCAL time zone — NOT UTC. The old code pinned these to
+        // 23:59:59 UTC, which for an Eastern user is ~7pm the same day, so
+        // countdowns and reminders for every all-day assignment fired hours
+        // early (the worst bug class for a deadline app).
         if params["VALUE"] == "DATE" || (value.count == 8 && !value.contains("T")) {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = .current
             let f = DateFormatter()
             f.dateFormat = "yyyyMMdd"
-            f.timeZone = TimeZone(identifier: "UTC")
+            f.timeZone = .current
             f.locale = Locale(identifier: "en_US_POSIX")
             guard let day = f.date(from: value) else { return nil }
-            return Calendar(identifier: .gregorian).date(byAdding: .second, value: 86_399, to: day)
+            // Via Calendar rather than a fixed +86,399s so it stays 23:59:59
+            // local even across a daylight-saving transition on that day.
+            return cal.date(bySettingHour: 23, minute: 59, second: 59, of: day)
         }
 
         // Datetime: YYYYMMDDTHHmmss with optional trailing Z or TZID param.

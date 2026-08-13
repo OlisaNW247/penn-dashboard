@@ -83,6 +83,12 @@ targets:
       path: LHFWidget/Info.plist
       properties:
         CFBundleDisplayName: LHF
+        # Must track the app's own version. An app extension whose
+        # CFBundleShortVersionString differs from its containing app is an App
+        # Store validation failure, and left unset these default to a literal
+        # "1.0" against the app's "1.0.0" — which is exactly what happened.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
