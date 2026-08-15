@@ -27,9 +27,44 @@ enum SessionCookieStore {
         write(stored)
     }
 
+    /// Loads the persisted cookies, dropping any that are stale: a cookie
+    /// carrying a real, past `expiresDate` (from `Set-Cookie: ...; Expires=`
+    /// or `Max-Age=`), or one with no expiry at all (a true session cookie —
+    /// Penn SSO's and Canvas's are both this kind) that's older than
+    /// `sessionCookieMaxAge` since it was captured. Without this, a
+    /// session-only cookie captured at connect time would be replayed as a
+    /// live session forever, regardless of whether the server-side session
+    /// died hours or weeks ago — exactly the mechanism behind
+    /// docs/CANVAS_LOGIN_DIAGNOSIS.md's H1/H2.
     static func load() -> [HTTPCookie] {
-        loadDicts().compactMap(cookie(from:))
+        let now = Date()
+        return loadDicts().compactMap { entry -> HTTPCookie? in
+            guard let cookie = cookie(from: entry) else { return nil }
+            if let expiresString = entry["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
+                return expires > now ? cookie : nil
+            }
+            if let capturedString = entry["capturedAt"], let captured = isoFormatter.date(from: capturedString) {
+                return now.timeIntervalSince(captured) < sessionCookieMaxAge ? cookie : nil
+            }
+            // No expiry and no capture timestamp recorded (data written before
+            // this staleness tracking existed) — treat as expired rather than
+            // eternal, forcing a fresh login instead of silently replaying an
+            // untraceable cookie of unknown age.
+            return nil
+        }
     }
+
+    /// How long a true session cookie (no server-supplied expiry) is trusted
+    /// after capture before it's treated as dead and dropped rather than
+    /// replayed. Penn SSO/Canvas sessions don't survive this long in
+    /// practice; this is a safety bound, not an attempt to model their real
+    /// server-side timeout.
+    private static let sessionCookieMaxAge: TimeInterval = 24 * 60 * 60
+
+    // `ISO8601DateFormatter` isn't `Sendable`, but every use here is a simple
+    // stateless format/parse call (no shared mutable configuration is ever
+    // written after init), so a single shared instance is safe in practice.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 
     static func clear() {
         SecItemDelete(baseQuery() as CFDictionary)
@@ -82,13 +117,18 @@ enum SessionCookieStore {
     // MARK: - Serialization
 
     private static func dict(from cookie: HTTPCookie) -> [String: String] {
-        [
+        var d: [String: String] = [
             "name": cookie.name,
             "value": cookie.value,
             "domain": cookie.domain,
             "path": cookie.path,
             "secure": cookie.isSecure ? "1" : "0",
+            "capturedAt": isoFormatter.string(from: Date()),
         ]
+        if let expires = cookie.expiresDate {
+            d["expiresDate"] = isoFormatter.string(from: expires)
+        }
+        return d
     }
 
     private static func cookie(from d: [String: String]) -> HTTPCookie? {
@@ -100,6 +140,9 @@ enum SessionCookieStore {
             .path: d["path"] ?? "/",
         ]
         if d["secure"] == "1" { props[.secure] = "TRUE" }
+        if let expiresString = d["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
+            props[.expires] = expires
+        }
         return HTTPCookie(properties: props)
     }
 }
