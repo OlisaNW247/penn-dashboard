@@ -12,6 +12,9 @@ struct OnboardingView: View {
     @EnvironmentObject var state: AppState
     @State private var phase: Phase = .steps
     @State private var name: String = ""
+    @State private var isResettingLoginData = false
+    @State private var showResetConfirmation = false
+    @State private var didResetLoginData = false
 
     private enum Phase {
         case steps
@@ -111,12 +114,68 @@ struct OnboardingView: View {
                 .accessibilityLabel("Preview the app with sample data")
                 .padding(.top, 16)
 
+                troubleConnectingLink
+                    .padding(.top, 10)
+
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
         }
         .onAppear { name = state.userName }
+    }
+
+    /// Escape hatch for a stuck login (docs/CANVAS_LOGIN_DIAGNOSIS.md): clears
+    /// every stored trace of a Canvas/Gradescope login attempt from this
+    /// device — the live WebView cookie/cache jar, the Keychain-persisted
+    /// cookie copy, and the connected-service flags — so a user who's stuck
+    /// (e.g. Canvas SSO's "Stale Request" screen) always has a way to force a
+    /// genuinely clean slate without needing to delete and reinstall the app,
+    /// which doesn't fully clear this state anyway (see
+    /// `AppState.resetAllLoginData`'s doc comment) and isn't reachable from
+    /// this screen in the first place.
+    private var troubleConnectingLink: some View {
+        VStack(spacing: 4) {
+            Button {
+                showResetConfirmation = true
+            } label: {
+                if isResettingLoginData {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Trouble connecting? Reset login data")
+                        .font(.lhfSans(11, weight: .medium))
+                        .foregroundStyle(Color.v2SpineRed)
+                        .underline()
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isResettingLoginData)
+            .accessibilityLabel("Reset stored Canvas and Gradescope login data")
+            .confirmationDialog(
+                "Reset login data?",
+                isPresented: $showResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset and start over", role: .destructive) {
+                    didResetLoginData = false
+                    isResettingLoginData = true
+                    Task {
+                        await state.resetAllLoginData()
+                        isResettingLoginData = false
+                        didResetLoginData = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Clears any stuck Canvas or Gradescope login on this device, including saved session cookies, so you can start fresh. You'll need to log in again.")
+            }
+
+            if didResetLoginData {
+                Text("Login data cleared. Try Connect Canvas again.")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2SpineGreen)
+            }
+        }
     }
 
     private var nameCard: some View {
@@ -346,7 +405,10 @@ private struct CanvasLoginPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LoginWebView(url: URL(string: "https://canvas.upenn.edu")!)
+            LoginWebView(
+                url: URL(string: "https://canvas.upenn.edu")!,
+                purgingDomainContains: AppState.canvasLoginDomainHints
+            )
 
             Divider().overlay(Color.v2Divider)
 
@@ -404,7 +466,10 @@ private struct GradescopeLoginPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LoginWebView(url: URL(string: "https://www.gradescope.com/login")!)
+            LoginWebView(
+                url: URL(string: "https://www.gradescope.com/login")!,
+                purgingDomainContains: ["gradescope"]
+            )
 
             Divider().overlay(Color.v2Divider)
 
@@ -522,28 +587,43 @@ private struct ClassPickerPane: View {
 #if os(macOS)
 private struct LoginWebView: NSViewRepresentable {
     let url: URL
+    let purgingDomainContains: [String]
 
-    func makeNSView(context: Context) -> WKWebView { makeWebView(url: url) }
+    func makeNSView(context: Context) -> WKWebView { makeWebView(url: url, purgingDomainContains: purgingDomainContains) }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 #else
 private struct LoginWebView: UIViewRepresentable {
     let url: URL
+    let purgingDomainContains: [String]
 
-    func makeUIView(context: Context) -> WKWebView { makeWebView(url: url) }
+    func makeUIView(context: Context) -> WKWebView { makeWebView(url: url, purgingDomainContains: purgingDomainContains) }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 #endif
 
 /// Shared WKWebView setup used by both platform representables. WKWebView and
 /// its default cookie store exist on iOS and macOS alike.
+///
+/// Two pieces of cookie/cache hygiene, added per
+/// docs/CANVAS_LOGIN_DIAGNOSIS.md: every fresh "Connect" attempt (a) purges
+/// any cookies/cache left in the shared `WKWebsiteDataStore.default()` for
+/// this login's domains before the first request goes out, so Canvas/Penn
+/// SSO never sees a session it thinks it should try to resume, and (b) loads
+/// with `.reloadIgnoringLocalAndRemoteCacheData` so a previously cached copy
+/// of the login/redirect chain (with a stale embedded flow-execution token)
+/// can never be replayed instead of hitting the network.
 @MainActor
-private func makeWebView(url: URL) -> WKWebView {
+private func makeWebView(url: URL, purgingDomainContains needles: [String]) -> WKWebView {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .default()
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.allowsBackForwardNavigationGestures = true
-    webView.load(URLRequest(url: url))
+
+    Task {
+        await WebsiteDataReset.purgeWebsiteData(matchingDomainContains: needles)
+        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
+    }
     return webView
 }
 
