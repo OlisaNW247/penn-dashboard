@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WebKit
 import LowHangingFruitKit
 #if canImport(WidgetKit)
 import WidgetKit
@@ -281,6 +282,12 @@ final class AppState: ObservableObject {
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         rebuildDashboardItems()
+        // Also drop the live WebView cookie/cache jar for these domains, not
+        // just the Keychain copy above — otherwise a still-resident
+        // WKWebsiteDataStore session survives disconnect and gets presented
+        // to a "Reconnect" attempt later in the same app process (see
+        // docs/CANVAS_LOGIN_DIAGNOSIS.md H1/H2).
+        Task { await WebsiteDataReset.purgeWebsiteData(matchingDomainContains: Self.canvasLoginDomainHints) }
     }
 
     /// Signs out of Gradescope: purges its cookies and everything scraped with
@@ -290,6 +297,36 @@ final class AppState: ObservableObject {
         setGradescopeConnected(false)
         gradescopeItems = []
         rebuildDashboardItems()
+        Task { await WebsiteDataReset.purgeWebsiteData(matchingDomainContains: ["gradescope"]) }
+    }
+
+    /// Domain substrings covering the whole Canvas/Penn SSO login chain:
+    /// `canvas.upenn.edu` (the SP), `idp.pennkey.upenn.edu` (Shibboleth IdP),
+    /// and `duosecurity.com` (Duo 2FA, if it's ever reached). Shared by the
+    /// pre-login purge in `OnboardingView.makeWebView` and the post-disconnect
+    /// purge above so both stay in sync.
+    static let canvasLoginDomainHints = ["canvas", "upenn", "pennkey", "duosecurity"]
+
+    /// Onboarding's "Trouble connecting? Reset login data" escape hatch. Wipes
+    /// every trace of a stuck/stale login: the live `WKWebsiteDataStore`
+    /// (cookies, cache, local storage — all domains, not just Canvas's, since
+    /// this is the button a lost user reaches for when nothing else worked),
+    /// the Keychain-persisted cookie copy, and every connected-service flag.
+    ///
+    /// This exists because a full delete-and-reinstall — the only other way
+    /// to reach a clean slate — does NOT actually reach one: `SessionCookieStore`
+    /// lives in the Keychain, which iOS keeps across app deletion by design,
+    /// and onboarding never runs the code path that would replay those
+    /// cookies anyway (`AutoSyncCoordinator` is only reachable from the
+    /// post-onboarding dashboard). So reinstalling clears less state than
+    /// this button does, while looking to the user like it should clear
+    /// everything. This button is the actual "start completely over."
+    func resetAllLoginData() async {
+        disconnectCanvas()
+        disconnectGradescope()
+        setCanvasDiscoveryConnected(false)
+        SessionCookieStore.clear()
+        await WebsiteDataReset.purgeAllWebsiteData()
     }
 
     func syncIfConfigured() async {
