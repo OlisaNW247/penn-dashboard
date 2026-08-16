@@ -1,6 +1,12 @@
 # Canvas Login "Stale Request" — Diagnosis
 
-Status: **diagnosis only, no fix implemented.**
+Status: **superseded — fix implemented.** See docs/CANVAS_LOGIN_HARDENING.md
+for the decision record of what actually shipped (a broader hardening pass:
+H1/H2 below, plus the back-swipe-resubmit trap, cookie-store isolation,
+service-scoped Keychain storage, and several never-trap-the-user-again
+fallbacks). This document is kept as-is below for the historical diagnosis
+record; treat docs/CANVAS_LOGIN_HARDENING.md as current for anything about
+what the code does today.
 Scope: shipped App Store build (`v2.5` tag/branch) and whether the same bug is
 present on the current working branch.
 

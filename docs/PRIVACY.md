@@ -26,6 +26,19 @@ only to the school services you sign in to.
   Gradescope's own web page inside the app. The app reads your own assignments
   and their due dates so they appear alongside your Canvas work.
 - **Assignments you create.** Any one-off or recurring tasks you add yourself.
+- **Paste-your-calendar-link fallback.** As an alternative to signing in
+  inside the app, you can paste your Canvas calendar feed link directly
+  (Canvas → Calendar → Calendar Feed). This connects the same assignment/
+  deadline dashboard as the in-app login, without the app ever seeing your
+  Canvas credentials at all. It does not enable submission-status tracking or
+  Grade Watcher, both of which need a logged-in session.
+- **Diagnostics report (optional, user-initiated).** Settings has a "Copy
+  diagnostics report" button for troubleshooting a stuck Canvas login. It
+  copies device/app version info and a short login redirect log (server
+  hostnames, URL paths, and HTTP status codes only — never a full URL, query
+  string, cookie, password, or your calendar feed link) to your clipboard, for
+  you to paste into a support message yourself. The app never sends this
+  anywhere on its own.
 
 ## Where your data lives
 
