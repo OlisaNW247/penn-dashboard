@@ -26,6 +26,10 @@ struct SettingsPage: View {
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
+    /// "Paste your Canvas calendar link" fallback, also reachable from
+    /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
+    @State private var showPasteFeedLink = false
+    @State private var didCopyDiagnostics = false
 
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
@@ -67,6 +71,11 @@ struct SettingsPage: View {
                         state.restartOnboarding()
                     } label: {
                         Label("Connect Canvas", systemImage: "link")
+                    }
+                    Button {
+                        showPasteFeedLink = true
+                    } label: {
+                        Label("Paste calendar link instead", systemImage: "link.badge.plus")
                     }
                 }
 
@@ -130,6 +139,8 @@ struct SettingsPage: View {
 
             remindersSection
 
+            diagnosticsSection
+
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
@@ -144,6 +155,9 @@ struct SettingsPage: View {
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
+        }
+        .sheet(isPresented: $showPasteFeedLink) {
+            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
         }
         .alert("Rename class", isPresented: Binding(
             get: { renamingCourse != nil },
@@ -309,6 +323,35 @@ struct SettingsPage: View {
                 }
             }
         }
+    }
+
+    /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
+    /// meant to be pasted into a support message when Canvas login is stuck.
+    /// Contains no credentials, cookie values, or the ICS feed URL/token —
+    /// see `DiagnosticsReport`'s doc comment for exactly what's included.
+    private var diagnosticsSection: some View {
+        Section {
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label(didCopyDiagnostics ? "Copied" : "Copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+            }
+        } header: {
+            Text("Troubleshooting")
+        } footer: {
+            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. Paste it when asking for help with a stuck Canvas login.")
+        }
+    }
+
+    private func copyDiagnostics() {
+        let report = DiagnosticsReport.generate(state: state)
+        #if canImport(UIKit)
+        UIPasteboard.general.string = report
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #endif
+        didCopyDiagnostics = true
     }
 
     private var digestTimeBinding: Binding<Date> {

@@ -95,7 +95,10 @@ public struct GradescopeClient: Sendable {
 
     private func fetchHTML(_ url: URL) async throws -> String {
         var request = URLRequest(url: url)
-        request.httpShouldHandleCookies = true
+        // See `CanvasDiscoveryClient.fetchHTML`'s matching comment — an
+        // explicit `Cookie` header below means this must be `false`
+        // (docs/CANVAS_LOGIN_HARDENING.md item 2c).
+        request.httpShouldHandleCookies = false
         request.setValue(
             "Mozilla/5.0 LowHangingFruit/0.1",
             forHTTPHeaderField: "User-Agent"
