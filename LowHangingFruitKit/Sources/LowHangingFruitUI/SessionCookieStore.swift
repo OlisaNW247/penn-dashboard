@@ -150,6 +150,12 @@ enum SessionCookieStore {
 
     // MARK: - Serialization
 
+    /// `HTTPCookiePropertyKey` has no built-in case for `HttpOnly` — Foundation
+    /// only exposes it as a read-only computed property (`cookie.isHTTPOnly`)
+    /// backed by this undocumented-but-stable raw key, same as WebKit/curl
+    /// use on the wire.
+    private static let httpOnlyKey = HTTPCookiePropertyKey("HttpOnly")
+
     private static func dict(from cookie: HTTPCookie) -> [String: String] {
         var d: [String: String] = [
             "name": cookie.name,
@@ -157,10 +163,14 @@ enum SessionCookieStore {
             "domain": cookie.domain,
             "path": cookie.path,
             "secure": cookie.isSecure ? "1" : "0",
+            "httpOnly": cookie.isHTTPOnly ? "1" : "0",
             "capturedAt": isoFormatter.string(from: Date()),
         ]
         if let expires = cookie.expiresDate {
             d["expiresDate"] = isoFormatter.string(from: expires)
+        }
+        if let sameSite = cookie.sameSitePolicy {
+            d["sameSite"] = sameSite.rawValue
         }
         return d
     }
@@ -174,8 +184,12 @@ enum SessionCookieStore {
             .path: d["path"] ?? "/",
         ]
         if d["secure"] == "1" { props[.secure] = "TRUE" }
+        if d["httpOnly"] == "1" { props[httpOnlyKey] = "TRUE" }
         if let expiresString = d["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
             props[.expires] = expires
+        }
+        if let sameSite = d["sameSite"] {
+            props[.sameSitePolicy] = sameSite
         }
         return HTTPCookie(properties: props)
     }

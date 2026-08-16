@@ -274,6 +274,86 @@ re-enabled) will silently degrade to "needs reconnect" once, surfaced by the
   `removeIsScopedToServiceNotDomain` — the exact Penn-SSO-shared-domain
   scenario 2e exists to fix) and `loadAll()`.
 
+## Post-ship fix: cross-suite Keychain test race (2026-08-16)
+
+`swift test` could finally be run for real (in a normal, non-sandboxed shell —
+see the "could not be run in this environment" note above, which was an
+artifact of that earlier sandboxed session, not a real environment limit) and
+turned up 2 failures, both in this document's item 2e/3d work:
+
+- `SessionCookieStoreTests.swift:49` — a cookie saved with a future
+  `expiresDate` sometimes didn't come back from `load(service: .canvas)`.
+- `CanvasLoginHardeningTests.swift:95` — `SessionCookieStore.isExpired(service:
+  .canvas)` sometimes reported `true` while a live, non-expired cookie was on
+  record.
+
+**Root cause: a test-isolation race, not a cookie-serialization bug.**
+`SessionCookieStore` is process-wide Keychain state — one Keychain item per
+`Service`, read via `SecItemCopyMatching` and written via a non-atomic
+`SecItemDelete` + `SecItemAdd` pair in `write()` (Keychain has no upsert).
+`SessionCookieStoreTests` already knew this and is marked `@Suite(...,
+.serialized)` specifically so its own `.canvas`/`.gradescope` tests never run
+concurrently with each other. But item 3d's `isExpired(service:)` tests were
+added to a *different*, unserialized suite — `CanvasLoginHardeningTests` —
+that also calls `SessionCookieStore.save`/`.clear`/`.isExpired` for
+`.canvas`. Swift Testing parallelizes by default both within an unserialized
+suite and across suites, so `CanvasLoginHardeningTests`' `.canvas` tests ran
+concurrently with (a) each other and (b) `SessionCookieStoreTests`' `.canvas`
+tests, all hammering the exact same Keychain item
+(`com.lhf.lowhangingfruit.session.canvas`). A `clear()` (or the delete half
+of a concurrent `write()`) landing between another thread's `save()` and its
+subsequent `load()`/`isExpired()` check silently dropped that thread's write
+— reproduced deterministically by running `CanvasLoginHardeningTests` alone
+repeatedly (`swift test --filter CanvasLoginHardeningTests`), which failed on
+its own with no other suite involved. Cookies *without* a server expiry
+happened to survive more often only because of which races landed in which
+timing windows, not because of anything specific to `expiresDate` encoding —
+confirmed by a standalone reproduction of the full `HTTPCookie` →
+`[String: String]` → `HTTPCookie(properties:)` round trip, which round-trips
+`expires` correctly every time in isolation, and by `swift test --filter
+SessionCookieStoreTests` alone passing 100% (including the future-expiry
+case) before any fix.
+
+**Fix:** moved the three `isExpired(service:)` tests from
+`CanvasLoginHardeningTests` (unserialized) into `SessionCookieStoreTests`
+(`.serialized`, and already the suite that owns this shared Keychain
+resource) — see `SessionCookieStoreTests.swift`'s "Group 3d" section.
+`CanvasLoginHardeningTests.swift` keeps a comment pointing to the new
+location and explaining why. No production code changed for this part; the
+bug was in test placement, not in `SessionCookieStore` itself.
+
+**Round-trip attribute audit.** Per the "if `expires` was lost, others may be
+too" concern, audited `SessionCookieStore.dict(from:)` /
+`SessionCookieStore.cookie(from:)` (`Sources/LowHangingFruitUI/SessionCookieStore.swift`)
+for every cookie attribute that matters for replaying a session. `secure`
+and `expiresDate` were already round-tripped correctly. `isHTTPOnly` and
+`sameSitePolicy` were **not** captured at all — every persisted cookie
+silently lost those two attributes on every save, unconditionally (a real,
+separate, pre-existing gap, unrelated to the race above). This wasn't
+breaking session replay in practice, because cookies are replayed manually
+via `HTTPCookie.requestHeaderFields(with:)` (name=value pairs only, per this
+file's own header comment) rather than through `HTTPCookieStorage`/WebKit,
+where `HttpOnly`/`SameSite` would matter. Still fixed for full fidelity and
+to close off future uses of these persisted cookies that would care:
+`dict(from:)` now also stores `httpOnly` (`"1"`/`"0"`) and `sameSite` (the
+raw `HTTPCookieStringPolicy` string) when present, and `cookie(from:)`
+restores both via `HTTPCookiePropertyKey("HttpOnly")` and `.sameSitePolicy`.
+`domain`/`path`/`name`/`value` were already round-tripped correctly and
+covered by existing tests.
+
+New regression test: `SessionCookieStoreTests.fullFidelityRoundTrip` builds a
+realistic Canvas-like cookie (name, value, domain, path, `secure`,
+`httpOnly`, `sameSite=Lax`, a future `expiresDate`) via the real
+`HTTPCookieStringPolicy` API, saves/loads it through the real Keychain path,
+and asserts every one of those attributes survives — not just that the
+cookie's name is still present, which is all the pre-existing tests checked.
+
+**Verified:** `cd LowHangingFruitKit && swift test` — 206 tests (205 + the
+new full-fidelity test), 0 failures, run 5 times back-to-back to confirm the
+race is actually gone rather than just timing-lucky.
+`xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit
+-destination 'generic/platform=iOS Simulator' build` — `BUILD SUCCEEDED`.
+
 ## App Store review considerations
 
 - **In-app third-party credential collection.** Unchanged from before this

@@ -126,4 +126,76 @@ struct SessionCookieStoreTests {
             #expect(all.contains { $0.name == "gradescopeCookie" })
         }
     }
+
+    // MARK: - Group 3d: canvasSessionExpired, distinct from isCanvasConnected
+    //
+    // Moved here from `CanvasLoginHardeningTests` (docs/CANVAS_LOGIN_HARDENING.md
+    // item 3d): that suite runs unserialized, so its `.canvas`-service
+    // Keychain tests raced against this suite's own `.canvas`-service tests
+    // over the same process-wide Keychain item, intermittently losing writes.
+    // Every test that touches `SessionCookieStore` needs to live in this
+    // `.serialized` suite — see the suite doc comment above.
+
+    @Test("SessionCookieStore.isExpired(service:) is false when nothing was ever persisted for that service")
+    func isExpiredFalseWhenNeverConnected() {
+        withCleanStore {
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("SessionCookieStore.isExpired(service:) is true once every persisted entry for that service has aged past its expiry")
+    func isExpiredTrueOnceEverythingIsStale() {
+        withCleanStore {
+            let past = Date().addingTimeInterval(-3600)
+            SessionCookieStore.save([cookie(name: "sid", domain: "canvas.upenn.edu", expiresDate: past)], service: .canvas)
+            #expect(SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("SessionCookieStore.isExpired(service:) is false while a live (non-expired) cookie is on record")
+    func isExpiredFalseWhileLiveCookieExists() {
+        withCleanStore {
+            let future = Date().addingTimeInterval(3600)
+            SessionCookieStore.save([cookie(name: "sid", domain: "canvas.upenn.edu", expiresDate: future)], service: .canvas)
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    // MARK: - Full-fidelity round-trip (secure, httpOnly, sameSite, expiry)
+
+    @Test("A realistic Canvas-like cookie (secure, httpOnly, future expiry) round-trips every attribute, not just name/value")
+    func fullFidelityRoundTrip() {
+        withCleanStore {
+            var props: [HTTPCookiePropertyKey: Any] = [
+                .name: "_csrf_token",
+                .value: "abc123def456",
+                .domain: "canvas.upenn.edu",
+                .path: "/",
+                .secure: "TRUE",
+            ]
+            props[HTTPCookiePropertyKey("HttpOnly")] = "TRUE"
+            let future = Date().addingTimeInterval(3600)
+            props[.expires] = future
+            props[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteLax.rawValue
+            let original = HTTPCookie(properties: props)!
+
+            SessionCookieStore.save([original], service: .canvas)
+            let loaded = SessionCookieStore.load(service: .canvas)
+
+            guard let reloaded = loaded.first(where: { $0.name == "_csrf_token" }) else {
+                Issue.record("cookie did not survive the round trip at all")
+                return
+            }
+            #expect(reloaded.value == "abc123def456")
+            #expect(reloaded.domain == "canvas.upenn.edu")
+            #expect(reloaded.path == "/")
+            #expect(reloaded.isSecure)
+            #expect(reloaded.isHTTPOnly)
+            #expect(reloaded.sameSitePolicy == .sameSiteLax)
+            // Keychain persistence round-trips through a string formatter, so
+            // compare with a coarse tolerance rather than bit-for-bit equality.
+            let expiresDelta = abs((reloaded.expiresDate ?? .distantPast).timeIntervalSince(future))
+            #expect(expiresDelta < 1)
+        }
+    }
 }

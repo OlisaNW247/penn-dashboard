@@ -63,35 +63,22 @@ struct CanvasLoginHardeningTests {
     }
 
     // MARK: - Group 3d: canvasSessionExpired, distinct from isCanvasConnected
-
-    @Test("SessionCookieStore.isExpired(service:) is false when nothing was ever persisted for that service")
-    func isExpiredFalseWhenNeverConnected() {
-        SessionCookieStore.clear()
-        defer { SessionCookieStore.clear() }
-        #expect(!SessionCookieStore.isExpired(service: .canvas))
-    }
-
-    @Test("SessionCookieStore.isExpired(service:) is true once every persisted entry for that service has aged past its expiry")
-    func isExpiredTrueOnceEverythingIsStale() {
-        SessionCookieStore.clear()
-        defer { SessionCookieStore.clear() }
-        let past = Date().addingTimeInterval(-3600)
-        let cookie = HTTPCookie(properties: [
-            .name: "sid", .value: "v", .domain: "canvas.upenn.edu", .path: "/", .expires: past,
-        ])!
-        SessionCookieStore.save([cookie], service: .canvas)
-        #expect(SessionCookieStore.isExpired(service: .canvas))
-    }
-
-    @Test("SessionCookieStore.isExpired(service:) is false while a live (non-expired) cookie is on record")
-    func isExpiredFalseWhileLiveCookieExists() {
-        SessionCookieStore.clear()
-        defer { SessionCookieStore.clear() }
-        let future = Date().addingTimeInterval(3600)
-        let cookie = HTTPCookie(properties: [
-            .name: "sid", .value: "v", .domain: "canvas.upenn.edu", .path: "/", .expires: future,
-        ])!
-        SessionCookieStore.save([cookie], service: .canvas)
-        #expect(!SessionCookieStore.isExpired(service: .canvas))
-    }
+    //
+    // The `isExpired(service:)` coverage that used to live here now lives in
+    // `SessionCookieStoreTests` instead (see that file's "Group 3d" section).
+    // This suite runs with Swift Testing's default (parallel, unserialized)
+    // execution, but `SessionCookieStore` is process-wide Keychain state
+    // shared across every test that touches it — so a Keychain test here ran
+    // concurrently with `SessionCookieStoreTests`' own `.canvas`-service tests
+    // (which *are* `.serialized`, but only relative to each other, not to an
+    // unrelated suite). The result was a genuine data race, not a product
+    // bug: one test's `SessionCookieStore.clear()`/`save()` could interleave
+    // with another's `save()`/`isExpired()` on the exact same Keychain item,
+    // since `SessionCookieStore.write()` is a non-atomic delete-then-add.
+    // That's what intermittently produced "SessionCookieStore.isExpired ...
+    // is false while a live cookie is on record → true" here, and a sibling
+    // "future expiresDate cookie disappears" failure over in
+    // `SessionCookieStoreTests` — both symptoms of the same race, not a
+    // cookie-serialization bug. See docs/CANVAS_LOGIN_HARDENING.md item 3d
+    // for the full writeup.
 }
