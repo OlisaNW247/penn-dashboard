@@ -83,6 +83,13 @@ targets:
       path: LHFWidget/Info.plist
       properties:
         CFBundleDisplayName: LHF
+        # Must be declared HERE, not just in the .plist on disk: this file is
+        # rewritten from scratch on every `xcodegen generate` (see the comment
+        # above), so version keys left only in the .plist are silently wiped —
+        # and Apple rejects an upload whose embedded extension's version
+        # doesn't match the containing app's.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
