@@ -52,8 +52,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
@@ -83,10 +83,12 @@ targets:
       path: LHFWidget/Info.plist
       properties:
         CFBundleDisplayName: LHF
-        # Must track the app's own version. An app extension whose
-        # CFBundleShortVersionString differs from its containing app is an App
-        # Store validation failure, and left unset these default to a literal
-        # "1.0" against the app's "1.0.0" — which is exactly what happened.
+        # Must be declared HERE, not just in the .plist on disk: this file is
+        # rewritten from scratch on every `xcodegen generate` (see the comment
+        # above), so version keys left only in the .plist are silently wiped,
+        # and they then default to a literal "1.0" against the app's own
+        # version. An app extension whose CFBundleShortVersionString differs
+        # from its containing app is an App Store validation failure.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
@@ -94,8 +96,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO

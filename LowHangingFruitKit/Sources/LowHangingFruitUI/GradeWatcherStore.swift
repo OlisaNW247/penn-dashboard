@@ -134,8 +134,7 @@ final class GradeWatcherStore: ObservableObject {
         var fetchedAny = false
         var succeeded = 0
 
-        let gradescopeConnected = SessionCookieStore.load()
-            .contains { $0.domain.localizedCaseInsensitiveContains("gradescope") }
+        let gradescopeConnected = !SessionCookieStore.load(service: .gradescope).isEmpty
 
         for courseID in courseIDs.keys.sorted() {
             do {
@@ -233,6 +232,35 @@ final class GradeWatcherStore: ObservableObject {
     /// User-authored settings (manual weights, confirmed Gradescope mappings,
     /// syllabus schemes) are preserved: re-connecting shouldn't make the user
     /// redo their setup.
+    func clearAll() {
+        snapshots = [:]
+        gradescopeItemsByCourse = [:]
+        history = [:]
+        persistHistory()
+        lastRefreshed = nil
+        isSessionExpired = false
+        error = nil
+    }
+
+    /// Seeds the store from bundled fixtures for preview (demo) mode — no
+    /// network, no cookies, no error banner. Everything downstream (the
+    /// engine, the overlay, projections, the report) then runs its real code
+    /// path against fixture snapshots, so the demo exercises the actual
+    /// feature rather than a mock of it.
+    func loadPreviewSnapshots(_ fixtures: [String: CourseGradeSnapshot], now: Date = Date()) {
+        snapshots = fixtures
+        gradescopeItemsByCourse = [:]
+        lastRefreshed = now
+        isSessionExpired = false
+        error = nil
+    }
+
+    /// Drops every fetched and derived grade artifact. Called when the user
+    /// disconnects Canvas — grades are downstream of that session, so leaving
+    /// snapshots (and the observed-history trail behind the week delta) on
+    /// disk after a sign-out would keep showing a signed-out student's grades.
+    /// User-authored settings (manual weights, confirmed Gradescope mappings)
+    /// are preserved: re-connecting shouldn't make the user redo their setup.
     func clearAll() {
         snapshots = [:]
         gradescopeItemsByCourse = [:]
