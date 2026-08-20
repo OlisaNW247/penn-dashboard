@@ -39,11 +39,40 @@ public final class StoredAssignment {
     /// or briefly hiding an item, or a partial fetch, must never lose it.
     public var isGoneFromFeed: Bool
 
+    // MARK: Completion — the ledger IS the record, not a mirror of one
     /// When the user ticked this item off (or its cross-platform counterpart).
-    /// Mirrors `AppState.completionDates` onto the ledger for one reason: a
-    /// finished assignment is what the Done tab exists to remember, so aging
-    /// must never reclaim it. Nil means not completed.
+    /// Nil means either "not completed" or "completed at an unknown time":
+    /// `userCompleted` is the authoritative flag, this is the optional *when*.
+    ///
+    /// The distinction is not academic. Completions carried over from the
+    /// pre-ledger `completedAssignmentIDs` set predate the app tracking
+    /// timestamps at all, and the Done tab deliberately places a dateless
+    /// completion by its due date while the weekly ring skips it. Folding a
+    /// synthetic timestamp in here would silently move those cards and inflate
+    /// the ring.
     public var completedAt: Date?
+
+    /// True once the user has ticked this item off. Defaulted (CloudKit) and
+    /// deliberately separate from `completedAt` — see above.
+    ///
+    /// Rows written before this flag existed recorded completion by setting
+    /// `completedAt` alone, so read completion through `isCompletedByUser`,
+    /// never off either field directly.
+    public var userCompleted: Bool = false
+
+    /// True when this row exists *only* to remember a completion — the user
+    /// ticked off something no feed reconciles into the ledger (a manual or
+    /// recurring task), or a completion was migrated out of the old
+    /// UserDefaults set before that item's feed had ever been synced.
+    ///
+    /// Nothing but the identity is trustworthy on such a row, so it is hidden
+    /// from every read of "assignments the app knows about" — the dashboard
+    /// seed, the Done pool, the widget, the stats panel. `refresh(from:now:)`
+    /// clears the flag the instant a real feed item with that id arrives,
+    /// promoting the row in place and keeping the completion that was waiting
+    /// on it. That promotion is the whole point: it is what lets a student
+    /// upgrading from a pre-ledger build keep work they had already ticked off.
+    public var isCompletionOnly: Bool = false
 
     // MARK: Submission / grade truth (persisted, not recomputed from scratch)
     /// Canvas's own submission signal (from Grade Watcher's `workflow_state`),
@@ -76,6 +105,8 @@ public final class StoredAssignment {
         lastSeenInFeed: Date,
         isGoneFromFeed: Bool = false,
         completedAt: Date? = nil,
+        userCompleted: Bool = false,
+        isCompletionOnly: Bool = false,
         canvasSubmitted: Bool = false,
         gradescopeSubmitted: Bool = false,
         scoreEarned: Double? = nil,
@@ -97,6 +128,8 @@ public final class StoredAssignment {
         self.lastSeenInFeed = lastSeenInFeed
         self.isGoneFromFeed = isGoneFromFeed
         self.completedAt = completedAt
+        self.userCompleted = userCompleted
+        self.isCompletionOnly = isCompletionOnly
         self.canvasSubmitted = canvasSubmitted
         self.gradescopeSubmitted = gradescopeSubmitted
         self.scoreEarned = scoreEarned
@@ -141,7 +174,30 @@ extension StoredAssignment {
     /// from aging, because losing a completed assignment silently rewrites the
     /// student's own record of what they did.
     var isFinished: Bool {
-        completedAt != nil || canvasSubmitted || gradescopeSubmitted
+        isCompletedByUser || canvasSubmitted || gradescopeSubmitted
+    }
+
+    /// Whether the user has ticked this item off, however the row recorded it.
+    /// The `completedAt != nil` half keeps rows written by earlier builds (which
+    /// had no `userCompleted` flag) reading as completed, so the flag's arrival
+    /// can't quietly un-finish anyone's work even if a migration never runs.
+    public var isCompletedByUser: Bool {
+        userCompleted || completedAt != nil
+    }
+
+    /// Marks the row completed. `date` may be nil for a completion whose
+    /// timestamp is genuinely unknown (a pre-timestamp migration); the flag
+    /// still records that it happened.
+    func markCompleted(at date: Date?) {
+        userCompleted = true
+        completedAt = date
+    }
+
+    /// Clears completion entirely — both the flag and the timestamp, so a row
+    /// written by an older build can actually be un-completed.
+    func clearCompletion() {
+        userCompleted = false
+        completedAt = nil
     }
 
     /// The Canvas assignment id this row joins to Grade Watcher's submission
@@ -164,6 +220,10 @@ extension StoredAssignment {
         termSeasonRaw = assignment.term?.season.rawValue
         lastSeenInFeed = now
         isGoneFromFeed = false
+        // A real feed item just arrived for an id we were only holding a
+        // completion against: this is now a full row, and the completion rides
+        // along untouched.
+        isCompletionOnly = false
         // Gradescope's submitted flag rides along with its feed items; fold it in
         // so a scraped completion is retained.
         if assignment.source == .gradescope {
@@ -192,6 +252,59 @@ extension StoredAssignment {
             scoreEarned: assignment.scoreEarned,
             scoreMax: assignment.scoreMax,
             linkedID: assignment.linkedID
+        )
+    }
+}
+
+// MARK: - Rows that exist only to carry a completion
+
+extension StoredAssignment {
+    /// Splits an `Assignment.id` back into its `(source, sourceID)` halves.
+    /// Only the *first* colon separates them — Canvas UIDs contain colons of
+    /// their own, so a naive split would mangle them.
+    static func decompose(id: String) -> (source: Assignment.Source, sourceID: String)? {
+        guard let separator = id.firstIndex(of: ":") else { return nil }
+        let rawSource = String(id[id.startIndex..<separator])
+        let sourceID = String(id[id.index(after: separator)...])
+        guard let source = Assignment.Source(rawValue: rawSource), !sourceID.isEmpty else { return nil }
+        return (source, sourceID)
+    }
+
+    /// A row whose only job is to remember that `id` was completed.
+    ///
+    /// Used on two paths that both used to lose data: ticking off a manual or
+    /// recurring task (nothing ever reconciles those into the ledger, so there
+    /// is no row to write completion onto), and migrating a completion for an
+    /// assignment whose feed hasn't been synced into the ledger yet. When a
+    /// `prototype` is available its display fields are kept — they cost nothing
+    /// and make the row legible in diagnostics — but the row stays hidden until
+    /// a feed promotes it either way.
+    ///
+    /// Returns nil for an id that can't be decomposed, so a corrupt or
+    /// hand-edited defaults blob can't seed junk rows.
+    static func completionOnly(
+        id: String,
+        prototype: Assignment? = nil,
+        completedAt: Date?,
+        now: Date
+    ) -> StoredAssignment? {
+        guard let parts = decompose(id: id) else { return nil }
+        return StoredAssignment(
+            id: id,
+            sourceRaw: parts.source.rawValue,
+            sourceID: parts.sourceID,
+            kindRaw: (prototype?.kind ?? .assignment).rawValue,
+            course: prototype?.course ?? "",
+            title: prototype?.title ?? "",
+            dueAt: prototype?.dueAt,
+            urlString: prototype?.url?.absoluteString,
+            termYear: prototype?.term?.year,
+            termSeasonRaw: prototype?.term?.season.rawValue,
+            firstSeen: now,
+            lastSeenInFeed: now,
+            completedAt: completedAt,
+            userCompleted: true,
+            isCompletionOnly: true
         )
     }
 }

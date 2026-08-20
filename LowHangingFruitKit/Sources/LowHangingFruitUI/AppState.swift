@@ -53,12 +53,21 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
-    @Published private(set) var completedAssignmentIDs: Set<String>
-    /// When each completed item was marked done. Persisted so the Done tab keeps
-    /// its history across launches (and so completed homework doesn't vanish on
-    /// relaunch). IDs completed before this map existed simply have no entry;
-    /// the Done view falls back to the due date to place them.
-    @Published private(set) var completionDates: [String: Date]
+    /// Everything the user has ticked off. **Derived, not persisted** — this is
+    /// a read model rebuilt from the ledger's rows (`AssignmentStore
+    /// .completionRecord()`) after every mutation and at launch. It used to be
+    /// written to UserDefaults *as well as* onto the ledger, which meant two
+    /// records of the same fact that could disagree; the ledger is now the only
+    /// one, and it's the one that survives a reinstall.
+    @Published private(set) var completedAssignmentIDs: Set<String> = []
+    /// When each completed item was marked done, for the ids where that's known.
+    /// Derived from the ledger alongside `completedAssignmentIDs`.
+    ///
+    /// An id can be completed with no entry here: completions carried over from
+    /// builds that predate timestamps know *that* but not *when*. The Done view
+    /// falls back to the due date to place those, and the weekly ring skips
+    /// them — so the absence is load-bearing, not a gap to paper over.
+    @Published private(set) var completionDates: [String: Date] = [:]
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
@@ -108,7 +117,7 @@ final class AppState: ObservableObject {
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
     /// directly; `refreshGradeWatcher` is the only thing that drives it here.
-    let gradeWatcher = GradeWatcherStore()
+    let gradeWatcher: GradeWatcherStore
 
     /// Durable assignment ledger. A sync reconciles into it instead of replacing
     /// the in-memory arrays wholesale, so previously-seen assignments (and
@@ -119,10 +128,14 @@ final class AppState: ObservableObject {
     /// store — no disk, no cross-test leakage.
     let assignmentStore: AssignmentStore?
 
+    /// Durable home for observed grade history — the trail behind the week-delta
+    /// chip, which used to be a `gradeWatcherHistory` JSON blob in UserDefaults.
+    /// Held here (rather than only inside `GradeWatcherStore`) so the one-time
+    /// migration can write to it before the watcher reads it.
+    let gradeHistoryStore: GradeHistoryStore?
+
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
-    private static let completedIDsKey = "completedAssignmentIDs"
-    private static let completionDatesKey = "completionDates"
     private static let hiddenCoursesKey = "hiddenCourseKeys"
     private static let deletedCoursesKey = "deletedCourseKeys"
     private static let recurringTasksKey = "recurringTasks"
@@ -140,10 +153,11 @@ final class AppState: ObservableObject {
     /// or temp-file store (and drive it across simulated launches). The default
     /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
     /// app, fresh in-memory in unit tests.
-    init(assignmentStore: AssignmentStore? = nil) {
+    init(
+        assignmentStore: AssignmentStore? = nil,
+        gradeHistoryStore: GradeHistoryStore? = nil
+    ) {
         self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
-        self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
-        self.completionDates = Self.loadCompletionDates()
         self.hiddenCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
         self.deletedCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.deletedCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
@@ -167,7 +181,28 @@ final class AppState: ObservableObject {
         // sync returns — instead of starting empty every launch.
         let store = assignmentStore ?? AssignmentStore.makeDefault()
         self.assignmentStore = store
+        let historyStore = gradeHistoryStore ?? GradeHistoryStore.makeDefault()
+        self.gradeHistoryStore = historyStore
+
+        // Move completion state and observed grade history off the old
+        // UserDefaults blobs and onto the ledger, before anything reads either.
+        // One-time (version-gated) and idempotent — see `LegacyStateMigration`.
+        LegacyStateMigration.runIfNeeded(
+            assignmentStore: store,
+            gradeHistoryStore: historyStore
+        )
+        // Constructed after the migration so its history cache is built from the
+        // migrated rows rather than an empty store.
+        self.gradeWatcher = GradeWatcherStore(historyStore: historyStore)
+
         if let store {
+            // Completion is read back out of the ledger rather than out of its
+            // own UserDefaults copy: one record of the fact, and the one that
+            // survives a reinstall.
+            let completion = store.completionRecord()
+            self.completedAssignmentIDs = completion.ids
+            self.completionDates = completion.dates
+
             let persisted = store.currentAssignments()
             self.canvasItems = persisted.filter { $0.source == .canvas }
             self.gradescopeItems = persisted.filter { $0.source == .gradescope }
@@ -806,6 +841,9 @@ final class AppState: ObservableObject {
     /// UI can be exercised without connecting a real Canvas account.
     func loadSampleData() {
         canvasItems = SampleData.items().map(\.assignment)
+        // Completion lives on the ledger now, so clearing the in-memory read
+        // model alone would leave it to be re-derived on the next mutation.
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: completedAssignmentIDs)
         completedAssignmentIDs = []
         completionDates = [:]
         rebuildDashboardItems()
@@ -825,9 +863,12 @@ final class AppState: ObservableObject {
             completionDates[linkedID] = date
             touched.insert(linkedID)
         }
-        // Mirror onto the ledger so aging can't reclaim finished work.
-        assignmentStore?.setCompleted(ids: touched, at: date)
-        persistCompletedIDs()
+        // The ledger is where completion actually lives. The item is passed
+        // through as a prototype so ticking off something no feed reconciles —
+        // a manual or recurring task — still gets a durable record instead of
+        // being dropped for want of a row.
+        assignmentStore?.setCompleted(ids: touched, at: date, prototypes: [assignment])
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
 
@@ -841,8 +882,21 @@ final class AppState: ObservableObject {
             touched.insert(linkedID)
         }
         assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
-        persistCompletedIDs()
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
+    }
+
+    /// Re-derives the completion read models from the ledger.
+    ///
+    /// The mutators above update the published sets optimistically first, then
+    /// call this: with a store, the ledger's answer replaces the optimistic one
+    /// so the two can never drift; without one (store creation failed — see
+    /// `assignmentStore`), the optimistic values stand and completion is
+    /// session-only, which is the same degradation the rest of the ledger has.
+    private func reloadCompletionFromLedger() {
+        guard let record = assignmentStore?.completionRecord() else { return }
+        completedAssignmentIDs = record.ids
+        completionDates = record.dates
     }
 
     /// True if EITHER platform reports this done: this item's own submitted
@@ -946,23 +1000,6 @@ final class AppState: ObservableObject {
     /// tracked timestamps return nil — callers fall back to the due date.
     func completedAt(_ assignment: Assignment) -> Date? {
         completionDates[assignment.id]
-    }
-
-    private func persistCompletedIDs() {
-        UserDefaults.standard.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
-        // Keep the date map trimmed to currently-completed IDs so it can't grow
-        // unbounded as items are toggled.
-        completionDates = completionDates.filter { completedAssignmentIDs.contains($0.key) }
-        if let data = try? JSONEncoder().encode(completionDates) {
-            UserDefaults.standard.set(data, forKey: Self.completionDatesKey)
-        }
-    }
-
-    private static func loadCompletionDates() -> [String: Date] {
-        guard let data = UserDefaults.standard.data(forKey: completionDatesKey),
-              let map = try? JSONDecoder().decode([String: Date].self, from: data)
-        else { return [:] }
-        return map
     }
 
     private func persistRecurringTasks() {
