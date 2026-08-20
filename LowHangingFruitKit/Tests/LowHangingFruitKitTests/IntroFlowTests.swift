@@ -28,7 +28,7 @@ struct IntroFlowTests {
         seenIntro: Bool? = false,
         _ body: () -> Void
     ) {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.lhf
         let saved = Self.touchedKeys.map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
