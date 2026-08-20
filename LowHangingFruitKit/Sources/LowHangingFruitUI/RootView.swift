@@ -50,8 +50,18 @@ public struct RootView: View {
     @ViewBuilder
     private var mainContent: some View {
         if state.needsOnboarding {
-            OnboardingView()
-                .environmentObject(state)
+            // The mission panes come first on a true first run, then the
+            // connect checklist. Nested rather than a sibling `else if` on
+            // purpose: the intro is only ever reachable *inside* onboarding, so
+            // a Settings reconnect (which clears `hasCompletedOnboarding` but
+            // not `hasSeenIntro`) lands on the checklist, not the pitch.
+            if state.needsIntro {
+                IntroView()
+                    .environmentObject(state)
+            } else {
+                OnboardingView()
+                    .environmentObject(state)
+            }
         } else {
             ContentView()
                 .environmentObject(state)
