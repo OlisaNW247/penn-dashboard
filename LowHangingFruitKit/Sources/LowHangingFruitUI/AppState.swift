@@ -988,7 +988,15 @@ final class AppState: ObservableObject {
                 }
             }
             let changes = assignmentStore?.applySubmissionState(
-                submittedCanvasAssignmentIDs: ids,
+                // The *union*, not the bare fetch. `applySubmissionState` is a
+                // full replace by design (so a retraction self-heals), which
+                // means handing it only this refresh's ids writes
+                // `canvasSubmitted = false` onto every course the refresh
+                // didn't cover. The session looks fine — `submittedCanvasAssignmentIDs`
+                // above is the union — but the ledger is already wrong, and the
+                // next cold launch seeds from the ledger and bounces finished
+                // work back onto the dashboard for good.
+                submittedCanvasAssignmentIDs: submittedCanvasAssignmentIDs,
                 scores: scores
             ) ?? []
             pendingGradeChanges = notifiableGradeChanges(changes)
