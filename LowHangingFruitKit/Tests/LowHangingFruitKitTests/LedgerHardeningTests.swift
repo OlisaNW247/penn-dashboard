@@ -217,9 +217,9 @@ struct MergedCompletionWithoutSyncTests {
         let due = Date().addingTimeInterval(86_400)
 
         let canvasItem = Assignment(source: .canvas, sourceID: "m-c1", kind: .assignment,
-                                    course: "CIS 1200", title: "Homework 3", dueAt: due)
+                                    course: "CIS 1200", title: "Homework 3", dueAt: due, url: nil)
         let gradescopeItem = Assignment(source: .gradescope, sourceID: "m-g1", kind: .assignment,
-                                        course: "CIS 1200", title: "HW3", dueAt: due)
+                                        course: "CIS 1200", title: "HW3", dueAt: due, url: nil)
         // Assigned directly — nothing reconciled, so neither has a ledger row.
         state.canvasItems = [canvasItem]
         state.gradescopeItems = [gradescopeItem]
