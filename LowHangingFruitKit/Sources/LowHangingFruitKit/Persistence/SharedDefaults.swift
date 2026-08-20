@@ -79,7 +79,14 @@ public enum SharedDefaults {
     /// Falls back to `.standard` if the suite can't be opened — which happens
     /// in unit tests and previews, where there's no App Group entitlement.
     /// Behaviour there is exactly what it was before this type existed.
-    public static let store: UserDefaults = {
+    ///
+    /// `nonisolated(unsafe)` because `UserDefaults` isn't marked `Sendable`,
+    /// even though it is documented as thread-safe and every access here is a
+    /// plain get/set. `@MainActor` — the other way to satisfy the checker — is
+    /// not available: `LedgerWidgetReader.snapshot()` is deliberately
+    /// nonisolated because WidgetKit's `TimelineProvider` callbacks don't run
+    /// on the main actor, and it has to read these preferences.
+    nonisolated(unsafe) public static let store: UserDefaults = {
         guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
         migrateFromStandardIfNeeded(into: suite)
         return suite
