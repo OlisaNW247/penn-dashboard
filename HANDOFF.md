@@ -175,16 +175,33 @@ Three independent notions of "done", and they are **not** interchangeable:
 
 | Signal | Source | Persisted? |
 |---|---|---|
-| Manual tick | user taps a card → `completedAssignmentIDs` + `completionDates` | **Yes** (App Group defaults) |
-| Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | with the item |
-| Canvas submitted | `submittedCanvasAssignmentIDs`, derived by `updateSubmissionState()` from Grade Watcher snapshots | **No — recomputed every refresh** |
+| Manual tick | user taps a card → `StoredAssignment.userCompleted` / `completedAt` | **Yes** (ledger) |
+| Gradescope submitted | `Assignment.submitted` from the scrape → `gradescopeSubmitted` | **Yes** (ledger) |
+| Canvas submitted | Grade Watcher `workflow_state` → `applySubmissionState()` → `canvasSubmitted` | **Yes** (ledger) |
 
-The Canvas set is deliberately **not** persisted so a retracted/corrected
-submission self-heals. Visible consequence: on a cold launch an auto-filed item
-sits in the active list until the first successful grade refresh lands, then
-moves to Done. And because it is derived from the grades fetch, **no Canvas
-session ⇒ the app does not know what's submitted.** Canvas doesn't push, so this
-is polling while the session is alive — best-effort, never real-time.
+All three are durable now. The Canvas flag is written as a full **replace**
+rather than a merge, which is what preserves the self-healing property the old
+recompute-every-refresh design had: a retracted or TA-cleared submission goes
+back to unsubmitted on the next refresh. `submittedCanvasAssignmentIDs()` seeds
+`AppState` at launch, so the app knows what you turned in *before* — or without —
+any grade refresh.
+
+Each flag also carries **when it was last observed**
+(`canvasSubmissionObservedAt` / `gradescopeSubmissionObservedAt`, newest of the
+two via `submissionObservedAt`). The flag alone cannot separate "not submitted,
+confirmed a minute ago" from "not submitted, as far as we knew last Tuesday",
+and those mean different things to a student deciding what to work on. Nil means
+*never observed* — unknown, which is not the same as stale, and must not be
+rendered as "last checked ages ago".
+
+Still true: Canvas state is derived from the grades fetch, so **no Canvas
+session ⇒ no fresh answer.** Canvas doesn't push, so this is polling while the
+session is alive — best-effort, never real-time. What's changed is that a stale
+answer now says so instead of disappearing.
+
+Not yet modelled: late / missing / excused / resubmitted (Canvas sends these in
+`workflow_state`; we collapse them to a Bool), and a manual student override for
+when Canvas is wrong or unreachable.
 
 ---
 

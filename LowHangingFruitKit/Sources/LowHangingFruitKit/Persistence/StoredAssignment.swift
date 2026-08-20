@@ -92,6 +92,24 @@ public final class StoredAssignment {
     public var canvasSubmitted: Bool
     /// Gradescope's scraped submitted status.
     public var gradescopeSubmitted: Bool
+
+    // MARK: How current the submission signals are
+    /// When Canvas last *told us something* about this item — submitted or not.
+    ///
+    /// Not the same as when it was submitted: it is when the app last had a
+    /// trustworthy answer. The flag alone cannot distinguish "not submitted,
+    /// confirmed a minute ago" from "not submitted, as far as we knew last
+    /// Tuesday before the session expired", and those mean very different
+    /// things to someone deciding what to work on tonight.
+    ///
+    /// Optional and defaulted: rows written before this existed have no
+    /// observation date, which reads correctly as "we don't know how fresh
+    /// this is" rather than as a fabricated timestamp.
+    public var canvasSubmissionObservedAt: Date?
+
+    /// The same, for Gradescope's scraped status. Written whenever a feed item
+    /// carries the flag, since that scrape *is* the observation.
+    public var gradescopeSubmissionObservedAt: Date?
     public var scoreEarned: Double?
     public var scoreMax: Double?
 
@@ -120,6 +138,8 @@ public final class StoredAssignment {
         isCompletionOnly: Bool = false,
         canvasSubmitted: Bool = false,
         gradescopeSubmitted: Bool = false,
+        canvasSubmissionObservedAt: Date? = nil,
+        gradescopeSubmissionObservedAt: Date? = nil,
         scoreEarned: Double? = nil,
         scoreMax: Double? = nil,
         linkedID: String? = nil,
@@ -143,6 +163,8 @@ public final class StoredAssignment {
         self.isCompletionOnly = isCompletionOnly
         self.canvasSubmitted = canvasSubmitted
         self.gradescopeSubmitted = gradescopeSubmitted
+        self.canvasSubmissionObservedAt = canvasSubmissionObservedAt
+        self.gradescopeSubmissionObservedAt = gradescopeSubmissionObservedAt
         self.scoreEarned = scoreEarned
         self.scoreMax = scoreMax
         self.linkedID = linkedID
@@ -239,6 +261,7 @@ extension StoredAssignment {
         // so a scraped completion is retained.
         if assignment.source == .gradescope {
             gradescopeSubmitted = assignment.submitted
+            gradescopeSubmissionObservedAt = now
         }
         if let earned = assignment.scoreEarned { scoreEarned = earned }
         if let max = assignment.scoreMax { scoreMax = max }
@@ -301,6 +324,9 @@ extension StoredAssignment {
             firstSeen: now,
             lastSeenInFeed: now,
             gradescopeSubmitted: assignment.source == .gradescope ? assignment.submitted : false,
+            // A first sighting is as much an observation as a re-sighting;
+            // `refresh(from:now:)` records the same thing on later passes.
+            gradescopeSubmissionObservedAt: assignment.source == .gradescope ? now : nil,
             scoreEarned: assignment.scoreEarned,
             scoreMax: assignment.scoreMax,
             linkedID: assignment.linkedID
@@ -358,5 +384,34 @@ extension StoredAssignment {
             userCompleted: true,
             isCompletionOnly: true
         )
+    }
+}
+
+// MARK: - Submission freshness
+
+public extension StoredAssignment {
+    /// The most recent moment any platform told us about this item's submission
+    /// state, or nil if none ever has.
+    ///
+    /// Deliberately the newest of the two rather than per-source: the question
+    /// a caller is asking is "how much should I trust what I'm about to show",
+    /// and the freshest signal is the honest answer to that.
+    var submissionObservedAt: Date? {
+        switch (canvasSubmissionObservedAt, gradescopeSubmissionObservedAt) {
+        case let (canvas?, gradescope?): return max(canvas, gradescope)
+        case let (canvas?, nil): return canvas
+        case let (nil, gradescope?): return gradescope
+        case (nil, nil): return nil
+        }
+    }
+
+    /// Whether the submission state was confirmed within `window` of `now`.
+    ///
+    /// A row that has never been observed is *not* stale — it is unknown, which
+    /// is a different thing and must not be shown as "last checked ages ago".
+    /// Callers distinguish the two by checking `submissionObservedAt` for nil.
+    func hasFreshSubmissionState(now: Date = Date(), within window: TimeInterval) -> Bool {
+        guard let observed = submissionObservedAt else { return false }
+        return now.timeIntervalSince(observed) <= window
     }
 }
