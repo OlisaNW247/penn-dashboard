@@ -51,12 +51,18 @@ public final class AssignmentStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
         self.isPersistent = !inMemory
+        rowsByID()
     }
 
     public init(url: URL) throws {
         let config = ModelConfiguration(url: url)
         self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
         self.isPersistent = true
+        // Sweep at load. Whatever is on disk was not necessarily written by this
+        // build of the app — a restored backup or a future CloudKit merge can
+        // put two rows for one assignment there, and the very first read
+        // (`currentAssignments()` seeding the dashboard) must not show both.
+        rowsByID()
     }
 
     /// The store the real app uses: a persistent SwiftData store in the shared
@@ -86,7 +92,11 @@ public final class AssignmentStore {
         source: Assignment.Source,
         now: Date = Date()
     ) -> ReconcileResult {
-        let existing = rows(source: source)
+        // One id-keyed view of the *whole* ledger, duplicates already collapsed.
+        // Every lookup below goes through it, because it is now the only thing
+        // keeping one assignment to one row.
+        var byID = rowsByID()
+        let existing = byID.values.filter { $0.sourceRaw == source.rawValue }
 
         // Partial-fetch guard: a source that previously had items suddenly
         // returning nothing is far more likely a network blip or an expired
@@ -99,14 +109,20 @@ public final class AssignmentStore {
             )
         }
 
-        let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let seenIDs = Set(fetched.map(\.id))
 
         for item in fetched {
-            if let row = existingByID[item.id] {
+            if let row = byID[item.id] {
                 row.refresh(from: item, now: now)
             } else {
-                context.insert(StoredAssignment.make(from: item, now: now))
+                let row = StoredAssignment.make(from: item, now: now)
+                context.insert(row)
+                // Record it in the map immediately. A feed that lists the same
+                // id twice in one batch — a cross-listed course, two merged
+                // section calendars, a repeated ICS UID — would otherwise miss
+                // the lookup on the second copy and insert a twin. The database
+                // used to absorb that; nothing does now except this line.
+                byID[item.id] = row
             }
         }
         for row in existing where !seenIDs.contains(row.id) {
@@ -124,7 +140,7 @@ public final class AssignmentStore {
     /// `gradescopeItems` at launch — so the class list and dashboard are
     /// populated from the first frame, before any network call returns.
     public func currentAssignments(now: Date = Date()) -> [Assignment] {
-        allRows().filter { !isAgedOut($0, now: now) }.map(\.assignment)
+        rowsByID().values.filter { !isAgedOut($0, now: now) }.map(\.assignment)
     }
 
     /// Deletes every ledger row for a source — used when the user disconnects
@@ -135,16 +151,66 @@ public final class AssignmentStore {
         try? context.save()
     }
 
-    // MARK: Queries
+    // MARK: Identity — uniqueness is enforced here, not by the database
 
-    private func rows(source: Assignment.Source) -> [StoredAssignment] {
-        let raw = source.rawValue
-        let descriptor = FetchDescriptor<StoredAssignment>(
-            predicate: #Predicate { $0.sourceRaw == raw }
-        )
-        return (try? context.fetch(descriptor)) ?? []
+    /// Every row keyed by `id`, with any duplicate ids collapsed on the spot.
+    ///
+    /// `StoredAssignment.id` used to carry `@Attribute(.unique)`, so the store
+    /// itself refused a second row for the same assignment. CloudKit does not
+    /// support unique constraints, so that guarantee had to move into code
+    /// before sync can ever be switched on. This is where it now lives: every
+    /// read and every write path resolves rows through this map, so an insert
+    /// can only ever happen for an id nothing on the ledger already holds.
+    ///
+    /// Deliberately spans **all** sources rather than the one being reconciled.
+    /// `id` already encodes the source, so a same-id row filed under a
+    /// different `sourceRaw` ought to be impossible — but "ought to be
+    /// impossible" is exactly the assumption a merge from another device
+    /// breaks, and a narrower lookup is precisely what would let it insert a
+    /// twin. Scanning the whole table on each call is affordable at a
+    /// student's few hundred rows, and a duplicated assignment is not.
+    @discardableResult
+    private func rowsByID() -> [String: StoredAssignment] {
+        var byID: [String: StoredAssignment] = [:]
+        var doomed: [StoredAssignment] = []
+
+        for row in allRows() {
+            guard let kept = byID[row.id] else {
+                byID[row.id] = row
+                continue
+            }
+            // The copy seen in the feed most recently carries the current
+            // title/date/URL, so it survives and supplies the display fields;
+            // everything worth keeping from the other is merged into it.
+            let survivor = row.lastSeenInFeed > kept.lastSeenInFeed ? row : kept
+            let absorbed = survivor === row ? kept : row
+            survivor.absorb(absorbed)
+            byID[row.id] = survivor
+            doomed.append(absorbed)
+        }
+
+        if !doomed.isEmpty {
+            for row in doomed { context.delete(row) }
+            try? context.save()
+        }
+        return byID
     }
 
+    // MARK: Queries
+
+    /// Rows for one source, resolved through `rowsByID()` so no caller can ever
+    /// see — or write to — one of two copies of the same assignment. This is a
+    /// filter over the full table rather than the `#Predicate` fetch it used to
+    /// be; the swap is what buys that guarantee, and the row counts involved
+    /// make the cost irrelevant.
+    private func rows(source: Assignment.Source) -> [StoredAssignment] {
+        let raw = source.rawValue
+        return rowsByID().values.filter { $0.sourceRaw == raw }
+    }
+
+    /// The raw table, duplicates and all. Only `rowsByID()` (which resolves
+    /// them) and the diagnostics in `stats()` (which count them) may use this —
+    /// everything else goes through a deduplicated view.
     private func allRows() -> [StoredAssignment] {
         (try? context.fetch(FetchDescriptor<StoredAssignment>())) ?? []
     }
@@ -174,7 +240,7 @@ public final class AssignmentStore {
     /// markActive path); both sets are applied in one save.
     public func setCompleted(ids: Set<String>, at date: Date?, clearing: Set<String> = []) {
         guard !ids.isEmpty || !clearing.isEmpty else { return }
-        for row in allRows() {
+        for row in rowsByID().values {
             if ids.contains(row.id) {
                 row.completedAt = date ?? Date()
             } else if clearing.contains(row.id) {
@@ -312,6 +378,11 @@ public final class AssignmentStore {
         /// are now exempt from aging.
         public let finished: Int
         public let withScores: Int
+        /// Ids the ledger is holding more than one row for. Uniqueness is a
+        /// code invariant now that the database no longer enforces it, so this
+        /// is the number that says whether the invariant is actually holding.
+        /// Anything but zero is a bug.
+        public let duplicateIDs: Int
         /// When the ledger first saw anything: how far back the archive reaches.
         public let earliestFirstSeen: Date?
         public let latestSeenInFeed: Date?
@@ -327,6 +398,7 @@ public final class AssignmentStore {
             goneFromFeed: rows.filter(\.isGoneFromFeed).count,
             finished: rows.filter(\.isFinished).count,
             withScores: rows.filter { $0.scoreEarned != nil }.count,
+            duplicateIDs: rows.count - Set(rows.map(\.id)).count,
             earliestFirstSeen: rows.map(\.firstSeen).min(),
             latestSeenInFeed: rows.map(\.lastSeenInFeed).max()
         )

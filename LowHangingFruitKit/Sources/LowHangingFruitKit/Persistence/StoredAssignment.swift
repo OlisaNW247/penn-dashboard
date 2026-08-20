@@ -12,10 +12,21 @@ import SwiftData
 /// lifecycle fields (`firstSeen` / `lastSeenInFeed` / `isGoneFromFeed`) are the
 /// point of the whole thing: an item leaving the feed is *recorded*, never
 /// silently dropped.
+///
+/// **`id` is not a database constraint.** It used to carry
+/// `@Attribute(.unique)`, which is unsupported by CloudKit and would make
+/// `ModelConfiguration(cloudKitDatabase:)` impossible to enable. Uniqueness now
+/// lives in `AssignmentStore` — see `rowsByID()`, which every read and write
+/// goes through — and `absorb(_:)` below is what a collision resolves to.
+/// Removing the attribute also fixed a quieter bug: SwiftData enforced
+/// `.unique` as a last-write-wins *overwrite*, so a collapsed duplicate
+/// silently discarded the older row's `firstSeen`, `completedAt` and pairing.
+/// The merge here keeps them.
 @Model
 public final class StoredAssignment {
     /// `"source:sourceID"` — the same stable identity as `Assignment.id`.
-    @Attribute(.unique) public var id: String
+    /// Unique by invariant, not by constraint (see the type's note).
+    public var id: String
 
     // MARK: Feed-supplied identity & display (refreshed on every sync)
     public var sourceRaw: String
@@ -171,6 +182,47 @@ extension StoredAssignment {
         }
         if let earned = assignment.scoreEarned { scoreEarned = earned }
         if let max = assignment.scoreMax { scoreMax = max }
+    }
+
+    /// Folds a second row carrying this row's `id` back into this one, ahead of
+    /// deleting it. Nothing the app does can create that second row — but a
+    /// restored backup, an interrupted save, or (the whole reason `.unique` had
+    /// to go) a CloudKit merge of two devices that each created the row
+    /// independently can, and the database no longer refuses it.
+    ///
+    /// Every rule below resolves the same way: toward keeping what the student
+    /// would notice missing. A collapse is already a surprise; it must not also
+    /// be the thing that loses a completion tick or a recorded grade.
+    ///
+    /// Display fields are deliberately untouched — the caller absorbs *into*
+    /// whichever copy was seen in the feed most recently, so those are already
+    /// the freshest ones available.
+    func absorb(_ other: StoredAssignment) {
+        // The archive reaches back as far as the earlier sighting, and aging is
+        // measured from the later one. Both directions favor retention.
+        firstSeen = min(firstSeen, other.firstSeen)
+        lastSeenInFeed = max(lastSeenInFeed, other.lastSeenInFeed)
+        // Still in the feed on either copy means still in the feed: a retained
+        // item can always age out later, an aged-out one is simply gone.
+        isGoneFromFeed = isGoneFromFeed && other.isGoneFromFeed
+        // Any evidence of finished work counts, dated from the earlier tick —
+        // that's when the student actually finished it.
+        completedAt = [completedAt, other.completedAt].compactMap { $0 }.min()
+        canvasSubmitted = canvasSubmitted || other.canvasSubmitted
+        gradescopeSubmitted = gradescopeSubmitted || other.gradescopeSubmitted
+        // A known score beats no score. Earned and max move together so a
+        // half-merged fraction can't be displayed.
+        if scoreEarned == nil, let earned = other.scoreEarned {
+            scoreEarned = earned
+            scoreMax = other.scoreMax ?? scoreMax
+        } else if scoreMax == nil {
+            scoreMax = other.scoreMax
+        }
+        // Same for a confirmed cross-platform pairing: keep the one that exists.
+        if linkedID == nil, let linked = other.linkedID {
+            linkedID = linked
+            pairingConfirmedAt = other.pairingConfirmedAt
+        }
     }
 
     /// A fresh ledger row for a never-before-seen assignment.

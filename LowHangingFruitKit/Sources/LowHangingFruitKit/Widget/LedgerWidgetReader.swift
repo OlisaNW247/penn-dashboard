@@ -54,9 +54,17 @@ public enum LedgerWidgetReader {
         let context = ModelContext(container)
         guard let rows = try? context.fetch(FetchDescriptor<StoredAssignment>()) else { return nil }
 
+        // One entry per assignment id. `AssignmentStore` keeps the ledger free of
+        // duplicates in code (the database stopped enforcing it when
+        // `@Attribute(.unique)` came off for CloudKit's sake), but that sweep
+        // needs to write and a widget extension only reads — so if a duplicate
+        // is sitting there between app launches, this is what stops a five-item
+        // list showing the same homework twice.
+        var seenIDs: Set<String> = []
         let items = rows
             .filter { !$0.isFinished }
             .filter { !isAgedOut($0, now: now) }
+            .filter { seenIDs.insert($0.id).inserted }
             .compactMap { row -> (Date, WidgetItem)? in
                 guard let due = row.dueAt else { return nil }
                 return (due, WidgetItem(title: row.title, course: row.course, dueAt: due))
