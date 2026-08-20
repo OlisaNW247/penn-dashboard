@@ -7,12 +7,15 @@ import SwiftData
 ///
 /// **Why this is a fallback and not the widget's primary path.** The dashboard's
 /// list is not the ledger — it's the output of `rebuildDashboardItems()`, which
-/// also applies hidden/deleted course selection, Canvas/Gradescope dedup, the
-/// end-of-term cap, and folds in manual assignments and recurring tasks that
-/// have no ledger rows at all. All of that lives in `LowHangingFruitUI`, which a
-/// widget extension cannot import. Reading rows directly as the *normal* path
-/// would therefore show duplicates and hidden classes while dropping the user's
-/// own tasks — strictly worse than the snapshot.
+/// also applies Canvas/Gradescope dedup and the end-of-term cap. That lives in
+/// `LowHangingFruitUI`, which a widget extension cannot import, so reading rows
+/// directly as the *normal* path could still show a duplicate the app would
+/// have merged.
+///
+/// Course selection and custom names are no longer part of that gap: they move
+/// through `SharedDefaults`, which lives in this module precisely so the widget
+/// can read them. A class the user hid, deleted, or renamed in the app is
+/// honoured here.
 ///
 /// What it fixes is the gap the snapshot genuinely has: on a fresh install, or
 /// after the container is cleared, there is no snapshot and the widget sits
@@ -46,20 +49,37 @@ public enum LedgerWidgetReader {
         // if the app has never run, there is simply nothing to show.
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
+        // Same versioned schema and migration plan the app writes with. Opening
+        // the store under an anonymous schema is how a reader and a writer end
+        // up disagreeing about what is on disk.
         guard let container = try? ModelContainer(
-            for: StoredAssignment.self,
+            for: Schema(versionedSchema: LedgerSchemaV1.self),
+            migrationPlan: LedgerMigrationPlan.self,
             configurations: ModelConfiguration(url: url)
         ) else { return nil }
 
         let context = ModelContext(container)
         guard let rows = try? context.fetch(FetchDescriptor<StoredAssignment>()) else { return nil }
 
+        // The user's own decisions about their classes, read from the shared
+        // suite. Without these the widget cheerfully advertised a class the
+        // user had hidden or deleted, under the raw Canvas name they had
+        // already renamed.
+        let hidden = Set(SharedDefaults.store.stringArray(forKey: SharedDefaults.hiddenCoursesKey) ?? [])
+        let deleted = Set(SharedDefaults.store.stringArray(forKey: SharedDefaults.deletedCoursesKey) ?? [])
+        let nameOverrides = SharedDefaults.store
+            .dictionary(forKey: SharedDefaults.courseNameOverridesKey) as? [String: String] ?? [:]
+
         let items = rows
             .filter { !$0.isFinished }
             .filter { !isAgedOut($0, now: now) }
+            .filter { !hidden.contains($0.course) && !deleted.contains($0.course) }
             .compactMap { row -> (Date, WidgetItem)? in
                 guard let due = row.dueAt else { return nil }
-                return (due, WidgetItem(title: row.title, course: row.course, dueAt: due))
+                let display = nameOverrides[row.course]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let course = (display?.isEmpty == false) ? display! : row.course
+                return (due, WidgetItem(title: row.title, course: course, dueAt: due))
             }
             .sorted { $0.0 < $1.0 }
             .prefix(maxItems)

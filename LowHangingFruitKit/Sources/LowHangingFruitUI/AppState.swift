@@ -130,8 +130,8 @@ final class AppState: ObservableObject {
     private static let userNameKey = "userName"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let completionDatesKey = "completionDates"
-    private static let hiddenCoursesKey = "hiddenCourseKeys"
-    private static let deletedCoursesKey = "deletedCourseKeys"
+    private static let hiddenCoursesKey = SharedDefaults.hiddenCoursesKey
+    private static let deletedCoursesKey = SharedDefaults.deletedCoursesKey
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -140,7 +140,7 @@ final class AppState: ObservableObject {
     private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
-    private static let courseNameOverridesKey = "courseNameOverrides"
+    private static let courseNameOverridesKey = SharedDefaults.courseNameOverridesKey
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
 
@@ -153,23 +153,23 @@ final class AppState: ObservableObject {
         // URL is itself a bearer credential. `ICSFeedURLStore.load()`
         // transparently migrates a pre-existing UserDefaults value in.
         self.canvasICSURL = ICSFeedURLStore.load()
-        self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
+        self.completedAssignmentIDs = Set(SharedDefaults.store.stringArray(forKey: Self.completedIDsKey) ?? [])
         self.completionDates = Self.loadCompletionDates()
-        self.hiddenCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
-        self.deletedCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.deletedCoursesKey) ?? [])
-        self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
-        self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
-        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
-        self.hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introSeenKey)
-        self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
-        self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
+        self.hiddenCourseKeys = Set(SharedDefaults.store.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
+        self.deletedCourseKeys = Set(SharedDefaults.store.stringArray(forKey: Self.deletedCoursesKey) ?? [])
+        self.isCanvasDiscoveryConnected = SharedDefaults.store.bool(forKey: Self.canvasDiscoveryConnectedKey)
+        self.isGradescopeConnected = SharedDefaults.store.bool(forKey: Self.gradescopeConnectedKey)
+        self.hasCompletedOnboarding = SharedDefaults.store.bool(forKey: Self.onboardingCompletedKey)
+        self.hasSeenIntro = SharedDefaults.store.bool(forKey: Self.introSeenKey)
+        self.isPreviewMode = SharedDefaults.store.bool(forKey: Self.previewModeKey)
+        self.userName = SharedDefaults.store.string(forKey: Self.userNameKey) ?? ""
         self.appearanceMode = AppearanceMode(
-            rawValue: UserDefaults.standard.string(forKey: Self.appearanceModeKey) ?? ""
+            rawValue: SharedDefaults.store.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light
         self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
         self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.gradeBaselinedCourses = Set(
-            UserDefaults.standard.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
+            SharedDefaults.store.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
@@ -201,7 +201,7 @@ final class AppState: ObservableObject {
         // below force that flag true.
         if hasCompletedOnboarding && !hasSeenIntro {
             hasSeenIntro = true
-            UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+            SharedDefaults.store.set(true, forKey: Self.introSeenKey)
         }
 
         // Preview (demo) mode persists across launches so an App Store reviewer
@@ -238,7 +238,7 @@ final class AppState: ObservableObject {
     /// skipped them. Never cleared by `restartOnboarding()`.
     func completeIntro() {
         hasSeenIntro = true
-        UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+        SharedDefaults.store.set(true, forKey: Self.introSeenKey)
     }
 
     /// True when the store is showing bundled fixtures rather than a real
@@ -281,20 +281,20 @@ final class AppState: ObservableObject {
 
     func completeOnboarding() {
         hasCompletedOnboarding = true
-        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+        SharedDefaults.store.set(true, forKey: Self.onboardingCompletedKey)
     }
 
     /// The user's first name, captured during onboarding and shown in the
     /// dashboard greeting ("Hello, Marco").
     func updateName(_ name: String) {
         userName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(userName, forKey: Self.userNameKey)
+        SharedDefaults.store.set(userName, forKey: Self.userNameKey)
     }
 
     /// Switches the app's Light/Dark appearance (Settings → Appearance).
     func setAppearanceMode(_ mode: AppearanceMode) {
         appearanceMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.appearanceModeKey)
+        SharedDefaults.store.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
@@ -304,12 +304,12 @@ final class AppState: ObservableObject {
     /// connect checklist, not back at the first-run pitch.
     func restartOnboarding() {
         hasCompletedOnboarding = false
-        UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
+        SharedDefaults.store.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
         // student who tapped Preview can switch to their own Canvas cleanly.
         let wasPreview = isPreviewMode
         isPreviewMode = false
-        UserDefaults.standard.set(false, forKey: Self.previewModeKey)
+        SharedDefaults.store.set(false, forKey: Self.previewModeKey)
         if wasPreview {
             // Drop the fixtures on the way out. They'd never render again
             // (their course ids leave with preview mode), but leaving demo
@@ -346,7 +346,7 @@ final class AppState: ObservableObject {
 
     func enterPreviewMode() {
         isPreviewMode = true
-        UserDefaults.standard.set(true, forKey: Self.previewModeKey)
+        SharedDefaults.store.set(true, forKey: Self.previewModeKey)
         // Preview is entered *from* the intro's first pane, so the panes have
         // served their purpose. Marking them seen also keeps a reviewer who
         // later taps Connect Canvas (via `restartOnboarding()`) on the
@@ -412,7 +412,7 @@ final class AppState: ObservableObject {
         SessionCookieStore.remove(service: .canvas)
         updateCanvasICSURL("")
         canvasCourseIDsByCode = [:]
-        UserDefaults.standard.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        SharedDefaults.store.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
@@ -589,7 +589,7 @@ final class AppState: ObservableObject {
 
     func setCanvasDiscoveryConnected(_ connected: Bool) {
         isCanvasDiscoveryConnected = connected
-        UserDefaults.standard.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
+        SharedDefaults.store.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
     }
 
     func syncGradescope(cookies: [HTTPCookie]) async {
@@ -642,7 +642,7 @@ final class AppState: ObservableObject {
 
     func setGradescopeConnected(_ connected: Bool) {
         isGradescopeConnected = connected
-        UserDefaults.standard.set(connected, forKey: Self.gradescopeConnectedKey)
+        SharedDefaults.store.set(connected, forKey: Self.gradescopeConnectedKey)
     }
 
     /// Refreshes Grade Watcher for the SELECTED courses only (docs/grades.md
@@ -705,7 +705,7 @@ final class AppState: ObservableObject {
     }
 
     private func persistHiddenCourses() {
-        UserDefaults.standard.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
+        SharedDefaults.store.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
     }
 
     /// Courses to render in the Settings classes list — every known course
@@ -741,7 +741,7 @@ final class AppState: ObservableObject {
     }
 
     private func persistDeletedCourses() {
-        UserDefaults.standard.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
+        SharedDefaults.store.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
     }
 
     /// Classes currently switched on, by code. Kept separate from
@@ -778,7 +778,7 @@ final class AppState: ObservableObject {
         } else {
             courseNameOverrides[course] = trimmed
         }
-        UserDefaults.standard.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+        SharedDefaults.store.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
@@ -796,11 +796,11 @@ final class AppState: ObservableObject {
         }
         guard byCode != canvasCourseIDsByCode else { return }
         canvasCourseIDsByCode = byCode
-        UserDefaults.standard.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+        SharedDefaults.store.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
     }
 
     private static func loadStringMap(_ key: String) -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        SharedDefaults.store.dictionary(forKey: key) as? [String: String] ?? [:]
     }
 
     func addRecurringTask(_ task: RecurringTask) {
@@ -1072,7 +1072,7 @@ final class AppState: ObservableObject {
         if !seen.isSubset(of: baselined) {
             baselined.formUnion(seen)
             gradeBaselinedCourses = baselined
-            UserDefaults.standard.set(Array(baselined).sorted(), forKey: Self.gradeBaselinedCoursesKey)
+            SharedDefaults.store.set(Array(baselined).sorted(), forKey: Self.gradeBaselinedCoursesKey)
         }
         return notifiable
     }
@@ -1102,17 +1102,17 @@ final class AppState: ObservableObject {
     }
 
     private func persistCompletedIDs() {
-        UserDefaults.standard.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
+        SharedDefaults.store.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
         // Keep the date map trimmed to currently-completed IDs so it can't grow
         // unbounded as items are toggled.
         completionDates = completionDates.filter { completedAssignmentIDs.contains($0.key) }
         if let data = try? JSONEncoder().encode(completionDates) {
-            UserDefaults.standard.set(data, forKey: Self.completionDatesKey)
+            SharedDefaults.store.set(data, forKey: Self.completionDatesKey)
         }
     }
 
     private static func loadCompletionDates() -> [String: Date] {
-        guard let data = UserDefaults.standard.data(forKey: completionDatesKey),
+        guard let data = SharedDefaults.store.data(forKey: completionDatesKey),
               let map = try? JSONDecoder().decode([String: Date].self, from: data)
         else { return [:] }
         return map
@@ -1120,11 +1120,11 @@ final class AppState: ObservableObject {
 
     private func persistRecurringTasks() {
         guard let data = try? JSONEncoder().encode(recurringTasks) else { return }
-        UserDefaults.standard.set(data, forKey: Self.recurringTasksKey)
+        SharedDefaults.store.set(data, forKey: Self.recurringTasksKey)
     }
 
     private static func loadRecurringTasks() -> [RecurringTask] {
-        guard let data = UserDefaults.standard.data(forKey: recurringTasksKey),
+        guard let data = SharedDefaults.store.data(forKey: recurringTasksKey),
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
         else { return [] }
         return tasks
@@ -1132,11 +1132,11 @@ final class AppState: ObservableObject {
 
     private func persistManualAssignments() {
         guard let data = try? JSONEncoder().encode(manualAssignments) else { return }
-        UserDefaults.standard.set(data, forKey: Self.manualAssignmentsKey)
+        SharedDefaults.store.set(data, forKey: Self.manualAssignmentsKey)
     }
 
     private static func loadManualAssignments() -> [ManualAssignment] {
-        guard let data = UserDefaults.standard.data(forKey: manualAssignmentsKey),
+        guard let data = SharedDefaults.store.data(forKey: manualAssignmentsKey),
               let items = try? JSONDecoder().decode([ManualAssignment].self, from: data)
         else { return [] }
         return items

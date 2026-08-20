@@ -78,7 +78,7 @@ final class GradeWatcherStore: ObservableObject {
         self.manualWeights = Self.loadManualWeights()
         self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
         self.history = Self.loadHistory()
-        self.watchedCourseIDs = Set(UserDefaults.standard.stringArray(forKey: Self.watchedCoursesKey) ?? [])
+        self.watchedCourseIDs = Set(SharedDefaults.store.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
     }
@@ -93,7 +93,7 @@ final class GradeWatcherStore: ObservableObject {
         } else {
             watchedCourseIDs.remove(courseID)
         }
-        UserDefaults.standard.set(Array(watchedCourseIDs), forKey: Self.watchedCoursesKey)
+        SharedDefaults.store.set(Array(watchedCourseIDs), forKey: Self.watchedCoursesKey)
     }
 
     /// Refreshes grades for exactly the courses the caller passes in — this
@@ -343,11 +343,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistConfirmedGradescopeMappings() {
         guard let data = try? JSONEncoder().encode(confirmedGradescopeMappings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.confirmedGradescopeMappingsKey)
+        SharedDefaults.store.set(data, forKey: Self.confirmedGradescopeMappingsKey)
     }
 
     private static func loadConfirmedGradescopeMappings() -> [String: [String: String]] {
-        guard let data = UserDefaults.standard.data(forKey: confirmedGradescopeMappingsKey),
+        guard let data = SharedDefaults.store.data(forKey: confirmedGradescopeMappingsKey),
               let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
         return dict
@@ -378,11 +378,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistManualWeights() {
         guard let data = try? JSONEncoder().encode(manualWeights) else { return }
-        UserDefaults.standard.set(data, forKey: Self.manualWeightsKey)
+        SharedDefaults.store.set(data, forKey: Self.manualWeightsKey)
     }
 
     private static func loadManualWeights() -> [String: [String: Double]] {
-        guard let data = UserDefaults.standard.data(forKey: manualWeightsKey),
+        guard let data = SharedDefaults.store.data(forKey: manualWeightsKey),
               let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
         else { return [:] }
         return dict
@@ -488,11 +488,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistSyllabusSchemes() {
         guard let data = try? JSONEncoder().encode(syllabusSchemes) else { return }
-        UserDefaults.standard.set(data, forKey: Self.syllabusSchemesKey)
+        SharedDefaults.store.set(data, forKey: Self.syllabusSchemesKey)
     }
 
     private static func loadSyllabusSchemes() -> [String: AttachedSyllabus] {
-        guard let data = UserDefaults.standard.data(forKey: syllabusSchemesKey),
+        guard let data = SharedDefaults.store.data(forKey: syllabusSchemesKey),
               let dict = try? JSONDecoder().decode([String: AttachedSyllabus].self, from: data)
         else { return [:] }
         return dict
@@ -500,11 +500,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistConfirmedCategoryMappings() {
         guard let data = try? JSONEncoder().encode(confirmedCategoryMappings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.confirmedCategoryMappingsKey)
+        SharedDefaults.store.set(data, forKey: Self.confirmedCategoryMappingsKey)
     }
 
     private static func loadConfirmedCategoryMappings() -> [String: [String: String]] {
-        guard let data = UserDefaults.standard.data(forKey: confirmedCategoryMappingsKey),
+        guard let data = SharedDefaults.store.data(forKey: confirmedCategoryMappingsKey),
               let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
         return dict
@@ -556,11 +556,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistHistory() {
         guard let data = try? JSONEncoder().encode(history) else { return }
-        UserDefaults.standard.set(data, forKey: Self.historyKey)
+        SharedDefaults.store.set(data, forKey: Self.historyKey)
     }
 
     private static func loadHistory() -> [String: [GradeHistoryPoint]] {
-        guard let data = UserDefaults.standard.data(forKey: historyKey),
+        guard let data = SharedDefaults.store.data(forKey: historyKey),
               let dict = try? JSONDecoder().decode([String: [GradeHistoryPoint]].self, from: data)
         else { return [:] }
         return dict

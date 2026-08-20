@@ -218,14 +218,36 @@ struct SettingsPage: View {
                 if let earliest = stats.earliestFirstSeen {
                     LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
+                // Three states, not two. A store can be perfectly on-disk and
+                // still be failing every write, and telling that user their
+                // work "will be lost when the app quits" is both wrong and
+                // unactionable.
                 Label(
                     stats.isPersistent
-                        ? "Saved on this device."
+                        ? (stats.failedSaveCount == 0
+                            ? "Saved on this device."
+                            : "Saved on this device, but recent changes didn't stick.")
                         : "Not saving — assignments will be lost when the app quits.",
-                    systemImage: stats.isPersistent ? "checkmark.circle" : "exclamationmark.triangle"
+                    systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .font(.lhfSans(12))
-                .foregroundStyle(stats.isPersistent ? Color.secondary : Color.orange)
+                .foregroundStyle(stats.isHealthy ? Color.secondary : Color.orange)
+
+                // The specifics, when there are any. "Not saving" on its own
+                // tells the user something is wrong but nothing about what —
+                // and these two failures have completely different fixes
+                // (reinstall vs. free up space), so naming them is the
+                // difference between an actionable warning and a shrug.
+                if let reason = stats.storageFailureReason {
+                    Text(reason)
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
+                if stats.failedSaveCount > 0 {
+                    Text("\(stats.failedSaveCount) change\(stats.failedSaveCount == 1 ? "" : "s") couldn't be written to storage. Check that your device isn't out of space.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
             }
         }
     }
