@@ -1097,7 +1097,14 @@ final class AppState: ObservableObject {
     /// could not be created, where the app degrades to its pre-ledger behaviour.
     private func applyCompletionInMemory(_ ids: Set<String>, at date: Date) {
         completedAssignmentIDs.formUnion(ids)
-        for id in ids { completionDates[id] = date }
+        pendingLegacyCompletionIDs.formUnion(ids)
+        for id in ids {
+            completionDates[id] = date
+            pendingLegacyCompletionDates[id] = date
+        }
+        // With no ledger at all, the pending map *is* the store — so the
+        // completion has to go into it, not just into the projection, or this
+        // path writes nothing to disk.
         persistPendingLegacyCompletions()
     }
 
