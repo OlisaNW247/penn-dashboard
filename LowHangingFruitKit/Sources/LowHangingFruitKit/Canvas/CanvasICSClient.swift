@@ -96,15 +96,22 @@ public struct CanvasICSClient: Sendable {
     }
 
     /// Canvas appends "[Course Name]" to most SUMMARYs; split it off.
+    ///
+    /// The suffix check runs on the *trimmed* summary. Feeds routinely carry a
+    /// trailing space or CR after the bracket, and matching the raw string sent
+    /// the whole item to `(unknown course)` — where it can't be selected,
+    /// graded, or deduplicated. One stray character silently hid an entire
+    /// class from the app.
     static func splitCourse(from summary: String) -> (title: String, course: String) {
-        guard let openIdx = summary.lastIndex(of: "["),
-              summary.hasSuffix("]") else {
-            return (summary.trimmingCharacters(in: .whitespaces), "(unknown course)")
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let openIdx = trimmed.lastIndex(of: "["),
+              trimmed.hasSuffix("]") else {
+            return (trimmed, "(unknown course)")
         }
-        let courseStart = summary.index(after: openIdx)
-        let courseEnd = summary.index(before: summary.endIndex)
-        let course = String(summary[courseStart..<courseEnd]).trimmingCharacters(in: .whitespaces)
-        let title = String(summary[..<openIdx]).trimmingCharacters(in: .whitespaces)
+        let courseStart = trimmed.index(after: openIdx)
+        let courseEnd = trimmed.index(before: trimmed.endIndex)
+        let course = String(trimmed[courseStart..<courseEnd]).trimmingCharacters(in: .whitespaces)
+        let title = String(trimmed[..<openIdx]).trimmingCharacters(in: .whitespaces)
         return (title, course)
     }
 }
