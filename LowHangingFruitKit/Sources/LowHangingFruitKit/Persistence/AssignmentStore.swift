@@ -255,6 +255,56 @@ public final class AssignmentStore {
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
     }
 
+    // MARK: User-created work
+
+    /// Upserts rows for work that doesn't come from a feed — the user's own
+    /// manual assignments, and any generated occurrence they interact with.
+    ///
+    /// Manual work used to live only as a JSON blob in UserDefaults, which
+    /// meant the thing the app could least afford to lose — the assignment
+    /// Canvas doesn't know about, that exists nowhere else — was the one thing
+    /// with no durable record, no archive, and no presence in the widget.
+    ///
+    /// `reconcile` only ever runs for `.canvas` / `.gradescope`, so these rows
+    /// are never marked gone, and `isAgedOut` requires `isGoneFromFeed` — user
+    /// work therefore never ages out. That's deliberate: aging exists to clear
+    /// abandoned *feed* items, and nothing about a manual assignment is
+    /// abandoned just because it's old.
+    @discardableResult
+    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> Int {
+        guard !assignments.isEmpty else { return 0 }
+        let existing = Dictionary(allRows().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var created = 0
+        for item in assignments {
+            if let row = existing[item.id] {
+                row.refresh(from: item, now: now)
+            } else {
+                context.insert(StoredAssignment.make(from: item, now: now))
+                created += 1
+            }
+        }
+        saveChanges()
+        return created
+    }
+
+    /// The active rows for one source, as value types. Projects manual work
+    /// back out of the ledger for the UI to edit.
+    public func assignments(source: Assignment.Source, now: Date = Date()) -> [Assignment] {
+        activeAssignments(source: source, now: now)
+    }
+
+    /// Deletes specific rows outright.
+    ///
+    /// The only place in this class where removing a row is the *correct*
+    /// outcome rather than the bug it was built to prevent: the user deleted
+    /// their own item and means it. Feed items still never take this path —
+    /// they go gone-from-feed and age out.
+    public func delete(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        for row in allRows() where ids.contains(row.id) { context.delete(row) }
+        saveChanges()
+    }
+
     // MARK: Completion & submission truth
 
     /// Records manual completion on the ledger so Done survives both a relaunch
@@ -270,6 +320,46 @@ public final class AssignmentStore {
             }
         }
         saveChanges()
+    }
+
+    /// Completion exactly as the ledger holds it — the authoritative map.
+    ///
+    /// `AppState.completedAssignmentIDs` / `completionDates` are a published
+    /// projection of this, not a second copy of the truth. They used to be
+    /// persisted independently in UserDefaults, which let the Done tab and the
+    /// ledger's aging exemption drift apart — and the aging exemption is what
+    /// stops finished work from being deleted.
+    public func completionDates() -> [String: Date] {
+        var dates: [String: Date] = [:]
+        for row in allRows() {
+            if let completed = row.completedAt { dates[row.id] = completed }
+        }
+        return dates
+    }
+
+    /// Folds a completion set migrated out of the old UserDefaults keys onto
+    /// whatever rows currently exist, returning the ids it managed to apply.
+    ///
+    /// Someone upgrading from a build with no ledger has completions but no
+    /// rows to hang them on until the first sync lands, so the caller keeps
+    /// the remainder pending and calls again after each reconcile. An id with
+    /// no recorded date falls back to the due date, preserving the old
+    /// behaviour for items completed before timestamps were tracked.
+    ///
+    /// Never overwrites a completion the ledger already has: the live value is
+    /// always newer than the migration source.
+    @discardableResult
+    public func applyLegacyCompletions(ids: Set<String>, dates: [String: Date], now: Date = Date()) -> Set<String> {
+        guard !ids.isEmpty else { return [] }
+        var applied: Set<String> = []
+        for row in allRows() where ids.contains(row.id) {
+            if row.completedAt == nil {
+                row.completedAt = dates[row.id] ?? row.dueAt ?? now
+            }
+            applied.insert(row.id)
+        }
+        if !applied.isEmpty { saveChanges() }
+        return applied
     }
 
     /// Writes Grade Watcher's Canvas submission side-channel and per-assignment

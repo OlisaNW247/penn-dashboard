@@ -21,7 +21,12 @@ let package = Package(
         ),
         .testTarget(
             name: "LowHangingFruitKitTests",
-            dependencies: ["LowHangingFruitKit", "LowHangingFruitUI"]
+            dependencies: ["LowHangingFruitKit", "LowHangingFruitUI"],
+            // Recorded Canvas feed exports. The ICS tests were all built from
+            // strings written by hand to match what the parser already did,
+            // which cannot catch the case that matters: Canvas changing the
+            // shape of what it actually sends.
+            resources: [.process("Fixtures")]
         ),
     ]
 )

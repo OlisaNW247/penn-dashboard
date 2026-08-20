@@ -54,12 +54,31 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
+    /// Completed work, as a published PROJECTION of the ledger — not a second
+    /// copy of the truth. `AssignmentStore.completionDates()` is authoritative;
+    /// `refreshCompletionFromLedger()` is the only thing that writes these.
+    ///
+    /// They used to be persisted independently in UserDefaults *and* mirrored
+    /// onto the ledger, with nothing reconciling the two on read. A divergence
+    /// meant the Done tab and the ledger's aging exemption disagreed about what
+    /// was finished — and the aging exemption is what keeps finished work from
+    /// being deleted.
     @Published private(set) var completedAssignmentIDs: Set<String>
-    /// When each completed item was marked done. Persisted so the Done tab keeps
-    /// its history across launches (and so completed homework doesn't vanish on
-    /// relaunch). IDs completed before this map existed simply have no entry;
+    /// When each completed item was marked done, so the Done tab keeps its
+    /// history. Items completed before timestamps were tracked have no entry;
     /// the Done view falls back to the due date to place them.
     @Published private(set) var completionDates: [String: Date]
+
+    /// Completions carried over from a build that had no ledger, still waiting
+    /// for a row to attach to.
+    ///
+    /// Someone upgrading has their completions in the old UserDefaults keys but
+    /// an empty ledger until the first sync returns, so these are held here,
+    /// unioned into the projection so Done looks right immediately, and drained
+    /// onto the ledger after every reconcile. The old keys double as the
+    /// pending store, and are removed once it empties.
+    private var pendingLegacyCompletionIDs: Set<String>
+    private var pendingLegacyCompletionDates: [String: Date]
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
@@ -153,8 +172,13 @@ final class AppState: ObservableObject {
         // URL is itself a bearer credential. `ICSFeedURLStore.load()`
         // transparently migrates a pre-existing UserDefaults value in.
         self.canvasICSURL = ICSFeedURLStore.load()
-        self.completedAssignmentIDs = Set(SharedDefaults.store.stringArray(forKey: Self.completedIDsKey) ?? [])
-        self.completionDates = Self.loadCompletionDates()
+        // The legacy keys are now a migration source, not live state.
+        self.pendingLegacyCompletionIDs = Set(
+            SharedDefaults.store.stringArray(forKey: Self.completedIDsKey) ?? []
+        )
+        self.pendingLegacyCompletionDates = Self.loadCompletionDates()
+        self.completedAssignmentIDs = self.pendingLegacyCompletionIDs
+        self.completionDates = self.pendingLegacyCompletionDates
         self.hiddenCourseKeys = Set(SharedDefaults.store.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
         self.deletedCourseKeys = Set(SharedDefaults.store.stringArray(forKey: Self.deletedCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = SharedDefaults.store.bool(forKey: Self.canvasDiscoveryConnectedKey)
@@ -189,7 +213,27 @@ final class AppState: ObservableObject {
             // had lapsed. Seed it from the ledger instead; a live refresh still
             // overwrites this with Canvas's current truth.
             self.submittedCanvasAssignmentIDs = store.submittedCanvasAssignmentIDs()
+
+            // Manual work moves onto the ledger, with the UserDefaults blob read
+            // once as a migration source and then dropped — the same shape as
+            // `ICSFeedURLStore`. Guarded on `isPersistent` because dropping the
+            // blob while the ledger is the in-memory fallback would destroy the
+            // user's own assignments on the next launch, which is the precise
+            // opposite of the point.
+            if store.isPersistent {
+                store.upsert(self.manualAssignments.map { $0.asAssignment() })
+                SharedDefaults.store.removeObject(forKey: Self.manualAssignmentsKey)
+                self.manualAssignments = store
+                    .assignments(source: .manual)
+                    .compactMap(ManualAssignment.init)
+            }
         }
+
+        // Outside the block on purpose: both are no-ops without a store, and
+        // calling instance methods mid-init is only legal once every stored
+        // property is initialized.
+        drainLegacyCompletions()
+        refreshCompletionFromLedger()
 
         rebuildDashboardItems()
 
@@ -418,6 +462,7 @@ final class AppState: ObservableObject {
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's work survives in the store and reappears on the dashboard.
         assignmentStore?.purge(source: .canvas)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
         refreshCanvasSessionExpiredState()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
@@ -441,6 +486,7 @@ final class AppState: ObservableObject {
         gradescopeItems = []
         // Ledger rows too — same reasoning as disconnectCanvas.
         assignmentStore?.purge(source: .gradescope)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
         Task {
             await WebsiteDataReset.purgeWebsiteData(
@@ -522,6 +568,10 @@ final class AppState: ObservableObject {
                 if result.wasSuspectedPartial {
                     syncNotice = "Couldn't fully refresh Canvas just now — showing your saved assignments."
                 }
+                // Rows this reconcile just created may be the ones a carried-over
+                // completion has been waiting for.
+                drainLegacyCompletions()
+                refreshCompletionFromLedger()
             } else {
                 canvasItems = fetched
             }
@@ -623,6 +673,8 @@ final class AppState: ObservableObject {
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
                 gradescopeItems = store.reconcile(fetched, source: .gradescope).items
+                drainLegacyCompletions()
+                refreshCompletionFromLedger()
             } else {
                 gradescopeItems = fetched
             }
@@ -809,15 +861,31 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// True when manual work is ledger-backed. False only where the ledger fell
+    /// back to memory, in which case the UserDefaults blob is still the durable
+    /// copy and has to keep being written.
+    private var manualWorkIsLedgerBacked: Bool { assignmentStore?.isPersistent == true }
+
     func addManualAssignment(_ assignment: ManualAssignment) {
         manualAssignments.append(assignment)
-        persistManualAssignments()
+        if let store = assignmentStore, manualWorkIsLedgerBacked {
+            store.upsert([assignment.asAssignment()])
+        } else {
+            persistManualAssignments()
+        }
         rebuildDashboardItems()
     }
 
     func removeManualAssignment(id: UUID) {
+        let removed = manualAssignments.filter { $0.id == id }
         manualAssignments.removeAll { $0.id == id }
-        persistManualAssignments()
+        if let store = assignmentStore, manualWorkIsLedgerBacked {
+            // The user deleting their own item is the one case where removing a
+            // row is what they actually meant.
+            store.delete(ids: Set(removed.map { $0.asAssignment().id }))
+        } else {
+            persistManualAssignments()
+        }
         rebuildDashboardItems()
     }
 
@@ -971,31 +1039,99 @@ final class AppState: ObservableObject {
     /// both identities even if a later sync no longer matches the pair.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
-        completedAssignmentIDs.insert(assignment.id)
-        completionDates[assignment.id] = date
-        if let linkedID = assignment.linkedID {
-            completedAssignmentIDs.insert(linkedID)
-            completionDates[linkedID] = date
-            touched.insert(linkedID)
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+
+        guard let store = assignmentStore else {
+            applyCompletionInMemory(touched, at: date)
+            rebuildDashboardItems()
+            return
         }
-        // Mirror onto the ledger so aging can't reclaim finished work.
-        assignmentStore?.setCompleted(ids: touched, at: date)
-        persistCompletedIDs()
+        // A generated occurrence of a recurring task, or a manual item created
+        // this launch, may have no row yet. Being completed is exactly what
+        // makes it worth a durable record, so create one here — otherwise the
+        // ledger could not be the single source of truth for completion.
+        store.upsert(rowsNeededToComplete(assignment))
+        store.setCompleted(ids: touched, at: date)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
     }
 
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
-        completedAssignmentIDs.remove(assignment.id)
-        completionDates[assignment.id] = nil
-        if let linkedID = assignment.linkedID {
-            completedAssignmentIDs.remove(linkedID)
-            completionDates[linkedID] = nil
-            touched.insert(linkedID)
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+
+        // Un-ticking has to clear the pending migration set too, or a legacy
+        // completion the user just undid reappears at the next drain.
+        forgetPendingLegacyCompletions(touched)
+
+        guard let store = assignmentStore else {
+            completedAssignmentIDs.subtract(touched)
+            for id in touched { completionDates[id] = nil }
+            persistPendingLegacyCompletions()
+            rebuildDashboardItems()
+            return
         }
-        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
-        persistCompletedIDs()
+        store.setCompleted(ids: [], at: nil, clearing: touched)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
+    }
+
+    /// The item plus its cross-platform counterpart, so both identities get a
+    /// row before completion is written.
+    ///
+    /// Completing a merged item marks both ids, but only the item the user
+    /// tapped is in hand — the counterpart is just a `linkedID`. When the pools
+    /// were filled by a sync, both already have rows and this changes nothing.
+    /// When they weren't — preview mode and sample data assign `canvasItems` /
+    /// `gradescopeItems` directly, and preview mode is the path App Store
+    /// reviewers use because they can't pass Penn SSO — the counterpart has no
+    /// row, `setCompleted` silently skips it, and half the merge comes back
+    /// undone.
+    private func rowsNeededToComplete(_ assignment: Assignment) -> [Assignment] {
+        guard let linkedID = assignment.linkedID else { return [assignment] }
+        let counterpart = (gradescopeItems + canvasItems).first { $0.id == linkedID }
+        return [assignment] + (counterpart.map { [$0] } ?? [])
+    }
+
+    /// The no-ledger fallback path. Only reachable when even an in-memory store
+    /// could not be created, where the app degrades to its pre-ledger behaviour.
+    private func applyCompletionInMemory(_ ids: Set<String>, at date: Date) {
+        completedAssignmentIDs.formUnion(ids)
+        for id in ids { completionDates[id] = date }
+        persistPendingLegacyCompletions()
+    }
+
+    /// Rebuilds the published completion projection from the ledger, unioned
+    /// with anything still waiting to be migrated onto it.
+    private func refreshCompletionFromLedger() {
+        guard let store = assignmentStore else { return }
+        let ledger = store.completionDates()
+        // Ledger wins on conflict: it is the live value, the pending map is a
+        // migration source that has simply not drained yet.
+        completionDates = ledger.merging(pendingLegacyCompletionDates) { live, _ in live }
+        completedAssignmentIDs = Set(ledger.keys).union(pendingLegacyCompletionIDs)
+    }
+
+    /// Attaches carried-over completions to whatever rows now exist. Cheap and
+    /// idempotent — a no-op the moment the pending set empties, which for a
+    /// fresh install is immediately.
+    private func drainLegacyCompletions() {
+        guard let store = assignmentStore, !pendingLegacyCompletionIDs.isEmpty else { return }
+        let applied = store.applyLegacyCompletions(
+            ids: pendingLegacyCompletionIDs,
+            dates: pendingLegacyCompletionDates
+        )
+        guard !applied.isEmpty else { return }
+        forgetPendingLegacyCompletions(applied)
+    }
+
+    private func forgetPendingLegacyCompletions(_ ids: Set<String>) {
+        guard !pendingLegacyCompletionIDs.isEmpty else { return }
+        pendingLegacyCompletionIDs.subtract(ids)
+        pendingLegacyCompletionDates = pendingLegacyCompletionDates.filter {
+            pendingLegacyCompletionIDs.contains($0.key)
+        }
+        persistPendingLegacyCompletions()
     }
 
     /// True if EITHER platform reports this done: this item's own submitted
@@ -1101,12 +1237,17 @@ final class AppState: ObservableObject {
         completionDates[assignment.id]
     }
 
-    private func persistCompletedIDs() {
-        SharedDefaults.store.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
-        // Keep the date map trimmed to currently-completed IDs so it can't grow
-        // unbounded as items are toggled.
-        completionDates = completionDates.filter { completedAssignmentIDs.contains($0.key) }
-        if let data = try? JSONEncoder().encode(completionDates) {
+    /// Writes what is left of the carried-over completions, and removes the
+    /// legacy keys entirely once nothing is left. After that the ledger is the
+    /// only place completion is stored.
+    private func persistPendingLegacyCompletions() {
+        guard !pendingLegacyCompletionIDs.isEmpty else {
+            SharedDefaults.store.removeObject(forKey: Self.completedIDsKey)
+            SharedDefaults.store.removeObject(forKey: Self.completionDatesKey)
+            return
+        }
+        SharedDefaults.store.set(pendingLegacyCompletionIDs.sorted(), forKey: Self.completedIDsKey)
+        if let data = try? JSONEncoder().encode(pendingLegacyCompletionDates) {
             SharedDefaults.store.set(data, forKey: Self.completionDatesKey)
         }
     }
