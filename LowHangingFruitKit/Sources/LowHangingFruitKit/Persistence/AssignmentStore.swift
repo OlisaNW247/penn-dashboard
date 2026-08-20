@@ -387,12 +387,18 @@ public final class AssignmentStore {
     @discardableResult
     public func applySubmissionState(
         submittedCanvasAssignmentIDs: Set<String>,
-        scores: [String: (earned: Double?, max: Double?)]
+        scores: [String: (earned: Double?, max: Double?)],
+        now: Date = Date()
     ) -> [ScoreChange] {
         var changes: [ScoreChange] = []
         for row in rows(source: .canvas) {
             guard let canvasID = row.canvasAssignmentID else { continue }
             row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
+            // Reaching this line means Canvas answered for this item — either
+            // way. Absence of a submission is a real observation too, and it is
+            // the one most worth timestamping: it is what the app shows when it
+            // tells a student they still owe work.
+            row.canvasSubmissionObservedAt = now
             guard let score = scores[canvasID] else { continue }
 
             // Only a real number counts as a grade. Canvas reports ungraded work
@@ -472,6 +478,11 @@ public final class AssignmentStore {
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.
     public func rowCount() -> Int { allRows().count }
+
+    /// The ledger's rows, duplicates already collapsed, for tests that need to
+    /// assert on stored fields the value-type `Assignment` doesn't carry —
+    /// submission observation dates in particular.
+    public func allRowsForTesting() -> [StoredAssignment] { Array(rowsByID().values) }
 
     /// A snapshot of what the ledger is actually holding. Backs the Settings →
     /// Storage panel: without it, "the database is working" and "the database
