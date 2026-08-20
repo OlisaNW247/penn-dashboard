@@ -1,35 +1,90 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-07-26 (branch `v2.5`)_
+_Last updated: 2026-08-20 (branch `claude/lhf-v3-canvas-merge-6msbyo`)_
 
 **LHF (Low Hanging Fruit)** is a personal academic dashboard for Penn students.
-It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and in
-v2.5 Canvas **grades**) and shows assignments as one chronological "what's due
-next" list, with local reminders. SwiftUI, iPhone-first (+ macOS from the same
-code), everything on-device.
+It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and
+Canvas **grades**) and shows assignments as one chronological "what's due next"
+list, with local reminders. SwiftUI, iPhone-first (+ macOS from the same code),
+everything on-device.
 
 ---
 
 ## ⚠️ Read this first
 
-Work is happening on branch **`v2.5`**, which builds on `V2` (PR #1) and adds
-Grade Watcher, the grade report + syllabus ingestion, a Home/Lock Screen widget,
-submission auto-detection, and a Light/Dark reskin. `v2.5` has been
-**force-pushed before** — always `git fetch` and check divergence before pushing.
+Work is on **`claude/lhf-v3-canvas-merge-6msbyo`** — `v3` (Marco's SwiftData
+ledger, grade report, projections, syllabus ingestion, intro flow) with the
+**v2.5 Canvas login hardening merged in**, plus a hardening pass on the ledger
+itself.
 
-- `cd LowHangingFruitKit && swift test` → **239 tests / 20 suites passing.**
-- iOS **Release** build green; the widget `.appex` is verified embedded in
-  `LowHangingFruit.app/PlugIns/`. Signing is resolved (see below).
-- **`xcodegen generate` is now safe.** The `LHFWidget/Info.plist` trap is
-  disarmed — see "Widget" below.
+- `cd LowHangingFruitKit && swift test` → **329 tests / 31 suites passing.**
+- **`v3` does not have the Canvas login hardening.** It is still at `7cd2525`.
+  The hardening lives on `v2.5` and on this branch only.
+- Merging this into `v3` is a clean fast-forward, but **coordinate with Marco
+  first** — his `28891ca` (`docs/v3-integration-handoff.md`) sequences six
+  parallel branches into `v3`, and this landing on top out of order is exactly
+  what that document is trying to prevent.
 
-**The one open question blocking verification:** Grade Watcher needs a **live
-Canvas cookie session**, which is separate from the cookieless ICS feed the
-assignment list uses. Marco's device has **no stored Canvas session** (he
-connected Canvas before v2.5 started persisting Canvas cookies), so grades are
-empty and Canvas submission detection is inert on his phone. The fix is to tap
-**Reconnect Canvas** in Grade Watcher. Until then, grades and submission
-tracking are proven only against fixtures — never against real Canvas data.
+**Not yet verified on hardware.** `swift test` runs without an App Group
+entitlement, so `AssignmentStore.makeDefault()` and `SharedDefaults.store` both
+take their non-entitled fallback paths. Three things are therefore **untested by
+the suite** and need a device build:
+
+1. the manual-assignment migration, which *deletes* the `manualAssignments`
+   UserDefaults blob after copying it to the ledger,
+2. the `SharedDefaults` one-time copy from `.standard` into the App Group suite,
+3. the widget reading hidden/renamed/deleted courses out of that suite.
+
+Check Settings → Storage after upgrading an existing install: it should say
+**"Saved on this device."**
+
+## 🆕 What changed in this session (2026-08-20)
+
+**The v2.5 → v3 merge was broken and is fixed.** A silent git auto-merge left
+duplicate `clearAll()` and `loadPreviewSnapshots(_:now:)` in
+`GradeWatcherStore.swift`; the branch did not compile. Kept the first of each
+(the v3 version, whose comment mentions syllabus schemes). Nothing else in the
+merge had the same defect — the compiler was the audit.
+
+**Ledger hardening.** An audit of the SwiftData ledger against the four
+symptoms a separate `docs/assignment-persistence-plan.md` proposed fixing found
+that plan was written against **`main`**, where no ledger exists at all — on
+`v3` almost all of it was already built. Six real gaps remained, and all six are
+now closed:
+
+1. **Schema versioning.** `LedgerSchema.swift` adds `LedgerSchemaV1` +
+   `LedgerMigrationPlan`, wired into every `ModelContainer`. Without it, the
+   first incompatible model change would have thrown on an existing store,
+   fallen back to in-memory, and shown the user an empty dashboard with no
+   error — the exact data loss the ledger exists to prevent. `stages` is empty
+   on purpose; the point is that the *next* change is a migration.
+2. **Honest failures.** `makeDefault()` keeps the reason it degraded instead of
+   discarding it (`storageFailureReason`).
+3. **Checked writes.** `try? context.save()` is gone; `saveChanges()` records
+   `lastSaveError` / `failedSaveCount`. Settings → Storage now has three states,
+   because a store can be perfectly on-disk and still be failing every write.
+4. **Pruning.** `pruneAgedOut()` deletes what `isAgedOut` already hides, bounded
+   by the identical predicate, so finished work stays untouchable.
+5. **User-created work on the ledger.** Manual assignments and recurring tasks
+   were JSON blobs in defaults — the one category of work Canvas cannot
+   re-supply had none of the ledger's protection. Migrated, and exempt from the
+   feed-gone/aging rules.
+6. **Shared preferences.** `SharedDefaults` moves non-credential preferences to
+   the App Group suite so the widget can see hidden courses and renames. It
+   falls back to `.standard` unless the App Group container actually exists —
+   `UserDefaults(suiteName:)` succeeds for *any* string, so without that check
+   the "shared" suite is a private domain that only hides values already in
+   `.standard`.
+
+Completion is now single-source: the ledger owns `completedAt`, and the old
+defaults keys are read once at launch, migrated, and deleted.
+
+**Tests: 239 → 329.** New suites: `LedgerHardeningTests`,
+`MergedCompletionWithoutSyncTests`, `RecordedICSFixtureTests` (the recorded-feed
+fixtures the old plan asked for), plus additions to `AssignmentStoreTests`,
+`LedgerWidgetReaderTests` and `AssignmentDeduplicatorTests`.
+
+---
 
 ## 🆕 What changed in this session (2026-07-26)
 
@@ -159,6 +214,8 @@ entering preview only seeded on the *next* launch.
 - **Assignments — no login after onboarding.** Onboarding captures the personal
   Canvas **calendar-feed URL** (`…/feeds/calendars/user_<token>.ics`, a
   self-authenticating secret URL). Every sync is a plain cookieless HTTPS GET.
+  Because that URL *is* the credential, it lives in the Keychain via
+  `ICSFeedURLStore` — **not** UserDefaults, where `v3` still keeps it.
   ICS carries **no submission state** (`CanvasICSClient.normalize` hardcodes
   `submitted: false`).
 - **Grades + Canvas submission detection — need a live cookie session.**
@@ -175,16 +232,24 @@ Three independent notions of "done", and they are **not** interchangeable:
 
 | Signal | Source | Persisted? |
 |---|---|---|
-| Manual tick | user taps a card → `completedAssignmentIDs` + `completionDates` | **Yes** (UserDefaults) |
-| Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | with the item |
-| Canvas submitted | `submittedCanvasAssignmentIDs`, derived by `updateSubmissionState()` from Grade Watcher snapshots | **No — recomputed every refresh** |
+| Manual tick | user taps a card → `StoredAssignment.completedAt` | **Yes** (ledger) |
+| Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | **Yes** (ledger) |
+| Canvas submitted | `submittedCanvasAssignmentIDs`, written by `AssignmentStore.applySubmissionState` from Grade Watcher snapshots | **Yes** (ledger) |
 
-The Canvas set is deliberately **not** persisted so a retracted/corrected
-submission self-heals. Visible consequence: on a cold launch an auto-filed item
-sits in the active list until the first successful grade refresh lands, then
-moves to Done. And because it is derived from the grades fetch, **no Canvas
-session ⇒ the app does not know what's submitted.** Canvas doesn't push, so this
-is polling while the session is alive — best-effort, never real-time.
+**All three now live on the ledger.** The Canvas flag used to be deliberately
+un-persisted so a retracted submission would self-heal; `applySubmissionState`
+keeps that property a better way — it is a full **replace** of the flag on every
+refresh, not a merge, so a cleared submission still goes back to unsubmitted.
+What changed is the cold-launch behaviour: `AppState.init` seeds from
+`store.submittedCanvasAssignmentIDs()`, so an auto-filed item is in Done from
+the first frame instead of sitting in the active list until a grade refresh
+lands. With no Canvas session the app now shows the **last known** submission
+state rather than nothing at all. Canvas doesn't push, so this is still polling
+while the session is alive — best-effort, never real-time.
+
+`completedAssignmentIDs` / `completionDates` remain in defaults purely as a
+**one-time migration source**; `AppState.init` reads them, writes them onto the
+ledger, and removes the keys.
 
 ---
 
@@ -211,22 +276,26 @@ LowHangingFruitKit/
                 SyllabusTextExtractor, CanvasSyllabusClient, SyllabusModels}.swift
       Gradescope/GradescopeClient.swift
       CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/   # 239 tests
+  Tests/LowHangingFruitKitTests/   # 329 tests
 docs/grades.md             # Grade Watcher design brief (§13 = report + syllabus)
 docs/appstore/             # App Store package (current as of 2026-07-26)
 ```
 
 - **Marco** owns the UI/app layer; **Olisa** owns the data layer. Cross-cutting
   model changes get a quick sync first.
-- **Tests share `UserDefaults.standard`.** `AppState` persists there, so any test
+- **Tests share one defaults domain.** `AppState` persists through
+  `SharedDefaults.store`, which resolves to the App Group suite on device and to
+  `UserDefaults.standard` everywhere else (no entitlement → no suite). Any test
   that toggles selection/completion must normalize on the way **in and out** —
-  an interrupted run otherwise leaves state that fails the next one. See
-  `GradeWatcherCourseResolutionTests`.
+  an interrupted run otherwise leaves state that fails the next one. Save and
+  restore via `SharedDefaults.store`, never `UserDefaults.standard` directly, or
+  the values you write are not the ones `AppState` reads. See
+  `GradeWatcherCourseResolutionTests` and `IntroFlowTests`.
 
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test              # 239 passing
+cd LowHangingFruitKit && swift test              # 329 passing
 xcodegen generate                                # safe now — Info.plist trap disarmed
 bash docs/appstore/capture-screenshots.sh        # regenerate App Store screenshots
 ```
@@ -282,6 +351,13 @@ retry fixed it.
 
 **Blocking a submission (need a person, not a commit):**
 
+- **Verify the ledger migrations on device** — see "Read this first". The test
+  suite structurally cannot reach them.
+- **Upload 1.1.1 to App Store Connect.** The version page exists; the build was
+  never uploaded, so the Build section is still empty. Independent of all the
+  v3 work — it ships from `v2.5`.
+- **Fold this branch into Marco's six-branch v3 integration**, rather than
+  merging over it.
 - **Verify grades + submission detection on device.** Reconnect Canvas on the
   iPhone. This is the headline feature and it has never run against real data.
 - **Verify dark mode and the widget on device** — both were unverifiable before
