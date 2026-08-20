@@ -80,12 +80,16 @@ public enum SharedDefaults {
     /// exists — the same check `AssignmentStore.makeDefault()` makes, for the
     /// same reason.
     ///
-    /// `UserDefaults(suiteName:)` succeeds for any string, entitlement or not.
-    /// Without a real App Group the resulting suite is a private domain shared
-    /// with nobody: it can't help the widget, and all it does is split
-    /// preferences across two stores so that values already in `.standard`
-    /// stop being visible. In unit tests and previews that means behaviour is
-    /// exactly what it was before this type existed.
+    /// `UserDefaults(suiteName:)` succeeds for any string, entitlement or not,
+    /// and without a real App Group the resulting suite is a private domain
+    /// shared with nobody — it can't help the widget, and only splits
+    /// preferences across two stores.
+    ///
+    /// Note the guard is load-bearing on iOS only. On macOS `containerURL(...)`
+    /// resolves to a path under `~/Library/Group Containers` whether or not the
+    /// process is entitled, so a macOS unit-test run does get the suite.
+    /// Anything reading these preferences in a test must therefore go through
+    /// `SharedDefaults.store` rather than assuming `.standard`.
     ///
     /// `nonisolated(unsafe)` because `UserDefaults` isn't marked `Sendable`,
     /// even though it is documented as thread-safe and every access here is a

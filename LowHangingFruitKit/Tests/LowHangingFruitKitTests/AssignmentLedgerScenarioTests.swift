@@ -17,7 +17,7 @@ struct AssignmentLedgerScenarioTests {
     // MARK: Fixtures
 
     /// A unique-ish course per test run so completion state persisted in the
-    /// shared `UserDefaults.standard` (keyed by assignment id) can't bleed
+    /// shared `SharedDefaults.store` (keyed by assignment id) can't bleed
     /// between tests. Callers pass a distinct salt.
     private func canvas(_ id: String, course: String, title: String = "HW 3", due: Date?) -> Assignment {
         Assignment(source: .canvas, sourceID: id, kind: .assignment,

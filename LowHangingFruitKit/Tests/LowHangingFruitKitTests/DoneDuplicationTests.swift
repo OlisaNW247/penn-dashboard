@@ -11,7 +11,7 @@ import Testing
 @Suite("Done tab deduplication")
 struct DoneDuplicationTests {
     /// A course code unlikely to collide with the other suites that toggle
-    /// class-picker state on the shared `UserDefaults.standard`.
+    /// class-picker state on the shared `SharedDefaults.store`.
     private static let course = "DONEDUP 9999"
 
     private func assignment(_ source: Assignment.Source, _ id: String,
