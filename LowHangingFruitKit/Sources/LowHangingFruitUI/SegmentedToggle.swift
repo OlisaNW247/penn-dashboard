@@ -36,6 +36,15 @@ struct SegmentedToggle: View {
                     selection = filter
                 }
             }
+            // This is the app's primary navigation control, and as a bare
+            // `Text` + `onTapGesture` it announced as static text: VoiceOver
+            // gave no hint it was tappable and no way to tell which tab was
+            // selected. It is also the first control a reviewer running
+            // VoiceOver reaches.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(filter.rawValue)
+            .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint(isActive ? "" : "Shows \(filter.rawValue) assignments")
     }
 }
 
