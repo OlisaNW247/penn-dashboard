@@ -76,9 +76,16 @@ public enum SharedDefaults {
 
     /// The defaults every non-credential preference should go through.
     ///
-    /// Falls back to `.standard` if the suite can't be opened — which happens
-    /// in unit tests and previews, where there's no App Group entitlement.
-    /// Behaviour there is exactly what it was before this type existed.
+    /// Falls back to `.standard` unless the App Group container actually
+    /// exists — the same check `AssignmentStore.makeDefault()` makes, for the
+    /// same reason.
+    ///
+    /// `UserDefaults(suiteName:)` succeeds for any string, entitlement or not.
+    /// Without a real App Group the resulting suite is a private domain shared
+    /// with nobody: it can't help the widget, and all it does is split
+    /// preferences across two stores so that values already in `.standard`
+    /// stop being visible. In unit tests and previews that means behaviour is
+    /// exactly what it was before this type existed.
     ///
     /// `nonisolated(unsafe)` because `UserDefaults` isn't marked `Sendable`,
     /// even though it is documented as thread-safe and every access here is a
@@ -87,7 +94,10 @@ public enum SharedDefaults {
     /// nonisolated because WidgetKit's `TimelineProvider` callbacks don't run
     /// on the main actor, and it has to read these preferences.
     nonisolated(unsafe) public static let store: UserDefaults = {
-        guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
+        guard FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: suiteName) != nil,
+              let suite = UserDefaults(suiteName: suiteName)
+        else { return .standard }
         migrateFromStandardIfNeeded(into: suite)
         return suite
     }()
