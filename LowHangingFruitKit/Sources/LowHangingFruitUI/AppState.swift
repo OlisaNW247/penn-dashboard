@@ -53,12 +53,21 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
-    @Published private(set) var completedAssignmentIDs: Set<String>
-    /// When each completed item was marked done. Persisted so the Done tab keeps
-    /// its history across launches (and so completed homework doesn't vanish on
-    /// relaunch). IDs completed before this map existed simply have no entry;
-    /// the Done view falls back to the due date to place them.
-    @Published private(set) var completionDates: [String: Date]
+    /// Everything the user has ticked off. **Derived, not persisted** — this is
+    /// a read model rebuilt from the ledger's rows (`AssignmentStore
+    /// .completionRecord()`) after every mutation and at launch. It used to be
+    /// written to UserDefaults *as well as* onto the ledger, which meant two
+    /// records of the same fact that could disagree; the ledger is now the only
+    /// one, and it's the one that survives a reinstall.
+    @Published private(set) var completedAssignmentIDs: Set<String> = []
+    /// When each completed item was marked done, for the ids where that's known.
+    /// Derived from the ledger alongside `completedAssignmentIDs`.
+    ///
+    /// An id can be completed with no entry here: completions carried over from
+    /// builds that predate timestamps know *that* but not *when*. The Done view
+    /// falls back to the due date to place those, and the weekly ring skips
+    /// them — so the absence is load-bearing, not a gap to paper over.
+    @Published private(set) var completionDates: [String: Date] = [:]
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
@@ -115,7 +124,7 @@ final class AppState: ObservableObject {
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
     /// directly; `refreshGradeWatcher` is the only thing that drives it here.
-    let gradeWatcher = GradeWatcherStore()
+    let gradeWatcher: GradeWatcherStore
 
     /// Durable assignment ledger. A sync reconciles into it instead of replacing
     /// the in-memory arrays wholesale, so previously-seen assignments (and
@@ -126,10 +135,14 @@ final class AppState: ObservableObject {
     /// store — no disk, no cross-test leakage.
     let assignmentStore: AssignmentStore?
 
+    /// Durable home for observed grade history — the trail behind the week-delta
+    /// chip, which used to be a `gradeWatcherHistory` JSON blob in UserDefaults.
+    /// Held here (rather than only inside `GradeWatcherStore`) so the one-time
+    /// migration can write to it before the watcher reads it.
+    let gradeHistoryStore: GradeHistoryStore?
+
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
-    private static let completedIDsKey = "completedAssignmentIDs"
-    private static let completionDatesKey = "completionDates"
     private static let hiddenCoursesKey = "hiddenCourseKeys"
     private static let deletedCoursesKey = "deletedCourseKeys"
     private static let recurringTasksKey = "recurringTasks"
@@ -148,25 +161,26 @@ final class AppState: ObservableObject {
     /// or temp-file store (and drive it across simulated launches). The default
     /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
     /// app, fresh in-memory in unit tests.
-    init(assignmentStore: AssignmentStore? = nil) {
-        self.canvasICSURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? ""
-        self.completedAssignmentIDs = Set(UserDefaults.standard.stringArray(forKey: Self.completedIDsKey) ?? [])
-        self.completionDates = Self.loadCompletionDates()
-        self.hiddenCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
-        self.deletedCourseKeys = Set(UserDefaults.standard.stringArray(forKey: Self.deletedCoursesKey) ?? [])
-        self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
-        self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
-        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
-        self.hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introSeenKey)
-        self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
-        self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
+    init(
+        assignmentStore: AssignmentStore? = nil,
+        gradeHistoryStore: GradeHistoryStore? = nil
+    ) {
+        self.canvasICSURL = UserDefaults.lhf.string(forKey: Self.urlKey) ?? ""
+        self.hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
+        self.deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
+        self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
+        self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
+        self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
+        self.hasSeenIntro = UserDefaults.lhf.bool(forKey: Self.introSeenKey)
+        self.isPreviewMode = UserDefaults.lhf.bool(forKey: Self.previewModeKey)
+        self.userName = UserDefaults.lhf.string(forKey: Self.userNameKey) ?? ""
         self.appearanceMode = AppearanceMode(
-            rawValue: UserDefaults.standard.string(forKey: Self.appearanceModeKey) ?? ""
+            rawValue: UserDefaults.lhf.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light
         self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
         self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.gradeBaselinedCourses = Set(
-            UserDefaults.standard.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
+            UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
@@ -176,7 +190,28 @@ final class AppState: ObservableObject {
         // sync returns — instead of starting empty every launch.
         let store = assignmentStore ?? AssignmentStore.makeDefault()
         self.assignmentStore = store
+        let historyStore = gradeHistoryStore ?? GradeHistoryStore.makeDefault()
+        self.gradeHistoryStore = historyStore
+
+        // Move completion state and observed grade history off the old
+        // UserDefaults blobs and onto the ledger, before anything reads either.
+        // One-time (version-gated) and idempotent — see `LegacyStateMigration`.
+        LegacyStateMigration.runIfNeeded(
+            assignmentStore: store,
+            gradeHistoryStore: historyStore
+        )
+        // Constructed after the migration so its history cache is built from the
+        // migrated rows rather than an empty store.
+        self.gradeWatcher = GradeWatcherStore(historyStore: historyStore)
+
         if let store {
+            // Completion is read back out of the ledger rather than out of its
+            // own UserDefaults copy: one record of the fact, and the one that
+            // survives a reinstall.
+            let completion = store.completionRecord()
+            self.completedAssignmentIDs = completion.ids
+            self.completionDates = completion.dates
+
             let persisted = store.currentAssignments()
             self.canvasItems = persisted.filter { $0.source == .canvas }
             self.gradescopeItems = persisted.filter { $0.source == .gradescope }
@@ -198,7 +233,7 @@ final class AppState: ObservableObject {
         // below force that flag true.
         if hasCompletedOnboarding && !hasSeenIntro {
             hasSeenIntro = true
-            UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+            UserDefaults.lhf.set(true, forKey: Self.introSeenKey)
         }
 
         // Preview (demo) mode persists across launches so an App Store reviewer
@@ -233,7 +268,7 @@ final class AppState: ObservableObject {
     /// skipped them. Never cleared by `restartOnboarding()`.
     func completeIntro() {
         hasSeenIntro = true
-        UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+        UserDefaults.lhf.set(true, forKey: Self.introSeenKey)
     }
 
     /// True when the store is showing bundled fixtures rather than a real
@@ -254,20 +289,20 @@ final class AppState: ObservableObject {
 
     func completeOnboarding() {
         hasCompletedOnboarding = true
-        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+        UserDefaults.lhf.set(true, forKey: Self.onboardingCompletedKey)
     }
 
     /// The user's first name, captured during onboarding and shown in the
     /// dashboard greeting ("Hello, Marco").
     func updateName(_ name: String) {
         userName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(userName, forKey: Self.userNameKey)
+        UserDefaults.lhf.set(userName, forKey: Self.userNameKey)
     }
 
     /// Switches the app's Light/Dark appearance (Settings → Appearance).
     func setAppearanceMode(_ mode: AppearanceMode) {
         appearanceMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.appearanceModeKey)
+        UserDefaults.lhf.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
@@ -277,12 +312,12 @@ final class AppState: ObservableObject {
     /// connect checklist, not back at the first-run pitch.
     func restartOnboarding() {
         hasCompletedOnboarding = false
-        UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
+        UserDefaults.lhf.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
         // student who tapped Preview can switch to their own Canvas cleanly.
         let wasPreview = isPreviewMode
         isPreviewMode = false
-        UserDefaults.standard.set(false, forKey: Self.previewModeKey)
+        UserDefaults.lhf.set(false, forKey: Self.previewModeKey)
         if wasPreview {
             // Drop the fixtures on the way out. They'd never render again
             // (their course ids leave with preview mode), but leaving demo
@@ -319,7 +354,7 @@ final class AppState: ObservableObject {
 
     func enterPreviewMode() {
         isPreviewMode = true
-        UserDefaults.standard.set(true, forKey: Self.previewModeKey)
+        UserDefaults.lhf.set(true, forKey: Self.previewModeKey)
         // Preview is entered *from* the intro's first pane, so the panes have
         // served their purpose. Marking them seen also keeps a reviewer who
         // later taps Connect Canvas (via `restartOnboarding()`) on the
@@ -337,7 +372,7 @@ final class AppState: ObservableObject {
 
     func updateCanvasICSURL(_ value: String) {
         canvasICSURL = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(canvasICSURL, forKey: Self.urlKey)
+        UserDefaults.lhf.set(canvasICSURL, forKey: Self.urlKey)
         if canvasICSURL.isEmpty {
             canvasItems = []
             rebuildDashboardItems()
@@ -364,7 +399,7 @@ final class AppState: ObservableObject {
         SessionCookieStore.remove(domainContains: "upenn")
         updateCanvasICSURL("")
         canvasCourseIDsByCode = [:]
-        UserDefaults.standard.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        UserDefaults.lhf.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         assignmentStore?.purge(source: .canvas)
@@ -478,7 +513,7 @@ final class AppState: ObservableObject {
 
     func setCanvasDiscoveryConnected(_ connected: Bool) {
         isCanvasDiscoveryConnected = connected
-        UserDefaults.standard.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
+        UserDefaults.lhf.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
     }
 
     func syncGradescope(cookies: [HTTPCookie]) async {
@@ -531,7 +566,7 @@ final class AppState: ObservableObject {
 
     func setGradescopeConnected(_ connected: Bool) {
         isGradescopeConnected = connected
-        UserDefaults.standard.set(connected, forKey: Self.gradescopeConnectedKey)
+        UserDefaults.lhf.set(connected, forKey: Self.gradescopeConnectedKey)
     }
 
     /// Refreshes Grade Watcher for the SELECTED courses only (docs/grades.md
@@ -594,7 +629,7 @@ final class AppState: ObservableObject {
     }
 
     private func persistHiddenCourses() {
-        UserDefaults.standard.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
+        UserDefaults.lhf.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
     }
 
     /// Courses to render in the Settings classes list — every known course
@@ -630,7 +665,7 @@ final class AppState: ObservableObject {
     }
 
     private func persistDeletedCourses() {
-        UserDefaults.standard.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
+        UserDefaults.lhf.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
     }
 
     /// Classes currently switched on, by code. Kept separate from
@@ -667,7 +702,7 @@ final class AppState: ObservableObject {
         } else {
             courseNameOverrides[course] = trimmed
         }
-        UserDefaults.standard.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+        UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
@@ -685,11 +720,11 @@ final class AppState: ObservableObject {
         }
         guard byCode != canvasCourseIDsByCode else { return }
         canvasCourseIDsByCode = byCode
-        UserDefaults.standard.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
     }
 
     private static func loadStringMap(_ key: String) -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
     }
 
     func addRecurringTask(_ task: RecurringTask) {
@@ -848,6 +883,9 @@ final class AppState: ObservableObject {
     /// UI can be exercised without connecting a real Canvas account.
     func loadSampleData() {
         canvasItems = SampleData.items().map(\.assignment)
+        // Completion lives on the ledger now, so clearing the in-memory read
+        // model alone would leave it to be re-derived on the next mutation.
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: completedAssignmentIDs)
         completedAssignmentIDs = []
         completionDates = [:]
         rebuildDashboardItems()
@@ -867,9 +905,12 @@ final class AppState: ObservableObject {
             completionDates[linkedID] = date
             touched.insert(linkedID)
         }
-        // Mirror onto the ledger so aging can't reclaim finished work.
-        assignmentStore?.setCompleted(ids: touched, at: date)
-        persistCompletedIDs()
+        // The ledger is where completion actually lives. The item is passed
+        // through as a prototype so ticking off something no feed reconciles —
+        // a manual or recurring task — still gets a durable record instead of
+        // being dropped for want of a row.
+        assignmentStore?.setCompleted(ids: touched, at: date, prototypes: [assignment])
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
 
@@ -883,8 +924,21 @@ final class AppState: ObservableObject {
             touched.insert(linkedID)
         }
         assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
-        persistCompletedIDs()
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
+    }
+
+    /// Re-derives the completion read models from the ledger.
+    ///
+    /// The mutators above update the published sets optimistically first, then
+    /// call this: with a store, the ledger's answer replaces the optimistic one
+    /// so the two can never drift; without one (store creation failed — see
+    /// `assignmentStore`), the optimistic values stand and completion is
+    /// session-only, which is the same degradation the rest of the ledger has.
+    private func reloadCompletionFromLedger() {
+        guard let record = assignmentStore?.completionRecord() else { return }
+        completedAssignmentIDs = record.ids
+        completionDates = record.dates
     }
 
     /// True if EITHER platform reports this done: this item's own submitted
@@ -961,7 +1015,7 @@ final class AppState: ObservableObject {
         if !seen.isSubset(of: baselined) {
             baselined.formUnion(seen)
             gradeBaselinedCourses = baselined
-            UserDefaults.standard.set(Array(baselined).sorted(), forKey: Self.gradeBaselinedCoursesKey)
+            UserDefaults.lhf.set(Array(baselined).sorted(), forKey: Self.gradeBaselinedCoursesKey)
         }
         return notifiable
     }
@@ -990,30 +1044,13 @@ final class AppState: ObservableObject {
         completionDates[assignment.id]
     }
 
-    private func persistCompletedIDs() {
-        UserDefaults.standard.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
-        // Keep the date map trimmed to currently-completed IDs so it can't grow
-        // unbounded as items are toggled.
-        completionDates = completionDates.filter { completedAssignmentIDs.contains($0.key) }
-        if let data = try? JSONEncoder().encode(completionDates) {
-            UserDefaults.standard.set(data, forKey: Self.completionDatesKey)
-        }
-    }
-
-    private static func loadCompletionDates() -> [String: Date] {
-        guard let data = UserDefaults.standard.data(forKey: completionDatesKey),
-              let map = try? JSONDecoder().decode([String: Date].self, from: data)
-        else { return [:] }
-        return map
-    }
-
     private func persistRecurringTasks() {
         guard let data = try? JSONEncoder().encode(recurringTasks) else { return }
-        UserDefaults.standard.set(data, forKey: Self.recurringTasksKey)
+        UserDefaults.lhf.set(data, forKey: Self.recurringTasksKey)
     }
 
     private static func loadRecurringTasks() -> [RecurringTask] {
-        guard let data = UserDefaults.standard.data(forKey: recurringTasksKey),
+        guard let data = UserDefaults.lhf.data(forKey: recurringTasksKey),
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
         else { return [] }
         return tasks
@@ -1021,11 +1058,11 @@ final class AppState: ObservableObject {
 
     private func persistManualAssignments() {
         guard let data = try? JSONEncoder().encode(manualAssignments) else { return }
-        UserDefaults.standard.set(data, forKey: Self.manualAssignmentsKey)
+        UserDefaults.lhf.set(data, forKey: Self.manualAssignmentsKey)
     }
 
     private static func loadManualAssignments() -> [ManualAssignment] {
-        guard let data = UserDefaults.standard.data(forKey: manualAssignmentsKey),
+        guard let data = UserDefaults.lhf.data(forKey: manualAssignmentsKey),
               let items = try? JSONDecoder().decode([ManualAssignment].self, from: data)
         else { return [] }
         return items

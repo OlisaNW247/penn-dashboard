@@ -207,7 +207,7 @@ struct AssignmentDeduplicatorTests {
         // not the fixed `Self.now` the pure matcher tests use. A dedicated,
         // unlikely-to-collide course code sidesteps other tests in this
         // package that toggle "CIS 1200"'s class-picker selection on the
-        // same shared `UserDefaults.standard`.
+        // same shared `UserDefaults.lhf`.
         let due = Date()
         let course = "DEDUPE 9999"
         let canvasItem = Self.canvas(id: "dedupe-c1", course: course, title: "Homework 3", due: due)
