@@ -20,7 +20,7 @@ struct PreviewModeTests {
         defer {
             if !wasPreview {
                 state.restartOnboarding()
-                UserDefaults.standard.set(false, forKey: "isPreviewMode")
+                UserDefaults.lhf.set(false, forKey: "isPreviewMode")
             }
         }
         body(state)
@@ -56,7 +56,7 @@ struct PreviewModeTests {
         defer {
             if !wasPreview {
                 state.restartOnboarding()
-                UserDefaults.standard.set(false, forKey: "isPreviewMode")
+                UserDefaults.lhf.set(false, forKey: "isPreviewMode")
             }
         }
 
