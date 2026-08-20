@@ -105,17 +105,10 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
 
-                Button {
-                    state.enterPreviewMode()
-                } label: {
-                    Text("Just exploring? Preview with sample data")
-                        .font(.lhfSans(12, weight: .medium))
-                        .foregroundStyle(Color.v2DateText)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Preview the app with sample data")
-                .padding(.top, 16)
+                // "Preview with sample data" used to sit here, as the smallest
+                // text on the busiest screen. It now leads the intro's first
+                // pane (`IntroView.previewLink`), where it's a card of its own
+                // and arrives *before* the Canvas login ask rather than under it.
 
                 troubleConnectingLink
                     .padding(.top, 10)

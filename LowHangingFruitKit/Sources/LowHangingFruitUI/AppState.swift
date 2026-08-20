@@ -90,6 +90,13 @@ final class AppState: ObservableObject {
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
+    /// Whether the first-run mission panes (`IntroView`) have been shown.
+    /// Deliberately *separate* from `hasCompletedOnboarding`: the Settings
+    /// reconnect buttons call `restartOnboarding()`, which clears that flag to
+    /// send the user back to the connect checklist. Sharing one flag would
+    /// replay the whole product pitch at someone who only wanted to reconnect
+    /// Canvas.
+    @Published private(set) var hasSeenIntro: Bool
     @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
@@ -130,6 +137,7 @@ final class AppState: ObservableObject {
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
+    private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
     private static let courseNameOverridesKey = "courseNameOverrides"
@@ -152,6 +160,7 @@ final class AppState: ObservableObject {
         self.isCanvasDiscoveryConnected = UserDefaults.standard.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.standard.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
+        self.hasSeenIntro = UserDefaults.standard.bool(forKey: Self.introSeenKey)
         self.isPreviewMode = UserDefaults.standard.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.standard.string(forKey: Self.userNameKey) ?? ""
         self.appearanceMode = AppearanceMode(
@@ -184,10 +193,22 @@ final class AppState: ObservableObject {
 
         rebuildDashboardItems()
 
+        // Backfill for anyone who onboarded before the intro existed: they have
+        // `hasCompletedOnboarding` but no `hasSeenIntro`, so without this the
+        // first Settings reconnect (`restartOnboarding()`) would drop them into
+        // a first-run pitch they've long since outgrown. Reads the *persisted*
+        // onboarding flag, so it has to run before the preview and demo seams
+        // below force that flag true.
+        if hasCompletedOnboarding && !hasSeenIntro {
+            hasSeenIntro = true
+            UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+        }
+
         // Preview (demo) mode persists across launches so an App Store reviewer
         // who relaunches still lands on the populated sample dashboard.
         if isPreviewMode {
             hasCompletedOnboarding = true
+            hasSeenIntro = true
             if userName.isEmpty { userName = "there" }
             loadPreviewData()
         }
@@ -197,6 +218,7 @@ final class AppState: ObservableObject {
         // and show a fully-populated dashboard. DEBUG-only; never in release.
         if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
             hasCompletedOnboarding = true
+            hasSeenIntro = true
             userName = "Marco"
         }
         #endif
@@ -206,6 +228,18 @@ final class AppState: ObservableObject {
 
     /// First-run onboarding is required until both core data sources are connected.
     var needsOnboarding: Bool { !hasCompletedOnboarding }
+
+    /// True until the mission panes have been shown once. Only ever consulted
+    /// alongside `needsOnboarding` (see `RootView`), so a returning user can't
+    /// be sent back through the pitch.
+    var needsIntro: Bool { !hasSeenIntro }
+
+    /// Marks the mission panes as shown — whether the user read all three or
+    /// skipped them. Never cleared by `restartOnboarding()`.
+    func completeIntro() {
+        hasSeenIntro = true
+        UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+    }
 
     /// True when the store is showing bundled fixtures rather than a real
     /// account: the reviewer-facing preview, or the DEBUG screenshot seam.
@@ -265,6 +299,9 @@ final class AppState: ObservableObject {
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
     /// buttons). Already-connected services stay connected and show as done.
+    ///
+    /// Deliberately leaves `hasSeenIntro` alone: this lands the user on the
+    /// connect checklist, not back at the first-run pitch.
     func restartOnboarding() {
         hasCompletedOnboarding = false
         UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
@@ -310,6 +347,11 @@ final class AppState: ObservableObject {
     func enterPreviewMode() {
         isPreviewMode = true
         UserDefaults.standard.set(true, forKey: Self.previewModeKey)
+        // Preview is entered *from* the intro's first pane, so the panes have
+        // served their purpose. Marking them seen also keeps a reviewer who
+        // later taps Connect Canvas (via `restartOnboarding()`) on the
+        // checklist instead of replaying the pitch.
+        completeIntro()
         if userName.isEmpty { userName = "there" }
         // Seed immediately, not just on the next launch: `init` only reaches
         // `loadPreviewData` when preview mode was already persisted, so
