@@ -99,10 +99,20 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
 
-                // "Preview with sample data" used to sit here, as the smallest
-                // text on the busiest screen. It now leads the intro's first
-                // pane (`IntroView.previewLink`), where it's a card of its own
-                // and arrives *before* the Canvas login ask rather than under it.
+                // "Preview with sample data" leads the intro's first pane
+                // (`IntroView.previewLink`) — but the intro is gated on
+                // `hasSeenIntro`, and Skip sets it. A reviewer who taps Skip
+                // (the most common thing to do with an intro carousel) lands
+                // here permanently, and `restartOnboarding()` does not clear
+                // `hasSeenIntro`, so there is no way back to that pane short of
+                // reinstalling. Without a door on *this* screen the app is
+                // unevaluatable behind Penn SSO.
+                //
+                // So it lives in both places. Here it is a card rather than the
+                // 11pt footnote it used to be, and it sits below the primary
+                // action so it never competes with connecting a real account.
+                previewCard
+                    .padding(.top, 18)
 
                 Spacer(minLength: 24)
             }
@@ -110,6 +120,33 @@ struct OnboardingView: View {
             .frame(maxWidth: 480)
         }
         .onAppear { name = state.userName }
+    }
+
+    /// The same door as `IntroView.previewLink`, on the screen a reviewer
+    /// actually lands on after skipping the intro.
+    private var previewCard: some View {
+        Button {
+            lhfHapticLight()
+            state.enterPreviewMode()
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Just exploring?")
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2CourseCode)
+                Text("Preview with sample data")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .underline()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Preview the app with sample data")
+        .accessibilityHint("Explore a demo dashboard without logging in")
     }
 
     private var nameCard: some View {

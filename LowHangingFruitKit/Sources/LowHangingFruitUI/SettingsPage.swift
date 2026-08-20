@@ -55,38 +55,54 @@ struct SettingsPage: View {
                           connected: state.isCanvasConnected,
                           working: state.isLoading || state.isCanvasDiscoveryLoading)
 
-                if state.isCanvasConnected {
-                    Button(role: .destructive) {
-                        disconnecting = .canvas
-                    } label: {
-                        Label("Disconnect Canvas", systemImage: "link.badge.plus")
-                    }
-                } else {
+                if state.isPreviewMode {
+                    // In the demo every "Connect…" row runs `restartOnboarding()`,
+                    // which silently drops preview mode and throws whoever tapped
+                    // it at the Penn SSO wall — with no way back, since the
+                    // preview door is gated behind `hasSeenIntro`. That is a trap
+                    // for a reviewer and merely baffling for a student who tapped
+                    // Preview out of curiosity. One clearly-labelled exit instead,
+                    // so leaving the demo is always a deliberate act.
                     Button {
                         dismiss()
                         state.restartOnboarding()
                     } label: {
-                        Label("Connect Canvas", systemImage: "link")
+                        Label("Exit preview and connect my Canvas", systemImage: "arrow.right.circle")
                     }
-                }
+                } else {
+                    if state.isCanvasConnected {
+                        Button(role: .destructive) {
+                            disconnecting = .canvas
+                        } label: {
+                            Label("Disconnect Canvas", systemImage: "link.badge.plus")
+                        }
+                    } else {
+                        Button {
+                            dismiss()
+                            state.restartOnboarding()
+                        } label: {
+                            Label("Connect Canvas", systemImage: "link")
+                        }
+                    }
 
-                statusRow(label: "Gradescope",
-                          connected: state.isGradescopeConnected,
-                          working: state.isGradescopeLoading)
+                    statusRow(label: "Gradescope",
+                              connected: state.isGradescopeConnected,
+                              working: state.isGradescopeLoading)
 
-                Button {
-                    dismiss()
-                    state.restartOnboarding()
-                } label: {
-                    Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
-                          systemImage: "link")
-                }
-
-                if state.isGradescopeConnected {
-                    Button(role: .destructive) {
-                        disconnecting = .gradescope
+                    Button {
+                        dismiss()
+                        state.restartOnboarding()
                     } label: {
-                        Label("Disconnect Gradescope", systemImage: "link.badge.plus")
+                        Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
+                              systemImage: "link")
+                    }
+
+                    if state.isGradescopeConnected {
+                        Button(role: .destructive) {
+                            disconnecting = .gradescope
+                        } label: {
+                            Label("Disconnect Gradescope", systemImage: "link.badge.plus")
+                        }
                     }
                 }
             } header: {
