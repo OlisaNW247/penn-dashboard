@@ -44,15 +44,22 @@ enum LegacyStateMigration {
 
     /// Runs any migration steps this install hasn't done yet.
     ///
-    /// `defaults` is injected so tests can drive a scratch suite instead of
-    /// `.standard`; the stores are optional because the app tolerates their
+    /// `defaults` is injected so tests can drive a scratch suite instead of the
+    /// real one; the stores are optional because the app tolerates their
     /// creation failing (see `AssignmentStore.makeDefault`), in which case there
     /// is nowhere to migrate *to* and the version is deliberately left unbumped
     /// so a later launch with a working store still gets the data across.
     @MainActor
+    /// **Reads the App Group suite, not `.standard`.** `UserDefaults.lhf` is a
+    /// lazy `static let` whose initializer runs `SharedDefaultsMigration`, so
+    /// merely resolving it has already copied the legacy blobs out of the app's
+    /// private domain and into the shared one. Draining them from there means
+    /// there is exactly one domain to read, in a guaranteed order, whether or
+    /// not this install ever had an App Group entitlement (without one, both
+    /// resolve to `.standard` and the result is identical).
     @discardableResult
     static func runIfNeeded(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = .lhf,
         assignmentStore: AssignmentStore?,
         gradeHistoryStore: GradeHistoryStore?,
         now: Date = Date()

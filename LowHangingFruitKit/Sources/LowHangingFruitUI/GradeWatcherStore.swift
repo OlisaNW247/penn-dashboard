@@ -88,7 +88,7 @@ final class GradeWatcherStore: ObservableObject {
         self.manualWeights = Self.loadManualWeights()
         self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
         self.history = historyStore?.allHistory() ?? [:]
-        self.watchedCourseIDs = Set(UserDefaults.standard.stringArray(forKey: Self.watchedCoursesKey) ?? [])
+        self.watchedCourseIDs = Set(UserDefaults.lhf.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
     }
@@ -103,7 +103,7 @@ final class GradeWatcherStore: ObservableObject {
         } else {
             watchedCourseIDs.remove(courseID)
         }
-        UserDefaults.standard.set(Array(watchedCourseIDs), forKey: Self.watchedCoursesKey)
+        UserDefaults.lhf.set(Array(watchedCourseIDs), forKey: Self.watchedCoursesKey)
     }
 
     /// Refreshes grades for exactly the courses the caller passes in — this
@@ -354,11 +354,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistConfirmedGradescopeMappings() {
         guard let data = try? JSONEncoder().encode(confirmedGradescopeMappings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.confirmedGradescopeMappingsKey)
+        UserDefaults.lhf.set(data, forKey: Self.confirmedGradescopeMappingsKey)
     }
 
     private static func loadConfirmedGradescopeMappings() -> [String: [String: String]] {
-        guard let data = UserDefaults.standard.data(forKey: confirmedGradescopeMappingsKey),
+        guard let data = UserDefaults.lhf.data(forKey: confirmedGradescopeMappingsKey),
               let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
         return dict
@@ -389,11 +389,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistManualWeights() {
         guard let data = try? JSONEncoder().encode(manualWeights) else { return }
-        UserDefaults.standard.set(data, forKey: Self.manualWeightsKey)
+        UserDefaults.lhf.set(data, forKey: Self.manualWeightsKey)
     }
 
     private static func loadManualWeights() -> [String: [String: Double]] {
-        guard let data = UserDefaults.standard.data(forKey: manualWeightsKey),
+        guard let data = UserDefaults.lhf.data(forKey: manualWeightsKey),
               let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
         else { return [:] }
         return dict
@@ -499,11 +499,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistSyllabusSchemes() {
         guard let data = try? JSONEncoder().encode(syllabusSchemes) else { return }
-        UserDefaults.standard.set(data, forKey: Self.syllabusSchemesKey)
+        UserDefaults.lhf.set(data, forKey: Self.syllabusSchemesKey)
     }
 
     private static func loadSyllabusSchemes() -> [String: AttachedSyllabus] {
-        guard let data = UserDefaults.standard.data(forKey: syllabusSchemesKey),
+        guard let data = UserDefaults.lhf.data(forKey: syllabusSchemesKey),
               let dict = try? JSONDecoder().decode([String: AttachedSyllabus].self, from: data)
         else { return [:] }
         return dict
@@ -511,11 +511,11 @@ final class GradeWatcherStore: ObservableObject {
 
     private func persistConfirmedCategoryMappings() {
         guard let data = try? JSONEncoder().encode(confirmedCategoryMappings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.confirmedCategoryMappingsKey)
+        UserDefaults.lhf.set(data, forKey: Self.confirmedCategoryMappingsKey)
     }
 
     private static func loadConfirmedCategoryMappings() -> [String: [String: String]] {
-        guard let data = UserDefaults.standard.data(forKey: confirmedCategoryMappingsKey),
+        guard let data = UserDefaults.lhf.data(forKey: confirmedCategoryMappingsKey),
               let dict = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
         return dict
