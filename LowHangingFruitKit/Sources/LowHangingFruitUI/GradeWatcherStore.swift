@@ -50,18 +50,24 @@ final class GradeWatcherStore: ObservableObject {
     private static let confirmedGradescopeMappingsKey = "gradeWatcherConfirmedGradescopeMappings"
 
     /// Observed grade history — one (day, percent) entry per course per
-    /// calendar day, appended on each successful refresh. This is the memory
+    /// calendar day, recorded on each successful refresh. This is the memory
     /// behind the "this week" delta chip (docs/grades.md §11): the trajectory
     /// chart is *reconstructed* from due dates, but "what changed since I
-    /// last looked" needs real observations. Persisted like `manualWeights`;
-    /// pruned to the most recent 180 entries per course.
+    /// last looked" needs real observations.
+    ///
+    /// Unlike the settings above it is **not** a UserDefaults blob any more.
+    /// The rows live in `historyStore` (SwiftData, App Group container); this
+    /// property is a read-through cache of them so the views that observe it
+    /// don't have to hit the store on every render. `historyStore` is the
+    /// source of truth — never write to this directly.
     @Published private(set) var history: [String: [GradeHistoryPoint]] = [:]
-    private static let historyKey = "gradeWatcherHistory"
 
-    struct GradeHistoryPoint: Codable, Hashable, Sendable {
-        let date: Date
-        let percent: Double
-    }
+    /// Durable backing for `history`. Optional so that a store that can't be
+    /// created degrades to session-only history rather than crashing, exactly
+    /// like `AppState.assignmentStore`.
+    private let historyStore: GradeHistoryStore?
+
+    typealias GradeHistoryPoint = GradeHistoryStore.Observation
 
     /// Courses the user explicitly asked LHF to **watch**. Watching is an
     /// opt-in per class: it unlocks the full grade report (projections,
@@ -74,10 +80,14 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var watchedCourseIDs: Set<String> = []
     private static let watchedCoursesKey = "gradeWatcherWatchedCourses"
 
-    init() {
+    /// `historyStore` is injectable so tests can drive observed history across
+    /// simulated launches; the default is the shared App Group store.
+    init(historyStore: GradeHistoryStore? = nil) {
+        let historyStore = historyStore ?? GradeHistoryStore.makeDefault()
+        self.historyStore = historyStore
         self.manualWeights = Self.loadManualWeights()
         self.confirmedGradescopeMappings = Self.loadConfirmedGradescopeMappings()
-        self.history = Self.loadHistory()
+        self.history = historyStore?.allHistory() ?? [:]
         self.watchedCourseIDs = Set(UserDefaults.standard.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
@@ -237,7 +247,7 @@ final class GradeWatcherStore: ObservableObject {
         snapshots = [:]
         gradescopeItemsByCourse = [:]
         history = [:]
-        persistHistory()
+        historyStore?.clearAll()
         lastRefreshed = nil
         isSessionExpired = false
         error = nil
@@ -542,29 +552,24 @@ final class GradeWatcherStore: ObservableObject {
 
     /// Records today's computed grade for one course, replacing an earlier
     /// entry from the same calendar day so repeated refreshes can't flood
-    /// the history.
+    /// the history. The store owns both that rule and the 180-entry cap; this
+    /// just re-reads the course back into the published cache.
     private func recordHistory(courseID: String, now: Date) {
         guard let percent = breakdown(courseID: courseID, now: now)?.currentPercent else { return }
-        var entries = history[courseID] ?? []
-        if let last = entries.last, Calendar.current.isDate(last.date, inSameDayAs: now) {
-            entries[entries.count - 1] = GradeHistoryPoint(date: now, percent: percent)
-        } else {
-            entries.append(GradeHistoryPoint(date: now, percent: percent))
+        guard let historyStore else {
+            // No durable store (creation failed): keep the old in-memory shape
+            // so the delta chip still works within this session.
+            var entries = history[courseID] ?? []
+            if let last = entries.last, Calendar.current.isDate(last.date, inSameDayAs: now) {
+                entries[entries.count - 1] = GradeHistoryPoint(date: now, percent: percent)
+            } else {
+                entries.append(GradeHistoryPoint(date: now, percent: percent))
+            }
+            history[courseID] = Array(entries.suffix(GradeHistoryStore.retentionPerCourse))
+            return
         }
-        history[courseID] = Array(entries.suffix(180))
-        persistHistory()
-    }
-
-    private func persistHistory() {
-        guard let data = try? JSONEncoder().encode(history) else { return }
-        UserDefaults.standard.set(data, forKey: Self.historyKey)
-    }
-
-    private static func loadHistory() -> [String: [GradeHistoryPoint]] {
-        guard let data = UserDefaults.standard.data(forKey: historyKey),
-              let dict = try? JSONDecoder().decode([String: [GradeHistoryPoint]].self, from: data)
-        else { return [:] }
-        return dict
+        historyStore.record(courseID: courseID, percent: percent, now: now)
+        history[courseID] = historyStore.history(courseID: courseID)
     }
 
     // MARK: - Canvas cross-check (docs/grades.md §1, Decision 2)

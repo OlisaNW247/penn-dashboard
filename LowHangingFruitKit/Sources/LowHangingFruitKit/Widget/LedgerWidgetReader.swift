@@ -62,6 +62,9 @@ public enum LedgerWidgetReader {
         // list showing the same homework twice.
         var seenIDs: Set<String> = []
         let items = rows
+            // Completion-only rows are bookkeeping, not assignments: they carry
+            // no trustworthy title or due date and must never reach the widget.
+            .filter { !$0.isCompletionOnly }
             .filter { !$0.isFinished }
             .filter { !isAgedOut($0, now: now) }
             .filter { seenIDs.insert($0.id).inserted }

@@ -102,7 +102,10 @@ public final class AssignmentStore {
         // returning nothing is far more likely a network blip or an expired
         // session than every assignment vanishing at once. Keep the prior data
         // untouched rather than flagging it all gone.
-        if fetched.isEmpty && !existing.isEmpty {
+        // Completion-only rows don't count as "this source previously had
+        // items" — they're bookkeeping, and letting them arm the guard would
+        // refuse a legitimately empty first sync for a migrated user.
+        if fetched.isEmpty && existing.contains(where: { !$0.isCompletionOnly }) {
             return ReconcileResult(
                 items: activeAssignments(source: source, now: now),
                 wasSuspectedPartial: true
@@ -140,7 +143,7 @@ public final class AssignmentStore {
     /// `gradescopeItems` at launch — so the class list and dashboard are
     /// populated from the first frame, before any network call returns.
     public func currentAssignments(now: Date = Date()) -> [Assignment] {
-        rowsByID().values.filter { !isAgedOut($0, now: now) }.map(\.assignment)
+        rowsByID().values.filter { isVisible($0, now: now) }.map(\.assignment)
     }
 
     /// Deletes every ledger row for a source — used when the user disconnects
@@ -216,7 +219,14 @@ public final class AssignmentStore {
     }
 
     private func activeAssignments(source: Assignment.Source, now: Date) -> [Assignment] {
-        rows(source: source).filter { !isAgedOut($0, now: now) }.map(\.assignment)
+        rows(source: source).filter { isVisible($0, now: now) }.map(\.assignment)
+    }
+
+    /// Whether a row represents an assignment the app should show. Excludes
+    /// aged-out rows and completion-only bookkeeping rows, which carry no
+    /// trustworthy title or course and must never reach a list.
+    private func isVisible(_ row: StoredAssignment, now: Date) -> Bool {
+        !row.isCompletionOnly && !isAgedOut(row, now: now)
     }
 
     /// An item ages out only once it's BOTH gone from the feed AND overdue past
@@ -235,19 +245,119 @@ public final class AssignmentStore {
 
     // MARK: Completion & submission truth
 
+    /// Every id the ledger records as ticked off by the user, and the timestamp
+    /// where one is known.
+    ///
+    /// This is what makes the ledger *authoritative* for completion rather than
+    /// a mirror of it: `AppState.completedAssignmentIDs` and `.completionDates`
+    /// are derived from this call instead of being persisted a second time as
+    /// UserDefaults blobs that could drift out of step with these rows.
+    ///
+    /// An id appears in `ids` with no entry in `dates` when the completion is
+    /// known to have happened but not when — see `StoredAssignment.completedAt`.
+    public struct CompletionRecord: Sendable, Equatable {
+        public let ids: Set<String>
+        public let dates: [String: Date]
+
+        public static let empty = CompletionRecord(ids: [], dates: [:])
+    }
+
+    public func completionRecord() -> CompletionRecord {
+        var ids: Set<String> = []
+        var dates: [String: Date] = [:]
+        for row in rowsByID().values where row.isCompletedByUser {
+            ids.insert(row.id)
+            if let completedAt = row.completedAt { dates[row.id] = completedAt }
+        }
+        return CompletionRecord(ids: ids, dates: dates)
+    }
+
     /// Records manual completion on the ledger so Done survives both a relaunch
     /// and the feed dropping the item. `clearing` un-completes rows (the
     /// markActive path); both sets are applied in one save.
-    public func setCompleted(ids: Set<String>, at date: Date?, clearing: Set<String> = []) {
+    ///
+    /// An id with no row yet still gets recorded, via a hidden completion-only
+    /// row (`StoredAssignment.completionOnly`). That covers the two cases where
+    /// silently dropping the write would lose the user's tick: manual and
+    /// recurring tasks, which no feed ever reconciles into the ledger, and a
+    /// cross-platform `linkedID` counterpart whose own row hasn't been synced.
+    /// `prototypes` supplies the full value type where the caller has it so the
+    /// row isn't blank; it is looked up by id and is optional.
+    ///
+    /// Un-completing deletes any row that existed *only* to hold the completion,
+    /// so toggling an item on and off leaves the ledger exactly as it found it.
+    public func setCompleted(
+        ids: Set<String>,
+        at date: Date?,
+        clearing: Set<String> = [],
+        prototypes: [Assignment] = [],
+        now: Date = Date()
+    ) {
         guard !ids.isEmpty || !clearing.isEmpty else { return }
+        var unrecorded = ids
         for row in rowsByID().values {
             if ids.contains(row.id) {
-                row.completedAt = date ?? Date()
+                row.markCompleted(at: date ?? now)
+                unrecorded.remove(row.id)
             } else if clearing.contains(row.id) {
-                row.completedAt = nil
+                if row.isCompletionOnly {
+                    context.delete(row)
+                } else {
+                    row.clearCompletion()
+                }
             }
         }
+
+        let prototypesByID = Dictionary(prototypes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for id in unrecorded {
+            guard let row = StoredAssignment.completionOnly(
+                id: id,
+                prototype: prototypesByID[id],
+                completedAt: date ?? now,
+                now: now
+            ) else { continue }
+            context.insert(row)
+        }
         try? context.save()
+    }
+
+    /// One-time import of the pre-ledger completion state — the
+    /// `completedAssignmentIDs` array and `completionDates` JSON map that used
+    /// to live in UserDefaults. Returns how many ids were recorded.
+    ///
+    /// Two rules keep it safe to run against a ledger that already knows things:
+    /// a row already marked completed is left alone (the ledger's own record is
+    /// never older than the blob's), and an id with no row is held as a
+    /// completion-only row until its feed arrives, rather than being dropped.
+    /// An id present in `ids` but absent from `dates` is recorded *without* a
+    /// timestamp, preserving the "completed, when unknown" state the Done tab
+    /// and the weekly ring both treat specially.
+    @discardableResult
+    public func importLegacyCompletions(
+        ids: Set<String>,
+        dates: [String: Date],
+        now: Date = Date()
+    ) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        var pending = ids
+        var recorded = 0
+        for row in rowsByID().values where pending.contains(row.id) {
+            pending.remove(row.id)
+            guard !row.isCompletedByUser else { continue }
+            row.markCompleted(at: dates[row.id])
+            recorded += 1
+        }
+        for id in pending {
+            guard let row = StoredAssignment.completionOnly(
+                id: id,
+                completedAt: dates[id],
+                now: now
+            ) else { continue }
+            context.insert(row)
+            recorded += 1
+        }
+        try? context.save()
+        return recorded
     }
 
     /// Writes Grade Watcher's Canvas submission side-channel and per-assignment
@@ -388,8 +498,10 @@ public final class AssignmentStore {
         public let latestSeenInFeed: Date?
     }
 
+    /// Completion-only rows are excluded: the panel answers "what is the ledger
+    /// holding for me", and a hidden bookkeeping row is not an assignment.
     public func stats() -> LedgerStats {
-        let rows = allRows()
+        let rows = allRows().filter { !$0.isCompletionOnly }
         return LedgerStats(
             isPersistent: isPersistent,
             total: rows.count,
