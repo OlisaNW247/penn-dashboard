@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
 /// `SessionCookieStore` persists login cookies to the Keychain so a session
@@ -17,6 +18,15 @@ import Testing
 /// The store is process-wide Keychain state (like `AppState`'s
 /// `UserDefaults` usage noted in `GradeWatcherCourseResolutionTests`), so
 /// every test clears it before and after.
+///
+/// Grade Watcher availability tests that touch `.canvas` cookie state also
+/// live here, for the same serialization reason (see the Group 4 note near
+/// the bottom of this suite) — do not "tidy" them back out into their own
+/// `GradeWatcherAvailabilityTests.swift` suite. Swift Testing runs distinct
+/// suites in parallel by default, so a second `.serialized` suite touching
+/// this same process-wide `.canvas` Keychain item would still race against
+/// the tests below; only being members of this one suite serializes them
+/// against each other.
 // `.serialized`: every test in this suite shares process-wide Keychain items,
 // so running them concurrently (Swift Testing's default) races on the same
 // read-modify-write blobs and produces flaky cross-test pollution.
@@ -197,5 +207,70 @@ struct SessionCookieStoreTests {
             let expiresDelta = abs((reloaded.expiresDate ?? .distantPast).timeIntervalSince(future))
             #expect(expiresDelta < 1)
         }
+    }
+
+    // MARK: - Group 4: Grade Watcher availability tests that touch `.canvas`
+    // cookie state
+    //
+    // Moved here from `GradeWatcherAvailabilityTests` for the same reason as
+    // the Group 3d move above: that suite was its own `.serialized` suite,
+    // but Swift Testing runs distinct suites in parallel by default, so it
+    // was NOT serialized against this suite's own `.canvas`-service tests
+    // over the same process-wide Keychain item. Folding these two tests in
+    // here — rather than keeping a second `.serialized` suite alive — is
+    // what actually serializes them. Each is `@MainActor` individually
+    // because it touches `AppState`, but the suite itself deliberately stays
+    // non-isolated so the rest of its tests are unaffected.
+
+    /// Same in-memory-store injection as `IntroFlowTests`, so this suite
+    /// can't contend with a real on-disk ledger from a machine that has
+    /// actually run the app.
+    @MainActor
+    private func makeGradeWatcherState() -> AppState {
+        AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+    }
+
+    @MainActor
+    @Test("a calendar-link-only install (feed URL set, no Canvas cookies) cannot use Grade Watcher")
+    func calendarLinkOnlyCannotUseGradeWatcher() {
+        SessionCookieStore.clear()
+        let state = makeGradeWatcherState()
+        defer {
+            // `disconnectCanvas()` drops both the cookie session (already
+            // empty here) and the feed URL this test set, so the next test
+            // doesn't inherit either.
+            state.disconnectCanvas()
+            SessionCookieStore.clear()
+        }
+
+        state.updateCanvasICSURL("https://canvas.upenn.edu/feeds/calendars/user_test123.ics")
+        state.refreshCanvasSessionExpiredState()
+
+        #expect(state.isCanvasConnected)
+        #expect(!state.canvasSessionExpired)
+        #expect(!state.canUseGradeWatcher)
+    }
+
+    @MainActor
+    @Test("an expired Canvas session still allows Grade Watcher — the reconnect path stays reachable")
+    func expiredSessionCanUseGradeWatcher() {
+        SessionCookieStore.clear()
+        defer { SessionCookieStore.clear() }
+
+        let past = Date().addingTimeInterval(-3600)
+        let cookie = HTTPCookie(properties: [
+            .name: "sid",
+            .value: "v",
+            .domain: "canvas.upenn.edu",
+            .path: "/",
+            .expires: past,
+        ])!
+        SessionCookieStore.save([cookie], service: .canvas)
+
+        let state = makeGradeWatcherState()
+        state.refreshCanvasSessionExpiredState()
+
+        #expect(state.canvasSessionExpired)
+        #expect(state.canUseGradeWatcher)
     }
 }

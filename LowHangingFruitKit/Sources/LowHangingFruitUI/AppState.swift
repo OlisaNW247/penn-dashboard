@@ -313,6 +313,31 @@ final class AppState: ObservableObject {
     /// True once the Canvas calendar feed has been captured automatically.
     var isCanvasConnected: Bool { !canvasICSURL.isEmpty }
 
+    /// True when there's an actual Canvas login session for Grade Watcher's
+    /// cookie-authenticated REST calls to use. Deliberately NOT
+    /// `isCanvasConnected` (`!canvasICSURL.isEmpty`): that's true for BOTH
+    /// Canvas connection paths — the in-app Penn SSO login, which captures the
+    /// cookie session Grade Watcher needs, AND a manually pasted calendar feed
+    /// link (docs/CANVAS_LOGIN_HARDENING.md item 3b), which carries no cookies
+    /// at all — so it can't tell the one path Grade Watcher can work on apart
+    /// from the one where every fetch would fail.
+    ///
+    /// Fixture/preview mode short-circuits to true because Grade Watcher runs
+    /// entirely off bundled sample data there, never the network, and preview
+    /// is the only way through the app for someone who can't pass Penn SSO —
+    /// notably an App Store reviewer (see `isUsingFixtureData`).
+    ///
+    /// `canvasSessionExpired` also counts as available — the same
+    /// cookies-or-expired test `DiagnosticsReport.canvasConnectPath` uses.
+    /// An expired session means a cookie login DID happen at some point, and
+    /// Grade Watcher's own "Reconnect Canvas" affordance is where that gets
+    /// fixed; treating expiry as unavailable would hide the one screen that
+    /// can recover it.
+    var canUseGradeWatcher: Bool {
+        if isUsingFixtureData { return true }
+        return !SessionCookieStore.load(service: .canvas).isEmpty || canvasSessionExpired
+    }
+
     /// True when the Canvas login *session* (the cookie-authed one, used for
     /// automatic submission detection and Canvas Scan — see
     /// `AutoSyncCoordinator.refreshCanvasGrades`) has gone stale and needs a

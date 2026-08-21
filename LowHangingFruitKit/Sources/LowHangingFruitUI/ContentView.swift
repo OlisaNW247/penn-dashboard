@@ -253,7 +253,7 @@ struct ContentView: View {
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
-                if FeatureFlags.gradeWatcher {
+                if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
                 }
                 navButton(to: .settings, icon: "gearshape.fill", title: "Settings")

@@ -120,11 +120,22 @@ struct SettingsPage: View {
             classesSection
 
             if FeatureFlags.gradeWatcher {
-                Section("Grades") {
-                    NavigationLink {
-                        GradeWatcherView(store: state.gradeWatcher)
-                    } label: {
+                Section {
+                    if state.canUseGradeWatcher {
+                        NavigationLink {
+                            GradeWatcherView(store: state.gradeWatcher)
+                        } label: {
+                            Label("Grade Watcher", systemImage: "chart.bar.fill")
+                        }
+                    } else {
                         Label("Grade Watcher", systemImage: "chart.bar.fill")
+                            .foregroundStyle(Color.secondary)
+                    }
+                } header: {
+                    Text("Grades")
+                } footer: {
+                    if !state.canUseGradeWatcher {
+                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use Disconnect Canvas above, then Connect Canvas to log in directly.")
                     }
                 }
             }
