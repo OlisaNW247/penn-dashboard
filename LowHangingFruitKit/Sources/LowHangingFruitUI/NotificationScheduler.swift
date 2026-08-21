@@ -64,7 +64,7 @@ final class NotificationScheduler: ObservableObject {
     static let horizonDays = 14
 
     init() {
-        let d = SharedDefaults.store
+        let d = UserDefaults.lhf
         self.isEnabled = d.bool(forKey: Self.enabledKey)
         if let raw = d.array(forKey: Self.offsetsKey) as? [Int], !raw.isEmpty {
             self.leadOffsets = Set(raw.compactMap(LeadOffset.init(rawValue:)))
@@ -106,7 +106,7 @@ final class NotificationScheduler: ObservableObject {
     /// is left to the caller (it owns the current `items`).
     func setEnabled(_ on: Bool) async {
         isEnabled = on
-        SharedDefaults.store.set(on, forKey: Self.enabledKey)
+        UserDefaults.lhf.set(on, forKey: Self.enabledKey)
         if on {
             _ = await requestAuthorization()
         } else {
@@ -116,18 +116,18 @@ final class NotificationScheduler: ObservableObject {
 
     func setOffset(_ offset: LeadOffset, on: Bool) {
         if on { leadOffsets.insert(offset) } else { leadOffsets.remove(offset) }
-        SharedDefaults.store.set(leadOffsets.map(\.rawValue), forKey: Self.offsetsKey)
+        UserDefaults.lhf.set(leadOffsets.map(\.rawValue), forKey: Self.offsetsKey)
     }
 
     func setDigestEnabled(_ on: Bool) {
         digestEnabled = on
-        SharedDefaults.store.set(on, forKey: Self.digestKey)
+        UserDefaults.lhf.set(on, forKey: Self.digestKey)
     }
 
     func setDigestTime(_ comps: DateComponents) {
         digestTime = DateComponents(hour: comps.hour ?? 8, minute: comps.minute ?? 0)
-        SharedDefaults.store.set(digestTime.hour, forKey: Self.digestHourKey)
-        SharedDefaults.store.set(digestTime.minute, forKey: Self.digestMinuteKey)
+        UserDefaults.lhf.set(digestTime.hour, forKey: Self.digestHourKey)
+        UserDefaults.lhf.set(digestTime.minute, forKey: Self.digestMinuteKey)
     }
 
     // MARK: Reschedule (idempotent)

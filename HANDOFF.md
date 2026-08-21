@@ -232,7 +232,7 @@ Three independent notions of "done", and they are **not** interchangeable:
 
 | Signal | Source | Persisted? |
 |---|---|---|
-| Manual tick | user taps a card → `StoredAssignment.completedAt` | **Yes** (ledger) |
+| Manual tick | user taps a card → `StoredAssignment.completedAt`, read back via `completionRecord()` | **Yes** (ledger) |
 | Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | **Yes** (ledger) |
 | Canvas submitted | `submittedCanvasAssignmentIDs`, written by `AssignmentStore.applySubmissionState` from Grade Watcher snapshots | **Yes** (ledger) |
 
@@ -283,14 +283,25 @@ docs/appstore/             # App Store package (current as of 2026-07-26)
 
 - **Marco** owns the UI/app layer; **Olisa** owns the data layer. Cross-cutting
   model changes get a quick sync first.
-- **Tests share one defaults domain.** `AppState` persists through
-  `SharedDefaults.store`, which resolves to the App Group suite on device and to
-  `UserDefaults.standard` everywhere else (no entitlement → no suite). Any test
+- **Tests share `UserDefaults.lhf`.** `AppState` persists there, so any test
   that toggles selection/completion must normalize on the way **in and out** —
-  an interrupted run otherwise leaves state that fails the next one. Save and
-  restore via `SharedDefaults.store`, never `UserDefaults.standard` directly, or
-  the values you write are not the ones `AppState` reads. See
-  `GradeWatcherCourseResolutionTests` and `IntroFlowTests`.
+  an interrupted run otherwise leaves state that fails the next one. See
+  `GradeWatcherCourseResolutionTests`.
+- **Preferences live in the App Group suite, not `.standard`.** Every read and
+  write goes through the single `UserDefaults.lhf` accessor
+  (`Persistence/SharedDefaults.swift`), which resolves to
+  `group.com.lhf.lowhangingfruit` and falls back to `.standard` when there's no
+  entitlement. That's what lets the widget see completions, hidden/deleted
+  courses and manual assignments at all. `SharedDefaultsMigration` copies the
+  pre-existing keys across once per install, guarded by a marker in the
+  destination; the list is frozen, so **new keys don't belong on it** — they're
+  born in the suite. Session cookies stay in the Keychain
+  (`SessionCookieStore`), deliberately device-bound, and do **not** move.
+  The **Canvas feed URL** does not move either: it is a bearer credential and
+  lives in the Keychain via `ICSFeedURLStore`, which is why `canvasICSURL` was
+  taken off `legacyKeys` when the login-hardening line merged in. Save and
+  restore through `UserDefaults.lhf` in tests, never `.standard` directly, or
+  the values you write are not the ones `AppState` reads — see `IntroFlowTests`.
 
 ## 🧰 Build / run / test
 

@@ -9,7 +9,7 @@ import Testing
 /// shared flag would replay the whole product pitch at someone who only wanted
 /// to reconnect Canvas.
 ///
-/// `AppState` persists into the process-wide `SharedDefaults.store`, so every test here
+/// `AppState` persists into the process-wide `UserDefaults`, so every test here
 /// restores what it touched — see the note in `PreviewModeTests`.
 @MainActor
 @Suite("Intro flow")
@@ -28,10 +28,7 @@ struct IntroFlowTests {
         seenIntro: Bool? = false,
         _ body: () -> Void
     ) {
-        // The same accessor `AppState` writes through. Hardcoding
-        // `.standard` here silently stopped matching once preferences moved to
-        // the App Group suite.
-        let defaults = SharedDefaults.store
+        let defaults = UserDefaults.lhf
         let saved = Self.touchedKeys.map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
