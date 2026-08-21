@@ -35,11 +35,11 @@ struct PasteFeedLinkSheet: View {
                 } header: {
                     Text("Canvas calendar link")
                 } footer: {
-                    Text("On canvas.upenn.edu: Calendar → Calendar Feed (bottom right) → copy the link. Paste it here exactly as given — a webcal:// link works too.")
+                    Text("These steps are for the desktop Canvas site — Calendar Feed isn't available in the Canvas app or on a phone browser, so grab the link from a computer. On canvas.upenn.edu: Calendar → Calendar Feed (bottom right) → copy the link. Paste it here exactly as given — a webcal:// link works too.")
                 }
 
                 Section {
-                    Text("This connects your assignment and deadline dashboard only. It doesn't show submission status or grades — those need the in-app Canvas login.")
+                    Text("Logging in to Canvas gives you a more accurate dashboard, so that's what we recommend. With a calendar link, the app can't tell what you've already submitted, so finished work keeps showing as outstanding until you check it off yourself. Grades aren't available this way either.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                 }

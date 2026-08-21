@@ -396,10 +396,15 @@ struct SettingsPage: View {
             } label: {
                 Label(didCopyDiagnostics ? "Copied" : "Copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
             }
+            Button {
+                reportProblem()
+            } label: {
+                Label("Report a problem", systemImage: "envelope")
+            }
         } header: {
             Text("Troubleshooting")
         } footer: {
-            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. Paste it when asking for help with a stuck Canvas login.")
+            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. \u{201C}Report a problem\u{201D} opens an email with that same redacted report already in it, so you only have to describe what happened.")
         }
     }
 
@@ -412,6 +417,11 @@ struct SettingsPage: View {
         NSPasteboard.general.setString(report, forType: .string)
         #endif
         didCopyDiagnostics = true
+    }
+
+    private func reportProblem() {
+        let report = DiagnosticsReport.generate(state: state)
+        SupportContact.openReportMail(diagnostics: report)
     }
 
     private var digestTimeBinding: Binding<Date> {

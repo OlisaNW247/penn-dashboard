@@ -444,6 +444,10 @@ private struct LoginErrorCard: View {
     let onStartOver: () -> Void
     /// Canvas only — Gradescope has no equivalent feed-link fallback.
     let onUseCalendarLinkInstead: (() -> Void)?
+    /// Canvas only, for now — offered when someone's hit the error card
+    /// repeatedly and just wants to hand off diagnostics rather than keep
+    /// retrying. `nil` hides the action entirely.
+    var onReportProblem: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 14) {
@@ -478,6 +482,14 @@ private struct LoginErrorCard: View {
                         .font(.lhfSans(12, weight: .medium))
                         .foregroundStyle(Color.v2DateText)
                         .underline()
+                }
+                .buttonStyle(.plain)
+            }
+            if let onReportProblem {
+                Button(action: onReportProblem) {
+                    Text("Report a problem")
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2DateText.opacity(0.7))
                 }
                 .buttonStyle(.plain)
             }
@@ -535,7 +547,10 @@ private struct CanvasLoginPane: View {
                             title: "Canvas login hit a snag",
                             message: "Penn's sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over or the calendar link are still available.",
                             onStartOver: startOver,
-                            onUseCalendarLinkInstead: { showPasteFeedLink = true }
+                            onUseCalendarLinkInstead: { showPasteFeedLink = true },
+                            onReportProblem: {
+                                SupportContact.openReportMail(diagnostics: DiagnosticsReport.generate(state: state))
+                            }
                         )
                         .frame(maxHeight: 200)
 
