@@ -13,8 +13,7 @@ import AppKit
 /// contact, so it needs to be an inbox someone actually reads.
 enum SupportContact {
     /// Where "Report a problem" sends reports.
-    // TODO: set this to a real, monitored support alias before shipping.
-    static let reportAddress = "REPLACE_ME@example.com"
+    static let reportAddress = "lowhangingfruit.help@gmail.com"
     static let reportSubject = "LHF — Canvas login problem"
 
     /// Builds a `mailto:` link to `reportAddress` with `reportSubject` and a
