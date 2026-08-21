@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WebKit
 import LowHangingFruitKit
 #if canImport(WidgetKit)
 import WidgetKit
@@ -53,21 +54,23 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
-    /// Everything the user has ticked off. **Derived, not persisted** — this is
-    /// a read model rebuilt from the ledger's rows (`AssignmentStore
-    /// .completionRecord()`) after every mutation and at launch. It used to be
-    /// written to UserDefaults *as well as* onto the ledger, which meant two
-    /// records of the same fact that could disagree; the ledger is now the only
-    /// one, and it's the one that survives a reinstall.
-    @Published private(set) var completedAssignmentIDs: Set<String> = []
-    /// When each completed item was marked done, for the ids where that's known.
-    /// Derived from the ledger alongside `completedAssignmentIDs`.
+    /// Completed work, as a published PROJECTION of the ledger — not a second
+    /// copy of the truth. `AssignmentStore.completionDates()` is authoritative;
+    /// `refreshCompletionFromLedger()` is the only thing that writes these.
     ///
-    /// An id can be completed with no entry here: completions carried over from
-    /// builds that predate timestamps know *that* but not *when*. The Done view
-    /// falls back to the due date to place those, and the weekly ring skips
-    /// them — so the absence is load-bearing, not a gap to paper over.
-    @Published private(set) var completionDates: [String: Date] = [:]
+    /// They used to be persisted independently in UserDefaults *and* mirrored
+    /// onto the ledger, with nothing reconciling the two on read. A divergence
+    /// meant the Done tab and the ledger's aging exemption disagreed about what
+    /// was finished — and the aging exemption is what keeps finished work from
+    /// being deleted.
+    @Published private(set) var completedAssignmentIDs: Set<String>
+    /// When each completed item was marked done, so the Done tab keeps its
+    /// history. Items completed before timestamps were tracked have no entry;
+    /// the Done view falls back to the due date to place them.
+    @Published private(set) var completionDates: [String: Date]
+
+    /// Completions carried over from a build that had no ledger, still waiting
+    /// for a row to attach to.
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
@@ -135,16 +138,15 @@ final class AppState: ObservableObject {
     /// store — no disk, no cross-test leakage.
     let assignmentStore: AssignmentStore?
 
-    /// Durable home for observed grade history — the trail behind the week-delta
-    /// chip, which used to be a `gradeWatcherHistory` JSON blob in UserDefaults.
-    /// Held here (rather than only inside `GradeWatcherStore`) so the one-time
-    /// migration can write to it before the watcher reads it.
+    /// Durable home for observed grade history, alongside the assignment
+    /// ledger in the same App Group container.
     let gradeHistoryStore: GradeHistoryStore?
 
     private static let userNameKey = "userName"
-    private static let urlKey = "canvasICSURL"
-    private static let hiddenCoursesKey = "hiddenCourseKeys"
-    private static let deletedCoursesKey = "deletedCourseKeys"
+    private static let completedIDsKey = "completedAssignmentIDs"
+    private static let completionDatesKey = "completionDates"
+    private static let hiddenCoursesKey = SharedDefaults.hiddenCoursesKey
+    private static let deletedCoursesKey = SharedDefaults.deletedCoursesKey
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -153,7 +155,7 @@ final class AppState: ObservableObject {
     private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
-    private static let courseNameOverridesKey = "courseNameOverrides"
+    private static let courseNameOverridesKey = SharedDefaults.courseNameOverridesKey
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
 
@@ -166,10 +168,8 @@ final class AppState: ObservableObject {
         gradeHistoryStore: GradeHistoryStore? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
-        // URL is itself a bearer credential, so it does NOT live in defaults,
-        // shared suite included. `ICSFeedURLStore.load()` transparently migrates
-        // a pre-existing UserDefaults value in. `canvasICSURL` is correspondingly
-        // absent from `SharedDefaults.legacyKeys`.
+        // URL is itself a bearer credential. `ICSFeedURLStore.load()`
+        // transparently migrates a pre-existing UserDefaults value in.
         self.canvasICSURL = ICSFeedURLStore.load()
         self.hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
         self.deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
@@ -227,7 +227,7 @@ final class AppState: ObservableObject {
             // overwrites this with Canvas's current truth.
             self.submittedCanvasAssignmentIDs = store.submittedCanvasAssignmentIDs()
 
-            // Manual work moves onto the ledger, with the defaults blob read
+            // Manual work moves onto the ledger, with the UserDefaults blob read
             // once as a migration source and then dropped — the same shape as
             // `ICSFeedURLStore`. Guarded on `isPersistent` because dropping the
             // blob while the ledger is the in-memory fallback would destroy the
@@ -241,6 +241,7 @@ final class AppState: ObservableObject {
                     .compactMap(ManualAssignment.init)
             }
         }
+
 
         rebuildDashboardItems()
 
@@ -273,6 +274,8 @@ final class AppState: ObservableObject {
             userName = "Marco"
         }
         #endif
+
+        refreshCanvasSessionExpiredState()
     }
 
     /// First-run onboarding is required until both core data sources are connected.
@@ -305,6 +308,28 @@ final class AppState: ObservableObject {
 
     /// True once the Canvas calendar feed has been captured automatically.
     var isCanvasConnected: Bool { !canvasICSURL.isEmpty }
+
+    /// True when the Canvas login *session* (the cookie-authed one, used for
+    /// automatic submission detection and Canvas Scan — see
+    /// `AutoSyncCoordinator.refreshCanvasGrades`) has gone stale and needs a
+    /// fresh login. Deliberately DISTINCT from `isCanvasConnected`
+    /// (`!canvasICSURL.isEmpty`): the two are orthogonal, since the ICS
+    /// calendar feed keeps working on its own token long after the cookie
+    /// session that originally captured it has expired, and a user who
+    /// pasted their feed link manually (docs/CANVAS_LOGIN_HARDENING.md item
+    /// 3b) never had a cookie session to expire in the first place — that
+    /// user must never see a reconnect nag. Refreshed from
+    /// `SessionCookieStore`'s Keychain state, not from any single failed
+    /// fetch, so it can't get stuck true after a successful reconnect or
+    /// stuck false for a feed-only user (docs/CANVAS_LOGIN_HARDENING.md item 3d).
+    @Published private(set) var canvasSessionExpired = false
+
+    /// Recomputes `canvasSessionExpired` from `SessionCookieStore`'s current
+    /// Keychain state. Call after anything that could change it: connecting,
+    /// disconnecting, or a periodic dashboard refresh.
+    func refreshCanvasSessionExpiredState() {
+        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas)
+    }
 
     func completeOnboarding() {
         hasCompletedOnboarding = true
@@ -389,6 +414,13 @@ final class AppState: ObservableObject {
         completeOnboarding()
     }
 
+    /// Sets the Canvas calendar feed URL — either captured automatically from
+    /// a login (`connectCanvas`) or pasted by hand (docs/CANVAS_LOGIN_HARDENING.md
+    /// item 3b, "Paste your Canvas calendar link"). Canvas's own "Calendar
+    /// Feed" copy button on the web hands out a `webcal://` URL, which
+    /// `URLSession`/`CanvasICSClient` can't fetch directly — rewritten to
+    /// `https://` here (identical resource, different scheme) so pasting
+    /// exactly what Canvas gives you just works.
     func updateCanvasICSURL(_ value: String) {
         canvasICSURL = Self.rewritingWebcalScheme(value.trimmingCharacters(in: .whitespacesAndNewlines))
         ICSFeedURLStore.save(canvasICSURL)
@@ -398,6 +430,18 @@ final class AppState: ObservableObject {
             error = nil
             lastSync = nil
         }
+    }
+
+    /// Rewrites a leading `webcal://` to `https://`, case-insensitively.
+    /// `webcal:` is just a hint to calendar apps to subscribe rather than
+    /// download once — the resource behind it is identical over `https:`,
+    /// which is what `URLSession` needs to fetch it at all. A no-op for any
+    /// other scheme (including an already-`https://` URL).
+    static func rewritingWebcalScheme(_ value: String) -> String {
+        guard value.range(of: "^webcal://", options: [.regularExpression, .caseInsensitive]) != nil else {
+            return value
+        }
+        return "https://" + value.dropFirst("webcal://".count)
     }
 
     // MARK: - Disconnecting (Settings → Account)
@@ -410,35 +454,101 @@ final class AppState: ObservableObject {
     /// only way to get rid of them was to delete the app — `SessionCookieStore`
     /// had no caller in the UI at all.
     ///
-    /// Gradescope's cookies live in the same Keychain blob and are left alone
-    /// (`remove(domainContains:)`, not `clear()`), so disconnecting one service
-    /// never silently signs the user out of the other.
-    func disconnectCanvas() async {
-        SessionCookieStore.remove(domainContains: "canvas")
-        SessionCookieStore.remove(domainContains: "upenn")
+    /// Gradescope's cookies are keyed and stored separately
+    /// (`SessionCookieStore.Service.gradescope`, not `.clear()`) — see
+    /// `SessionCookieStore`'s doc comment for why this matters even though
+    /// Canvas and Gradescope can both leave cookies on `upenn.edu` (Penn
+    /// SSO) — so disconnecting one service never silently signs the user out
+    /// of the other.
+    func disconnectCanvas() {
+        SessionCookieStore.remove(service: .canvas)
         updateCanvasICSURL("")
         canvasCourseIDsByCode = [:]
         UserDefaults.lhf.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
+        // Drop the durable ledger's Canvas rows too, or a disconnected
+        // account's work survives in the store and reappears on the dashboard.
         assignmentStore?.purge(source: .canvas)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
-        // Also erase the live WebView session — the Keychain purge above isn't
-        // where the login lives (Penn SSO + Canvas cookies persist in
-        // WKWebsiteDataStore and were otherwise re-merged on the next sync).
-        await AutoSyncCoordinator.purgeWebSession(domainContains: "canvas")
-        await AutoSyncCoordinator.purgeWebSession(domainContains: "upenn")
+        refreshCanvasSessionExpiredState()
+        // Also drop the live WebView cookie/cache jar for Canvas's isolated
+        // store, not just the Keychain copy above — otherwise a still-resident
+        // WKWebsiteDataStore session survives disconnect and gets presented
+        // to a "Reconnect" attempt later in the same app process (see
+        // docs/CANVAS_LOGIN_DIAGNOSIS.md H1/H2).
+        Task {
+            await WebsiteDataReset.purgeWebsiteData(
+                matchingDomainContains: Self.canvasLoginDomainHints,
+                in: LoginDataStores.canvas
+            )
+        }
     }
 
     /// Signs out of Gradescope: purges its cookies and everything scraped with
     /// them. Canvas stays connected.
-    func disconnectGradescope() async {
-        SessionCookieStore.remove(domainContains: "gradescope")
+    func disconnectGradescope() {
+        SessionCookieStore.remove(service: .gradescope)
         setGradescopeConnected(false)
         gradescopeItems = []
+        // Ledger rows too — same reasoning as disconnectCanvas.
         assignmentStore?.purge(source: .gradescope)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
-        await AutoSyncCoordinator.purgeWebSession(domainContains: "gradescope")
+        Task {
+            await WebsiteDataReset.purgeWebsiteData(
+                matchingDomainContains: ["gradescope"],
+                in: LoginDataStores.gradescope
+            )
+        }
+    }
+
+    /// Domain substrings covering the whole Canvas/Penn SSO login chain.
+    ///
+    /// `WebsiteDataReset.purgeWebsiteData` matches these against
+    /// `WKWebsiteDataRecord.displayName`, which WebKit derives as the
+    /// record's eTLD+1 (registrable domain) — e.g. a cookie on
+    /// `canvas.upenn.edu` or `idp.pennkey.upenn.edu` both report a
+    /// `displayName` of `"upenn.edu"`, NOT `"canvas.upenn.edu"` or
+    /// `"pennkey.upenn.edu"`. So `"canvas"` and `"pennkey"` as needles never
+    /// match anything — they were silently dead. `"upenn"` (covers the SP and
+    /// the Shibboleth IdP), `"duosecurity"` (Duo 2FA, if reached), and
+    /// `"instructure"` (Canvas's own SaaS domain, for Instructure-hosted
+    /// instances or embedded Canvas resources that don't live under
+    /// upenn.edu) are what actually match real records. Shared by the
+    /// pre-login purge in `OnboardingView`'s login panes and the
+    /// post-disconnect purge above so both stay in sync.
+    static let canvasLoginDomainHints = ["upenn", "duosecurity", "instructure"]
+
+    /// Onboarding's "Trouble connecting? Reset login data" escape hatch. Wipes
+    /// every trace of a stuck/stale login: the live `WKWebsiteDataStore`
+    /// (cookies, cache, local storage — all domains, not just Canvas's, since
+    /// this is the button a lost user reaches for when nothing else worked),
+    /// the Keychain-persisted cookie copy, and every connected-service flag.
+    ///
+    /// This exists because a full delete-and-reinstall — the only other way
+    /// to reach a clean slate — does NOT actually reach one: `SessionCookieStore`
+    /// lives in the Keychain, which iOS keeps across app deletion by design,
+    /// and onboarding never runs the code path that would replay those
+    /// cookies anyway (`AutoSyncCoordinator` is only reachable from the
+    /// post-onboarding dashboard). So reinstalling clears less state than
+    /// this button does, while looking to the user like it should clear
+    /// everything. This button is the actual "start completely over."
+    func resetAllLoginData() async {
+        disconnectCanvas()
+        disconnectGradescope()
+        setCanvasDiscoveryConnected(false)
+        SessionCookieStore.clear()
+        // Sweeps the legacy shared store, both isolated per-service stores,
+        // AND `HTTPCookieStorage.shared` (docs/CANVAS_LOGIN_HARDENING.md item
+        // 2d) — the one jar nothing else here touches, since it's a separate,
+        // non-WebKit cookie storage.
+        await WebsiteDataReset.purgeAllLoginStores()
+        // Diagnostics shouldn't outlive a reset — nothing sensitive is in it
+        // (host/path/status only), but it's specific to the login attempt(s)
+        // being thrown away.
+        LoginDiagnosticsLog.shared.clear()
     }
 
     func syncIfConfigured() async {
@@ -466,6 +576,9 @@ final class AppState: ObservableObject {
                 if result.wasSuspectedPartial {
                     syncNotice = "Couldn't fully refresh Canvas just now — showing your saved assignments."
                 }
+                // Rows this reconcile just created may be the ones a carried-over
+                // completion has been waiting for.
+                refreshCompletionFromLedger()
             } else {
                 canvasItems = fetched
             }
@@ -500,6 +613,7 @@ final class AppState: ObservableObject {
         }
 
         await sync()
+        refreshCanvasSessionExpiredState()
         return isCanvasConnected
     }
 
@@ -566,6 +680,7 @@ final class AppState: ObservableObject {
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
                 gradescopeItems = store.reconcile(fetched, source: .gradescope).items
+                refreshCompletionFromLedger()
             } else {
                 gradescopeItems = fetched
             }
@@ -753,7 +868,7 @@ final class AppState: ObservableObject {
     }
 
     /// True when manual work is ledger-backed. False only where the ledger fell
-    /// back to memory, in which case the defaults blob is still the durable
+    /// back to memory, in which case the UserDefaults blob is still the durable
     /// copy and has to keep being written.
     private var manualWorkIsLedgerBacked: Bool { assignmentStore?.isPersistent == true }
 
@@ -918,9 +1033,6 @@ final class AppState: ObservableObject {
     /// UI can be exercised without connecting a real Canvas account.
     func loadSampleData() {
         canvasItems = SampleData.items().map(\.assignment)
-        // Completion lives on the ledger now, so clearing the in-memory read
-        // model alone would leave it to be re-derived on the next mutation.
-        assignmentStore?.setCompleted(ids: [], at: nil, clearing: completedAssignmentIDs)
         completedAssignmentIDs = []
         completionDates = [:]
         rebuildDashboardItems()
@@ -933,48 +1045,85 @@ final class AppState: ObservableObject {
     /// both identities even if a later sync no longer matches the pair.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
-        completedAssignmentIDs.insert(assignment.id)
-        completionDates[assignment.id] = date
-        if let linkedID = assignment.linkedID {
-            completedAssignmentIDs.insert(linkedID)
-            completionDates[linkedID] = date
-            touched.insert(linkedID)
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+
+        guard let store = assignmentStore else {
+            applyCompletionInMemory(touched, at: date)
+            rebuildDashboardItems()
+            return
         }
-        // The ledger is where completion actually lives. The item is passed
-        // through as a prototype so ticking off something no feed reconciles —
-        // a manual or recurring task — still gets a durable record instead of
-        // being dropped for want of a row.
-        assignmentStore?.setCompleted(ids: touched, at: date, prototypes: [assignment])
-        reloadCompletionFromLedger()
+        // A generated occurrence of a recurring task, or a manual item created
+        // this launch, may have no row yet. Being completed is exactly what
+        // makes it worth a durable record, so create one here — otherwise the
+        // ledger could not be the single source of truth for completion.
+        store.upsert(rowsNeededToComplete(assignment))
+        store.setCompleted(ids: touched, at: date)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
     }
 
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
-        completedAssignmentIDs.remove(assignment.id)
-        completionDates[assignment.id] = nil
-        if let linkedID = assignment.linkedID {
-            completedAssignmentIDs.remove(linkedID)
-            completionDates[linkedID] = nil
-            touched.insert(linkedID)
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+
+        guard let store = assignmentStore else {
+            // No ledger at all: the old defaults keys are the only durable
+            // store, so un-ticking has to be written back to them directly.
+            completedAssignmentIDs.subtract(touched)
+            for id in touched { completionDates[id] = nil }
+            UserDefaults.lhf.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
+            if let data = try? JSONEncoder().encode(completionDates) {
+                UserDefaults.lhf.set(data, forKey: Self.completionDatesKey)
+            }
+            rebuildDashboardItems()
+            return
         }
-        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
-        reloadCompletionFromLedger()
+        store.setCompleted(ids: [], at: nil, clearing: touched)
+        refreshCompletionFromLedger()
         rebuildDashboardItems()
     }
 
-    /// Re-derives the completion read models from the ledger.
+    /// The item plus its cross-platform counterpart, so both identities get a
+    /// row before completion is written.
     ///
-    /// The mutators above update the published sets optimistically first, then
-    /// call this: with a store, the ledger's answer replaces the optimistic one
-    /// so the two can never drift; without one (store creation failed — see
-    /// `assignmentStore`), the optimistic values stand and completion is
-    /// session-only, which is the same degradation the rest of the ledger has.
-    private func reloadCompletionFromLedger() {
-        guard let record = assignmentStore?.completionRecord() else { return }
-        completedAssignmentIDs = record.ids
-        completionDates = record.dates
+    /// Completing a merged item marks both ids, but only the item the user
+    /// tapped is in hand — the counterpart is just a `linkedID`. When the pools
+    /// were filled by a sync, both already have rows and this changes nothing.
+    /// When they weren't — preview mode and sample data assign `canvasItems` /
+    /// `gradescopeItems` directly, and preview mode is the path App Store
+    /// reviewers use because they can't pass Penn SSO — the counterpart has no
+    /// row, `setCompleted` silently skips it, and half the merge comes back
+    /// undone.
+    private func rowsNeededToComplete(_ assignment: Assignment) -> [Assignment] {
+        guard let linkedID = assignment.linkedID else { return [assignment] }
+        let counterpart = (gradescopeItems + canvasItems).first { $0.id == linkedID }
+        return [assignment] + (counterpart.map { [$0] } ?? [])
     }
+
+    /// The no-ledger fallback path. Only reachable when even an in-memory store
+    /// could not be created, where the app degrades to its pre-ledger behaviour.
+    private func applyCompletionInMemory(_ ids: Set<String>, at date: Date) {
+        completedAssignmentIDs.formUnion(ids)
+        for id in ids { completionDates[id] = date }
+        // With no ledger at all the old defaults keys are the only durable
+        // store left, so this path writes them directly. `LegacyStateMigration`
+        // drains them onto the ledger the moment one can be opened again.
+        UserDefaults.lhf.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
+        if let data = try? JSONEncoder().encode(completionDates) {
+            UserDefaults.lhf.set(data, forKey: Self.completionDatesKey)
+        }
+    }
+
+    /// Rebuilds the published completion projection from the ledger, unioned
+    /// with anything still waiting to be migrated onto it.
+    private func refreshCompletionFromLedger() {
+        guard let store = assignmentStore else { return }
+        let record = store.completionRecord()
+        completionDates = record.dates
+        completedAssignmentIDs = record.ids
+    }
+
+
 
     /// True if EITHER platform reports this done: this item's own submitted
     /// flag/manual completion, its cross-platform counterpart's manual
@@ -1077,6 +1226,14 @@ final class AppState: ObservableObject {
     /// tracked timestamps return nil — callers fall back to the due date.
     func completedAt(_ assignment: Assignment) -> Date? {
         completionDates[assignment.id]
+    }
+
+
+    private static func loadCompletionDates() -> [String: Date] {
+        guard let data = UserDefaults.lhf.data(forKey: completionDatesKey),
+              let map = try? JSONDecoder().decode([String: Date].self, from: data)
+        else { return [:] }
+        return map
     }
 
     private func persistRecurringTasks() {
