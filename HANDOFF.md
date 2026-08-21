@@ -17,26 +17,63 @@ ledger, grade report, projections, syllabus ingestion, intro flow) with the
 **v2.5 Canvas login hardening merged in**, plus a hardening pass on the ledger
 itself.
 
-- `cd LowHangingFruitKit && swift test` → **329 tests / 31 suites passing.**
-- **`v3` does not have the Canvas login hardening.** It is still at `7cd2525`.
-  The hardening lives on `v2.5` and on this branch only.
-- Merging this into `v3` is a clean fast-forward, but **coordinate with Marco
-  first** — his `28891ca` (`docs/v3-integration-handoff.md`) sequences six
-  parallel branches into `v3`, and this landing on top out of order is exactly
-  what that document is trying to prevent.
+- `cd LowHangingFruitKit && swift test` → **365 tests / 34 suites passing.**
+- **`v3` does not have the Canvas login hardening.** The hardening lives on
+  `v2.5` and on this branch.
+- **This is no longer a fast-forward.** `v3` moved while the branch was in
+  flight: PR #5 (`claude/bold-tesla-2142f1`) landed an independent
+  implementation of shared preferences and completion-on-the-ledger — the same
+  two gaps this branch had already closed. That has been merged here, resolved
+  toward `v3` in the overlapping areas because its versions carry
+  `MigrationChainTests`, `SharedDefaultsMigrationTests` and the
+  `@Attribute(.unique)` removal. `v3` is now fully contained in this branch, so
+  `git merge --ff-only` works from `v3`'s side.
+- **Coordinate with Marco before landing it.** His `28891ca`
+  (`docs/v3-integration-handoff.md`) sequences six parallel branches into `v3`,
+  and 30+ commits arriving out of that order is what the document exists to
+  prevent. PR #5 is evidence the collision is real, not hypothetical.
 
 **Not yet verified on hardware.** `swift test` runs without an App Group
-entitlement, so `AssignmentStore.makeDefault()` and `SharedDefaults.store` both
+entitlement, so `AssignmentStore.makeDefault()` and `UserDefaults.lhf` both
 take their non-entitled fallback paths. Three things are therefore **untested by
 the suite** and need a device build:
 
 1. the manual-assignment migration, which *deletes* the `manualAssignments`
    UserDefaults blob after copying it to the ledger,
-2. the `SharedDefaults` one-time copy from `.standard` into the App Group suite,
+2. `SharedDefaultsMigration`'s one-time copy from `.standard` into the suite,
 3. the widget reading hidden/renamed/deleted courses out of that suite.
 
 Check Settings → Storage after upgrading an existing install: it should say
 **"Saved on this device."**
+
+## 🆕 What changed in this session (2026-08-21)
+
+**The v3 merge is done and green — 365 tests, 34 suites.**
+
+`v3` had moved: PR #5 shipped a second, independent implementation of the same
+shared-preferences and completion-on-the-ledger work this branch had. Neither
+line contained any of the other's unique work, so it was merged rather than
+resolved by picking a side — `v3`'s versions won the overlap (better migration
+test coverage, plus the `@Attribute(.unique)` removal), and this branch's
+unique work was re-applied on top: the Canvas login hardening, `LedgerSchemaV1`,
+`saveChanges()` with `LedgerStats.isHealthy`, `pruneAgedOut()`, and the
+manual-work-on-ledger API.
+
+**One security correction the merge itself created.** `canvasICSURL` is off
+`SharedDefaultsMigration.legacyKeys`. It belonged there on `v3`, where the feed
+URL was an ordinary preference; once the hardening lands it is a Keychain-held
+bearer credential, and copying it into the shared suite would put it back into
+unencrypted, backed-up storage. Nothing is orphaned — `ICSFeedURLStore.load()`
+reads the pre-hardening value from `UserDefaults.standard` and moves it to the
+Keychain. `SharedDefaultsMigrationTests` now asserts the key is *absent*, so
+re-adding it fails loudly.
+
+**Lesson worth keeping.** Three rounds of compile errors on this merge all had
+one shape: a conflict resolved by taking one whole side of a file, dropping the
+losing side's unique work while leaving its callers in place. Whole-file
+resolution is only safe when one side is strictly newer. Check first.
+
+---
 
 ## 🆕 What changed in this session (2026-08-20)
 
@@ -276,7 +313,7 @@ LowHangingFruitKit/
                 SyllabusTextExtractor, CanvasSyllabusClient, SyllabusModels}.swift
       Gradescope/GradescopeClient.swift
       CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/   # 329 tests
+  Tests/LowHangingFruitKitTests/   # 365 tests
 docs/grades.md             # Grade Watcher design brief (§13 = report + syllabus)
 docs/appstore/             # App Store package (current as of 2026-07-26)
 ```
@@ -306,7 +343,7 @@ docs/appstore/             # App Store package (current as of 2026-07-26)
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test              # 329 passing
+cd LowHangingFruitKit && swift test              # 365 passing
 xcodegen generate                                # safe now — Info.plist trap disarmed
 bash docs/appstore/capture-screenshots.sh        # regenerate App Store screenshots
 ```
