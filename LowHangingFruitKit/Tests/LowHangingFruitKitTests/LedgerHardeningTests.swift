@@ -144,12 +144,12 @@ struct LedgerHardeningTests {
         state.markCompleted(item)
 
         #expect(state.isCompleted(item))
-        #expect(store.completionDates()[item.id] != nil)
+        #expect(store.completionRecord().dates[item.id] != nil)
         #expect(state.completedAssignmentIDs.contains(item.id))
 
         state.markActive(item)
         #expect(!state.isCompleted(item))
-        #expect(store.completionDates()[item.id] == nil)
+        #expect(store.completionRecord().dates[item.id] == nil)
     }
 
     @Test("completing an item with no ledger row creates one")
@@ -166,7 +166,7 @@ struct LedgerHardeningTests {
 
         state.markCompleted(occurrence)
 
-        #expect(store.completionDates()[occurrence.id] != nil,
+        #expect(store.completionRecord().dates[occurrence.id] != nil,
                 "completion is exactly what makes an ephemeral occurrence worth persisting")
         #expect(state.isCompleted(occurrence))
     }
@@ -233,6 +233,6 @@ struct MergedCompletionWithoutSyncTests {
         #expect(state.isCompleted(canvasItem))
         #expect(state.isCompleted(gradescopeItem),
                 "the counterpart needs a row too, or half the merge comes back undone")
-        #expect(store.completionDates()[gradescopeItem.id] != nil)
+        #expect(store.completionRecord().dates[gradescopeItem.id] != nil)
     }
 }

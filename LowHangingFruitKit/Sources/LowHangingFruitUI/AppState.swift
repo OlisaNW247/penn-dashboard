@@ -55,7 +55,7 @@ final class AppState: ObservableObject {
 
     @Published private(set) var canvasICSURL: String
     /// Completed work, as a published PROJECTION of the ledger — not a second
-    /// copy of the truth. `AssignmentStore.completionDates()` is authoritative;
+    /// copy of the truth. `AssignmentStore.completionRecord()` is authoritative;
     /// `refreshCompletionFromLedger()` is the only thing that writes these.
     ///
     /// They used to be persisted independently in UserDefaults *and* mirrored
@@ -69,8 +69,6 @@ final class AppState: ObservableObject {
     /// the Done view falls back to the due date to place them.
     @Published private(set) var completionDates: [String: Date]
 
-    /// Completions carried over from a build that had no ledger, still waiting
-    /// for a row to attach to.
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
@@ -145,8 +143,8 @@ final class AppState: ObservableObject {
     private static let userNameKey = "userName"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let completionDatesKey = "completionDates"
-    private static let hiddenCoursesKey = SharedDefaults.hiddenCoursesKey
-    private static let deletedCoursesKey = SharedDefaults.deletedCoursesKey
+    private static let hiddenCoursesKey = "hiddenCourseKeys"
+    private static let deletedCoursesKey = "deletedCourseKeys"
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -155,7 +153,7 @@ final class AppState: ObservableObject {
     private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
-    private static let courseNameOverridesKey = SharedDefaults.courseNameOverridesKey
+    private static let courseNameOverridesKey = "courseNameOverrides"
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
 
@@ -208,6 +206,12 @@ final class AppState: ObservableObject {
         // Constructed after the migration so its history cache is built from the
         // migrated rows rather than an empty store.
         self.gradeWatcher = GradeWatcherStore(historyStore: historyStore)
+
+        // Degraded no-ledger path: if the SwiftData store couldn't be created,
+        // there's no ledger to seed completion from, so it starts empty rather
+        // than leaving these stored properties uninitialized on this path.
+        self.completedAssignmentIDs = []
+        self.completionDates = [:]
 
         if let store {
             // Completion is read back out of the ledger rather than out of its
