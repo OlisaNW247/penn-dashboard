@@ -523,20 +523,32 @@ private struct CanvasLoginPane: View {
                 ProgressView("Preparing a clean sign-in…")
                     .font(.lhfSans(12))
                 Spacer()
-            } else if navObserver.detectedKnownErrorPage {
-                LoginErrorCard(
-                    title: "Canvas login hit a snag",
-                    message: "Penn's sign-in page reported an error partway through. This isn't something reloading the same page will fix — start a fresh attempt, or skip the in-app login entirely.",
-                    onStartOver: startOver,
-                    onUseCalendarLinkInstead: { showPasteFeedLink = true }
-                )
             } else {
-                LoginWebView(
-                    url: URL(string: "https://canvas.upenn.edu")!,
-                    store: LoginDataStores.canvas,
-                    reloadTick: reloadTick,
-                    navigationObserver: navObserver
-                )
+                // The WebView stays mounted even when a known error page has
+                // been detected — a single detection (or a stale one from an
+                // intermediate SSO hop) must never be the thing that makes
+                // login impossible. The card becomes a non-blocking banner
+                // above the still-live WebView instead of replacing it.
+                VStack(spacing: 0) {
+                    if navObserver.detectedKnownErrorPage {
+                        LoginErrorCard(
+                            title: "Canvas login hit a snag",
+                            message: "Penn's sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over or the calendar link are still available.",
+                            onStartOver: startOver,
+                            onUseCalendarLinkInstead: { showPasteFeedLink = true }
+                        )
+                        .frame(maxHeight: 200)
+
+                        Divider().overlay(Color.v2Divider)
+                    }
+
+                    LoginWebView(
+                        url: URL(string: "https://canvas.upenn.edu")!,
+                        store: LoginDataStores.canvas,
+                        reloadTick: reloadTick,
+                        navigationObserver: navObserver
+                    )
+                }
             }
 
             Divider().overlay(Color.v2Divider)
@@ -639,20 +651,32 @@ private struct GradescopeLoginPane: View {
                 ProgressView("Preparing a clean sign-in…")
                     .font(.lhfSans(12))
                 Spacer()
-            } else if navObserver.detectedKnownErrorPage {
-                LoginErrorCard(
-                    title: "Gradescope login hit a snag",
-                    message: "The sign-in page reported an error partway through. Start a fresh attempt below.",
-                    onStartOver: startOver,
-                    onUseCalendarLinkInstead: nil
-                )
             } else {
-                LoginWebView(
-                    url: URL(string: "https://www.gradescope.com/login")!,
-                    store: LoginDataStores.gradescope,
-                    reloadTick: reloadTick,
-                    navigationObserver: navObserver
-                )
+                // The WebView stays mounted even when a known error page has
+                // been detected — a single detection (or a stale one from an
+                // intermediate SSO hop) must never be the thing that makes
+                // login impossible. The card becomes a non-blocking banner
+                // above the still-live WebView instead of replacing it.
+                VStack(spacing: 0) {
+                    if navObserver.detectedKnownErrorPage {
+                        LoginErrorCard(
+                            title: "Gradescope login hit a snag",
+                            message: "The sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over is still available.",
+                            onStartOver: startOver,
+                            onUseCalendarLinkInstead: nil
+                        )
+                        .frame(maxHeight: 200)
+
+                        Divider().overlay(Color.v2Divider)
+                    }
+
+                    LoginWebView(
+                        url: URL(string: "https://www.gradescope.com/login")!,
+                        store: LoginDataStores.gradescope,
+                        reloadTick: reloadTick,
+                        navigationObserver: navObserver
+                    )
+                }
             }
 
             Divider().overlay(Color.v2Divider)

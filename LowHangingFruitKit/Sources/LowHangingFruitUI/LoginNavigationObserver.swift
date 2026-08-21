@@ -73,9 +73,17 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 
     /// True once a known IdP/Shibboleth error page's title has been observed
     /// on the currently-loaded page. Reset by the pane's "Start over"/"Reload"
-    /// actions (which recreate this observer or explicitly clear it), never
-    /// by this class itself.
+    /// actions (which recreate this observer or explicitly clear it), and
+    /// also cleared automatically as soon as a new main-frame navigation
+    /// starts (see `didStartProvisionalNavigation`) — a multi-hop SSO chain
+    /// (Canvas → Shibboleth → Duo → back) can pass through a transient
+    /// error-titled intermediate page without permanently latching this flag
+    /// for the rest of the flow.
     @Published private(set) var detectedKnownErrorPage = false
+
+    /// The actual page title that tripped `detectedKnownErrorPage`, kept for
+    /// diagnostics. Cleared everywhere `detectedKnownErrorPage` is cleared.
+    @Published private(set) var detectedErrorPageTitle: String?
 
     /// Most recent entries first; capped so a long back-and-forth SSO chain
     /// can't grow this unbounded across a long session.
@@ -95,6 +103,7 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     func reset() {
         loadError = nil
         detectedKnownErrorPage = false
+        detectedErrorPageTitle = nil
     }
 
     fileprivate func appendLogEntry(host: String, path: String, status: Int?) {
@@ -135,6 +144,14 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 extension LoginNavigationObserver: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
+        // A new main-frame navigation means the flow has moved past whatever
+        // was previously on screen. Penn SSO is a multi-hop redirect chain
+        // (Canvas → Shibboleth → Duo → back); if an intermediate page's
+        // title happened to match a known-error marker, that page is gone
+        // now, so don't let the flag (or the title that caused it) latch
+        // for the rest of the flow.
+        detectedKnownErrorPage = false
+        detectedErrorPageTitle = nil
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -163,6 +180,13 @@ extension LoginNavigationObserver: WKNavigationDelegate {
             let lower = title.lowercased()
             if Self.knownErrorTitleMarkers.contains(where: lower.contains) {
                 self.detectedKnownErrorPage = true
+                self.detectedErrorPageTitle = title
+                // A page title is safe to log verbatim (no query string,
+                // cookie value, or ICS feed token can end up here — see
+                // `LoginRedirectLogEntry`'s doc comment), so it's fine to
+                // surface in the copyable diagnostics report via the same
+                // path as the host/path/status entries below.
+                self.appendLogEntry(host: "(page title)", path: " \(title)", status: nil)
             }
         }
     }
