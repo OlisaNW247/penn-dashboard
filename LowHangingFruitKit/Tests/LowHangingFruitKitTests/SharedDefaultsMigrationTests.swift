@@ -227,9 +227,7 @@ struct SharedDefaultsMigrationTests {
         // suite, only through `ICSFeedURLStore` into the Keychain.
         #expect(
             !SharedDefaultsMigration.legacyKeys.contains("canvasICSURL"),
-            "canvasICSURL is a bearer credential (Canvas feed token embedded in the URL) and must "
-                + "migrate via ICSFeedURLStore into the Keychain, not be copied into the shared "
-                + "App Group suite"
+            "canvasICSURL is a bearer credential (Canvas feed token embedded in the URL) and must migrate via ICSFeedURLStore into the Keychain, not be copied into the shared App Group suite"
         )
     }
 
@@ -270,14 +268,11 @@ struct SharedDefaultsMigrationTests {
                 // some unrelated preference that snuck in later.
                 #expect(
                     text.contains("UserDefaults.standard"),
-                    "\(file.lastPathComponent) is listed as the migration exception but no longer "
-                        + "reads UserDefaults.standard at all — remove it from the exception list"
+                    "\(file.lastPathComponent) is listed as the migration exception but no longer reads UserDefaults.standard at all — remove it from the exception list"
                 )
                 #expect(
                     text.contains("legacyUserDefaultsKey"),
-                    "\(file.lastPathComponent) reads UserDefaults.standard but isn't tied to the "
-                        + "documented legacy migration key — this looks like a new, undocumented "
-                        + "private-domain read rather than the one-time canvasICSURL migration"
+                    "\(file.lastPathComponent) reads UserDefaults.standard but isn't tied to the documented legacy migration key — this looks like a new, undocumented private-domain read rather than the one-time canvasICSURL migration"
                 )
                 continue
             }
