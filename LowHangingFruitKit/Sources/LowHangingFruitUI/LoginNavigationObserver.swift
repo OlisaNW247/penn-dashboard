@@ -51,13 +51,17 @@ final class LoginDiagnosticsLog: ObservableObject {
 /// Observe-only `WKNavigationDelegate` for the Canvas/Gradescope login panes
 /// (docs/CANVAS_LOGIN_HARDENING.md item 3a).
 ///
-/// Deliberately does nothing to steer navigation: every `decidePolicyFor`
-/// call always allows. No `.cancel`, no URL rewriting, no auto-purge-and-
-/// retry — a false-positive "known error page" detection that silently
-/// purged and reloaded would burn a second `SAMLRequest` mid-flow and could
-/// easily make the exact bug this file exists to diagnose *worse*. Recovery
-/// from a detected error is always a user-initiated tap ("Start over" /
-/// "Use calendar link instead"), never automatic.
+/// Deliberately does (almost) nothing to steer navigation. No URL
+/// rewriting, no auto-purge-and-retry — a false-positive "known error page"
+/// detection that silently purged and reloaded would burn a second
+/// `SAMLRequest` mid-flow and could easily make the exact bug this file
+/// exists to diagnose *worse*. Recovery from a detected error is always a
+/// user-initiated tap ("Start over" / "Use calendar link instead"), never
+/// automatic. The single exception to "always allow": a duplicate
+/// main-frame POST to the same URL within 3s is cancelled, because a
+/// double-submitted credential form is what consumed Shibboleth's one-shot
+/// login conversation and produced every deterministic "Stale Request" —
+/// see `decidePolicyFor navigationAction` for the on-device evidence.
 ///
 /// What this DOES do:
 /// - Surfaces a plain-language message on `didFailProvisionalNavigation`
@@ -101,10 +105,17 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         "request has expired",
     ]
 
+    /// The most recent main-frame POST this observer allowed through, used
+    /// to suppress the flow-killing duplicate submit — see the
+    /// `decidePolicyFor navigationAction` doc comment for the evidence.
+    private var lastMainFramePOST: (url: URL, at: Date)?
+    private static let duplicatePOSTWindow: TimeInterval = 3
+
     func reset() {
         loadError = nil
         detectedKnownErrorPage = false
         detectedErrorPageTitle = nil
+        lastMainFramePOST = nil
     }
 
     /// Mirrors every redirect-log entry to the unified system log, so the
@@ -186,21 +197,42 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         appendLogEntry(host: host, path: "\(url.path) [\(kind)]", status: nil)
     }
 
-    // Observe-only, always allows — implemented purely because the on-device
-    // chain shows failing PennKey submits producing TWO [start] entries a
-    // second apart (a double-consumed Shibboleth flow is a guaranteed Stale
-    // Request), and this callback shows whether that second navigation is a
-    // genuine re-POST of the form (method + navigationType say so) or an
-    // internal WebKit restart. Same signature discipline as the response
-    // variant below: the decisionHandler MUST be typed
-    // `@MainActor @Sendable` or this silently stops being called.
+    // The ONE deliberate exception to this delegate's observe-only rule,
+    // earned by on-device evidence (2026-08-22): failing PennKey logins
+    // showed the credential form POSTing TWICE to the same URL within a
+    // second (two `[action POST type=1]` entries — genuine formSubmitted
+    // navigations both times). Shibboleth's login conversation is one-shot:
+    // the first POST consumes it, the duplicate then trips the IdP's
+    // "Stale Request" page every time — which is exactly the deterministic
+    // failure this whole investigation chased. The single success that
+    // reached Duo that night had a single POST.
+    //
+    // So: an identical main-frame POST to the SAME URL within 3 seconds of
+    // the previous one is cancelled. The first submit is never touched, and
+    // a different URL or a later retry always passes, so a false positive
+    // costs one extra tap — strictly better than a guaranteed dead login.
+    // Same signature discipline as the response variant below: the
+    // decisionHandler MUST be typed `@MainActor @Sendable` or this silently
+    // stops being called.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
-        if navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url, let host = url.host {
+        if navigationAction.targetFrame?.isMainFrame ?? true,
+           let url = navigationAction.request.url,
+           let host = url.host {
             let method = navigationAction.request.httpMethod ?? "?"
+            if method == "POST" {
+                if let last = lastMainFramePOST,
+                   last.url == url,
+                   Date().timeIntervalSince(last.at) < Self.duplicatePOSTWindow {
+                    appendLogEntry(host: host, path: "\(url.path) [action POST duplicate-canceled]", status: nil)
+                    decisionHandler(.cancel)
+                    return
+                }
+                lastMainFramePOST = (url, Date())
+            }
             appendLogEntry(host: host, path: "\(url.path) [action \(method) type=\(navigationAction.navigationType.rawValue)]", status: nil)
         }
         decisionHandler(.allow)
