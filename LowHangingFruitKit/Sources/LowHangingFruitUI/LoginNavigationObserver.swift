@@ -194,20 +194,23 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         loadError = Self.plainLanguageMessage(for: error)
     }
 
-    // The explicit @objc selector is the load-bearing part: WebKit decides
-    // whether to deliver this callback purely by `respondsToSelector`, and
-    // @objc inference for it has silently failed here twice — first because
-    // the method was `private` (private members never satisfy an @objc
-    // optional requirement), then again even non-private (the SDK's
-    // requirement isn't matched exactly, hence the historical "nearly
-    // matches" warning — a near-miss means NO inference). Naming the
-    // selector removes the guesswork; `makeWebView` logs a respondsToSelector
-    // probe so a regression here shows up in the very first console line.
-    @objc(webView:decidePolicyForNavigationResponse:decisionHandler:)
+    // The `@MainActor @Sendable` on the decisionHandler is the load-bearing
+    // part: the SDK requirement types the completion as
+    // `@escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void`,
+    // and without those annotations this method does NOT satisfy the
+    // requirement — the compiler emits only a "nearly matches" warning, no
+    // @objc is inferred, `respondsToSelector` returns false, and WebKit
+    // silently never delivers the callback. That exact mismatch (silenced
+    // with `private` at some point, which hides the warning but not the
+    // problem) is why the diagnostics report's redirect chain was empty on
+    // device. Do not add an explicit `@objc(...)` selector instead of
+    // matching the type — the compiler rejects that as a conflict with the
+    // requirement. `makeWebView` logs a respondsToSelector probe so a
+    // regression here shows up in the very first console line of a login.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
     ) {
         if let http = navigationResponse.response as? HTTPURLResponse, let url = http.url {
             appendLogEntry(host: url.host ?? "", path: url.path, status: http.statusCode)
