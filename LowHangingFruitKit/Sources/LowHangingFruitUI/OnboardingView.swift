@@ -920,7 +920,15 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     configuration.websiteDataStore = store
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.allowsBackForwardNavigationGestures = false
-    webView.customUserAgent = LoginUserAgent.mobileSafari
+    // EXPERIMENT (2026-08-22, Stale Request investigation): UA spoof OFF —
+    // this build sends WKWebView's genuine default UA. The isolated data
+    // store has been ruled out (same failure rate on `.default()`); the
+    // Safari-impersonating UA is the next single variable. If Penn's stack
+    // fingerprints "claims Safari but isn't" (spoofed UA without Safari's
+    // exact header/behavior profile) as suspicious, dropping the spoof
+    // should move the success rate toward Private Safari's. Restore the
+    // line below when the experiment concludes.
+    // webView.customUserAgent = LoginUserAgent.mobileSafari
     // Observe-only (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a) — see
     // `LoginNavigationObserver`'s doc comment. The pane's `@StateObject` keeps
     // this instance alive; `WKWebView.navigationDelegate` is a weak reference.

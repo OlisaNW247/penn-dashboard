@@ -186,6 +186,26 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         appendLogEntry(host: host, path: "\(url.path) [\(kind)]", status: nil)
     }
 
+    // Observe-only, always allows — implemented purely because the on-device
+    // chain shows failing PennKey submits producing TWO [start] entries a
+    // second apart (a double-consumed Shibboleth flow is a guaranteed Stale
+    // Request), and this callback shows whether that second navigation is a
+    // genuine re-POST of the form (method + navigationType say so) or an
+    // internal WebKit restart. Same signature discipline as the response
+    // variant below: the decisionHandler MUST be typed
+    // `@MainActor @Sendable` or this silently stops being called.
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url, let host = url.host {
+            let method = navigationAction.request.httpMethod ?? "?"
+            appendLogEntry(host: host, path: "\(url.path) [action \(method) type=\(navigationAction.navigationType.rawValue)]", status: nil)
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         loadError = Self.plainLanguageMessage(for: error)
     }
