@@ -41,6 +41,17 @@ enum LoginDataStores {
     private static let canvasStoreID = UUID(uuidString: "8F2D6A10-8B0A-4E9E-9C3A-6C1E9B2F0A01")!
     private static let gradescopeStoreID = UUID(uuidString: "8F2D6A10-8B0A-4E9E-9C3A-6C1E9B2F0A02")!
 
-    static let canvas = WKWebsiteDataStore(forIdentifier: canvasStoreID)
+    // EXPERIMENT (2026-08-22, Stale Request investigation): temporarily the
+    // shared default store instead of the isolated identifier store. The
+    // on-device redirect chain shows the IdP losing its conversation cookie
+    // between serving the PennKey form and receiving the POST (~1/6 success
+    // in the app vs 3/4 in Private Safari, same minutes, both cold) — and
+    // `WKWebsiteDataStore(forIdentifier:)` is the one remaining difference
+    // from Safari's setup. If login rates jump to Safari levels on this
+    // build, the identifier store's cookie handling is the culprit and we
+    // need a permanent replacement for it; if rates stay bad, revert to the
+    // line below and the store is exonerated.
+    // static let canvas = WKWebsiteDataStore(forIdentifier: canvasStoreID)
+    static let canvas = WKWebsiteDataStore.default()
     static let gradescope = WKWebsiteDataStore(forIdentifier: gradescopeStoreID)
 }
