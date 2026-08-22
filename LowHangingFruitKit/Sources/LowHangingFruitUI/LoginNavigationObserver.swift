@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import os
 
 /// One entry in the login pane's in-memory redirect log. Deliberately
 /// carries only host + path + HTTP status — never a query string, cookie
@@ -106,8 +107,19 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         detectedErrorPageTitle = nil
     }
 
+    /// Mirrors every redirect-log entry to the unified system log, so the
+    /// chain is visible live in Xcode's console (or Console.app) while
+    /// reproducing a login failure — no in-app export step needed. Same
+    /// privacy budget as the report: host + path + status only, which is
+    /// why `.public` is safe here.
+    private static let consoleLog = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "LHF",
+        category: "login-redirects"
+    )
+
     fileprivate func appendLogEntry(host: String, path: String, status: Int?) {
         let entry = LoginRedirectLogEntry(host: host, path: path, status: status, at: Date())
+        Self.consoleLog.info("\(entry.description, privacy: .public)")
         redirectLog.insert(entry, at: 0)
         if redirectLog.count > maxLogEntries {
             redirectLog.removeLast(redirectLog.count - maxLogEntries)

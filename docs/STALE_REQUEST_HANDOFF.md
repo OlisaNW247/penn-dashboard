@@ -3,7 +3,24 @@
 _Written 2026-08-22. Read this top to bottom before touching anything; it is
 short on purpose._
 
-> ## RESOLVED — 2026-08-22, later the same day
+> ## REOPENED — 2026-08-22, hours after the RESOLVED note below
+>
+> Not Penn-side after all. New reproduction, same device, same build:
+> **fresh app launch → login works first try; disconnect Canvas →
+> reconnect → Stale Request 4× in a row** within the same process run.
+> Current lead: the disconnect/pre-connect purge leaves the isolated
+> `WKWebsiteDataStore(forIdentifier:)` unable to persist the IdP's
+> conversation cookie until the process restarts. Discriminating test
+> (force-quit → relaunch → connect) was in flight when this note was
+> written. Also fixed en route: the login error card's `maxHeight: 200`
+> cap clipped "Report a problem" off screen entirely, and redirect-log
+> entries now mirror to the unified log (`category: login-redirects`) so
+> the chain is readable live from Xcode's console.
+>
+> The note below is kept for the evidence timeline, but its verdict is
+> superseded.
+
+> ## ~~RESOLVED~~ — 2026-08-22, later the same day
 >
 > Both §3 answers arrived and the bug is gone. Verdict: **Penn-side
 > transient**, not our code.

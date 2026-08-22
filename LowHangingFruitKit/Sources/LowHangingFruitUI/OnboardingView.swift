@@ -450,8 +450,11 @@ private struct LoginErrorCard: View {
     var onReportProblem: (() -> Void)? = nil
 
     var body: some View {
+        // No Spacers and no maxHeight cap here or at the call sites: the
+        // card must hug its content. A fixed-height cap already clipped the
+        // last action ("Report a problem") clean off the screen once — an
+        // invisible action is worse than a taller card.
         VStack(spacing: 14) {
-            Spacer()
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(Color.v2SpineRed)
@@ -493,9 +496,9 @@ private struct LoginErrorCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -552,7 +555,6 @@ private struct CanvasLoginPane: View {
                                 SupportContact.openReportMail(diagnostics: DiagnosticsReport.generate(state: state))
                             }
                         )
-                        .frame(maxHeight: 200)
 
                         Divider().overlay(Color.v2Divider)
                     }
@@ -680,7 +682,6 @@ private struct GradescopeLoginPane: View {
                             onStartOver: startOver,
                             onUseCalendarLinkInstead: nil
                         )
-                        .frame(maxHeight: 200)
 
                         Divider().overlay(Color.v2Divider)
                     }
