@@ -57,11 +57,14 @@ final class LoginDiagnosticsLog: ObservableObject {
 /// `SAMLRequest` mid-flow and could easily make the exact bug this file
 /// exists to diagnose *worse*. Recovery from a detected error is always a
 /// user-initiated tap ("Start over" / "Use calendar link instead"), never
-/// automatic. The single exception to "always allow": a duplicate
-/// main-frame POST to the same URL within 3s is cancelled, because a
-/// double-submitted credential form is what consumed Shibboleth's one-shot
-/// login conversation and produced every deterministic "Stale Request" —
-/// see `decidePolicyFor navigationAction` for the on-device evidence.
+/// automatic. The single exception to "always allow": a repeat main-frame
+/// POST to the same URL while the previous POST's response has not yet
+/// committed (20s cap) is cancelled, because a double-submitted credential
+/// form is what consumed Shibboleth's one-shot login conversation and
+/// produced every deterministic "Stale Request" — see
+/// `decidePolicyFor navigationAction` for the on-device evidence. Once any
+/// page commits, the guard disarms, so a human resubmitting a re-rendered
+/// form (e.g. after a wrong password) is never touched.
 ///
 /// What this DOES do:
 /// - Surfaces a plain-language message on `didFailProvisionalNavigation`
@@ -211,6 +214,14 @@ extension LoginNavigationObserver: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         logHop("commit", url: webView.url)
+        // A committed page disarms the duplicate-POST guard: everything the
+        // user does on a rendered page is a deliberate action, and the
+        // legitimate wrong-password retry is a same-URL POST from the
+        // re-rendered form (Shibboleth keeps the URL on credential errors).
+        // The pathological duplicates this guard exists for all arrive
+        // BEFORE the original POST's response commits — every on-device
+        // trace showed [start] → echo with no commit in between.
+        lastMainFramePOST = nil
     }
 
     private func logHop(_ kind: String, url: URL?) {
@@ -228,10 +239,12 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     // failure this whole investigation chased. The single success that
     // reached Duo that night had a single POST.
     //
-    // So: an identical main-frame POST to the SAME URL within 3 seconds of
-    // the previous one is cancelled. The first submit is never touched, and
-    // a different URL or a later retry always passes, so a false positive
-    // costs one extra tap — strictly better than a guaranteed dead login.
+    // So: an identical main-frame POST to the SAME URL is cancelled while
+    // the previous POST is still un-committed (20s cap). The first submit
+    // is never touched; a different URL always passes; and `didCommit`
+    // disarms the guard, so a deliberate resubmit from a re-rendered page
+    // (wrong password → error form → retry) always passes too. A false
+    // positive costs one extra tap — strictly better than a dead login.
     // Same signature discipline as the response variant below: the
     // decisionHandler MUST be typed `@MainActor @Sendable` or this silently
     // stops being called.
@@ -240,7 +253,7 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
-        if navigationAction.targetFrame?.isMainFrame ?? true,
+        if navigationAction.targetFrame?.isMainFrame == true,
            let url = navigationAction.request.url,
            let host = url.host {
             let method = navigationAction.request.httpMethod ?? "?"
