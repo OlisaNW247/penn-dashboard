@@ -3,6 +3,30 @@
 _Written 2026-08-22. Read this top to bottom before touching anything; it is
 short on purpose._
 
+> ## ROOT CAUSE FOUND — 2026-08-22, late night (supersedes everything below)
+>
+> The navigation-action log caught it: the PennKey credential form POST
+> fires **twice** (two genuine `formSubmitted` POSTs to the same
+> weblogin URL, an echo ~1s after the real one, sometimes a re-issue ~6s
+> later). Shibboleth's login conversation is one-shot — the first POST
+> consumes it, the repeat deterministically draws "Stale Request". Penn
+> being slow/flaky widened the window this could hit, which is why it
+> came and went. Ruled out along the way, each by a single-variable
+> on-device test: the last 3 commits, the isolated
+> `WKWebsiteDataStore(forIdentifier:)`, the UA spoof, purge timing,
+> cache replay, back-swipe, ITP-on-fresh-store (§4 — dead).
+>
+> Fix (all in `LoginNavigationObserver`): cancel any same-URL main-frame
+> POST within 20s of the previous one, and when the echo has already
+> killed the real POST (code -999) before the guard ate the echo — the
+> one residual dead end — auto-reload the pane's start URL (cookies
+> kept, fresh conversation). "Start over" also no longer purges (retry
+> keeps cookies, Safari-style; purge runs once per pane appearance).
+> Measured: 0/8 before → **5/6 after** the guard, with the single miss
+> being the exact dead end the auto-recover now covers. Why the form
+> double-submits (page JS vs iOS 26 WebKit) is still unattributed —
+> the guard makes it moot for us.
+>
 > ## REOPENED — 2026-08-22, hours after the RESOLVED note below
 >
 > Not Penn-side after all. New reproduction, same device, same build:

@@ -109,6 +109,20 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// to suppress the flow-killing duplicate submit — see the
     /// `decidePolicyFor navigationAction` doc comment for the evidence.
     private var lastMainFramePOST: (url: URL, at: Date)?
+
+    /// The URL the login pane originally loaded (set by `makeWebView`), so
+    /// auto-recovery can restart the SSO chain from the top.
+    var startURL: URL?
+    /// Markers for the one dead-end this delegate self-heals: the duplicate
+    /// POST replaces (and kills, code -999) the real credential POST, and
+    /// the guard then cancels the duplicate — leaving NOTHING in flight and
+    /// a login conversation that is already consumed server-side, so any
+    /// manual re-submit of the on-screen form is doomed to "Stale Request".
+    /// Seen on device 2026-08-22 as the only failure in a 5/6 run. When both
+    /// markers land within the duplicate window (either order), the pane
+    /// reloads `startURL`: cookies survive, a fresh conversation starts.
+    private var duplicateCanceledAt: Date?
+    private var postProvisionalDiedAt: Date?
     /// 20s, not 3s: on-device (2026-08-22) the re-submits came in two waves —
     /// an echo ~1s after the real POST and a re-issue ~6s later that slipped
     /// a 3s window and drew the Stale Request anyway. During a login flow a
@@ -121,6 +135,8 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         detectedKnownErrorPage = false
         detectedErrorPageTitle = nil
         lastMainFramePOST = nil
+        duplicateCanceledAt = nil
+        postProvisionalDiedAt = nil
     }
 
     /// Mirrors every redirect-log entry to the unified system log, so the
@@ -234,6 +250,8 @@ extension LoginNavigationObserver: WKNavigationDelegate {
                    Date().timeIntervalSince(last.at) < Self.duplicatePOSTWindow {
                     appendLogEntry(host: host, path: "\(url.path) [action POST duplicate-canceled]", status: nil)
                     decisionHandler(.cancel)
+                    duplicateCanceledAt = Date()
+                    autoRecoverIfBothNavigationsDead(webView)
                     return
                 }
                 lastMainFramePOST = (url, Date())
@@ -266,6 +284,33 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         )
         let message = Self.plainLanguageMessage(for: error)
         loadError = message.isEmpty ? nil : message
+        // A cancelled (-999, i.e. replaced) navigation while a credential
+        // POST is in play is one of the two markers of the dead-air dead
+        // end — see `duplicateCanceledAt`'s doc comment.
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled,
+           let last = lastMainFramePOST,
+           Date().timeIntervalSince(last.at) < Self.duplicatePOSTWindow {
+            postProvisionalDiedAt = Date()
+            autoRecoverIfBothNavigationsDead(webView)
+        }
+    }
+
+    /// Fires only when BOTH markers are present within the duplicate window
+    /// (either order): the real POST died replaced AND its replacement was
+    /// cancelled by the guard. Nothing is in flight, the on-screen form's
+    /// conversation is consumed, so restart the chain from the top. Cookies
+    /// are untouched, so this is the same recovery a Safari user gets by
+    /// re-entering the site — not a purge.
+    private func autoRecoverIfBothNavigationsDead(_ webView: WKWebView) {
+        guard let canceled = duplicateCanceledAt,
+              let died = postProvisionalDiedAt,
+              abs(canceled.timeIntervalSince(died)) < Self.duplicatePOSTWindow,
+              let startURL else { return }
+        duplicateCanceledAt = nil
+        postProvisionalDiedAt = nil
+        lastMainFramePOST = nil
+        appendLogEntry(host: startURL.host ?? "", path: "\(startURL.path) [auto-recover reload]", status: nil)
+        webView.load(URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
     }
 
     // The `@MainActor @Sendable` on the decisionHandler is the load-bearing

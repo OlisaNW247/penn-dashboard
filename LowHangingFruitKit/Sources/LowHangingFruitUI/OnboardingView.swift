@@ -931,6 +931,7 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     // `LoginNavigationObserver`'s doc comment. The pane's `@StateObject` keeps
     // this instance alive; `WKWebView.navigationDelegate` is a weak reference.
     webView.navigationDelegate = navigationObserver
+    navigationObserver.startURL = url
     // One-line dispatch probe: WebKit delivers the response-policy callback
     // (the only source of HTTP statuses in the redirect log) purely based on
     // this respondsToSelector check. Its @objc exposure has silently failed
