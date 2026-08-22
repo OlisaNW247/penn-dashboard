@@ -3,6 +3,35 @@
 _Written 2026-08-22. Read this top to bottom before touching anything; it is
 short on purpose._
 
+> ## RESOLVED — 2026-08-22, later the same day
+>
+> Both §3 answers arrived and the bug is gone. Verdict: **Penn-side
+> transient**, not our code.
+>
+> - §3 Q1: Safari **Private Browsing** (the cold handshake, same as our
+>   WebView) hit Stale Request once, then worked on retry — so the cold
+>   path was broken at Penn's end, in Safari too.
+> - Shortly after: in-app login (build `03b7f3c`, which includes only the
+>   diagnostics fix below — observe-only, cannot affect login) succeeded
+>   first try, **no Stale Request**. The failure no longer reproduces
+>   anywhere.
+> - The earlier "deterministic" in-app failure is explained: our pane
+>   purges before every attempt, so it *always* does the cold handshake —
+>   it sat squarely in the window when Penn's cold path was failing, while
+>   normal Safari rode an existing session past it.
+> - §4's ITP hypothesis was never tested and is moot unless this recurs.
+> - Kept from this session: `LoginNavigationObserver`'s
+>   `decidePolicyFor navigationResponse:` was `private`, so WebKit never
+>   called it and the diagnostics report had **no redirect-chain entries**
+>   — fixed in `66bf5a6` (368 tests pass on a Mac). **If Stale Request
+>   recurs, copy the diagnostics report immediately**; it now records the
+>   full host/path/status chain.
+>
+> §7's two open items (ledger-migration device verification, App Store
+> support URL + privacy policy) are still open and unrelated.
+
+_Everything below is the original handoff, kept for context._
+
 ## 1. The problem
 
 In-app Canvas login fails **deterministically**. Penn's Shibboleth IdP returns
