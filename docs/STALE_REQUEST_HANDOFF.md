@@ -27,6 +27,12 @@ short on purpose._
 > double-submits (page JS vs iOS 26 WebKit) is still unattributed —
 > the guard makes it moot for us.
 >
+> **CONFIRMED FIXED — final validation run: 6/6 logins, zero Stale
+> Request pages, guard + auto-recover build (`f5c08c3`).** Before any of
+> this merges toward `v3`: sync with Marco — this branch changes login
+> pane retry semantics and gives the observer two narrow steering
+> exceptions, all in his UI layer.
+>
 > ## REOPENED — 2026-08-22, hours after the RESOLVED note below
 >
 > Not Penn-side after all. New reproduction, same device, same build:
