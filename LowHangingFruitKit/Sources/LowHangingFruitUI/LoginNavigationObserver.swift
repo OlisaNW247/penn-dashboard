@@ -109,7 +109,12 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// to suppress the flow-killing duplicate submit — see the
     /// `decidePolicyFor navigationAction` doc comment for the evidence.
     private var lastMainFramePOST: (url: URL, at: Date)?
-    private static let duplicatePOSTWindow: TimeInterval = 3
+    /// 20s, not 3s: on-device (2026-08-22) the re-submits came in two waves —
+    /// an echo ~1s after the real POST and a re-issue ~6s later that slipped
+    /// a 3s window and drew the Stale Request anyway. During a login flow a
+    /// same-URL main-frame re-POST inside 20s is always the pathological
+    /// repeat; a genuine user retry (re-type, re-tap) lands later than that.
+    private static let duplicatePOSTWindow: TimeInterval = 20
 
     func reset() {
         loadError = nil
@@ -239,11 +244,28 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        loadError = Self.plainLanguageMessage(for: error)
+        recordNavigationFailure(webView, error: error, phase: "provisional-failed")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        loadError = Self.plainLanguageMessage(for: error)
+        recordNavigationFailure(webView, error: error, phase: "failed")
+    }
+
+    /// Logs every dead navigation with its error code — code -999
+    /// (NSURLErrorCancelled) is the interesting one: it marks a navigation
+    /// WebKit abandoned because something replaced it, which is how the
+    /// credential POST that actually consumed the IdP's login conversation
+    /// was vanishing from the record without a trace. Cancelled navigations
+    /// keep `loadError` nil (they were never a user-visible failure).
+    private func recordNavigationFailure(_ webView: WKWebView, error: Error, phase: String) {
+        let nsError = error as NSError
+        appendLogEntry(
+            host: webView.url?.host ?? "(no url)",
+            path: "\(webView.url?.path ?? "") [\(phase) code=\(nsError.code)]",
+            status: nil
+        )
+        let message = Self.plainLanguageMessage(for: error)
+        loadError = message.isEmpty ? nil : message
     }
 
     // The `@MainActor @Sendable` on the decisionHandler is the load-bearing
