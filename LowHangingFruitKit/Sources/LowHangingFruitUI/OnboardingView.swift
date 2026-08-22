@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import LowHangingFruitKit
+import os
 
 /// First-run welcome flow. Blocks the dashboard until both core data sources are
 /// connected. The Canvas calendar feed URL is captured automatically from the
@@ -906,6 +907,16 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     // `LoginNavigationObserver`'s doc comment. The pane's `@StateObject` keeps
     // this instance alive; `WKWebView.navigationDelegate` is a weak reference.
     webView.navigationDelegate = navigationObserver
+    // One-line dispatch probe: WebKit delivers the response-policy callback
+    // (the only source of HTTP statuses in the redirect log) purely based on
+    // this respondsToSelector check. Its @objc exposure has silently failed
+    // twice, so assert it out loud on every WebView creation — "false" in
+    // the console means the redirect log is back to titles only.
+    let respondsToPolicy = navigationObserver.responds(
+        to: Selector(("webView:decidePolicyForNavigationResponse:decisionHandler:"))
+    )
+    Logger(subsystem: Bundle.main.bundleIdentifier ?? "LHF", category: "login-redirects")
+        .info("delegate responds to decidePolicyForNavigationResponse: \(respondsToPolicy, privacy: .public)")
     webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
     return webView
 }

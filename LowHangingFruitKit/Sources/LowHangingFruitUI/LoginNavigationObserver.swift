@@ -164,6 +164,26 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         // for the rest of the flow.
         detectedKnownErrorPage = false
         detectedErrorPageTitle = nil
+        logHop("start", url: webView.url)
+    }
+
+    // The two below exist purely to make the redirect chain observable
+    // through callbacks that provably fire (same plain notification family
+    // as `didFinish` above) — they carry no HTTP status, so entries from the
+    // policy callback are still preferred when it works. Server-redirect is
+    // the important one: Penn SSO is a chain of 302s, and this fires once
+    // per hop.
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        logHop("redirect", url: webView.url)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        logHop("commit", url: webView.url)
+    }
+
+    private func logHop(_ kind: String, url: URL?) {
+        guard let url, let host = url.host else { return }
+        appendLogEntry(host: host, path: "\(url.path) [\(kind)]", status: nil)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -174,10 +194,16 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         loadError = Self.plainLanguageMessage(for: error)
     }
 
-    // Must NOT be `private`: a private method is excluded from matching an
-    // `@objc` protocol's optional requirement, so `@objc` is never inferred,
-    // `respondsToSelector` says no, and WebKit silently never calls this —
-    // leaving the diagnostics report with no redirect-chain entries at all.
+    // The explicit @objc selector is the load-bearing part: WebKit decides
+    // whether to deliver this callback purely by `respondsToSelector`, and
+    // @objc inference for it has silently failed here twice — first because
+    // the method was `private` (private members never satisfy an @objc
+    // optional requirement), then again even non-private (the SDK's
+    // requirement isn't matched exactly, hence the historical "nearly
+    // matches" warning — a near-miss means NO inference). Naming the
+    // selector removes the guesswork; `makeWebView` logs a respondsToSelector
+    // probe so a regression here shows up in the very first console line.
+    @objc(webView:decidePolicyForNavigationResponse:decisionHandler:)
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,

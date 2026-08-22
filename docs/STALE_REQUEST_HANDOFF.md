@@ -8,14 +8,26 @@ short on purpose._
 > Not Penn-side after all. New reproduction, same device, same build:
 > **fresh app launch → login works first try; disconnect Canvas →
 > reconnect → Stale Request 4× in a row** within the same process run.
-> Current lead: the disconnect/pre-connect purge leaves the isolated
-> `WKWebsiteDataStore(forIdentifier:)` unable to persist the IdP's
-> conversation cookie until the process restarts. Discriminating test
-> (force-quit → relaunch → connect) was in flight when this note was
-> written. Also fixed en route: the login error card's `maxHeight: 200`
-> cap clipped "Report a problem" off screen entirely, and redirect-log
-> entries now mirror to the unified log (`category: login-redirects`) so
-> the chain is readable live from Xcode's console.
+> Hard numbers, same minutes, same device and network: **app 0/8, Private
+> Safari 3/4** (Safari fails its first cold attempt during Penn's bad
+> spells, then succeeds on retry; the app never does). Force-quit does
+> NOT fix the app, so the earlier "store broken until restart" lead is
+> dead. Current model: Penn's IdP is intermittently failing genuinely
+> first-contact handshakes; Safari recovers on retry because its cookies
+> persist between attempts, while the app purges before EVERY attempt —
+> "Start over" included — so every app attempt is first contact, forever.
+> Untested prediction: a retry that does NOT purge (e.g. Reload) should
+> recover like Safari's second attempt.
+>
+> Also fixed en route: the login error card's `maxHeight: 200` cap
+> clipped "Report a problem" off screen entirely; redirect-log entries
+> mirror to the unified log (`category: login-redirects`); and the
+> response-policy delegate method needed an **explicit
+> `@objc(webView:decidePolicyForNavigationResponse:decisionHandler:)`**
+> — removing `private` was not enough, inference still failed (that is
+> what the old "nearly matches" warning meant), proven by an
+> on-device report whose chain was still empty. `makeWebView` now logs a
+> respondsToSelector probe so this can never silently regress again.
 >
 > The note below is kept for the evidence timeline, but its verdict is
 > superseded.
