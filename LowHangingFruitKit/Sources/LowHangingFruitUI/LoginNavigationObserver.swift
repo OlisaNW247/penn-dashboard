@@ -162,7 +162,11 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         loadError = Self.plainLanguageMessage(for: error)
     }
 
-    private func webView(
+    // Must NOT be `private`: a private method is excluded from matching an
+    // `@objc` protocol's optional requirement, so `@objc` is never inferred,
+    // `respondsToSelector` says no, and WebKit silently never calls this —
+    // leaving the diagnostics report with no redirect-chain entries at all.
+    func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void

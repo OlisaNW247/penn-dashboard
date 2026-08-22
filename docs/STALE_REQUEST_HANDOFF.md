@@ -41,6 +41,16 @@ Two open questions. **Get both answers before writing any code.**
    Settings → **Copy diagnostics report**. It records the redirect chain and
    the page title that tripped the detector.
 
+   > **2026-08-22:** until now the redirect chain was never actually
+   > recorded — `LoginNavigationObserver`'s
+   > `decidePolicyFor navigationResponse:` was marked `private`, which
+   > excludes it from `@objc` optional-requirement matching, so WebKit never
+   > called it and reports contained only "(page title)" lines. Fixed in
+   > this commit (**uncompiled** — no toolchain here; needs `swift test` +
+   > a rebuild on the Mac). A report copied from a build without this fix
+   > cannot answer this question — rebuild first, then reproduce the
+   > failure once, then copy the report.
+
 Neither answer had arrived when this session ended.
 
 ## 4. Leading hypothesis, if it is WebView-specific
