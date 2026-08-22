@@ -520,6 +520,16 @@ private struct CanvasLoginPane: View {
     @State private var isPurging = true
     /// Bumping this re-runs the purge-and-load `.task` below ("Start over").
     @State private var purgeGeneration = UUID()
+    /// True only for this pane appearance's FIRST attempt. Measured on
+    /// device (2026-08-22): during a Penn IdP bad spell the app went 0/8
+    /// while Private Safari went 3/4 in the same minutes — Safari fails its
+    /// first genuinely-cold handshake too, but recovers on retry because
+    /// the failed attempt's IdP cookies survive into the next one. Purging
+    /// on every "Start over" forced this app to be permanently
+    /// first-contact. So: purge once per pane appearance (a fresh Connect
+    /// still starts clean), and let retries keep the cookies exactly like
+    /// Safari's retry does.
+    @State private var purgeOnNextAttempt = true
     /// Bumping this tells the live WebView to call `.reload()` ("Reload").
     @State private var reloadTick = 0
     /// Observe-only navigation delegate (docs/CANVAS_LOGIN_DIAGNOSIS.md item
@@ -591,11 +601,16 @@ private struct CanvasLoginPane: View {
             // or a "Start over" tap), before the WebView is ever created —
             // never re-entrant with an in-flight login navigation. Targets
             // Canvas's own isolated store (docs/CANVAS_LOGIN_DIAGNOSIS.md
-            // item 2a), not the shared `.default()` store.
-            await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: AppState.canvasLoginDomainHints,
-                in: LoginDataStores.canvas
-            )
+            // item 2a), not the shared `.default()` store. Purges only on
+            // the first attempt of this pane appearance — see
+            // `purgeOnNextAttempt` for the on-device evidence.
+            if purgeOnNextAttempt {
+                await WebsiteDataReset.purgeWebsiteData(
+                    matchingDomainContains: AppState.canvasLoginDomainHints,
+                    in: LoginDataStores.canvas
+                )
+                purgeOnNextAttempt = false
+            }
             isPurging = false
         }
 #if os(macOS)
@@ -603,9 +618,12 @@ private struct CanvasLoginPane: View {
 #endif
     }
 
-    /// Clears this login's cookies/cache again and reloads a fresh sign-in
-    /// page, without leaving the pane — the recovery path now that the
+    /// Tears down the WebView and loads a fresh sign-in page from the top of
+    /// the chain, without leaving the pane — the recovery path now that the
     /// WebView no longer allows a back-swipe onto a consumed login form.
+    /// Deliberately does NOT purge cookies anymore (`purgeOnNextAttempt`
+    /// stays false): a retry that keeps the failed attempt's IdP cookies is
+    /// exactly how Safari recovers from the same "Stale Request" page.
     private func startOver() {
         message = nil
         navObserver.reset()
