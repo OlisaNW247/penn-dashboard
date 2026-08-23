@@ -130,10 +130,18 @@ private struct SplashPlayer {
             let url = Bundle.module.url(forResource: name, withExtension: "mp4")
             Self.logger.log("splash asset selection: isDarkMode=\(isDarkMode, privacy: .public) resource=\(name, privacy: .public) bundleURLFound=\(url != nil, privacy: .public) url=\(url?.absoluteString ?? "nil", privacy: .public)")
             guard let url else { return }
+            // Before the player is touched at all: make sure that starting it
+            // cannot evict whatever the user is already listening to. See the
+            // function's note — the clip is silent, and the interruption comes
+            // from session activation rather than from any sound.
+            Self.configureAudioSessionForSilentPlayback()
             let asset = AVURLAsset(url: url)
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
             player.actionAtItemEnd = .pause
+            // Belt and braces. Both bundled clips are video-only, so this is a
+            // no-op today; it stays because it costs nothing and is the right
+            // default if an asset with an audio track is ever swapped in.
             player.isMuted = true
             // Combine (non-@Sendable sink) sidesteps the @Sendable-capture warning
             // that the block-based observer trips under Swift 6 strict concurrency;
@@ -146,6 +154,71 @@ private struct SplashPlayer {
             // Setting a positive rate starts playback, so this replaces play()
             // rather than following it (play() would reset the rate to 1).
             player.rate = SplashPlayer.playbackRate
+        }
+
+        /// Makes the intro clip a guest in whatever audio is already playing,
+        /// instead of the owner of the device's audio.
+        ///
+        /// **The clip has no sound, and never did.** This lands as a bug report
+        /// that reads "remove the sound from the intro video — it stops my
+        /// Spotify," and the obvious fix is the wrong one. Both `splash.mp4`
+        /// and `splash_dark.mp4` are video-only: `ffprobe` reports exactly one
+        /// h264 stream and no audio track on each. `start(isDarkMode:)` also
+        /// sets `player.isMuted = true` on top of that. There is no sound to
+        /// remove, and muting harder — or re-encoding the assets to strip an
+        /// audio track that isn't there — accomplishes nothing. If the symptom
+        /// ever comes back, it is not the volume.
+        ///
+        /// What actually stops Spotify is the **session activation**, not
+        /// anything audible. An app that never configures `AVAudioSession` gets
+        /// the system default category, `.soloAmbient`, whose entire semantic is
+        /// "while I am active, everyone else is silenced." `AVPlayer` implicitly
+        /// activates the process's shared session the instant playback begins,
+        /// so merely starting a muted, soundless clip is enough to evict another
+        /// app's audio. `.ambient` is the opposite promise — this app's audio is
+        /// incidental and never worth interrupting anyone over — and
+        /// `.mixWithOthers` says so explicitly rather than leaning on
+        /// `.ambient`'s implicit mixing behaviour.
+        ///
+        /// **Why here, and not at launch or in `init`.** This is the only
+        /// `AVPlayer` in the app and `start` is the only place it ever plays,
+        /// so this is the narrowest point that is still guaranteed to precede
+        /// activation. Reaching this line also means the clip was found and is
+        /// genuinely about to roll; configuring process-global audio state from
+        /// `init`, or from app launch, would reconfigure the process for a
+        /// splash that may never play (Reduce Motion skips the player entirely,
+        /// and a missing asset returns before this point). The category is
+        /// sticky process state, so one call per launch is enough — and because
+        /// it is idempotent, a second splash presentation re-setting it costs a
+        /// syscall and nothing else.
+        ///
+        /// **Nothing is torn down when the splash ends, deliberately.** There is
+        /// no matching `setActive(false)` and there should not be. `.ambient`
+        /// interrupted nobody, so there is no one to hand the session back to,
+        /// and deactivating with `.notifyOthersOnDeactivation` would broadcast a
+        /// spurious "you may resume" to apps this app never paused. An idle
+        /// `.ambient` session costs other apps exactly nothing.
+        ///
+        /// **A throw is logged and swallowed, on purpose.** The worst case for a
+        /// failed `setCategory` is the behaviour already shipping today — the
+        /// user's music pauses — whereas letting it propagate would let a
+        /// decorative animation take the app's launch down with it. Degrading to
+        /// the old bug is strictly better than degrading to a black screen.
+        private static func configureAudioSessionForSilentPlayback() {
+            // `AVAudioSession` is an iOS-family type. It does not exist on
+            // macOS, where AppKit apps mix with other audio by default and need
+            // no equivalent call — so this compiles out entirely rather than
+            // being stubbed. The guard is written against the OS rather than the
+            // file's usual `canImport(UIKit)` split because availability here is
+            // a property of the platform's audio stack, not of its UI framework
+            // (Mac Catalyst is `os(iOS)` and does have `AVAudioSession`).
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            } catch {
+                Self.logger.error("audio session setCategory(.ambient, .mixWithOthers) failed: \(error.localizedDescription, privacy: .public) — the intro clip may interrupt other apps' audio, but playback continues")
+            }
+            #endif
         }
 
         private func finishOnce() {
