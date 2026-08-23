@@ -267,7 +267,18 @@ struct CourseIntelRefinementTests {
         let course = "LGST 9996"
         withCleanDecision(course) {
             let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+            // enterPreviewMode PERSISTS the flag in UserDefaults.lhf — leaving
+            // it set poisons every AppState any other suite constructs while
+            // (or after) this test runs, flooding them with the s-1…s-16
+            // sample fixtures. Restore it exactly the way PreviewModeTests'
+            // withPreviewMode helper does, unconditionally on the way out.
+            let wasPreview = state.isPreviewMode
             state.enterPreviewMode()
+            defer {
+                if !wasPreview {
+                    UserDefaults.lhf.set(false, forKey: "isPreviewMode")
+                }
+            }
             let before = state.moduleReadingItems
             state.importReadingsIfNeeded(for: course)
             #expect(state.moduleReadingItems == before)
