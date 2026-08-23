@@ -111,19 +111,28 @@ public struct CanvasDiscoveryClient: Sendable {
         return CanvasModulesParser.items(from: html)
     }
 
+    /// `/courses` and `/dashboard` need DIFFERENT parsers: `/courses` lists
+    /// past and future enrollments alongside current ones (professors often
+    /// never conclude a course), so it goes through `currentEnrollmentLinks`
+    /// to keep finished classes out of `canvasCourseIDsByCode` / Grade
+    /// Watcher. `/dashboard` only ever shows Canvas's own idea of "active"
+    /// courses (that's what the dashboard IS), so the plain, unsectioned
+    /// `courseLinks` is correct there and cheaper.
     private func discoverCourses() async -> [String: String] {
-        let urls = [
-            baseURL.appendingPathComponent("courses"),
-            baseURL.appendingPathComponent("dashboard"),
-        ]
-
         var courses: [String: String] = [:]
-        for url in urls {
-            guard let html = try? await fetchHTML(url) else { continue }
+
+        if let html = try? await fetchHTML(baseURL.appendingPathComponent("courses")) {
+            for course in CanvasCourseDiscoveryParser.currentEnrollmentLinks(from: html) {
+                courses[course.id] = course.name
+            }
+        }
+
+        if let html = try? await fetchHTML(baseURL.appendingPathComponent("dashboard")) {
             for course in CanvasCourseDiscoveryParser.courseLinks(from: html) {
                 courses[course.id] = course.name
             }
         }
+
         return courses
     }
 
@@ -165,6 +174,35 @@ public enum CanvasCourseDiscoveryParser {
             self.id = id
             self.name = name
         }
+    }
+
+    /// Restricts course discovery to the CURRENT-enrollment section of
+    /// Canvas's classic `/courses` page. That page groups enrollments into
+    /// separate tables — `my_courses_table` for current enrollments, plus
+    /// `past_enrollments_table`/`future_enrollments_table` (headed "Past
+    /// Enrollments"/"Future Enrollments") for terms a professor never
+    /// concluded, or hasn't started — and scraping the whole page (the old
+    /// behavior) pulls long-finished classes into `canvasCourseIDsByCode`,
+    /// polluting Grade Watcher with courses that are over.
+    ///
+    /// We find the EARLIEST of those past/future markers (by DOM id or
+    /// heading text, case-insensitively — Canvas has used both across
+    /// redesigns) and only scan the page before it.
+    ///
+    /// If NO marker is found at all, we fall back to the WHOLE page rather
+    /// than an empty result: a future HTML redesign that renames or drops
+    /// these markers must degrade to the old too-inclusive behavior — extra
+    /// courses to filter elsewhere — never to an empty course list, which
+    /// would look indistinguishable from a broken login.
+    public static func currentEnrollmentLinks(from html: String) -> [Course] {
+        let markers = ["past_enrollments", "Past Enrollments", "future_enrollments", "Future Enrollments"]
+        let cutoff = markers
+            .compactMap { html.range(of: $0, options: .caseInsensitive) }
+            .map(\.lowerBound)
+            .min()
+
+        guard let cutoff else { return courseLinks(from: html) }
+        return courseLinks(from: String(html[html.startIndex..<cutoff]))
     }
 
     public static func courseLinks(from html: String) -> [Course] {

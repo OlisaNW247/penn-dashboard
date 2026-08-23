@@ -826,10 +826,19 @@ final class AppState: ObservableObject {
         guard !isUsingFixtureData, !cookies.isEmpty else { return }
 
         let client = CanvasDiscoveryClient(cookies: cookies)
+        // Backstop behind `CanvasCourseDiscoveryParser.currentEnrollmentLinks`'s
+        // HTML-section split: that filter is best-effort page-shape scraping,
+        // so anything that leaks through (a redesign quietly renames the
+        // markers, an odd cross-listed section) gets one more chance to be
+        // caught here by its own course-code term suffix.
         let enrolled = await client.discoverEnrolledCourses()
+            .filter { Self.isEnrolledCourseCurrent($0) }
         if !enrolled.isEmpty {
             enrolledCanvasCourses = enrolled
             persistEnrolledCanvasCourses()
+            pruneStaleCourseIDCacheEntries(
+                currentEnrolledKeys: Set(enrolled.map { Self.courseKey(forEnrolled: $0) })
+            )
         }
 
         mergeEnrolledCoursesIntoCourseIDCache()
@@ -889,6 +898,48 @@ final class AppState: ObservableObject {
     private static func courseKey(forEnrolled course: CanvasCourseDiscoveryParser.Course) -> String {
         let parsed = CourseCode.parse(course.name).code
         return parsed == unknownCourse ? course.name : parsed
+    }
+
+    /// True when `course`'s parsed term (from the `YYYYTT` suffix Canvas
+    /// embeds in its display name, via `CourseCode.parse`) is absent, or not
+    /// strictly before `now`'s term. Internal (not private) and pure so it's
+    /// directly testable — see `CurrentEnrollmentTests.swift` — without a
+    /// live Canvas session. A course with NO parseable term passes through
+    /// unfiltered: the HTML-section filter (`currentEnrollmentLinks`)
+    /// already vouched for it, and a term-less course is better shown than
+    /// wrongly hidden.
+    static func isEnrolledCourseCurrent(_ course: CanvasCourseDiscoveryParser.Course, now: Date = Date()) -> Bool {
+        guard let term = CourseCode.parse(course.name).term else { return true }
+        return term >= Term(date: now)
+    }
+
+    /// Removes `canvasCourseIDsByCode` entries that can only be leftovers
+    /// from the earlier over-inclusive `/courses` scrape (the bug
+    /// `currentEnrollmentLinks` fixes): a course code that (1) isn't among
+    /// this refresh's current enrolled courses, (2) has zero items in this
+    /// launch's Canvas feed, and (3) has zero items in Gradescope. Such an
+    /// entry has nothing to display and nothing for Grade Watcher to
+    /// watch — it can only be dead weight, so it's safe to drop. This isn't
+    /// permanent: a course that becomes real again re-enters through either
+    /// a fresh discovery pass or its own feed items
+    /// (`updateCanvasCourseIDCache`). Deliberately leaves `deletedCourseKeys`
+    /// and hidden/selection state untouched — this only prunes the id
+    /// lookup table, never a user's own choices.
+    func pruneStaleCourseIDCacheEntries(currentEnrolledKeys: Set<String>) {
+        let feedCourseKeys = Set(canvasItems.map(\.course))
+        let gradescopeCourseKeys = Set(gradescopeItems.map(\.course))
+
+        var byCode = canvasCourseIDsByCode
+        let staleKeys = byCode.keys.filter { key in
+            !currentEnrolledKeys.contains(key)
+                && !feedCourseKeys.contains(key)
+                && !gradescopeCourseKeys.contains(key)
+        }
+        guard !staleKeys.isEmpty else { return }
+
+        for key in staleKeys { byCode.removeValue(forKey: key) }
+        canvasCourseIDsByCode = byCode
+        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
     }
 
     private func persistEnrolledCanvasCourses() {
