@@ -1047,7 +1047,34 @@ final class AppState: ObservableObject {
             return false
         }
         recordModuleImport("\(courseKey): fetched \(items.count) items, dated=\(items.filter { $0.dueAt != nil }.count)")
-        let readings = items.map { item in
+
+        // Pages/Files can't carry a `due_at` — Canvas's own dashboard still
+        // shows them with times because a professor set a per-student
+        // "to-do" date, which lives only in the planner API (field evidence:
+        // a real course's 55 module readings all imported dated=0 despite
+        // showing times on the dashboard). Only worth the extra round trip
+        // when something actually needs it. Window: 120 days back to 365
+        // days forward covers a whole semester in both directions off one
+        // cheap paginated call, so it doesn't need to track term boundaries.
+        let overlaidItems: [CanvasModulesClient.ModuleItem]
+        if items.contains(where: { $0.dueAt == nil }) {
+            let now = Date()
+            let plannerStart = now.addingTimeInterval(-120 * 24 * 60 * 60)
+            let plannerEnd = now.addingTimeInterval(365 * 24 * 60 * 60)
+            let plannerDates = (try? await modulesClient.fetchPlannerDates(
+                courseID: courseID,
+                start: plannerStart,
+                end: plannerEnd
+            )) ?? []
+            overlaidItems = CanvasModulesClient.overlayDates(items, planner: plannerDates)
+            let newlyDated = overlaidItems.filter { $0.dueAt != nil }.count - items.filter { $0.dueAt != nil }.count
+            recordModuleImport("\(courseKey): planner dated=\(newlyDated) of \(items.count)")
+        } else {
+            overlaidItems = items
+            recordModuleImport("\(courseKey): planner dated=0 of \(items.count)")
+        }
+
+        let readings = overlaidItems.map { item in
             Assignment(
                 source: .canvasModules,
                 sourceID: "module-item-\(item.id)",
