@@ -1,92 +1,126 @@
-# Readings-only courses — implementation plan
+# Readings-only courses — detection, explanation, opt-in
 
-_Written 2026-08-23, for v3.5. Problem: a Canvas course whose work is
-non-submittable readings never shows up in LHF — not the items, not even
-the course._
+_v2, 2026-08-23, for v3.5. Supersedes the Settings-toggle-first plan; the
+user experience is now a proactive, explained, one-time ask per course._
 
-## Root cause (confirmed in code, 2026-08-23)
+## Goal
 
-The data already flows most of the way:
+When LHF detects an enrolled course it is not representing (readings with
+nothing to submit, or no calendar presence at all), it shows a one-time
+page that names the course, explains exactly what was found, and asks the
+user whether to include those items. Detection is continuous (every
+sync/scan); the ask is once per course unless the course's shape
+materially changes. Settings remains the place to change the answer later.
 
-- `ICSParser` parses **every** VEVENT in the feed — no filtering there.
-- `CanvasICSClient.classify()` already labels calendar-event items as
-  `.event` (UID contains "calendar"/"event", or URL contains
-  `/calendar_events/`).
-- The sync path (`AppState.sync`, AppState.swift ~708) calls
-  `fetchAssignments()`, which is `filter(\.isAssignment)` — and
-  `Assignment.isAssignment` is `kind == .assignment`, full stop
-  (Assignment.swift:60).
+## Feasibility — confirmed against existing code
 
-So readings that appear on the Canvas calendar are fetched, parsed,
-classified `.event`, and then discarded. Courses are discovered from the
-surviving items, so a readings-only course vanishes entirely.
+Three data sources already exist in the Kit; together they are enough to
+detect and explain this accurately:
 
-## Phase 0 — diagnosis fork (user, 2 min, no code)
+| Source | Auth needed | What it gives us | Exists today |
+|---|---|---|---|
+| ICS feed (`CanvasICSClient`) | No (bearer URL) | Every dated calendar item, already classified `.assignment`/`.quiz`/`.discussion`/`.event`, with course code | Yes — `.event` items are parsed then discarded by the `isAssignment` filter |
+| Course enumeration (`CanvasDiscoveryClient`) | Cookie session | All enrolled courses via `/courses` + `/dashboard` (it already fetches both), incl. courses with zero calendar presence | Yes — used by requirement scanning |
+| Per-course probe (`CanvasDiscoveryClient` + `CanvasGradesClient` patterns) | Cookie session | Syllabus page (already fetched), assignment-group JSON (already decoded for grades), and — new fetch — the course Modules page listing readings | Partially — modules fetch is the one new network surface |
 
-Open **canvas.upenn.edu → Calendar** in a browser and enable the readings
-course in the sidebar course list.
+Session caveat: cookie sessions expire. The engine runs authenticated
+probes only while `canvasSessionExpired == false` (LHF already tracks
+this for Grade Watcher) and falls back to feed-only detection otherwise.
+Feed-only still catches the "readings on the calendar" shape; only the
+"invisible course" shape needs the session.
 
-- **Readings appear on Canvas's own calendar** → they are in the ICS feed
-  → Phases 1–4 below apply as written.
-- **They don't appear** → the readings live only in Modules/Syllabus pages,
-  the feed has nothing, and the ingestion side of this plan reroutes
-  through the existing `Syllabus/` pipeline (`CanvasSyllabusClient`,
-  `SyllabusParser`, `SyllabusReconciler`) instead of the ICS path. The
-  preference model and UI (Phases 2–3) stay the same either way.
+## Course profiles the engine can distinguish
 
-## Phase 1 — data layer (LowHangingFruitKit — Olisa)
+Computed per course, every sync:
 
-1. **Ingest `.event` items in sync.** Switch the sync fetch from
-   `fetchAssignments()` to `fetchCalendarItems()` and carry `kind`
-   through `StoredAssignment`/the ledger. Nothing may change for
-   existing users yet — a downstream inclusion filter (Phase 2) defaults
-   to assignments-only.
-2. **Course discovery from all items.** Build the detected-course set
-   (incl. `canvasCourseIDsByCode` handling) from all calendar items, so a
-   readings-only course exists in Settings even while its items are
-   filtered out.
-3. **Semantics for `.event` items:** no submission concept — never
-   `submitted`, excluded from Grade Watcher and submission scanning;
-   manual "mark done" works exactly like manual assignments (completion
-   ledger is already source-agnostic).
+- **NORMAL** — feed has submittable work for the course. No nudge.
+- **READINGS_ON_CALENDAR** — feed has `.event` items but no assignments
+  for the course. Explanation can be concrete: "N dated readings through
+  DATE, nothing to submit."
+- **SILENT** — enrolled (per authenticated course list) but zero feed
+  items. Probe (session required): assignment groups empty or
+  non-submittable (`submission_types: none/on_paper`) + Modules page
+  readings count → "no calendar items; N readings found in Modules."
+- **UNKNOWN-SILENT** — SILENT but no live session to probe. Nudge still
+  possible but with honest copy ("this course isn't publishing anything
+  LHF can see; reconnect Canvas login to let LHF look closer").
 
-## Phase 2 — preference model (Kit + AppState boundary)
+## The ask, and its lifecycle
 
-4. **Per-course content policy**, persisted via `UserDefaults.lhf`
-   (NEVER `.standard` — project rule): something like
-   `courseEventInclusion: [courseCode: Bool]`, default **false** for
-   every course. Existing users see zero change until they opt a course
-   in. The dashboard/widget item builders apply this filter, not the
-   fetch layer — the ledger keeps everything so toggling is instant and
-   non-destructive, no resync needed.
+- New persisted decision store (UserDefaults.lhf — never `.standard`):
+  `courseContentDecisions: [courseKey: {choice: in/out, profileFingerprint,
+  decidedAt}]`.
+- After each sync/scan, courses with an actionable profile
+  (READINGS_ON_CALENDAR, SILENT-with-findings) and no matching decision
+  enter a nudge queue; the dashboard presents ONE sheet per app-open at
+  most (no nag storms).
+- The sheet: course name/code, the profile-specific explanation with real
+  counts and date ranges, and two choices — "Add these to my list" /
+  "Not for this course" — plus a line noting it can be changed in
+  Settings later.
+- Re-ask only when the profile fingerprint changes class (e.g. a SILENT
+  course starts emitting calendar items, or a new term's course appears).
+  New courses each semester naturally retrigger.
 
-## Phase 3 — UI (LowHangingFruitUI — Marco's layer, sync with him FIRST)
+## Implementation phases
 
-5. **Settings → new "Courses & content" section:** list every detected
-   course; per course, a toggle "Show calendar events & readings"
-   (assignments always on). Readings-only courses appear here with a hint
-   ("this course only has readings — turn this on to see them").
-6. **Dashboard rendering** of `.event` items: same card, a small visual
-   kind marker; "mark done" enabled; no submission affordances.
-7. **Widget:** respects the same filtered item set (it reads the shared
-   store — verify nothing in `LHFWidget` re-filters by kind).
+### Phase 1 — Kit: profile engine (Olisa)
+1. Ingest all calendar items (`fetchCalendarItems`), keep `kind` through
+   `StoredAssignment`/ledger; display-time filtering, so opt-in/out is
+   instant and non-destructive.
+2. Parse the enrolled-course list out of the `/courses` HTML
+   `CanvasDiscoveryClient` already downloads (id, code, name, term).
+3. Per-course probe: reuse the grades client's assignment-group JSON for
+   submittability; add ONE new fetch (course Modules page) with a parser
+   for item titles + dates-if-present. HTML parsing fragility is an
+   accepted, established pattern in this codebase.
+4. `CourseProfileEngine`: pure function (feed items, enrolled courses,
+   probe results) → per-course profile + fingerprint. Fully fixture-
+   testable, synthetic data only.
 
-## Phase 4 — tests + device validation
+### Phase 2 — AppState: decisions + queue (Olisa, boundary with Marco)
+5. Decision store, nudge queue, trigger points after sync and after
+   requirement/Grade Watcher scans; session-expired degradation.
+6. Item inclusion filter consults decisions (assignments always in;
+   `.event`/module-reading items only for opted-in courses; default out).
 
-8. Fixture ICS with synthetic calendar-event VEVENTs (SYNTHETIC values
-   only — project rule: never commit real Canvas data/UIDs/URLs) covering:
-   classification, course discovery from events-only feeds, the inclusion
-   filter's default-off behavior, and toggle-on behavior.
-9. Device pass on the real readings course: course appears in Settings,
-   toggle on → readings appear dated correctly, toggle off → gone without
-   resync; existing courses unchanged throughout.
+### Phase 3 — UI (Marco's layer — sync with him BEFORE this phase)
+7. Nudge sheet (one per app-open), profile-specific copy, two actions.
+8. Settings "Courses & content" section as the management surface —
+   every detected course, current choice, flip anytime.
+9. Dashboard cards for readings: kind marker, "mark done" (ledger already
+   supports manual completion), no submission affordances. Undated module
+   readings: design decision — either a "No date" group or dates via the
+   existing `SyllabusMatcher`; decide with Marco at phase start.
+10. Widget: verify it renders the same filtered set (it reads the shared
+    store; confirm no independent kind filtering).
 
-## Constraints
+### Phase 4 — Tests + device validation
+11. Fixtures (synthetic only — project rule): feeds that are
+    events-only, mixed, and empty per course; probe fixtures for
+    non-submittable assignment groups and module readings; engine
+    profile/fingerprint tests; decision-store default-out tests.
+12. On-device with the real readings course: nudge appears once with
+    accurate counts, opt-in shows readings correctly dated, opt-out
+    stays quiet, decision survives relaunch and resync, and a normal
+    course never nudges.
 
-- Cross-cutting model change (`StoredAssignment`, ledger rows gain kind
-  semantics) → **sync between owners before implementing** (project
-  rule), and ledger migrations are untestable in `swift test` (no App
-  Group entitlement) — the migration, if any, needs a device pass over a
-  populated install.
-- `swift test` compiles the macOS slice — any iOS-only UI stays behind
-  `#if os(iOS)`.
+## Constraints and risks
+
+- Cross-cutting model change (ledger rows carry kind; new persisted
+  stores) → owner sync first; ledger migrations cannot run under
+  `swift test` (no App Group entitlement) — device pass over a populated
+  install required.
+- Modules-page HTML is the fragile new surface; scope its parser
+  defensively (fail → UNKNOWN-SILENT copy, never a crash or a wrong
+  claim).
+- All of this stays on-device (privacy pitch intact); no new data leaves
+  the phone.
+- `swift test` = macOS slice; iOS-only UI behind `#if os(iOS)`.
+
+## Validation still worth 2 minutes
+
+Canvas web → Calendar → enable the readings course: tells us whether the
+user's own course is READINGS_ON_CALENDAR or SILENT — which decides which
+probe path its device test exercises first. Not a plan blocker; the plan
+covers both.
