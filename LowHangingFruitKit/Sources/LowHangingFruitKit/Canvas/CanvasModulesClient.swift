@@ -287,9 +287,12 @@ public struct CanvasModulesClient: Sendable {
     /// (stringified `course_id` comparison — planner items span every course
     /// plus personal-note items with no course at all, and this client only
     /// ever wants one course's worth) and only entries whose `plannable_date`
-    /// actually parses. Never throws: a malformed entry or page just
-    /// contributes nothing, since a missing planner date degrades a reading
-    /// back to undated rather than failing the whole import.
+    /// actually parses. Also captures `plannable.title` (nil when Canvas
+    /// omits it) — the title-fallback join key `overlayDates` needs for
+    /// Pages, which carry no `content_id` on the module-items side. Never
+    /// throws: a malformed entry or page just contributes nothing, since a
+    /// missing planner date degrades a reading back to undated rather than
+    /// failing the whole import.
     public static func plannerDatedItems(fromPages pages: [Data], courseID: String) -> [PlannerDatedItem] {
         let decoder = JSONDecoder()
         var items: [PlannerDatedItem] = []
@@ -303,7 +306,8 @@ public struct CanvasModulesClient: Sendable {
                 items.append(PlannerDatedItem(
                     plannableType: entry.plannableType,
                     plannableID: String(plannableID),
-                    plannedAt: date
+                    plannedAt: date,
+                    title: entry.plannable?.title
                 ))
             }
         }
@@ -327,33 +331,92 @@ public struct CanvasModulesClient: Sendable {
     }
 
     /// Overlays planner-derived dates onto module items that have no
-    /// `due_at` of their own — the fix for the field evidence that a real
-    /// course's 55 module readings (Pages, which structurally can't carry
-    /// due_at) all imported dateless even though Canvas's own dashboard shows
-    /// them with times, because those times come from the planner API's
-    /// per-student "to-do" dates, not from the modules API at all. Join key
-    /// is (normalized plannable type, underlying content id) — an item with
-    /// no `contentID`, or whose type has no planner analogue, or that finds
-    /// no match, is returned unchanged (still undated, which is correct: it
-    /// lands in the dashboard's later "undated" bucket same as before).
+    /// `due_at` of their own, in two passes.
+    ///
+    /// **Pass 1 — id join.** Join key is (normalized plannable type,
+    /// underlying content id) — the fix for the field evidence that a real
+    /// course's module readings (Pages, which structurally can't carry
+    /// due_at) all imported dateless even though Canvas's own dashboard
+    /// shows them with times, because those times come from the planner
+    /// API's per-student "to-do" dates, not from the modules API at all.
+    /// This is the precise path wherever it applies. An item with no
+    /// `contentID`, or whose type has no planner analogue, or that finds no
+    /// match here, falls through to pass 2 still undated.
+    ///
+    /// **Pass 2 — title fallback.** Field evidence from a real device
+    /// against a real course: module items = Page 44, ExternalUrl 5,
+    /// Assignment 5, File 1; the planner fetch matched 20 dated entries for
+    /// the course; the id join above joined 0 of them. Root cause: Canvas's
+    /// module-items API supplies `content_id` for File/Discussion/
+    /// Assignment/Quiz module items but NOT for Pages — Page items carry a
+    /// `page_url` slug instead — so the id join can never work for the
+    /// dominant type. Both sides do carry the same title (same underlying
+    /// page record), which makes an exact-title join safe as a second
+    /// chance, *with* an ambiguity guard: normalize titles on both sides
+    /// (trim whitespace/newlines, case-fold — see `normalizedTitle(_:)`)
+    /// and build a map from normalized title to the set of *distinct*
+    /// dates across every planner entry that has a title, regardless of
+    /// its `plannable_type` (a page retitled as an assignment on one side
+    /// of Canvas's data model must still be able to join by title here).
+    /// An item pass 1 left undated whose normalized title maps to exactly
+    /// one distinct date gains that date; a title that maps to zero or to
+    /// more than one distinct date is left undated rather than guessing.
     public static func overlayDates(_ items: [ModuleItem], planner: [PlannerDatedItem]) -> [ModuleItem] {
-        var lookup: [String: Date] = [:]
+        var idLookup: [String: Date] = [:]
         for entry in planner {
-            lookup["\(entry.plannableType):\(entry.plannableID)"] = entry.plannedAt
+            idLookup["\(entry.plannableType):\(entry.plannableID)"] = entry.plannedAt
         }
+
+        var titleLookup: [String: Set<Date>] = [:]
+        for entry in planner {
+            guard let title = entry.title else { continue }
+            let key = normalizedTitle(title)
+            guard !key.isEmpty else { continue }
+            titleLookup[key, default: []].insert(entry.plannedAt)
+        }
+
         return items.map { item in
-            guard item.dueAt == nil, let contentID = item.contentID else { return item }
-            guard let mappedType = plannableType(forModuleItemType: item.typeRaw) else { return item }
-            guard let planned = lookup["\(mappedType):\(contentID)"] else { return item }
-            return ModuleItem(
-                id: item.id,
-                title: item.title,
-                dueAt: planned,
-                typeRaw: item.typeRaw,
-                contentID: item.contentID,
-                moduleName: item.moduleName
-            )
+            guard item.dueAt == nil else { return item }
+
+            // Pass 1: id join — precise wherever content_id exists.
+            if let contentID = item.contentID,
+               let mappedType = plannableType(forModuleItemType: item.typeRaw),
+               let planned = idLookup["\(mappedType):\(contentID)"] {
+                return ModuleItem(
+                    id: item.id,
+                    title: item.title,
+                    dueAt: planned,
+                    typeRaw: item.typeRaw,
+                    contentID: item.contentID,
+                    moduleName: item.moduleName
+                )
+            }
+
+            // Pass 2: title fallback — covers Pages, which carry no
+            // content_id at all. Ambiguity guard: only a unique date wins.
+            let key = normalizedTitle(item.title)
+            if !key.isEmpty, let dates = titleLookup[key], dates.count == 1, let planned = dates.first {
+                return ModuleItem(
+                    id: item.id,
+                    title: item.title,
+                    dueAt: planned,
+                    typeRaw: item.typeRaw,
+                    contentID: item.contentID,
+                    moduleName: item.moduleName
+                )
+            }
+
+            return item
         }
+    }
+
+    /// Trims whitespace/newlines and case-folds a title so the same
+    /// underlying content's title compares equal across the modules API and
+    /// the planner API even when Canvas serializes it with different
+    /// surrounding whitespace or casing. Used only by the title-fallback
+    /// pass of `overlayDates`.
+    private static func normalizedTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
@@ -365,11 +428,20 @@ public struct PlannerDatedItem: Sendable, Hashable {
     public let plannableType: String
     public let plannableID: String
     public let plannedAt: Date
+    /// `plannable.title` — the same title Canvas shows for the underlying
+    /// Page/Assignment/etc. Nil when Canvas omits it. This is the join key
+    /// `overlayDates`'s title-fallback pass uses, since Pages carry no
+    /// `content_id` on the module-items side (field evidence: a real
+    /// course's Page module items all decode with a nil `contentID`, only a
+    /// `page_url` slug) and so can never join by id — title is the only key
+    /// both sides share.
+    public let title: String?
 
-    public init(plannableType: String, plannableID: String, plannedAt: Date) {
+    public init(plannableType: String, plannableID: String, plannedAt: Date, title: String? = nil) {
         self.plannableType = plannableType
         self.plannableID = plannableID
         self.plannedAt = plannedAt
+        self.title = title
     }
 }
 
@@ -420,5 +492,6 @@ private struct PlannerItemDTO: Decodable {
 
     struct PlannableDTO: Decodable {
         let id: Int?
+        let title: String?
     }
 }

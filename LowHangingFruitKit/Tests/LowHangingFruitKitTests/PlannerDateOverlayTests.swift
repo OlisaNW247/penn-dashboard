@@ -207,4 +207,69 @@ struct PlannerDateOverlayTests {
         #expect(overlaid.count == 1)
         #expect(overlaid[0].dueAt == nil)
     }
+
+    // MARK: - overlayDates(_:planner:) — title fallback (pass 2)
+
+    @Test("An undated Page with no contentID joins by exact title match")
+    func undatedPageWithNoContentIDJoinsByTitle() {
+        let plannedDate = iso("2026-09-10T15:00:00Z")
+        let items = [moduleItem(id: "1", title: "Reading: Chapter 1", typeRaw: "Page", contentID: nil)]
+        let planner = [
+            PlannerDatedItem(plannableType: "wiki_page", plannableID: "5555", plannedAt: plannedDate, title: "Reading: Chapter 1"),
+        ]
+        let overlaid = CanvasModulesClient.overlayDates(items, planner: planner)
+        #expect(overlaid.count == 1)
+        #expect(overlaid[0].dueAt == plannedDate)
+    }
+
+    @Test("A title differing only by case/whitespace still joins")
+    func titleFallbackNormalizesCaseAndWhitespace() {
+        let plannedDate = iso("2026-09-10T15:00:00Z")
+        let items = [moduleItem(id: "1", title: "  Reading: Chapter 1 \n", typeRaw: "Page", contentID: nil)]
+        let planner = [
+            PlannerDatedItem(plannableType: "wiki_page", plannableID: "5555", plannedAt: plannedDate, title: "reading: chapter 1"),
+        ]
+        let overlaid = CanvasModulesClient.overlayDates(items, planner: planner)
+        #expect(overlaid.count == 1)
+        #expect(overlaid[0].dueAt == plannedDate)
+    }
+
+    @Test("Two planner entries sharing a normalized title with different dates leave the item undated")
+    func titleFallbackAmbiguousDifferentDatesStaysUndated() {
+        let items = [moduleItem(id: "1", title: "Reading: Chapter 1", typeRaw: "Page", contentID: nil)]
+        let planner = [
+            PlannerDatedItem(plannableType: "wiki_page", plannableID: "5555", plannedAt: iso("2026-09-10T15:00:00Z"), title: "Reading: Chapter 1"),
+            PlannerDatedItem(plannableType: "assignment", plannableID: "6666", plannedAt: iso("2026-09-11T15:00:00Z"), title: "Reading: Chapter 1"),
+        ]
+        let overlaid = CanvasModulesClient.overlayDates(items, planner: planner)
+        #expect(overlaid.count == 1)
+        #expect(overlaid[0].dueAt == nil)
+    }
+
+    @Test("Two planner entries sharing a title with the same date still join (one distinct date)")
+    func titleFallbackSameDateAcrossEntriesJoins() {
+        let plannedDate = iso("2026-09-10T15:00:00Z")
+        let items = [moduleItem(id: "1", title: "Reading: Chapter 1", typeRaw: "Page", contentID: nil)]
+        let planner = [
+            PlannerDatedItem(plannableType: "wiki_page", plannableID: "5555", plannedAt: plannedDate, title: "Reading: Chapter 1"),
+            PlannerDatedItem(plannableType: "assignment", plannableID: "6666", plannedAt: plannedDate, title: "Reading: Chapter 1"),
+        ]
+        let overlaid = CanvasModulesClient.overlayDates(items, planner: planner)
+        #expect(overlaid.count == 1)
+        #expect(overlaid[0].dueAt == plannedDate)
+    }
+
+    @Test("The id join still wins first, even when a same-title entry has a different date")
+    func idJoinWinsOverTitleFallback() {
+        let idJoinedDate = iso("2026-09-10T15:00:00Z")
+        let titleOnlyDate = iso("2026-09-20T15:00:00Z")
+        let items = [moduleItem(id: "1", title: "Reading: Chapter 1", typeRaw: "Assignment", contentID: "5555")]
+        let planner = [
+            PlannerDatedItem(plannableType: "assignment", plannableID: "5555", plannedAt: idJoinedDate, title: "Some Other Title"),
+            PlannerDatedItem(plannableType: "wiki_page", plannableID: "9999", plannedAt: titleOnlyDate, title: "Reading: Chapter 1"),
+        ]
+        let overlaid = CanvasModulesClient.overlayDates(items, planner: planner)
+        #expect(overlaid.count == 1)
+        #expect(overlaid[0].dueAt == idJoinedDate)
+    }
 }
