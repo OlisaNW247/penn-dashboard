@@ -1,5 +1,28 @@
 # Readings-only courses — detection, explanation, opt-in
 
+> ## SHIPPED & DEVICE-VALIDATED — 2026-08-23 (v3.5)
+>
+> Everything below was built, plus what the device taught us along the way:
+> - Modules probe runs on Canvas's JSON API (HTML scrape is fallback only);
+>   `include[]=content_details` is mandatory or every item arrives undated.
+> - Dates for Pages/Files come from the PLANNER API (student to-do dates —
+>   the thing Canvas's dashboard renders). Two-pass join: content-id first,
+>   exact-normalized-title fallback (Pages carry NO content_id, only a
+>   page_url slug). Ambiguous titles stay undated by design.
+> - Decisions import IMMEDIATELY (nudge answer / Settings toggle), not on
+>   next launch; module rows persist via upsert in their own source
+>   partition (.canvasModules).
+> - Enrolled courses without a parseable DEPT+number code (diagnostics
+>   sites, class-year orgs, archives) are filtered everywhere; known false
+>   positive: "TAP 2028" (parses like a code) — manual toggle.
+> - Validated on device: 55-item readings course detected silent(55),
+>   opt-in imported all 55, planner dated 20/55 (all the professor has
+>   dated), dated readings on the timeline, rest in Later. Junk courses
+>   gone from Grade Watcher/picker/Settings. 449 tests green.
+>
+> Open before any merge toward v3: Marco's review (login pane, observer
+> exceptions, dashboard/Settings changes are his layer).
+
 _v2, 2026-08-23, for v3.5. Supersedes the Settings-toggle-first plan; the
 user experience is now a proactive, explained, one-time ask per course._
 
