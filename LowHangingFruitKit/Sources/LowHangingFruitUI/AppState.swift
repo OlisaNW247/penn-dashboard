@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import WebKit
 import LowHangingFruitKit
+import os
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -28,6 +29,18 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         case .dark:  return .dark
         }
     }
+}
+
+/// Per-course tally of `canvasItems` kinds, for the diagnostics-only feed
+/// histogram (`AppState.courseIntelDiagnosticLines`). Counts and kinds only —
+/// never a title, so it stays inside the same privacy budget as the rest of
+/// the diagnostics report.
+private struct CourseFeedKindTally {
+    var assignment = 0
+    var quiz = 0
+    var event = 0
+    var other = 0
+    var undated = 0
 }
 
 @MainActor
@@ -958,6 +971,7 @@ final class AppState: ObservableObject {
             probes: courseProbes
         )
         queueNudgeIfNeeded()
+        logCourseIntelDiagnostics()
     }
 
     /// Surfaces at most one nudge per app-open (docs/READINGS_COURSES_PLAN.md
@@ -1083,6 +1097,102 @@ final class AppState: ObservableObject {
         courseProfileReports
             .filter(Self.isManageable)
             .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
+    }
+
+    // MARK: - Diagnostics (course intel)
+    //
+    // There is no telemetry in this app by design — everything is on-device.
+    // These two surfaces (the copyable `DiagnosticsReport` and the console
+    // log below) are the ONLY debug channels for a puzzling on-device course
+    // profile, so they're read-only projections of state this file already
+    // holds, not a new source of truth.
+    //
+    // Privacy budget, same as `DiagnosticsReport`'s: course codes, profile
+    // shapes, counts, item kinds, and dates are fine. NEVER an assignment or
+    // reading title, a URL, or a token/cookie value — nothing here ever
+    // touches `Assignment.title` or `Assignment.url`.
+
+    /// One line per course's computed profile, one line per course's feed-kind
+    /// histogram (built from `canvasItems` alone — titles never enter this
+    /// computation), and a final summary line. Consumed verbatim by
+    /// `DiagnosticsReport` and mirrored to the console log by
+    /// `recomputeCourseProfiles()`.
+    var courseIntelDiagnosticLines: [String] {
+        var lines: [String] = []
+
+        for report in courseProfileReports {
+            lines.append(
+                "\(report.courseKey): \(Self.courseProfileDescription(report.profile)) fingerprint=\(report.fingerprint) id=\(report.canvasCourseID ?? "-")"
+            )
+        }
+
+        var tallies: [String: CourseFeedKindTally] = [:]
+        for item in canvasItems {
+            var tally = tallies[item.course] ?? CourseFeedKindTally()
+            switch item.kind {
+            case .assignment: tally.assignment += 1
+            case .quiz: tally.quiz += 1
+            case .event: tally.event += 1
+            case .discussion, .other: tally.other += 1
+            }
+            if item.dueAt == nil { tally.undated += 1 }
+            tallies[item.course] = tally
+        }
+        for course in tallies.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+            let t = tallies[course]!
+            lines.append(
+                "\(course): feed kinds assignment=\(t.assignment) quiz=\(t.quiz) event=\(t.event) other=\(t.other), undated=\(t.undated)"
+            )
+        }
+
+        lines.append(
+            "enrolled=\(enrolledCanvasCourses.count) probed=\(courseProbes.count) decisions=\(courseContentDecisions.count)"
+        )
+        return lines
+    }
+
+    /// `<profile-name>(<counts>)` text for `courseIntelDiagnosticLines` — e.g.
+    /// `normal`, `readingsOnCalendar(12, through 2026-12-08)`,
+    /// `silent(modules: 3)`, `silent(modules: none)`, `unknownSilent`.
+    private static func courseProfileDescription(_ profile: CourseProfile) -> String {
+        switch profile {
+        case .normal:
+            return "normal"
+        case let .readingsOnCalendar(eventCount, latestDate):
+            let dateText = latestDate.map { courseIntelDateFormatter.string(from: $0) } ?? "unknown"
+            return "readingsOnCalendar(\(eventCount), through \(dateText))"
+        case let .silent(moduleReadingCount):
+            let countText = moduleReadingCount.map(String.init) ?? "none"
+            return "silent(modules: \(countText))"
+        case .unknownSilent:
+            return "unknownSilent"
+        }
+    }
+
+    private static let courseIntelDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// Console-log mirror of `courseIntelDiagnosticLines`, so a puzzling
+    /// on-device profile is visible live in Xcode's console without the user
+    /// having to export the copyable report. Same privacy budget as that
+    /// report — `.public` is safe here because the content is built to stay
+    /// inside it. Skipped in fixture/preview mode: that's sample data, not a
+    /// real account worth logging.
+    private static let courseIntelLog = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "LHF",
+        category: "course-intel"
+    )
+
+    private func logCourseIntelDiagnostics() {
+        guard !isUsingFixtureData else { return }
+        for line in courseIntelDiagnosticLines {
+            Self.courseIntelLog.info("\(line, privacy: .public)")
+        }
     }
 
     /// Rewrites an item's course label to the canonical `CourseCode` form so

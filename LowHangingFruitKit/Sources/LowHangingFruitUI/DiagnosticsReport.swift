@@ -11,9 +11,12 @@ import UIKit
 ///   link vs. not connected), and each service's connected/expired state.
 /// - The redirect log (host + path + HTTP status only — see
 ///   `LoginRedirectLogEntry`'s doc comment).
+/// - Course intel: each course's computed profile (shape + counts +
+///   fingerprint + Canvas course id) and a per-course feed-kind histogram —
+///   see `AppState.courseIntelDiagnosticLines`.
 ///
 /// Never includes: credentials, cookie values/names, the ICS feed URL/token,
-/// or query strings of any kind.
+/// query strings of any kind, or any assignment/reading title or URL.
 @MainActor
 enum DiagnosticsReport {
     static func generate(state: AppState) -> String {
@@ -37,6 +40,16 @@ enum DiagnosticsReport {
         } else {
             for entry in entries {
                 lines.append("  \(relativeTime(entry.at))  \(entry.description)")
+            }
+        }
+        lines.append("")
+        lines.append("Course intel (codes/counts only — no titles):")
+        let courseIntelLines = state.courseIntelDiagnosticLines
+        if courseIntelLines.isEmpty {
+            lines.append("(none computed this session)")
+        } else {
+            for line in courseIntelLines {
+                lines.append("  \(line)")
             }
         }
         return lines.joined(separator: "\n")
