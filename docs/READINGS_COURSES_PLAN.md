@@ -95,6 +95,28 @@ Computed per course, every sync:
 10. Widget: verify it renders the same filtered set (it reads the shared
     store; confirm no independent kind filtering).
 
+### Hard requirement — Grade Watcher independence
+
+The list-visibility decision and Grade Watcher coverage are SEPARATE
+axes, by explicit product decision (2026-08-23):
+
+- A course stays available to Grade Watcher **regardless** of whether
+  the user opted its readings/events into the list, and regardless of
+  profile (a READINGS_ON_CALENDAR or SILENT course can still carry
+  Canvas grades — on-paper work is graded without submissions).
+- Wiring: Grade Watcher already refreshes from
+  `selectedCanvasCourseIDs()` (class picker / `canvasCourseIDsByCode`),
+  not from dashboard items. Keep it that way: the new content-decision
+  filter must apply ONLY to dashboard/widget item building, never to
+  course discovery or the picker's course map.
+- New behavior: courses discovered via the enrolled-course list (Phase
+  1.2) — including ones with zero feed items — flow INTO
+  `canvasCourseIDsByCode`, so a readings-only course becomes watchable
+  at all (today it can't be, since it's never discovered).
+- Check `docs/grades.md` Decision 4 (course hiding vs Grade Watcher)
+  when implementing, and extend it to cover the new decision axis so the
+  two hiding concepts don't get conflated.
+
 ### Phase 4 — Tests + device validation
 11. Fixtures (synthetic only — project rule): feeds that are
     events-only, mixed, and empty per course; probe fixtures for
@@ -104,6 +126,10 @@ Computed per course, every sync:
     accurate counts, opt-in shows readings correctly dated, opt-out
     stays quiet, decision survives relaunch and resync, and a normal
     course never nudges.
+13. Grade Watcher independence: with the readings course opted OUT of
+    the list, it still appears in the class picker and Grade Watcher
+    refreshes it; opting in/out flips list visibility only, never the
+    watcher's course set.
 
 ## Constraints and risks
 
