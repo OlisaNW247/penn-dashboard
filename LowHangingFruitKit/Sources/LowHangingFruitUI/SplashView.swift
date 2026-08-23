@@ -130,6 +130,15 @@ private struct SplashPlayer {
             let url = Bundle.module.url(forResource: name, withExtension: "mp4")
             Self.logger.log("splash asset selection: isDarkMode=\(isDarkMode, privacy: .public) resource=\(name, privacy: .public) bundleURLFound=\(url != nil, privacy: .public) url=\(url?.absoluteString ?? "nil", privacy: .public)")
             guard let url else { return }
+            // The clip is muted, but starting ANY AVPlayer under iOS's
+            // default audio-session category (.soloAmbient) pauses whatever
+            // the user is playing in Music/YouTube/etc. .ambient declares
+            // this app's audio as decorative: mixes with other apps, honors
+            // the silent switch, interrupts nothing. iOS-only — AVAudioSession
+            // doesn't exist on macOS, and the macOS test build must not see it.
+            #if os(iOS)
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+            #endif
             let asset = AVURLAsset(url: url)
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
