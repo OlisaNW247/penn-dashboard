@@ -11,37 +11,15 @@ import LowHangingFruitKit
 final class NotificationScheduler: ObservableObject {
 
     /// How far before a due date a reminder fires.
-    enum LeadOffset: Int, CaseIterable, Identifiable, Codable {
-        case h1 = 3600
-        case h3 = 10800
-        case h24 = 86_400
-        case d2 = 172_800
-        case d7 = 604_800
-
-        var id: Int { rawValue }
-
-        /// Settings-row label.
-        var label: String {
-            switch self {
-            case .h1:  return "1 hour before"
-            case .h3:  return "3 hours before"
-            case .h24: return "1 day before"
-            case .d2:  return "2 days before"
-            case .d7:  return "1 week before"
-            }
-        }
-
-        /// Notification headline prefix.
-        var headline: String {
-            switch self {
-            case .h1:  return "Due in 1 hour"
-            case .h3:  return "Due in 3 hours"
-            case .h24: return "Due tomorrow"
-            case .d2:  return "Due in 2 days"
-            case .d7:  return "Due in a week"
-            }
-        }
-    }
+    ///
+    /// **The enum itself moved into the Kit** (`Models/LeadOffset.swift`) when
+    /// `CoursePreferences` grew a per-course `leadOffsets`: that type is in
+    /// `LowHangingFruitKit`, which cannot import this module, so the shared
+    /// vocabulary had to move down rather than be duplicated. This alias keeps
+    /// `NotificationScheduler.LeadOffset` — the spelling Settings and every
+    /// other call site already uses — resolving to exactly the same type, so
+    /// nothing outside this file had to change.
+    typealias LeadOffset = LowHangingFruitKit.LeadOffset
 
     @Published private(set) var isEnabled: Bool
     @Published private(set) var leadOffsets: Set<LeadOffset>
@@ -69,7 +47,9 @@ final class NotificationScheduler: ObservableObject {
         if let raw = d.array(forKey: Self.offsetsKey) as? [Int], !raw.isEmpty {
             self.leadOffsets = Set(raw.compactMap(LeadOffset.init(rawValue:)))
         } else {
-            self.leadOffsets = [.h24, .h1]
+            // The same default a course with `leadOffsets == nil` inherits, so
+            // the two cannot drift apart.
+            self.leadOffsets = LeadOffset.defaults
         }
         self.digestEnabled = d.bool(forKey: Self.digestKey)
         let hour = d.object(forKey: Self.digestHourKey) as? Int ?? 8

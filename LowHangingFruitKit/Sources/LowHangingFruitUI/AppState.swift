@@ -85,17 +85,21 @@ final class AppState: ObservableObject {
     /// fetch can establish a baseline silently instead of announcing a whole
     /// term of existing scores. See `notifiableGradeChanges`.
     private var gradeBaselinedCourses: Set<String> = []
-    /// Courses the user has switched OFF (no dashboard items, no notifications).
-    /// Stored as the *hidden* set so the default — empty — means every course is
-    /// shown, and any newly-discovered course shows up automatically.
-    @Published private(set) var hiddenCourseKeys: Set<String>
-    /// Courses the user deleted from the classes list. Deletion is a superset of
-    /// hiding: a deleted course is excluded everywhere a hidden course is
-    /// (dashboard, notifications, Grade Watcher) AND is also removed from the
-    /// classes list itself — unlike a merely-hidden course, which still shows
-    /// there with its toggle off. There's no server-side course to delete (it's
-    /// synced from Canvas), so this is purely a local filter the user can undo.
-    @Published private(set) var deletedCourseKeys: Set<String>
+    /// Everything the student has decided about each of their classes: which
+    /// are shown, which are deleted, custom names, resolved Canvas ids, and —
+    /// from v4 on — per-course notification settings, recurring-item opt-in and
+    /// semester archival.
+    ///
+    /// **This replaced four `UserDefaults` maps that used to live directly on
+    /// `AppState`.** Each of them cost this type a stored property, a load line,
+    /// a persist method and a key constant, and every new per-course setting
+    /// cost another set of all four — on the one file every parallel workstream
+    /// needs to touch. The four names those maps had are still exposed below as
+    /// forwarding accessors, so no existing call site changed; they now read
+    /// through here instead of holding a second copy.
+    ///
+    /// Add per-course state to `CoursePreferences`, not to `AppState`.
+    let coursePreferences: CoursePreferencesStore
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
@@ -111,16 +115,39 @@ final class AppState: ObservableObject {
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
     /// the root. Persisted like every other user preference here.
     @Published private(set) var appearanceMode: AppearanceMode
+    // MARK: Per-course state — forwarding accessors
+    //
+    // These four names are what the rest of the app has always called this
+    // state, and they keep working unchanged. They are computed, not stored:
+    // `coursePreferences` holds the single canonical record and these derive
+    // from it, so there is no second copy to fall out of step. Views still
+    // update because `AppState` republishes the store's `willChange` as its own
+    // `objectWillChange` (see `init`).
+
+    /// Courses the user has switched OFF (no dashboard items, no notifications).
+    /// Read as the *hidden* set so the default — empty — means every course is
+    /// shown, and any newly-discovered course shows up automatically.
+    var hiddenCourseKeys: Set<String> { coursePreferences.hiddenCourseKeys }
+
+    /// Courses the user deleted from the classes list. Deletion is a superset of
+    /// hiding: a deleted course is excluded everywhere a hidden course is
+    /// (dashboard, notifications, Grade Watcher) AND is also removed from the
+    /// classes list itself — unlike a merely-hidden course, which still shows
+    /// there with its toggle off. There's no server-side course to delete (it's
+    /// synced from Canvas), so this is purely a local filter the user can undo.
+    var deletedCourseKeys: Set<String> { coursePreferences.deletedCourseKeys }
+
     /// User-chosen display names, keyed by the canonical course code the rest of
     /// the app identifies a class by. Renaming is deliberately cosmetic: hiding,
     /// deletion, notifications and grades all still key on the code, so a
     /// renamed class keeps working and a re-sync can't undo the rename.
-    @Published private(set) var courseNameOverrides: [String: String]
+    var courseNameOverrides: [String: String] { coursePreferences.courseNameOverrides }
+
     /// Course code -> Canvas numeric course id, remembered once resolved. Ids
     /// only ever arrive attached to an ICS item's URL, so a course whose current
     /// feed entries carry no usable URL would otherwise be invisible to Grade
     /// Watcher even while selected. Caching keeps a selected class fetchable.
-    @Published private(set) var canvasCourseIDsByCode: [String: String]
+    var canvasCourseIDsByCode: [String: String] { coursePreferences.canvasCourseIDsByCode }
 
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
@@ -143,8 +170,10 @@ final class AppState: ObservableObject {
     let gradeHistoryStore: GradeHistoryStore?
 
     private static let userNameKey = "userName"
-    private static let hiddenCoursesKey = SharedDefaults.hiddenCoursesKey
-    private static let deletedCoursesKey = SharedDefaults.deletedCoursesKey
+    // The four per-course keys that used to be listed here — `hiddenCourseKeys`,
+    // `deletedCourseKeys`, `courseNameOverrides`, `canvasCourseIDsByCode` — now
+    // belong to `CoursePreferencesStore`, which is the only thing that writes
+    // them. `SharedDefaults` still declares the three the widget reads.
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -153,8 +182,6 @@ final class AppState: ObservableObject {
     private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
-    private static let courseNameOverridesKey = SharedDefaults.courseNameOverridesKey
-    private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
@@ -170,8 +197,6 @@ final class AppState: ObservableObject {
         // token directly in it. `ICSFeedURLStore.load()` transparently migrates
         // a pre-existing UserDefaults value in and deletes the original.
         self.canvasICSURL = ICSFeedURLStore.load()
-        self.hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
-        self.deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
@@ -181,8 +206,6 @@ final class AppState: ObservableObject {
         self.appearanceMode = AppearanceMode(
             rawValue: UserDefaults.lhf.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light
-        self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
-        self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
@@ -198,15 +221,28 @@ final class AppState: ObservableObject {
         self.gradeHistoryStore = historyStore
 
         // Move completion state and observed grade history off the old
-        // UserDefaults blobs and onto the ledger, before anything reads either.
+        // UserDefaults blobs and onto the ledger, and fold the four per-course
+        // maps into `CoursePreferences`, before anything reads any of them.
         // One-time (version-gated) and idempotent — see `LegacyStateMigration`.
         LegacyStateMigration.runIfNeeded(
             assignmentStore: store,
             gradeHistoryStore: historyStore
         )
-        // Constructed after the migration so its history cache is built from the
-        // migrated rows rather than an empty store.
+        // Both constructed after the migration so they read migrated state
+        // rather than an empty store. Ordering is load-bearing for
+        // `coursePreferences` in particular: constructing it first would load an
+        // empty map, and its next save would then write that emptiness over the
+        // four legacy keys the migration had not yet read.
+        self.coursePreferences = CoursePreferencesStore()
         self.gradeWatcher = GradeWatcherStore(historyStore: historyStore)
+
+        // Republish the store's changes as our own. `hiddenCourseKeys` and the
+        // three names beside it used to be `@Published` properties here; they
+        // are computed forwarding accessors now, and a computed property
+        // publishes nothing. Without this relay, hiding or renaming a class
+        // would update the store and leave every view observing `AppState`
+        // showing the old value until something unrelated redrew it.
+        coursePreferences.willChange = { [weak self] in self?.objectWillChange.send() }
 
         if let store {
             // Completion is read back out of the ledger rather than out of its
@@ -468,8 +504,7 @@ final class AppState: ObservableObject {
     func disconnectCanvas() {
         SessionCookieStore.remove(service: .canvas)
         updateCanvasICSURL("")
-        canvasCourseIDsByCode = [:]
-        UserDefaults.lhf.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        coursePreferences.clearAllCanvasCourseIDs()
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
@@ -756,55 +791,45 @@ final class AppState: ObservableObject {
     /// False if the course is hidden OR deleted — both keep it out of the
     /// dashboard, notifications, and Grade Watcher (see `selectedCanvasCourseIDs`).
     func isCourseSelected(_ course: String) -> Bool {
-        !hiddenCourseKeys.contains(course) && !deletedCourseKeys.contains(course)
+        coursePreferences.isSelected(course)
     }
 
     /// Toggle a course on/off. Off = hidden from the dashboard and notifications.
     func setCourse(_ course: String, selected: Bool) {
-        if selected { hiddenCourseKeys.remove(course) }
-        else { hiddenCourseKeys.insert(course) }
-        persistHiddenCourses()
+        coursePreferences.setVisible(course, selected)
         rebuildDashboardItems()
-    }
-
-    private func persistHiddenCourses() {
-        UserDefaults.lhf.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
     }
 
     /// Courses to render in the Settings classes list — every known course
     /// minus deleted ones. (Hidden-but-not-deleted courses still appear here,
     /// toggled off.)
     func visibleCourseCodes() -> [String] {
-        allCourseCodes().filter { !deletedCourseKeys.contains($0) }
+        allCourseCodes().filter { !coursePreferences.isDeleted($0) }
     }
 
     /// Deleted courses, sorted for a stable "Deleted classes" restore list.
     func deletedCourseCodes() -> [String] {
-        allCourseCodes().filter { deletedCourseKeys.contains($0) }
+        allCourseCodes().filter { coursePreferences.isDeleted($0) }
     }
 
     func isCourseDeleted(_ course: String) -> Bool {
-        deletedCourseKeys.contains(course)
+        coursePreferences.isDeleted(course)
     }
 
     /// Removes a course from the classes list. Purely local — there's nothing
     /// to delete on Canvas's end — so it's fully reversible with `restoreCourse`.
     func deleteCourse(_ course: String) {
-        deletedCourseKeys.insert(course)
-        persistDeletedCourses()
+        coursePreferences.setDeleted(course, true)
         rebuildDashboardItems()
     }
 
     /// Undoes `deleteCourse`. The course reappears in the classes list at
-    /// whatever hidden/shown state it had before deletion.
+    /// whatever hidden/shown state it had before deletion — deletion and hiding
+    /// are separate fields on one record, so undoing one cannot disturb the
+    /// other.
     func restoreCourse(_ course: String) {
-        deletedCourseKeys.remove(course)
-        persistDeletedCourses()
+        coursePreferences.setDeleted(course, false)
         rebuildDashboardItems()
-    }
-
-    private func persistDeletedCourses() {
-        UserDefaults.lhf.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
     }
 
     /// Classes currently switched on, by code. Kept separate from
@@ -820,50 +845,35 @@ final class AppState: ObservableObject {
     /// What to show for a class: the user's own name if they set one, otherwise
     /// the code parsed from Canvas/Gradescope.
     func courseDisplayName(_ course: String) -> String {
-        guard let custom = courseNameOverrides[course]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !custom.isEmpty
-        else { return course }
-        return custom
+        coursePreferences.displayName(for: course)
     }
 
     func hasCustomName(_ course: String) -> Bool {
-        courseNameOverrides[course] != nil
+        coursePreferences.hasCustomName(course)
     }
 
     /// Renames a class for display only — every other system (hiding, deletion,
     /// reminders, grades) still keys on `course`, so the rename survives a
     /// re-sync and can't orphan the class. Clearing the field restores the code.
     func renameCourse(_ course: String, to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == course {
-            courseNameOverrides.removeValue(forKey: course)
-        } else {
-            courseNameOverrides[course] = trimmed
-        }
-        UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+        coursePreferences.setDisplayName(course, to: newName)
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
     /// from `rebuildDashboardItems` (i.e. when items change) rather than from the
     /// `canvasCourseIDs` read path, because that read happens inside SwiftUI body
-    /// evaluation and must not publish changes.
+    /// evaluation and must not publish changes. `mergeCanvasCourseIDs` keeps
+    /// that guarantee: it publishes nothing when this sync revealed no new ids.
     private func updateCanvasCourseIDCache() {
-        var byCode = canvasCourseIDsByCode
+        var resolved: [String: String] = [:]
         for item in canvasItems {
             guard item.course != Self.unknownCourse,
                   let url = item.url,
                   let id = Self.courseID(from: url)
             else { continue }
-            byCode[item.course] = id
+            resolved[item.course] = id
         }
-        guard byCode != canvasCourseIDsByCode else { return }
-        canvasCourseIDsByCode = byCode
-        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
-    }
-
-    private static func loadStringMap(_ key: String) -> [String: String] {
-        UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
+        coursePreferences.mergeCanvasCourseIDs(resolved)
     }
 
     func addRecurringTask(_ task: RecurringTask) {

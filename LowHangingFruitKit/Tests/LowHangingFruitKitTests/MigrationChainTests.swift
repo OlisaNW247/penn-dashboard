@@ -157,6 +157,46 @@ struct MigrationChainTests {
         #expect(shared.stringArray(forKey: "gradeWatcherWatchedCourses") == ["CIS 1200"])
     }
 
+    /// v4 added a third migration to the same launch: the four per-course maps
+    /// fold into `CoursePreferences`. Its own behaviour is covered in
+    /// `CoursePreferencesTests`; what this asserts is the *seam*, which is where
+    /// the interesting failure lives.
+    ///
+    /// The fold reads the per-course keys out of the shared suite. Those keys
+    /// only arrive there because `SharedDefaultsMigration` copied them from the
+    /// private domain moments earlier — so if the fold ever ran first, or read
+    /// the wrong domain, an upgrading student would silently lose every hidden
+    /// class, every rename, and every cached Canvas course id, and the app would
+    /// look completely normal while doing it.
+    @Test("the per-course fold sees preferences the App Group copy has just moved")
+    func coursePreferencesFoldJoinsTheChain() throws {
+        let (legacy, ln) = scratchDefaults(); defer { destroy(ln) }
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        let (ledger, history) = try stores()
+        try seedLegacyData(legacy, completedAt: Date(timeIntervalSince1970: 1_700_000_000))
+
+        // Two more per-course maps, in the private domain like the rest.
+        legacy.set(["CIS 1600": "Discrete Math"], forKey: "courseNameOverrides")
+        legacy.set(["CIS 1600": "1234567"], forKey: "canvasCourseIDsByCode")
+
+        let summary = launch(legacy: legacy, shared: shared,
+                             assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(summary.coursePreferencesImported > 0)
+
+        let prefs = CoursePreferencesStore(defaults: shared)
+        #expect(!prefs.isVisible("canvas:CIS1200"))          // was hiddenCourseKeys
+        #expect(prefs.isDeleted("gradescope:OLD"))           // was deletedCourseKeys
+        #expect(prefs.displayName(for: "CIS 1600") == "Discrete Math")
+        #expect(prefs.canvasCourseID(for: "CIS 1600") == "1234567")
+
+        // A second launch must not re-fold. The version gate is one number
+        // shared with the ledger step, so a bug there shows up here first.
+        let second = launch(legacy: legacy, shared: shared,
+                            assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(second.coursePreferencesImported == 0)
+        #expect(CoursePreferencesStore(defaults: shared).byCourseKey == prefs.byCourseKey)
+    }
+
     /// The regression guard for the task 3 / task 5 collision.
     ///
     /// The legacy blobs exist **only** in the private domain, exactly as they do
