@@ -103,6 +103,25 @@ final class AppState: ObservableObject {
     /// store stays free of notification plumbing.
     @Published var pendingGradeChanges: [AssignmentStore.ScoreChange] = []
 
+    /// Posts "Turned in ✓" confirmations detected in `updateSubmissionState`.
+    /// Everywhere else in this file, notification delivery is left to the view
+    /// layer (see `pendingGradeChanges` above) because it already owns a
+    /// `NotificationScheduler`. `AppState` has no reference to that
+    /// view-owned instance and no path to reach it — plumbing one through
+    /// would mean threading it into every initializer used by previews and
+    /// tests, none of which build a view tree. A private instance here is the
+    /// smallest change that still delivers the notification: it carries no
+    /// state that must match the app's — `isEnabled` is read fresh from
+    /// `UserDefaults.lhf` at init (same source the view-owned instance reads),
+    /// and authorization is re-checked live against `UNUserNotificationCenter`
+    /// on every call — so a second instance behaves identically to the app's.
+    /// "Turned in ✓" confirmations found by the last submission-state
+    /// refresh, waiting for the UI layer to post them — same shape and same
+    /// reasoning as `pendingGradeChanges` above: `ContentView` owns the one
+    /// `NotificationScheduler`, so this store publishes what to say and
+    /// stays free of notification plumbing itself.
+    @Published var pendingTurnedInNotices: [(title: String, body: String)] = []
+
     /// Courses whose grades have been fetched at least once, so the very first
     /// fetch can establish a baseline silently instead of announcing a whole
     /// term of existing scores. See `notifiableGradeChanges`.
@@ -1972,6 +1991,10 @@ final class AppState: ObservableObject {
     /// refresh. Reads every fetched course's submissions (Grade Watcher only
     /// fetches selected courses, which is exactly the set the dashboard shows).
     func updateSubmissionState() {
+        // Captured before the merge below so "Turned in ✓" notifications can
+        // diff against what was true a moment ago, not what's about to be true.
+        let previousSubmittedIDs = submittedCanvasAssignmentIDs
+
         var ids: Set<String> = []
         for snapshot in gradeWatcher.snapshots.values {
             for submission in snapshot.submissions where submission.indicatesSubmitted {
@@ -1983,6 +2006,22 @@ final class AppState: ObservableObject {
         // failed mid-loop), and dropping it would bounce finished items back
         // onto the dashboard.
         submittedCanvasAssignmentIDs = ids.union(persistedSubmittedIDsForUnfetchedCourses())
+
+        // "Turned in ✓" confirmations for whatever just newly appeared as
+        // submitted. Skipped entirely under fixture/demo data (reviewer
+        // preview, DEBUG screenshot seam) — nothing was actually turned in
+        // there, so a stray id would just be noise.
+        if !isUsingFixtureData {
+            let newlySubmitted = submittedCanvasAssignmentIDs.subtracting(previousSubmittedIDs)
+            let notifications = Self.submissionNotifications(
+                newIDs: newlySubmitted,
+                previous: previousSubmittedIDs,
+                items: canvasItems
+            )
+            if !notifications.isEmpty {
+                pendingTurnedInNotices += notifications
+            }
+        }
 
         // Persist onto the ledger so the next cold launch already knows what's
         // turned in — and, more importantly, so a launch with a lapsed Canvas
@@ -2005,6 +2044,45 @@ final class AppState: ObservableObject {
             pendingGradeChanges = notifiableGradeChanges(changes)
         }
         rebuildDashboardItems()
+    }
+
+    /// Pure planning for "Turned in ✓" notifications — mirrors
+    /// `NotificationScheduler`'s documented "Planning (pure)" pattern so the
+    /// decision logic (what counts as new, what gets skipped, how the body
+    /// reads) is unit-testable without touching `UNUserNotificationCenter`.
+    /// Not itself gated on `isUsingFixtureData`; the caller
+    /// (`updateSubmissionState`) skips invoking this at all for fixture/demo
+    /// data.
+    static func submissionNotifications(
+        newIDs: Set<String>,
+        previous: Set<String>,
+        items: [Assignment]
+    ) -> [(title: String, body: String)] {
+        // Cold-start baseline: the first time `submittedCanvasAssignmentIDs`
+        // is ever populated (first launch, or the very first Grade Watcher
+        // run) there is nothing real to diff against. Treating an empty
+        // `previous` as "nothing was submitted before" would read a whole
+        // mid-semester backlog of already-turned-in work as newly submitted,
+        // and fire a notification for every one of them. Stay silent until
+        // there's an actual prior refresh to compare against.
+        guard !previous.isEmpty else { return [] }
+
+        // A single pass surfacing more than a handful of "new" submissions is
+        // a sync artifact — a deselected/reselected course, a session that
+        // just recovered from a lapse, a ledger merge — not five simultaneous
+        // real submissions. Skip silently: no log, because this is expected
+        // and logging it would just be noise on every one of those paths.
+        guard newIDs.count <= 5 else { return [] }
+
+        return newIDs.map { id in
+            guard let item = items.first(where: { $0.canvasAssignmentID == id }) else {
+                // The id came from the grades feed but isn't (yet, or ever)
+                // among the calendar-feed items we hold titles for.
+                return (title: "Turned in ✓", body: "An assignment was turned in.")
+            }
+            let body = item.course.isEmpty ? item.title : "\(item.title) — \(item.course)"
+            return (title: "Turned in ✓", body: body)
+        }
     }
 
     /// Grade changes worth telling the user about, and the baseline bookkeeping

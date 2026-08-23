@@ -224,6 +224,53 @@ final class NotificationScheduler: ObservableObject {
             : String(format: "%.1f", value)
     }
 
+    // MARK: Turned-in confirmations
+
+    /// Posts one immediate "Turned in ✓" notification per newly-detected
+    /// Canvas submission (see `AppState.updateSubmissionState` /
+    /// `AppState.submissionNotifications`). Delivered with a nil trigger, like
+    /// `notifyGradeChanges` — the submission has already happened, so there's
+    /// nothing to wait for.
+    ///
+    /// Does NOT call `requestAuthorization()`: if the user has never granted
+    /// (or has declined) notifications, this silently no-ops rather than
+    /// prompting from a background Grade Watcher refresh. It reuses whatever
+    /// authorization state the reminders flow already established, exactly
+    /// like `notifyGradeChanges` does.
+    func postTurnedInNotifications(_ notifications: [(title: String, body: String)]) async {
+        guard isEnabled, !notifications.isEmpty else { return }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return }
+        for request in Self.turnedInRequests(notifications) {
+            try? await center.add(request)
+        }
+    }
+
+    /// Pure request-building for turned-in confirmations, mirroring
+    /// `gradeRequests` — unit-testable without `UNUserNotificationCenter`.
+    ///
+    /// Identifiers use the `turnedin:` prefix, which does not collide with
+    /// any scheme already in use here: due-date reminders are
+    /// `due:<assignment id>:<offset>` (built/removed in `plannedRequests` /
+    /// `reschedule`'s `cancelAll()`), the daily summary is the fixed
+    /// `digest:daily`, and grade alerts are `grade:<assignment id>:<earned>`
+    /// or `grade:batch:<timestamp>`. A random UUID per call additionally
+    /// guarantees two confirmations for the same assignment (e.g. a
+    /// submission retracted and redone) never collide with each other either.
+    static func turnedInRequests(_ notifications: [(title: String, body: String)]) -> [UNNotificationRequest] {
+        notifications.map { notification in
+            let content = UNMutableNotificationContent()
+            content.title = notification.title
+            content.body = notification.body
+            content.sound = .default
+            return UNNotificationRequest(
+                identifier: "turnedin:\(UUID().uuidString)",
+                content: content,
+                trigger: nil
+            )
+        }
+    }
+
     // MARK: Planning (pure; no UNUserNotificationCenter access — unit-testable)
 
     func plannedRequests(from items: [DashItem], now: Date = Date()) -> [UNNotificationRequest] {

@@ -322,6 +322,17 @@ struct ContentView: View {
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         await announceGradeChanges()
+        await announceTurnedIn()
+    }
+
+    /// Drains "Turned in ✓" confirmations the same way grade changes drain —
+    /// after `reschedule`, via the view-owned scheduler, so `AppState` stays
+    /// free of notification plumbing (see `pendingTurnedInNotices`).
+    private func announceTurnedIn() async {
+        let notices = state.pendingTurnedInNotices
+        guard !notices.isEmpty else { return }
+        state.pendingTurnedInNotices = []
+        await scheduler.postTurnedInNotifications(notices)
     }
 
     /// Drains any grades the refresh found had changed and posts them. Done
