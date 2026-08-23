@@ -916,8 +916,30 @@ final class AppState: ObservableObject {
         // so anything that leaks through (a redesign quietly renames the
         // markers, an odd cross-listed section) gets one more chance to be
         // caught here by its own course-code term suffix.
+        //
+        // `CourseCode.containsExplicitCode` filters out enrollment entries
+        // whose Canvas display name never carries a real DEPT+number course
+        // code — sanitized on-device data showed these are Canvas
+        // community/resource sites the enrollment scrape can't otherwise
+        // tell apart from a real class: "Chemistry Diagnostic 2024-2025",
+        // "Math Diagnostic 2024-2025", "Penn Engineering Class of 2028",
+        // "Physics Exam Archive", "The Studios @ Venture Labs",
+        // "Connections@Wharton". A real class ("ACCT 1010", "LGST 1010")
+        // always parses. Effect, traced through the rest of this file: a
+        // filtered-out entry never enters `enrolledCanvasCourses`, so it's
+        // never folded into `canvasCourseIDsByCode` (`mergeEnrolledCoursesIntoCourseIDCache`
+        // below — keeps it out of the Grade Watcher picker), never reaches
+        // the probe loop or `CourseProfileEngine.reports` (never nudged,
+        // never listed in Settings' "Courses & content"), and a junk entry
+        // that snuck into `canvasCourseIDsByCode` on an earlier launch gets
+        // dropped by `pruneStaleCourseIDCacheEntries` below on this one,
+        // since it's absent from `currentEnrolledKeys` and (being a resource
+        // site, not a class) has no feed or Gradescope items either. One
+        // known accepted false positive: "TAP 2028" parses like a course
+        // code and survives this filter; a user who doesn't want it toggles
+        // it off manually like any other course.
         let enrolled = await client.discoverEnrolledCourses()
-            .filter { Self.isEnrolledCourseCurrent($0) }
+            .filter { Self.isEnrolledCourseCurrent($0) && CourseCode.containsExplicitCode($0.name) }
         if !enrolled.isEmpty {
             enrolledCanvasCourses = enrolled
             // The enrolled list just arrived or changed, which is exactly
@@ -952,12 +974,6 @@ final class AppState: ObservableObject {
             }
             .prefix(8)
 
-        // Readings found via the JSON probe, for courses this refresh probed
-        // successfully AND that already have an "include" decision on file —
-        // gathered while probing so the reconcile below runs once, after the
-        // whole loop, rather than once per course.
-        var readingsToImport: [Assignment] = []
-
         for course in toProbe {
             let courseKey = Self.courseKey(forEnrolled: course)
             // The JSON modules API (`CanvasModulesClient`) is the robust
@@ -969,18 +985,20 @@ final class AppState: ObservableObject {
             let modulesClient = CanvasModulesClient(cookies: cookies)
             if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
                 courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
+                // A course probed for the first time this launch that ALSO
+                // already carries an "include" decision from a previous
+                // session (the common nudge-then-relaunch case) is imported
+                // right away via the shared `importModuleReadings`, instead
+                // of collecting into a batch reconciled once after this
+                // loop. This costs one extra `fetchModuleItems` call for that
+                // course (`importModuleReadings` fetches its own copy rather
+                // than taking `items` as a parameter, so it can be shared
+                // verbatim with `importReadingsIfNeeded` below) — an
+                // acceptable trade for not having a second, batch-shaped
+                // import path with its own reconcile/upsert semantics to
+                // keep in sync with this one.
                 if !items.isEmpty && courseContentDecisions[courseKey]?.choice == .include {
-                    readingsToImport += items.map { item in
-                        Assignment(
-                            source: .canvasModules,
-                            sourceID: "module-item-\(item.id)",
-                            kind: .event,
-                            course: courseKey,
-                            title: item.title,
-                            dueAt: item.dueAt,
-                            url: nil
-                        )
-                    }
+                    _ = await importModuleReadings(courseKey: courseKey, courseID: course.id, cookies: cookies)
                 }
                 continue
             }
@@ -992,34 +1010,92 @@ final class AppState: ObservableObject {
             courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
         }
 
-        // One reconcile for the whole batch, after the loop — `reconcile`
-        // partitions the ledger by source before deciding what's missing, so
-        // this never touches `.canvas`/`.gradescope` rows. NOTE: this batch is
-        // scoped to the courses THIS call's `toProbe` covers (capped at 8,
-        // and `courseProbes` — once set — keeps an already-probed course out
-        // of `toProbe` for the rest of this launch). A course opted in and
-        // imported by an earlier `refreshCourseIntel` call this same launch
-        // therefore has no entry in `readingsToImport` on a later call, and
-        // `reconcile` — seeing its rows missing from a NON-empty `fetched` —
-        // would mark them `isGoneFromFeed` rather than refuse the batch (the
-        // partial-fetch guard only fires when `fetched` is empty outright).
-        // In practice this only bites a course whose heavy enrollment list
-        // needs more than one 8-course-per-refresh pass to fully probe; it
-        // does not delete anything (`isGoneFromFeed` rows still show until
-        // the grace period elapses, and undated readings never age out at
-        // all — see `AssignmentStore.isAgedOut`), and the next full sync that
-        // re-probes and re-imports that course self-heals it. Flagged here
-        // rather than fixed: fixing it means accumulating probed courses'
-        // readings across calls, which changes this function's state shape.
-        if let store = assignmentStore {
-            let result = store.reconcile(readingsToImport, source: .canvasModules)
-            moduleReadingItems = result.items
-        } else {
-            moduleReadingItems = readingsToImport
-        }
         rebuildDashboardItems()
 
         recomputeCourseProfiles()
+    }
+
+    /// Fetches a probed course's Modules-page readings via the JSON API and
+    /// upserts them into the ledger as `.canvasModules` rows, then refreshes
+    /// `moduleReadingItems` from the ledger. Shared by the probe loop above
+    /// (for a course already decided "include" when its first probe of this
+    /// launch lands) and `importReadingsIfNeeded` below (the immediate
+    /// import that runs the moment a user answers a nudge or flips the
+    /// Settings toggle). Returns whether the fetch itself succeeded — a
+    /// thrown fetch (expired session, HTTP error) leaves the ledger
+    /// untouched rather than being treated as "confirmed empty."
+    ///
+    /// Persists via `upsert`, not `reconcile`: `upsert` only ever inserts a
+    /// new row or refreshes an existing one by id (see `AssignmentStore
+    /// .upsert`) — it never marks anything `isGoneFromFeed`. `reconcile` was
+    /// the wrong tool here because it partitions by SOURCE, not by course:
+    /// reconciling THIS course's freshly-fetched items against the WHOLE
+    /// `.canvasModules` ledger meant every other already-imported course's
+    /// rows — invisible to this fetch, since it only ever asked Canvas about
+    /// one course — looked "missing from a non-empty fetch" and got marked
+    /// gone (this is what happened before this fix: one course's import
+    /// batch could mark another course's module rows gone). `upsert`
+    /// sidesteps that distinction entirely: it only ever touches rows for
+    /// the ids in the list it's given.
+    private func importModuleReadings(courseKey: String, courseID: String, cookies: [HTTPCookie]) async -> Bool {
+        let modulesClient = CanvasModulesClient(cookies: cookies)
+        guard let items = try? await modulesClient.fetchModuleItems(courseID: courseID) else { return false }
+        let readings = items.map { item in
+            Assignment(
+                source: .canvasModules,
+                sourceID: "module-item-\(item.id)",
+                kind: .event,
+                course: courseKey,
+                title: item.title,
+                dueAt: item.dueAt,
+                url: nil
+            )
+        }
+        if let store = assignmentStore {
+            store.upsert(readings)
+            moduleReadingItems = store.assignments(source: .canvasModules)
+        } else {
+            moduleReadingItems = readings
+        }
+        return true
+    }
+
+    /// Imports a just-decided-in course's readings right away, instead of
+    /// waiting for the next launch's `refreshCourseIntel` probe loop to
+    /// notice the decision. Field evidence this fixes: probes run at most
+    /// once per course per launch (the `courseProbes` gate), and import only
+    /// ever happened INSIDE that same probe loop — but every include
+    /// decision necessarily arrives strictly AFTER the probe that produced
+    /// the nudge it's answering, so answering "Add to my list" (`resolveCourseNudge`)
+    /// or flipping the Settings toggle on (`setCourseContentIncluded`) used
+    /// to import nothing until the app was relaunched. Both call this.
+    ///
+    /// Fire-and-forget: started as an unstructured `Task`, not awaited by
+    /// the caller. That's acceptable because the caller has already updated
+    /// `courseContentDecisions`/`pendingCourseNudge` and rebuilt the
+    /// dashboard synchronously — this call only needs to catch the ledger
+    /// and dashboard up with the freshly-imported readings once the network
+    /// round trip completes, the same "sync happens in the background, the
+    /// toggle itself is immediate" posture as the rest of this file's
+    /// cookie-gathering call sites.
+    ///
+    /// No-ops in fixture/preview mode, when there's no live Canvas session
+    /// to fetch with, or when `courseKey`'s Canvas course id can't be
+    /// resolved — the "silent no-op, not a user-facing error" posture
+    /// `refreshGradeWatcher`/`refreshCourseIntel` already use for the same
+    /// situations.
+    func importReadingsIfNeeded(for courseKey: String) {
+        guard !isUsingFixtureData else { return }
+        guard let courseID = courseProfileReports.first(where: { $0.courseKey == courseKey })?.canvasCourseID
+            ?? enrolledCanvasCourses.first(where: { Self.courseKey(forEnrolled: $0) == courseKey })?.id
+        else { return }
+
+        Task { @MainActor in
+            let cookies = await AutoSyncCoordinator.canvasCookies()
+            guard !cookies.isEmpty else { return }
+            _ = await importModuleReadings(courseKey: courseKey, courseID: courseID, cookies: cookies)
+            rebuildDashboardItems()
+        }
     }
 
     /// Folds the enrolled-course list into `canvasCourseIDsByCode` — the map
@@ -1200,6 +1276,10 @@ final class AppState: ObservableObject {
         )
         pendingCourseNudge = nil
         rebuildDashboardItems()
+        // Import right away rather than waiting for next launch's probe loop
+        // to notice this decision — see `importReadingsIfNeeded`'s doc
+        // comment for the field evidence this fixes.
+        if include { importReadingsIfNeeded(for: report.courseKey) }
     }
 
     /// Dismisses the pending nudge WITHOUT recording a decision, so the same
@@ -1227,6 +1307,10 @@ final class AppState: ObservableObject {
         setCourseContentDecision(courseKey: course, choice: include ? .include : .exclude, fingerprint: fingerprint)
         if pendingCourseNudge?.courseKey == course { pendingCourseNudge = nil }
         rebuildDashboardItems()
+        // Same immediate-import fix as `resolveCourseNudge` — flipping this
+        // toggle on used to import nothing until the next launch's probe
+        // loop happened to notice the decision.
+        if include { importReadingsIfNeeded(for: course) }
     }
 
     private func setCourseContentDecision(courseKey: String, choice: CourseContentDecision.Choice, fingerprint: String) {
@@ -1291,6 +1375,17 @@ final class AppState: ObservableObject {
             lines.append(
                 "\(course): feed kinds assignment=\(t.assignment) quiz=\(t.quiz) event=\(t.event) other=\(t.other), undated=\(t.undated)"
             )
+        }
+
+        // One line per recorded decision, sorted for stable output — same
+        // privacy budget as everything else here: the course key, the
+        // include/exclude choice, and the stored fingerprint (a shape+count
+        // summary, never a title) are all that's shown, e.g.
+        // "decision LGST 1010: include (silent:55)".
+        for key in courseContentDecisions.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+            let decision = courseContentDecisions[key]!
+            let choiceText = decision.choice == .include ? "include" : "exclude"
+            lines.append("decision \(key): \(choiceText) (\(decision.fingerprint))")
         }
 
         lines.append(

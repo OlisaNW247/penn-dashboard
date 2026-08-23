@@ -60,6 +60,19 @@ public enum CourseCode {
         return best
     }
 
+    /// True iff `raw` contains a recognizable DEPT + number course code
+    /// (i.e. `extractCode(from:)` finds a match). Distinguishes a real
+    /// DEPT+number course site from a Canvas community/resource site whose
+    /// name never carries one — a diagnostic, a class-year cohort org, or an
+    /// archive (e.g. "Chemistry Diagnostic 2024-2025", "Penn Engineering
+    /// Class of 2028", "Physics Exam Archive") — which `parse` falls back to
+    /// returning verbatim as its "code" rather than failing outright.
+    /// Exposed only as this read-only wrapper; `parse`'s own behavior (its
+    /// verbatim fallback for unparseable names) is unchanged.
+    public static func containsExplicitCode(_ raw: String) -> Bool {
+        extractCode(from: raw.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+    }
+
     private static func firstTermCode(in text: String) -> String? {
         guard let range = text.range(of: #"\b20\d{2}(?:10|20|30)\b"#, options: .regularExpression)
         else { return nil }
