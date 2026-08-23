@@ -1039,7 +1039,14 @@ final class AppState: ObservableObject {
     /// the ids in the list it's given.
     private func importModuleReadings(courseKey: String, courseID: String, cookies: [HTTPCookie]) async -> Bool {
         let modulesClient = CanvasModulesClient(cookies: cookies)
-        guard let items = try? await modulesClient.fetchModuleItems(courseID: courseID) else { return false }
+        let items: [CanvasModulesClient.ModuleItem]
+        do {
+            items = try await modulesClient.fetchModuleItems(courseID: courseID)
+        } catch {
+            recordModuleImport("\(courseKey): fetch failed code=\((error as NSError).code)")
+            return false
+        }
+        recordModuleImport("\(courseKey): fetched \(items.count) items, dated=\(items.filter { $0.dueAt != nil }.count)")
         let readings = items.map { item in
             Assignment(
                 source: .canvasModules,
@@ -1057,6 +1064,7 @@ final class AppState: ObservableObject {
         } else {
             moduleReadingItems = readings
         }
+        recordModuleImport("\(courseKey): holding \(moduleReadingItems.count) rows after upsert")
         return true
     }
 
@@ -1088,11 +1096,18 @@ final class AppState: ObservableObject {
         guard !isUsingFixtureData else { return }
         guard let courseID = courseProfileReports.first(where: { $0.courseKey == courseKey })?.canvasCourseID
             ?? enrolledCanvasCourses.first(where: { Self.courseKey(forEnrolled: $0) == courseKey })?.id
-        else { return }
+        else {
+            recordModuleImport("\(courseKey): no course id resolvable")
+            return
+        }
 
+        recordModuleImport("\(courseKey): on-decision import starting")
         Task { @MainActor in
             let cookies = await AutoSyncCoordinator.canvasCookies()
-            guard !cookies.isEmpty else { return }
+            guard !cookies.isEmpty else {
+                recordModuleImport("\(courseKey): no canvas cookies")
+                return
+            }
             _ = await importModuleReadings(courseKey: courseKey, courseID: courseID, cookies: cookies)
             rebuildDashboardItems()
         }
@@ -1388,10 +1403,36 @@ final class AppState: ObservableObject {
             lines.append("decision \(key): \(choiceText) (\(decision.fingerprint))")
         }
 
+        // Import-path visibility (2026-08-23): a device kept reporting
+        // "toggled include, nothing appeared" and every guard on the import
+        // path fails SILENTLY by design — so the path now confesses here.
+        // Same privacy budget: keys, counts, and error codes only.
+        let datedModuleRows = moduleReadingItems.filter { $0.dueAt != nil }.count
+        lines.append("module rows held=\(moduleReadingItems.count) dated=\(datedModuleRows)")
+        let moduleInBuckets = (assignments + laterAssignments).filter { $0.source == .canvasModules }.count
+        lines.append(
+            "buckets near=\(assignments.count) later=\(laterAssignments.count) assessments=\(assessments.count) moduleRowsShown=\(moduleInBuckets)"
+        )
+        for entry in moduleImportLog {
+            lines.append("import \(entry)")
+        }
         lines.append(
             "enrolled=\(enrolledCanvasCourses.count) probed=\(courseProbes.count) decisions=\(courseContentDecisions.count)"
         )
         return lines
+    }
+
+    /// Rolling record of what the module-reading import path did this
+    /// launch — every silent guard exit and every fetch outcome, newest
+    /// last, capped so a pathological retry loop can't grow it unbounded.
+    /// Course keys, counts, and error codes only; never titles or URLs.
+    private(set) var moduleImportLog: [String] = []
+
+    func recordModuleImport(_ entry: String) {
+        moduleImportLog.append(entry)
+        if moduleImportLog.count > 12 {
+            moduleImportLog.removeFirst(moduleImportLog.count - 12)
+        }
     }
 
     /// `<profile-name>(<counts>)` text for `courseIntelDiagnosticLines` — e.g.
