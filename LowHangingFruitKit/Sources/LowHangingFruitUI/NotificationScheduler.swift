@@ -46,6 +46,10 @@ final class NotificationScheduler: ObservableObject {
     @Published private(set) var isEnabled: Bool
     @Published private(set) var leadOffsets: Set<LeadOffset>
     @Published private(set) var digestEnabled: Bool
+    /// Whether "Turned in ✓" confirmations post when a Grade Watcher refresh
+    /// detects a new submission. Defaults ON (unlike reminders/digest): the
+    /// feature was requested as always-on, so the toggle exists to opt OUT.
+    @Published private(set) var turnedInEnabled: Bool
     @Published private(set) var digestTime: DateComponents
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
@@ -58,6 +62,7 @@ final class NotificationScheduler: ObservableObject {
     private static let digestKey       = "notif.digestEnabled"
     private static let digestHourKey   = "notif.digestHour"
     private static let digestMinuteKey = "notif.digestMinute"
+    private static let turnedInKey     = "notif.turnedInEnabled"
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
     static let maxPending = 60
@@ -72,6 +77,9 @@ final class NotificationScheduler: ObservableObject {
             self.leadOffsets = [.h24, .h1]
         }
         self.digestEnabled = d.bool(forKey: Self.digestKey)
+        // Default ON when never set — `bool(forKey:)` alone would read a
+        // missing key as false and silently disable the feature for everyone.
+        self.turnedInEnabled = d.object(forKey: Self.turnedInKey) as? Bool ?? true
         let hour = d.object(forKey: Self.digestHourKey) as? Int ?? 8
         let minute = d.object(forKey: Self.digestMinuteKey) as? Int ?? 0
         self.digestTime = DateComponents(hour: hour, minute: minute)
@@ -122,6 +130,11 @@ final class NotificationScheduler: ObservableObject {
     func setDigestEnabled(_ on: Bool) {
         digestEnabled = on
         UserDefaults.lhf.set(on, forKey: Self.digestKey)
+    }
+
+    func setTurnedInEnabled(_ on: Bool) {
+        turnedInEnabled = on
+        UserDefaults.lhf.set(on, forKey: Self.turnedInKey)
     }
 
     func setDigestTime(_ comps: DateComponents) {
@@ -238,7 +251,7 @@ final class NotificationScheduler: ObservableObject {
     /// authorization state the reminders flow already established, exactly
     /// like `notifyGradeChanges` does.
     func postTurnedInNotifications(_ notifications: [(title: String, body: String)]) async {
-        guard isEnabled, !notifications.isEmpty else { return }
+        guard isEnabled, turnedInEnabled, !notifications.isEmpty else { return }
         await refreshAuthStatus()
         guard authStatus == .authorized || authStatus == .provisional else { return }
         for request in Self.turnedInRequests(notifications) {

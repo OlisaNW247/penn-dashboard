@@ -432,6 +432,11 @@ struct SettingsPage: View {
                         ))
                     }
 
+                    Toggle("\u{201C}Turned in\u{201D} confirmations", isOn: Binding(
+                        get: { scheduler.turnedInEnabled },
+                        set: { scheduler.setTurnedInEnabled($0) }
+                    ))
+
                     Toggle("Daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
                         get: { scheduler.digestEnabled },
                         set: { scheduler.setDigestEnabled($0) }
