@@ -9,6 +9,14 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         case gradescope
         case manual
         case canvasSuggestion
+        /// Imported from a course's Modules pages via Canvas's JSON API
+        /// (`CanvasModulesClient`, docs/READINGS_COURSES_PLAN.md) rather than
+        /// the ICS calendar feed. Kept distinct from `.canvas` so
+        /// `AssignmentStore.reconcile(_:source:)` — which partitions existing
+        /// rows by source before flagging anything missing from a fresh fetch
+        /// as gone — never marks a module-imported reading gone during an ICS
+        /// sync, or an ICS-synced assignment gone during a modules sync.
+        case canvasModules
     }
 
     /// What kind of thing this calendar entry represents. Canvas's ICS feed
