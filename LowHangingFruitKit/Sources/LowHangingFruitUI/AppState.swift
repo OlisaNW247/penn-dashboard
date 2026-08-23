@@ -47,6 +47,15 @@ private struct CourseFeedKindTally {
 final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeItems: [Assignment] = []
+    /// Readings imported from a probed (silent) course's Modules page via
+    /// `CanvasModulesClient`, for courses whose readings/silent-course nudge
+    /// was answered "include" (docs/READINGS_COURSES_PLAN.md). Kept separate
+    /// from `canvasItems` because these never came through the ICS feed —
+    /// `refreshCourseIntel` is what fills it, ledger-backed the same way via
+    /// `AssignmentStore.reconcile(_:source: .canvasModules)`. Read-only
+    /// outside this file; `rebuildDashboardItems` folds it into the Canvas
+    /// pool it filters.
+    @Published private(set) var moduleReadingItems: [Assignment] = []
     /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
     /// incomplete buckets below are filtered out of, but kept whole so callers
     /// that need completed work (the Done tab) see one item per assignment
@@ -273,6 +282,12 @@ final class AppState: ObservableObject {
             let persisted = store.currentAssignments()
             self.canvasItems = persisted.filter { $0.source == .canvas }
             self.gradescopeItems = persisted.filter { $0.source == .gradescope }
+            // Module-imported readings (docs/READINGS_COURSES_PLAN.md) survive
+            // a relaunch the same way canvasItems/gradescopeItems do — read
+            // back out of the same `currentAssignments()` snapshot rather than
+            // a second ledger query, so the dashboard has last session's
+            // opted-in readings from the first frame, before any refresh runs.
+            self.moduleReadingItems = persisted.filter { $0.source == .canvasModules }
             // Submission state used to be blank until the first successful grade
             // refresh landed — so auto-filed work sat back on the active list on
             // every cold launch, and stayed there forever if the Canvas session
@@ -564,6 +579,12 @@ final class AppState: ObservableObject {
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's work survives in the store and reappears on the dashboard.
         assignmentStore?.purge(source: .canvas)
+        // Module-imported readings are session-derived the same way the probe
+        // state above is — purge their ledger rows too, or a disconnected
+        // account's readings survive the reconnect and reappear once the
+        // course re-qualifies for a decision.
+        assignmentStore?.purge(source: .canvasModules)
+        moduleReadingItems = []
         refreshCompletionFromLedger()
         rebuildDashboardItems()
         refreshCanvasSessionExpiredState()
@@ -931,7 +952,38 @@ final class AppState: ObservableObject {
             }
             .prefix(8)
 
+        // Readings found via the JSON probe, for courses this refresh probed
+        // successfully AND that already have an "include" decision on file —
+        // gathered while probing so the reconcile below runs once, after the
+        // whole loop, rather than once per course.
+        var readingsToImport: [Assignment] = []
+
         for course in toProbe {
+            let courseKey = Self.courseKey(forEnrolled: course)
+            // The JSON modules API (`CanvasModulesClient`) is the robust
+            // source for a course's readings — it's tried FIRST. Only when it
+            // throws (expired session, HTTP error — never on a merely empty
+            // result, which still counts as "probed, found nothing") do we
+            // fall back to the HTML scrape (`fetchModulesReadings`) that ran
+            // here before, keeping that path's exact result semantics.
+            let modulesClient = CanvasModulesClient(cookies: cookies)
+            if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
+                courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
+                if !items.isEmpty && courseContentDecisions[courseKey]?.choice == .include {
+                    readingsToImport += items.map { item in
+                        Assignment(
+                            source: .canvasModules,
+                            sourceID: "module-item-\(item.id)",
+                            kind: .event,
+                            course: courseKey,
+                            title: item.title,
+                            dueAt: item.dueAt,
+                            url: nil
+                        )
+                    }
+                }
+                continue
+            }
             // A thrown fetch (expired session, HTTP error) leaves NO probe
             // entry — that's what keeps `.unknownSilent` honest instead of
             // quietly reporting "probed, found nothing" for a course LHF
@@ -939,6 +991,33 @@ final class AppState: ObservableObject {
             guard let items = try? await client.fetchModulesReadings(courseID: course.id) else { continue }
             courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
         }
+
+        // One reconcile for the whole batch, after the loop — `reconcile`
+        // partitions the ledger by source before deciding what's missing, so
+        // this never touches `.canvas`/`.gradescope` rows. NOTE: this batch is
+        // scoped to the courses THIS call's `toProbe` covers (capped at 8,
+        // and `courseProbes` — once set — keeps an already-probed course out
+        // of `toProbe` for the rest of this launch). A course opted in and
+        // imported by an earlier `refreshCourseIntel` call this same launch
+        // therefore has no entry in `readingsToImport` on a later call, and
+        // `reconcile` — seeing its rows missing from a NON-empty `fetched` —
+        // would mark them `isGoneFromFeed` rather than refuse the batch (the
+        // partial-fetch guard only fires when `fetched` is empty outright).
+        // In practice this only bites a course whose heavy enrollment list
+        // needs more than one 8-course-per-refresh pass to fully probe; it
+        // does not delete anything (`isGoneFromFeed` rows still show until
+        // the grace period elapses, and undated readings never age out at
+        // all — see `AssignmentStore.isAgedOut`), and the next full sync that
+        // re-probes and re-imports that course self-heals it. Flagged here
+        // rather than fixed: fixing it means accumulating probed courses'
+        // readings across calls, which changes this function's state shape.
+        if let store = assignmentStore {
+            let result = store.reconcile(readingsToImport, source: .canvasModules)
+            moduleReadingItems = result.items
+        } else {
+            moduleReadingItems = readingsToImport
+        }
+        rebuildDashboardItems()
 
         recomputeCourseProfiles()
     }
@@ -1027,6 +1106,13 @@ final class AppState: ObservableObject {
     /// nudge if one is warranted. Call after anything that could change any
     /// of those three inputs — a successful `sync()`, or `refreshCourseIntel`.
     private func recomputeCourseProfiles() {
+        // Deliberately `canvasItems`, never `canvasItems + moduleReadingItems`:
+        // silence is a property of the ICS FEED (does this course publish
+        // anything on the calendar at all?), and `moduleReadingItems` is
+        // itself the OUTCOME of probing a course this engine already called
+        // silent. Folding imported readings back in here would make an
+        // opted-in silent course look `.normal` on the very next refresh and
+        // silently stop nudging/managing it.
         courseProfileReports = CourseProfileEngine.reports(
             feedItems: canvasItems,
             enrolledCourses: enrolledCanvasCourses,
@@ -1513,9 +1599,15 @@ final class AppState: ObservableObject {
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams), plus — for a course the user opted in via
         // a readings/silent-course nudge or Settings — its dated calendar
-        // events (docs/READINGS_COURSES_PLAN.md). Gradescope items are already
-        // assignments.
-        let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
+        // events (docs/READINGS_COURSES_PLAN.md), whether those events came in
+        // on the ICS feed or were imported from a probed course's Modules page
+        // (`moduleReadingItems`). Both are `.event`-kind, so
+        // `includesAsOptedInContent` gates a module-imported reading exactly
+        // the same way it gates a feed one — a course toggled OFF hides its
+        // already-imported readings without deleting them from the ledger.
+        // Gradescope items are already assignments.
+        let canvasPool = canvasItems + moduleReadingItems
+        let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
         // into a single Canvas-anchored item before it ever reaches the
