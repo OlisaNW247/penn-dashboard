@@ -1073,7 +1073,7 @@ final class AppState: ObservableObject {
             let now = Date()
             let plannerStart = now.addingTimeInterval(-120 * 24 * 60 * 60)
             let plannerEnd = now.addingTimeInterval(365 * 24 * 60 * 60)
-            var plannerDates: [CanvasModulesClient.PlannerDatedItem] = []
+            var plannerDates: [PlannerDatedItem] = []
             do {
                 plannerDates = try await modulesClient.fetchPlannerDates(
                     courseID: courseID,
