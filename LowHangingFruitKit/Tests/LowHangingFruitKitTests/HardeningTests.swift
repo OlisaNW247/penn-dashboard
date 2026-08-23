@@ -155,4 +155,22 @@ struct HardeningTests {
         #expect(AppState.isAssessment(item(.assignment, "Final Exam")))
         #expect(!AppState.isAssessment(item(.assignment, "Homework 3")))
     }
+
+    /// A trailing space after the bracket used to send the whole item to
+    /// `(unknown course)`, where it can't be selected, graded or deduplicated —
+    /// one stray character silently hid an entire class from the app. Feeds
+    /// carry trailing whitespace and CRs routinely, so this is not exotic.
+    @Test("a course survives trailing whitespace after the bracket")
+    func splitCourseToleratesTrailingWhitespace() {
+        for summary in [
+            "HW 3 [CIS 1200] ",
+            "HW 3 [CIS 1200]\r",
+            "HW 3 [CIS 1200]\n",
+            "HW 3 [CIS 1200]\t ",
+        ] {
+            let parsed = CanvasICSClient.splitCourse(from: summary)
+            #expect(parsed.course == "CIS 1200", "failed for \(summary.debugDescription)")
+            #expect(parsed.title == "HW 3")
+        }
+    }
 }

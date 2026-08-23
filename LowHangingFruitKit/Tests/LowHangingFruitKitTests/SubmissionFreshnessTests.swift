@@ -130,6 +130,39 @@ struct SubmissionFreshnessTests {
         #expect(r.canvasSubmissionObservedAt == at)
     }
 
+    @Test("a partial refresh doesn't backdate-launder the courses it never reached")
+    func partialRefreshLeavesUncoveredObservationsAlone() throws {
+        let store = try AssignmentStore(inMemory: true)
+        _ = store.reconcile([canvas("1"), canvas("2", course: "MATH 1400")], source: .canvas)
+        let tuesday = Date(timeIntervalSince1970: 1_700_000_000)
+        let today = tuesday.addingTimeInterval(5 * 86_400)
+
+        // Tuesday: both courses answered, both turned in.
+        _ = store.applySubmissionState(submittedCanvasAssignmentIDs: ["1", "2"],
+                                       scores: [:], now: tuesday)
+
+        // Today: MATH 1400 401s mid-loop, so only "1" is covered. The caller
+        // merges the ledger's memory of "2" into the submitted set — otherwise
+        // the full-replace write would erase it — but "2" was not observed.
+        _ = store.applySubmissionState(submittedCanvasAssignmentIDs: ["1", "2"],
+                                       scores: [:],
+                                       observedCanvasAssignmentIDs: ["1"],
+                                       now: today)
+
+        let covered = try #require(row(store, "canvas:1"))
+        let uncovered = try #require(row(store, "canvas:2"))
+        // Both still read as submitted — that is the partial-refresh fix.
+        #expect(covered.canvasSubmitted)
+        #expect(uncovered.canvasSubmitted)
+        // But only one of them was actually asked about today. Carrying an id
+        // forward to protect the flag must not also relabel Tuesday's answer as
+        // today's, or "as of" becomes a confident-sounding fiction.
+        #expect(covered.canvasSubmissionObservedAt == today)
+        #expect(uncovered.canvasSubmissionObservedAt == tuesday)
+        #expect(covered.hasFreshSubmissionState(now: today, within: 3600))
+        #expect(!uncovered.hasFreshSubmissionState(now: today, within: 3600))
+    }
+
     @Test("rows written before observation dates existed read as unknown, not stale")
     func legacyRowsDegradeHonestly() throws {
         let store = try AssignmentStore(inMemory: true)

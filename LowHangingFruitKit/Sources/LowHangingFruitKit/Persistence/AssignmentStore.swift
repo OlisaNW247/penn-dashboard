@@ -384,21 +384,38 @@ public final class AssignmentStore {
         public var isNewlyGraded: Bool { previous == nil }
     }
 
+    /// Writes this refresh's Canvas submission flags and scores onto the ledger.
+    ///
+    /// `observedCanvasAssignmentIDs` is what separates the two things a caller
+    /// hands over here. The submitted set is deliberately allowed to be wider
+    /// than this refresh — callers merge in what the ledger already knew, so a
+    /// course that 401'd mid-loop doesn't get its finished work erased — but a
+    /// carried-over id is *not* something Canvas answered for just now, and
+    /// dating it as though it were would turn a stale record into a
+    /// confident-looking fresh one. Pass the ids this pass genuinely covered and
+    /// only those get a new observation date; the rest keep the date they had,
+    /// which is the honest answer and the one `hasFreshSubmissionState` needs.
+    ///
+    /// Nil means "everything on the ledger was covered" — the whole-refresh
+    /// case, and the behaviour before partial refreshes were handled.
     @discardableResult
     public func applySubmissionState(
         submittedCanvasAssignmentIDs: Set<String>,
         scores: [String: (earned: Double?, max: Double?)],
+        observedCanvasAssignmentIDs: Set<String>? = nil,
         now: Date = Date()
     ) -> [ScoreChange] {
         var changes: [ScoreChange] = []
         for row in rows(source: .canvas) {
             guard let canvasID = row.canvasAssignmentID else { continue }
             row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
-            // Reaching this line means Canvas answered for this item — either
-            // way. Absence of a submission is a real observation too, and it is
-            // the one most worth timestamping: it is what the app shows when it
-            // tells a student they still owe work.
-            row.canvasSubmissionObservedAt = now
+            // Canvas answered for this item — either way. Absence of a
+            // submission is a real observation too, and it is the one most worth
+            // timestamping: it is what the app shows when it tells a student
+            // they still owe work.
+            if observedCanvasAssignmentIDs?.contains(canvasID) ?? true {
+                row.canvasSubmissionObservedAt = now
+            }
             guard let score = scores[canvasID] else { continue }
 
             // Only a real number counts as a grade. Canvas reports ungraded work

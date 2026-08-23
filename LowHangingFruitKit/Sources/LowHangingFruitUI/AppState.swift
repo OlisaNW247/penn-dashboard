@@ -988,8 +988,24 @@ final class AppState: ObservableObject {
                 }
             }
             let changes = assignmentStore?.applySubmissionState(
-                submittedCanvasAssignmentIDs: ids,
-                scores: scores
+                // The *union*, not the bare fetch. `applySubmissionState` is a
+                // full replace by design (so a retraction self-heals), which
+                // means handing it only this refresh's ids writes
+                // `canvasSubmitted = false` onto every course the refresh
+                // didn't cover. The session looks fine — `submittedCanvasAssignmentIDs`
+                // above is the union — but the ledger is already wrong, and the
+                // next cold launch seeds from the ledger and bounces finished
+                // work back onto the dashboard for good.
+                submittedCanvasAssignmentIDs: submittedCanvasAssignmentIDs,
+                scores: scores,
+                // Passing the union above fixes the flags but would corrupt the
+                // timestamps if left alone: the ids for courses this refresh
+                // never reached come from the ledger, and stamping them
+                // "observed now" would relabel last Tuesday's answer as today's.
+                // That is the precise lie `hasFreshSubmissionState` exists to
+                // catch, so the store is told which ids Canvas genuinely spoke
+                // for and dates only those.
+                observedCanvasAssignmentIDs: refreshedCanvasAssignmentIDs()
             ) ?? []
             pendingGradeChanges = notifiableGradeChanges(changes)
         }
@@ -1020,6 +1036,22 @@ final class AppState: ObservableObject {
         return notifiable
     }
 
+    /// Every Canvas assignment id this refresh actually got an answer about.
+    ///
+    /// This is the boundary between what the app *learned* just now and what it
+    /// is merely still carrying from last time, and two separate things need to
+    /// agree on where that boundary is: which persisted submissions survive a
+    /// partial refresh, and which rows are entitled to a fresh observation
+    /// timestamp. Deriving it once means they cannot drift apart.
+    private func refreshedCanvasAssignmentIDs() -> Set<String> {
+        Set(
+            gradeWatcher.snapshots.values
+                .flatMap(\.categories)
+                .flatMap(\.items)
+                .map(\.id)
+        )
+    }
+
     /// Persisted submissions belonging to courses this refresh didn't cover, so
     /// a partial or deselected refresh can't un-submit them in memory.
     private func persistedSubmittedIDsForUnfetchedCourses() -> Set<String> {
@@ -1029,13 +1061,8 @@ final class AppState: ObservableObject {
         // Anything this refresh actually saw is authoritative (including a
         // now-retracted submission, which must be allowed to clear). Everything
         // else keeps whatever the ledger last recorded.
-        let refreshedAssignmentIDs = Set(
-            gradeWatcher.snapshots.values
-                .flatMap(\.categories)
-                .flatMap(\.items)
-                .map(\.id)
-        )
-        return store.submittedCanvasAssignmentIDs().subtracting(refreshedAssignmentIDs)
+        return store.submittedCanvasAssignmentIDs()
+            .subtracting(refreshedCanvasAssignmentIDs())
     }
 
     /// When this item was marked done, if known. Items completed before the app
