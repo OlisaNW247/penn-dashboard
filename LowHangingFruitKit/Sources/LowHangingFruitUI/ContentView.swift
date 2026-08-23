@@ -160,6 +160,23 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
+        // `CourseProfileReport` isn't `Identifiable`, so this is
+        // `.sheet(isPresented:)` driven off a Binding over `pendingCourseNudge`
+        // rather than `.sheet(item:)`. Swipe-to-dismiss drives the setter with
+        // `false` and only calls `dismissCourseNudge()` (ask again next
+        // launch); the sheet's own two buttons call `resolveCourseNudge`
+        // first, which writes a durable decision and clears the pending nudge
+        // itself — the setter below then sees that as "already nil" and is a
+        // no-op, not a second dismiss.
+        .sheet(isPresented: courseNudgeBinding) {
+            if let report = state.pendingCourseNudge {
+                CourseNudgeSheet(
+                    report: report,
+                    onInclude: { state.resolveCourseNudge(report, include: true) },
+                    onSkip: { state.resolveCourseNudge(report, include: false) }
+                )
+            }
+        }
         // Settings is a push now, so there's no sheet-dismiss hook to hang this
         // on: returning to the dashboard is the moment class toggles, deletions
         // and renames need to be reflected in the list and in reminders.
@@ -190,6 +207,17 @@ struct ContentView: View {
     private func rescheduleNotifications() {
         guard scheduler.isEnabled else { return }
         Task { await scheduler.reschedule(from: vm.items) }
+    }
+
+    /// Drives the course-nudge sheet's presentation off `pendingCourseNudge`
+    /// (see the `.sheet` comment above for the dismiss-vs-resolve distinction).
+    private var courseNudgeBinding: Binding<Bool> {
+        Binding(
+            get: { state.pendingCourseNudge != nil },
+            set: { isPresented in
+                if !isPresented { state.dismissCourseNudge() }
+            }
+        )
     }
 
     // MARK: Canvas session banner

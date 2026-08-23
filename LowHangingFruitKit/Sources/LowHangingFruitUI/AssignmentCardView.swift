@@ -59,10 +59,21 @@ struct AssignmentCardView: View {
     private func content(state: DueState, now: Date) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                    .font(.lhfSans(9, weight: .medium))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
+                HStack(spacing: 4) {
+                    if item.assignment.kind == .event {
+                        // Reading/event item opted into the list (docs/
+                        // READINGS_COURSES_PLAN.md Phase 3.9) — never a
+                        // submission, so it gets a marker instead of implying
+                        // one.
+                        Image(systemName: "book")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(Color.v2CourseCode)
+                    }
+                    Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
+                        .font(.lhfSans(9, weight: .medium))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.v2CourseCode)
+                }
 
                 Text(item.assignment.title)
                     .font(.lhfSans(14, weight: .medium))
