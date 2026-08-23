@@ -13,7 +13,7 @@ struct ManualAssignment: Codable, Identifiable, Hashable {
     func asAssignment() -> Assignment {
         Assignment(
             source: .manual,
-            sourceID: "manual-\(id.uuidString)",
+            sourceID: "\(Self.sourceIDPrefix)\(id.uuidString)",
             kind: .assignment,
             course: course,
             title: title,
@@ -21,6 +21,27 @@ struct ManualAssignment: Codable, Identifiable, Hashable {
             url: nil,
             submitted: false
         )
+    }
+}
+
+extension ManualAssignment {
+    /// The `sourceID` prefix `asAssignment()` writes. Round-tripping through it
+    /// is what lets manual work live on the ledger and still be edited here.
+    static let sourceIDPrefix = "manual-"
+
+    /// Rebuilds the editable model from a ledger row's value type. Nil when the
+    /// row isn't one this type produced — a `.manual` item from anywhere else
+    /// isn't ours to hand to the edit sheet.
+    init?(_ assignment: Assignment) {
+        guard assignment.source == .manual,
+              assignment.sourceID.hasPrefix(Self.sourceIDPrefix),
+              let uuid = UUID(uuidString: String(
+                  assignment.sourceID.dropFirst(Self.sourceIDPrefix.count)))
+        else { return nil }
+        self.id = uuid
+        self.title = assignment.title
+        self.course = assignment.course
+        self.dueAt = assignment.dueAt
     }
 }
 

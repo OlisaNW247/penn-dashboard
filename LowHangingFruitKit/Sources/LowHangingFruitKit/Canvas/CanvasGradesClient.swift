@@ -126,7 +126,10 @@ public struct CanvasGradesClient: Sendable {
 
     private func fetchRaw(_ url: URL) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url)
-        request.httpShouldHandleCookies = true
+        // See `CanvasDiscoveryClient.fetchHTML`'s matching comment — an
+        // explicit `Cookie` header below means this must be `false`
+        // (docs/CANVAS_LOGIN_HARDENING.md item 2c).
+        request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
             request.setValue(value, forHTTPHeaderField: field)

@@ -59,6 +59,12 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
+                    if state.canvasSessionExpired {
+                        canvasSessionExpiredBanner
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                    }
+
                     SegmentedToggle(selection: $filter)
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
@@ -186,6 +192,41 @@ struct ContentView: View {
         Task { await scheduler.reschedule(from: vm.items) }
     }
 
+    // MARK: Canvas session banner
+
+    /// Plain-language reconnect nudge (docs/CANVAS_LOGIN_HARDENING.md item
+    /// 3d) — shown only when `state.canvasSessionExpired`, which is
+    /// deliberately distinct from "Canvas isn't connected": a feed-only
+    /// (paste-link) user, or one whose feed still syncs fine, never sees
+    /// this. It's specifically about the cookie-authed login session behind
+    /// automatic submission tracking and Canvas Scan going stale.
+    private var canvasSessionExpiredBanner: some View {
+        Button {
+            state.restartOnboarding()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your Canvas login needs a refresh")
+                        .font(.lhfSans(12, weight: .semibold))
+                    Text("Reconnect to keep automatic submission tracking accurate.")
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2DateText)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.v2DateText)
+            }
+            .foregroundStyle(Color.v2Ink)
+            .padding(12)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Your Canvas login needs a refresh. Reconnect Canvas.")
+    }
+
     // MARK: Header
 
     /// Wordmark, greeting and date on the left; the two destinations stacked on
@@ -212,7 +253,9 @@ struct ContentView: View {
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
-                navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                if FeatureFlags.gradeWatcher {
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                }
                 navButton(to: .settings, icon: "gearshape.fill", title: "Settings")
             }
             .padding(.top, 2)
@@ -247,6 +290,7 @@ struct ContentView: View {
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
+        state.refreshCanvasSessionExpiredState()
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         await announceGradeChanges()

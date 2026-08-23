@@ -1,6 +1,27 @@
 # Plan: Bulletproofing assignments, classes, submission state & duplicates
 
-_Status: proposal (written 2026-08-02, branch `v3`). Nothing here is built yet._
+_Status: **BUILT** (proposed 2026-08-02, shipped on `v3`; hardened 2026-08-20)._
+_This document is kept as the design record. Do not re-implement it — read
+`AssignmentStore.swift` first._
+
+| Plan section | Where it lives now |
+| --- | --- |
+| §3 durable ledger, `StoredAssignment` | `LowHangingFruitKit/Persistence/StoredAssignment.swift` |
+| §3 `firstSeen` / `lastSeenInFeed` / `isGoneFromFeed` | same file — all three, same names |
+| §3 App Group placement | `AssignmentStore.appGroupID`, read by `LedgerWidgetReader` |
+| §3 reconciliation that unions | `AssignmentStore.reconcile(_:source:)` |
+| §3 partial-fetch guard | same method, surfaced as `wasSuspectedPartial` |
+| §5 persisted Canvas↔Gradescope pairings | `confirmedPairings()` / `recordPairings()` |
+| §5 relaxed gap for exact-title matches | `AssignmentDeduplicator.sameTitleMaxDueGap` (21d) vs `similarTitleDueDateTolerance` (26h) |
+| §7 feed-simulation harness | `AssignmentLedgerScenarioTests.swift` |
+| §9 open question: deployment target | resolved — iOS 17, SwiftData |
+
+A follow-up pass on 2026-08-20 closed six gaps the original plan didn't cover:
+versioned schema + migration plan (`LedgerSchema.swift`), honest reporting of
+storage and write failures, pruning of aged-out rows, user-created work moved
+onto the ledger, completion made ledger-authoritative rather than a parallel
+UserDefaults copy, and preferences moved to the App Group suite
+(`SharedDefaults.swift`) so the widget can see them.
 
 This is the design plan for making LHF's core data — "what classwork is due" —
 durable and trustworthy. It addresses four reported problems that all trace to a

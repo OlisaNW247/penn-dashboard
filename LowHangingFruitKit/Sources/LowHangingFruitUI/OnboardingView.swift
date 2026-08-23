@@ -12,6 +12,12 @@ struct OnboardingView: View {
     @EnvironmentObject var state: AppState
     @State private var phase: Phase = .steps
     @State private var name: String = ""
+    @State private var isResettingLoginData = false
+    @State private var showResetConfirmation = false
+    @State private var didResetLoginData = false
+    /// "Paste your Canvas calendar link" fallback (docs/CANVAS_LOGIN_HARDENING.md
+    /// item 3b) — reachable without ever touching the in-app login WebView.
+    @State private var showPasteFeedLink = false
 
     private enum Phase {
         case steps
@@ -114,12 +120,92 @@ struct OnboardingView: View {
                 previewCard
                     .padding(.top, 18)
 
+                troubleConnectingLink
+                    .padding(.top, 10)
+
+                pasteFeedLinkLink
+                    .padding(.top, 6)
+
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
         }
         .onAppear { name = state.userName }
+        .sheet(isPresented: $showPasteFeedLink) {
+            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
+        }
+    }
+
+    /// Fallback path for anyone stuck on the in-app login (docs/CANVAS_LOGIN_HARDENING.md
+    /// item 3b) — connects the dashboard without touching the WKWebView login
+    /// at all. Kept as a plain-language, low-emphasis link (not a button next
+    /// to "Connect Canvas") since the login flow is still the primary,
+    /// richer path — this is explicitly the fallback.
+    private var pasteFeedLinkLink: some View {
+        Button {
+            showPasteFeedLink = true
+        } label: {
+            Text("Or paste your Canvas calendar link instead")
+                .font(.lhfSans(11, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+                .underline()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Paste your Canvas calendar link instead of logging in")
+    }
+
+    /// Escape hatch for a stuck login (docs/CANVAS_LOGIN_DIAGNOSIS.md): clears
+    /// every stored trace of a Canvas/Gradescope login attempt from this
+    /// device — the live WebView cookie/cache jar, the Keychain-persisted
+    /// cookie copy, and the connected-service flags — so a user who's stuck
+    /// (e.g. Canvas SSO's "Stale Request" screen) always has a way to force a
+    /// genuinely clean slate without needing to delete and reinstall the app,
+    /// which doesn't fully clear this state anyway (see
+    /// `AppState.resetAllLoginData`'s doc comment) and isn't reachable from
+    /// this screen in the first place.
+    private var troubleConnectingLink: some View {
+        VStack(spacing: 4) {
+            Button {
+                showResetConfirmation = true
+            } label: {
+                if isResettingLoginData {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Trouble connecting? Reset login data")
+                        .font(.lhfSans(11, weight: .medium))
+                        .foregroundStyle(Color.v2SpineRed)
+                        .underline()
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isResettingLoginData)
+            .accessibilityLabel("Reset stored Canvas and Gradescope login data")
+            .confirmationDialog(
+                "Reset login data?",
+                isPresented: $showResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset and start over", role: .destructive) {
+                    didResetLoginData = false
+                    isResettingLoginData = true
+                    Task {
+                        await state.resetAllLoginData()
+                        isResettingLoginData = false
+                        didResetLoginData = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Clears any stuck Canvas or Gradescope login on this device, including saved session cookies, so you can start fresh. You'll need to log in again.")
+            }
+
+            if didResetLoginData {
+                Text("Login data cleared. Try Connect Canvas again.")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2SpineGreen)
+            }
+        }
     }
 
     /// The same door as `IntroView.previewLink`, on the screen a reviewer
@@ -311,6 +397,14 @@ struct OnboardingView: View {
 
 /// The bottom action bar under the login WebView. Stacks the hint above the
 /// buttons so it never crowds on a narrow phone screen.
+///
+/// Carries explicit "Reload" and "Start over" controls (docs/CANVAS_LOGIN_DIAGNOSIS.md
+/// item 1a): the login WebView disables swipe back/forward navigation, since
+/// swiping back onto an already-consumed login form and resubmitting it is
+/// exactly what produces Shibboleth's "Stale Request" — with no chrome and no
+/// way forward. These two buttons are the replacement escape hatch: Reload
+/// re-requests the current page; Start over purges this login's cookies/cache
+/// again and reloads the login page from scratch, without leaving the pane.
 private struct LoginActionBar: View {
     let message: String?
     let defaultHint: String
@@ -318,6 +412,8 @@ private struct LoginActionBar: View {
     let isBusy: Bool
     let onCancel: () -> Void
     let onConnect: () -> Void
+    let onReload: () -> Void
+    let onStartOver: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -325,6 +421,22 @@ private struct LoginActionBar: View {
                 .font(.lhfSans(12))
                 .foregroundStyle(message == nil ? Color.v2DateText : Color.v2SpineRed)
                 .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 14) {
+                Button("Reload", action: onReload)
+                    .buttonStyle(.plain)
+                    .font(.lhfSans(12, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+                    .disabled(isBusy)
+                    .accessibilityHint("Reloads the current login page")
+
+                Button("Start over", action: onStartOver)
+                    .buttonStyle(.plain)
+                    .font(.lhfSans(12, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+                    .disabled(isBusy)
+                    .accessibilityHint("Clears this login's cookies and loads a fresh sign-in page")
+            }
 
             HStack(spacing: 12) {
                 Button("Cancel", action: onCancel)
@@ -358,6 +470,60 @@ private struct LoginActionBar: View {
     }
 }
 
+/// Plain-language card shown in place of the WebView when
+/// `LoginNavigationObserver` detects a known IdP/Shibboleth error page
+/// (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a). User-initiated recovery only —
+/// this never appears as a result of automatic retry logic, and tapping a
+/// button here is the only way it goes away.
+private struct LoginErrorCard: View {
+    let title: String
+    let message: String
+    let onStartOver: () -> Void
+    /// Canvas only — Gradescope has no equivalent feed-link fallback.
+    let onUseCalendarLinkInstead: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(Color.v2SpineRed)
+            Text(title)
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+
+            Button(action: onStartOver) {
+                Text("Start over")
+                    .font(.lhfSans(13, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+
+            if let onUseCalendarLinkInstead {
+                Button(action: onUseCalendarLinkInstead) {
+                    Text("Use calendar link instead")
+                        .font(.lhfSans(12, weight: .medium))
+                        .foregroundStyle(Color.v2DateText)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 // MARK: - Canvas login pane
 
 /// Canvas login WebView whose "Connect" action captures the ICS feed URL,
@@ -369,42 +535,105 @@ private struct CanvasLoginPane: View {
 
     @State private var isReadingCookies = false
     @State private var message: String?
+    /// True while the pre-login purge (docs/CANVAS_LOGIN_DIAGNOSIS.md item 1c)
+    /// is running. The WebView isn't created until this clears, so the purge
+    /// always finishes before the first request goes out — never mid-navigation.
+    @State private var isPurging = true
+    /// Bumping this re-runs the purge-and-load `.task` below ("Start over").
+    @State private var purgeGeneration = UUID()
+    /// Bumping this tells the live WebView to call `.reload()` ("Reload").
+    @State private var reloadTick = 0
+    /// Observe-only navigation delegate (docs/CANVAS_LOGIN_DIAGNOSIS.md item
+    /// 3a) — surfaces load errors and known IdP error pages; never steers
+    /// navigation itself.
+    @StateObject private var navObserver = LoginNavigationObserver()
+    @State private var showPasteFeedLink = false
 
     private var isBusy: Bool {
-        isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading
+        isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading || isPurging
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            LoginWebView(url: URL(string: "https://canvas.upenn.edu")!)
+            if isPurging {
+                Spacer()
+                ProgressView("Preparing a clean sign-in…")
+                    .font(.lhfSans(12))
+                Spacer()
+            } else if navObserver.detectedKnownErrorPage {
+                LoginErrorCard(
+                    title: "Canvas login hit a snag",
+                    message: "Penn's sign-in page reported an error partway through. This isn't something reloading the same page will fix — start a fresh attempt, or skip the in-app login entirely.",
+                    onStartOver: startOver,
+                    onUseCalendarLinkInstead: { showPasteFeedLink = true }
+                )
+            } else {
+                LoginWebView(
+                    url: URL(string: "https://canvas.upenn.edu")!,
+                    store: LoginDataStores.canvas,
+                    reloadTick: reloadTick,
+                    navigationObserver: navObserver
+                )
+            }
 
             Divider().overlay(Color.v2Divider)
 
             LoginActionBar(
-                message: message,
+                message: message ?? navObserver.loadError,
                 defaultHint: "Log in to Canvas once. We'll capture your calendar feed automatically.",
                 connectTitle: "Connect Canvas",
                 isBusy: isBusy,
                 onCancel: onCancel,
-                onConnect: connect
+                onConnect: connect,
+                onReload: { reloadTick += 1 },
+                onStartOver: startOver
             )
         }
         .background(Color.v2Bg.ignoresSafeArea())
+        .sheet(isPresented: $showPasteFeedLink) {
+            PasteFeedLinkSheet(onSaved: onConnected).environmentObject(state)
+        }
+        .task(id: purgeGeneration) {
+            // Fires exactly once per Connect tap (this view's own appearance,
+            // or a "Start over" tap), before the WebView is ever created —
+            // never re-entrant with an in-flight login navigation. Targets
+            // Canvas's own isolated store (docs/CANVAS_LOGIN_DIAGNOSIS.md
+            // item 2a), not the shared `.default()` store.
+            await WebsiteDataReset.purgeWebsiteData(
+                matchingDomainContains: AppState.canvasLoginDomainHints,
+                in: LoginDataStores.canvas
+            )
+            isPurging = false
+        }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
 #endif
     }
 
+    /// Clears this login's cookies/cache again and reloads a fresh sign-in
+    /// page, without leaving the pane — the recovery path now that the
+    /// WebView no longer allows a back-swipe onto a consumed login form.
+    private func startOver() {
+        message = nil
+        navObserver.reset()
+        isPurging = true
+        purgeGeneration = UUID()
+    }
+
     private func connect() {
         isReadingCookies = true
         message = nil
-        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+        // Must read from the SAME store instance the WebView above was
+        // configured with (`LoginDataStores.canvas`), not `.default()` — see
+        // that type's doc comment. Reading the wrong store returns an empty
+        // cookie list and every login reports "No session was found yet".
+        LoginDataStores.canvas.httpCookieStore.getAllCookies { cookies in
             // Read once to discover the calendar-feed URL, but also persisted
             // (Keychain, same treatment as Gradescope's) so Grade Watcher's
             // cookie-authed refresh survives relaunches — `WKWebsiteDataStore`
             // drops session cookies like Canvas's/Penn SSO's between launches.
             let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
-            SessionCookieStore.save(canvasCookies)
+            SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)
@@ -429,36 +658,80 @@ private struct GradescopeLoginPane: View {
 
     @State private var isReadingCookies = false
     @State private var message: String?
+    /// See `CanvasLoginPane`'s matching properties for why these exist —
+    /// same pre-login purge / reload / start-over treatment, item-for-item.
+    @State private var isPurging = true
+    @State private var purgeGeneration = UUID()
+    @State private var reloadTick = 0
+    @StateObject private var navObserver = LoginNavigationObserver()
 
-    private var isBusy: Bool { isReadingCookies || state.isGradescopeLoading }
+    private var isBusy: Bool { isReadingCookies || state.isGradescopeLoading || isPurging }
+
+    private static let gradescopeLoginDomainHints = ["gradescope"]
 
     var body: some View {
         VStack(spacing: 0) {
-            LoginWebView(url: URL(string: "https://www.gradescope.com/login")!)
+            if isPurging {
+                Spacer()
+                ProgressView("Preparing a clean sign-in…")
+                    .font(.lhfSans(12))
+                Spacer()
+            } else if navObserver.detectedKnownErrorPage {
+                LoginErrorCard(
+                    title: "Gradescope login hit a snag",
+                    message: "The sign-in page reported an error partway through. Start a fresh attempt below.",
+                    onStartOver: startOver,
+                    onUseCalendarLinkInstead: nil
+                )
+            } else {
+                LoginWebView(
+                    url: URL(string: "https://www.gradescope.com/login")!,
+                    store: LoginDataStores.gradescope,
+                    reloadTick: reloadTick,
+                    navigationObserver: navObserver
+                )
+            }
 
             Divider().overlay(Color.v2Divider)
 
             LoginActionBar(
-                message: message,
+                message: message ?? navObserver.loadError,
                 defaultHint: "Log in to Gradescope once. We'll keep it in sync while your session is valid.",
                 connectTitle: "Connect Gradescope",
                 isBusy: isBusy,
                 onCancel: onCancel,
-                onConnect: connect
+                onConnect: connect,
+                onReload: { reloadTick += 1 },
+                onStartOver: startOver
             )
         }
         .background(Color.v2Bg.ignoresSafeArea())
+        .task(id: purgeGeneration) {
+            await WebsiteDataReset.purgeWebsiteData(
+                matchingDomainContains: Self.gradescopeLoginDomainHints,
+                in: LoginDataStores.gradescope
+            )
+            isPurging = false
+        }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
 #endif
     }
 
+    private func startOver() {
+        message = nil
+        navObserver.reset()
+        isPurging = true
+        purgeGeneration = UUID()
+    }
+
     private func connect() {
         isReadingCookies = true
         message = nil
-        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+        // Same store the WebView above uses — see `LoginDataStores`' doc comment.
+        LoginDataStores.gradescope.httpCookieStore.getAllCookies { cookies in
             let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope") }
-            SessionCookieStore.save(gradescopeCookies)
+            SessionCookieStore.save(gradescopeCookies, service: .gradescope)
             Task { @MainActor in
                 isReadingCookies = false
                 guard !gradescopeCookies.isEmpty else {
@@ -549,31 +822,88 @@ private struct ClassPickerPane: View {
 
 // MARK: - Shared WebView (cross-platform)
 
+/// Tracks the last `reloadTick` this representable acted on, so
+/// `update{UI,NS}View` can tell "the pane's Reload button was tapped again"
+/// apart from an unrelated SwiftUI re-render.
+private final class LoginWebViewCoordinator {
+    var lastReloadTick = 0
+}
+
 #if os(macOS)
 private struct LoginWebView: NSViewRepresentable {
     let url: URL
+    let store: WKWebsiteDataStore
+    let reloadTick: Int
+    let navigationObserver: LoginNavigationObserver
 
-    func makeNSView(context: Context) -> WKWebView { makeWebView(url: url) }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func makeCoordinator() -> LoginWebViewCoordinator { LoginWebViewCoordinator() }
+    func makeNSView(context: Context) -> WKWebView {
+        context.coordinator.lastReloadTick = reloadTick
+        return makeWebView(url: url, store: store, navigationObserver: navigationObserver)
+    }
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        guard reloadTick != context.coordinator.lastReloadTick else { return }
+        context.coordinator.lastReloadTick = reloadTick
+        nsView.reload()
+    }
 }
 #else
 private struct LoginWebView: UIViewRepresentable {
     let url: URL
+    let store: WKWebsiteDataStore
+    let reloadTick: Int
+    let navigationObserver: LoginNavigationObserver
 
-    func makeUIView(context: Context) -> WKWebView { makeWebView(url: url) }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func makeCoordinator() -> LoginWebViewCoordinator { LoginWebViewCoordinator() }
+    func makeUIView(context: Context) -> WKWebView {
+        context.coordinator.lastReloadTick = reloadTick
+        return makeWebView(url: url, store: store, navigationObserver: navigationObserver)
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard reloadTick != context.coordinator.lastReloadTick else { return }
+        context.coordinator.lastReloadTick = reloadTick
+        uiView.reload()
+    }
 }
 #endif
 
 /// Shared WKWebView setup used by both platform representables. WKWebView and
 /// its default cookie store exist on iOS and macOS alike.
+///
+/// The pre-login cookie/cache purge (docs/CANVAS_LOGIN_DIAGNOSIS.md item 1c)
+/// happens BEFORE this function is ever called — in the owning pane's
+/// `.task(id: purgeGeneration)`, which gates whether the WebView is created
+/// at all (`isPurging`). That guarantees it runs exactly once per Connect tap
+/// (or "Start over" tap) and can never race an in-flight navigation the way a
+/// purge-then-load `Task` fired from inside `makeWebView` itself could.
+///
+/// Two further hardening pieces (docs/CANVAS_LOGIN_DIAGNOSIS.md items 1a/1d):
+/// - `allowsBackForwardNavigationGestures = false` — a full-bleed login pane
+///   has no chrome, so swiping back onto an already-consumed login form and
+///   resubmitting it is indistinguishable from a real tap, and produces
+///   exactly Shibboleth's "Stale Request" with no way forward. The pane's
+///   explicit Reload/"Start over" controls are the replacement.
+/// - `customUserAgent` — a genuine Mobile Safari UA for this device/iOS
+///   version (`LoginUserAgent.mobileSafari`), since Safari itself logs into
+///   Canvas fine on the same device but `WKWebView`'s default UA is missing
+///   Safari's own version tokens, which is exactly the kind of thing
+///   fingerprinting/bot-protection keys on.
+///
+/// Loads with `.reloadIgnoringLocalAndRemoteCacheData` so a previously cached
+/// copy of the login/redirect chain (with a stale embedded flow-execution
+/// token) can never be replayed instead of hitting the network.
 @MainActor
-private func makeWebView(url: URL) -> WKWebView {
+private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver: LoginNavigationObserver) -> WKWebView {
     let configuration = WKWebViewConfiguration()
-    configuration.websiteDataStore = .default()
+    configuration.websiteDataStore = store
     let webView = WKWebView(frame: .zero, configuration: configuration)
-    webView.allowsBackForwardNavigationGestures = true
-    webView.load(URLRequest(url: url))
+    webView.allowsBackForwardNavigationGestures = false
+    webView.customUserAgent = LoginUserAgent.mobileSafari
+    // Observe-only (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a) — see
+    // `LoginNavigationObserver`'s doc comment. The pane's `@StateObject` keeps
+    // this instance alive; `WKWebView.navigationDelegate` is a weak reference.
+    webView.navigationDelegate = navigationObserver
+    webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
     return webView
 }
 

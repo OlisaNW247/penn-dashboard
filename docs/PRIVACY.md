@@ -3,7 +3,7 @@
 _Last updated: 2026-07-26_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
-your Canvas assignments, deadlines, and grades in one place. This policy explains
+your Canvas assignments and deadlines in one place. This policy explains
 what the app does with your information. In short: **everything stays on your
 device, and we collect nothing.**
 
@@ -17,26 +17,33 @@ only to the school services you sign in to.
   web page, shown inside the app. The app never sees or stores your password.
 - **Canvas calendar feed.** After you log in, the app captures your personal
   Canvas calendar feed URL and reads your assignments and deadlines from it.
-- **Canvas grades.** If you use Grade Watcher, the app reads your own grades,
-  assignment groups, category weights, and submission status from Canvas using
-  your logged-in session — the same information you see on Canvas's own grades
-  page.
-- **Your syllabus (optional).** If you attach a syllabus to a class, the app
-  reads it from Canvas (or from a file or text you provide) and extracts only
-  the grading section: category weights, drop rules, expected assignment counts,
-  and letter-grade cutoffs. The document is read on your device. Neither the
-  document nor its text is uploaded anywhere.
+- **Canvas submission status.** So that work you've already turned in can file
+  itself away automatically, the app reads your own submission records from
+  Canvas using your logged-in session — the same information you see on
+  Canvas's own pages. This is read-only; the app never submits or changes
+  anything on Canvas.
 - **Gradescope (optional).** If you connect Gradescope, you sign in through
   Gradescope's own web page inside the app. The app reads your own assignments
-  and scores to fill gaps Canvas hasn't graded yet.
+  and their due dates so they appear alongside your Canvas work.
 - **Assignments you create.** Any one-off or recurring tasks you add yourself.
+- **Paste-your-calendar-link fallback.** As an alternative to signing in
+  inside the app, you can paste your Canvas calendar feed link directly
+  (Canvas → Calendar → Calendar Feed). This connects the same assignment/
+  deadline dashboard as the in-app login, without the app ever seeing your
+  Canvas credentials at all. It does not enable submission-status tracking or
+  Grade Watcher, both of which need a logged-in session.
+- **Diagnostics report (optional, user-initiated).** Settings has a "Copy
+  diagnostics report" button for troubleshooting a stuck Canvas login. It
+  copies device/app version info and a short login redirect log (server
+  hostnames, URL paths, and HTTP status codes only — never a full URL, query
+  string, cookie, password, or your calendar feed link) to your clipboard, for
+  you to paste into a support message yourself. The app never sends this
+  anywhere on its own.
 
 ## Where your data lives
 
 - **On your device only.** Assignments, completions, due-date edits, your name,
-  reminder settings, self-created tasks, grade settings (category weights,
-  confirmed matches, any attached syllabus's grading scheme), and your observed
-  grade history are stored locally on your device.
+  reminder settings and self-created tasks are stored locally on your device.
 - **Login sessions are stored in the iOS Keychain.** Canvas and Gradescope
   session cookies are kept encrypted at rest, on this device only, and are never
   included in unencrypted backups. They are used solely to re-authenticate you
@@ -68,13 +75,6 @@ device.
 - **There is no account to delete** — LHF never creates one.
 - **Deleting the app removes all of its data** from your device, including
   Keychain-stored sessions.
-
-## Accuracy of grades
-
-Grade Watcher computes an estimate from what Canvas exposes. Projections and
-letter grades are estimates, not official records — professors apply curves,
-late policies, and cutoffs the app cannot see. Your official grade is always the
-one your institution publishes.
 
 ## Affiliation
 

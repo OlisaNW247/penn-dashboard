@@ -10,52 +10,121 @@ import Security
 /// tokens, so they must be encrypted at rest and kept out of unencrypted device
 /// backups. We only need name/value/domain/path to replay the session via
 /// `HTTPCookie.requestHeaderFields(with:)`, so that's all we store.
+///
+/// **Keyed by service, not by domain substring** (docs/CANVAS_LOGIN_HARDENING.md
+/// item 2e). Canvas and Gradescope both flow through Penn SSO, so both can
+/// leave cookies on `upenn.edu`/`pennkey.upenn.edu` — a domain-substring
+/// purge like the old `remove(domainContains: "upenn")` would delete
+/// Gradescope's PennKey session while "only" disconnecting Canvas, and vice
+/// versa. Each service now gets its own Keychain item, so a Canvas
+/// disconnect/purge can only ever touch cookies captured from the Canvas
+/// login pane, regardless of which domain they happen to live on.
 enum SessionCookieStore {
-    private static let service = "com.lhf.lowhangingfruit.session"
+    enum Service: String, CaseIterable {
+        case canvas
+        case gradescope
+    }
+
+    private static func service(for s: Service) -> String {
+        "com.lhf.lowhangingfruit.session.\(s.rawValue)"
+    }
     private static let account = "sessionCookies"
 
-    /// Merge the given cookies into the persisted set (replacing any with the
-    /// same name+domain+path).
-    static func save(_ cookies: [HTTPCookie]) {
+    /// Merge the given cookies into `service`'s persisted set (replacing any
+    /// with the same name+domain+path).
+    static func save(_ cookies: [HTTPCookie], service: Service) {
         guard !cookies.isEmpty else { return }
-        var stored = loadDicts()
+        var stored = loadDicts(service: service)
         for cookie in cookies {
             let d = dict(from: cookie)
             stored.removeAll { $0["name"] == d["name"] && $0["domain"] == d["domain"] && $0["path"] == d["path"] }
             stored.append(d)
         }
-        write(stored)
+        write(stored, service: service)
     }
 
-    static func load() -> [HTTPCookie] {
-        loadDicts().compactMap(cookie(from:))
+    /// Loads `service`'s persisted cookies, dropping any that are stale: a
+    /// cookie carrying a real, past `expiresDate` (from `Set-Cookie: ...;
+    /// Expires=` or `Max-Age=`), or one with no expiry at all (a true session
+    /// cookie — Penn SSO's and Canvas's are both this kind) that's older than
+    /// `sessionCookieMaxAge` since it was captured. Without this, a
+    /// session-only cookie captured at connect time would be replayed as a
+    /// live session forever, regardless of whether the server-side session
+    /// died hours or weeks ago — exactly the mechanism behind
+    /// docs/CANVAS_LOGIN_DIAGNOSIS.md's H1/H2.
+    static func load(service: Service) -> [HTTPCookie] {
+        let now = Date()
+        return loadDicts(service: service).compactMap { entry -> HTTPCookie? in
+            guard let cookie = cookie(from: entry) else { return nil }
+            if let expiresString = entry["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
+                return expires > now ? cookie : nil
+            }
+            if let capturedString = entry["capturedAt"], let captured = isoFormatter.date(from: capturedString) {
+                return now.timeIntervalSince(captured) < sessionCookieMaxAge ? cookie : nil
+            }
+            // No expiry and no capture timestamp recorded (data written before
+            // this staleness tracking existed) — treat as expired rather than
+            // eternal, forcing a fresh login instead of silently replaying an
+            // untraceable cookie of unknown age.
+            return nil
+        }
     }
 
+    /// Every service's persisted cookies, folded together. Only for read
+    /// paths that genuinely don't care which service a cookie came from (e.g.
+    /// diagnostics); prefer `load(service:)` everywhere a specific service's
+    /// session is what's actually needed.
+    static func loadAll() -> [HTTPCookie] {
+        Service.allCases.flatMap { load(service: $0) }
+    }
+
+    /// True when `service` once had a captured login session that's now
+    /// entirely expired/stale (every persisted entry was dropped by
+    /// `load(service:)`'s staleness check) — as opposed to never having had
+    /// one at all. Lets a caller distinguish "reconnect, your session died"
+    /// from "you never logged in via this path" (e.g. a feed-only/paste-link
+    /// Canvas user, who never captured a cookie session and shouldn't be
+    /// nagged to reconnect one). See `AppState.canvasSessionExpired`.
+    static func isExpired(service: Service) -> Bool {
+        !loadDicts(service: service).isEmpty && load(service: service).isEmpty
+    }
+
+    /// How long a true session cookie (no server-supplied expiry) is trusted
+    /// after capture before it's treated as dead and dropped rather than
+    /// replayed. Penn SSO/Canvas sessions don't survive this long in
+    /// practice; this is a safety bound, not an attempt to model their real
+    /// server-side timeout.
+    private static let sessionCookieMaxAge: TimeInterval = 24 * 60 * 60
+
+    // `ISO8601DateFormatter` isn't `Sendable`, but every use here is a simple
+    // stateless format/parse call (no shared mutable configuration is ever
+    // written after init), so a single shared instance is safe in practice.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    /// Removes every service's persisted cookies.
     static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        for s in Service.allCases { SecItemDelete(baseQuery(service: s) as CFDictionary) }
     }
 
-    /// Removes only the persisted cookies whose domain contains `needle`
-    /// (case-insensitive) — e.g. purging a lapsed Canvas session without
-    /// touching Gradescope's cookies in the same blob, or vice versa.
-    static func remove(domainContains needle: String) {
-        var stored = loadDicts()
-        stored.removeAll { ($0["domain"] ?? "").localizedCaseInsensitiveContains(needle) }
-        write(stored)
+    /// Removes only `service`'s persisted cookies, leaving every other
+    /// service's session untouched — including one that happens to share a
+    /// domain (e.g. both flowing through `upenn.edu` Penn SSO).
+    static func remove(service: Service) {
+        SecItemDelete(baseQuery(service: service) as CFDictionary)
     }
 
     // MARK: - Keychain
 
-    private static func baseQuery() -> [String: Any] {
+    private static func baseQuery(service: Service) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service(for: service),
             kSecAttrAccount as String: account,
         ]
     }
 
-    private static func loadDicts() -> [[String: String]] {
-        var query = baseQuery()
+    private static func loadDicts(service: Service) -> [[String: String]] {
+        var query = baseQuery(service: service)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -67,11 +136,11 @@ enum SessionCookieStore {
         return dicts
     }
 
-    private static func write(_ dicts: [[String: String]]) {
+    private static func write(_ dicts: [[String: String]], service: Service) {
         guard let data = try? JSONSerialization.data(withJSONObject: dicts) else { return }
         // Keychain has no upsert — delete any existing item, then add.
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
+        SecItemDelete(baseQuery(service: service) as CFDictionary)
+        var query = baseQuery(service: service)
         query[kSecValueData as String] = data
         // Readable after first unlock so the launch-time auto-sync can replay the
         // session; never migrated off this device.
@@ -81,14 +150,29 @@ enum SessionCookieStore {
 
     // MARK: - Serialization
 
+    /// `HTTPCookiePropertyKey` has no built-in case for `HttpOnly` — Foundation
+    /// only exposes it as a read-only computed property (`cookie.isHTTPOnly`)
+    /// backed by this undocumented-but-stable raw key, same as WebKit/curl
+    /// use on the wire.
+    private static let httpOnlyKey = HTTPCookiePropertyKey("HttpOnly")
+
     private static func dict(from cookie: HTTPCookie) -> [String: String] {
-        [
+        var d: [String: String] = [
             "name": cookie.name,
             "value": cookie.value,
             "domain": cookie.domain,
             "path": cookie.path,
             "secure": cookie.isSecure ? "1" : "0",
+            "httpOnly": cookie.isHTTPOnly ? "1" : "0",
+            "capturedAt": isoFormatter.string(from: Date()),
         ]
+        if let expires = cookie.expiresDate {
+            d["expiresDate"] = isoFormatter.string(from: expires)
+        }
+        if let sameSite = cookie.sameSitePolicy {
+            d["sameSite"] = sameSite.rawValue
+        }
+        return d
     }
 
     private static func cookie(from d: [String: String]) -> HTTPCookie? {
@@ -100,6 +184,13 @@ enum SessionCookieStore {
             .path: d["path"] ?? "/",
         ]
         if d["secure"] == "1" { props[.secure] = "TRUE" }
+        if d["httpOnly"] == "1" { props[httpOnlyKey] = "TRUE" }
+        if let expiresString = d["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
+            props[.expires] = expires
+        }
+        if let sameSite = d["sameSite"] {
+            props[.sameSitePolicy] = sameSite
+        }
         return HTTPCookie(properties: props)
     }
 }

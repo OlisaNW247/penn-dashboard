@@ -283,10 +283,9 @@ struct GradeWatcherView: View {
         await state.refreshGradeWatcher(cookies: cookies)
 
         if store.isSessionExpired {
-            let hadPersisted = SessionCookieStore.load()
-                .contains { $0.domain.localizedCaseInsensitiveContains("canvas") }
+            let hadPersisted = !SessionCookieStore.load(service: .canvas).isEmpty
             if hadPersisted {
-                SessionCookieStore.remove(domainContains: "canvas")
+                SessionCookieStore.remove(service: .canvas)
             }
         }
     }

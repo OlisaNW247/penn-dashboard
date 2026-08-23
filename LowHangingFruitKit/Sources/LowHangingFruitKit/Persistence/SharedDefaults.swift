@@ -16,6 +16,19 @@ public enum SharedDefaults {
     /// stays the single source of truth for the id.
     public static var appGroupID: String { WidgetSharing.appGroupID }
 
+    /// The handful of keys that are read from *outside* the app process.
+    ///
+    /// Everything else is written and read by one type, which can keep its key
+    /// name private. These three are the exception: `LedgerWidgetReader` needs
+    /// them to honour hidden courses, deleted courses and custom names, and it
+    /// lives in an extension that cannot be told when `AppState` renames a
+    /// string literal. A silent drift here doesn't crash — the widget just goes
+    /// back to advertising a class the user already deleted, which is precisely
+    /// the bug that made the widget read preferences in the first place.
+    public static let hiddenCoursesKey = "hiddenCourseKeys"
+    public static let deletedCoursesKey = "deletedCourseKeys"
+    public static let courseNameOverridesKey = "courseNameOverrides"
+
     /// The App Group suite, or nil when this process has no App Group
     /// entitlement (unit tests, SwiftUI previews, an unsigned binary).
     ///
@@ -89,10 +102,20 @@ public enum SharedDefaultsMigration {
     /// Group. This list is deliberately frozen: keys added after this change are
     /// born in the shared suite and have nothing to migrate, so a new key that
     /// isn't listed here is correct, not an omission.
+    ///
+    /// `canvasICSURL` is deliberately absent, and its absence is load-bearing.
+    /// Canvas's `/feeds/calendars/user_<token>.ics` embeds a per-user token in
+    /// the URL itself, so the feed URL is a bearer credential: anyone holding
+    /// the string can read that student's assignments and due dates with no
+    /// further authentication. `ICSFeedURLStore` moved it into the Keychain for
+    /// exactly that reason, migrating the old value out of `.standard` and
+    /// deleting it. Listing it here would copy it back out into an unencrypted
+    /// App Group container — one that is included in device backups and that
+    /// the widget can also read — and leave it there permanently, quietly
+    /// undoing the move.
     public static let legacyKeys: [String] = [
         // AppState
         "userName",
-        "canvasICSURL",
         "completedAssignmentIDs",
         "completionDates",
         "hiddenCourseKeys",
@@ -102,6 +125,11 @@ public enum SharedDefaultsMigration {
         "canvasDiscoveryConnected",
         "gradescopeConnected",
         "hasCompletedOnboarding",
+        // Shipped writing to `.standard` briefly before the accessor existed,
+        // so unlike the keys born in the shared suite this one really does have
+        // something to migrate. Missing it only costs an upgrading user a
+        // second showing of the intro, which is why it went unnoticed.
+        "hasSeenIntro",
         "isPreviewMode",
         "appearanceMode",
         "courseNameOverrides",

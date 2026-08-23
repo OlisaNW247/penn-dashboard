@@ -26,6 +26,10 @@ struct SettingsPage: View {
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
+    /// "Paste your Canvas calendar link" fallback, also reachable from
+    /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
+    @State private var showPasteFeedLink = false
+    @State private var didCopyDiagnostics = false
 
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
@@ -85,6 +89,18 @@ struct SettingsPage: View {
                         }
                     }
 
+                    // The escape hatch for a login that won't complete: paste
+                    // the calendar feed URL straight out of Canvas. Stays
+                    // inside the non-preview branch — a preview session has no
+                    // real feed to point at, and offering one there would put
+                    // the reviewer back at the wall the branch above exists to
+                    // keep them away from.
+                    Button {
+                        showPasteFeedLink = true
+                    } label: {
+                        Label("Paste calendar link instead", systemImage: "link.badge.plus")
+                    }
+
                     statusRow(label: "Gradescope",
                               connected: state.isGradescopeConnected,
                               working: state.isGradescopeLoading)
@@ -126,11 +142,13 @@ struct SettingsPage: View {
 
             classesSection
 
-            Section("Grades") {
-                NavigationLink {
-                    GradeWatcherView(store: state.gradeWatcher)
-                } label: {
-                    Label("Grade Watcher", systemImage: "chart.bar.fill")
+            if FeatureFlags.gradeWatcher {
+                Section("Grades") {
+                    NavigationLink {
+                        GradeWatcherView(store: state.gradeWatcher)
+                    } label: {
+                        Label("Grade Watcher", systemImage: "chart.bar.fill")
+                    }
                 }
             }
 
@@ -146,6 +164,8 @@ struct SettingsPage: View {
 
             storageSection
 
+            diagnosticsSection
+
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
@@ -160,6 +180,9 @@ struct SettingsPage: View {
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
+        }
+        .sheet(isPresented: $showPasteFeedLink) {
+            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
         }
         .alert("Rename class", isPresented: Binding(
             get: { renamingCourse != nil },
@@ -181,11 +204,9 @@ struct SettingsPage: View {
                 title: Text("Disconnect \(target.label)?"),
                 message: Text(target.message),
                 primaryButton: .destructive(Text("Disconnect")) {
-                    Task {
-                        switch target {
-                        case .canvas:     await state.disconnectCanvas()
-                        case .gradescope: await state.disconnectGradescope()
-                        }
+                    switch target {
+                    case .canvas:     state.disconnectCanvas()
+                    case .gradescope: state.disconnectGradescope()
                     }
                 },
                 secondaryButton: .cancel()
@@ -220,14 +241,36 @@ struct SettingsPage: View {
                 if let earliest = stats.earliestFirstSeen {
                     LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
+                // Three states, not two. A store can be perfectly on-disk and
+                // still be failing every write, and telling that user their
+                // work "will be lost when the app quits" is both wrong and
+                // unactionable.
                 Label(
                     stats.isPersistent
-                        ? "Saved on this device."
+                        ? (stats.failedSaveCount == 0
+                            ? "Saved on this device."
+                            : "Saved on this device, but recent changes didn't stick.")
                         : "Not saving — assignments will be lost when the app quits.",
-                    systemImage: stats.isPersistent ? "checkmark.circle" : "exclamationmark.triangle"
+                    systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .font(.lhfSans(12))
-                .foregroundStyle(stats.isPersistent ? Color.secondary : Color.orange)
+                .foregroundStyle(stats.isHealthy ? Color.secondary : Color.orange)
+
+                // The specifics, when there are any. "Not saving" on its own
+                // tells the user something is wrong but nothing about what —
+                // and these two failures have completely different fixes
+                // (reinstall vs. free up space), so naming them is the
+                // difference between an actionable warning and a shrug.
+                if let reason = stats.storageFailureReason {
+                    Text(reason)
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
+                if stats.failedSaveCount > 0 {
+                    Text("\(stats.failedSaveCount) change\(stats.failedSaveCount == 1 ? "" : "s") couldn't be written to storage. Check that your device isn't out of space.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
             }
         }
     }
@@ -363,6 +406,35 @@ struct SettingsPage: View {
                 }
             }
         }
+    }
+
+    /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
+    /// meant to be pasted into a support message when Canvas login is stuck.
+    /// Contains no credentials, cookie values, or the ICS feed URL/token —
+    /// see `DiagnosticsReport`'s doc comment for exactly what's included.
+    private var diagnosticsSection: some View {
+        Section {
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label(didCopyDiagnostics ? "Copied" : "Copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+            }
+        } header: {
+            Text("Troubleshooting")
+        } footer: {
+            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. Paste it when asking for help with a stuck Canvas login.")
+        }
+    }
+
+    private func copyDiagnostics() {
+        let report = DiagnosticsReport.generate(state: state)
+        #if canImport(UIKit)
+        UIPasteboard.general.string = report
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #endif
+        didCopyDiagnostics = true
     }
 
     private var digestTimeBinding: Binding<Date> {

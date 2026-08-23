@@ -144,8 +144,7 @@ final class GradeWatcherStore: ObservableObject {
         var fetchedAny = false
         var succeeded = 0
 
-        let gradescopeConnected = SessionCookieStore.load()
-            .contains { $0.domain.localizedCaseInsensitiveContains("gradescope") }
+        let gradescopeConnected = !SessionCookieStore.load(service: .gradescope).isEmpty
 
         for courseID in courseIDs.keys.sorted() {
             do {

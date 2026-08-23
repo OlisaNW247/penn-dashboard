@@ -16,7 +16,10 @@ import SwiftData
 public final class AssignmentStore {
     /// Shared App Group container id — matches the widget's, so the ledger lands
     /// in the same place the widget can later read.
-    public static let appGroupID = "group.com.lhf.lowhangingfruit"
+    /// `nonisolated` for the same reason `goneGracePeriod` is: non-main-actor
+    /// callers (the widget's ledger read, `SharedDefaults`) need the one
+    /// canonical group id rather than their own copy of the string.
+    public nonisolated static let appGroupID = "group.com.lhf.lowhangingfruit"
 
     /// How long a gone-from-feed item is kept visible past its due date before it
     /// ages out. Generous on purpose: the design brief says a lingering
@@ -35,6 +38,18 @@ public final class AssignmentStore {
     /// is silently not persisting" is otherwise indistinguishable from working.
     public let isPersistent: Bool
 
+    /// Why the ledger is running in memory, when it is. Nil on a healthy
+    /// persistent store. Surfaced in Settings so "not saving" is legible.
+    public let storageFailureReason: String?
+
+    /// The most recent failed write, and how many have failed this session.
+    /// `isPersistent` only says the container opened on disk; it says nothing
+    /// about whether saves are landing. A full disk, or protected data being
+    /// unavailable before first unlock, fails every save while the store still
+    /// reports itself persistent.
+    public private(set) var lastSaveError: String?
+    public private(set) var failedSaveCount: Int = 0
+
     public struct ReconcileResult: Sendable {
         /// The current active set for the reconciled source — what the caller
         /// should assign to `canvasItems` / `gradescopeItems`.
@@ -47,17 +62,30 @@ public final class AssignmentStore {
 
     // MARK: Construction
 
-    public init(inMemory: Bool = false) throws {
+    /// Every container the app builds goes through the versioned schema and the
+    /// migration plan, so a future model change is a migration rather than a
+    /// throw-and-silently-forget. See `LedgerSchema.swift`.
+    private static func makeContainer(_ config: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(
+            for: Schema(versionedSchema: LedgerSchemaV1.self),
+            migrationPlan: LedgerMigrationPlan.self,
+            configurations: config
+        )
+    }
+
+    public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
-        self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
+        self.container = try Self.makeContainer(config)
         self.isPersistent = !inMemory
+        self.storageFailureReason = inMemory ? storageFailureReason : nil
         rowsByID()
     }
 
     public init(url: URL) throws {
         let config = ModelConfiguration(url: url)
-        self.container = try ModelContainer(for: StoredAssignment.self, configurations: config)
+        self.container = try Self.makeContainer(config)
         self.isPersistent = true
+        self.storageFailureReason = nil
         // Sweep at load. Whatever is on disk was not necessarily written by this
         // build of the app — a restored backup or a future CloudKit merge can
         // put two rows for one assignment there, and the very first read
@@ -74,12 +102,50 @@ public final class AssignmentStore {
     /// case the app degrades to its old non-persistent behavior instead of
     /// crashing.
     public static func makeDefault() -> AssignmentStore? {
+        var failure: String?
         if let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
             let url = groupURL.appending(path: "Assignments.store")
-            if let store = try? AssignmentStore(url: url) { return store }
+            do {
+                return try AssignmentStore(url: url)
+            } catch {
+                // The one case worth spelling out: the on-disk store exists but
+                // could not be opened (a schema the migration plan can't reach,
+                // a corrupt file, no free space). Falling back to memory is the
+                // right move — losing the session beats refusing to launch — but
+                // doing it silently is how a wiped ledger looks exactly like a
+                // working one.
+                failure = "Saved assignments couldn't be opened (\(error.localizedDescription)). "
+                    + "This session is being kept in memory only."
+            }
+        } else {
+            failure = "The app isn't entitled for its shared App Group container, "
+                + "so assignments can't be saved to disk."
         }
-        return try? AssignmentStore(inMemory: true)
+        return try? AssignmentStore(inMemory: true, storageFailureReason: failure)
+    }
+
+    // MARK: Durability
+
+    /// Saves pending changes, keeping the failure instead of discarding it.
+    ///
+    /// Replaces the `try? context.save()` this class used everywhere. A
+    /// swallowed write failure is indistinguishable from a successful one at
+    /// every call site, which meant a ledger that had stopped persisting kept
+    /// reporting itself healthy right up until the user relaunched and found
+    /// their work gone.
+    @discardableResult
+    func saveChanges(_ operation: String = #function) -> Bool {
+        guard context.hasChanges else { return true }
+        do {
+            try context.save()
+            lastSaveError = nil
+            return true
+        } catch {
+            failedSaveCount += 1
+            lastSaveError = "\(operation) — \(error.localizedDescription)"
+            return false
+        }
     }
 
     // MARK: Reconciliation
@@ -131,7 +197,12 @@ public final class AssignmentStore {
         for row in existing where !seenIDs.contains(row.id) {
             row.isGoneFromFeed = true
         }
-        try? context.save()
+        saveChanges()
+
+        // Sync is the natural place to collect: the rows dropped here are ones
+        // this very reconcile just confirmed are both gone from the feed and
+        // long past due.
+        pruneAgedOut(now: now)
 
         return ReconcileResult(
             items: activeAssignments(source: source, now: now),
@@ -151,7 +222,24 @@ public final class AssignmentStore {
     /// reappear from the ledger on reconnect.
     public func purge(source: Assignment.Source) {
         for row in rows(source: source) { context.delete(row) }
-        try? context.save()
+        saveChanges()
+    }
+
+    /// Deletes rows that `isAgedOut` already hides from every read.
+    ///
+    /// Aging used to be filter-only: an abandoned item stopped being *shown*
+    /// but its row lived on for the life of the install, so the store grew
+    /// without bound and `stats()` counted rows the user had no way to see.
+    /// Pruning is deliberately the same predicate as the read filter, so this
+    /// can never remove something still reachable — and `isAgedOut` exempts
+    /// finished work outright, so the Done archive is untouchable here.
+    @discardableResult
+    public func pruneAgedOut(now: Date = Date()) -> Int {
+        let doomed = allRows().filter { isAgedOut($0, now: now) }
+        guard !doomed.isEmpty else { return 0 }
+        for row in doomed { context.delete(row) }
+        saveChanges()
+        return doomed.count
     }
 
     // MARK: Identity — uniqueness is enforced here, not by the database
@@ -194,7 +282,7 @@ public final class AssignmentStore {
 
         if !doomed.isEmpty {
             for row in doomed { context.delete(row) }
-            try? context.save()
+            saveChanges()
         }
         return byID
     }
@@ -241,6 +329,56 @@ public final class AssignmentStore {
         guard !row.isFinished else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
+    }
+
+    // MARK: User-created work
+
+    /// Upserts rows for work that doesn't come from a feed — the user's own
+    /// manual assignments, and any generated occurrence they interact with.
+    ///
+    /// Manual work used to live only as a JSON blob in UserDefaults, which
+    /// meant the thing the app could least afford to lose — the assignment
+    /// Canvas doesn't know about, that exists nowhere else — was the one thing
+    /// with no durable record, no archive, and no presence in the widget.
+    ///
+    /// `reconcile` only ever runs for `.canvas` / `.gradescope`, so these rows
+    /// are never marked gone, and `isAgedOut` requires `isGoneFromFeed` — user
+    /// work therefore never ages out. That's deliberate: aging exists to clear
+    /// abandoned *feed* items, and nothing about a manual assignment is
+    /// abandoned just because it's old.
+    @discardableResult
+    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> Int {
+        guard !assignments.isEmpty else { return 0 }
+        let existing = Dictionary(allRows().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var created = 0
+        for item in assignments {
+            if let row = existing[item.id] {
+                row.refresh(from: item, now: now)
+            } else {
+                context.insert(StoredAssignment.make(from: item, now: now))
+                created += 1
+            }
+        }
+        saveChanges()
+        return created
+    }
+
+    /// The active rows for one source, as value types. Projects manual work
+    /// back out of the ledger for the UI to edit.
+    public func assignments(source: Assignment.Source, now: Date = Date()) -> [Assignment] {
+        activeAssignments(source: source, now: now)
+    }
+
+    /// Deletes specific rows outright.
+    ///
+    /// The only place in this class where removing a row is the *correct*
+    /// outcome rather than the bug it was built to prevent: the user deleted
+    /// their own item and means it. Feed items still never take this path —
+    /// they go gone-from-feed and age out.
+    public func delete(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        for row in allRows() where ids.contains(row.id) { context.delete(row) }
+        saveChanges()
     }
 
     // MARK: Completion & submission truth
@@ -318,7 +456,21 @@ public final class AssignmentStore {
             ) else { continue }
             context.insert(row)
         }
-        try? context.save()
+        saveChanges()
+    }
+
+    /// Completion as a plain id-to-date map.
+    ///
+    /// A narrower read of `completionRecord()`, which is the authoritative one —
+    /// this exists because most callers only ever want the dates and reading
+    /// `.dates` off a record they immediately discard says less than it costs.
+    /// Both are projections of the ledger, never a second copy of the truth:
+    /// completion used to be persisted independently in UserDefaults *and*
+    /// mirrored onto rows, and when the two drifted the Done tab and the aging
+    /// exemption disagreed about what was finished — with that exemption being
+    /// the only thing standing between completed work and deletion.
+    public func completionDates() -> [String: Date] {
+        completionRecord().dates
     }
 
     /// One-time import of the pre-ledger completion state — the
@@ -356,7 +508,7 @@ public final class AssignmentStore {
             context.insert(row)
             recorded += 1
         }
-        try? context.save()
+        saveChanges()
         return recorded
     }
 
@@ -433,7 +585,7 @@ public final class AssignmentStore {
             row.scoreEarned = score.earned
             row.scoreMax = score.max
         }
-        try? context.save()
+        saveChanges()
         return changes
     }
 
@@ -478,7 +630,7 @@ public final class AssignmentStore {
                 changed = true
             }
         }
-        if changed { try? context.save() }
+        if changed { saveChanges() }
     }
 
     /// The persisted Canvas submission set, for seeding `AppState` at launch
@@ -507,6 +659,18 @@ public final class AssignmentStore {
     /// exactly the same from inside the app.
     public struct LedgerStats: Sendable, Equatable {
         public let isPersistent: Bool
+        /// Why the ledger fell back to memory, when it did. Nil when healthy.
+        public let storageFailureReason: String?
+        /// Most recent failed write this session, and the running count.
+        public let lastSaveError: String?
+        public let failedSaveCount: Int
+
+        /// True only when the ledger is on disk *and* its writes are landing.
+        /// Settings should key off this rather than `isPersistent` alone — a
+        /// store can be perfectly persistent and still be failing every save.
+        public var isHealthy: Bool {
+            isPersistent && storageFailureReason == nil && failedSaveCount == 0
+        }
         public let total: Int
         public let canvas: Int
         public let gradescope: Int
@@ -532,6 +696,9 @@ public final class AssignmentStore {
         let rows = allRows().filter { !$0.isCompletionOnly }
         return LedgerStats(
             isPersistent: isPersistent,
+            storageFailureReason: storageFailureReason,
+            lastSaveError: lastSaveError,
+            failedSaveCount: failedSaveCount,
             total: rows.count,
             canvas: rows.filter { $0.sourceRaw == Assignment.Source.canvas.rawValue }.count,
             gradescope: rows.filter { $0.sourceRaw == Assignment.Source.gradescope.rawValue }.count,

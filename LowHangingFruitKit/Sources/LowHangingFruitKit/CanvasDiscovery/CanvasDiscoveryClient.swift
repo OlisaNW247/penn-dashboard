@@ -102,7 +102,12 @@ public struct CanvasDiscoveryClient: Sendable {
 
     private func fetchHTML(_ url: URL) async throws -> String {
         var request = URLRequest(url: url)
-        request.httpShouldHandleCookies = true
+        // We attach the session cookie explicitly as a `Cookie` header below,
+        // so cookie handling must be off here — leaving it `true` alongside a
+        // manual header is undefined behavior (`HTTPCookieStorage.shared` can
+        // silently overwrite or duplicate the header). See
+        // docs/CANVAS_LOGIN_HARDENING.md item 2c.
+        request.httpShouldHandleCookies = false
         let headerFields = HTTPCookie.requestHeaderFields(with: cookies)
         for (field, value) in headerFields {
             request.setValue(value, forHTTPHeaderField: field)
