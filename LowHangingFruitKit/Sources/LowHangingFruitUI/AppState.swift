@@ -1056,16 +1056,38 @@ final class AppState: ObservableObject {
         // when something actually needs it. Window: 120 days back to 365
         // days forward covers a whole semester in both directions off one
         // cheap paginated call, so it doesn't need to track term boundaries.
+        // Which module-item types this course actually uses — the planner
+        // can only date types that map to a plannable (Page/Assignment/Quiz/
+        // Discussion); a course built from ExternalUrls or Files is
+        // undateable through the planner no matter what, and this line is
+        // how the diagnostics report says so. Types + counts only.
+        var typeTally: [String: Int] = [:]
+        for item in items { typeTally[item.typeRaw, default: 0] += 1 }
+        let typeSummary = typeTally.keys.sorted()
+            .map { "\($0)=\(typeTally[$0]!)" }
+            .joined(separator: " ")
+        recordModuleImport("\(courseKey): types \(typeSummary)")
+
         let overlaidItems: [CanvasModulesClient.ModuleItem]
         if items.contains(where: { $0.dueAt == nil }) {
             let now = Date()
             let plannerStart = now.addingTimeInterval(-120 * 24 * 60 * 60)
             let plannerEnd = now.addingTimeInterval(365 * 24 * 60 * 60)
-            let plannerDates = (try? await modulesClient.fetchPlannerDates(
-                courseID: courseID,
-                start: plannerStart,
-                end: plannerEnd
-            )) ?? []
+            var plannerDates: [CanvasModulesClient.PlannerDatedItem] = []
+            do {
+                plannerDates = try await modulesClient.fetchPlannerDates(
+                    courseID: courseID,
+                    start: plannerStart,
+                    end: plannerEnd
+                )
+                // matched = entries the decoder kept FOR THIS COURSE; a
+                // healthy fetch with matched=0 means the planner has nothing
+                // for the course (or ids/types don't line up), which is a
+                // different failure from the request dying.
+                recordModuleImport("\(courseKey): planner fetch ok, matched=\(plannerDates.count)")
+            } catch {
+                recordModuleImport("\(courseKey): planner fetch failed code=\((error as NSError).code)")
+            }
             overlaidItems = CanvasModulesClient.overlayDates(items, planner: plannerDates)
             let newlyDated = overlaidItems.filter { $0.dueAt != nil }.count - items.filter { $0.dueAt != nil }.count
             recordModuleImport("\(courseKey): planner dated=\(newlyDated) of \(items.count)")
