@@ -122,6 +122,38 @@ final class AppState: ObservableObject {
     /// Watcher even while selected. Caching keeps a selected class fetchable.
     @Published private(set) var canvasCourseIDsByCode: [String: String]
 
+    /// Per-course answer to the readings/silent-course nudge
+    /// (docs/READINGS_COURSES_PLAN.md), keyed by `CourseProfileReport
+    /// .courseKey`. Default is exclude — a course with no entry here shows
+    /// none of its opted-in content, so existing users see zero change
+    /// until they answer a nudge or flip the Settings toggle. Deliberately
+    /// never consulted by Grade Watcher / course-selection paths (see the
+    /// plan's "Hard requirement — Grade Watcher independence").
+    @Published private(set) var courseContentDecisions: [String: CourseContentDecision]
+    /// The one nudge the UI may present this app-open ("no nag storms" —
+    /// docs/READINGS_COURSES_PLAN.md). Set by `queueNudgeIfNeeded()`, cleared
+    /// by `resolveCourseNudge`/`dismissCourseNudge`.
+    @Published var pendingCourseNudge: CourseProfileReport?
+    /// The authenticated course list from the last successful
+    /// `refreshCourseIntel`, persisted (id -> name) so SILENT detection
+    /// survives a launch with no live Canvas session — a course with zero
+    /// feed items is otherwise invisible to LHF at all (see `CourseProfile
+    /// .unknownSilent` vs `.silent`).
+    private var enrolledCanvasCourses: [CanvasCourseDiscoveryParser.Course]
+    /// Per-course probe results from this launch's `refreshCourseIntel`
+    /// runs. In-memory only: a probe surviving relaunch could misreport a
+    /// course as `.silent` (probed, found nothing) when it's really
+    /// `.unknownSilent` (no session to probe with) this launch.
+    private var courseProbes: [String: CourseProbeResult] = [:]
+    /// The last computed profile for every course seen — feed- or
+    /// enrollment-derived. Recomputed by `recomputeCourseProfiles()`.
+    private var courseProfileReports: [CourseProfileReport] = []
+    /// Whether a nudge has already been surfaced this launch.
+    /// `pendingCourseNudge == nil` alone can't tell "never queued" apart
+    /// from "queued, then resolved" — without this a resolve during this
+    /// launch would let the next sync immediately queue another one.
+    private var nudgePresentedThisLaunch = false
+
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
     /// directly; `refreshGradeWatcher` is the only thing that drives it here.
@@ -156,6 +188,7 @@ final class AppState: ObservableObject {
     private static let courseNameOverridesKey = "courseNameOverrides"
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
+    private static let enrolledCanvasCoursesKey = "enrolledCanvasCoursesV1"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -185,6 +218,9 @@ final class AppState: ObservableObject {
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
+        self.courseContentDecisions = CourseContentDecisionStore.load()
+        self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
+            .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
 
@@ -494,6 +530,22 @@ final class AppState: ObservableObject {
         updateCanvasICSURL("")
         canvasCourseIDsByCode = [:]
         UserDefaults.lhf.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md) is
+        // Canvas-session-derived state too — clear it wholesale so a
+        // reconnect re-probes and re-asks from scratch instead of inheriting
+        // decisions tied to a fingerprint history the new session may never
+        // reproduce. This is deliberate, not an oversight: see the plan's
+        // "Hard requirement — Grade Watcher independence" for why this never
+        // touches `canvasCourseIDsByCode`'s Grade Watcher role beyond the
+        // clear already above.
+        enrolledCanvasCourses = []
+        UserDefaults.lhf.removeObject(forKey: Self.enrolledCanvasCoursesKey)
+        courseProbes = [:]
+        courseProfileReports = []
+        nudgePresentedThisLaunch = false
+        courseContentDecisions = [:]
+        CourseContentDecisionStore.clear()
+        pendingCourseNudge = nil
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
@@ -612,6 +664,7 @@ final class AppState: ObservableObject {
                 canvasItems = fetched
             }
             rebuildDashboardItems()
+            recomputeCourseProfiles()
             lastSync = Date()
         } catch {
             self.error = "Sync failed: \(error.localizedDescription)"
@@ -754,6 +807,231 @@ final class AppState: ObservableObject {
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
         updateSubmissionState()
+    }
+
+    /// Discovers the full enrolled-course list (including courses with zero
+    /// feed presence) and probes the ones the feed hasn't already covered,
+    /// so SILENT and READINGS_ON_CALENDAR courses can be detected and
+    /// explained (docs/READINGS_COURSES_PLAN.md Phase 2). Mirrors
+    /// `refreshGradeWatcher`'s guard and cookie handling — fixture/demo mode
+    /// never reaches the network, and an empty cookie set is a silent no-op
+    /// rather than an error the user has to dismiss.
+    ///
+    /// This is entirely a DETECTION/list-visibility path. Its only effect on
+    /// Grade Watcher is additive — folding newly-discovered courses into
+    /// `canvasCourseIDsByCode` so they become watchable at all — never a
+    /// removal, and never anything routed through `courseContentDecisions`
+    /// (see the plan's "Hard requirement — Grade Watcher independence").
+    func refreshCourseIntel(cookies: [HTTPCookie]) async {
+        guard !isUsingFixtureData, !cookies.isEmpty else { return }
+
+        let client = CanvasDiscoveryClient(cookies: cookies)
+        let enrolled = await client.discoverEnrolledCourses()
+        if !enrolled.isEmpty {
+            enrolledCanvasCourses = enrolled
+            persistEnrolledCanvasCourses()
+        }
+
+        mergeEnrolledCoursesIntoCourseIDCache()
+
+        // Probe only courses the feed hasn't already accounted for (a course
+        // with feed items is never SILENT — see `CourseProfileEngine
+        // .reports`) and that have no probe result yet this launch. Capped
+        // at 8 per refresh so a heavy course load can't turn one refresh
+        // into dozens of sequential HTML fetches.
+        let feedCourseKeys = Set(canvasItems.map(\.course))
+        let toProbe = enrolledCanvasCourses
+            .filter { course in
+                !feedCourseKeys.contains(Self.courseKey(forEnrolled: course))
+                    && courseProbes[course.id] == nil
+            }
+            .prefix(8)
+
+        for course in toProbe {
+            // A thrown fetch (expired session, HTTP error) leaves NO probe
+            // entry — that's what keeps `.unknownSilent` honest instead of
+            // quietly reporting "probed, found nothing" for a course LHF
+            // never actually looked at this launch.
+            guard let items = try? await client.fetchModulesReadings(courseID: course.id) else { continue }
+            courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
+        }
+
+        recomputeCourseProfiles()
+    }
+
+    /// Folds the enrolled-course list into `canvasCourseIDsByCode` — the map
+    /// `selectedCanvasCourseIDs()` reads for Grade Watcher — so a course
+    /// with zero feed items (readings-only, or genuinely silent) becomes
+    /// watchable at all; today it's invisible to Grade Watcher because
+    /// nothing else ever discovers it (docs/READINGS_COURSES_PLAN.md "Hard
+    /// requirement — Grade Watcher independence"). Only ADDS: an id already
+    /// resolved from a feed item's URL (`updateCanvasCourseIDCache`) is a
+    /// stronger source and is never overwritten by this name-parsed one.
+    private func mergeEnrolledCoursesIntoCourseIDCache() {
+        var byCode = canvasCourseIDsByCode
+        for course in enrolledCanvasCourses {
+            let key = Self.courseKey(forEnrolled: course)
+            // Skip only the degenerate case: an unparseable AND empty raw
+            // name, which would otherwise insert a useless "" key.
+            guard !key.isEmpty, byCode[key] == nil else { continue }
+            byCode[key] = course.id
+        }
+        guard byCode != canvasCourseIDsByCode else { return }
+        canvasCourseIDsByCode = byCode
+        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+    }
+
+    /// The same course-key derivation `CourseProfileEngine` uses internally
+    /// (parse the enrolled display name; fall back to the raw name when it
+    /// doesn't parse), duplicated here because the engine's version is
+    /// private — this is the join key between an enrolled course and its
+    /// feed items' already-clean `course` field.
+    private static func courseKey(forEnrolled course: CanvasCourseDiscoveryParser.Course) -> String {
+        let parsed = CourseCode.parse(course.name).code
+        return parsed == unknownCourse ? course.name : parsed
+    }
+
+    private func persistEnrolledCanvasCourses() {
+        let byID = Dictionary(uniqueKeysWithValues: enrolledCanvasCourses.map { ($0.id, $0.name) })
+        UserDefaults.lhf.set(byID, forKey: Self.enrolledCanvasCoursesKey)
+    }
+
+    /// Recomputes every course's profile from current feed items, the
+    /// cached enrolled-course list, and this launch's probes, then queues a
+    /// nudge if one is warranted. Call after anything that could change any
+    /// of those three inputs — a successful `sync()`, or `refreshCourseIntel`.
+    private func recomputeCourseProfiles() {
+        courseProfileReports = CourseProfileEngine.reports(
+            feedItems: canvasItems,
+            enrolledCourses: enrolledCanvasCourses,
+            probes: courseProbes
+        )
+        queueNudgeIfNeeded()
+    }
+
+    /// Surfaces at most one nudge per app-open (docs/READINGS_COURSES_PLAN.md
+    /// "no nag storms"). A report is nudge-worthy when its profile is
+    /// actionable (`isActionable`) and either no decision has been recorded
+    /// for it, or the recorded decision's fingerprint CLASS (the substring
+    /// before ":" — "readings"/"silent"/…) differs from the current one: a
+    /// silent course whose reading count merely grew isn't re-asked, but one
+    /// that starts putting events on the calendar is. A deleted course is
+    /// never nudged.
+    private func queueNudgeIfNeeded() {
+        guard pendingCourseNudge == nil, !nudgePresentedThisLaunch else { return }
+
+        let candidates = courseProfileReports
+            .filter { !deletedCourseKeys.contains($0.courseKey) }
+            .filter(Self.isActionable)
+            .filter { report in
+                guard let decision = courseContentDecisions[report.courseKey] else { return true }
+                return Self.fingerprintClass(decision.fingerprint) != Self.fingerprintClass(report.fingerprint)
+            }
+            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
+
+        guard let next = candidates.first else { return }
+        pendingCourseNudge = next
+        nudgePresentedThisLaunch = true
+    }
+
+    /// Worth ASKING about: dated readings on the calendar, or a silent
+    /// course whose probe found actual module readings. `.normal` (already
+    /// represented on the dashboard), `.unknownSilent` (nothing concrete to
+    /// show yet — no session to probe with), and a silent course whose probe
+    /// came back with zero/no readings never nudge — stricter than
+    /// `isManageable` below, which also lists a confirmed-empty silent
+    /// course so Settings can say so.
+    private static func isActionable(_ report: CourseProfileReport) -> Bool {
+        switch report.profile {
+        case .readingsOnCalendar:
+            return true
+        case let .silent(moduleReadingCount):
+            return (moduleReadingCount ?? 0) > 0
+        case .normal, .unknownSilent:
+            return false
+        }
+    }
+
+    /// Worth LISTING in Settings' "Courses & content" management section:
+    /// readings-on-calendar, or any silent course a probe actually reached
+    /// (`moduleReadingCount != nil`) — including one that came back
+    /// confirmed-empty, which `isActionable` deliberately excludes from the
+    /// nudge queue but Settings should still be able to show and explain.
+    private static func isManageable(_ report: CourseProfileReport) -> Bool {
+        switch report.profile {
+        case .readingsOnCalendar:
+            return true
+        case let .silent(moduleReadingCount):
+            return moduleReadingCount != nil
+        case .normal, .unknownSilent:
+            return false
+        }
+    }
+
+    /// The stable part of a fingerprint used to decide whether a course's
+    /// shape changed enough to re-ask — the substring before the first ":"
+    /// (e.g. "readings:10" -> "readings"), or the whole string when there's
+    /// no ":" (e.g. "normal", "unknownSilent").
+    private static func fingerprintClass(_ fingerprint: String) -> String {
+        String(fingerprint.split(separator: ":", maxSplits: 1).first ?? Substring(fingerprint))
+    }
+
+    /// Records the user's answer to a course-content nudge — writes the
+    /// decision, persists it, clears the pending nudge, and rebuilds so the
+    /// choice takes effect immediately.
+    func resolveCourseNudge(_ report: CourseProfileReport, include: Bool) {
+        setCourseContentDecision(
+            courseKey: report.courseKey,
+            choice: include ? .include : .exclude,
+            fingerprint: report.fingerprint
+        )
+        pendingCourseNudge = nil
+        rebuildDashboardItems()
+    }
+
+    /// Dismisses the pending nudge WITHOUT recording a decision, so the same
+    /// course is asked again next launch — dismissing isn't an answer.
+    func dismissCourseNudge() {
+        pendingCourseNudge = nil
+    }
+
+    /// Whether `course`'s opted-in content (readings/events) currently shows
+    /// on the dashboard. Default is false (exclude) when no decision is on
+    /// file — see `CourseContentDecision`'s doc comment.
+    func courseContentIncluded(_ course: String) -> Bool {
+        courseContentDecisions[course]?.choice == .include
+    }
+
+    /// Settings surface ("Courses & content"): sets or overwrites the
+    /// decision for `course` directly, independent of any pending nudge.
+    /// Uses the current profile report's fingerprint when one is on file for
+    /// this course, so a later profile-class change is still measured
+    /// against a real fingerprint; falls back to "manual" when this course
+    /// has no computed report yet (e.g. set before the first sync this
+    /// launch).
+    func setCourseContentIncluded(_ course: String, _ include: Bool) {
+        let fingerprint = courseProfileReports.first { $0.courseKey == course }?.fingerprint ?? "manual"
+        setCourseContentDecision(courseKey: course, choice: include ? .include : .exclude, fingerprint: fingerprint)
+        if pendingCourseNudge?.courseKey == course { pendingCourseNudge = nil }
+        rebuildDashboardItems()
+    }
+
+    private func setCourseContentDecision(courseKey: String, choice: CourseContentDecision.Choice, fingerprint: String) {
+        courseContentDecisions[courseKey] = CourseContentDecision(
+            choice: choice,
+            fingerprint: fingerprint,
+            decidedAt: Date()
+        )
+        CourseContentDecisionStore.save(courseContentDecisions)
+    }
+
+    /// Courses worth surfacing in Settings' "Courses & content" management
+    /// section: every course with a manageable profile (see `isManageable`),
+    /// decided or not.
+    var courseContentManageableCourses: [CourseProfileReport] {
+        courseProfileReports
+            .filter(Self.isManageable)
+            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
     }
 
     /// Rewrites an item's course label to the canonical `CourseCode` form so
@@ -992,13 +1270,29 @@ final class AppState: ObservableObject {
         return assignment.title.range(of: pattern, options: .regularExpression) != nil
     }
 
+    /// Extra content beyond assignments/assessments that the user has
+    /// specifically opted into for this course: a dated calendar event
+    /// (reading, discussion prep, etc.) for a course whose
+    /// READINGS_ON_CALENDAR/SILENT nudge was answered "include"
+    /// (docs/READINGS_COURSES_PLAN.md). Default is exclude — no stored
+    /// decision means these stay off the dashboard, so existing users see
+    /// zero change until they opt in.
+    private func includesAsOptedInContent(_ assignment: Assignment) -> Bool {
+        assignment.kind == .event
+            && assignment.course != Self.unknownCourse
+            && courseContentDecisions[assignment.course]?.choice == .include
+    }
+
     private func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
-        // assessment (quizzes/exams). Gradescope items are already assignments.
-        let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
+        // assessment (quizzes/exams), plus — for a course the user opted in via
+        // a readings/silent-course nudge or Settings — its dated calendar
+        // events (docs/READINGS_COURSES_PLAN.md). Gradescope items are already
+        // assignments.
+        let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
         // into a single Canvas-anchored item before it ever reaches the
@@ -1031,11 +1325,15 @@ final class AppState: ObservableObject {
                 && isCourseSelected(item.course)          // class picker
                 && Self.withinTermCap(item, now: now)     // end-of-term cap
         }
-        assessments = incomplete.filter { Self.isAssessment($0) }
+        // `.event` items never land in Assessments even when their title
+        // matches the exam/quiz regex (`isAssessment` is title-based, and a
+        // readings-course opt-in can surface something titled e.g. "Reading
+        // quiz prep") — they're opted-in content, always coursework.
+        assessments = incomplete.filter { $0.kind != .event && Self.isAssessment($0) }
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped.
-        let coursework = incomplete.filter { !Self.isAssessment($0) }
+        let coursework = incomplete.filter { $0.kind == .event || !Self.isAssessment($0) }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
         publishWidgetSnapshot()

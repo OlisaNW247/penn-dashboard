@@ -281,6 +281,8 @@ struct GradeWatcherView: View {
     private func performRefresh() async {
         let cookies = await AutoSyncCoordinator.canvasCookies()
         await state.refreshGradeWatcher(cookies: cookies)
+        // Same session, separate axis — see AutoSyncCoordinator.refreshCanvasGrades.
+        await state.refreshCourseIntel(cookies: cookies)
 
         if store.isSessionExpired {
             let hadPersisted = !SessionCookieStore.load(service: .canvas).isEmpty

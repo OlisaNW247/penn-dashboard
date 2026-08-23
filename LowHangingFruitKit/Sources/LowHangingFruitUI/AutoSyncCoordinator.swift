@@ -51,6 +51,12 @@ enum AutoSyncCoordinator {
         let cookies = await canvasCookies()
         guard !cookies.isEmpty else { return }
         await state.refreshGradeWatcher(cookies: cookies)
+        // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md)
+        // piggybacks on the same session rather than gathering its own —
+        // a separate, unrelated axis from Grade Watcher's course coverage
+        // (see the plan's "Hard requirement — Grade Watcher independence"),
+        // just sharing the cookies already in hand.
+        await state.refreshCourseIntel(cookies: cookies)
     }
 
     /// Gathers Gradescope session cookies: the Keychain-persisted set
