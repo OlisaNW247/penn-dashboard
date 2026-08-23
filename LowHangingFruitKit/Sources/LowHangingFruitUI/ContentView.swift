@@ -18,12 +18,29 @@ struct ContentView: View {
     /// booleans so the screenshot flag can open Settings directly.
     @State private var path: [DashRoute] = []
 
+    /// Which tab the app is showing, owned by `MainTabView`. The dashboard needs
+    /// write access for one reason — the header's gear switches to the Settings
+    /// tab rather than pushing a second copy of Settings (see `header`) — and
+    /// read access for another: coming *back* to the dashboard from Profile is
+    /// now the moment class edits have to be reflected in the list, the way
+    /// popping the pushed Settings page used to be.
+    ///
+    /// Defaulted to a constant so `ContentView` still stands up on its own in
+    /// `#Preview` and in tests without a tab bar around it. In that case the
+    /// gear is inert, which is correct: there is no tab to switch to.
+    @Binding private var selectedTab: MainTab
+
     /// Where the header's buttons lead. Both are pushes onto the dashboard's own
     /// stack, so Settings and Grades are full screens with a back button rather
     /// than cards presented over the list.
     /// `report` carries its own course identity so the stack can be restored
     /// (or, in DEBUG, seeded straight to the report for screenshots) without
     /// walking through the cards.
+    ///
+    /// `.settings` survives v4's tab bar even though the gear no longer pushes
+    /// it. It is what the `-LHFShowSettings` screenshot seam drives, and
+    /// keeping it means the App Store capture script keeps producing the same
+    /// frame it always did — now with the tab bar underneath it.
     enum DashRoute: Hashable {
         case settings
         case grades
@@ -36,8 +53,10 @@ struct ContentView: View {
     /// activation covers the "I just opened the app" case.
     private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
-    init(previewVM: DashboardViewModel? = nil) {
+    init(previewVM: DashboardViewModel? = nil,
+         selectedTab: Binding<MainTab> = .constant(.dashboard)) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
+        _selectedTab = selectedTab
         #if DEBUG
         // Screenshot seam: pick the initial tab from launch flags. (Settings is
         // opened from onAppear, after data loads, so it presents reliably.)
@@ -168,6 +187,16 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+        // The same moment, reached the other way. Class toggles, renames and
+        // deletions moved to the Profile *tab* in v4, and switching tabs pops
+        // nothing — `path` never changes, so the hook above never fires. Without
+        // this, a student could turn a class off in Profile, tap Dashboard, and
+        // still see its assignments until something else happened to reload.
+        .onChange(of: selectedTab) { _, tab in
+            guard tab == .dashboard else { return }
+            vm.reload(preservingEdits: true)
+            rescheduleNotifications()
+        }
     }
 
     /// Floating "+" to add a user-created assignment (one-off or recurring).
@@ -232,6 +261,26 @@ struct ContentView: View {
     /// Wordmark, greeting and date on the left; the two destinations stacked on
     /// the right, where the weekly ring used to sit. There's no manual reload —
     /// opening the app auto-refreshes — so these are the only header controls.
+    ///
+    /// **Why the gear stays now that Settings is a tab.** Two arguments pulled
+    /// the other way and both lose. The first is redundancy: the tab bar is
+    /// always on screen, so a second door is arguably clutter. But the gear is
+    /// where a year of muscle memory points, it is what `docs/appstore/
+    /// REVIEW_NOTES.md` tells an App Store reviewer to look for ("Settings —
+    /// the gear icon"), and the cost of keeping it is one 48pt circle. The
+    /// second is the real hazard: if the gear kept *pushing* `SettingsPage`
+    /// onto the dashboard's stack, the app would have two live, independent
+    /// copies of Settings — one buried in the Dashboard tab's history, one at
+    /// the root of the Settings tab — each with its own scroll position, its
+    /// own half-typed rename, its own alert. That is the "back button went to
+    /// the wrong screen" bug, pre-built.
+    ///
+    /// So: the affordance stays, the navigation changes. The gear now *selects
+    /// the Settings tab*, which is the same gesture the tab bar performs, so
+    /// there is exactly one Settings in existence at any moment.
+    ///
+    /// Grades keeps pushing, because Grades genuinely is a drill-down off the
+    /// dashboard rather than a peer of it — see `MainTab`.
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
@@ -256,7 +305,7 @@ struct ContentView: View {
                 if FeatureFlags.gradeWatcher {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
                 }
-                navButton(to: .settings, icon: "gearshape.fill", title: "Settings")
+                tabButton(to: .settings, icon: "gearshape.fill", title: "Settings")
             }
             .padding(.top, 2)
         }
@@ -267,16 +316,37 @@ struct ContentView: View {
     /// accessibility layer only.
     private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
         NavigationLink(value: route) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.v2DateText)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-                .contentShape(Circle())
+            headerIcon(icon)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
+    }
+
+    /// The gear. Identical to `navButton` from the outside — same circle, same
+    /// corner — but it moves the tab bar's selection instead of pushing, for the
+    /// reasons in `header`'s comment. The accessibility hint says so out loud,
+    /// because a control that changes tabs when everything beside it pushes is
+    /// exactly the kind of surprise VoiceOver users get no warning about.
+    private func tabButton(to tab: MainTab, icon: String, title: String) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            headerIcon(icon)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint("Switches to the \(title) tab")
+        .help(title)
+    }
+
+    private func headerIcon(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.v2DateText)
+            .frame(width: 48, height: 48)
+            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+            .contentShape(Circle())
     }
 
     private var greeting: String {

@@ -6,22 +6,27 @@ import UIKit
 import AppKit
 #endif
 
-/// Houses everything that used to clutter the main screen: connection status,
-/// reconnect, class editing, recurring-task entry, and reminder preferences.
+/// Account, appearance, reminder defaults, tasks, storage and troubleshooting.
 ///
-/// Pushed onto the dashboard's `NavigationStack` (from the header's Settings
-/// button) rather than presented as a sheet, so it's a full screen with a back
-/// button. It therefore owns **no** `NavigationStack` of its own — nesting one
-/// would break the push and strand `Grade Watcher`'s own link below it.
+/// **The class list is no longer here.** It moved to the Profile tab in v4 —
+/// see `ProfileClassesSection`, which is that code, moved rather than rewritten.
+/// The split is "a preference vs. a thing you own": appearance and reminder
+/// lead times are preferences; which classes you're taking is not, and it was
+/// odd that turning off a course lived next to the light/dark picker.
+/// What stays here is the *global* reminder configuration that per-course
+/// settings in Profile will inherit from and override.
+///
+/// In v4 this is the root of the **Settings tab**, which is where its
+/// `NavigationStack` comes from (`MainTabView` supplies one per tab). It still
+/// owns **no** stack of its own — nesting one would strand `Grade Watcher`'s
+/// link below it, exactly as it would have when this was a push. It is still
+/// reachable as a push too, via `ContentView.DashRoute.settings`, which the
+/// screenshot seam drives.
 struct SettingsPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var showRecurring = false
-    /// Non-nil while the rename prompt is up; holds the course *code* being
-    /// renamed (never the display name, which is what's being edited).
-    @State private var renamingCourse: String?
-    @State private var renameDraft = ""
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
@@ -47,7 +52,11 @@ struct SettingsPage: View {
 
     var body: some View {
         Form {
-            Section("Profile") {
+            // Header deliberately isn't "Profile" any more: that word now names
+            // a tab, and a Settings section wearing the same label would read
+            // as a shortcut to it. The field itself hasn't moved — a name is a
+            // preference, and Profile is about classes.
+            Section("Your name") {
                 TextField("Your name", text: Binding(
                     get: { state.userName },
                     set: { state.updateName($0) }
@@ -140,8 +149,6 @@ struct SettingsPage: View {
                 .labelsHidden()
             }
 
-            classesSection
-
             if FeatureFlags.gradeWatcher {
                 Section("Grades") {
                     NavigationLink {
@@ -183,21 +190,6 @@ struct SettingsPage: View {
         }
         .sheet(isPresented: $showPasteFeedLink) {
             PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
-        }
-        .alert("Rename class", isPresented: Binding(
-            get: { renamingCourse != nil },
-            set: { if !$0 { renamingCourse = nil } }
-        )) {
-            TextField("Class name", text: $renameDraft)
-            Button("Save") {
-                if let course = renamingCourse {
-                    state.renameCourse(course, to: renameDraft)
-                }
-                renamingCourse = nil
-            }
-            Button("Cancel", role: .cancel) { renamingCourse = nil }
-        } message: {
-            Text("Shown in place of \(renamingCourse ?? "the class code"). Leave it empty to go back to the original.")
         }
         .alert(item: $disconnecting) { target in
             Alert(
@@ -275,104 +267,14 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: Classes
-
-    /// Same class picker as onboarding, so a course can be turned off any time.
-    /// Off = hidden from the dashboard and from reminders. Swipe to delete a
-    /// class entirely (it drops out of this list, not just off); "Deleted
-    /// classes" below lists anything deleted so it can be brought back.
-    @ViewBuilder
-    private var classesSection: some View {
-        let courses = state.visibleCourseCodes()
-        let deletedCourses = state.deletedCourseCodes()
-        if !courses.isEmpty || !deletedCourses.isEmpty {
-            Section {
-                ForEach(courses, id: \.self) { course in
-                    classRow(course)
-                }
-
-                if !deletedCourses.isEmpty {
-                    deletedClassesRow(deletedCourses)
-                }
-            } header: {
-                Text("Classes")
-            } footer: {
-                Text("Turn a class off to hide its assignments and its reminders. Swipe to rename or delete \u{2014} renaming only changes the label, so grades and reminders keep working.")
-            }
-        }
-    }
-
-    /// One class: the on/off toggle, plus rename and delete. The row shows the
-    /// user's own name when they've set one, but every action still keys on
-    /// `course` (the code Canvas gave us) so a rename can't detach the class
-    /// from its assignments or its grades.
-    private func classRow(_ course: String) -> some View {
-        Toggle(state.courseDisplayName(course), isOn: Binding(
-            get: { state.isCourseSelected(course) },
-            set: { state.setCourse(course, selected: $0) }
-        ))
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                state.deleteCourse(course)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            Button {
-                beginRename(course)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .tint(Color.v2DateText)
-        }
-        .contextMenu {
-            Button {
-                beginRename(course)
-            } label: {
-                Label("Rename class", systemImage: "pencil")
-            }
-            if state.hasCustomName(course) {
-                Button {
-                    state.renameCourse(course, to: "")
-                } label: {
-                    Label("Reset to \(course)", systemImage: "arrow.uturn.backward")
-                }
-            }
-            Button(role: .destructive) {
-                state.deleteCourse(course)
-            } label: {
-                Label("Delete class", systemImage: "trash")
-            }
-        }
-    }
-
-    private func beginRename(_ course: String) {
-        renameDraft = state.courseDisplayName(course)
-        renamingCourse = course
-    }
-
-    private func deletedClassesRow(_ deletedCourses: [String]) -> some View {
-        DisclosureGroup {
-            ForEach(deletedCourses, id: \.self) { course in
-                HStack {
-                    Text(state.courseDisplayName(course))
-                        .font(.lhfSans(14))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Restore") {
-                        state.restoreCourse(course)
-                    }
-                    .font(.lhfSans(13))
-                }
-            }
-        } label: {
-            Label("Deleted classes (\(deletedCourses.count))", systemImage: "trash")
-                .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: Reminders
 
+    /// The **global** reminder configuration: whether due-date reminders run at
+    /// all, which lead times they use, and the daily digest. v4's Profile tab
+    /// adds a per-class layer that inherits from exactly these values and
+    /// overrides them class by class, which is why they stay in Settings rather
+    /// than following the class list over to Profile — this is the default a
+    /// student sets once, not the per-course tuning they revisit.
     @ViewBuilder
     private var remindersSection: some View {
         Section("Reminders") {

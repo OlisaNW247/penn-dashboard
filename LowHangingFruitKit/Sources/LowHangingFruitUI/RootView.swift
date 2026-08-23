@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// The app's three top-level destinations.
+///
+/// Named cases rather than integer tags so the tab bar, the DEBUG screenshot
+/// seam, `ContentView`'s header and the tests all refer to the same thing;
+/// `String`-backed so a tag that stops matching shows up as an obviously wrong
+/// name in a debugger rather than as a silently inert `2`.
+///
+/// Grades and the per-course grade report are deliberately **not** here. They
+/// are drill-downs from the dashboard — you arrive at them from a specific
+/// course or a specific week and you expect a back button — so they stay
+/// pushed routes on the dashboard's own stack (`ContentView.DashRoute`).
+/// A destination earns a tab when you'd want to jump to it from anywhere;
+/// neither of those does.
+enum MainTab: String, Hashable, CaseIterable {
+    case dashboard
+    case profile
+    case settings
+}
+
 /// The app's root view. The `@main` entry point lives in the Xcode app target
 /// (which owns the `WindowGroup`) and simply presents `RootView()`. Keeping the
 /// UI in a library lets a real, shippable app target import it.
@@ -63,14 +82,79 @@ public struct RootView: View {
                     .environmentObject(state)
             }
         } else {
-            ContentView()
+            MainTabView()
                 .environmentObject(state)
                 .environmentObject(scheduler)
-                .task {
-                    // Canvas-only: refresh the assignment list from the
-                    // (cookieless, self-authenticating) calendar feed.
-                    await state.syncIfConfigured()
-                }
+        }
+    }
+}
+
+/// The tab bar, and the only place the app's top-level structure is decided.
+///
+/// Until v4 the whole app was a single `NavigationStack` and Settings was a
+/// push behind a gear icon. That was fine while Settings was the only
+/// destination, but Profile — "what classes am I taking, which do I want to
+/// see, and how do I want to hear about each one" — is something a student
+/// opens on purpose, repeatedly, in the first week of a semester. Burying it
+/// one level down behind an icon that reads as "preferences" would be the
+/// wrong shape for the most-used setup screen in the app.
+///
+/// **Every tab gets its own `NavigationStack`.** This is not stylistic. A
+/// single stack shared across tabs keeps one `path`, so a push made while the
+/// Dashboard tab was showing is still on the stack when you switch to Settings
+/// — you get somebody else's screen, and Back takes you somewhere you never
+/// were. Three stacks means three independent histories, which is what a tab
+/// bar promises. `ContentView` already owns its own stack (it has since the
+/// dashboard was the whole app), so it is placed here *unwrapped*; wrapping it
+/// again would nest two stacks and break `DashRoute` pushes entirely.
+struct MainTabView: View {
+    @EnvironmentObject var state: AppState
+    @EnvironmentObject var scheduler: NotificationScheduler
+
+    /// Lives here rather than in `AppState` on purpose: which tab is showing is
+    /// view state for one session, not a user preference worth persisting to
+    /// disk and migrating forever. Launching on the dashboard is right every
+    /// time — it's the screen that answers "what do I owe today".
+    @State private var selection: MainTab = .dashboard
+
+    var body: some View {
+        TabView(selection: $selection) {
+            // Unwrapped: ContentView brings its own NavigationStack. See the
+            // type's doc comment.
+            ContentView(selectedTab: $selection)
+                .tabItem { Label("Dashboard", systemImage: "checklist") }
+                .tag(MainTab.dashboard)
+
+            NavigationStack {
+                ProfileView()
+            }
+            .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+            .tag(MainTab.profile)
+
+            NavigationStack {
+                SettingsPage()
+            }
+            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tag(MainTab.settings)
+        }
+        // The tab bar is chrome the system draws, so it takes the system tint
+        // unless told otherwise; the rest of the app tints controls with the
+        // v2 blue (see `SheetTheme`) and a stock iOS blue underneath a warm
+        // greige app reads as somebody else's UI.
+        //
+        // Deliberately no height, padding or font override anywhere in here.
+        // A tab bar is one of the few pieces of chrome that resizes itself
+        // correctly for accessibility text sizes — at the largest ones iOS
+        // drops the labels and shows the icons alone — and every hardcoded
+        // dimension is a way to take that away.
+        .tint(Color.v2SpineBlue)
+        .task {
+            // Canvas-only: refresh the assignment list from the (cookieless,
+            // self-authenticating) calendar feed. Lives on the tab container
+            // rather than on the dashboard tab so it fires once at the
+            // onboarding -> app handoff, not again every time the student
+            // comes back to the dashboard from Profile.
+            await state.syncIfConfigured()
         }
     }
 }
