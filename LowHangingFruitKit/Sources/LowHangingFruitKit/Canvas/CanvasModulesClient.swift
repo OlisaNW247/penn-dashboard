@@ -82,6 +82,12 @@ public struct CanvasModulesClient: Sendable {
         ) else { throw Error.invalidURL }
         components.queryItems = [
             URLQueryItem(name: "include[]", value: "items"),
+            // Canvas returns `content_details` — the ONLY carrier of an
+            // item's due_at — solely when explicitly requested. Without this
+            // second include, every imported reading arrived undated and
+            // sank to the bottom of the list (observed on device: all 55 of
+            // a real course's readings, dateless).
+            URLQueryItem(name: "include[]", value: "content_details"),
             URLQueryItem(name: "per_page", value: "100"),
         ]
         guard let firstURL = components.url else { throw Error.invalidURL }
