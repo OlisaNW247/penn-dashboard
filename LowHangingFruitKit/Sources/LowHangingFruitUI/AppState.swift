@@ -650,6 +650,45 @@ final class AppState: ObservableObject {
         await sync()
     }
 
+    /// Recovers course attribution for a Canvas calendar item that fell into
+    /// `unknownCourse` because its SUMMARY carried no `[Course Name]` suffix.
+    /// Sanitized on-device diagnostics showed this happening for real: 17
+    /// `.event` items with no suffix all bucketed under "(unknown course)",
+    /// while the course they actually belonged to (enrolled, Canvas id known)
+    /// had zero feed items and profiled as SILENT. The SUMMARY doesn't name
+    /// the course, but the event's own URL still embeds the Canvas course id
+    /// (`courseID(from:)`) — the only recoverable attribution left — so an
+    /// unknown-course item whose URL resolves to an id in `enrolledCanvasCourses`
+    /// is re-keyed to that course. An item whose URL points at a course id that
+    /// ISN'T enrolled deliberately stays `unknownCourse`: that's an
+    /// institution-wide calendar entry (a holiday, a "no class / no exams"
+    /// day), not a misattributed one.
+    ///
+    /// Internal, not private, so it's directly testable — see
+    /// `UnknownCourseAttributionTests.swift` — the same reasoning as
+    /// `isEnrolledCourseCurrent`.
+    func attributingUnknownCourse(_ item: Assignment) -> Assignment {
+        guard item.course == Self.unknownCourse,
+              let url = item.url,
+              let id = Self.courseID(from: url),
+              let match = enrolledCanvasCourses.first(where: { $0.id == id })
+        else { return item }
+        return Assignment(
+            source: item.source,
+            sourceID: item.sourceID,
+            kind: item.kind,
+            course: Self.courseKey(forEnrolled: match),
+            title: item.title,
+            dueAt: item.dueAt,
+            url: item.url,
+            term: item.term,
+            submitted: item.submitted,
+            scoreEarned: item.scoreEarned,
+            scoreMax: item.scoreMax,
+            linkedID: item.linkedID
+        )
+    }
+
     func sync() async {
         guard let url = URL(string: canvasICSURL), !canvasICSURL.isEmpty else {
             error = "Paste your Canvas calendar feed URL first."
@@ -660,7 +699,19 @@ final class AppState: ObservableObject {
         defer { isLoading = false }
         do {
             let client = CanvasICSClient(feedURL: url)
-            let fetched = try await client.fetchCalendarItems().sorted(by: Self.byDueDate)
+            // Re-attribute unknown-course items by their URL's course id
+            // BEFORE reconciling: `StoredAssignment.refresh(from:now:)` copies
+            // `course` from the feed item on every sync a row is seen again
+            // (verified by reading it), so doing this first means the
+            // ledger's course field picks up the correction on this very
+            // sync rather than needing a special-case write. On a fresh
+            // install the first sync can run before `enrolledCanvasCourses`
+            // has ever been populated, so attribution can lag one sync —
+            // it self-heals on the next one since `course` is feed-refreshed
+            // every time.
+            let fetched = try await client.fetchCalendarItems()
+                .map(attributingUnknownCourse)
+                .sorted(by: Self.byDueDate)
             // Reconcile into the durable ledger rather than replacing the pool:
             // items that dropped out of the rolling feed are retained, and a
             // suspiciously empty fetch is refused so one blip can't wipe the list.
@@ -848,6 +899,17 @@ final class AppState: ObservableObject {
             .filter { Self.isEnrolledCourseCurrent($0) }
         if !enrolled.isEmpty {
             enrolledCanvasCourses = enrolled
+            // The enrolled list just arrived or changed, which is exactly
+            // when an item stuck at `unknownCourse` (its URL's course id
+            // wasn't enrolled yet) might now resolve. Re-attribute in memory
+            // and rebuild so the correction shows up without waiting for the
+            // next feed sync. Deliberately BEFORE `pruneStaleCourseIDCacheEntries`
+            // and the probe loop below: both read `canvasItems.map(\.course)`
+            // to decide what already has feed presence, and a still-unknown
+            // course would make the probe fetch it needlessly (or the prune
+            // wrongly treat its cache entry as stale).
+            canvasItems = canvasItems.map(attributingUnknownCourse)
+            rebuildDashboardItems()
             persistEnrolledCanvasCourses()
             pruneStaleCourseIDCacheEntries(
                 currentEnrolledKeys: Set(enrolled.map { Self.courseKey(forEnrolled: $0) })
