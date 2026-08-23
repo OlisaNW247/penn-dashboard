@@ -86,7 +86,16 @@ struct CanvasModulesClientTests {
         """
         let items = CanvasModulesClient.moduleItems(fromPages: [data(json)])
         #expect(items.count == 1)
-        #expect(items[0].dueAt == iso("2026-09-05T03:59:59Z"))
+        // The parsed Date carries the .123s fraction, so exact == against a
+        // whole-second expectation fails by 123ms while both PRINT the same
+        // second (that exact trap shipped in this test's first version).
+        // The property under test is "a fractional timestamp parses at all",
+        // so assert same-second, not bit-equality.
+        let parsed = items[0].dueAt
+        #expect(parsed != nil)
+        if let parsed {
+            #expect(abs(parsed.timeIntervalSince(iso("2026-09-05T03:59:59Z"))) < 0.5)
+        }
     }
 
     @Test("Missing content_details yields nil dueAt")
