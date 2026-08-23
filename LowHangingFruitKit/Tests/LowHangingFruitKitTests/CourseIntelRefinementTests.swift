@@ -270,14 +270,15 @@ struct CourseIntelRefinementTests {
             // enterPreviewMode PERSISTS the flag in UserDefaults.lhf — leaving
             // it set poisons every AppState any other suite constructs while
             // (or after) this test runs, flooding them with the s-1…s-16
-            // sample fixtures. Restore it exactly the way PreviewModeTests'
-            // withPreviewMode helper does, unconditionally on the way out.
-            let wasPreview = state.isPreviewMode
+            // sample fixtures. Clear it UNCONDITIONALLY, both on the way out
+            // and — unlike PreviewModeTests' conditional restore — regardless
+            // of what it read on entry: a stuck-true flag from a previous
+            // poisoned run would otherwise make the restore skip itself
+            // forever (wasPreview reads true, reset never fires), which is
+            // exactly the self-perpetuating failure observed on 2026-08-23.
             state.enterPreviewMode()
             defer {
-                if !wasPreview {
-                    UserDefaults.lhf.set(false, forKey: "isPreviewMode")
-                }
+                UserDefaults.lhf.set(false, forKey: "isPreviewMode")
             }
             let before = state.moduleReadingItems
             state.importReadingsIfNeeded(for: course)
