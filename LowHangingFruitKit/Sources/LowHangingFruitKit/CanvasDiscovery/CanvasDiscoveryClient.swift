@@ -84,6 +84,33 @@ public struct CanvasDiscoveryClient: Sendable {
         }
     }
 
+    /// Public wrapper over the same `/courses` + `/dashboard` scrape `scan`
+    /// already uses internally, for callers (`CourseProfileEngine`'s
+    /// caller) that need the full enrolled-course list itself rather than
+    /// just an id→name lookup table — in particular, courses with zero
+    /// calendar/feed presence are otherwise invisible to LHF, and this is
+    /// the only source that surfaces them (docs/READINGS_COURSES_PLAN.md
+    /// Phase 1.2).
+    public func discoverEnrolledCourses() async -> [CanvasCourseDiscoveryParser.Course] {
+        // `discoverCourses()` already dedupes by id (it's keyed on id in a
+        // dictionary), so this is a direct, order-unspecified projection.
+        await discoverCourses().map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
+    }
+
+    /// Fetches and parses a course's Modules page — the one new network
+    /// surface Phase 1.3 needs, alongside the syllabus/assignment-group
+    /// fetches the grades client already does — so the profile engine can
+    /// tell a course that only publishes readings through Modules apart
+    /// from one that's genuinely silent. Best-effort like the rest of this
+    /// file's HTML scraping: a parse miss yields an empty array (see
+    /// `CanvasModulesParser`), but a *fetch* failure (expired session, HTTP
+    /// error) still throws, so callers can tell "no session" (→
+    /// `.unknownSilent`) apart from "session fine, page just has nothing."
+    public func fetchModulesReadings(courseID: String) async throws -> [CanvasModulesParser.Item] {
+        let html = try await fetchHTML(baseURL.appendingPathComponent("courses/\(courseID)/modules"))
+        return CanvasModulesParser.items(from: html)
+    }
+
     private func discoverCourses() async -> [String: String] {
         let urls = [
             baseURL.appendingPathComponent("courses"),
@@ -129,6 +156,15 @@ public enum CanvasCourseDiscoveryParser {
     public struct Course: Sendable, Hashable {
         public let id: String
         public let name: String
+
+        // Explicit public init: the synthesized memberwise init is only
+        // `internal`, which would leave callers outside this module (the UI
+        // layer, and CourseProfileEngine's tests) unable to construct one
+        // even though the type and its fields are public.
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
     }
 
     public static func courseLinks(from html: String) -> [Course] {
