@@ -439,6 +439,45 @@ private struct LoginActionBar: View {
 /// (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a). User-initiated recovery only —
 /// this never appears as a result of automatic retry logic, and tapping a
 /// button here is the only way it goes away.
+/// Full-pane notice shown before the Canvas sign-in page loads (see
+/// `CanvasLoginPane.showsSignInTips` for why it exists). Same visual family
+/// as `LoginErrorCard`, but it fills the pane rather than banner-ing above a
+/// WebView — there's nothing behind it yet worth showing.
+private struct CanvasSignInTipsCard: View {
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "hourglass")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(Color.v2Ink)
+            Text("One thing before you sign in")
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+            Text("Penn\u{2019}s sign-in can pause for up to half a minute after you enter your password. That\u{2019}s normal \u{2014} the screen isn\u{2019}t stuck. Press the sign-in button once and wait; pressing it again is what causes Penn\u{2019}s \u{201C}Stale Request\u{201D} error.")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+
+            Button(action: onContinue) {
+                Text("Got it")
+                    .font(.lhfSans(13, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 private struct LoginErrorCard: View {
     let title: String
     let message: String
@@ -537,6 +576,14 @@ private struct CanvasLoginPane: View {
     /// navigation itself.
     @StateObject private var navObserver = LoginNavigationObserver()
     @State private var showPasteFeedLink = false
+    /// Shown once per pane appearance, BEFORE the sign-in page: Penn's IdP
+    /// can pause noticeably after the password is submitted, and an
+    /// impatient second tap is what mints its "Stale Request" error (the
+    /// duplicate-POST guard in `LoginNavigationObserver` catches the
+    /// machine-made repeats; this card heads off the human-made one). The
+    /// purge keeps running behind this card, so dismissing it is usually
+    /// instant.
+    @State private var showsSignInTips = true
 
     private var isBusy: Bool {
         isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading || isPurging
@@ -544,7 +591,9 @@ private struct CanvasLoginPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isPurging {
+            if showsSignInTips {
+                CanvasSignInTipsCard(onContinue: { showsSignInTips = false })
+            } else if isPurging {
                 Spacer()
                 ProgressView("Preparing a clean sign-in…")
                     .font(.lhfSans(12))
