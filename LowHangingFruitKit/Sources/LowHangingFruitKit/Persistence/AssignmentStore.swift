@@ -18,6 +18,11 @@ public final class AssignmentStore {
     /// in the same place the widget can later read.
     public static let appGroupID = "group.com.lhf.lowhangingfruit"
 
+    /// The private CloudKit database container the ledger mirrors into when
+    /// sync is turned on. Opt-in only — see `init(cloudKitGroupURL:)` and
+    /// `makeDefault(syncEnabled:)` — and otherwise unused.
+    public static let cloudContainerID = "iCloud.com.lhf.lowhangingfruit"
+
     /// How long a gone-from-feed item is kept visible past its due date before it
     /// ages out. Generous on purpose: the design brief says a lingering
     /// already-removed item is far better than losing real work. Undated items
@@ -71,22 +76,67 @@ public final class AssignmentStore {
     }
 
     public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {
-        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        // cloudKitDatabase MUST be pinned to .none on every non-cloud path:
+        // the parameter defaults to .automatic, which adopts the first
+        // container in the app's entitlements — and the app now carries an
+        // iCloud container entitlement (Tier 2). Without the pin, plain
+        // local stores would silently start mirroring to CloudKit for every
+        // user, ignoring the sync toggle entirely.
+        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
         self.container = try Self.makeContainer(config)
         self.isPersistent = !inMemory
         self.storageFailureReason = inMemory ? storageFailureReason : nil
         rowsByID()
     }
 
-    public init(url: URL) throws {
-        let config = ModelConfiguration(url: url)
+    /// - Parameter storageFailureReason: Normally nil — a plain local store is
+    ///   fully healthy. Non-nil only on the `makeDefault(syncEnabled: true)`
+    ///   fallback path, where CloudKit mirroring failed to start but the local
+    ///   ledger opened fine: the store is genuinely persistent (`isPersistent`
+    ///   is still `true`), it just isn't syncing, and Settings' storage panel
+    ///   has no other way to say so. Existing call sites all take the default
+    ///   and are byte-for-byte unaffected.
+    public init(url: URL, storageFailureReason: String? = nil) throws {
+        // .none pinned for the same reason as init(inMemory:) above — the
+        // .automatic default would adopt the newly-entitled iCloud container.
+        let config = ModelConfiguration(url: url, cloudKitDatabase: .none)
         self.container = try Self.makeContainer(config)
         self.isPersistent = true
-        self.storageFailureReason = nil
+        self.storageFailureReason = storageFailureReason
         // Sweep at load. Whatever is on disk was not necessarily written by this
         // build of the app — a restored backup or a future CloudKit merge can
         // put two rows for one assignment there, and the very first read
         // (`currentAssignments()` seeding the dashboard) must not show both.
+        rowsByID()
+    }
+
+    /// Cloud-backed variant of `init(url:)`. `groupURL` is the App Group
+    /// container URL itself (as returned by `FileManager.default
+    /// .containerURL(forSecurityApplicationGroupIdentifier:)`), not the final
+    /// store file — this appends `"Assignments.store"` itself, the exact same
+    /// filename `init(url:)` and `LedgerWidgetReader.snapshot()` use, so
+    /// turning sync on does not move the ledger out from under the widget's
+    /// read path.
+    ///
+    /// Deliberately built via the explicit-`url:` `ModelConfiguration`
+    /// initializer plus `cloudKitDatabase:`, not the `groupContainer:`-based
+    /// one: the `groupContainer:` initializer resolves its own file location
+    /// inside the group container, which is not documented to produce
+    /// `Assignments.store` and is exactly the kind of divergence that would
+    /// silently strand the widget's fallback read on an empty/stale file.
+    /// Pinning the URL ourselves — the same construction `makeDefault()`
+    /// already uses for the local path — makes the two configurations
+    /// (synced or not) agree on where the ledger lives by construction rather
+    /// than by coincidence of an internal default.
+    public init(cloudKitGroupURL groupURL: URL) throws {
+        let url = groupURL.appending(path: "Assignments.store")
+        let config = ModelConfiguration(
+            url: url,
+            cloudKitDatabase: .private(Self.cloudContainerID)
+        )
+        self.container = try Self.makeContainer(config)
+        self.isPersistent = true
+        self.storageFailureReason = nil
         rowsByID()
     }
 
@@ -98,7 +148,19 @@ public final class AssignmentStore {
     /// Returns nil only if even the in-memory store can't be created, in which
     /// case the app degrades to its old non-persistent behavior instead of
     /// crashing.
-    public static func makeDefault() -> AssignmentStore? {
+    ///
+    /// - Parameter syncEnabled: Opt-in CloudKit mirroring (default `false`,
+    ///   matching every existing caller — passing nothing is byte-for-byte
+    ///   today's behavior). When `true`, tries `init(cloudKitGroupURL:)`
+    ///   first; if that throws for any reason (no iCloud account, container
+    ///   not provisioned, offline at first launch, whatever), it falls back
+    ///   to the exact same local, non-cloud store the `false` path uses —
+    ///   sync must never cost anyone their local ledger — and records why in
+    ///   `storageFailureReason` even though the store is fully persistent, so
+    ///   Settings can tell the student sync didn't start instead of just
+    ///   quietly not syncing. Ignored under `SharedDefaults.isTestRunner`,
+    ///   which always returns the in-memory store regardless.
+    public static func makeDefault(syncEnabled: Bool = false) -> AssignmentStore? {
         // Test runners must NEVER open the real shared ledger. On macOS the
         // container URL below resolves even for unentitled, unsandboxed
         // processes — swift test included — so without this branch every
@@ -112,9 +174,21 @@ public final class AssignmentStore {
         var failure: String?
         if let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            if syncEnabled {
+                do {
+                    return try AssignmentStore(cloudKitGroupURL: groupURL)
+                } catch {
+                    // Sync couldn't start — fall through to the same local,
+                    // non-cloud store the syncEnabled: false path opens below,
+                    // so the student keeps a working (if unsynced) ledger
+                    // instead of losing the session over it.
+                    failure = "Sync couldn't start (\(error.localizedDescription)). "
+                        + "Assignments are being saved on this device only."
+                }
+            }
             let url = groupURL.appending(path: "Assignments.store")
             do {
-                return try AssignmentStore(url: url)
+                return try AssignmentStore(url: url, storageFailureReason: failure)
             } catch {
                 // Falling back to memory is right — losing the session beats
                 // refusing to launch — but doing it silently is how a wiped
