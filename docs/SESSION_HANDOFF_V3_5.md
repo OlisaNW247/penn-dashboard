@@ -39,13 +39,15 @@ pages (hosted at olisanw247.github.io/lhf-site/).
   task id `com.lhf.lowhangingfruit.refresh`) — needs a day of organic
   observation or the debugger simulate trick
   (`BACKGROUND_REFRESH_PLAN.md` has it).
-- **Tier 2 Phase A iCloud sync — the next session's main job.** Code
-  complete (commits `4fd8a2b`..`8b97371`): entitlements, CloudKit-ready
-  schema defaults, `AssignmentStore.makeDefault(syncEnabled:)`,
-  `init(cloudKitGroupURL:)`, Settings toggle "Sync between my devices"
-  (default OFF, applies at relaunch), `CloudPrefsMirror` (KVS,
-  whole-value LWW over four pref blobs). ZERO of the CloudKit path has
-  ever executed — swift test structurally cannot reach it.
+- **Tier 2 Phase A iCloud sync — DEVICE-VALIDATED 2026-08-24, see
+  §2c.** Code complete (commits `4fd8a2b`..`8b97371`, plus the §2b
+  audit fixes): entitlements, CloudKit-ready schema defaults,
+  `AssignmentStore.makeDefault(syncEnabled:)`, `init(cloudKitGroupURL:)`,
+  Settings toggle "Sync between my devices" (default OFF, applies at
+  relaunch), `CloudPrefsMirror` (KVS, whole-value LWW over four pref
+  blobs). The full §2.3 acceptance list passed on real Mac + iPhone
+  the same day the audit landed; what remains is the multi-day soak
+  (§2c).
 
 ## 2. The next session starts HERE
 
@@ -124,6 +126,33 @@ side is deliberately Phase B. Until then, cross-device *import* latency
 is at the mercy of launch/lifecycle events — so if a tick doesn't show
 up in ~2 min, relaunch the receiving app before declaring sync broken.
 Only a tick that survives a relaunch without appearing is a real bug.
+
+### 2c. Phase A bring-up record — PASSED, 2026-08-24
+
+Owner-driven, Mac + iPhone, same iCloud account, same day the §2b
+audit fixes merged (`v3.5` @ `989b145`). Every §2.3 acceptance
+criterion passed, first try, no CloudKit Dashboard intervention:
+
+- Signing/auto-provisioning of `iCloud.com.lhf.lowhangingfruit`: no
+  blockers worth recording.
+- Ledger sync, Mac → iPhone: completion ticked on the Mac appeared on
+  the phone. iPhone → Mac: an **un**-complete (done → undone) made the
+  return trip — the stronger test, since it syncs `clearCompletion()`'s
+  cleared flag rather than a set one.
+- "Duplicate entries" (the new Settings → Storage row): **0 on both
+  devices after real two-device merges.** The `rowsByID()` in-code
+  uniqueness invariant held.
+- KVS prefs channel: a course rename on one device appeared on the
+  other.
+- Sync OFF → quit → relaunch: all class data and completions intact —
+  the "sync must never cost anyone their local ledger" guarantee held.
+
+Still open before Phase A is *done* done:
+- Multi-day soak under normal use (step 5): watch for drift,
+  duplicates creeping above 0, or a `storageFailureReason` appearing.
+- BGAppRefresh organic-wake observation can ride the same soak.
+- Then the §2.6 gates: Marco's review, CloudKit dev→prod schema
+  deploy, 1.2.0 bump in both project.yml version blocks.
 
 ## 3. Traps this session hit — do not relearn these
 
