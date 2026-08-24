@@ -94,6 +94,30 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     /// one year is distinguishable from one that fires in consecutive years.
     public var archivedTerm: Term?
 
+    /// Whether the student typed this class in themselves.
+    ///
+    /// The class list is derived from what the feeds have actually shown, so a
+    /// course that hasn't posted an assignment yet contributes no items and
+    /// therefore doesn't exist — which in week one of a semester is most of
+    /// them. This flag is what lets a hand-added class exist anyway:
+    /// `AppState.allCourseCodes()` unions the feed's courses with the courses
+    /// carrying it.
+    ///
+    /// It also has to be *stored*, and that is the second reason it is a field
+    /// rather than an inference. A record that says nothing the defaults don't
+    /// say is pruned by `commit` (see `isDefault`), so a hand-added class with
+    /// no other settings would be dropped the instant it was written. Something
+    /// on the record has to say "this course exists because I said so."
+    ///
+    /// **It is not an identity.** The flag says where the course came from, not
+    /// which course it is — `courseKey` does that, and a hand-added class is
+    /// keyed by the same canonical `CourseCode` a feed item normalises to. So
+    /// when Canvas finally posts for it, the feed's course and this one are the
+    /// same key and collapse into one entry with no reconciliation step at all.
+    /// Nothing clears the flag at that point and nothing needs to: the class
+    /// would now appear on the feed's evidence alone, and the union is a `Set`.
+    public var isManuallyAdded: Bool
+
     public var id: String { courseKey }
 
     public init(
@@ -105,7 +129,8 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         notificationsEnabled: Bool = true,
         leadOffsets: Set<LeadOffset>? = nil,
         recurringEnabled: Bool = true,
-        archivedTerm: Term? = nil
+        archivedTerm: Term? = nil,
+        isManuallyAdded: Bool = false
     ) {
         self.courseKey = courseKey
         self.displayName = displayName
@@ -116,6 +141,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.leadOffsets = leadOffsets
         self.recurringEnabled = recurringEnabled
         self.archivedTerm = archivedTerm
+        self.isManuallyAdded = isManuallyAdded
     }
 
     // MARK: Derived
@@ -175,6 +201,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case courseKey, displayName, isVisible, isDeleted, canvasCourseID
         case notificationsEnabled, leadOffsets, recurringEnabled, archivedTerm
+        case isManuallyAdded
     }
 
     public init(from decoder: any Decoder) throws {
@@ -187,6 +214,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.notificationsEnabled = try c.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
         self.recurringEnabled = try c.decodeIfPresent(Bool.self, forKey: .recurringEnabled) ?? true
         self.archivedTerm = try c.decodeIfPresent(Term.self, forKey: .archivedTerm)
+        self.isManuallyAdded = try c.decodeIfPresent(Bool.self, forKey: .isManuallyAdded) ?? false
 
         // Stored as raw seconds rather than as `Set<LeadOffset>` so that a value
         // written by a future build carrying a lead time this build has never
@@ -211,6 +239,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         try c.encode(notificationsEnabled, forKey: .notificationsEnabled)
         try c.encode(recurringEnabled, forKey: .recurringEnabled)
         try c.encodeIfPresent(archivedTerm, forKey: .archivedTerm)
+        try c.encode(isManuallyAdded, forKey: .isManuallyAdded)
         // Sorted so the encoded blob is byte-stable across runs — `Set`'s
         // iteration order is not. `encodeIfPresent` on the mapped optional keeps
         // `nil` (inherit) written as an absent key rather than as `null`.
@@ -314,6 +343,20 @@ public final class CoursePreferencesStore: ObservableObject {
         preferences(for: courseKey).archivedTerm
     }
     public func isArchived(_ courseKey: String) -> Bool { preferences(for: courseKey).isArchived }
+    public func isManuallyAdded(_ courseKey: String) -> Bool {
+        preferences(for: courseKey).isManuallyAdded
+    }
+
+    /// Classes the student typed in themselves, sorted. Unioned into the class
+    /// list so a course Canvas hasn't posted for yet still exists in the app.
+    public var manuallyAddedCourseKeys: Set<String> {
+        Set(byCourseKey.filter(\.value.isManuallyAdded).keys)
+    }
+
+    /// Courses a rollover has taken off the roster, as a set.
+    public var archivedCourseKeys: Set<String> {
+        Set(byCourseKey.filter(\.value.isArchived).keys)
+    }
 
     // MARK: The four legacy projections
     //
@@ -402,6 +445,17 @@ public final class CoursePreferencesStore: ObservableObject {
     /// Files the course under a term (rollover) or brings it back (`nil`).
     public func setArchivedTerm(_ courseKey: String, _ term: Term?) {
         update(courseKey) { $0.archivedTerm = term }
+    }
+
+    /// Marks a class as one the student added by hand, or clears the mark.
+    ///
+    /// Clearing is what "remove this class I added" means: the record falls back
+    /// to defaults and `commit` prunes it, so the course leaves the list exactly
+    /// as if it had never been typed — unless a feed has since started posting
+    /// for it, in which case it stays, because it is a real class now and
+    /// forgetting who first mentioned it changes nothing.
+    public func setManuallyAdded(_ courseKey: String, _ isManuallyAdded: Bool) {
+        update(courseKey) { $0.isManuallyAdded = isManuallyAdded }
     }
 
     /// Folds a batch of newly-resolved Canvas ids in, in one write.
