@@ -213,6 +213,33 @@ final class AppState: ObservableObject {
     /// ledger in the same App Group container.
     let gradeHistoryStore: GradeHistoryStore?
 
+    /// Settings → "Sync between my devices" (docs/LAPTOP_INTEGRATION_PLAN.md
+    /// Tier 2). Default off: existing users see zero change until they opt
+    /// in. Toggling this republishes immediately via `setCloudSyncEnabled`,
+    /// but see `cloudSyncEnabledAtLaunch` for why neither `assignmentStore`
+    /// nor `cloudPrefsMirror` reconfigure themselves until the next launch.
+    @Published private(set) var cloudSyncEnabled: Bool
+
+    /// `cloudSyncEnabled` as read from `UserDefaults.lhf` at the top of this
+    /// launch's `init` — i.e. what `assignmentStore` was actually built with
+    /// (`AssignmentStore.makeDefault(syncEnabled:)`) and what
+    /// `cloudPrefsMirror` was actually constructed with. Swapping a live
+    /// SwiftData `ModelContainer`, or restarting the iCloud key-value
+    /// observer, out from under a running app is not worth the risk, so a
+    /// toggle flipped mid-session is deliberately queued rather than applied
+    /// live. Settings compares the live `cloudSyncEnabled` against this `let`
+    /// to tell the user their change is queued instead of implying it
+    /// already took effect.
+    let cloudSyncEnabledAtLaunch: Bool
+
+    /// Mirrors a small allowlist of preference keys (course-content
+    /// decisions, deleted/hidden courses, renames) through the user's own
+    /// iCloud key-value store when sync is enabled. Inert under
+    /// `SharedDefaults.isTestRunner` or when sync is off — see
+    /// `CloudPrefsMirror`'s own doc comment for the conflict semantics and
+    /// exactly which keys it touches.
+    let cloudPrefsMirror: CloudPrefsMirror
+
     private static let userNameKey = "userName"
     private static let completedIDsKey = "completedAssignmentIDs"
     private static let completionDatesKey = "completionDates"
@@ -230,6 +257,13 @@ final class AppState: ObservableObject {
     private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
     private static let enrolledCanvasCoursesKey = "enrolledCanvasCoursesV1"
+    /// docs/LAPTOP_INTEGRATION_PLAN.md Tier 2 — read directly by
+    /// `CloudSyncToggleTests`'s own hardcoded copy of this string (the same
+    /// convention `CourseContentDecisionStoreTests` uses for
+    /// `CourseContentDecisionStore`'s key), not by `CloudPrefsMirror`, which
+    /// never mirrors this key itself (sync's own on/off state is
+    /// necessarily per-device, not something to sync).
+    private static let cloudSyncEnabledKey = "cloudSyncEnabledV1"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -265,10 +299,20 @@ final class AppState: ObservableObject {
         self.recurringTasks = Self.loadRecurringTasks()
         self.manualAssignments = Self.loadManualAssignments()
 
+        // Read once, at the top of this launch, and handed to both the
+        // ledger's own opt-in CloudKit mirroring and this launch's
+        // `CloudPrefsMirror` — see `cloudSyncEnabledAtLaunch`'s doc comment
+        // for why a toggle flipped mid-session doesn't reconfigure either
+        // one until the next launch reads this again.
+        let syncEnabledAtLaunch = UserDefaults.lhf.bool(forKey: Self.cloudSyncEnabledKey)
+        self.cloudSyncEnabled = syncEnabledAtLaunch
+        self.cloudSyncEnabledAtLaunch = syncEnabledAtLaunch
+        self.cloudPrefsMirror = CloudPrefsMirror(enabled: syncEnabledAtLaunch)
+
         // Seed the in-memory pools from the durable ledger so the class list and
         // dashboard are populated on the very first frame — before any network
         // sync returns — instead of starting empty every launch.
-        let store = assignmentStore ?? AssignmentStore.makeDefault()
+        let store = assignmentStore ?? AssignmentStore.makeDefault(syncEnabled: syncEnabledAtLaunch)
         self.assignmentStore = store
         let historyStore = gradeHistoryStore ?? GradeHistoryStore.makeDefault()
         self.gradeHistoryStore = historyStore
@@ -329,6 +373,24 @@ final class AppState: ObservableObject {
             }
         }
 
+        // Wired here rather than at `cloudPrefsMirror`'s own construction
+        // above: forming a closure that captures `self` isn't legal until
+        // every stored property above has an initial value, which this point
+        // in `init` is the first to guarantee.
+        //
+        // `CloudPrefsMirror` calls this closure from a plain, non-isolated
+        // context (its `NSUbiquitousKeyValueStore.didChangeExternally`
+        // observer, registered with `queue: .main` but not statically
+        // MainActor-isolated) — so the actual call into this `@MainActor`
+        // type's `reloadMirroredPreferences()` is wrapped in `Task
+        // { @MainActor in ... }` here, the standard bridge for re-entering
+        // an actor from a callback-based system API, rather than calling it
+        // directly and relying on `queue: .main` alone.
+        cloudPrefsMirror.onExternalChange = { [weak self] _ in
+            Task { @MainActor in
+                self?.reloadMirroredPreferences()
+            }
+        }
 
         rebuildDashboardItems()
 
@@ -459,6 +521,40 @@ final class AppState: ObservableObject {
     func setAppearanceMode(_ mode: AppearanceMode) {
         appearanceMode = mode
         UserDefaults.lhf.set(mode.rawValue, forKey: Self.appearanceModeKey)
+    }
+
+    // MARK: - iCloud sync (Settings → "Sync between my devices")
+
+    /// Persists and republishes the toggle immediately. Deliberately does
+    /// NOT rebuild `assignmentStore` or reconfigure `cloudPrefsMirror` here —
+    /// swapping a live SwiftData `ModelContainer` (or tearing down and
+    /// re-arming the iCloud key-value observer) out from under a running app
+    /// is not worth the risk this feature already goes out of its way to
+    /// avoid elsewhere. Both wait for the next launch's `init` to read the
+    /// freshly-persisted value — see `cloudSyncEnabledAtLaunch`.
+    func setCloudSyncEnabled(_ enabled: Bool) {
+        cloudSyncEnabled = enabled
+        UserDefaults.lhf.set(enabled, forKey: Self.cloudSyncEnabledKey)
+    }
+
+    /// Called by `cloudPrefsMirror.onExternalChange` after a pull from
+    /// iCloud wrote fresh values for one or more mirrored keys into
+    /// `UserDefaults.lhf` (another device's course deletion, rename, or
+    /// content decision). Re-reads every mirrored key from disk — the same
+    /// reads `init` itself does on a cold launch — rather than trying to
+    /// patch in just the keys that changed, so this can never drift from
+    /// `init`'s own parsing of the same keys. Whole-value last-writer-wins
+    /// (see `CloudPrefsMirror`'s doc comment) means there is nothing to
+    /// merge: whatever is now on disk for a key is simply this device's new
+    /// truth for it. Finishes with `rebuildDashboardItems()` so a deleted or
+    /// newly-included course takes effect on screen immediately, without
+    /// waiting for the next sync or relaunch.
+    private func reloadMirroredPreferences() {
+        hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
+        deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
+        courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
+        courseContentDecisions = CourseContentDecisionStore.load()
+        rebuildDashboardItems()
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
@@ -592,6 +688,9 @@ final class AppState: ObservableObject {
         nudgePresentedThisLaunch = false
         courseContentDecisions = [:]
         CourseContentDecisionStore.clear()
+        // Propagate the clear to the iCloud copy too, or the next external
+        // pull resurrects decisions this disconnect just threw away.
+        if cloudSyncEnabled { cloudPrefsMirror?.push(key: "courseContentDecisionsV1") }
         pendingCourseNudge = nil
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
@@ -1403,6 +1502,7 @@ final class AppState: ObservableObject {
             decidedAt: Date()
         )
         CourseContentDecisionStore.save(courseContentDecisions)
+        if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
     }
 
     /// Courses worth surfacing in Settings' "Courses & content" management
@@ -1584,6 +1684,7 @@ final class AppState: ObservableObject {
 
     private func persistHiddenCourses() {
         UserDefaults.lhf.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
+        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.hiddenCoursesKey) }
     }
 
     /// Courses to render in the Settings classes list — every known course
@@ -1620,6 +1721,7 @@ final class AppState: ObservableObject {
 
     private func persistDeletedCourses() {
         UserDefaults.lhf.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
+        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.deletedCoursesKey) }
     }
 
     /// Classes currently switched on, by code. Kept separate from
@@ -1657,6 +1759,7 @@ final class AppState: ObservableObject {
             courseNameOverrides[course] = trimmed
         }
         UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.courseNameOverridesKey) }
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called

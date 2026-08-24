@@ -161,6 +161,8 @@ struct SettingsPage: View {
 
             remindersSection
 
+            iCloudSyncSection
+
             #if os(macOS)
             onThisMacSection
             #endif
@@ -461,6 +463,47 @@ struct SettingsPage: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: iCloud sync
+
+    /// Settings → "Sync between my devices" (docs/LAPTOP_INTEGRATION_PLAN.md
+    /// Tier 2), placed between Reminders and the macOS section so it reads
+    /// as one more per-device preference rather than a headline feature —
+    /// matching that plan's own caution to ship it "behind a Settings
+    /// toggle... default off for one release."
+    @ViewBuilder
+    private var iCloudSyncSection: some View {
+        Section {
+            Toggle("Sync between my devices", isOn: Binding(
+                get: { state.cloudSyncEnabled },
+                set: { state.setCloudSyncEnabled($0) }
+            ))
+
+            // Priority order matters here, not just presence: a toggle
+            // flipped THIS session hasn't actually reconfigured
+            // `assignmentStore` yet (see `AppState.cloudSyncEnabledAtLaunch`),
+            // so "takes effect next launch" must win over both other lines —
+            // otherwise a student who just turned sync on would see "Sync is
+            // on" immediately, which isn't true until they relaunch.
+            if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
+                Text("Takes effect after you quit and reopen LHF.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
+                Text(reason)
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.orange)
+            } else if state.cloudSyncEnabled {
+                Text("Sync is on. Changes appear on your other devices within a minute or two.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("iCloud sync")
+        } footer: {
+            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to LHF\u{2019}s developer. Takes effect the next time you quit and reopen LHF. Both devices need to be signed into the same iCloud account.")
         }
     }
 
