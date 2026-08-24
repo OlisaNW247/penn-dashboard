@@ -45,7 +45,7 @@ struct AssignmentLedgerUniquenessTests {
     private func writeRawRows(_ rows: [StoredAssignment], to url: URL) throws {
         let container = try ModelContainer(
             for: StoredAssignment.self,
-            configurations: ModelConfiguration(url: url)
+            configurations: ModelConfiguration(url: url, cloudKitDatabase: .none)
         )
         let context = ModelContext(container)
         for row in rows { context.insert(row) }

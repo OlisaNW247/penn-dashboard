@@ -46,9 +46,14 @@ public enum LedgerWidgetReader {
         // if the app has never run, there is simply nothing to show.
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
+        // cloudKitDatabase pinned to .none: this is a read of the store file,
+        // never a second mirroring party. The widget's entitlements carry no
+        // iCloud container today, so .automatic happens to resolve to nothing —
+        // but "happens to" is exactly what the pin replaces with "by
+        // construction" (see AssignmentStore's local inits).
         guard let container = try? ModelContainer(
             for: StoredAssignment.self,
-            configurations: ModelConfiguration(url: url)
+            configurations: ModelConfiguration(url: url, cloudKitDatabase: .none)
         ) else { return nil }
 
         let context = ModelContext(container)

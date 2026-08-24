@@ -690,7 +690,7 @@ final class AppState: ObservableObject {
         CourseContentDecisionStore.clear()
         // Propagate the clear to the iCloud copy too, or the next external
         // pull resurrects decisions this disconnect just threw away.
-        if cloudSyncEnabled { cloudPrefsMirror?.push(key: "courseContentDecisionsV1") }
+        if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
         pendingCourseNudge = nil
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()

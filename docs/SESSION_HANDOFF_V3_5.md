@@ -79,6 +79,46 @@ Phase A device bring-up, with the owner driving both devices:
    observer steering exceptions, scenes restructure) and into the
    shared persistence layer.
 
+### 2b. Pre-flight audit, 2026-08-24 (container session — NOT compiled)
+
+A follow-up session without a Swift toolchain statically audited the
+Phase A code before device bring-up. Everything below is on
+`claude/session-handoff-v3-5-56jkcr`; the owner's next
+`git pull && swift test` is the compile gate for all four edits — **none
+of them has been compiled.**
+
+Resolved from step 4's list:
+- **Signature drift is a non-issue.** Verified against Apple's SwiftData
+  docs: `ModelConfiguration.init(_:schema:url:allowsSave:cloudKitDatabase:)`
+  exists, as do `.automatic` / `.none` / `.private(_:)` on
+  `ModelConfiguration.CloudKitDatabase`. Every spelling the branch uses
+  matches.
+- Schema re-checked: `StoredAssignment` and `StoredGradeObservation`
+  are both CloudKit-compliant (every non-optional defaulted, no
+  `.unique`, no relationships).
+
+Found and fixed (watch these in the first `swift test`):
+1. **`AppState.disconnectCanvas()` had `cloudPrefsMirror?.push(...)`** —
+   optional chaining on a non-optional `let`, which is a compile error.
+   This contradicts §1's "everything compiled" claim, so treat the tip
+   of the branch as having missed at least one compile pass. Fixed to
+   plain member access (matching the file's three other call sites).
+2. **Trap #2 was only half-applied.** `AssignmentStore`'s local inits
+   pin `cloudKitDatabase: .none`, but `GradeHistoryStore` (both inits)
+   and `LedgerWidgetReader.snapshot(storeURL:)` left it at `.automatic`.
+   Since `StoredGradeObservation` is CloudKit-compliant, the entitled
+   device build would NOT have thrown — grade history would have
+   silently mirrored to CloudKit for every user, sync toggle or not.
+   All three now pin `.none` (plus the raw-container helper in
+   `AssignmentLedgerUniquenessTests`, for the invariant's sake).
+
+One acceptance-criteria caveat for step 3: SwiftData's CloudKit import
+is push-driven, and the remote-notification background mode / APNs
+side is deliberately Phase B. Until then, cross-device *import* latency
+is at the mercy of launch/lifecycle events — so if a tick doesn't show
+up in ~2 min, relaunch the receiving app before declaring sync broken.
+Only a tick that survives a relaunch without appearing is a real bug.
+
 ## 3. Traps this session hit — do not relearn these
 
 1. **macOS resolves the App Group container WITHOUT the entitlement.**
