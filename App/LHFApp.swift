@@ -23,15 +23,19 @@ struct LHFApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Low Hanging Fruit") {
-            RootView()
-                .onChange(of: scenePhase) { _, newPhase in
-                    #if canImport(BackgroundTasks) && os(iOS)
-                    if newPhase == .background {
-                        LHFBackgroundRefresh.scheduleNext()
-                    }
-                    #endif
+        // `LHFScenes` (docs/LAPTOP_INTEGRATION_PLAN.md Tier 1) owns the main
+        // `WindowGroup` plus, on macOS, the menu-bar extra — both sharing one
+        // `AppState`/`NotificationScheduler` pair. The scenePhase wiring below
+        // is unchanged from when this modifier lived on `RootView()` itself;
+        // `.onChange(of:)` on a `Scene` behaves the same way and now covers
+        // every scene `LHFScenes` contains.
+        LHFScenes()
+            .onChange(of: scenePhase) { _, newPhase in
+                #if canImport(BackgroundTasks) && os(iOS)
+                if newPhase == .background {
+                    LHFBackgroundRefresh.scheduleNext()
                 }
-        }
+                #endif
+            }
     }
 }

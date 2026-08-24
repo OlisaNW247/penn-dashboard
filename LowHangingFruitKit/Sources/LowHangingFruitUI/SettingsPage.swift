@@ -5,6 +5,9 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+#if os(macOS)
+import ServiceManagement
+#endif
 
 /// Houses everything that used to clutter the main screen: connection status,
 /// reconnect, class editing, recurring-task entry, and reminder preferences.
@@ -30,6 +33,12 @@ struct SettingsPage: View {
     /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
     @State private var showPasteFeedLink = false
     @State private var didCopyDiagnostics = false
+    #if os(macOS)
+    /// Bumped after every `SMAppService` register/unregister call so the
+    /// toggle below re-reads `.status` — that call doesn't publish anything
+    /// itself, and the toggle's `get` has no other reason to be re-evaluated.
+    @State private var loginItemRefreshNonce = 0
+    #endif
 
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
@@ -151,6 +160,10 @@ struct SettingsPage: View {
             }
 
             remindersSection
+
+            #if os(macOS)
+            onThisMacSection
+            #endif
 
             storageSection
 
@@ -449,6 +462,39 @@ struct SettingsPage: View {
             }
         }
     }
+
+    // MARK: On this Mac
+
+    #if os(macOS)
+    /// Launch-at-login (docs/LAPTOP_INTEGRATION_PLAN.md Tier 1) — what makes
+    /// the persistent menu-bar sync loop (`MenuBarLabel` in `LHFScenes.swift`)
+    /// actually start without the user remembering to open the app after
+    /// every reboot. `SMAppService.mainApp` registers/unregisters *this* app
+    /// bundle as a login item directly; no separate helper target needed.
+    @ViewBuilder
+    private var onThisMacSection: some View {
+        Section {
+            Toggle("Open at login", isOn: Binding(
+                get: {
+                    _ = loginItemRefreshNonce // force a re-read after register/unregister
+                    return SMAppService.mainApp.status == .enabled
+                },
+                set: { newValue in
+                    if newValue {
+                        try? SMAppService.mainApp.register()
+                    } else {
+                        try? SMAppService.mainApp.unregister()
+                    }
+                    loginItemRefreshNonce += 1
+                }
+            ))
+        } header: {
+            Text("On this Mac")
+        } footer: {
+            Text("Keeps LHF in your menu bar so assignments stay fresh all day.")
+        }
+    }
+    #endif
 
     /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
     /// meant to be pasted into a support message when Canvas login is stuck.
