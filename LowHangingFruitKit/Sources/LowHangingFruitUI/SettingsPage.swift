@@ -247,6 +247,18 @@ struct SettingsPage: View {
                 if let earliest = stats.earliestFirstSeen {
                     LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
+                // Always shown, even at 0: this is the number that says the
+                // in-code uniqueness invariant is holding now that the
+                // database no longer enforces it (`.unique` came off for
+                // CloudKit), and a provable zero after a two-device merge is
+                // the whole point. An absent row would be indistinguishable
+                // from "nobody ever checked".
+                LabeledContent("Duplicate entries", value: "\(stats.duplicateIDs)")
+                if stats.duplicateIDs > 0 {
+                    Text("The ledger is holding more than one copy of the same assignment. It will self-heal on the next sync, but this appearing at all is a bug worth reporting.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
                 // Three states, not two. A store can be perfectly on-disk and
                 // still be failing every write, and telling that user their
                 // work "will be lost when the app quits" is both wrong and

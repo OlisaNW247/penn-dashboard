@@ -112,6 +112,12 @@ Found and fixed (watch these in the first `swift test`):
    All three now pin `.none` (plus the raw-container helper in
    `AssignmentLedgerUniquenessTests`, for the invariant's sake).
 
+Found during bring-up itself: `LedgerStats.duplicateIDs` was computed
+but never rendered anywhere — neither the Settings storage panel nor
+the diagnostics report — so step 4's "watch it" had nothing to watch.
+Settings → Storage now shows "Duplicate entries" unconditionally (a
+provable 0 being the point), with an orange warning when nonzero.
+
 One acceptance-criteria caveat for step 3: SwiftData's CloudKit import
 is push-driven, and the remote-notification background mode / APNs
 side is deliberately Phase B. Until then, cross-device *import* latency
