@@ -22,6 +22,21 @@ import SwiftData
 /// `.unique` as a last-write-wins *overwrite*, so a collapsed duplicate
 /// silently discarded the older row's `firstSeen`, `completedAt` and pairing.
 /// The merge here keeps them.
+///
+/// **This schema is not CloudKit-eligible yet, despite the note above and the
+/// one on `userCompleted`.** Removing `.unique` cleared one of two blockers,
+/// and every property added since has been optional-or-defaulted — but eleven
+/// properties predating that decision are still non-optional with no default:
+/// `id`, `sourceRaw`, `sourceID`, `kindRaw`, `course`, `title`, `firstSeen`,
+/// `lastSeenInFeed`, `isGoneFromFeed`, `canvasSubmitted`, `gradescopeSubmitted`.
+/// CloudKit requires a default on every property, because it has to be able to
+/// materialize a record a peer wrote without the field. Each needs one before
+/// `ModelConfiguration(cloudKitDatabase:)` can be set.
+///
+/// Recorded here rather than only in `docs/database-explained.md` §5 because
+/// this file is where someone stands when they decide to turn sync on, and the
+/// failure without it is a launch-time crash rather than a compile error.
+/// `StoredGradeObservation` is already clean.
 @Model
 public final class StoredAssignment {
     /// `"source:sourceID"` — the same stable identity as `Assignment.id`.
