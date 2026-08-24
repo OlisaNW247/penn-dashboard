@@ -143,4 +143,137 @@ _W0 — merges of `claude/lhf-submission-freshness`,
 
 ---
 
+### The app has a Profile tab, and Settings is just settings
+
+**What changed.** The app used to be one screen with everything else pushed on
+top of it — Settings and Grades hung off buttons in the dashboard header. There
+is now a real tab bar with three tabs: Dashboard, Profile, Settings. Your
+classes moved out of Settings and into Profile, which is where the rest of the
+per-class setup now lives too. Grades and the per-course report stay where they
+were, reached from the dashboard, because they're a drill-down into a course
+rather than a place you go.
+
+**Why it mattered.** "Which classes am I taking and how do I want to hear about
+each one" is a question you answer at the start of a semester and revisit
+whenever something changes. It was buried behind a gear icon next to
+notification toggles and storage diagnostics, which is not where anyone would
+look for it.
+
+**What you'll notice.** A tab bar. Classes are one tap away instead of three,
+and Settings is shorter.
+
+_W2 — Phase 1 Part B._
+
+---
+
+### Every class can have its own reminders
+
+**What changed.** Each class now carries its own notification settings: mute it
+entirely, choose its own lead times, or decide separately whether its recurring
+non-assignment work — readings, weekly check-ins, discussion posts — sends
+reminders at all. A class you haven't configured *inherits* the global setting
+rather than being frozen to a copy of it, so changing the app-wide default still
+moves everything you never overrode.
+
+**Why it mattered.** One global reminder setting is wrong the moment two classes
+differ. The seminar with a weekly reading and the lecture with three problem
+sets a term want different things, and the only previous answer was to pick a
+compromise or turn reminders off.
+
+**What you'll notice.** Per-class controls in Profile, and reminders that show
+plainly when a class is following the global setting versus using its own.
+
+_W3 — per-course notification settings._
+
+---
+
+### Last semester stops following you into this one
+
+**What changed.** The app can now tell that you've crossed into a new term, and
+offers to archive the old one — with a count in front of you, so you can see
+what you're agreeing to before you agree to it. Archiving is not deleting:
+archived work stays on disk and in your history, it just stops appearing on the
+dashboard, in reminders, and in the widget. You can put it back.
+
+The rule that was supposed to keep old work out only ever looked *forward* — it
+excluded next semester's courses but let every past one through, and undated or
+overdue items passed unconditionally. It now bounds both ends.
+
+**Why it mattered.** This is the bug that had Spring assignments sending
+notifications in August. The ledger deliberately never deletes anything, which
+is what stops a flaky Canvas fetch from erasing your work — but nothing ever
+told it that a semester had ended, so four months of finished work stayed live
+indefinitely.
+
+**What you'll notice.** At the start of a term, an offer to put the last one
+away. Notifications stop arriving for classes you finished months ago.
+
+_W4 — semester rollover._
+
+---
+
+### You can add a class Canvas hasn't mentioned yet
+
+**What changed.** Classes can be added by hand, and they behave like any other:
+selectable, hideable, able to hold assignments you enter yourself. When Canvas
+eventually starts posting for that course, the hand-added class reconciles with
+the feed's version instead of splitting into a duplicate.
+
+**Why it mattered.** A class only existed in the app if the Canvas calendar feed
+was currently carrying an assignment for it. In the first week of a semester
+that's almost none of them — which is exactly why "only one class shows up" was
+the experience of starting a new term.
+
+**What you'll notice.** Your full schedule on day one, instead of whichever
+professor posted first.
+
+_W4 — add-a-class._
+
+---
+
+### Onboarding asks about each class, including the work Canvas doesn't list
+
+**What changed.** After you pick your classes, onboarding now walks through them
+one at a time. For each, it reads that course's Canvas syllabus and
+announcements for recurring obligations a calendar feed never carries — weekly
+readings, check-ins, discussion posts — and shows you what it found along with
+the sentence it found it in, so you can judge whether the guess is right. You
+accept, edit, or skip each one, and set that class's reminder preferences while
+you're there.
+
+The scanner itself already existed and was already tested. It was reachable from
+exactly one place — Settings → Tasks — which a new user has no reason to open.
+
+**Why it mattered.** The obligations most likely to be forgotten are the ones
+with no due date attached: the reading before Thursday's seminar, the weekly
+discussion post. Canvas doesn't put them in the calendar feed, so the app never
+knew about them unless you went looking for a feature you didn't know existed.
+
+**What you'll notice.** A short per-class step during setup. It's skippable at
+every point, and skipping leaves that class on sensible defaults rather than on
+nothing.
+
+_W5 — onboarding per-course setup._
+
+---
+
+### Under the hood: one record per class
+
+**What changed.** Per-class settings used to live in four separate lists —
+hidden classes, deleted classes, renames, and cached Canvas course ids — each
+maintained by hand. They're now one record per class, in one place, with the
+old lists still written alongside because the Home Screen widget reads them by
+name.
+
+**Why it mattered.** Nothing you can see. This is the change that made the three
+above possible without each of them adding a fifth, sixth and seventh list to
+the same file.
+
+**What you'll notice.** Nothing. Your hidden classes, renames and deletions
+carry across on first launch.
+
+_Phase 1 Part A._
+
+---
+
 _More entries are appended here as each workstream lands._
