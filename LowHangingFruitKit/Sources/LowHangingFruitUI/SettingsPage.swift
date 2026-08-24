@@ -177,6 +177,7 @@ struct SettingsPage: View {
                 }
             }
         }
+        .formStyle(.grouped)
         .navigationTitle("Settings")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

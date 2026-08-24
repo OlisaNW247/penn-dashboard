@@ -52,6 +52,7 @@ struct PasteFeedLinkSheet: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Paste calendar link")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

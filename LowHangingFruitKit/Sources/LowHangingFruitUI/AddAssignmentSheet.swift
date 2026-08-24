@@ -41,6 +41,7 @@ struct AddAssignmentSheet: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("New assignment")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
