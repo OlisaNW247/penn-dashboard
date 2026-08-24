@@ -24,6 +24,28 @@ struct OnboardingView: View {
         case canvasLogin
         case gradescopeLogin
         case classPicker
+        case courseSetup
+    }
+
+    /// Whether the primary action should route through the per-course walk
+    /// rather than straight to the dashboard.
+    ///
+    /// Three conditions, all of which have to hold. Canvas connected, because
+    /// the walk has nothing to say without it. At least one class switched on,
+    /// because the class list is derived from feed items and in week one it is
+    /// routinely empty — a "set up your classes" button that opens on nothing
+    /// is worse than no button. And `OnboardingCourseSetup.needsCourseSetup`,
+    /// which is what keeps a Settings reconnect from replaying the walk; see
+    /// its doc comment for why that flag is separate from
+    /// `hasCompletedOnboarding`.
+    ///
+    /// Recomputed rather than cached in `@State` so that connecting Canvas —
+    /// which populates the class list — flips the button without needing an
+    /// invalidation path.
+    private var shouldOfferCourseSetup: Bool {
+        state.isCanvasConnected
+            && !state.selectedCourseCodes().isEmpty
+            && OnboardingCourseSetup.needsCourseSetup()
     }
 
     var body: some View {
@@ -44,6 +66,14 @@ struct OnboardingView: View {
             .environmentObject(state)
         case .classPicker:
             ClassPickerPane(onDone: { phase = .steps })
+                .environmentObject(state)
+        case .courseSetup:
+            // Finishing *or* skipping the walk goes straight to the dashboard
+            // rather than back to this checklist. The walk is the last thing
+            // between the student and the app, and depositing someone who just
+            // tapped "Skip setup" back on the screen they were trying to leave
+            // is how a skip stops reading as a skip.
+            OnboardingCourseSetupPane(onFinish: { state.completeOnboarding() })
                 .environmentObject(state)
         }
     }
@@ -84,6 +114,8 @@ struct OnboardingView: View {
                     ) { phase = .gradescopeLogin }
 
                     classPickerCard
+
+                    courseSetupCard
                 }
 
                 if let error = state.error {
@@ -98,12 +130,17 @@ struct OnboardingView: View {
                 goToDashboardButton
                     .padding(.top, 20)
 
-                Text("Connect Canvas to build your dashboard.")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2RingSub)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
+                if shouldOfferCourseSetup {
+                    skipCourseSetupLink
+                        .padding(.top, 12)
+                } else {
+                    Text("Connect Canvas to build your dashboard.")
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2RingSub)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
+                }
 
                 // "Preview with sample data" leads the intro's first pane
                 // (`IntroView.previewLink`) — but the intro is gated on
@@ -131,7 +168,15 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
         }
-        .onAppear { name = state.userName }
+        .onAppear {
+            name = state.userName
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-LHFCourseSetupHarness") {
+                state.canvasItems = SampleData.items().map(\.assignment)
+                state.updateCanvasICSURL("https://example.com/harness.ics")
+            }
+            #endif
+        }
         .sheet(isPresented: $showPasteFeedLink) {
             PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
         }
@@ -269,11 +314,29 @@ struct OnboardingView: View {
         }
     }
 
+    /// The primary action, which has two forms.
+    ///
+    /// Once Canvas is connected and there are classes to configure, it leads
+    /// into the per-course walk — that is what makes the walk part of
+    /// onboarding rather than a setting nobody finds, which is precisely the
+    /// state the requirement scanner has been in since v3 (reachable only from
+    /// Settings → Tasks). Afterwards, and for anyone reconnecting from
+    /// Settings, it goes straight to the dashboard as it always did.
+    ///
+    /// The escape hatch below it (`skipCourseSetupLink`) is not optional
+    /// decoration: routing the one obvious button into a multi-screen wizard
+    /// without a visible way past it is exactly the abandonment trap, so the
+    /// two ship together and neither is ever the only thing on screen.
     private var goToDashboardButton: some View {
         Button {
-            state.completeOnboarding()
+            lhfHapticLight()
+            if shouldOfferCourseSetup {
+                phase = .courseSetup
+            } else {
+                state.completeOnboarding()
+            }
         } label: {
-            Text("Go to dashboard")
+            Text(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
                 .font(.lhfSans(15, weight: .semibold))
                 .foregroundStyle(canContinue ? Color.v2ToggleActiveTx : Color.v2DateText.opacity(0.55))
                 .frame(maxWidth: .infinity)
@@ -284,8 +347,33 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canContinue)
-        .accessibilityLabel("Go to dashboard")
-        .accessibilityHint(canContinue ? "" : "Connect Canvas first")
+        .accessibilityLabel(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
+        .accessibilityHint(canContinue
+                           ? (shouldOfferCourseSetup ? "Choose how each class notifies you. You can skip this." : "")
+                           : "Connect Canvas first")
+    }
+
+    /// The one-tap way past the walk, on the same screen as the button that
+    /// leads into it.
+    ///
+    /// Marks the step completed on the way out, so a student who declines it
+    /// here is not asked again the next time a Settings reconnect drops them
+    /// back on this checklist. Declining costs them nothing — every class keeps
+    /// `CoursePreferences`' defaults, which is reminders on and lead times
+    /// following the global setting.
+    private var skipCourseSetupLink: some View {
+        Button {
+            OnboardingCourseSetup.markCompleted()
+            state.completeOnboarding()
+        } label: {
+            Text("Skip for now — go to dashboard")
+                .font(.lhfSans(12, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+                .underline()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Skip class setup and go to the dashboard")
+        .accessibilityHint("Every class keeps its default reminders")
     }
 
     private func stepCard(
@@ -390,6 +478,64 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+
+    /// Optional fourth step: how each class should reach you.
+    ///
+    /// This card exists alongside the primary button that leads to the same
+    /// place, and the duplication is on purpose — it is the only route back in
+    /// for two people the primary button has stopped offering it to. One is the
+    /// student who skipped the walk and changed their mind before leaving this
+    /// screen. The other matters more: a student who connects Canvas in week
+    /// one, when no class has posted anything yet, has an empty class list, so
+    /// `shouldOfferCourseSetup` is false and they go straight to the dashboard.
+    /// A fortnight later their classes exist, and a Settings reconnect is the
+    /// only thing that brings them back here — at which point the flag says the
+    /// step is done and the button says "Go to dashboard". Without this card
+    /// the walk would be unreachable for exactly the students the app is
+    /// hardest on.
+    private var courseSetupCard: some View {
+        let courses = state.selectedCourseCodes()
+        let enabled = !courses.isEmpty
+
+        return Button {
+            if enabled { phase = .courseSetup }
+        } label: {
+            HStack(alignment: .center, spacing: 13) {
+                ZStack {
+                    Circle().fill(Color.v2Ink.opacity(0.08)).frame(width: 28, height: 28)
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reminders, class by class")
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
+                    Text(enabled
+                         ? "We'll look for weekly readings and check-ins in each syllabus, and you decide what to keep."
+                         : "Once your classes show up, set how each one reminds you.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.v2CourseCode)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 10)
+
+                if enabled {
+                    Text("\(courses.count)")
+                        .font(.lhfSans(12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .padding(16)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel("Set up reminders class by class")
     }
 }
 
