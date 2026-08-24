@@ -76,6 +76,29 @@ final class AppState: ObservableObject {
     /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
 
+    /// Ledger ids a semester rollover has filed away. **Derived, not
+    /// persisted** — rebuilt from the ledger's rows exactly as
+    /// `completedAssignmentIDs` is, because the rows are the record and a second
+    /// copy is a second thing that can disagree with it.
+    ///
+    /// This is what keeps archived work off the dashboard. It is deliberately
+    /// *not* applied to `mergedCoursework`, which is what the Done tab reads —
+    /// archiving is not deletion, and finished work from an archived semester
+    /// stays in the student's own history.
+    @Published private(set) var archivedAssignmentIDs: Set<String> = []
+
+    /// Terms holding at least one archived row, newest first. Feeds
+    /// `withinTermCap`'s past bound, so a leftover from an archived semester
+    /// that never made it onto a row — a recurring occurrence, say — is caught
+    /// by its term or its due date instead.
+    @Published private(set) var archivedTerms: [Term] = []
+
+    /// The rollover the app is currently prepared to offer, or nil when there is
+    /// no term boundary to ask about — which is the state for eleven months of
+    /// the year, and the reason `ProfileSemesterSection` can sit at the top of
+    /// Profile without costing anything.
+    @Published private(set) var rolloverOffer: SemesterRollover.Offer?
+
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
     /// store stays free of notification plumbing.
@@ -183,6 +206,11 @@ final class AppState: ObservableObject {
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
+    /// The term code of the most recent rollover the student waved away. A
+    /// preference by every test in `docs/persistence-explained.md` §3 — losing
+    /// it costs one re-offered card, nothing more — so it stays in defaults
+    /// rather than going near the ledger.
+    private static let rolloverDismissedTermKey = "rolloverDismissedTerm"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -780,12 +808,87 @@ final class AppState: ObservableObject {
 
     // MARK: Course selection (class picker)
 
-    /// Every distinct course currently seen across the connected sources, sorted
-    /// for a stable picker order. Drives the onboarding + settings class list.
+    /// Every distinct course the app knows about, sorted for a stable picker
+    /// order. Drives the onboarding + Profile class list.
+    ///
+    /// **The union with hand-added classes is the fix for "only one class shows
+    /// up".** This list used to be derived purely from what the feeds currently
+    /// contain, which sounds reasonable and fails in exactly the week it matters
+    /// most: a course that hasn't posted an assignment yet contributes no items,
+    /// so it contributes no class, so in week one of a semester most of a
+    /// student's timetable simply doesn't exist in the app. `canvasCourseID`
+    /// already caches resolved ids so grades survive a quiet week; this is the
+    /// same idea for the class list itself.
+    ///
+    /// Feed courses and hand-added courses share one namespace — the canonical
+    /// `CourseCode` — so this is a set union and not a merge. When Canvas
+    /// finally posts for a class the student typed in, the two are the same
+    /// element and there is nothing to reconcile.
     func allCourseCodes() -> [String] {
         let pool = canvasItems + gradescopeItems
-        let codes = Set(pool.map(\.course)).subtracting([Self.unknownCourse])
+        let codes = Set(pool.map(\.course))
+            .union(coursePreferences.manuallyAddedCourseKeys)
+            .subtracting([Self.unknownCourse])
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// The canonical form of a course code the student typed. Everything that
+    /// identifies a class — selection, reminders, grades, dedup — keys on the
+    /// output of `CourseCode.parse`, so an added class has to arrive through it
+    /// or it will sit next to the feed's copy of the same course forever.
+    /// "cis1200", "CIS 1200" and "cis-1200" all land on `CIS 1200`.
+    /// A class the feed has never mentioned may legitimately have no course
+    /// code at all — a thesis, a reading group, a lab that lives off Canvas — so
+    /// a name that doesn't parse is kept as typed rather than refused. The one
+    /// thing rejected is a name with nothing nameable in it: `CourseCode.parse`
+    /// falls back to the raw string when it recognises nothing, which is right
+    /// for a noisy feed descriptor and would otherwise let "???" become a class.
+    static func normalizedCourseKey(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        let parsed = CourseCode.parse(trimmed).code
+        guard parsed != Self.unknownCourse else { return nil }
+        return parsed
+    }
+
+    /// Adds a class by hand. Returns the canonical key it was filed under, or
+    /// nil when the input wasn't usable.
+    ///
+    /// Idempotent, and idempotent in the way that matters: adding a class the
+    /// feed already supplies is not an error and does not create a second entry
+    /// — it just marks the existing course as one the student also vouched for.
+    /// A previously deleted class is un-deleted, since typing its name in again
+    /// is a clearer statement of intent than the deletion it supersedes.
+    @discardableResult
+    func addCourse(_ raw: String) -> String? {
+        guard let key = Self.normalizedCourseKey(raw) else { return nil }
+        coursePreferences.update(key) {
+            $0.isManuallyAdded = true
+            $0.isDeleted = false
+            $0.isVisible = true
+            // Typing in a class is a statement about this term. If a rollover
+            // had filed it away, bring it back rather than adding a class that
+            // is invisible the moment it is created.
+            $0.archivedTerm = nil
+        }
+        rebuildDashboardItems()
+        return key
+    }
+
+    /// Undoes `addCourse`. Only clears the hand-added mark — a class the feed
+    /// is also publishing stays in the list, because it is real regardless of
+    /// who mentioned it first. Manual assignments already attached to it are
+    /// untouched; they are ledger rows and deleting a label must not delete
+    /// work.
+    func removeAddedCourse(_ course: String) {
+        coursePreferences.setManuallyAdded(course, false)
+        rebuildDashboardItems()
+    }
+
+    /// Classes the student typed in themselves, sorted.
+    func manuallyAddedCourseCodes() -> [String] {
+        coursePreferences.manuallyAddedCourseKeys
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// False if the course is hidden OR deleted — both keep it out of the
@@ -800,11 +903,27 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
-    /// Courses to render in the Settings classes list — every known course
-    /// minus deleted ones. (Hidden-but-not-deleted courses still appear here,
-    /// toggled off.)
+    /// Courses to render in the Profile classes list — every known course minus
+    /// deleted ones and minus the ones a semester rollover took off the roster.
+    /// (Hidden-but-not-deleted courses still appear here, toggled off.)
+    ///
+    /// Archived courses drop out of the *list* but keep `isCourseSelected`
+    /// true, and the split is deliberate. Done reads
+    /// `isCourseSelected` when deciding whose finished work to show, so
+    /// folding archival into selection would empty last semester out of the
+    /// student's own history — which is the thing archiving exists not to do.
     func visibleCourseCodes() -> [String] {
-        allCourseCodes().filter { !coursePreferences.isDeleted($0) }
+        allCourseCodes().filter {
+            !coursePreferences.isDeleted($0) && !coursePreferences.isArchived($0)
+        }
+    }
+
+    /// Classes a rollover has taken off the roster, sorted. The "you archived
+    /// these" list.
+    func archivedCourseCodes() -> [String] {
+        allCourseCodes()
+            .filter { coursePreferences.isArchived($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Deleted courses, sorted for a stable "Deleted classes" restore list.
@@ -876,6 +995,149 @@ final class AppState: ObservableObject {
         coursePreferences.mergeCanvasCourseIDs(resolved)
     }
 
+    // MARK: Semester rollover
+
+    /// Re-derives the archive read model from the ledger, and recomputes what
+    /// the rollover card should offer.
+    ///
+    /// Called from `rebuildDashboardItems`, which is the same place the Canvas
+    /// id cache is refreshed and for the same reason: it runs whenever the pool
+    /// of known items changes, so a sync that brings in this term's first
+    /// assignment is what surfaces the offer. Nothing is published unless a
+    /// value actually changed — `rebuildDashboardItems` also runs on every
+    /// completion toggle, and re-publishing an unchanged offer would redraw the
+    /// dashboard for nothing.
+    private func refreshArchiveState(now: Date = Date()) {
+        guard let store = assignmentStore else { return }
+        // One pass over the table for all three answers — see
+        // `AssignmentStore.archiveState`. This runs on every completion toggle,
+        // so asking three separate questions was three full scans per tick.
+        let state = store.archiveState(now: now)
+        if state.archivedIDs != archivedAssignmentIDs { archivedAssignmentIDs = state.archivedIDs }
+        if state.terms != archivedTerms { archivedTerms = state.terms }
+
+        let resolved = Self.visibleRolloverOffer(
+            state.offer,
+            dismissedTerm: rolloverDismissedTerm
+        )
+        if resolved != rolloverOffer { rolloverOffer = resolved }
+    }
+
+    /// Applies the student's "not now" to a freshly-detected offer.
+    ///
+    /// A dismissal is **suppressed rather than remembered forever**, and it is
+    /// scoped to the boundary that produced it: waving away "archive Spring
+    /// 2026" in August must not also wave away "archive Fall 2026" next
+    /// January. When a later boundary comes around `currentTerm` has moved, the
+    /// stored term no longer matches, and the card asks again.
+    ///
+    /// Pure and static so the scoping can be tested without a store, a clock or
+    /// a `UserDefaults` domain — it is one comparison, and it is the difference
+    /// between a card that respects a "no" and one that nags.
+    static func visibleRolloverOffer(
+        _ offer: SemesterRollover.Offer?,
+        dismissedTerm: Term?
+    ) -> SemesterRollover.Offer? {
+        guard let offer, dismissedTerm != offer.currentTerm else { return nil }
+        return offer
+    }
+
+    /// The term whose rollover offer the student most recently dismissed.
+    private var rolloverDismissedTerm: Term? {
+        UserDefaults.lhf.string(forKey: Self.rolloverDismissedTermKey).flatMap(Term.init(code:))
+    }
+
+    /// Files every item belonging to `terms` away, and takes their classes off
+    /// the roster. Returns how many ledger rows were stamped.
+    ///
+    /// **Archiving is not deleting, and the two halves below are why.** The
+    /// ledger stamp (`store.archive`) is what stops the work reaching the
+    /// dashboard, `reschedule()` and the widget. The course stamp is what takes
+    /// the class out of the class list. Neither removes a row, clears a
+    /// completion, or touches a score — every archived item is still on disk,
+    /// still in `mergedCoursework`, and still in Done. `unarchiveTerms` puts it
+    /// all back.
+    ///
+    /// Only ever called from a control the student tapped, with the count in
+    /// front of them.
+    @discardableResult
+    func archiveTerms(_ terms: Set<Term>, now: Date = Date()) -> Int {
+        guard let store = assignmentStore, !terms.isEmpty else { return 0 }
+
+        // Which classes belong to the terms being archived has to be read
+        // *before* the rows are stamped: `rolloverOffer` skips archived rows, so
+        // asking afterwards returns nothing and the classes would stay on the
+        // roster with no items behind them.
+        let coursesByTerm = store.rolloverOffer(now: now)?
+            .candidates
+            .filter { terms.contains($0.term) }
+            ?? []
+
+        // Hoisted out of the loop below: it walks every known item, and asking
+        // it once per course made archiving quadratic in a student's timetable.
+        let stillCurrent = currentTermCourseKeys(now: now)
+
+        let stamped = store.archive(terms: terms, now: now)
+        for candidate in coursesByTerm {
+            for course in candidate.courseKeys {
+                // A class that is also in the *current* term keeps its place.
+                // A student retaking CIS 1200 has one course key spanning two
+                // terms, and taking it off the roster because last spring was
+                // archived would hide a class they are sitting in this week.
+                guard !stillCurrent.contains(course) else { continue }
+                coursePreferences.setArchivedTerm(course, candidate.term)
+            }
+        }
+        refreshArchiveState(now: now)
+        rebuildDashboardItems(now: now)
+        return stamped
+    }
+
+    /// Course keys with at least one live (unarchived) item in the current term
+    /// — the roster as the feed currently describes it.
+    private func currentTermCourseKeys(now: Date = Date()) -> Set<String> {
+        let current = Term(date: now)
+        var keys = coursePreferences.manuallyAddedCourseKeys
+        for item in canvasItems + gradescopeItems {
+            guard !archivedAssignmentIDs.contains(item.id) else { continue }
+            let term = item.term ?? item.dueAt.map { Term(date: $0) }
+            if term == current { keys.insert(item.course) }
+        }
+        return keys
+    }
+
+    /// Puts archived terms back on the dashboard and their classes back on the
+    /// roster. The way out of a rollover the student regrets.
+    @discardableResult
+    func unarchiveTerms(_ terms: Set<Term>, now: Date = Date()) -> Int {
+        guard let store = assignmentStore, !terms.isEmpty else { return 0 }
+        let cleared = store.unarchive(terms: terms, now: now)
+        // Read straight off the preferences store rather than through
+        // `archivedCourseCodes()`, which filters `allCourseCodes()` — a course
+        // whose every item had left the known pool would not appear there, and
+        // its archived stamp would then be unclearable by any route the UI
+        // offers. The record is the thing being cleared, so the record is what
+        // to enumerate.
+        for course in coursePreferences.archivedCourseKeys where
+            coursePreferences.archivedTerm(for: course).map(terms.contains) == true {
+            coursePreferences.setArchivedTerm(course, nil)
+        }
+        // Clearing the dismissal too: a student who un-archives has changed
+        // their mind about this boundary, and the card should be allowed to ask
+        // again rather than staying silenced by a tap they've since reversed.
+        UserDefaults.lhf.removeObject(forKey: Self.rolloverDismissedTermKey)
+        refreshArchiveState(now: now)
+        rebuildDashboardItems(now: now)
+        return cleared
+    }
+
+    /// Dismisses the current rollover offer without archiving anything. Scoped
+    /// to the term boundary that produced it, so the next one still asks.
+    func dismissRolloverOffer(now: Date = Date()) {
+        UserDefaults.lhf.set(Term(date: now).code, forKey: Self.rolloverDismissedTermKey)
+        refreshArchiveState(now: now)
+    }
+
     func addRecurringTask(_ task: RecurringTask) {
         recurringTasks.append(task)
         persistRecurringTasks()
@@ -945,11 +1207,45 @@ final class AppState: ObservableObject {
     /// from the Canvas course code) we use it directly — exact, and immune to the
     /// fuzzy month→season boundary. Otherwise we fall back to a due-date cap that
     /// is never tighter than the dashboard window, so genuinely-soon items are
-    /// safe at term boundaries. Undated and overdue items always pass.
-    static func withinTermCap(_ assignment: Assignment, now: Date = Date()) -> Bool {
+    /// safe at term boundaries. Undated and overdue items pass unless their term
+    /// has been archived.
+    ///
+    /// ## The past bound, and why it is a set rather than a comparison
+    ///
+    /// This function used to read `term <= current`, which bounds only the
+    /// future: every past term passed, so an entire prior semester stayed on the
+    /// dashboard and kept feeding `reschedule()`. The obvious repair — demanding
+    /// `term == current` — is wrong, and expensively so. `Term(date:)` maps
+    /// August to fall, so on 23 August a summer course with an August deadline
+    /// is a *past* term by that test, and a student still finishing it would
+    /// watch their live work vanish with no way to ask for it back.
+    ///
+    /// So the past bound is `archivedTerms`: a term is excluded once the student
+    /// has been shown a count and agreed to file it away, and not before.
+    /// Detected and offered, never automatic — the same rule the rollover card
+    /// is built on, enforced in the one filter that could otherwise quietly
+    /// break it.
+    ///
+    /// The parameter defaults to empty, which is exactly the old behaviour: with
+    /// nothing archived, a past term still passes. That is deliberate rather
+    /// than convenient. The term cap is not the mechanism that hides last
+    /// semester — the student's confirmed archive is, and this reads it.
+    static func withinTermCap(
+        _ assignment: Assignment,
+        now: Date = Date(),
+        archivedTerms: Set<Term> = []
+    ) -> Bool {
         let current = Term(date: now)
-        if let term = assignment.term { return term <= current }   // future term → excluded
+        if let term = assignment.term {
+            if archivedTerms.contains(term) { return false }   // archived past term
+            return term <= current                             // future term → excluded
+        }
+        // An item with no term of its own still belongs to one. Dating it by its
+        // due date is what stops an archived semester's leftovers coming back in
+        // through the undated-and-overdue door — the specific clause that kept
+        // showing a student work from a semester they had already put away.
         guard let due = assignment.dueAt else { return true }
+        if archivedTerms.contains(Term(date: due)) { return false }
         let cap = max(current.endDate(), now.addingTimeInterval(dashboardWindow))
         return due <= cap
     }
@@ -980,6 +1276,7 @@ final class AppState: ObservableObject {
 
     private func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
+        refreshArchiveState(now: now)
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
@@ -1011,11 +1308,24 @@ final class AppState: ObservableObject {
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
+        // `mergedCoursework` is assigned above, *before* this filter, and that
+        // ordering is what keeps archiving from being deletion: the Done tab
+        // reads that pool, so a semester the student put away is still their own
+        // history. Only the dashboard buckets below lose it — and, through them,
+        // `reschedule()`, which is driven by exactly these arrays.
+        let archivedTermSet = Set(archivedTerms)
         let incomplete = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && isCourseSelected(item.course)          // class picker
-                && Self.withinTermCap(item, now: now)     // end-of-term cap
+                // The per-row archive stamp. Authoritative, because it was
+                // resolved against `firstSeen` at the moment the student
+                // confirmed — evidence the value type below simply doesn't
+                // carry.
+                && !archivedAssignmentIDs.contains(item.id)
+                // And the term-level bound, for items that never got a row:
+                // recurring occurrences are generated fresh on every rebuild.
+                && Self.withinTermCap(item, now: now, archivedTerms: archivedTermSet)
         }
         assessments = incomplete.filter { Self.isAssessment($0) }
 

@@ -83,6 +83,13 @@ public enum LedgerWidgetReader {
             // no trustworthy title or due date and must never reach the widget.
             .filter { !$0.isCompletionOnly }
             .filter { !$0.isFinished }
+            // Work the student put away in a semester rollover. The app drops it
+            // from the dashboard and from reminders; a widget still counting
+            // down to last April's problem set would be the same bug wearing a
+            // home screen. Read straight off the row rather than out of the
+            // shared suite, because unlike hiding and deletion this fact is
+            // per-item, not per-course — see `StoredAssignment.archivedTerm`.
+            .filter { !$0.isArchived }
             .filter { !isAgedOut($0, now: now) }
             .filter { seenIDs.insert($0.id).inserted }
             .filter { !hidden.contains($0.course) && !deleted.contains($0.course) }
@@ -103,9 +110,13 @@ public enum LedgerWidgetReader {
 
     /// Mirrors `AssignmentStore.isAgedOut` — kept here rather than shared
     /// because that one is main-actor-isolated. Both must stay in step; the
-    /// rule is "finished work never ages, otherwise gone + long overdue does".
+    /// rule is "finished or archived work never ages, otherwise gone + long
+    /// overdue does". The archived clause is redundant here — the filter chain
+    /// above already dropped those rows — and is kept anyway so the two copies
+    /// of this predicate remain literally the same rule, which is the only
+    /// property that makes duplicating it survivable.
     private static func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
-        guard !row.isFinished else { return false }
+        guard !row.isFinished, !row.isArchived else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
     }
