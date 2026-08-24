@@ -1,5 +1,6 @@
 #if canImport(BackgroundTasks) && os(iOS)
 import Foundation
+import os
 // `@preconcurrency`: BackgroundTasks' ObjC-bridged types (`BGTask`,
 // `BGAppRefreshTask`, `BGTaskScheduler`) predate Swift 6's Sendable audits.
 // Without this, capturing a `BGAppRefreshTask` across the actor hop below
@@ -73,17 +74,25 @@ public enum LHFBackgroundRefresh {
     /// in ... }` rather than relying on inferred isolation.
     ///
     /// Apple's contract is that `setTaskCompleted` is called EXACTLY once
-    /// per task, from both the success path and `expirationHandler`.
-    /// `didComplete` guards against calling it twice if expiration fires
-    /// while (or just after) the work finishes. It's `nonisolated(unsafe)`
-    /// because both places that touch it — the `Task`'s body below and
-    /// `expirationHandler` — are themselves hopped onto the main actor, so
-    /// they can't run concurrently with each other even though the compiler,
-    /// looking only at this non-isolated function, can't see that; the
-    /// annotation says "trust the construction below," not "ignore the
-    /// race."
+    /// per task, from both the success path and `expirationHandler`. Those
+    /// two arrive on different queues, so the once-guard is a lock-protected
+    /// flag (`OSAllocatedUnfairLock` is `Sendable`, which is what lets the
+    /// closures below capture it without Swift 6's region-isolation checker
+    /// objecting — a plain captured `var` here is a compile error, observed
+    /// on the first device build). Expiration also completes SYNCHRONOUSLY
+    /// on whatever queue the system calls it from, rather than hopping to
+    /// the main actor first — the system wants the completion promptly once
+    /// the budget is gone.
     private static func handle(_ task: BGAppRefreshTask) {
-        nonisolated(unsafe) var didComplete = false
+        let completed = OSAllocatedUnfairLock(initialState: false)
+        func completeOnce(success: Bool) {
+            let isFirst = completed.withLock { done -> Bool in
+                if done { return false }
+                done = true
+                return true
+            }
+            if isFirst { task.setTaskCompleted(success: success) }
+        }
 
         let work = Task { @MainActor in
             // Schedule the NEXT wake first, before doing any work. If the
@@ -91,20 +100,12 @@ public enum LHFBackgroundRefresh {
             // wakes survives that crash instead of silently dying with it.
             scheduleNext()
             await run()
-            if !didComplete {
-                didComplete = true
-                task.setTaskCompleted(success: true)
-            }
+            completeOnce(success: true)
         }
 
         task.expirationHandler = {
             work.cancel()
-            Task { @MainActor in
-                if !didComplete {
-                    didComplete = true
-                    task.setTaskCompleted(success: false)
-                }
-            }
+            completeOnce(success: false)
         }
     }
 
