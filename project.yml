@@ -49,6 +49,15 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        # Background refresh (docs/BACKGROUND_REFRESH_PLAN.md, Option A).
+        # `fetch` is the UIBackgroundModes value BGAppRefreshTask requires;
+        # the permitted-identifiers list must match
+        # `LHFBackgroundRefresh.taskID` exactly or registration/submission
+        # silently fail against each other.
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.lhf.lowhangingfruit.refresh
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit

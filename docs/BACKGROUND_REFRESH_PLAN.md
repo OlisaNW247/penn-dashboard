@@ -23,6 +23,13 @@ pushes results to the device.
 
 ## Option A — RECOMMENDED: BGAppRefreshTask (best effort, no backend)
 
+**IMPLEMENTED 2026-08-24.** Task id `com.lhf.lowhangingfruit.refresh`
+(`LHFBackgroundRefresh` in `LowHangingFruitUI`, wired from `LHFApp`).
+Verification is device-only: enable Settings → General → Background App
+Refresh for LHF; first organic wakes typically show up within hours of
+normal use, or force one immediately while attached in Xcode with
+`e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.lhf.lowhangingfruit.refresh"]`.
+
 What it is: register a background-refresh task; iOS wakes the app for
 ~30 seconds at times of its choosing (it learns usage patterns), during
 which LHF runs the exact refresh it runs on foregrounding — feed sync,
