@@ -9,14 +9,14 @@ import LowHangingFruitUI
 /// finishes launching, and a fresh request must be queued every time the
 /// app leaves the foreground (submitted requests don't persist forever).
 /// `BackgroundTasks` isn't available to macOS, so every call into
-/// `LHFBackgroundRefresh` sits behind `#if canImport(BackgroundTasks)` —
+/// `LHFBackgroundRefresh` sits behind `#if canImport(BackgroundTasks) && os(iOS)` —
 /// `scenePhase` itself is fine unguarded on both platforms.
 @main
 struct LHFApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        #if canImport(BackgroundTasks)
+        #if canImport(BackgroundTasks) && os(iOS)
         LHFBackgroundRefresh.register()
         LHFBackgroundRefresh.scheduleNext()
         #endif
@@ -26,7 +26,7 @@ struct LHFApp: App {
         WindowGroup("Low Hanging Fruit") {
             RootView()
                 .onChange(of: scenePhase) { _, newPhase in
-                    #if canImport(BackgroundTasks)
+                    #if canImport(BackgroundTasks) && os(iOS)
                     if newPhase == .background {
                         LHFBackgroundRefresh.scheduleNext()
                     }

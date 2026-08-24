@@ -1,4 +1,4 @@
-#if canImport(BackgroundTasks)
+#if canImport(BackgroundTasks) && os(iOS)
 import Foundation
 // `@preconcurrency`: BackgroundTasks' ObjC-bridged types (`BGTask`,
 // `BGAppRefreshTask`, `BGTaskScheduler`) predate Swift 6's Sendable audits.
@@ -22,9 +22,10 @@ import Foundation
 /// exposed across that boundary. It lives in this module (not the App
 /// target) specifically so it CAN reach those internal types directly.
 ///
-/// Entirely behind `#if canImport(BackgroundTasks)`: the macOS slice
-/// `swift test` compiles has no BackgroundTasks framework available to the
-/// SwiftPM build, so this whole file compiles to nothing there.
+/// Entirely behind `#if canImport(BackgroundTasks) && os(iOS)`: the macOS SDK
+/// SHIPS the BackgroundTasks framework (for Catalyst), so canImport alone
+/// passes there while every symbol is API_UNAVAILABLE(macos) — the os(iOS)
+/// clause is what actually empties this file out of the macOS test slice.
 public enum LHFBackgroundRefresh {
     /// Must match `project.yml`'s app-target
     /// `BGTaskSchedulerPermittedIdentifiers` entry exactly, or registration
