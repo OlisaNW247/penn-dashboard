@@ -99,6 +99,16 @@ public final class AssignmentStore {
     /// case the app degrades to its old non-persistent behavior instead of
     /// crashing.
     public static func makeDefault() -> AssignmentStore? {
+        // Test runners must NEVER open the real shared ledger. On macOS the
+        // container URL below resolves even for unentitled, unsandboxed
+        // processes — swift test included — so without this branch every
+        // test that constructs a bare AppState() writes fixtures into the
+        // developer's actual Mac app data (seen on device: DEDUPE 9999 rows
+        // on the real dashboard). In-memory, no failure banner: this is the
+        // hermetic path tests were always assumed to take.
+        if SharedDefaults.isTestRunner {
+            return try? AssignmentStore(inMemory: true)
+        }
         var failure: String?
         if let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {

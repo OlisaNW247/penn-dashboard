@@ -26,10 +26,28 @@ public enum SharedDefaults {
     /// `WidgetSnapshotStore` already use, so all three agree on when the group
     /// is available.
     public static func sharedSuite() -> UserDefaults? {
-        guard FileManager.default
+        guard !isTestRunner,
+              FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
         else { return nil }
         return UserDefaults(suiteName: appGroupID)
+    }
+
+    /// True when this process is a test runner. Load-bearing on macOS:
+    /// unlike iOS, `containerURL(forSecurityApplicationGroupIdentifier:)`
+    /// resolves for UNSANDBOXED processes with no App Group entitlement at
+    /// all — which is exactly what `swift test` is — so without this guard
+    /// the test suite reads and writes the REAL Mac app's shared defaults,
+    /// ledger, and widget snapshot. Observed in the wild the day the Mac
+    /// app became a daily driver: test fixtures ("DEDUPE 9999" rows) on the
+    /// real dashboard. `XCTestCase` only loads inside test processes, and
+    /// the env keys cover the harness variants.
+    public static var isTestRunner: Bool {
+        if NSClassFromString("XCTestCase") != nil { return true }
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil
+            || env["XCTestBundlePath"] != nil
+            || env["XCTestSessionIdentifier"] != nil
     }
 
     /// True inside a widget/app extension. Extensions get their *own* private

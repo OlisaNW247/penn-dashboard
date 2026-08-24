@@ -21,6 +21,13 @@ It also runs with **no App Group entitlement**, so `AssignmentStore
 paths. Anything gated on `isPersistent` — the ledger migrations especially —
 is structurally untestable there and needs a device build.
 
+**macOS caveat (learned 2026-08-24):** unlike iOS, an unsandboxed macOS
+process resolves the App Group container URL *without* the entitlement — so
+`swift test` on the dev Mac would reach the REAL Mac app's ledger, shared
+defaults, and widget snapshot. `SharedDefaults.isTestRunner` guards all
+three choke points; the fallback-paths assumption above is now true by
+construction, not by accident. Never remove those guards.
+
 ## Layout
 
 - `LowHangingFruitKit/Sources/LowHangingFruitKit/` — data layer, no UI (Olisa)
