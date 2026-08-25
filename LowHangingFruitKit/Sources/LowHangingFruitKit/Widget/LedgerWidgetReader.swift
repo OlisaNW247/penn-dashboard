@@ -72,6 +72,10 @@ public enum LedgerWidgetReader {
             .filter { !$0.isCompletionOnly }
             .filter { !$0.isFinished }
             .filter { !isAgedOut($0, now: now) }
+            // `.event` rows (readings, lectures, exam dates) have nothing to
+            // submit, so they never go "overdue" — mirrors AppState's
+            // isExpiredEvent: they simply drop off once their calendar day ends.
+            .filter { !isExpiredEvent($0, now: now) }
             .filter { seenIDs.insert($0.id).inserted }
             .compactMap { row -> (Date, WidgetItem)? in
                 guard let due = row.dueAt else { return nil }
@@ -92,5 +96,13 @@ public enum LedgerWidgetReader {
         guard !row.isFinished else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
+    }
+
+    /// Mirrors `AppState.isExpiredEvent`: an `.event`-kind row with a dated
+    /// day strictly before today is expired. Undated events are never expired.
+    private static func isExpiredEvent(_ row: StoredAssignment, now: Date) -> Bool {
+        guard row.kindRaw == Assignment.Kind.event.rawValue, let due = row.dueAt else { return false }
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: due) < calendar.startOfDay(for: now)
     }
 }

@@ -20,6 +20,12 @@ struct LedgerWidgetReaderTests {
                    url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/\(id)"))
     }
 
+    private func event(_ id: String, title: String, due: Date?) -> Assignment {
+        Assignment(source: .canvas, sourceID: id, kind: .event,
+                   course: "CIS 3200", title: title, dueAt: due,
+                   url: URL(string: "https://canvas.upenn.edu/courses/1/calendar_events/\(id)"))
+    }
+
     @Test("no store file yields no snapshot rather than an empty one")
     func missingStoreIsNil() {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -77,6 +83,25 @@ struct LedgerWidgetReaderTests {
         let now = Date()
         _ = store.reconcile([canvas("1", title: "No date", due: nil)], source: .canvas)
         #expect(LedgerWidgetReader.snapshot(storeURL: url, now: now) == nil)
+    }
+
+    @Test("an .event row expires with its calendar day; an .assignment row does not")
+    func expiredEventsDropWhileAssignmentsStayOverdue() throws {
+        let (store, url) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date()
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        _ = store.reconcile([
+            event("1", title: "Yesterday's reading", due: yesterday),
+            event("2", title: "Today's reading", due: now),
+            canvas("3", title: "Overdue pset", due: yesterday),
+        ], source: .canvas)
+
+        let snapshot = try #require(LedgerWidgetReader.snapshot(storeURL: url, now: now))
+        let titles = Set(snapshot.items.map(\.title))
+        #expect(!titles.contains("Yesterday's reading"))
+        #expect(titles.contains("Today's reading"))
+        #expect(titles.contains("Overdue pset"))
     }
 
     @Test("the list is capped so a widget never over-reads")

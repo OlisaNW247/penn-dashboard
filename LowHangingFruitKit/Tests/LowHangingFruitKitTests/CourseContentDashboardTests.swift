@@ -131,6 +131,26 @@ struct CourseContentDashboardTests {
         }
     }
 
+    // MARK: - Expired events drop off (readings have nothing to submit)
+
+    @Test("an opted-in event drops off the dashboard once its calendar day has passed")
+    func optedInEventExpiresAfterItsDay() {
+        withCleanDecision {
+            let state = makeState()
+            let now = Date()
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+            state.canvasItems = [
+                item(kind: .event, title: "Yesterday's reading", dueAt: yesterday),
+                item(kind: .event, title: "Today's reading", dueAt: now),
+            ]
+            state.setCourseContentIncluded(Self.course, true)
+
+            let shown = state.assignments + state.laterAssignments
+            #expect(!shown.contains { $0.title == "Yesterday's reading" })
+            #expect(shown.contains { $0.title == "Today's reading" })
+        }
+    }
+
     // MARK: - Grade Watcher independence (item 6)
 
     @Test("flipping a content decision never changes canvasCourseIDsByCode or selectedCanvasCourseIDs()")

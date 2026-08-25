@@ -1848,6 +1848,17 @@ final class AppState: ObservableObject {
         return due <= now.addingTimeInterval(dashboardWindow)
     }
 
+    /// An `.event`-kind item (a reading, a lecture, an exam date with nothing
+    /// to submit) has no submission to be late on, so it never belongs in
+    /// OVERDUE — the product rule is that it simply drops off the dashboard
+    /// once its calendar day is over. Undated events are never expired, since
+    /// there's no day to compare against.
+    static func isExpiredEvent(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard assignment.kind == .event, let due = assignment.dueAt else { return false }
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: due) < calendar.startOfDay(for: now)
+    }
+
     /// Keeps the dashboard to the current term so next-term courses Canvas still
     /// lists as "active" can't leak in. When the item's term is known (parsed
     /// from the Canvas course code) we use it directly — exact, and immune to the
@@ -1954,8 +1965,12 @@ final class AppState: ObservableObject {
         assessments = incomplete.filter { $0.kind != .event && Self.isAssessment($0) }
 
         // Near (overdue + this week) and later partition the coursework with no
-        // gap, so nothing incomplete is silently dropped.
-        let coursework = incomplete.filter { $0.kind == .event || !Self.isAssessment($0) }
+        // gap, so nothing incomplete is silently dropped. An `.event` (reading,
+        // lecture, exam date) has nothing to submit, so once its calendar day
+        // has passed it isn't "overdue" — it's just gone from the dashboard.
+        let coursework = incomplete
+            .filter { $0.kind == .event || !Self.isAssessment($0) }
+            .filter { !Self.isExpiredEvent($0, now: now) }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
         publishWidgetSnapshot()

@@ -72,6 +72,29 @@ struct DashboardFilterTests {
         #expect(AppState.withinTermCap(item(term: Term(year: 2000, season: .spring))))
     }
 
+    @Test("expired events: only a dated .event whose day has fully passed is expired")
+    func expiredEventBoundaries() {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let yesterday1159pm = calendar.date(byAdding: .second, value: -1, to: startOfToday)!
+        let todayMidnight = startOfToday
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+
+        func dated(kind: Assignment.Kind, dueAt: Date?) -> Assignment {
+            Assignment(source: .canvas, sourceID: "x", kind: kind, course: "CIS 1200",
+                       title: "Reading", dueAt: dueAt, url: nil)
+        }
+
+        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: yesterday1159pm), now: now))
+        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: todayMidnight), now: now))
+        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: tomorrow), now: now))
+        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: nil), now: now))
+        // A last-week assignment has something to submit, so it's overdue, not expired.
+        let lastWeek = calendar.date(byAdding: .day, value: -7, to: now)!
+        #expect(!AppState.isExpiredEvent(dated(kind: .assignment, dueAt: lastWeek), now: now))
+    }
+
     @Test("deselecting a course hides it; everything is selected by default")
     func courseSelection() {
         let state = AppState()
