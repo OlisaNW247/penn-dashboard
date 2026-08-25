@@ -448,6 +448,34 @@ public final class AssignmentStore {
         activeAssignments(source: source, now: now)
     }
 
+    /// Rewrites every row's `course` through `transform`, for migrating rows
+    /// that were stored under a raw registrar descriptor (e.g.
+    /// "BAN_CIS-2400-001 202630") back when the parser couldn't turn it into
+    /// a clean code — so the same course stops appearing under two different
+    /// strings just because some of its rows predate a parser fix.
+    ///
+    /// Goes through `rowsByID()`, not `allRows()`, for the same reason every
+    /// other write path here does: it is the deduplicated view, and it is
+    /// what keeps this from writing through one of two copies of a row while
+    /// leaving the other stale.
+    ///
+    /// Deliberately takes the transform as a parameter rather than reaching
+    /// for a parser itself — this file is Kit-layer plumbing and has no
+    /// business knowing what a "clean" course code looks like; that policy
+    /// belongs to whoever calls this (`AppState`, via `CourseCode.parse`).
+    @discardableResult
+    public func normalizeCourseNames(_ transform: (String) -> String) -> Int {
+        var changed = 0
+        for row in rowsByID().values {
+            let normalized = transform(row.course)
+            guard normalized != row.course else { continue }
+            row.course = normalized
+            changed += 1
+        }
+        if changed > 0 { saveChanges() }
+        return changed
+    }
+
     /// Deletes specific rows outright.
     ///
     /// The only place in this class where removing a row is the *correct*

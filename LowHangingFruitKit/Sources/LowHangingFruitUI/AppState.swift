@@ -334,6 +334,23 @@ final class AppState: ObservableObject {
         self.completedAssignmentIDs = []
         self.completionDates = [:]
 
+        // Every stored property this class declares now has an initial
+        // value — `canvasICSURL` through `completionDates` above are all
+        // explicitly assigned, and everything else (`canvasItems`,
+        // `moduleReadingItems`, `courseProbes`, `canvasSessionExpired`, …)
+        // carries an inline default — so this is the first point in `init`
+        // where a call into `self` is legal at all, and deliberately the
+        // one used here: it must run BEFORE `store.currentAssignments()`
+        // seeds `canvasItems`/`gradescopeItems`/`moduleReadingItems` just
+        // below, not just before `rebuildDashboardItems()` — those arrays
+        // are a snapshot taken once here, not a live view of the ledger, so
+        // normalizing the ledger *after* they were seeded would leave this
+        // launch's dashboard (and its `isCourseSelected` filtering against
+        // the now-normalized `hiddenCourseKeys`/`deletedCourseKeys`, which
+        // this same call also migrates) reading stale raw course names
+        // until the next sync.
+        normalizeStoredCourseNames()
+
         if let store {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
@@ -375,8 +392,9 @@ final class AppState: ObservableObject {
 
         // Wired here rather than at `cloudPrefsMirror`'s own construction
         // above: forming a closure that captures `self` isn't legal until
-        // every stored property above has an initial value, which this point
-        // in `init` is the first to guarantee.
+        // every stored property above has an initial value — true as early
+        // as `normalizeStoredCourseNames()`'s call site above, and still
+        // true here.
         //
         // `CloudPrefsMirror` calls this closure from a plain, non-isolated
         // context (its `NSUbiquitousKeyValueStore.didChangeExternally`
@@ -425,6 +443,91 @@ final class AppState: ObservableObject {
         #endif
 
         refreshCanvasSessionExpiredState()
+    }
+
+    /// One-time-per-launch (but idempotent, and safe to re-run every launch)
+    /// sweep that rewrites every stored course string — ledger rows,
+    /// hidden/deleted sets, renames, and content decisions — through
+    /// `CourseCode.parse`. Canvas descriptors like
+    /// "BAN_CIS-2400-001 202630" used to fail to parse and get stored
+    /// verbatim, both as ledger rows and as the preference keys below; a
+    /// parser fix producing a clean code for them going forward does
+    /// nothing for data already on disk, so the same course would
+    /// otherwise go on appearing under both its raw registrar string and
+    /// its clean code forever. Cheap at a student's few hundred rows, and
+    /// re-running self-heals raw names that arrive later from an
+    /// unmigrated device via sync.
+    ///
+    /// Called once from `init`, right after every stored property has an
+    /// initial value and — crucially — before `store.currentAssignments()`
+    /// seeds `canvasItems`/`gradescopeItems`/`moduleReadingItems` for this
+    /// launch, so the ledger sweep below lands before anything reads it.
+    /// See the call site's comment for why that ordering matters.
+    private func normalizeStoredCourseNames() {
+        let norm = { (name: String) -> String in CourseCode.parse(name).code }
+
+        assignmentStore?.normalizeCourseNames(norm)
+
+        // Mapping a set through `norm` merges variants of the same course
+        // together, so a course reads as hidden/deleted if ANY of its old
+        // raw variants was — deliberate, since the variants were always the
+        // same course, and landing on the wrong side of hidden/deleted
+        // either way is one tap to reverse.
+        let normalizedHidden = Set(hiddenCourseKeys.map(norm))
+        if normalizedHidden != hiddenCourseKeys {
+            hiddenCourseKeys = normalizedHidden
+            persistHiddenCourses()
+        }
+        let normalizedDeleted = Set(deletedCourseKeys.map(norm))
+        if normalizedDeleted != deletedCourseKeys {
+            deletedCourseKeys = normalizedDeleted
+            persistDeletedCourses()
+        }
+
+        // Collision rule: if two old keys normalize to the same clean code,
+        // keep the entry whose old key was ALREADY normalized (i.e.
+        // `norm(oldKey) == oldKey`) when one exists, else keep whichever is
+        // encountered first.
+        var normalizedOverrides: [String: String] = [:]
+        var winnerIsAlreadyNormalized: Set<String> = []
+        for (oldKey, value) in courseNameOverrides {
+            let newKey = norm(oldKey)
+            let isAlreadyNormalized = newKey == oldKey
+            if normalizedOverrides[newKey] == nil {
+                normalizedOverrides[newKey] = value
+                if isAlreadyNormalized { winnerIsAlreadyNormalized.insert(newKey) }
+            } else if isAlreadyNormalized && !winnerIsAlreadyNormalized.contains(newKey) {
+                normalizedOverrides[newKey] = value
+                winnerIsAlreadyNormalized.insert(newKey)
+            }
+        }
+        if normalizedOverrides != courseNameOverrides {
+            courseNameOverrides = normalizedOverrides
+            UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
+            if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.courseNameOverridesKey) }
+        }
+
+        // Collision rule: keep the decision with the most recent
+        // `decidedAt` — the freshest answer to the nudge is the one that
+        // should survive.
+        var normalizedDecisions: [String: CourseContentDecision] = [:]
+        for (oldKey, decision) in courseContentDecisions {
+            let newKey = norm(oldKey)
+            if let existing = normalizedDecisions[newKey], existing.decidedAt >= decision.decidedAt {
+                continue
+            }
+            normalizedDecisions[newKey] = decision
+        }
+        if normalizedDecisions != courseContentDecisions {
+            courseContentDecisions = normalizedDecisions
+            CourseContentDecisionStore.save(courseContentDecisions)
+            // `cloudPrefsMirror` is already constructed by the time `init`
+            // calls this method, so the push IS possible here — same
+            // "push at the point the local write happens" pattern as
+            // `setCourseContentDecision` below, just running once at launch
+            // instead of on a user action.
+            if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
+        }
     }
 
     /// First-run onboarding is required until both core data sources are connected.
