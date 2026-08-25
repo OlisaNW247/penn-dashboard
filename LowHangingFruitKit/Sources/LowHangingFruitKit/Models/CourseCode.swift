@@ -29,8 +29,18 @@ public enum CourseCode {
 
     /// Finds a DEPT + course-number pair anywhere in the string, not just at
     /// the very start. Canvas descriptors are occasionally prefixed with an
-    /// extra cross-listing tag (e.g. `"ban-cis-3200-001 …"`), so anchoring at
-    /// `^` (the old behavior) matched the wrong token or missed entirely.
+    /// extra cross-listing tag (e.g. `"ban-cis-3200-001 …"` or, on live Penn
+    /// accounts, `"BAN_CIS-2400-001 202630"`), so anchoring at `^` (the old
+    /// behavior) matched the wrong token or missed entirely.
+    ///
+    /// Underscore is a regex word character, so `\b` doesn't fire between a
+    /// `BAN_` prefix and the department that follows it — the whole match
+    /// would silently fail and `parse` would fall back to the raw registrar
+    /// string. Underscores are only ever used by Canvas as a prefix
+    /// separator, never inside a real dept or course number, so they're
+    /// swapped for spaces before matching; this also folds the underscore
+    /// variant into the same last-match-wins handling as the dash variant
+    /// below, with no regex changes needed.
     ///
     /// DEPT (2–4 letters) + optional separator (a single dash or space) +
     /// course number (3–4 digits, may lead with 0, e.g. "PHYS 0150"). A
@@ -41,13 +51,14 @@ public enum CourseCode {
     /// mistaken for a course. A dash/no-separator pairing is accepted
     /// regardless of case, since that's how lowercase cross-list prefixes
     /// like "cis-3200" show up. When multiple candidates match, the LAST
-    /// valid one wins, so a leading decoy tag (like "ban-") loses to the real
-    /// course that follows it.
+    /// valid one wins, so a leading decoy tag (like "ban-" or "BAN_") loses
+    /// to the real course that follows it.
     private static func extractCode(from text: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: #"\b([A-Za-z]{2,4})([- ]?)(\d{3,4})\b"#)
         else { return nil }
-        let nsText = text as NSString
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        let normalized = text.replacingOccurrences(of: "_", with: " ")
+        let nsText = normalized as NSString
+        let matches = regex.matches(in: normalized, range: NSRange(location: 0, length: nsText.length))
 
         var best: String?
         for match in matches {

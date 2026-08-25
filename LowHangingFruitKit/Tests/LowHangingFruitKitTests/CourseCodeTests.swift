@@ -37,6 +37,26 @@ struct CourseCodeTests {
               term: Term(year: 2026, season: .fall)),
         // Same shape without a term/title suffix.
         .init(raw: "ban-cis-3200", code: "CIS 3200", term: nil),
+        // Underscore cross-listing prefix, as seen on live Penn Canvas
+        // accounts — underscore is a regex word char, so `\b` doesn't fire
+        // between "BAN_" and "CIS" without the underscore→space fix.
+        .init(raw: "BAN_CIS-2400-001 202630", code: "CIS 2400",
+              term: Term(year: 2026, season: .fall)),
+        // Same underscore prefix, leading-zero course number preserved.
+        .init(raw: "BAN_PHYS-0151-151 202630", code: "PHYS 0151",
+              term: Term(year: 2026, season: .fall)),
+        // Same course, different section — collapses to the same clean code.
+        .init(raw: "BAN_PHYS-0151-402 202630", code: "PHYS 0151",
+              term: Term(year: 2026, season: .fall)),
+        // Bare underscore-prefixed tag with no real course after it. "BAN"
+        // is already uppercase, so this satisfies the space-separator rule
+        // just like a genuine dept would — there's no better interpretation
+        // for a string shaped like this, so this is an accepted false
+        // positive, not a bug.
+        .init(raw: "BAN_2400", code: "BAN 2400", term: nil),
+        // Same documented quirk with a different tag — matches the
+        // already-accepted "TAP 2028" false positive.
+        .init(raw: "TAP_2028", code: "TAP 2028", term: nil),
         // Non-course cohort / diagnostic space → keep the label, no term.
         .init(raw: "Class of 2028", code: "Class of 2028", term: nil),
         // Unknown-course fallback passes through unchanged.
@@ -50,6 +70,15 @@ struct CourseCodeTests {
             #expect(parsed.code == c.code, "code for \"\(c.raw)\" → \(parsed.code), expected \(c.code)")
             #expect(parsed.term == c.term, "term for \"\(c.raw)\" → \(String(describing: parsed.term))")
         }
+    }
+
+    @Test("containsExplicitCode agrees with extractCode's underscore handling")
+    func explicitCodeDetection() {
+        #expect(CourseCode.containsExplicitCode("BAN_CIS-2400-001 202630"))
+        #expect(CourseCode.containsExplicitCode("ban-cis-3200-001 202630 Cross-Listed Seminar"))
+        #expect(CourseCode.containsExplicitCode("FNAR 3230-401 202610 PSYCHEDELIC ART & THE 1960s"))
+        #expect(!CourseCode.containsExplicitCode("Class of 2028"))
+        #expect(!CourseCode.containsExplicitCode(""))
     }
 
     @Test("term code round-trips and orders correctly")
