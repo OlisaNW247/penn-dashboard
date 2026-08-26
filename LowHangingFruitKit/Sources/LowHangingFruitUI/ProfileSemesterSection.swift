@@ -64,7 +64,7 @@ struct ProfileSemesterSection: View {
         if let offer = state.rolloverOffer {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("New semester?", systemImage: "calendar.badge.clock")
+                    Label("new semester?", systemImage: "calendar.badge.clock")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(Color.v2Ink)
 
@@ -72,9 +72,9 @@ struct ProfileSemesterSection: View {
                     // instead of just doing it. "Archive 47 items from Spring
                     // 2026" is a decision a student can actually make; "tidy up
                     // your old work" is a shrug with consequences.
-                    Text("It looks like \(offer.currentTerm.displayName) has started, and " +
-                         "\(offer.summary) \(offer.totalItemCount == 1 ? "is" : "are") still on " +
-                         "your dashboard.")
+                    Text("\(offer.currentTerm.displayName) has started, and " +
+                         "\(offer.summary) \(offer.totalItemCount == 1 ? "is" : "are") still " +
+                         "on your dashboard.")
                         .font(.lhfSans(13))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -87,9 +87,8 @@ struct ProfileSemesterSection: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Text("Archiving keeps all of it \u{2014} it stays saved and stays in your " +
-                         "Done history. It just stops showing up on the dashboard and stops " +
-                         "sending reminders. You can undo it below.")
+                    Text("nothing is deleted. it stays in done, just off the " +
+                         "dashboard and out of reminders. you can undo it below.")
                         .font(.lhfSans(12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -100,17 +99,17 @@ struct ProfileSemesterSection: View {
                 Button {
                     state.archiveTerms(Set(offer.terms))
                 } label: {
-                    Label("Archive \(offer.summary)", systemImage: "archivebox")
+                    Label("archive \(offer.summary)", systemImage: "archivebox")
                         .font(.lhfSans(14, weight: .semibold))
                 }
 
-                Button("Not now") {
+                Button("not now") {
                     state.dismissRolloverOffer()
                 }
                 .font(.lhfSans(14))
                 .foregroundStyle(.secondary)
             } header: {
-                Text("Semester")
+                Text("semester")
             }
         }
     }
@@ -130,21 +129,21 @@ struct ProfileSemesterSection: View {
                             Text(term.displayName)
                                 .font(.lhfSans(14))
                                 .foregroundStyle(Color.v2Ink)
-                            Text("Saved, and still in Done")
+                            Text("saved, still in done")
                                 .font(.lhfSans(11))
                                 .foregroundStyle(Color.v2SectionMuted)
                         }
                         Spacer()
-                        Button("Restore") {
+                        Button("restore") {
                             state.unarchiveTerms([term])
                         }
                         .font(.lhfSans(13))
                     }
                 }
             } header: {
-                Text("Archived")
+                Text("prev semesters")
             } footer: {
-                Text("Restoring puts a semester\u{2019}s work back on the dashboard and back in reminders.")
+                Text("restoring puts that work back on the dashboard and in reminders.")
             }
         }
     }
@@ -154,14 +153,14 @@ struct ProfileSemesterSection: View {
     private var addClassSection: some View {
         Section {
             HStack {
-                TextField("e.g. CIS 1200", text: $newCourse)
+                TextField("e.g. cis 1200", text: $newCourse)
                     .font(.lhfSans(14))
 #if os(iOS)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
 #endif
                     .onSubmit(submitCourse)
-                Button("Add", action: submitCourse)
+                Button("add", action: submitCourse)
                     .font(.lhfSans(14, weight: .semibold))
                     .disabled(AppState.normalizedCourseKey(newCourse) == nil)
             }
@@ -177,12 +176,12 @@ struct ProfileSemesterSection: View {
                 addedClassRow(course)
             }
         } header: {
-            Text("Add a class")
+            Text("add a class")
         } footer: {
             // Says the quiet part out loud, because "where are my other
             // classes" is the question this whole section exists to answer and
             // the honest answer is not obvious.
-            Text("Classes normally appear once Canvas posts something for them, so a course that hasn\u{2019}t posted yet stays invisible. Add it here and it shows up straight away \u{2014} and when Canvas does catch up, the two merge into one class rather than doubling up.")
+            Text("canvas only shows a class once it posts something. add it here and it appears now; the two merge when canvas catches up.")
         }
         // A sheet of its own rather than `AddAssignmentSheet`, for one reason:
         // that sheet asks for the course as free text, and the entire point of
@@ -217,17 +216,17 @@ struct ProfileSemesterSection: View {
             Button {
                 addingAssignmentTo = course
             } label: {
-                Label("Add assignment", systemImage: "plus.circle")
+                Label("add assignment", systemImage: "plus.circle")
                     .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Add an assignment to \(state.courseDisplayName(course))")
+            .accessibilityLabel("add an assignment to \(state.courseDisplayName(course))")
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 state.removeAddedCourse(course)
             } label: {
-                Label("Remove", systemImage: "trash")
+                Label("remove", systemImage: "trash")
             }
         }
     }
@@ -272,15 +271,15 @@ private struct AddToAddedClassSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Title", text: $title)
+                    TextField("title", text: $title)
                 } header: {
                     Text(course)
                 }
 
                 Section {
-                    Toggle("Has a due date", isOn: $hasDueDate)
+                    Toggle("has a due date", isOn: $hasDueDate)
                     if hasDueDate {
-                        DatePicker("Due", selection: $dueDate,
+                        DatePicker("due", selection: $dueDate,
                                    displayedComponents: [.date, .hourAndMinute])
                     }
                 } footer: {
@@ -289,16 +288,16 @@ private struct AddToAddedClassSheet: View {
                          : "Undated items sit under \u{201C}Later\u{201D} until you give them a date.")
                 }
             }
-            .navigationTitle("New assignment")
+            .navigationTitle("new assignment")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button("add") {
                         onAdd(trimmedTitle, hasDueDate ? dueDate : nil)
                         dismiss()
                     }

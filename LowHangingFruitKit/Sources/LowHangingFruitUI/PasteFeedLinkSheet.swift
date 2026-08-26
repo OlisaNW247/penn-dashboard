@@ -33,13 +33,13 @@ struct PasteFeedLinkSheet: View {
                         #endif
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Canvas calendar link")
+                    Text("canvas calendar link")
                 } footer: {
-                    Text("On canvas.upenn.edu: Calendar → Calendar Feed (bottom right) → copy the link. Paste it here exactly as given — a webcal:// link works too.")
+                    Text("on canvas.upenn.edu: calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given. a webcal:// link works too.")
                 }
 
                 Section {
-                    Text("This connects your assignment and deadline dashboard only. It doesn't show submission status or grades — those need the in-app Canvas login.")
+                    Text("this connects your assignment and deadline dashboard only. it doesn't show submission status or grades. those need the in-app canvas login.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -52,16 +52,16 @@ struct PasteFeedLinkSheet: View {
                     }
                 }
             }
-            .navigationTitle("Paste calendar link")
+            .navigationTitle("paste calendar link")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
+                    Button("save", action: save)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

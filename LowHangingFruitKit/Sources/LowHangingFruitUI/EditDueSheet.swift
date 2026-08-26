@@ -27,12 +27,12 @@ struct EditDueSheet: View {
                     }
 
                     if overrideDate != nil, let original = assignment.dueAt {
-                        Text("Originally due \(Self.format(original))")
+                        Text("originally due \(Self.format(original))")
                             .font(.geist(12))
                             .foregroundStyle(.secondary)
                     }
 
-                    DatePicker("Due", selection: $draft, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("due", selection: $draft, displayedComponents: [.date, .hourAndMinute])
                         .datePickerStyle(.graphical)
 
                     if overrideDate != nil {
@@ -40,7 +40,7 @@ struct EditDueSheet: View {
                             overrideDate = nil
                             dismiss()
                         } label: {
-                            Label("Reset to original due date", systemImage: "arrow.counterclockwise")
+                            Label("reset to original due date", systemImage: "arrow.counterclockwise")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -48,16 +48,16 @@ struct EditDueSheet: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("Edit Due Date")
+            .navigationTitle("edit due date")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button("save") {
                         overrideDate = draft
                         dismiss()
                     }

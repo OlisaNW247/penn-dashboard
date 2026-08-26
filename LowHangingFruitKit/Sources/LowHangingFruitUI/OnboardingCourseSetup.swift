@@ -315,14 +315,14 @@ struct OnboardingCourseSetupPane: View {
                 // are already saved, since every control writes as it is
                 // touched rather than on some final commit.
                 Button(action: finish) {
-                    Text("Skip setup")
+                    Text("skip setup")
                         .font(.lhfSans(12, weight: .semibold))
                         .foregroundStyle(Color.v2DateText)
                         .underline()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Skip class setup")
-                .accessibilityHint("Goes to your dashboard. Every class keeps its default reminders.")
+                .accessibilityLabel("skip class setup")
+                .accessibilityHint("goes to your dashboard. every class keeps its default reminders.")
             }
 
             // A plain proportion rather than a step-by-step dot row: a student
@@ -360,7 +360,7 @@ struct OnboardingCourseSetupPane: View {
                 .font(.lhfSerif(26))
                 .foregroundStyle(Color.v2Ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("How should this class reach you?")
+            Text("how should this class reach you?")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -418,7 +418,7 @@ struct OnboardingCourseSetupPane: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Text("Reading this class's syllabus and announcements…")
+                Text("reading this class's syllabus and announcements…")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -430,7 +430,7 @@ struct OnboardingCourseSetupPane: View {
                 // moved on is still theirs — it lands in
                 // `state.canvasRequirementSuggestions` and stays reachable
                 // from Settings → Tasks.
-                Text("Canvas is taking its time. You don't have to wait — carry on, and anything it finds will be waiting in Settings → Tasks.")
+                Text("canvas is taking its time. you don't have to wait. carry on, and anything it finds will be waiting in settings → tasks.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2CourseCode)
                     .fixedSize(horizontal: false, vertical: true)
@@ -502,7 +502,7 @@ struct OnboardingCourseSetupPane: View {
                         state.addCanvasSuggestion(suggestion)
                         decisions[suggestion.id] = .added
                     } label: {
-                        Text("Add it")
+                        Text("add it")
                             .font(.lhfSans(12, weight: .semibold))
                             .foregroundStyle(Color.v2ToggleActiveTx)
                             .padding(.horizontal, 16)
@@ -510,14 +510,14 @@ struct OnboardingCourseSetupPane: View {
                             .background(Capsule().fill(Color.v2Ink))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add \(suggestion.title) for \(course)")
+                    .accessibilityLabel("add \(suggestion.title) for \(course)")
                     .accessibilityHint(Self.scheduleLabel(for: suggestion))
 
                     Button {
                         state.dismissCanvasSuggestion(suggestion)
                         decisions[suggestion.id] = .skipped
                     } label: {
-                        Text("Not this one")
+                        Text("not this one")
                             .font(.lhfSans(12, weight: .medium))
                             .foregroundStyle(Color.v2DateText)
                             .padding(.horizontal, 14)
@@ -525,7 +525,7 @@ struct OnboardingCourseSetupPane: View {
                             .background(Capsule().fill(Color.v2Ink.opacity(0.07)))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Skip \(suggestion.title) for \(course)")
+                    .accessibilityLabel("skip \(suggestion.title) for \(course)")
                 }
             }
         }
@@ -677,7 +677,7 @@ struct OnboardingCourseSetupPane: View {
                 }
 
                 if offsets.isEmpty {
-                    Text("No advance reminders for this class. You'll still see it on your dashboard.")
+                    Text("no advance reminders for this class. you'll still see it on your dashboard.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -718,7 +718,7 @@ struct OnboardingCourseSetupPane: View {
                 Button {
                     index -= 1
                 } label: {
-                    Text("Back")
+                    Text("back")
                         .font(.lhfSans(14, weight: .medium))
                         .foregroundStyle(Color.v2DateText)
                         .padding(.horizontal, 6)
@@ -827,7 +827,7 @@ struct OnboardingCourseSetupPane: View {
     /// (docs/CANVAS_LOGIN_HARDENING.md item 3b) sees this every time, and has
     /// done nothing wrong — so it names the limitation and moves on rather than
     /// asking them to go and fix something.
-    private static let noSessionMessage = "We couldn't check your syllabus for weekly readings or check-ins — that needs a Canvas login. You can still set reminders below, and add recurring work later from Settings → Tasks."
+    private static let noSessionMessage = "We couldn't check your syllabus for weekly readings or check-ins. that needs a Canvas login. You can still set reminders below, and add recurring work later from Settings → Tasks."
 
     private func runScan(cookies: [HTTPCookie]) async {
         scan = .scanning
@@ -855,7 +855,7 @@ struct OnboardingCourseSetupPane: View {
         // since it returns nothing.
         scan = state.isCanvasDiscoveryConnected
             ? .finished
-            : .unavailable("Canvas didn't answer when we looked for weekly readings and check-ins. Nothing is lost — you can set reminders below, and try again later from Settings → Tasks.")
+            : .unavailable("Canvas didn't answer when we looked for weekly readings and check-ins. Nothing is lost. you can set reminders below, and try again later from Settings → Tasks.")
     }
 
     // MARK: Chrome

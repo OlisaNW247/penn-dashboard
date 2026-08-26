@@ -242,7 +242,7 @@ final class NotificationScheduler: ObservableObject {
             content.title = change.isNewlyGraded
                 ? "📊 \(change.course) grade posted"
                 : "📊 \(change.course) grade updated"
-            content.body = "\(change.title) — \(Self.formatScore(change))"
+            content.body = "\(change.title). \(Self.formatScore(change))"
             content.sound = .default
             return UNNotificationRequest(
                 identifier: "grade:\(change.assignmentID):\(change.earned)",
@@ -512,7 +512,7 @@ final class NotificationScheduler: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = "What's due"
         content.body = count == 0
-            ? "Nothing due in the next 24 hours — go enjoy life."
+            ? "nothing due in the next 24 hours. go enjoy life."
             : "\(count) assignment\(count == 1 ? "" : "s") due in the next 24 hours."
         content.sound = .default
 

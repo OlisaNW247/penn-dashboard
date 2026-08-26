@@ -17,7 +17,7 @@ import AppKit
 /// settings in Profile will inherit from and override.
 ///
 /// In v4 this is the root of the **Settings tab**, which is where its
-/// `NavigationStack` comes from (`MainTabView` supplies one per tab). It still
+/// `NavigationStack` comes from (the dashboard's stack supplies one). It still
 /// owns **no** stack of its own — nesting one would strand `Grade Watcher`'s
 /// link below it, exactly as it would have when this was a push. It is still
 /// reachable as a push too, via `ContentView.DashRoute.settings`, which the
@@ -33,8 +33,6 @@ struct SettingsPage: View {
     @State private var disconnecting: DisconnectTarget?
     /// "Paste your Canvas calendar link" fallback, also reachable from
     /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
-    @State private var showPasteFeedLink = false
-    @State private var didCopyDiagnostics = false
 
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
@@ -56,88 +54,47 @@ struct SettingsPage: View {
             // a tab, and a Settings section wearing the same label would read
             // as a shortcut to it. The field itself hasn't moved — a name is a
             // preference, and Profile is about classes.
-            Section("Your name") {
-                TextField("Your name", text: Binding(
+            Section("your name") {
+                TextField("your name", text: Binding(
                     get: { state.userName },
                     set: { state.updateName($0) }
                 ))
             }
 
+            // One row per source, connect or disconnect on the right. The
+            // paste-a-calendar-link fallback moved out of here: it belongs on
+            // the path where a login is actually failing (onboarding), not in
+            // a list of accounts, where it read as a third thing to connect.
             Section {
-                statusRow(label: "Canvas",
-                          connected: state.isCanvasConnected,
-                          working: state.isLoading || state.isCanvasDiscoveryLoading)
-
                 if state.isPreviewMode {
-                    // In the demo every "Connect…" row runs `restartOnboarding()`,
-                    // which silently drops preview mode and throws whoever tapped
-                    // it at the Penn SSO wall — with no way back, since the
-                    // preview door is gated behind `hasSeenIntro`. That is a trap
-                    // for a reviewer and merely baffling for a student who tapped
-                    // Preview out of curiosity. One clearly-labelled exit instead,
-                    // so leaving the demo is always a deliberate act.
+                    // In the demo every connect action runs `restartOnboarding()`,
+                    // which drops preview mode and throws whoever tapped it at the
+                    // Penn SSO wall with no way back. One clearly labelled exit
+                    // instead, so leaving the demo is always deliberate.
                     Button {
                         dismiss()
                         state.restartOnboarding()
                     } label: {
-                        Label("Exit preview and connect my Canvas", systemImage: "arrow.right.circle")
+                        Text("exit preview")
                     }
                 } else {
-                    if state.isCanvasConnected {
-                        Button(role: .destructive) {
-                            disconnecting = .canvas
-                        } label: {
-                            Label("Disconnect Canvas", systemImage: "link.badge.plus")
-                        }
-                    } else {
-                        Button {
-                            dismiss()
-                            state.restartOnboarding()
-                        } label: {
-                            Label("Connect Canvas", systemImage: "link")
-                        }
-                    }
-
-                    // The escape hatch for a login that won't complete: paste
-                    // the calendar feed URL straight out of Canvas. Stays
-                    // inside the non-preview branch — a preview session has no
-                    // real feed to point at, and offering one there would put
-                    // the reviewer back at the wall the branch above exists to
-                    // keep them away from.
-                    Button {
-                        showPasteFeedLink = true
-                    } label: {
-                        Label("Paste calendar link instead", systemImage: "link.badge.plus")
-                    }
-
-                    statusRow(label: "Gradescope",
-                              connected: state.isGradescopeConnected,
-                              working: state.isGradescopeLoading)
-
-                    Button {
-                        dismiss()
-                        state.restartOnboarding()
-                    } label: {
-                        Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
-                              systemImage: "link")
-                    }
-
-                    if state.isGradescopeConnected {
-                        Button(role: .destructive) {
-                            disconnecting = .gradescope
-                        } label: {
-                            Label("Disconnect Gradescope", systemImage: "link.badge.plus")
-                        }
-                    }
+                    accountRow(label: "canvas",
+                               connected: state.isCanvasConnected,
+                               working: state.isLoading || state.isCanvasDiscoveryLoading,
+                               disconnect: .canvas)
+                    accountRow(label: "gradescope",
+                               connected: state.isGradescopeConnected,
+                               working: state.isGradescopeLoading,
+                               disconnect: .gradescope)
                 }
             } header: {
-                Text("Account")
+                Text("accounts")
             } footer: {
-                Text("Disconnecting erases that service\u{2019}s saved login from this device. LHF has no account and no server \u{2014} everything it knows lives on your phone.")
+                Text("everything stays on your phone.")
             }
 
-            Section("Appearance") {
-                Picker("Appearance", selection: Binding(
+            Section("appearance") {
+                Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
                     set: { state.setAppearanceMode($0) }
                 )) {
@@ -150,28 +107,26 @@ struct SettingsPage: View {
             }
 
             if FeatureFlags.gradeWatcher {
-                Section("Grades") {
+                Section("grades") {
                     NavigationLink {
                         GradeWatcherView(store: state.gradeWatcher)
                     } label: {
-                        Label("Grade Watcher", systemImage: "chart.bar.fill")
+                        Label("grade watcher", systemImage: "chart.bar.fill")
                     }
                 }
             }
 
-            Section("Tasks") {
+            Section("tasks") {
                 Button {
                     showRecurring = true
                 } label: {
-                    Label("Add recurring task", systemImage: "calendar.badge.plus")
+                    Label("add recurring task", systemImage: "calendar.badge.plus")
                 }
             }
 
             remindersSection
 
             storageSection
-
-            diagnosticsSection
 
             if let notice = state.syncNotice ?? state.error {
                 Section {
@@ -181,21 +136,18 @@ struct SettingsPage: View {
                 }
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("settings")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
         }
-        .sheet(isPresented: $showPasteFeedLink) {
-            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
-        }
         .alert(item: $disconnecting) { target in
             Alert(
-                title: Text("Disconnect \(target.label)?"),
+                title: Text("disconnect \(target.label)?"),
                 message: Text(target.message),
-                primaryButton: .destructive(Text("Disconnect")) {
+                primaryButton: .destructive(Text("disconnect")) {
                     switch target {
                     case .canvas:     state.disconnectCanvas()
                     case .gradescope: state.disconnectGradescope()
@@ -220,18 +172,18 @@ struct SettingsPage: View {
     @ViewBuilder
     private var storageSection: some View {
         if let stats = state.assignmentStore?.stats() {
-            Section("Storage") {
-                LabeledContent("Saved assignments", value: "\(stats.total)")
-                LabeledContent("Canvas / Gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
-                LabeledContent("Finished (kept forever)", value: "\(stats.finished)")
+            Section("storage") {
+                LabeledContent("saved", value: "\(stats.total)")
+                LabeledContent("canvas / gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
+                LabeledContent("finished", value: "\(stats.finished)")
                 if stats.withScores > 0 {
-                    LabeledContent("With a saved score", value: "\(stats.withScores)")
+                    LabeledContent("with a score", value: "\(stats.withScores)")
                 }
                 if stats.goneFromFeed > 0 {
-                    LabeledContent("Retained after leaving the feed", value: "\(stats.goneFromFeed)")
+                    LabeledContent("kept after leaving canvas", value: "\(stats.goneFromFeed)")
                 }
                 if let earliest = stats.earliestFirstSeen {
-                    LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
+                    LabeledContent("tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
                 // Three states, not two. A store can be perfectly on-disk and
                 // still be failing every write, and telling that user their
@@ -242,7 +194,7 @@ struct SettingsPage: View {
                         ? (stats.failedSaveCount == 0
                             ? "Saved on this device."
                             : "Saved on this device, but recent changes didn't stick.")
-                        : "Not saving — assignments will be lost when the app quits.",
+                        : "not saving. assignments will be lost when the app quits.",
                     systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .font(.lhfSans(12))
@@ -277,18 +229,18 @@ struct SettingsPage: View {
     /// student sets once, not the per-course tuning they revisit.
     @ViewBuilder
     private var remindersSection: some View {
-        Section("Reminders") {
-            Toggle("Due-date reminders", isOn: Binding(
+        Section("reminders") {
+            Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
                 set: { newValue in Task { await scheduler.setEnabled(newValue) } }
             ))
 
             if scheduler.isEnabled {
                 if scheduler.authStatus == .denied {
-                    Label("Notifications are off in System Settings.", systemImage: "bell.slash")
+                    Label("notifications are off in system settings.", systemImage: "bell.slash")
                         .font(.lhfSans(12))
                         .foregroundStyle(.secondary)
-                    Button("Open Settings") { openSystemNotificationSettings() }
+                    Button("open settings") { openSystemNotificationSettings() }
                 } else {
                     ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
                         Toggle(offset.label, isOn: Binding(
@@ -297,12 +249,12 @@ struct SettingsPage: View {
                         ))
                     }
 
-                    Toggle("Daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
+                    Toggle("daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
                         get: { scheduler.digestEnabled },
                         set: { scheduler.setDigestEnabled($0) }
                     ))
                     if scheduler.digestEnabled {
-                        DatePicker("Digest time", selection: digestTimeBinding,
+                        DatePicker("digest time", selection: digestTimeBinding,
                                    displayedComponents: .hourAndMinute)
                     }
                 }
@@ -310,34 +262,7 @@ struct SettingsPage: View {
         }
     }
 
-    /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
-    /// meant to be pasted into a support message when Canvas login is stuck.
-    /// Contains no credentials, cookie values, or the ICS feed URL/token —
-    /// see `DiagnosticsReport`'s doc comment for exactly what's included.
-    private var diagnosticsSection: some View {
-        Section {
-            Button {
-                copyDiagnostics()
-            } label: {
-                Label(didCopyDiagnostics ? "Copied" : "Copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
-            }
-        } header: {
-            Text("Troubleshooting")
-        } footer: {
-            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. Paste it when asking for help with a stuck Canvas login.")
-        }
-    }
 
-    private func copyDiagnostics() {
-        let report = DiagnosticsReport.generate(state: state)
-        #if canImport(UIKit)
-        UIPasteboard.general.string = report
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(report, forType: .string)
-        #endif
-        didCopyDiagnostics = true
-    }
 
     private var digestTimeBinding: Binding<Date> {
         Binding(
@@ -358,7 +283,14 @@ struct SettingsPage: View {
 #endif
     }
 
-    private func statusRow(label: String, connected: Bool, working: Bool) -> some View {
+    /// One source, with its action on the right. Connected state is carried by
+    /// the action word itself rather than a separate "Connected" label: the row
+    /// only ever offers the one move that applies, so a second status string
+    /// was saying the same thing twice.
+    private func accountRow(label: String,
+                            connected: Bool,
+                            working: Bool,
+                            disconnect target: DisconnectTarget) -> some View {
         HStack(spacing: 8) {
             if working {
                 ProgressView().controlSize(.small)
@@ -368,9 +300,17 @@ struct SettingsPage: View {
             }
             Text(label)
             Spacer()
-            Text(connected ? "Connected" : "Not connected")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
+            if connected {
+                Button("disconnect", role: .destructive) { disconnecting = target }
+                    .buttonStyle(.borderless)
+            } else {
+                Button("connect") {
+                    dismiss()
+                    state.restartOnboarding()
+                }
+                .buttonStyle(.borderless)
+            }
         }
+        .accessibilityElement(children: .combine)
     }
 }

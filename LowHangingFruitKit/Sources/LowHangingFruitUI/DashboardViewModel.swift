@@ -24,9 +24,9 @@ struct DashItem: Identifiable, Equatable {
 // MARK: – Toggle tabs
 
 enum DashFilter: String, CaseIterable, Identifiable {
-    case thisWeek = "This week"
-    case all      = "All"
-    case done     = "Done"
+    case thisWeek = "this week"
+    case all      = "all"
+    case done     = "done"
     var id: String { rawValue }
 }
 
@@ -205,19 +205,19 @@ final class DashboardViewModel: ObservableObject {
 
         var sections: [DashSection] = []
         if includeOverdue && !overdue.isEmpty {
-            sections.append(.init(id: "overdue", label: "OVERDUE",
+            sections.append(.init(id: "overdue", label: "overdue",
                                   labelColor: .v2SpineRed, items: overdue))
         }
         if !today.isEmpty {
-            sections.append(.init(id: "today", label: "TODAY",
+            sections.append(.init(id: "today", label: "today",
                                   labelColor: .v2SectionMuted, items: today))
         }
         if !rest.isEmpty {
-            sections.append(.init(id: "rest", label: includeLater ? "THIS WEEK" : "REST OF WEEK",
+            sections.append(.init(id: "rest", label: includeLater ? "this week" : "rest of week",
                                   labelColor: .v2SectionMuted, items: rest))
         }
         if includeLater && !later.isEmpty {
-            sections.append(.init(id: "later", label: "LATER",
+            sections.append(.init(id: "later", label: "later",
                                   labelColor: .v2SectionMuted, items: later))
         }
         return sections
@@ -261,12 +261,12 @@ final class DashboardViewModel: ObservableObject {
 
         var sections: [DashSection] = []
         if !thisWeek.isEmpty {
-            sections.append(.init(id: "doneWeek", label: "THIS WEEK",
+            sections.append(.init(id: "doneWeek", label: "this week",
                                   labelColor: .v2SectionMuted, items: thisWeek,
                                   dayLabel: weekdayLabel))
         }
         if !semester.isEmpty {
-            sections.append(.init(id: "doneSemester", label: "EARLIER THIS SEMESTER",
+            sections.append(.init(id: "doneSemester", label: "earlier this semester",
                                   labelColor: .v2SectionMuted, items: semester,
                                   dayLabel: dateLabel))
         }

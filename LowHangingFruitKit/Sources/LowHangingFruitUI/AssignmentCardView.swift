@@ -35,7 +35,7 @@ struct AssignmentCardView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Double tap to mark complete")
+                .accessibilityHint("double tap to mark complete")
 
                 Button { onEdit() } label: {
                     Image(systemName: "calendar")
@@ -46,8 +46,8 @@ struct AssignmentCardView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 6)
-                .help("Adjust due date")
-                .accessibilityLabel("Adjust due date")
+                .help("adjust due date")
+                .accessibilityLabel("adjust due date")
             }
             .background(Color.v2Card)
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))

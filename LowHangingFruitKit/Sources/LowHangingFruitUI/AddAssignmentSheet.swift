@@ -24,33 +24,33 @@ struct AddAssignmentSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Title", text: $title)
-                    TextField("Course (optional)", text: $course)
+                    TextField("title", text: $title)
+                    TextField("course (optional)", text: $course)
                 }
 
                 Section {
                     DatePicker(repeatsWeekly ? "First due" : "Due",
                                selection: $dueDate,
                                displayedComponents: [.date, .hourAndMinute])
-                    Toggle("Repeats weekly", isOn: $repeatsWeekly)
+                    Toggle("repeats weekly", isOn: $repeatsWeekly)
                 } footer: {
                     if repeatsWeekly {
-                        Text("Repeats every \(weekdayName(dueDate)) at \(timeString(dueDate)).")
+                        Text("repeats every \(weekdayName(dueDate)) at \(timeString(dueDate)).")
                     } else {
-                        Text("A one-time assignment. The sync never touches items you add.")
+                        Text("a one-time assignment. the sync never touches items you add.")
                     }
                 }
             }
-            .navigationTitle("New assignment")
+            .navigationTitle("new assignment")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { add() }.disabled(!canAdd)
+                    Button("add") { add() }.disabled(!canAdd)
                 }
             }
         }

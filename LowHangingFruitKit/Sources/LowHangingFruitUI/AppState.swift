@@ -17,8 +17,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .light: return "Light"
-        case .dark:  return "Dark"
+        case .light: return "light"
+        case .dark:  return "dark"
         }
     }
 
@@ -642,7 +642,7 @@ final class AppState: ObservableObject {
                 let result = store.reconcile(fetched, source: .canvas)
                 canvasItems = result.items.sorted(by: Self.byDueDate)
                 if result.wasSuspectedPartial {
-                    syncNotice = "Couldn't fully refresh Canvas just now — showing your saved assignments."
+                    syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
                 }
                 // Rows this reconcile just created may be the ones a carried-over
                 // completion has been waiting for.

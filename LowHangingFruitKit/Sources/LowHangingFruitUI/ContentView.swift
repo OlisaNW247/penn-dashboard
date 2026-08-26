@@ -18,18 +18,6 @@ struct ContentView: View {
     /// booleans so the screenshot flag can open Settings directly.
     @State private var path: [DashRoute] = []
 
-    /// Which tab the app is showing, owned by `MainTabView`. The dashboard needs
-    /// write access for one reason — the header's gear switches to the Settings
-    /// tab rather than pushing a second copy of Settings (see `header`) — and
-    /// read access for another: coming *back* to the dashboard from Profile is
-    /// now the moment class edits have to be reflected in the list, the way
-    /// popping the pushed Settings page used to be.
-    ///
-    /// Defaulted to a constant so `ContentView` still stands up on its own in
-    /// `#Preview` and in tests without a tab bar around it. In that case the
-    /// gear is inert, which is correct: there is no tab to switch to.
-    @Binding private var selectedTab: MainTab
-
     /// Where the header's buttons lead. Both are pushes onto the dashboard's own
     /// stack, so Settings and Grades are full screens with a back button rather
     /// than cards presented over the list.
@@ -43,6 +31,7 @@ struct ContentView: View {
     /// frame it always did — now with the tab bar underneath it.
     enum DashRoute: Hashable {
         case settings
+        case profile
         case grades
         case report(courseID: String, courseName: String)
     }
@@ -53,10 +42,8 @@ struct ContentView: View {
     /// activation covers the "I just opened the app" case.
     private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
-    init(previewVM: DashboardViewModel? = nil,
-         selectedTab: Binding<MainTab> = .constant(.dashboard)) {
+    init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
-        _selectedTab = selectedTab
         #if DEBUG
         // Screenshot seam: pick the initial tab from launch flags. (Settings is
         // opened from onAppear, after data loads, so it presents reliably.)
@@ -105,6 +92,10 @@ struct ContentView: View {
                 switch route {
                 case .settings:
                     SettingsPage()
+                        .environmentObject(state)
+                        .environmentObject(scheduler)
+                case .profile:
+                    ProfileView()
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .grades:
@@ -187,16 +178,6 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
-        // The same moment, reached the other way. Class toggles, renames and
-        // deletions moved to the Profile *tab* in v4, and switching tabs pops
-        // nothing — `path` never changes, so the hook above never fires. Without
-        // this, a student could turn a class off in Profile, tap Dashboard, and
-        // still see its assignments until something else happened to reload.
-        .onChange(of: selectedTab) { _, tab in
-            guard tab == .dashboard else { return }
-            vm.reload(preservingEdits: true)
-            rescheduleNotifications()
-        }
     }
 
     /// Floating "+" to add a user-created assignment (one-off or recurring).
@@ -210,7 +191,7 @@ struct ContentView: View {
                 .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Add assignment")
+        .accessibilityLabel("add assignment")
         .padding(.trailing, 22)
         .padding(.bottom, 24)
     }
@@ -237,9 +218,9 @@ struct ContentView: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Your Canvas login needs a refresh")
+                    Text("your canvas login needs a refresh")
                         .font(.lhfSans(12, weight: .semibold))
-                    Text("Reconnect to keep automatic submission tracking accurate.")
+                    Text("reconnect to keep automatic submission tracking accurate.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -253,34 +234,25 @@ struct ContentView: View {
             .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Your Canvas login needs a refresh. Reconnect Canvas.")
+        .accessibilityLabel("your canvas login needs a refresh. reconnect canvas.")
     }
 
     // MARK: Header
 
-    /// Wordmark, greeting and date on the left; the two destinations stacked on
-    /// the right, where the weekly ring used to sit. There's no manual reload —
-    /// opening the app auto-refreshes — so these are the only header controls.
+    /// Wordmark, greeting and date on the left; the destinations on the right,
+    /// where the weekly ring used to sit. There's no manual reload button:
+    /// opening the app auto-refreshes, so these are the only header controls.
     ///
-    /// **Why the gear stays now that Settings is a tab.** Two arguments pulled
-    /// the other way and both lose. The first is redundancy: the tab bar is
-    /// always on screen, so a second door is arguably clutter. But the gear is
-    /// where a year of muscle memory points, it is what `docs/appstore/
-    /// REVIEW_NOTES.md` tells an App Store reviewer to look for ("Settings —
-    /// the gear icon"), and the cost of keeping it is one 48pt circle. The
-    /// second is the real hazard: if the gear kept *pushing* `SettingsPage`
-    /// onto the dashboard's stack, the app would have two live, independent
-    /// copies of Settings — one buried in the Dashboard tab's history, one at
-    /// the root of the Settings tab — each with its own scroll position, its
-    /// own half-typed rename, its own alert. That is the "back button went to
-    /// the wrong screen" bug, pre-built.
+    /// v4 briefly made profile and settings tabs. They are pushed routes again,
+    /// off one stack, which is what the gear had always been. The tab bar cost
+    /// a permanent strip of screen on a list that wants the height, and put two
+    /// screens a student visits at the start of a semester next to the one they
+    /// open every day.
     ///
-    /// So: the affordance stays, the navigation changes. The gear now *selects
-    /// the Settings tab*, which is the same gesture the tab bar performs, so
-    /// there is exactly one Settings in existence at any moment.
-    ///
-    /// Grades keeps pushing, because Grades genuinely is a drill-down off the
-    /// dashboard rather than a peer of it — see `MainTab`.
+    /// One stack also means one Settings. When the gear pushed while a Settings
+    /// tab existed, the app could hold two live independent copies, each with
+    /// its own scroll position and half-typed rename, which is the "back button
+    /// went to the wrong screen" bug pre-built.
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
@@ -303,17 +275,18 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 if FeatureFlags.gradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades")
                 }
-                tabButton(to: .settings, icon: "gearshape.fill", title: "Settings")
+                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile")
+                navButton(to: .settings, icon: "gearshape.fill", title: "settings")
             }
             .padding(.top, 2)
         }
     }
 
-    /// Matching circular icons, side by side, so neither destination reads as
-    /// secondary to the other; Settings sits in the corner. Labels live in the
-    /// accessibility layer only.
+    /// Matching circular icons in the top right. Every one is a push onto the
+    /// dashboard's own stack, so profile and settings are full screens with a
+    /// back button. Labels live in the accessibility layer only.
     private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
         NavigationLink(value: route) {
             headerIcon(icon)
@@ -323,22 +296,6 @@ struct ContentView: View {
         .help(title)
     }
 
-    /// The gear. Identical to `navButton` from the outside — same circle, same
-    /// corner — but it moves the tab bar's selection instead of pushing, for the
-    /// reasons in `header`'s comment. The accessibility hint says so out loud,
-    /// because a control that changes tabs when everything beside it pushes is
-    /// exactly the kind of surprise VoiceOver users get no warning about.
-    private func tabButton(to tab: MainTab, icon: String, title: String) -> some View {
-        Button {
-            selectedTab = tab
-        } label: {
-            headerIcon(icon)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint("Switches to the \(title) tab")
-        .help(title)
-    }
 
     private func headerIcon(_ icon: String) -> some View {
         Image(systemName: icon)
@@ -462,7 +419,7 @@ struct ContentView: View {
                     .accessibilityHidden(true)
             }
             VStack(spacing: 8) {
-                Text("Go enjoy Life")
+                Text("go enjoy life")
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
                 Text("you're all caught up")
@@ -479,14 +436,14 @@ struct ContentView: View {
     private var loadingState: some View {
         VStack(spacing: 14) {
             ProgressView()
-            Text("Loading your assignments…")
+            Text("loading your assignments…")
                 .font(.lhfSans(15))
                 .foregroundStyle(Color.v2DateText)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 90)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Loading your assignments")
+        .accessibilityLabel("loading your assignments")
     }
 
     /// Full-screen failure state, shown only when a sync failed AND there's
@@ -497,7 +454,7 @@ struct ContentView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34, weight: .regular))
                 .foregroundStyle(Color.v2SpineRed)
-            Text("Couldn't sync")
+            Text("couldn't sync")
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
             Text(message)
@@ -507,7 +464,7 @@ struct ContentView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 28)
             Button { Task { await refresh() } } label: {
-                Text("Try again")
+                Text("try again")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .padding(.horizontal, 22)
@@ -537,7 +494,7 @@ struct ContentView: View {
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button("Retry") { Task { await refresh() } }
+                Button("retry") { Task { await refresh() } }
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.v2SpineRed)
                     .buttonStyle(.plain)
@@ -549,7 +506,7 @@ struct ContentView: View {
                     .fill(Color.v2SpineRed.opacity(0.10))
             )
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Sync failed. \(error). Double-tap to retry.")
+            .accessibilityLabel("sync failed. \(error). double-tap to retry.")
             .accessibilityAddTraits(.isButton)
         }
     }

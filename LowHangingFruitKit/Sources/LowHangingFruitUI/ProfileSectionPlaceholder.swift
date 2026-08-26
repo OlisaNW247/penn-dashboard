@@ -38,7 +38,7 @@ struct ProfileSectionPlaceholder: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("COMING IN V4")
+            Text("coming in v4")
                 .font(.lhfSans(11, weight: .semibold))
                 .tracking(1)
                 .foregroundStyle(Color.v2SpineAmber)
@@ -53,6 +53,6 @@ struct ProfileSectionPlaceholder: View {
         // a decorative capsule is exactly the kind of thing a screen reader
         // would otherwise announce last or not at all.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(headline). \(detail) Coming in v4.")
+        .accessibilityLabel("\(headline). \(detail) coming in v4.")
     }
 }

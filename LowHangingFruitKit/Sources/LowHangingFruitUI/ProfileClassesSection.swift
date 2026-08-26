@@ -61,9 +61,9 @@ struct ProfileClassesSection: View {
                 }
             }
         } header: {
-            Text("Classes")
+            Text("classes")
         } footer: {
-            Text("Turn a class off to hide its assignments and its reminders. Swipe to rename or delete \u{2014} renaming only changes the label, so grades and reminders keep working.")
+            Text("turning a class off hides its assignments and reminders. swipe to rename or delete. renaming only changes the label.")
         }
         // The alert used to live on `SettingsPage`'s whole `Form`, because the
         // state driving it lived on the page. It follows the state here. It is
@@ -74,16 +74,16 @@ struct ProfileClassesSection: View {
             get: { renamingCourse != nil },
             set: { if !$0 { renamingCourse = nil } }
         )) {
-            TextField("Class name", text: $renameDraft)
-            Button("Save") {
+            TextField("class name", text: $renameDraft)
+            Button("save") {
                 if let course = renamingCourse {
                     state.renameCourse(course, to: renameDraft)
                 }
                 renamingCourse = nil
             }
-            Button("Cancel", role: .cancel) { renamingCourse = nil }
+            Button("cancel", role: .cancel) { renamingCourse = nil }
         } message: {
-            Text("Shown in place of \(renamingCourse ?? "the class code"). Leave it empty to go back to the original.")
+            Text("shown instead of \(renamingCourse ?? "the class code"). leave it empty to reset.")
         }
     }
 
@@ -97,10 +97,10 @@ struct ProfileClassesSection: View {
     /// report and a shrug.
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No classes yet")
+            Text("no classes yet")
                 .font(.lhfSans(15, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Classes appear here once Canvas has posted something for them \u{2014} an assignment, a quiz, anything with a due date. A course that hasn\u{2019}t posted yet stays invisible until it does.")
+            Text("classes appear once canvas posts something with a due date. add one below if yours hasn\u{2019}t yet.")
                 .font(.lhfSans(13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -122,12 +122,12 @@ struct ProfileClassesSection: View {
             Button(role: .destructive) {
                 state.deleteCourse(course)
             } label: {
-                Label("Delete", systemImage: "trash")
+                Label("delete", systemImage: "trash")
             }
             Button {
                 beginRename(course)
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Label("rename", systemImage: "pencil")
             }
             .tint(Color.v2DateText)
         }
@@ -135,19 +135,19 @@ struct ProfileClassesSection: View {
             Button {
                 beginRename(course)
             } label: {
-                Label("Rename class", systemImage: "pencil")
+                Label("rename class", systemImage: "pencil")
             }
             if state.hasCustomName(course) {
                 Button {
                     state.renameCourse(course, to: "")
                 } label: {
-                    Label("Reset to \(course)", systemImage: "arrow.uturn.backward")
+                    Label("reset to \(course)", systemImage: "arrow.uturn.backward")
                 }
             }
             Button(role: .destructive) {
                 state.deleteCourse(course)
             } label: {
-                Label("Delete class", systemImage: "trash")
+                Label("delete class", systemImage: "trash")
             }
         }
     }
@@ -165,14 +165,14 @@ struct ProfileClassesSection: View {
                         .font(.lhfSans(14))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Restore") {
+                    Button("restore") {
                         state.restoreCourse(course)
                     }
                     .font(.lhfSans(13))
                 }
             }
         } label: {
-            Label("Deleted classes (\(deletedCourses.count))", systemImage: "trash")
+            Label("deleted (\(deletedCourses.count))", systemImage: "trash")
                 .font(.lhfSans(13))
                 .foregroundStyle(.secondary)
         }

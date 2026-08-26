@@ -57,14 +57,14 @@ struct GradeCategoryRow: View {
     }
 
     private var weightText: String {
-        category.effectiveWeight.map { "\(formatPoints($0))%" } ?? "\u{2014}"
+        category.effectiveWeight.map { "\(formatPoints($0))%" } ?? "-"
     }
 
     @ViewBuilder
     private var editingControls: some View {
         if isEditing {
             HStack(spacing: 8) {
-                TextField("Weight %", text: $editText)
+                TextField("weight %", text: $editText)
 #if os(iOS)
                     .keyboardType(.decimalPad)
 #endif
@@ -72,14 +72,14 @@ struct GradeCategoryRow: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 90)
                     .focused($isFieldFocused)
-                    .accessibilityLabel("Manual weight percent for \(category.name)")
+                    .accessibilityLabel("manual weight percent for \(category.name)")
 
                 Button(action: save) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.v2SpineGreen)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Save weight")
+                .accessibilityLabel("save weight")
 
                 Button {
                     isEditing = false
@@ -88,7 +88,7 @@ struct GradeCategoryRow: View {
                         .foregroundStyle(Color.v2RingSub)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Cancel editing weight")
+                .accessibilityLabel("cancel editing weight")
             }
         } else {
             HStack(spacing: 14) {
@@ -97,7 +97,7 @@ struct GradeCategoryRow: View {
                     isEditing = true
                     isFieldFocused = true
                 } label: {
-                    Label("Edit weight", systemImage: "pencil")
+                    Label("edit weight", systemImage: "pencil")
                         .font(.lhfSans(10.5, weight: .medium))
                         .foregroundStyle(Color.v2SpineBlue)
                 }
@@ -107,7 +107,7 @@ struct GradeCategoryRow: View {
                     Button {
                         store.setManualWeight(courseID: courseID, categoryID: category.id, weight: nil)
                     } label: {
-                        Label("Reset to Canvas", systemImage: "arrow.uturn.backward")
+                        Label("reset to canvas", systemImage: "arrow.uturn.backward")
                             .font(.lhfSans(10.5, weight: .medium))
                             .foregroundStyle(Color.v2RingSub)
                     }

@@ -23,7 +23,7 @@ import LowHangingFruitKit
 ///   order.
 ///
 /// Three environment objects are guaranteed to any child: `AppState` and
-/// `NotificationScheduler` (both injected by `MainTabView`), plus whatever the
+/// `NotificationScheduler` (both injected by `RootView`), plus whatever the
 /// app-wide environment carries. A section that declares an `@EnvironmentObject`
 /// nobody injects crashes at first render, so anything new has to come through
 /// an existing object rather than a new one.
@@ -53,7 +53,7 @@ struct ProfileView: View {
             // you can see the courses they attach to.
             ProfileNotificationsSection()
         }
-        .navigationTitle("Profile")
+        .navigationTitle("profile")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif

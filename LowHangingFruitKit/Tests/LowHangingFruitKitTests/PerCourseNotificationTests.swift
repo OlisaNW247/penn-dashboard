@@ -49,7 +49,7 @@ struct PerCourseNotificationTests {
 
             // And the digest counts nothing from the muted class: the only item
             // inside the next 24 hours belongs to it.
-            #expect(digestBody(scheduler, items, now, prefs)?.contains("Nothing due") == true)
+            #expect(digestBody(scheduler, items, now, prefs)?.contains("nothing due") == true)
         }
     }
 

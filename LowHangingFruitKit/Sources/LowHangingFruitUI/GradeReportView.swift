@@ -65,7 +65,7 @@ struct GradeReportView: View {
                             .foregroundStyle(Color.v2DateText)
                     }
                 } else {
-                    Text("No scores yet")
+                    Text("no scores yet")
                         .font(.lhfSerif(26))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -109,7 +109,7 @@ struct GradeReportView: View {
     private func landingSection(_ projection: GradeProjection) -> some View {
         ReportSection(title: "Where you land") {
             if projection.isDecided {
-                Text("Everything is graded \u{2014} this is your final grade.")
+                Text("everything is graded. this is your final grade.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
             } else {
@@ -122,7 +122,7 @@ struct GradeReportView: View {
                     )
                     LandingTile(
                         label: "At this pace",
-                        value: projection.pacePercent.map(formatPercent) ?? "\u{2014}",
+                        value: projection.pacePercent.map(formatPercent) ?? "-",
                         caption: "rest goes like so far",
                         color: .v2SpineBlue
                     )
@@ -133,7 +133,7 @@ struct GradeReportView: View {
                         color: .v2SpineGreen
                     )
                 }
-                Text("Projections, not predictions \u{2014} they assume the professor grades what\u{2019}s listed and nothing gets curved.")
+                Text("projections, not predictions. they assume the professor grades what\u{2019}s listed and nothing gets curved.")
                     .font(.lhfSans(10))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
@@ -150,7 +150,7 @@ struct GradeReportView: View {
                 let bands = cutoffs.targetBands.prefix(6)
                 let selected = targetPercent ?? defaultTarget(projection)
 
-                Picker("Target", selection: Binding(
+                Picker("target", selection: Binding(
                     get: { selected },
                     set: { targetPercent = $0 }
                 )) {
@@ -185,7 +185,7 @@ struct GradeReportView: View {
         let letter = cutoffs.band(forPercent: target)?.letter ?? formatPercent(target)
         switch requirement {
         case .alreadyReached:
-            Text("\(article(for: letter).capitalized) \(letter) is already locked in \u{2014} even a zero on everything left keeps it.")
+            Text("\(article(for: letter).capitalized) \(letter) is already locked in. even a zero on everything left keeps it.")
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2SpineGreen)
                 .fixedSize(horizontal: false, vertical: true)
@@ -200,13 +200,13 @@ struct GradeReportView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case let .unreachable(shortfall):
-            Text(String(format: "%@ %@ is out of reach \u{2014} even 100%% on everything left finishes about %.1f points short.",
+            Text(String(format: "%@ %@ is out of reach. even 100%% on everything left finishes about %.1f points short.",
                         article(for: letter).capitalized, letter, abs(shortfall)))
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2DueAmber)
                 .fixedSize(horizontal: false, vertical: true)
         case .nothingLeft:
-            Text("Nothing left to score \u{2014} the grade is final.")
+            Text("nothing left to score. the grade is final.")
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2DateText)
         }
@@ -234,7 +234,7 @@ struct GradeReportView: View {
                 )
 
                 ForEach(store.countGaps(courseID: courseID)) { gap in
-                    Text("Your syllabus lists \(gap.expected) \(gap.categoryName.lowercased()); Canvas shows \(gap.listedInCanvas). \(gap.missing) probably \(gap.missing == 1 ? "hasn\u{2019}t" : "haven\u{2019}t") been posted yet.")
+                    Text("your syllabus lists \(gap.expected) \(gap.categoryName.lowercased()); canvas shows \(gap.listedInCanvas). \(gap.missing) probably \(gap.missing == 1 ? "hasn\u{2019}t" : "haven\u{2019}t") been posted yet.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
@@ -295,11 +295,11 @@ struct GradeReportView: View {
                 attachedSyllabusBody(attached)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Canvas knows what\u{2019}s graded, not what it\u{2019}s worth. Add your syllabus and this report can use the real weights, cutoffs and assignment counts.")
+                    Text("canvas knows what\u{2019}s graded, not what it\u{2019}s worth. add your syllabus and this report can use the real weights, cutoffs and assignment counts.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Add your syllabus") { showSyllabusSetup = true }
+                    Button("add your syllabus") { showSyllabusSetup = true }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
@@ -316,18 +316,18 @@ struct GradeReportView: View {
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(1)
                 Spacer()
-                Button("Review") { showSyllabusSetup = true }
+                Button("review") { showSyllabusSetup = true }
                     .font(.lhfSans(12))
             }
 
             if let match = store.syllabusMatch(courseID: courseID) {
                 if match.isCompleteCoverage {
-                    Label("Weights from your syllabus are being used.", systemImage: "checkmark.circle.fill")
+                    Label("weights from your syllabus are being used.", systemImage: "checkmark.circle.fill")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2SpineGreen)
                 } else {
                     let applied = match.matches.filter(\.isApplied).count
-                    Label("\(applied) of \(match.matches.count) categories matched \u{2014} finish matching to use your syllabus\u{2019}s weights.",
+                    Label("\(applied) of \(match.matches.count) categories matched. finish matching to use your syllabus\u{2019}s weights.",
                           systemImage: "exclamationmark.circle")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DueAmber)
@@ -336,7 +336,7 @@ struct GradeReportView: View {
             }
 
             if attached.scheme.mentionsCurve {
-                Text("Your syllabus mentions a curve or instructor discretion, so cutoffs and projections may not hold exactly.")
+                Text("your syllabus mentions a curve or instructor discretion, so cutoffs and projections may not hold exactly.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
@@ -351,12 +351,12 @@ struct GradeReportView: View {
         VStack(alignment: .leading, spacing: 4) {
             if store.differsFromCanvas(courseID: courseID, currentPercent: breakdown.currentPercent),
                let canvasScore = store.canvasComputedScore(courseID: courseID) {
-                Text("Canvas computes \(formatPercent(canvasScore)) for this class. The difference usually means a late policy or a rule we can\u{2019}t see.")
+                Text("canvas computes \(formatPercent(canvasScore)) for this class. the difference usually means a late policy or a rule we can\u{2019}t see.")
                     .font(.lhfSans(10.5))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Last refreshed \(relativeTimeString(store.lastRefreshed)).")
+            Text("last refreshed \(relativeTimeString(store.lastRefreshed)).")
                 .font(.lhfSans(10.5))
                 .foregroundStyle(Color.v2RingSub)
         }
@@ -364,10 +364,10 @@ struct GradeReportView: View {
 
     private var emptyState: some View {
         VStack(spacing: 6) {
-            Text("No grades for this class yet.")
+            Text("no grades for this class yet.")
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
-            Text("Once Canvas has scored something, the full report shows up here.")
+            Text("once canvas has scored something, the full report shows up here.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)

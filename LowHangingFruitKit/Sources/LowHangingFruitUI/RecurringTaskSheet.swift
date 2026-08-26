@@ -24,32 +24,32 @@ struct RecurringTaskSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Recurring Assignment")
+            Text("recurring assignment")
                 .font(.title3.weight(.semibold))
 
-            TextField("Title", text: $title)
+            TextField("title", text: $title)
                 .textFieldStyle(.roundedBorder)
 
-            TextField("Course", text: $course)
+            TextField("course", text: $course)
                 .textFieldStyle(.roundedBorder)
 
-            Picker("Due day", selection: $weekday) {
+            Picker("due day", selection: $weekday) {
                 ForEach(weekdays, id: \.0) { day in
                     Text(day.1).tag(day.0)
                 }
             }
 
-            DatePicker("Due time", selection: $dueTime, displayedComponents: .hourAndMinute)
-            DatePicker("Start", selection: $startDate, displayedComponents: .date)
-            Toggle("End date", isOn: $hasEndDate)
+            DatePicker("due time", selection: $dueTime, displayedComponents: .hourAndMinute)
+            DatePicker("start", selection: $startDate, displayedComponents: .date)
+            Toggle("end date", isOn: $hasEndDate)
             if hasEndDate {
-                DatePicker("Ends", selection: $endDate, displayedComponents: .date)
+                DatePicker("ends", selection: $endDate, displayedComponents: .date)
             }
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Add") {
+                Button("cancel") { dismiss() }
+                Button("add") {
                     addTask()
                 }
                 .keyboardShortcut(.defaultAction)

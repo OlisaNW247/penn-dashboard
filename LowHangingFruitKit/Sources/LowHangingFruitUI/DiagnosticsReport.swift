@@ -30,7 +30,7 @@ enum DiagnosticsReport {
         lines.append("Canvas connect path: \(canvasConnectPath(state: state))")
         lines.append("Gradescope connected: \(state.isGradescopeConnected)")
         lines.append("")
-        lines.append("Recent login redirects (host/path/status only — no tokens or query strings):")
+        lines.append("Recent login redirects (host/path/status only. no tokens or query strings):")
         let entries = LoginDiagnosticsLog.shared.entries
         if entries.isEmpty {
             lines.append("(none recorded this session)")

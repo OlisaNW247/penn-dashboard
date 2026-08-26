@@ -3,10 +3,11 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// v4 turned the app from one `NavigationStack` into a three-tab `TabView` and
-/// moved the class list out of Settings into the new Profile tab. SwiftUI views
-/// aren't rendered by `swift test`, so what these pin down is the *seam*: the
-/// shape of the tab set, and the `AppState` reads the Profile tab is built on.
+/// v4 moved the class list out of Settings onto a Profile screen, reached from
+/// the dashboard header. (It was briefly a tab; the tab bar came back out.)
+/// SwiftUI views aren't rendered by `swift test`, so what these pin down is the
+/// *seam*: the set of routes off the dashboard, and the `AppState` reads Profile
+/// is built on.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, so every test
 /// here restores what it touched — see the note in `PreviewModeTests`.
@@ -14,22 +15,25 @@ import Testing
 @Suite("Profile tab")
 struct ProfileTabTests {
 
-    // MARK: The tab set
+    // MARK: The route set
 
-    /// Three tabs, in this order, and the dashboard is the one you land on.
+    /// Profile and settings are pushed routes off the dashboard's own stack,
+    /// which is what makes the dashboard the app's one root.
     ///
-    /// This looks like a test of an enum, and it is — deliberately. Three
-    /// later workstreams render into Profile, and the cheapest way for one of
-    /// them to quietly break the app's shape is to bolt on a fourth tab or
-    /// reorder the existing ones. Grades and the per-course report are
-    /// drill-downs off the dashboard, not peers of it, and they must not
-    /// appear here.
-    @Test("the app has exactly three tabs, dashboard first")
-    func tabSet() {
-        #expect(MainTab.allCases == [.dashboard, .profile, .settings])
-        #expect(MainTab.dashboard.rawValue == "dashboard")
-        #expect(MainTab.profile.rawValue == "profile")
-        #expect(MainTab.settings.rawValue == "settings")
+    /// This looks like a test of an enum, and it is, deliberately. Several
+    /// workstreams render into Profile, and the cheapest way for one of them to
+    /// quietly change the app's shape is to make Profile a sheet, or a tab, or
+    /// a second stack. Routes being `Hashable` and distinct is also what stops
+    /// two live copies of Settings existing at once.
+    @Test("profile and settings are distinct pushed routes off the dashboard")
+    func routeSet() {
+        let routes: Set<ContentView.DashRoute> = [.settings, .profile, .grades]
+        #expect(routes.count == 3)
+        #expect(ContentView.DashRoute.profile != ContentView.DashRoute.settings)
+        // The per-course report carries its identity, so two different courses
+        // are two different destinations rather than one reused screen.
+        #expect(ContentView.DashRoute.report(courseID: "1", courseName: "a")
+                != ContentView.DashRoute.report(courseID: "2", courseName: "a"))
     }
 
     // MARK: Preview mode, on the Profile tab

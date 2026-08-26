@@ -68,7 +68,7 @@ struct SplashView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Low Hanging Fruit")
+        .accessibilityLabel("low hanging fruit")
         .task {
             // Reduce Motion shows a brief static beat; otherwise a safety net so
             // a clip that never loads or ends can't strand the user. The cancel
@@ -216,7 +216,7 @@ private struct SplashPlayer {
             do {
                 try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
             } catch {
-                Self.logger.error("audio session setCategory(.ambient, .mixWithOthers) failed: \(error.localizedDescription, privacy: .public) — the intro clip may interrupt other apps' audio, but playback continues")
+                Self.logger.error("audio session setCategory(.ambient, .mixWithOthers) failed: \(error.localizedDescription, privacy: .public). the intro clip may interrupt other apps' audio, but playback continues")
             }
             #endif
         }

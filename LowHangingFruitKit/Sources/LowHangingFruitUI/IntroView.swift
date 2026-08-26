@@ -100,13 +100,13 @@ struct IntroView: View {
                 lhfHapticLight()
                 state.completeIntro()
             } label: {
-                Text("Skip")
+                Text("skip")
                     .font(.lhfSans(14, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip the intro")
-            .accessibilityHint("Goes straight to setup")
+            .accessibilityLabel("skip the intro")
+            .accessibilityHint("goes straight to setup")
         }
         .padding(.horizontal, 24)
         .padding(.top, 12)
@@ -224,10 +224,10 @@ struct IntroView: View {
             state.enterPreviewMode()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Just exploring?")
+                Text("just exploring?")
                     .font(.lhfSans(13))
                     .foregroundStyle(Color.v2CourseCode)
-                Text("Preview with sample data")
+                Text("preview with sample data")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
                     .underline()
@@ -239,8 +239,8 @@ struct IntroView: View {
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Preview the app with sample data")
-        .accessibilityHint("Explore a demo dashboard without logging in")
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     private var footer: some View {

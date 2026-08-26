@@ -134,7 +134,7 @@ struct OnboardingView: View {
                     skipCourseSetupLink
                         .padding(.top, 12)
                 } else {
-                    Text("Connect Canvas to build your dashboard.")
+                    Text("connect canvas to build your dashboard.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                         .multilineTextAlignment(.center)
@@ -191,13 +191,13 @@ struct OnboardingView: View {
         Button {
             showPasteFeedLink = true
         } label: {
-            Text("Or paste your Canvas calendar link instead")
+            Text("or paste your canvas calendar link instead")
                 .font(.lhfSans(11, weight: .medium))
                 .foregroundStyle(Color.v2DateText)
                 .underline()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Paste your Canvas calendar link instead of logging in")
+        .accessibilityLabel("paste your canvas calendar link instead of logging in")
     }
 
     /// Escape hatch for a stuck login (docs/CANVAS_LOGIN_DIAGNOSIS.md): clears
@@ -217,7 +217,7 @@ struct OnboardingView: View {
                 if isResettingLoginData {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("Trouble connecting? Reset login data")
+                    Text("trouble connecting? reset login data")
                         .font(.lhfSans(11, weight: .medium))
                         .foregroundStyle(Color.v2SpineRed)
                         .underline()
@@ -225,13 +225,13 @@ struct OnboardingView: View {
             }
             .buttonStyle(.plain)
             .disabled(isResettingLoginData)
-            .accessibilityLabel("Reset stored Canvas and Gradescope login data")
+            .accessibilityLabel("reset stored canvas and gradescope login data")
             .confirmationDialog(
                 "Reset login data?",
                 isPresented: $showResetConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Reset and start over", role: .destructive) {
+                Button("reset and start over", role: .destructive) {
                     didResetLoginData = false
                     isResettingLoginData = true
                     Task {
@@ -240,13 +240,13 @@ struct OnboardingView: View {
                         didResetLoginData = true
                     }
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("cancel", role: .cancel) {}
             } message: {
-                Text("Clears any stuck Canvas or Gradescope login on this device, including saved session cookies, so you can start fresh. You'll need to log in again.")
+                Text("clears any stuck canvas or gradescope login on this device, including saved session cookies, so you can start fresh. you'll need to log in again.")
             }
 
             if didResetLoginData {
-                Text("Login data cleared. Try Connect Canvas again.")
+                Text("login data cleared. try connect canvas again.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2SpineGreen)
             }
@@ -261,10 +261,10 @@ struct OnboardingView: View {
             state.enterPreviewMode()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Just exploring?")
+                Text("just exploring?")
                     .font(.lhfSans(13))
                     .foregroundStyle(Color.v2CourseCode)
-                Text("Preview with sample data")
+                Text("preview with sample data")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
                     .underline()
@@ -276,17 +276,17 @@ struct OnboardingView: View {
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Preview the app with sample data")
-        .accessibilityHint("Explore a demo dashboard without logging in")
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     private var nameCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("YOUR NAME")
+            Text("your name")
                 .font(.lhfSans(9, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(Color.v2CourseCode)
-            TextField("First name", text: $name)
+            TextField("first name", text: $name)
                 .textFieldStyle(.plain)
                 .font(.lhfSans(15))
                 .foregroundStyle(Color.v2Ink)
@@ -303,10 +303,10 @@ struct OnboardingView: View {
             Text("LHF")
                 .font(.lhfSerif(44))
                 .foregroundStyle(Color.v2Ink)
-            Text("Welcome to Low Hanging Fruit")
+            Text("welcome to low hanging fruit")
                 .font(.lhfSans(16, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Never miss another assignment")
+            Text("never miss another assignment")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -366,14 +366,14 @@ struct OnboardingView: View {
             OnboardingCourseSetup.markCompleted()
             state.completeOnboarding()
         } label: {
-            Text("Skip for now — go to dashboard")
+            Text("skip for now. go to dashboard")
                 .font(.lhfSans(12, weight: .medium))
                 .foregroundStyle(Color.v2DateText)
                 .underline()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Skip class setup and go to the dashboard")
-        .accessibilityHint("Every class keeps its default reminders")
+        .accessibilityLabel("skip class setup and go to the dashboard")
+        .accessibilityHint("every class keeps its default reminders")
     }
 
     private func stepCard(
@@ -453,7 +453,7 @@ struct OnboardingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Choose your classes")
+                    Text("choose your classes")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
                     Text(enabled
@@ -510,7 +510,7 @@ struct OnboardingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Reminders, class by class")
+                    Text("reminders, class by class")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
                     Text(enabled
@@ -535,7 +535,7 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .accessibilityLabel("Set up reminders class by class")
+        .accessibilityLabel("set up reminders class by class")
     }
 }
 
@@ -569,23 +569,23 @@ private struct LoginActionBar: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 14) {
-                Button("Reload", action: onReload)
+                Button("reload", action: onReload)
                     .buttonStyle(.plain)
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
                     .disabled(isBusy)
-                    .accessibilityHint("Reloads the current login page")
+                    .accessibilityHint("reloads the current login page")
 
-                Button("Start over", action: onStartOver)
+                Button("start over", action: onStartOver)
                     .buttonStyle(.plain)
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
                     .disabled(isBusy)
-                    .accessibilityHint("Clears this login's cookies and loads a fresh sign-in page")
+                    .accessibilityHint("clears this login's cookies and loads a fresh sign-in page")
             }
 
             HStack(spacing: 12) {
-                Button("Cancel", action: onCancel)
+                Button("cancel", action: onCancel)
                     .buttonStyle(.plain)
                     .font(.lhfSans(13, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
@@ -646,7 +646,7 @@ private struct LoginErrorCard: View {
                 .padding(.horizontal, 24)
 
             Button(action: onStartOver) {
-                Text("Start over")
+                Text("start over")
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .padding(.horizontal, 20)
@@ -657,7 +657,7 @@ private struct LoginErrorCard: View {
 
             if let onUseCalendarLinkInstead {
                 Button(action: onUseCalendarLinkInstead) {
-                    Text("Use calendar link instead")
+                    Text("use calendar link instead")
                         .font(.lhfSans(12, weight: .medium))
                         .foregroundStyle(Color.v2DateText)
                         .underline()
@@ -709,7 +709,7 @@ private struct CanvasLoginPane: View {
             } else if navObserver.detectedKnownErrorPage {
                 LoginErrorCard(
                     title: "Canvas login hit a snag",
-                    message: "Penn's sign-in page reported an error partway through. This isn't something reloading the same page will fix — start a fresh attempt, or skip the in-app login entirely.",
+                    message: "Penn's sign-in page reported an error partway through. This isn't something reloading the same page will fix. start a fresh attempt, or skip the in-app login entirely.",
                     onStartOver: startOver,
                     onUseCalendarLinkInstead: { showPasteFeedLink = true }
                 )
@@ -907,10 +907,10 @@ private struct ClassPickerPane: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
-                Text("Your classes")
+                Text("your classes")
                     .font(.lhfSerif(26))
                     .foregroundStyle(Color.v2Ink)
-                Text("Turn off any class you don't want on your dashboard or in reminders.")
+                Text("turn off any class you don't want on your dashboard or in reminders.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .multilineTextAlignment(.center)
@@ -933,7 +933,7 @@ private struct ClassPickerPane: View {
             Divider().overlay(Color.v2Divider)
 
             Button(action: onDone) {
-                Text("Done")
+                Text("done")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .frame(maxWidth: .infinity)

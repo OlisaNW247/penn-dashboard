@@ -80,9 +80,9 @@ struct ProfileNotificationsSection: View {
                 }
             }
         } header: {
-            Text("Notifications")
+            Text("notifications")
         } footer: {
-            Text("Each class starts out following your default reminder times from Settings \u{2192} Reminders. Give a class its own times only when you want it to stop following them.")
+            Text("classes follow your default times from settings unless you give them their own.")
         }
     }
 
@@ -94,10 +94,10 @@ struct ProfileNotificationsSection: View {
     /// anything owes the student an explanation at the top.
     private var remindersOffNotice: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Label("Reminders are off", systemImage: "bell.slash")
+            Label("reminders are off", systemImage: "bell.slash")
                 .font(.lhfSans(14, weight: .semibold))
                 .foregroundStyle(Color.v2SpineAmber)
-            Text("Nothing below will send anything until you turn on due-date reminders in Settings \u{2192} Reminders. What you set here is kept and takes effect when you do.")
+            Text("turn on due-date reminders in settings first. what you set here is kept until you do.")
                 .font(.lhfSans(12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -111,10 +111,10 @@ struct ProfileNotificationsSection: View {
     /// state rather than a fault.
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No classes to set up yet")
+            Text("no classes yet")
                 .font(.lhfSans(15, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Once a class shows up in the list above, it gets its own row here \u{2014} its own reminder times, or none at all.")
+            Text("each class gets a row here once it shows up above.")
                 .font(.lhfSans(13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -133,12 +133,12 @@ struct ProfileNotificationsSection: View {
                 .font(.lhfSans(15))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
-            Text("Class is off")
+            Text("class is off")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2CourseCode)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(state.courseDisplayName(course)). This class is switched off in Classes, so it sends no reminders.")
+        .accessibilityLabel("\(state.courseDisplayName(course)). this class is switched off in classes, so it sends no reminders.")
     }
 
     // MARK: One course
@@ -174,7 +174,7 @@ struct ProfileNotificationsSection: View {
 
     @ViewBuilder
     private func courseControls(_ course: String) -> some View {
-        Toggle("Reminders for this class", isOn: Binding(
+        Toggle("reminders for this class", isOn: Binding(
             get: { preferences.notificationsEnabled(course) },
             set: { newValue in
                 preferences.setNotificationsEnabled(course, newValue)
@@ -186,7 +186,7 @@ struct ProfileNotificationsSection: View {
         if preferences.notificationsEnabled(course) {
             leadTimeControls(course)
 
-            Toggle("Readings and check-ins", isOn: Binding(
+            Toggle("readings and check-ins", isOn: Binding(
                 get: { preferences.recurringEnabled(course) },
                 set: { newValue in
                     preferences.setRecurringEnabled(course, newValue)
@@ -213,7 +213,7 @@ struct ProfileNotificationsSection: View {
     private func leadTimeControls(_ course: String) -> some View {
         let isInheriting = preferences.leadOffsets(for: course) == nil
 
-        Toggle("Use my default times", isOn: Binding(
+        Toggle("use my default times", isOn: Binding(
             get: { isInheriting },
             set: { useDefaults in
                 // Turning inheritance *off* seeds the override from the global
@@ -254,14 +254,14 @@ struct ProfileNotificationsSection: View {
                 .foregroundStyle(.secondary)
             }
 
-            Text("From Settings \u{2192} Reminders. Change it there and this class follows.")
+            Text("from settings. change it there and this class follows.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2CourseCode)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Inherited reminder times: \(offsetList(scheduler.leadOffsets)). Set in Settings, Reminders. This class follows them.")
+        .accessibilityLabel("inherited reminder times: \(offsetList(scheduler.leadOffsets)). set in settings, reminders. this class follows them.")
     }
 
     @ViewBuilder
@@ -290,7 +290,7 @@ struct ProfileNotificationsSection: View {
         // list of five unticked switches — it looks identical to "I haven't
         // finished setting this up". Say what it currently means.
         if chosen.isEmpty {
-            Label("No reminder times \u{2014} this class won\u{2019}t warn you before something is due.",
+            Label("no reminder times. this class won\u{2019}t warn you.",
                   systemImage: "exclamationmark.triangle")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2SpineAmber)
