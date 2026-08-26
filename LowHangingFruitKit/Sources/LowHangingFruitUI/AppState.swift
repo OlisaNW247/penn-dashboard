@@ -2222,6 +2222,19 @@ final class AppState: ObservableObject {
                 ids.insert(submission.assignmentID)
             }
         }
+        // Assignments Canvas expects nothing online for (e.g. "attend the
+        // review session") can't ever go "late" the normal way — once their
+        // deadline passes they belong with finished work, not in the overdue
+        // pile. Folded into `ids` alongside real submissions so both the
+        // in-memory set below and the ledger persist below see the same
+        // truth, which is what lets a deadline the professor later moves
+        // into the future fall back out on the next refresh (replace
+        // semantics on `applySubmissionState`, not an additive flag).
+        let autoSubmitted = Self.autoSubmittedNoSubmissionIDs(
+            snapshots: Array(gradeWatcher.snapshots.values),
+            now: Date()
+        )
+        ids.formUnion(autoSubmitted)
         // Merge rather than replace: the ledger may know about work turned in
         // for a course that isn't in this refresh (deselected, or a fetch that
         // failed mid-loop), and dropping it would bounce finished items back
@@ -2231,9 +2244,14 @@ final class AppState: ObservableObject {
         // "Turned in ✓" confirmations for whatever just newly appeared as
         // submitted. Skipped entirely under fixture/demo data (reviewer
         // preview, DEBUG screenshot seam) — nothing was actually turned in
-        // there, so a stray id would just be noise.
+        // there, so a stray id would just be noise. Also excludes
+        // `autoSubmitted`: nothing was turned in for those either — the
+        // deadline just passed on work Canvas never expected online — so a
+        // "Turned in ✓" notice would be noise at best and alarming at worst.
         if !isUsingFixtureData {
-            let newlySubmitted = submittedCanvasAssignmentIDs.subtracting(previousSubmittedIDs)
+            let newlySubmitted = submittedCanvasAssignmentIDs
+                .subtracting(previousSubmittedIDs)
+                .subtracting(autoSubmitted)
             let notifications = Self.submissionNotifications(
                 newIDs: newlySubmitted,
                 previous: previousSubmittedIDs,
@@ -2265,6 +2283,29 @@ final class AppState: ObservableObject {
             pendingGradeChanges = notifiableGradeChanges(changes)
         }
         rebuildDashboardItems()
+    }
+
+    /// Canvas assignment ids that should read as submitted purely because their
+    /// deadline has passed and Canvas expects nothing to be submitted for them
+    /// (per the owner's rule: an "attend the session" assignment can't be late,
+    /// and once its moment has passed it belongs with finished work). Pure so
+    /// it can be tested without a network or a GradeWatcherStore. No end-of-day
+    /// rounding — assignments carry real deadlines, unlike the calendar
+    /// readings handled elsewhere.
+    static func autoSubmittedNoSubmissionIDs(
+        snapshots: [CourseGradeSnapshot],
+        now: Date
+    ) -> Set<String> {
+        var ids: Set<String> = []
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    guard item.requiresNoSubmission, let dueAt = item.dueAt, dueAt < now else { continue }
+                    ids.insert(item.id)
+                }
+            }
+        }
+        return ids
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors

@@ -273,7 +273,8 @@ public struct CanvasGradesClient: Sendable {
             scoreSource: score != nil ? .canvas : nil,
             isExcused: dto.submission?.excused ?? false,
             omitFromFinalGrade: dto.omitFromFinalGrade ?? false,
-            dueAt: parseDate(dto.dueAt)
+            dueAt: parseDate(dto.dueAt),
+            submissionTypes: dto.submissionTypes
         )
     }
 
@@ -437,6 +438,12 @@ private struct AssignmentDTO: Decodable {
     let pointsPossible: FlexibleDouble?
     let omitFromFinalGrade: Bool?
     let dueAt: String?
+    /// Canvas `submission_types` — drives `GradeItem.requiresNoSubmission`
+    /// (docs: an "attend the review session"-style assignment auto-completes
+    /// on its own deadline rather than reading as overdue). Optional/absent
+    /// decodes to nil like every other cosmetic field here — never fails the
+    /// page over it.
+    let submissionTypes: [String]?
     let submission: SubmissionDTO?
 
     enum CodingKeys: String, CodingKey {
@@ -444,6 +451,7 @@ private struct AssignmentDTO: Decodable {
         case pointsPossible = "points_possible"
         case omitFromFinalGrade = "omit_from_final_grade"
         case dueAt = "due_at"
+        case submissionTypes = "submission_types"
         case submission
     }
 }
