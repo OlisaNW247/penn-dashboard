@@ -31,12 +31,16 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        /// Notification headline prefix.
+        /// The reminder notification's entire body text (see `plannedRequests`
+        /// — the owner's notification redesign made the lead phrase the whole
+        /// message). "Due in 24 hours", not "Due tomorrow": a 24h-before
+        /// reminder for something due at 6 AM fires at 6 AM today, where
+        /// "tomorrow" reads wrong.
         var headline: String {
             switch self {
             case .h1:  return "Due in 1 hour"
             case .h3:  return "Due in 3 hours"
-            case .h24: return "Due tomorrow"
+            case .h24: return "Due in 24 hours"
             case .d2:  return "Due in 2 days"
             case .d7:  return "Due in a week"
             }
@@ -305,11 +309,16 @@ final class NotificationScheduler: ObservableObject {
 
         var requests: [UNNotificationRequest] = pairs.prefix(budget).map { pair in
             let content = UNMutableNotificationContent()
-            // Lead the title with a colored urgency dot (iOS won't let us tint
-            // notification text, so the emoji carries the tier through).
+            // Owner's notification redesign (2026-08-26): the class name is
+            // the headline and the lead phrase is the entire body — no
+            // urgency emoji, no assignment title, no formatted date. The
+            // notification's job is "look at this class now-ish"; the app is
+            // one tap away for everything else. Urgency still shapes
+            // BEHAVIOR (the time-sensitive interruption level below), it
+            // just no longer shapes the text.
             let urgency = DueState(due: pair.item.due, now: pair.fireDate)
-            content.title = "\(urgency.urgencyEmoji) \(pair.offset.headline): \(pair.item.assignment.title)"
-            content.body = "\(pair.item.assignment.course) · due \(Self.format(pair.item.due ?? pair.fireDate))"
+            content.title = pair.item.assignment.course
+            content.body = pair.offset.headline
             content.sound = .default
             content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
             let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)

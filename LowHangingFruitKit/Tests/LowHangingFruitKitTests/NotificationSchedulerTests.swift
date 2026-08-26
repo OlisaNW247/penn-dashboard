@@ -38,19 +38,25 @@ final class NotificationSchedulerTests: XCTestCase {
         XCTAssertEqual(reqs.count, 0)
     }
 
-    func testTitlesCarryUrgencyEmojiAndInterruptionLevel() {
+    func testContentIsClassNameAndLeadPhraseOnly() {
         let s = NotificationScheduler()   // defaults: [.h24, .h1]
         let now = Date()
-        // Due in 3 days → a 24h-before (soon/🔵) and a 1h-before (today/🟠) reminder.
         let reqs = s.plannedRequests(from: [item("1", due: now.addingTimeInterval(3 * 86_400))], now: now)
         XCTAssertEqual(reqs.count, 2)
 
-        let dots: Set<Character> = ["🔴", "🟠", "🔵", "🟢"]
+        // Owner's redesign: title is the class name, body is the lead phrase,
+        // and NOTHING else — no urgency emoji, no assignment title, no date.
         for r in reqs {
-            guard let first = r.content.title.first else { return XCTFail("empty title") }
-            XCTAssertTrue(dots.contains(first), "title should lead with an urgency dot: \(r.content.title)")
+            XCTAssertEqual(r.content.title, "CIS 2400")
         }
-        // The 1h-before reminder is time-sensitive; the 24h-before one is not.
+        XCTAssertEqual(Set(reqs.map(\.content.body)), ["Due in 24 hours", "Due in 1 hour"])
+        let emoji: Set<Character> = ["🔴", "🟠", "🔵", "🟢"]
+        for r in reqs {
+            XCTAssertTrue((r.content.title + r.content.body).allSatisfy { !emoji.contains($0) },
+                          "no urgency dot anywhere in the text: \(r.content.title) / \(r.content.body)")
+        }
+        // Urgency still shapes behavior even though it left the text:
+        // the 1h-before reminder is time-sensitive; the 24h-before one is not.
         XCTAssertTrue(reqs.contains { $0.content.interruptionLevel == .timeSensitive })
         XCTAssertTrue(reqs.contains { $0.content.interruptionLevel == .active })
     }
