@@ -2458,11 +2458,19 @@ final class AppState: ObservableObject {
         // and logging it would just be noise on every one of those paths.
         guard newIDs.count <= 5 else { return [] }
 
-        return newIDs.map { id in
+        return newIDs.compactMap { id in
             guard let item = items.first(where: { $0.canvasAssignmentID == id }) else {
-                // The id came from the grades feed but isn't (yet, or ever)
-                // among the calendar-feed items we hold titles for.
-                return (title: "Turned in ✓", body: "An assignment was turned in.")
+                // The id came from the grades feed but matches nothing among
+                // the calendar-feed items we hold titles for. This used to
+                // fall back to a generic "An assignment was turned in." —
+                // retired (owner's call, 2026-08-26): a notice that can't
+                // name what was turned in carries no information, and the
+                // ids that land here are precisely the noise cases — the
+                // submission backlog of a course fetched for the first time
+                // (e.g. a readings course just opted in), or gradebook-only
+                // work that never had a calendar card. Real submissions of
+                // real dashboard items always have a title to show.
+                return nil
             }
             let body = item.course.isEmpty ? item.title : "\(item.title) — \(item.course)"
             return (title: "Turned in ✓", body: body)

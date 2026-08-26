@@ -37,16 +37,18 @@ struct SubmissionNotificationTests {
         #expect(notifications[0].body.contains("CIS 3200"))
     }
 
-    @Test("a newly submitted id with no matching item gets a generic body")
-    func unmatchedIDGetsGenericBody() {
+    @Test("a newly submitted id with no matching item announces nothing — a notice that can't name its assignment is noise")
+    func unmatchedIDIsDroppedSilently() {
+        // The generic "An assignment was turned in." fallback was retired:
+        // the ids that reach this branch are the first-fetch backlog of a
+        // newly-selected course, or gradebook-only work with no calendar
+        // card — noise in every observed case, information in none.
         let notifications = AppState.submissionNotifications(
             newIDs: ["999"],
             previous: ["100"],
             items: [canvasItem(id: "501", title: "Problem Set 4")]
         )
-        #expect(notifications.count == 1)
-        #expect(notifications[0].title == "Turned in ✓")
-        #expect(notifications[0].body == "An assignment was turned in.")
+        #expect(notifications.isEmpty)
     }
 
     @Test("an empty previous set is a cold-start baseline and announces nothing")
