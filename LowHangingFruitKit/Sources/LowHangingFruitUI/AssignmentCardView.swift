@@ -150,7 +150,7 @@ struct AssignmentCardView: View {
     /// this point the student has singled this assignment out, so a date control
     /// is what they are most likely to want and costs nothing when collapsed.
     private func expandedDetail(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             Rectangle()
                 .fill(Color.v2Divider)
                 .frame(height: 0.5)
@@ -183,10 +183,6 @@ struct AssignmentCardView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("edit due date")
             }
-
-            Text("swipe right to mark it done")
-                .font(.lhfSans(10))
-                .foregroundStyle(Color.v2SectionMuted)
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }

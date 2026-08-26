@@ -50,10 +50,11 @@ struct IntroView: View {
             symbol: "checkmark.circle",
             lead: "Keeping track of it all shouldn’t be a second job.",
             title: "It notices when\nyou’re done.",
-            body: "Submit on Canvas and LHF files the assignment for you. It watches your grades too, and tells you the moment one posts.",
+            body: "Submit on Canvas and LHF files the assignment for you. For everything else, a swipe is all it takes.",
             points: [
                 "Finished work moves itself out of the way.",
-                "Nothing to tick off. Nothing to refresh.",
+                "Swipe a card right to mark it done yourself.",
+                "Tap one to see its due date, or change it.",
             ],
             closer: "So you can stop checking, and trust the list instead."
         ),
