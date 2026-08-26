@@ -50,6 +50,11 @@ final class CanvasSessionRenewer {
         case renewed
         case landedOnLoginPage
         case timedOut
+        /// The visible login pane appeared while this attempt was mid-flight,
+        /// so the attempt tore itself down (`abortForLoginPane()`) — the user
+        /// is now doing the real thing, and a background navigation racing
+        /// them through the same store is exactly what rule 3 forbids.
+        case abortedByLoginPane
         case notAttempted(reason: String)
     }
 
@@ -104,6 +109,27 @@ final class CanvasSessionRenewer {
     /// every exit path" actually true, rather than just documented.
     private var activeWebView: WKWebView?
     private var activeDelegate: RenewalNavigationDelegate?
+    private var activeWaiter: SettleWaiter?
+
+    /// Tears down an in-flight attempt because the visible Canvas login pane
+    /// just appeared (rule 3's second half — the gate stops a NEW attempt
+    /// from starting while the pane is open, and this stops an ALREADY
+    /// RUNNING one the moment the pane opens). The trigger design makes this
+    /// race likely, not hypothetical: the same `canvasSessionExpired`
+    /// transition that starts a silent attempt also surfaces the "needs a
+    /// refresh" banner, so the user tapping reconnect right then is the
+    /// EXPECTED path, and the pane's purge-then-login must never share the
+    /// live store with a background SAML navigation still resolving. Called
+    /// synchronously from `AppState.isCanvasLoginPaneActive`'s `didSet`
+    /// (both are `@MainActor`, so there's no window between the flag flip
+    /// and this teardown). The consumed cooldown slot deliberately stays
+    /// consumed — the user is logging in for real; retrying silently a
+    /// second later would race them all over again.
+    func abortForLoginPane() {
+        guard isInFlight else { return }
+        activeWebView?.stopLoading()
+        activeWaiter?.signal(.aborted)
+    }
 
     init(isLoginPaneActive: @escaping () -> Bool) {
         self.isLoginPaneActive = isLoginPaneActive
@@ -230,6 +256,7 @@ final class CanvasSessionRenewer {
         // `navigationDelegate`'s weak storage.
         activeWebView = webView
         activeDelegate = delegate
+        activeWaiter = waiter
         defer {
             // Discard the WebView (and its delegate) on every exit path
             // below, including the two early returns — this is the one
@@ -237,6 +264,7 @@ final class CanvasSessionRenewer {
             activeWebView?.navigationDelegate = nil
             activeWebView = nil
             activeDelegate = nil
+            activeWaiter = nil
         }
 
         // GET-only, exactly one `load(URLRequest)` call for the whole
@@ -266,6 +294,10 @@ final class CanvasSessionRenewer {
         if signal == .timedOut {
             Self.logAttempt(host: webView.url?.host, status: "timed-out")
             return .timedOut
+        }
+        if signal == .aborted {
+            Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane")
+            return .abortedByLoginPane
         }
 
         let finalHost = webView.url?.host
@@ -327,6 +359,9 @@ private final class SettleWaiter {
         case finished
         case failed
         case timedOut
+        /// The visible login pane appeared mid-attempt — see
+        /// `CanvasSessionRenewer.abortForLoginPane()`.
+        case aborted
     }
 
     private var continuation: CheckedContinuation<Signal, Never>?

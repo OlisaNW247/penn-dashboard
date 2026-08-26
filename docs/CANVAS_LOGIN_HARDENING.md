@@ -403,3 +403,43 @@ race is actually gone rather than just timing-lucky.
      immediately after a fresh login), confirm the "Your Canvas login needs
      a refresh" banner appears on the dashboard and disappears after
      reconnecting.
+
+## Addendum, 2026-08-26 — session longevity (Layers 1 & 2)
+
+Two additions attack the "reconnect every few days" complaint at its root;
+both live under the rules above and neither loosens them.
+
+**Layer 1 — rotated-cookie capture** (`CanvasGradesClient
+.refreshedCookieHandler` → `SessionCookieStore.merge`). Canvas runs sliding
+sessions: every authenticated response re-mints the session cookie with a
+fresh expiry, which the explicit-Cookie-header / `httpShouldHandleCookies =
+false` fetch style (2c) was silently discarding. Grade Watcher now persists
+those rotations after each successfully-decoded fetch, so regular app use
+keeps the session alive instead of aging out the login-time snapshot on a
+fixed clock. Test-runner-guarded; server deletions (past-expiry Set-Cookie)
+are honored.
+
+**Layer 2 — silent renewal** (`CanvasSessionRenewer`). When the session has
+genuinely lapsed, a hidden, never-in-the-view-hierarchy WKWebView bound to
+`LoginDataStores.canvas` loads `https://canvas.upenn.edu/` once and lets the
+still-live PennKey/Duo IdP cookies walk the SAML chain back to a fresh
+Canvas session, harvested read-only into `SessionCookieStore`. Safety rules
+are structural, inherited from this document's post-mortem: GET-only (one
+`load` per attempt — the delegate never re-navigates, unlike
+`LoginNavigationObserver`'s auto-recover, which is exactly why it isn't
+reused); read-only against the store; one attempt per hour with a 30s hard
+timeout; inert under tests/fixtures; and never concurrent with the visible
+login pane — the pane's appearance both gates new attempts
+(`AppState.isCanvasLoginPaneActive`) and aborts an in-flight one
+(`abortForLoginPane()`), because the expiry transition that starts a silent
+attempt is the same one that surfaces the reconnect banner the user may be
+answering. A settled chain only counts as renewed when the final host is
+Canvas itself AND a recognizable session cookie exists; the SAML POST
+binding's JS auto-submit makes success span multiple WebKit navigations, so
+`didFinish` on the IdP host mid-chain deliberately does not settle the wait.
+
+Device-validation status at time of writing: NOT yet exercised against real
+PennKey/Duo — the WKWebView orchestration is untestable from `swift test`.
+The empirical unknowns are the IdP session's real lifetime and whether Duo
+stays quiet inside the hidden WebView; the failure mode either way is the
+pre-existing banner, never a worse state.

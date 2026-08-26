@@ -608,7 +608,19 @@ final class AppState: ObservableObject {
     /// Layer 2 — see that type's doc comment), so a background silent-renewal
     /// attempt can never run concurrently with the visible login pane reading
     /// from/writing to the same isolated `WKWebsiteDataStore`.
-    var isCanvasLoginPaneActive = false
+    /// The `didSet` closes the guard's other half: the gate stops a NEW
+    /// silent attempt while the pane is open, and this aborts an ALREADY
+    /// IN-FLIGHT one the moment the pane opens — likely in practice, since
+    /// the same expiry transition that starts a silent attempt also surfaces
+    /// the reconnect banner the user is now responding to. Both types are
+    /// `@MainActor`, so the teardown is synchronous with the flag flip.
+    var isCanvasLoginPaneActive = false {
+        didSet {
+            if isCanvasLoginPaneActive {
+                canvasSessionRenewer?.abortForLoginPane()
+            }
+        }
+    }
 
     /// Lazily-created, reused across calls so its own cooldown/in-flight
     /// state (see `CanvasSessionRenewer.gate`) persists between the multiple
