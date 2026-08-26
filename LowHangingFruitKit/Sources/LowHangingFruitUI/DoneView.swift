@@ -93,7 +93,7 @@ struct DoneCardView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfSans(9, weight: .medium))
+                        .font(.lhfSans(9.5, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Color.v2DoneCourse)
                     Text(item.assignment.title)
