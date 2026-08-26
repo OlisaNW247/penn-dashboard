@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 import Security
 
 /// Persists the login cookies captured from the in-app WebView so the session
@@ -41,6 +42,52 @@ enum SessionCookieStore {
             stored.append(d)
         }
         write(stored, service: service)
+    }
+
+    /// Merges freshly re-issued cookies into the persisted set for `service`:
+    /// an incoming cookie replaces any stored cookie with the same
+    /// (name, domain, path); everything else is kept. Cookies whose
+    /// expiresDate is already past are dropped rather than stored — a
+    /// Set-Cookie with a past expiry is the server deleting that cookie.
+    /// Saving also refreshes the store's own staleness clock (see
+    /// `sessionCookieMaxAge`), which is the point: a session that keeps
+    /// getting used keeps reading as fresh. Canvas's sliding sessions
+    /// re-mint the session cookie on every authenticated response
+    /// (`CanvasGradesClient.refreshedCookieHandler`), so a caller that wires
+    /// that handler up to this merge is what turns "ages out from login"
+    /// into "stays alive as long as the app is actually used."
+    static func merge(_ fresh: [HTTPCookie], service: Service) {
+        guard !fresh.isEmpty else { return }
+        // Never touch the developer's real Keychain item under `swift
+        // test` — the same trap `SharedDefaults.isTestRunner` guards
+        // everywhere else in this codebase (CLAUDE.md: an unsandboxed
+        // macOS test run resolves real on-device state without the
+        // entitlement that would otherwise gate it).
+        guard !SharedDefaults.isTestRunner else { return }
+        let existing = load(service: service)
+        let combined = merged(existing: existing, fresh: fresh)
+        guard !combined.isEmpty else { return }
+        save(combined, service: service)
+    }
+
+    /// Pure merge logic behind `merge(_:service:)`: an incoming cookie
+    /// replaces any existing cookie with the same (name, domain, path);
+    /// everything else in `existing` is kept as-is. An incoming cookie whose
+    /// `expiresDate` is already past is dropped rather than carried forward
+    /// — a `Set-Cookie` with a past expiry is the server's own way of
+    /// deleting that cookie, so re-adding it would resurrect something the
+    /// server just killed. No Keychain I/O, so this is the seam the test
+    /// suite exercises directly instead of going through the real Keychain.
+    static func merged(existing: [HTTPCookie], fresh: [HTTPCookie]) -> [HTTPCookie] {
+        guard !fresh.isEmpty else { return existing }
+        let now = Date()
+        var result = existing
+        for cookie in fresh {
+            result.removeAll { $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path }
+            if let expires = cookie.expiresDate, expires <= now { continue }
+            result.append(cookie)
+        }
+        return result
     }
 
     /// Loads `service`'s persisted cookies, dropping any that are stale: a

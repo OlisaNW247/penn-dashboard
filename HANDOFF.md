@@ -1,35 +1,172 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-07-26 (branch `v2.5`)_
+_Last updated: 2026-08-26 (branch `claude/v4-github-repo-kvu0e0` — the v3.5 + v4 merge)_
+
+## ⚠️ Current state: v3.5 and v4 merged (2026-08-26)
+
+This branch merges **`v3.5`** (engine: readings-only courses, iCloud Tier 2
+sync, background refresh, the Mac menu-bar tier, silent Canvas session
+renewal, the Stale Request login fix, turned-in notifications) into **`v4`**
+(product: swipe-to-complete card, lowercase chrome, per-course reminders,
+semester rollover, onboarding course setup, `CoursePreferencesStore`).
+Resolution policy: **v4 wins on UI, v3.5 wins on functionality.** Version
+bumped to **2.0.0 (build 5)**. The load-bearing reconciliations:
+
+- **Per-course state**: `CoursePreferencesStore` (v4) is the single canonical
+  record. v3.5's iCloud mirroring now syncs the store's blob itself
+  (`CloudPrefsMirror.mirroredKeys` includes `CoursePreferencesStore
+  .storageKey`); pushes ride the store's new `didChange` hook, pulls land via
+  `reloadFromDefaults()`. v3.5's `CourseContentDecisions` (readings opt-ins)
+  stays as its own store alongside — folding it into `CoursePreferences` is
+  a candidate follow-up, not done here.
+- **Ledger**: union of v4's freshness/archive fields and v3.5's
+  CloudKit-ready all-defaults constraints; still schema V1.
+- **Notifications**: v4's per-class scheduling with v3.5's redesigned content
+  (title = class name, body = lead phrase, no emoji). `LeadOffset.headline`
+  for `.h24` is now "Due in 24 hours".
+- **Course-name migration**: v3.5's launch-time normalization now re-keys the
+  `coursePreferences` blob (`normalizeCourseKeys`) instead of the four legacy
+  maps.
+- **Grade Watcher stays hidden** (`FeatureFlags.gradeWatcher = false`, owner's
+  call 2026-08-26) but all v3.5 session plumbing is merged and live for
+  submission detection.
+- **Settings vs Profile**: class management lives in the Profile surface
+  (v4); readings-course toggles, iCloud sync, Mac login item, storage and
+  troubleshooting live in Settings, restyled to v4's lowercase chrome.
+
+**Not yet done on this branch** — in order:
+1. `cd LowHangingFruitKit && swift test` on a Mac (this merge was produced in
+   a Linux environment with no Swift toolchain; it has **not been compiled**).
+2. `xcodegen generate` (project.pbxproj still carries pre-merge version keys).
+3. Device pass: onboarding walk, swipe card, readings opt-in nudge, Mac
+   menu-bar build, and — only with two devices — the iCloud sync toggle.
+
+Everything below this section is historical context from earlier sessions.
+
+---
+
+_Previous update: 2026-08-20 (branch `claude/lhf-v3-canvas-merge-6msbyo`)_
 
 **LHF (Low Hanging Fruit)** is a personal academic dashboard for Penn students.
-It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and in
-v2.5 Canvas **grades**) and shows assignments as one chronological "what's due
-next" list, with local reminders. SwiftUI, iPhone-first (+ macOS from the same
-code), everything on-device.
+It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and
+Canvas **grades**) and shows assignments as one chronological "what's due next"
+list, with local reminders. SwiftUI, iPhone-first (+ macOS from the same code),
+everything on-device.
 
 ---
 
 ## ⚠️ Read this first
 
-Work is happening on branch **`v2.5`**, which builds on `V2` (PR #1) and adds
-Grade Watcher, the grade report + syllabus ingestion, a Home/Lock Screen widget,
-submission auto-detection, and a Light/Dark reskin. `v2.5` has been
-**force-pushed before** — always `git fetch` and check divergence before pushing.
+Work is on **`claude/lhf-v3-canvas-merge-6msbyo`** — `v3` (Marco's SwiftData
+ledger, grade report, projections, syllabus ingestion, intro flow) with the
+**v2.5 Canvas login hardening merged in**, plus a hardening pass on the ledger
+itself.
 
-- `cd LowHangingFruitKit && swift test` → **239 tests / 20 suites passing.**
-- iOS **Release** build green; the widget `.appex` is verified embedded in
-  `LowHangingFruit.app/PlugIns/`. Signing is resolved (see below).
-- **`xcodegen generate` is now safe.** The `LHFWidget/Info.plist` trap is
-  disarmed — see "Widget" below.
+- `cd LowHangingFruitKit && swift test` → **365 tests / 34 suites passing.**
+- **`v3` does not have the Canvas login hardening.** The hardening lives on
+  `v2.5` and on this branch.
+- **This is no longer a fast-forward.** `v3` moved while the branch was in
+  flight: PR #5 (`claude/bold-tesla-2142f1`) landed an independent
+  implementation of shared preferences and completion-on-the-ledger — the same
+  two gaps this branch had already closed. That has been merged here, resolved
+  toward `v3` in the overlapping areas because its versions carry
+  `MigrationChainTests`, `SharedDefaultsMigrationTests` and the
+  `@Attribute(.unique)` removal. `v3` is now fully contained in this branch, so
+  `git merge --ff-only` works from `v3`'s side.
+- **Coordinate with Marco before landing it.** His `28891ca`
+  (`docs/v3-integration-handoff.md`) sequences six parallel branches into `v3`,
+  and 30+ commits arriving out of that order is what the document exists to
+  prevent. PR #5 is evidence the collision is real, not hypothetical.
 
-**The one open question blocking verification:** Grade Watcher needs a **live
-Canvas cookie session**, which is separate from the cookieless ICS feed the
-assignment list uses. Marco's device has **no stored Canvas session** (he
-connected Canvas before v2.5 started persisting Canvas cookies), so grades are
-empty and Canvas submission detection is inert on his phone. The fix is to tap
-**Reconnect Canvas** in Grade Watcher. Until then, grades and submission
-tracking are proven only against fixtures — never against real Canvas data.
+**Not yet verified on hardware.** `swift test` runs without an App Group
+entitlement, so `AssignmentStore.makeDefault()` and `UserDefaults.lhf` both
+take their non-entitled fallback paths. Three things are therefore **untested by
+the suite** and need a device build:
+
+1. the manual-assignment migration, which *deletes* the `manualAssignments`
+   UserDefaults blob after copying it to the ledger,
+2. `SharedDefaultsMigration`'s one-time copy from `.standard` into the suite,
+3. the widget reading hidden/renamed/deleted courses out of that suite.
+
+Check Settings → Storage after upgrading an existing install: it should say
+**"Saved on this device."**
+
+## 🆕 What changed in this session (2026-08-21)
+
+**The v3 merge is done and green — 365 tests, 34 suites.**
+
+`v3` had moved: PR #5 shipped a second, independent implementation of the same
+shared-preferences and completion-on-the-ledger work this branch had. Neither
+line contained any of the other's unique work, so it was merged rather than
+resolved by picking a side — `v3`'s versions won the overlap (better migration
+test coverage, plus the `@Attribute(.unique)` removal), and this branch's
+unique work was re-applied on top: the Canvas login hardening, `LedgerSchemaV1`,
+`saveChanges()` with `LedgerStats.isHealthy`, `pruneAgedOut()`, and the
+manual-work-on-ledger API.
+
+**One security correction the merge itself created.** `canvasICSURL` is off
+`SharedDefaultsMigration.legacyKeys`. It belonged there on `v3`, where the feed
+URL was an ordinary preference; once the hardening lands it is a Keychain-held
+bearer credential, and copying it into the shared suite would put it back into
+unencrypted, backed-up storage. Nothing is orphaned — `ICSFeedURLStore.load()`
+reads the pre-hardening value from `UserDefaults.standard` and moves it to the
+Keychain. `SharedDefaultsMigrationTests` now asserts the key is *absent*, so
+re-adding it fails loudly.
+
+**Lesson worth keeping.** Three rounds of compile errors on this merge all had
+one shape: a conflict resolved by taking one whole side of a file, dropping the
+losing side's unique work while leaving its callers in place. Whole-file
+resolution is only safe when one side is strictly newer. Check first.
+
+---
+
+## 🆕 What changed in this session (2026-08-20)
+
+**The v2.5 → v3 merge was broken and is fixed.** A silent git auto-merge left
+duplicate `clearAll()` and `loadPreviewSnapshots(_:now:)` in
+`GradeWatcherStore.swift`; the branch did not compile. Kept the first of each
+(the v3 version, whose comment mentions syllabus schemes). Nothing else in the
+merge had the same defect — the compiler was the audit.
+
+**Ledger hardening.** An audit of the SwiftData ledger against the four
+symptoms a separate `docs/assignment-persistence-plan.md` proposed fixing found
+that plan was written against **`main`**, where no ledger exists at all — on
+`v3` almost all of it was already built. Six real gaps remained, and all six are
+now closed:
+
+1. **Schema versioning.** `LedgerSchema.swift` adds `LedgerSchemaV1` +
+   `LedgerMigrationPlan`, wired into every `ModelContainer`. Without it, the
+   first incompatible model change would have thrown on an existing store,
+   fallen back to in-memory, and shown the user an empty dashboard with no
+   error — the exact data loss the ledger exists to prevent. `stages` is empty
+   on purpose; the point is that the *next* change is a migration.
+2. **Honest failures.** `makeDefault()` keeps the reason it degraded instead of
+   discarding it (`storageFailureReason`).
+3. **Checked writes.** `try? context.save()` is gone; `saveChanges()` records
+   `lastSaveError` / `failedSaveCount`. Settings → Storage now has three states,
+   because a store can be perfectly on-disk and still be failing every write.
+4. **Pruning.** `pruneAgedOut()` deletes what `isAgedOut` already hides, bounded
+   by the identical predicate, so finished work stays untouchable.
+5. **User-created work on the ledger.** Manual assignments and recurring tasks
+   were JSON blobs in defaults — the one category of work Canvas cannot
+   re-supply had none of the ledger's protection. Migrated, and exempt from the
+   feed-gone/aging rules.
+6. **Shared preferences.** `SharedDefaults` moves non-credential preferences to
+   the App Group suite so the widget can see hidden courses and renames. It
+   falls back to `.standard` unless the App Group container actually exists —
+   `UserDefaults(suiteName:)` succeeds for *any* string, so without that check
+   the "shared" suite is a private domain that only hides values already in
+   `.standard`.
+
+Completion is now single-source: the ledger owns `completedAt`, and the old
+defaults keys are read once at launch, migrated, and deleted.
+
+**Tests: 239 → 329.** New suites: `LedgerHardeningTests`,
+`MergedCompletionWithoutSyncTests`, `RecordedICSFixtureTests` (the recorded-feed
+fixtures the old plan asked for), plus additions to `AssignmentStoreTests`,
+`LedgerWidgetReaderTests` and `AssignmentDeduplicatorTests`.
+
+---
 
 ## 🆕 What changed in this session (2026-07-26)
 
@@ -159,6 +296,8 @@ entering preview only seeded on the *next* launch.
 - **Assignments — no login after onboarding.** Onboarding captures the personal
   Canvas **calendar-feed URL** (`…/feeds/calendars/user_<token>.ics`, a
   self-authenticating secret URL). Every sync is a plain cookieless HTTPS GET.
+  Because that URL *is* the credential, it lives in the Keychain via
+  `ICSFeedURLStore` — **not** UserDefaults, where `v3` still keeps it.
   ICS carries **no submission state** (`CanvasICSClient.normalize` hardcodes
   `submitted: false`).
 - **Grades + Canvas submission detection — need a live cookie session.**
@@ -228,7 +367,7 @@ LowHangingFruitKit/
                 SyllabusTextExtractor, CanvasSyllabusClient, SyllabusModels}.swift
       Gradescope/GradescopeClient.swift
       CanvasDiscovery/{CanvasDiscoveryClient, CanvasRequirementScanner}.swift
-  Tests/LowHangingFruitKitTests/   # 239 tests
+  Tests/LowHangingFruitKitTests/   # 365 tests
 docs/grades.md             # Grade Watcher design brief (§13 = report + syllabus)
 docs/appstore/             # App Store package (current as of 2026-07-26)
 ```
@@ -249,11 +388,16 @@ docs/appstore/             # App Store package (current as of 2026-07-26)
   destination; the list is frozen, so **new keys don't belong on it** — they're
   born in the suite. Session cookies stay in the Keychain
   (`SessionCookieStore`), deliberately device-bound, and do **not** move.
+  The **Canvas feed URL** does not move either: it is a bearer credential and
+  lives in the Keychain via `ICSFeedURLStore`, which is why `canvasICSURL` was
+  taken off `legacyKeys` when the login-hardening line merged in. Save and
+  restore through `UserDefaults.lhf` in tests, never `.standard` directly, or
+  the values you write are not the ones `AppState` reads — see `IntroFlowTests`.
 
 ## 🧰 Build / run / test
 
 ```sh
-cd LowHangingFruitKit && swift test              # 239 passing
+cd LowHangingFruitKit && swift test              # 365 passing
 xcodegen generate                                # safe now — Info.plist trap disarmed
 bash docs/appstore/capture-screenshots.sh        # regenerate App Store screenshots
 ```
@@ -309,6 +453,13 @@ retry fixed it.
 
 **Blocking a submission (need a person, not a commit):**
 
+- **Verify the ledger migrations on device** — see "Read this first". The test
+  suite structurally cannot reach them.
+- **Upload 1.1.1 to App Store Connect.** The version page exists; the build was
+  never uploaded, so the Build section is still empty. Independent of all the
+  v3 work — it ships from `v2.5`.
+- **Fold this branch into Marco's six-branch v3 integration**, rather than
+  merging over it.
 - **Verify grades + submission detection on device.** Reconnect Canvas on the
   iPhone. This is the headline feature and it has never run against real data.
 - **Verify dark mode and the widget on device** — both were unverifiable before

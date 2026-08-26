@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import LowHangingFruitKit
+import os
 
 /// First-run welcome flow. Blocks the dashboard until both core data sources are
 /// connected. The Canvas calendar feed URL is captured automatically from the
@@ -621,16 +622,62 @@ private struct LoginActionBar: View {
 /// (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a). User-initiated recovery only —
 /// this never appears as a result of automatic retry logic, and tapping a
 /// button here is the only way it goes away.
+/// Full-pane notice shown before the Canvas sign-in page loads (see
+/// `CanvasLoginPane.showsSignInTips` for why it exists). Same visual family
+/// as `LoginErrorCard`, but it fills the pane rather than banner-ing above a
+/// WebView — there's nothing behind it yet worth showing.
+private struct CanvasSignInTipsCard: View {
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "hourglass")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(Color.v2Ink)
+            Text("One thing before you sign in")
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+            Text("Penn\u{2019}s sign-in can pause for up to half a minute after you enter your password. That\u{2019}s normal \u{2014} the screen isn\u{2019}t stuck. Press the sign-in button once and wait; pressing it again is what causes Penn\u{2019}s \u{201C}Stale Request\u{201D} error.")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+
+            Button(action: onContinue) {
+                Text("Got it")
+                    .font(.lhfSans(13, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 private struct LoginErrorCard: View {
     let title: String
     let message: String
     let onStartOver: () -> Void
     /// Canvas only — Gradescope has no equivalent feed-link fallback.
     let onUseCalendarLinkInstead: (() -> Void)?
+    /// Canvas only, for now — offered when someone's hit the error card
+    /// repeatedly and just wants to hand off diagnostics rather than keep
+    /// retrying. `nil` hides the action entirely.
+    var onReportProblem: (() -> Void)? = nil
 
     var body: some View {
+        // No Spacers and no maxHeight cap here or at the call sites: the
+        // card must hug its content. A fixed-height cap already clipped the
+        // last action ("Report a problem") clean off the screen once — an
+        // invisible action is worse than a taller card.
         VStack(spacing: 14) {
-            Spacer()
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(Color.v2SpineRed)
@@ -664,9 +711,17 @@ private struct LoginErrorCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            Spacer()
+            if let onReportProblem {
+                Button(action: onReportProblem) {
+                    Text("Report a problem")
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2DateText.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -687,6 +742,16 @@ private struct CanvasLoginPane: View {
     @State private var isPurging = true
     /// Bumping this re-runs the purge-and-load `.task` below ("Start over").
     @State private var purgeGeneration = UUID()
+    /// True only for this pane appearance's FIRST attempt. Measured on
+    /// device (2026-08-22): during a Penn IdP bad spell the app went 0/8
+    /// while Private Safari went 3/4 in the same minutes — Safari fails its
+    /// first genuinely-cold handshake too, but recovers on retry because
+    /// the failed attempt's IdP cookies survive into the next one. Purging
+    /// on every "Start over" forced this app to be permanently
+    /// first-contact. So: purge once per pane appearance (a fresh Connect
+    /// still starts clean), and let retries keep the cookies exactly like
+    /// Safari's retry does.
+    @State private var purgeOnNextAttempt = true
     /// Bumping this tells the live WebView to call `.reload()` ("Reload").
     @State private var reloadTick = 0
     /// Observe-only navigation delegate (docs/CANVAS_LOGIN_DIAGNOSIS.md item
@@ -694,6 +759,14 @@ private struct CanvasLoginPane: View {
     /// navigation itself.
     @StateObject private var navObserver = LoginNavigationObserver()
     @State private var showPasteFeedLink = false
+    /// Shown once per pane appearance, BEFORE the sign-in page: Penn's IdP
+    /// can pause noticeably after the password is submitted, and an
+    /// impatient second tap is what mints its "Stale Request" error (the
+    /// duplicate-POST guard in `LoginNavigationObserver` catches the
+    /// machine-made repeats; this card heads off the human-made one). The
+    /// purge keeps running behind this card, so dismissing it is usually
+    /// instant.
+    @State private var showsSignInTips = true
 
     private var isBusy: Bool {
         isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading || isPurging
@@ -701,25 +774,41 @@ private struct CanvasLoginPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isPurging {
+            if showsSignInTips {
+                CanvasSignInTipsCard(onContinue: { showsSignInTips = false })
+            } else if isPurging {
                 Spacer()
                 ProgressView("Preparing a clean sign-in…")
                     .font(.lhfSans(12))
                 Spacer()
-            } else if navObserver.detectedKnownErrorPage {
-                LoginErrorCard(
-                    title: "Canvas login hit a snag",
-                    message: "Penn's sign-in page reported an error partway through. This isn't something reloading the same page will fix. start a fresh attempt, or skip the in-app login entirely.",
-                    onStartOver: startOver,
-                    onUseCalendarLinkInstead: { showPasteFeedLink = true }
-                )
             } else {
-                LoginWebView(
-                    url: URL(string: "https://canvas.upenn.edu")!,
-                    store: LoginDataStores.canvas,
-                    reloadTick: reloadTick,
-                    navigationObserver: navObserver
-                )
+                // The WebView stays mounted even when a known error page has
+                // been detected — a single detection (or a stale one from an
+                // intermediate SSO hop) must never be the thing that makes
+                // login impossible. The card becomes a non-blocking banner
+                // above the still-live WebView instead of replacing it.
+                VStack(spacing: 0) {
+                    if navObserver.detectedKnownErrorPage {
+                        LoginErrorCard(
+                            title: "Canvas login hit a snag",
+                            message: "Penn's sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over or the calendar link are still available.",
+                            onStartOver: startOver,
+                            onUseCalendarLinkInstead: { showPasteFeedLink = true },
+                            onReportProblem: {
+                                SupportContact.openReportMail(diagnostics: DiagnosticsReport.generate(state: state))
+                            }
+                        )
+
+                        Divider().overlay(Color.v2Divider)
+                    }
+
+                    LoginWebView(
+                        url: URL(string: "https://canvas.upenn.edu")!,
+                        store: LoginDataStores.canvas,
+                        reloadTick: reloadTick,
+                        navigationObserver: navObserver
+                    )
+                }
             }
 
             Divider().overlay(Color.v2Divider)
@@ -744,21 +833,39 @@ private struct CanvasLoginPane: View {
             // or a "Start over" tap), before the WebView is ever created —
             // never re-entrant with an in-flight login navigation. Targets
             // Canvas's own isolated store (docs/CANVAS_LOGIN_DIAGNOSIS.md
-            // item 2a), not the shared `.default()` store.
-            await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: AppState.canvasLoginDomainHints,
-                in: LoginDataStores.canvas
-            )
+            // item 2a), not the shared `.default()` store. Purges only on
+            // the first attempt of this pane appearance — see
+            // `purgeOnNextAttempt` for the on-device evidence.
+            if purgeOnNextAttempt {
+                await WebsiteDataReset.purgeWebsiteData(
+                    matchingDomainContains: AppState.canvasLoginDomainHints,
+                    in: LoginDataStores.canvas
+                )
+                purgeOnNextAttempt = false
+            }
             isPurging = false
         }
+        // Session-longevity Layer 2 guard (`CanvasSessionRenewer`): this pane
+        // reads from and writes into `LoginDataStores.canvas` the same live,
+        // persistent store the background silent-renewal attempt would use,
+        // so it must never run while this pane is on screen. Set true as
+        // soon as the pane appears (before the purge/WebView above even
+        // starts) and cleared on disappear — there's no separate teardown
+        // path for this pane beyond SwiftUI removing it from the tree
+        // (`OnboardingView`'s `phase` switch), which `onDisappear` covers.
+        .onAppear { state.isCanvasLoginPaneActive = true }
+        .onDisappear { state.isCanvasLoginPaneActive = false }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
 #endif
     }
 
-    /// Clears this login's cookies/cache again and reloads a fresh sign-in
-    /// page, without leaving the pane — the recovery path now that the
+    /// Tears down the WebView and loads a fresh sign-in page from the top of
+    /// the chain, without leaving the pane — the recovery path now that the
     /// WebView no longer allows a back-swipe onto a consumed login form.
+    /// Deliberately does NOT purge cookies anymore (`purgeOnNextAttempt`
+    /// stays false): a retry that keeps the failed attempt's IdP cookies is
+    /// exactly how Safari recovers from the same "Stale Request" page.
     private func startOver() {
         message = nil
         navObserver.reset()
@@ -822,20 +929,31 @@ private struct GradescopeLoginPane: View {
                 ProgressView("Preparing a clean sign-in…")
                     .font(.lhfSans(12))
                 Spacer()
-            } else if navObserver.detectedKnownErrorPage {
-                LoginErrorCard(
-                    title: "Gradescope login hit a snag",
-                    message: "The sign-in page reported an error partway through. Start a fresh attempt below.",
-                    onStartOver: startOver,
-                    onUseCalendarLinkInstead: nil
-                )
             } else {
-                LoginWebView(
-                    url: URL(string: "https://www.gradescope.com/login")!,
-                    store: LoginDataStores.gradescope,
-                    reloadTick: reloadTick,
-                    navigationObserver: navObserver
-                )
+                // The WebView stays mounted even when a known error page has
+                // been detected — a single detection (or a stale one from an
+                // intermediate SSO hop) must never be the thing that makes
+                // login impossible. The card becomes a non-blocking banner
+                // above the still-live WebView instead of replacing it.
+                VStack(spacing: 0) {
+                    if navObserver.detectedKnownErrorPage {
+                        LoginErrorCard(
+                            title: "Gradescope login hit a snag",
+                            message: "The sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over is still available.",
+                            onStartOver: startOver,
+                            onUseCalendarLinkInstead: nil
+                        )
+
+                        Divider().overlay(Color.v2Divider)
+                    }
+
+                    LoginWebView(
+                        url: URL(string: "https://www.gradescope.com/login")!,
+                        store: LoginDataStores.gradescope,
+                        reloadTick: reloadTick,
+                        navigationObserver: navObserver
+                    )
+                }
             }
 
             Divider().overlay(Color.v2Divider)
@@ -1044,11 +1162,28 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     configuration.websiteDataStore = store
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.allowsBackForwardNavigationGestures = false
+    // UA experiment concluded 2026-08-22: spoof off changed nothing (0/3,
+    // identical failure signature), so the UA is exonerated for the Stale
+    // Request bug and restored for its original purpose (Duo's browser
+    // gating). The actual culprit the same round's action log exposed: the
+    // PennKey form POST fires twice — see LoginNavigationObserver's
+    // duplicate-POST suppression.
     webView.customUserAgent = LoginUserAgent.mobileSafari
     // Observe-only (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a) — see
     // `LoginNavigationObserver`'s doc comment. The pane's `@StateObject` keeps
     // this instance alive; `WKWebView.navigationDelegate` is a weak reference.
     webView.navigationDelegate = navigationObserver
+    navigationObserver.startURL = url
+    // One-line dispatch probe: WebKit delivers the response-policy callback
+    // (the only source of HTTP statuses in the redirect log) purely based on
+    // this respondsToSelector check. Its @objc exposure has silently failed
+    // twice, so assert it out loud on every WebView creation — "false" in
+    // the console means the redirect log is back to titles only.
+    let respondsToPolicy = navigationObserver.responds(
+        to: Selector(("webView:decidePolicyForNavigationResponse:decisionHandler:"))
+    )
+    Logger(subsystem: Bundle.main.bundleIdentifier ?? "LHF", category: "login-redirects")
+        .info("delegate responds to decidePolicyForNavigationResponse: \(respondsToPolicy, privacy: .public)")
     webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
     return webView
 }

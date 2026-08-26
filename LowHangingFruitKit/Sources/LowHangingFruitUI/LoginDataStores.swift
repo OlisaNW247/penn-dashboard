@@ -41,6 +41,10 @@ enum LoginDataStores {
     private static let canvasStoreID = UUID(uuidString: "8F2D6A10-8B0A-4E9E-9C3A-6C1E9B2F0A01")!
     private static let gradescopeStoreID = UUID(uuidString: "8F2D6A10-8B0A-4E9E-9C3A-6C1E9B2F0A02")!
 
+    // Tested on device 2026-08-22 (Stale Request investigation): swapping
+    // this for `.default()` did NOT change the failure rate (0/6, same
+    // failure signature — Stale Request straight after the PennKey form
+    // POST), so the identifier store is not what breaks the IdP handshake.
     static let canvas = WKWebsiteDataStore(forIdentifier: canvasStoreID)
     static let gradescope = WKWebsiteDataStore(forIdentifier: gradescopeStoreID)
 }

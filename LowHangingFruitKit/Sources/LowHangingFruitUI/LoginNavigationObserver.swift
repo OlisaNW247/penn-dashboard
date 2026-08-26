@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import os
 
 /// One entry in the login pane's in-memory redirect log. Deliberately
 /// carries only host + path + HTTP status — never a query string, cookie
@@ -50,13 +51,20 @@ final class LoginDiagnosticsLog: ObservableObject {
 /// Observe-only `WKNavigationDelegate` for the Canvas/Gradescope login panes
 /// (docs/CANVAS_LOGIN_HARDENING.md item 3a).
 ///
-/// Deliberately does nothing to steer navigation: every `decidePolicyFor`
-/// call always allows. No `.cancel`, no URL rewriting, no auto-purge-and-
-/// retry — a false-positive "known error page" detection that silently
-/// purged and reloaded would burn a second `SAMLRequest` mid-flow and could
-/// easily make the exact bug this file exists to diagnose *worse*. Recovery
-/// from a detected error is always a user-initiated tap ("Start over" /
-/// "Use calendar link instead"), never automatic.
+/// Deliberately does (almost) nothing to steer navigation. No URL
+/// rewriting, no auto-purge-and-retry — a false-positive "known error page"
+/// detection that silently purged and reloaded would burn a second
+/// `SAMLRequest` mid-flow and could easily make the exact bug this file
+/// exists to diagnose *worse*. Recovery from a detected error is always a
+/// user-initiated tap ("Start over" / "Use calendar link instead"), never
+/// automatic. The single exception to "always allow": a repeat main-frame
+/// POST to the same URL while the previous POST's response has not yet
+/// committed (20s cap) is cancelled, because a double-submitted credential
+/// form is what consumed Shibboleth's one-shot login conversation and
+/// produced every deterministic "Stale Request" — see
+/// `decidePolicyFor navigationAction` for the on-device evidence. Once any
+/// page commits, the guard disarms, so a human resubmitting a re-rendered
+/// form (e.g. after a wrong password) is never touched.
 ///
 /// What this DOES do:
 /// - Surfaces a plain-language message on `didFailProvisionalNavigation`
@@ -73,9 +81,17 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 
     /// True once a known IdP/Shibboleth error page's title has been observed
     /// on the currently-loaded page. Reset by the pane's "Start over"/"Reload"
-    /// actions (which recreate this observer or explicitly clear it), never
-    /// by this class itself.
+    /// actions (which recreate this observer or explicitly clear it), and
+    /// also cleared automatically as soon as a new main-frame navigation
+    /// starts (see `didStartProvisionalNavigation`) — a multi-hop SSO chain
+    /// (Canvas → Shibboleth → Duo → back) can pass through a transient
+    /// error-titled intermediate page without permanently latching this flag
+    /// for the rest of the flow.
     @Published private(set) var detectedKnownErrorPage = false
+
+    /// The actual page title that tripped `detectedKnownErrorPage`, kept for
+    /// diagnostics. Cleared everywhere `detectedKnownErrorPage` is cleared.
+    @Published private(set) var detectedErrorPageTitle: String?
 
     /// Most recent entries first; capped so a long back-and-forth SSO chain
     /// can't grow this unbounded across a long session.
@@ -92,13 +108,53 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         "request has expired",
     ]
 
+    /// The most recent main-frame POST this observer allowed through, used
+    /// to suppress the flow-killing duplicate submit — see the
+    /// `decidePolicyFor navigationAction` doc comment for the evidence.
+    private var lastMainFramePOST: (url: URL, at: Date)?
+
+    /// The URL the login pane originally loaded (set by `makeWebView`), so
+    /// auto-recovery can restart the SSO chain from the top.
+    var startURL: URL?
+    /// Markers for the one dead-end this delegate self-heals: the duplicate
+    /// POST replaces (and kills, code -999) the real credential POST, and
+    /// the guard then cancels the duplicate — leaving NOTHING in flight and
+    /// a login conversation that is already consumed server-side, so any
+    /// manual re-submit of the on-screen form is doomed to "Stale Request".
+    /// Seen on device 2026-08-22 as the only failure in a 5/6 run. When both
+    /// markers land within the duplicate window (either order), the pane
+    /// reloads `startURL`: cookies survive, a fresh conversation starts.
+    private var duplicateCanceledAt: Date?
+    private var postProvisionalDiedAt: Date?
+    /// 20s, not 3s: on-device (2026-08-22) the re-submits came in two waves —
+    /// an echo ~1s after the real POST and a re-issue ~6s later that slipped
+    /// a 3s window and drew the Stale Request anyway. During a login flow a
+    /// same-URL main-frame re-POST inside 20s is always the pathological
+    /// repeat; a genuine user retry (re-type, re-tap) lands later than that.
+    private static let duplicatePOSTWindow: TimeInterval = 20
+
     func reset() {
         loadError = nil
         detectedKnownErrorPage = false
+        detectedErrorPageTitle = nil
+        lastMainFramePOST = nil
+        duplicateCanceledAt = nil
+        postProvisionalDiedAt = nil
     }
+
+    /// Mirrors every redirect-log entry to the unified system log, so the
+    /// chain is visible live in Xcode's console (or Console.app) while
+    /// reproducing a login failure — no in-app export step needed. Same
+    /// privacy budget as the report: host + path + status only, which is
+    /// why `.public` is safe here.
+    private static let consoleLog = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "LHF",
+        category: "login-redirects"
+    )
 
     fileprivate func appendLogEntry(host: String, path: String, status: Int?) {
         let entry = LoginRedirectLogEntry(host: host, path: path, status: status, at: Date())
+        Self.consoleLog.info("\(entry.description, privacy: .public)")
         redirectLog.insert(entry, at: 0)
         if redirectLog.count > maxLogEntries {
             redirectLog.removeLast(redirectLog.count - maxLogEntries)
@@ -135,20 +191,158 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 extension LoginNavigationObserver: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
+        // A new main-frame navigation means the flow has moved past whatever
+        // was previously on screen. Penn SSO is a multi-hop redirect chain
+        // (Canvas → Shibboleth → Duo → back); if an intermediate page's
+        // title happened to match a known-error marker, that page is gone
+        // now, so don't let the flag (or the title that caused it) latch
+        // for the rest of the flow.
+        detectedKnownErrorPage = false
+        detectedErrorPageTitle = nil
+        logHop("start", url: webView.url)
+    }
+
+    // The two below exist purely to make the redirect chain observable
+    // through callbacks that provably fire (same plain notification family
+    // as `didFinish` above) — they carry no HTTP status, so entries from the
+    // policy callback are still preferred when it works. Server-redirect is
+    // the important one: Penn SSO is a chain of 302s, and this fires once
+    // per hop.
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        logHop("redirect", url: webView.url)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        logHop("commit", url: webView.url)
+        // A committed page disarms the duplicate-POST guard: everything the
+        // user does on a rendered page is a deliberate action, and the
+        // legitimate wrong-password retry is a same-URL POST from the
+        // re-rendered form (Shibboleth keeps the URL on credential errors).
+        // The pathological duplicates this guard exists for all arrive
+        // BEFORE the original POST's response commits — every on-device
+        // trace showed [start] → echo with no commit in between.
+        lastMainFramePOST = nil
+    }
+
+    private func logHop(_ kind: String, url: URL?) {
+        guard let url, let host = url.host else { return }
+        appendLogEntry(host: host, path: "\(url.path) [\(kind)]", status: nil)
+    }
+
+    // The ONE deliberate exception to this delegate's observe-only rule,
+    // earned by on-device evidence (2026-08-22): failing PennKey logins
+    // showed the credential form POSTing TWICE to the same URL within a
+    // second (two `[action POST type=1]` entries — genuine formSubmitted
+    // navigations both times). Shibboleth's login conversation is one-shot:
+    // the first POST consumes it, the duplicate then trips the IdP's
+    // "Stale Request" page every time — which is exactly the deterministic
+    // failure this whole investigation chased. The single success that
+    // reached Duo that night had a single POST.
+    //
+    // So: an identical main-frame POST to the SAME URL is cancelled while
+    // the previous POST is still un-committed (20s cap). The first submit
+    // is never touched; a different URL always passes; and `didCommit`
+    // disarms the guard, so a deliberate resubmit from a re-rendered page
+    // (wrong password → error form → retry) always passes too. A false
+    // positive costs one extra tap — strictly better than a dead login.
+    // Same signature discipline as the response variant below: the
+    // decisionHandler MUST be typed `@MainActor @Sendable` or this silently
+    // stops being called.
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.targetFrame?.isMainFrame == true,
+           let url = navigationAction.request.url,
+           let host = url.host {
+            let method = navigationAction.request.httpMethod ?? "?"
+            if method == "POST" {
+                if let last = lastMainFramePOST,
+                   last.url == url,
+                   Date().timeIntervalSince(last.at) < Self.duplicatePOSTWindow {
+                    appendLogEntry(host: host, path: "\(url.path) [action POST duplicate-canceled]", status: nil)
+                    decisionHandler(.cancel)
+                    duplicateCanceledAt = Date()
+                    autoRecoverIfBothNavigationsDead(webView)
+                    return
+                }
+                lastMainFramePOST = (url, Date())
+            }
+            appendLogEntry(host: host, path: "\(url.path) [action \(method) type=\(navigationAction.navigationType.rawValue)]", status: nil)
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        loadError = Self.plainLanguageMessage(for: error)
+        recordNavigationFailure(webView, error: error, phase: "provisional-failed")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        loadError = Self.plainLanguageMessage(for: error)
+        recordNavigationFailure(webView, error: error, phase: "failed")
     }
 
-    private func webView(
+    /// Logs every dead navigation with its error code — code -999
+    /// (NSURLErrorCancelled) is the interesting one: it marks a navigation
+    /// WebKit abandoned because something replaced it, which is how the
+    /// credential POST that actually consumed the IdP's login conversation
+    /// was vanishing from the record without a trace. Cancelled navigations
+    /// keep `loadError` nil (they were never a user-visible failure).
+    private func recordNavigationFailure(_ webView: WKWebView, error: Error, phase: String) {
+        let nsError = error as NSError
+        appendLogEntry(
+            host: webView.url?.host ?? "(no url)",
+            path: "\(webView.url?.path ?? "") [\(phase) code=\(nsError.code)]",
+            status: nil
+        )
+        let message = Self.plainLanguageMessage(for: error)
+        loadError = message.isEmpty ? nil : message
+        // A cancelled (-999, i.e. replaced) navigation while a credential
+        // POST is in play is one of the two markers of the dead-air dead
+        // end — see `duplicateCanceledAt`'s doc comment.
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled,
+           let last = lastMainFramePOST,
+           Date().timeIntervalSince(last.at) < Self.duplicatePOSTWindow {
+            postProvisionalDiedAt = Date()
+            autoRecoverIfBothNavigationsDead(webView)
+        }
+    }
+
+    /// Fires only when BOTH markers are present within the duplicate window
+    /// (either order): the real POST died replaced AND its replacement was
+    /// cancelled by the guard. Nothing is in flight, the on-screen form's
+    /// conversation is consumed, so restart the chain from the top. Cookies
+    /// are untouched, so this is the same recovery a Safari user gets by
+    /// re-entering the site — not a purge.
+    private func autoRecoverIfBothNavigationsDead(_ webView: WKWebView) {
+        guard let canceled = duplicateCanceledAt,
+              let died = postProvisionalDiedAt,
+              abs(canceled.timeIntervalSince(died)) < Self.duplicatePOSTWindow,
+              let startURL else { return }
+        duplicateCanceledAt = nil
+        postProvisionalDiedAt = nil
+        lastMainFramePOST = nil
+        appendLogEntry(host: startURL.host ?? "", path: "\(startURL.path) [auto-recover reload]", status: nil)
+        webView.load(URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
+    }
+
+    // The `@MainActor @Sendable` on the decisionHandler is the load-bearing
+    // part: the SDK requirement types the completion as
+    // `@escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void`,
+    // and without those annotations this method does NOT satisfy the
+    // requirement — the compiler emits only a "nearly matches" warning, no
+    // @objc is inferred, `respondsToSelector` returns false, and WebKit
+    // silently never delivers the callback. That exact mismatch (silenced
+    // with `private` at some point, which hides the warning but not the
+    // problem) is why the diagnostics report's redirect chain was empty on
+    // device. Do not add an explicit `@objc(...)` selector instead of
+    // matching the type — the compiler rejects that as a conflict with the
+    // requirement. `makeWebView` logs a respondsToSelector probe so a
+    // regression here shows up in the very first console line of a login.
+    func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
     ) {
         if let http = navigationResponse.response as? HTTPURLResponse, let url = http.url {
             appendLogEntry(host: url.host ?? "", path: url.path, status: http.statusCode)
@@ -163,6 +357,13 @@ extension LoginNavigationObserver: WKNavigationDelegate {
             let lower = title.lowercased()
             if Self.knownErrorTitleMarkers.contains(where: lower.contains) {
                 self.detectedKnownErrorPage = true
+                self.detectedErrorPageTitle = title
+                // A page title is safe to log verbatim (no query string,
+                // cookie value, or ICS feed token can end up here — see
+                // `LoginRedirectLogEntry`'s doc comment), so it's fine to
+                // surface in the copyable diagnostics report via the same
+                // path as the host/path/status entries below.
+                self.appendLogEntry(host: "(page title)", path: " \(title)", status: nil)
             }
         }
     }

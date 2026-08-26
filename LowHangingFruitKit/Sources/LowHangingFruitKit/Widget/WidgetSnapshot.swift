@@ -44,7 +44,11 @@ public struct WidgetSnapshot: Codable, Hashable, Sendable {
 /// written yet, the App Group isn't configured, or the file is briefly mid-write.
 public enum WidgetSnapshotStore {
     private static func fileURL() -> URL? {
-        FileManager.default
+        // Test runners resolve the container on macOS despite having no
+        // entitlement (see `SharedDefaults.isTestRunner`) — never let a test
+        // overwrite the real widget's snapshot file.
+        guard !SharedDefaults.isTestRunner else { return nil }
+        return FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: WidgetSharing.appGroupID)?
             .appendingPathComponent(WidgetSharing.snapshotFilename)
     }

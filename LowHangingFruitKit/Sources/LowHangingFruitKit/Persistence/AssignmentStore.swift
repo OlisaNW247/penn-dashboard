@@ -16,10 +16,12 @@ import SwiftData
 public final class AssignmentStore {
     /// Shared App Group container id — matches the widget's, so the ledger lands
     /// in the same place the widget can later read.
-    /// `nonisolated` for the same reason `goneGracePeriod` is: non-main-actor
-    /// callers (the widget's ledger read, `SharedDefaults`) need the one
-    /// canonical group id rather than their own copy of the string.
-    public nonisolated static let appGroupID = "group.com.lhf.lowhangingfruit"
+    public static let appGroupID = "group.com.lhf.lowhangingfruit"
+
+    /// The private CloudKit database container the ledger mirrors into when
+    /// sync is turned on. Opt-in only — see `init(cloudKitGroupURL:)` and
+    /// `makeDefault(syncEnabled:)` — and otherwise unused.
+    public static let cloudContainerID = "iCloud.com.lhf.lowhangingfruit"
 
     /// How long a gone-from-feed item is kept visible past its due date before it
     /// ages out. Generous on purpose: the design brief says a lingering
@@ -39,10 +41,10 @@ public final class AssignmentStore {
     public let isPersistent: Bool
 
     /// Why the ledger is running in memory, when it is. Nil on a healthy
-    /// persistent store. Surfaced in Settings so "not saving" is legible.
+    /// persistent store.
     public let storageFailureReason: String?
 
-    /// The most recent failed write, and how many have failed this session.
+    /// The most recent failed write, and how many failed this session.
     /// `isPersistent` only says the container opened on disk; it says nothing
     /// about whether saves are landing. A full disk, or protected data being
     /// unavailable before first unlock, fails every save while the store still
@@ -62,9 +64,9 @@ public final class AssignmentStore {
 
     // MARK: Construction
 
-    /// Every container the app builds goes through the versioned schema and the
-    /// migration plan, so a future model change is a migration rather than a
-    /// throw-and-silently-forget. See `LedgerSchema.swift`.
+    /// Every container goes through the versioned schema and the migration
+    /// plan, so a future model change is a migration rather than a throw the
+    /// caller turns into a silent in-memory fallback. See `LedgerSchema.swift`.
     private static func makeContainer(_ config: ModelConfiguration) throws -> ModelContainer {
         try ModelContainer(
             for: Schema(versionedSchema: LedgerSchemaV1.self),
@@ -74,22 +76,67 @@ public final class AssignmentStore {
     }
 
     public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {
-        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        // cloudKitDatabase MUST be pinned to .none on every non-cloud path:
+        // the parameter defaults to .automatic, which adopts the first
+        // container in the app's entitlements — and the app now carries an
+        // iCloud container entitlement (Tier 2). Without the pin, plain
+        // local stores would silently start mirroring to CloudKit for every
+        // user, ignoring the sync toggle entirely.
+        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
         self.container = try Self.makeContainer(config)
         self.isPersistent = !inMemory
         self.storageFailureReason = inMemory ? storageFailureReason : nil
         rowsByID()
     }
 
-    public init(url: URL) throws {
-        let config = ModelConfiguration(url: url)
+    /// - Parameter storageFailureReason: Normally nil — a plain local store is
+    ///   fully healthy. Non-nil only on the `makeDefault(syncEnabled: true)`
+    ///   fallback path, where CloudKit mirroring failed to start but the local
+    ///   ledger opened fine: the store is genuinely persistent (`isPersistent`
+    ///   is still `true`), it just isn't syncing, and Settings' storage panel
+    ///   has no other way to say so. Existing call sites all take the default
+    ///   and are byte-for-byte unaffected.
+    public init(url: URL, storageFailureReason: String? = nil) throws {
+        // .none pinned for the same reason as init(inMemory:) above — the
+        // .automatic default would adopt the newly-entitled iCloud container.
+        let config = ModelConfiguration(url: url, cloudKitDatabase: .none)
         self.container = try Self.makeContainer(config)
         self.isPersistent = true
-        self.storageFailureReason = nil
+        self.storageFailureReason = storageFailureReason
         // Sweep at load. Whatever is on disk was not necessarily written by this
         // build of the app — a restored backup or a future CloudKit merge can
         // put two rows for one assignment there, and the very first read
         // (`currentAssignments()` seeding the dashboard) must not show both.
+        rowsByID()
+    }
+
+    /// Cloud-backed variant of `init(url:)`. `groupURL` is the App Group
+    /// container URL itself (as returned by `FileManager.default
+    /// .containerURL(forSecurityApplicationGroupIdentifier:)`), not the final
+    /// store file — this appends `"Assignments.store"` itself, the exact same
+    /// filename `init(url:)` and `LedgerWidgetReader.snapshot()` use, so
+    /// turning sync on does not move the ledger out from under the widget's
+    /// read path.
+    ///
+    /// Deliberately built via the explicit-`url:` `ModelConfiguration`
+    /// initializer plus `cloudKitDatabase:`, not the `groupContainer:`-based
+    /// one: the `groupContainer:` initializer resolves its own file location
+    /// inside the group container, which is not documented to produce
+    /// `Assignments.store` and is exactly the kind of divergence that would
+    /// silently strand the widget's fallback read on an empty/stale file.
+    /// Pinning the URL ourselves — the same construction `makeDefault()`
+    /// already uses for the local path — makes the two configurations
+    /// (synced or not) agree on where the ledger lives by construction rather
+    /// than by coincidence of an internal default.
+    public init(cloudKitGroupURL groupURL: URL) throws {
+        let url = groupURL.appending(path: "Assignments.store")
+        let config = ModelConfiguration(
+            url: url,
+            cloudKitDatabase: .private(Self.cloudContainerID)
+        )
+        self.container = try Self.makeContainer(config)
+        self.isPersistent = true
+        self.storageFailureReason = nil
         rowsByID()
     }
 
@@ -101,20 +148,51 @@ public final class AssignmentStore {
     /// Returns nil only if even the in-memory store can't be created, in which
     /// case the app degrades to its old non-persistent behavior instead of
     /// crashing.
-    public static func makeDefault() -> AssignmentStore? {
+    ///
+    /// - Parameter syncEnabled: Opt-in CloudKit mirroring (default `false`,
+    ///   matching every existing caller — passing nothing is byte-for-byte
+    ///   today's behavior). When `true`, tries `init(cloudKitGroupURL:)`
+    ///   first; if that throws for any reason (no iCloud account, container
+    ///   not provisioned, offline at first launch, whatever), it falls back
+    ///   to the exact same local, non-cloud store the `false` path uses —
+    ///   sync must never cost anyone their local ledger — and records why in
+    ///   `storageFailureReason` even though the store is fully persistent, so
+    ///   Settings can tell the student sync didn't start instead of just
+    ///   quietly not syncing. Ignored under `SharedDefaults.isTestRunner`,
+    ///   which always returns the in-memory store regardless.
+    public static func makeDefault(syncEnabled: Bool = false) -> AssignmentStore? {
+        // Test runners must NEVER open the real shared ledger. On macOS the
+        // container URL below resolves even for unentitled, unsandboxed
+        // processes — swift test included — so without this branch every
+        // test that constructs a bare AppState() writes fixtures into the
+        // developer's actual Mac app data (seen on device: DEDUPE 9999 rows
+        // on the real dashboard). In-memory, no failure banner: this is the
+        // hermetic path tests were always assumed to take.
+        if SharedDefaults.isTestRunner {
+            return try? AssignmentStore(inMemory: true)
+        }
         var failure: String?
         if let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            if syncEnabled {
+                do {
+                    return try AssignmentStore(cloudKitGroupURL: groupURL)
+                } catch {
+                    // Sync couldn't start — fall through to the same local,
+                    // non-cloud store the syncEnabled: false path opens below,
+                    // so the student keeps a working (if unsynced) ledger
+                    // instead of losing the session over it.
+                    failure = "Sync couldn't start (\(error.localizedDescription)). "
+                        + "Assignments are being saved on this device only."
+                }
+            }
             let url = groupURL.appending(path: "Assignments.store")
             do {
-                return try AssignmentStore(url: url)
+                return try AssignmentStore(url: url, storageFailureReason: failure)
             } catch {
-                // The one case worth spelling out: the on-disk store exists but
-                // could not be opened (a schema the migration plan can't reach,
-                // a corrupt file, no free space). Falling back to memory is the
-                // right move — losing the session beats refusing to launch — but
-                // doing it silently is how a wiped ledger looks exactly like a
-                // working one.
+                // Falling back to memory is right — losing the session beats
+                // refusing to launch — but doing it silently is how a wiped
+                // ledger looks exactly like a working one.
                 failure = "Saved assignments couldn't be opened (\(error.localizedDescription)). "
                     + "This session is being kept in memory only."
             }
@@ -128,12 +206,8 @@ public final class AssignmentStore {
     // MARK: Durability
 
     /// Saves pending changes, keeping the failure instead of discarding it.
-    ///
-    /// Replaces the `try? context.save()` this class used everywhere. A
-    /// swallowed write failure is indistinguishable from a successful one at
-    /// every call site, which meant a ledger that had stopped persisting kept
-    /// reporting itself healthy right up until the user relaunched and found
-    /// their work gone.
+    /// Replaces the `try? context.save()` that used to be at every call site,
+    /// where a failed write was indistinguishable from a successful one.
     @discardableResult
     func saveChanges(_ operation: String = #function) -> Bool {
         guard context.hasChanges else { return true }
@@ -201,7 +275,8 @@ public final class AssignmentStore {
 
         // Sync is the natural place to collect: the rows dropped here are ones
         // this very reconcile just confirmed are both gone from the feed and
-        // long past due.
+        // long past due. Completion-only rows are safe — they're finished by
+        // definition, and `isAgedOut` exempts finished work.
         pruneAgedOut(now: now)
 
         return ReconcileResult(
@@ -220,19 +295,13 @@ public final class AssignmentStore {
     /// Deletes every ledger row for a source — used when the user disconnects
     /// that service, so its assignments don't linger on-device or silently
     /// reappear from the ledger on reconnect.
-    public func purge(source: Assignment.Source) {
-        for row in rows(source: source) { context.delete(row) }
-        saveChanges()
-    }
-
     /// Deletes rows that `isAgedOut` already hides from every read.
     ///
-    /// Aging used to be filter-only: an abandoned item stopped being *shown*
-    /// but its row lived on for the life of the install, so the store grew
-    /// without bound and `stats()` counted rows the user had no way to see.
-    /// Pruning is deliberately the same predicate as the read filter, so this
-    /// can never remove something still reachable — and `isAgedOut` exempts
-    /// finished work outright, so the Done archive is untouchable here.
+    /// Aging used to be filter-only: an abandoned item stopped being *shown* but
+    /// its row lived on for the life of the install. Deliberately the same
+    /// predicate as the read filter, so this can never remove something still
+    /// reachable — and `isAgedOut` exempts finished work outright, so the Done
+    /// archive is untouchable here.
     @discardableResult
     public func pruneAgedOut(now: Date = Date()) -> Int {
         let doomed = allRows().filter { isAgedOut($0, now: now) }
@@ -240,6 +309,11 @@ public final class AssignmentStore {
         for row in doomed { context.delete(row) }
         saveChanges()
         return doomed.count
+    }
+
+    public func purge(source: Assignment.Source) {
+        for row in rows(source: source) { context.delete(row) }
+        saveChanges()
     }
 
     // MARK: Identity — uniqueness is enforced here, not by the database
@@ -449,26 +523,31 @@ public final class AssignmentStore {
     /// Upserts rows for work that doesn't come from a feed — the user's own
     /// manual assignments, and any generated occurrence they interact with.
     ///
-    /// Manual work used to live only as a JSON blob in UserDefaults, which
-    /// meant the thing the app could least afford to lose — the assignment
-    /// Canvas doesn't know about, that exists nowhere else — was the one thing
-    /// with no durable record, no archive, and no presence in the widget.
+    /// Manual work used to live only as a JSON blob in defaults, which meant
+    /// the thing the app could least afford to lose — the assignment Canvas
+    /// doesn't know about, that exists nowhere else — was the one thing with no
+    /// durable record, no archive, and no presence in the widget.
     ///
     /// `reconcile` only ever runs for `.canvas` / `.gradescope`, so these rows
     /// are never marked gone, and `isAgedOut` requires `isGoneFromFeed` — user
     /// work therefore never ages out. That's deliberate: aging exists to clear
     /// abandoned *feed* items, and nothing about a manual assignment is
     /// abandoned just because it's old.
+    ///
+    /// Goes through `rowsByID()` rather than `allRows()` so the uniqueness
+    /// invariant this class now enforces in code holds on this path too.
     @discardableResult
     public func upsert(_ assignments: [Assignment], now: Date = Date()) -> Int {
         guard !assignments.isEmpty else { return 0 }
-        let existing = Dictionary(allRows().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var byID = rowsByID()
         var created = 0
         for item in assignments {
-            if let row = existing[item.id] {
+            if let row = byID[item.id] {
                 row.refresh(from: item, now: now)
             } else {
-                context.insert(StoredAssignment.make(from: item, now: now))
+                let row = StoredAssignment.make(from: item, now: now)
+                context.insert(row)
+                byID[item.id] = row
                 created += 1
             }
         }
@@ -480,6 +559,34 @@ public final class AssignmentStore {
     /// back out of the ledger for the UI to edit.
     public func assignments(source: Assignment.Source, now: Date = Date()) -> [Assignment] {
         activeAssignments(source: source, now: now)
+    }
+
+    /// Rewrites every row's `course` through `transform`, for migrating rows
+    /// that were stored under a raw registrar descriptor (e.g.
+    /// "BAN_CIS-2400-001 202630") back when the parser couldn't turn it into
+    /// a clean code — so the same course stops appearing under two different
+    /// strings just because some of its rows predate a parser fix.
+    ///
+    /// Goes through `rowsByID()`, not `allRows()`, for the same reason every
+    /// other write path here does: it is the deduplicated view, and it is
+    /// what keeps this from writing through one of two copies of a row while
+    /// leaving the other stale.
+    ///
+    /// Deliberately takes the transform as a parameter rather than reaching
+    /// for a parser itself — this file is Kit-layer plumbing and has no
+    /// business knowing what a "clean" course code looks like; that policy
+    /// belongs to whoever calls this (`AppState`, via `CourseCode.parse`).
+    @discardableResult
+    public func normalizeCourseNames(_ transform: (String) -> String) -> Int {
+        var changed = 0
+        for row in rowsByID().values {
+            let normalized = transform(row.course)
+            guard normalized != row.course else { continue }
+            row.course = normalized
+            changed += 1
+        }
+        if changed > 0 { saveChanges() }
+        return changed
     }
 
     /// Deletes specific rows outright.
@@ -779,8 +886,7 @@ public final class AssignmentStore {
         public let failedSaveCount: Int
 
         /// True only when the ledger is on disk *and* its writes are landing.
-        /// Settings should key off this rather than `isPersistent` alone — a
-        /// store can be perfectly persistent and still be failing every save.
+        /// Settings should key off this rather than `isPersistent` alone.
         public var isHealthy: Bool {
             isPersistent && storageFailureReason == nil && failedSaveCount == 0
         }

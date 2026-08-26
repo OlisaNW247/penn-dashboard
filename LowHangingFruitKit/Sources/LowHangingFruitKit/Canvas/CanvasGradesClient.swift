@@ -42,14 +42,25 @@ public struct CanvasGradesClient: Sendable {
     private let cookies: [HTTPCookie]
     private let session: URLSession
 
+    /// Invoked with any cookies Canvas re-issued on a successfully decoded
+    /// response page. Canvas runs sliding sessions — each authenticated
+    /// response re-mints the session cookie with a fresh expiry — and the
+    /// explicit-Cookie-header/httpShouldHandleCookies=false fetch style
+    /// (Group 2c) means URLSession discards them otherwise. Callers persist
+    /// these so regular use keeps the session alive instead of aging out
+    /// the login-time snapshot.
+    public var refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)?
+
     public init(
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
+        self.refreshedCookieHandler = refreshedCookieHandler
     }
 
     // MARK: - Networked fetch
@@ -61,12 +72,39 @@ public struct CanvasGradesClient: Sendable {
         async let groupPages = fetchAllAssignmentGroupPages(courseID: courseID)
         async let coursePage = fetchCourseInfoPage(courseID: courseID)
         let (pages, course) = try await (groupPages, coursePage)
-        return try Self.decodeSnapshot(courseID: courseID, courseJSON: course, assignmentGroupPages: pages, now: now)
+        let snapshot = try Self.decodeSnapshot(
+            courseID: courseID,
+            courseJSON: course.data,
+            assignmentGroupPages: pages.map { $0.data },
+            now: now
+        )
+        // Only surface rotated cookies once every page this fetch touched has
+        // decoded successfully (`decodeSnapshot` above didn't throw) — a 2xx
+        // response that fails to parse must not contribute cookies, since
+        // that's the profile of a subtly broken response, not a trustworthy
+        // sliding-session renewal.
+        if let refreshedCookieHandler {
+            var refreshed: [HTTPCookie] = []
+            for page in pages {
+                refreshed += Self.responseCookies(from: page.response, requestURL: page.url)
+            }
+            refreshed += Self.responseCookies(from: course.response, requestURL: course.url)
+            if !refreshed.isEmpty {
+                refreshedCookieHandler(refreshed)
+            }
+        }
+        return snapshot
     }
 
     /// GET .../assignment_groups?include[]=assignments&include[]=submission&per_page=100,
     /// following the `Link: rel="next"` header until exhausted (large courses).
-    private func fetchAllAssignmentGroupPages(courseID: String) async throws -> [Data] {
+    /// Carries each page's response + URL alongside its body so
+    /// `fetchSnapshot` can parse rotated cookies off of it after a successful
+    /// decode, without `fetchRaw` itself knowing anything about cookie
+    /// rotation.
+    private func fetchAllAssignmentGroupPages(
+        courseID: String
+    ) async throws -> [(data: Data, response: HTTPURLResponse, url: URL)] {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/v1/courses/\(courseID)/assignment_groups"),
             resolvingAgainstBaseURL: false
@@ -78,7 +116,7 @@ public struct CanvasGradesClient: Sendable {
         ]
         guard let firstURL = components.url else { throw Error.invalidURL }
 
-        var pages: [Data] = []
+        var pages: [(data: Data, response: HTTPURLResponse, url: URL)] = []
         var nextURL: URL? = firstURL
         var pagesFetched = 0
         // Safety valve: a well-behaved Canvas instance won't loop, but this
@@ -89,7 +127,7 @@ public struct CanvasGradesClient: Sendable {
             pagesFetched += 1
             guard pagesFetched <= maxPages else { break }
             let (data, http) = try await fetchRaw(url)
-            pages.append(data)
+            pages.append((data, http, url))
 
             guard let candidate = Self.nextPageURL(fromLinkHeader: http.value(forHTTPHeaderField: "Link")) else {
                 nextURL = nil
@@ -113,15 +151,17 @@ public struct CanvasGradesClient: Sendable {
 
     /// GET .../courses/:id?include[]=total_scores — carries both
     /// `apply_assignment_group_weights` and (per enrollment) `computed_current_score`.
-    private func fetchCourseInfoPage(courseID: String) async throws -> Data {
+    /// Returns the response + URL too, for the same cookie-rotation reason as
+    /// `fetchAllAssignmentGroupPages`.
+    private func fetchCourseInfoPage(courseID: String) async throws -> (data: Data, response: HTTPURLResponse, url: URL) {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/v1/courses/\(courseID)"),
             resolvingAgainstBaseURL: false
         ) else { throw Error.invalidURL }
         components.queryItems = [URLQueryItem(name: "include[]", value: "total_scores")]
         guard let url = components.url else { throw Error.invalidURL }
-        let (data, _) = try await fetchRaw(url)
-        return data
+        let (data, http) = try await fetchRaw(url)
+        return (data, http, url)
     }
 
     private func fetchRaw(_ url: URL) async throws -> (Data, HTTPURLResponse) {
@@ -180,6 +220,19 @@ public struct CanvasGradesClient: Sendable {
         guard url.scheme?.lowercased() == "https" else { return false }
         guard let host = url.host, let baseHost = baseURL.host else { return false }
         return host.caseInsensitiveCompare(baseHost) == .orderedSame
+    }
+
+    /// Parses whatever `Set-Cookie` headers `response` carries into
+    /// `HTTPCookie`s scoped to `requestURL` — the pure seam `fetchSnapshot`'s
+    /// cookie-rotation handling and the test suite both use, kept separate
+    /// from the actual network call so it's directly unit-testable. Empty
+    /// (never crashes) when the response has no `Set-Cookie` header.
+    static func responseCookies(from response: HTTPURLResponse, requestURL: URL) -> [HTTPCookie] {
+        let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
+            guard let key = pair.key as? String, let value = pair.value as? String else { return }
+            result[key] = value
+        }
+        return HTTPCookie.cookies(withResponseHeaderFields: headers, for: requestURL)
     }
 
     /// Parses a `Link` response header (RFC 5988 style) for the `rel="next"` URL.
@@ -273,7 +326,8 @@ public struct CanvasGradesClient: Sendable {
             scoreSource: score != nil ? .canvas : nil,
             isExcused: dto.submission?.excused ?? false,
             omitFromFinalGrade: dto.omitFromFinalGrade ?? false,
-            dueAt: parseDate(dto.dueAt)
+            dueAt: parseDate(dto.dueAt),
+            submissionTypes: dto.submissionTypes
         )
     }
 
@@ -437,6 +491,12 @@ private struct AssignmentDTO: Decodable {
     let pointsPossible: FlexibleDouble?
     let omitFromFinalGrade: Bool?
     let dueAt: String?
+    /// Canvas `submission_types` — drives `GradeItem.requiresNoSubmission`
+    /// (docs: an "attend the review session"-style assignment auto-completes
+    /// on its own deadline rather than reading as overdue). Optional/absent
+    /// decodes to nil like every other cosmetic field here — never fails the
+    /// page over it.
+    let submissionTypes: [String]?
     let submission: SubmissionDTO?
 
     enum CodingKeys: String, CodingKey {
@@ -444,6 +504,7 @@ private struct AssignmentDTO: Decodable {
         case pointsPossible = "points_possible"
         case omitFromFinalGrade = "omit_from_final_grade"
         case dueAt = "due_at"
+        case submissionTypes = "submission_types"
         case submission
     }
 }

@@ -104,6 +104,7 @@ struct SyllabusSetupView: View {
 #endif
             }
         }
+        .formStyle(.grouped)
         .sheet(isPresented: $showPaste) { pasteSheet }
     }
 
@@ -237,6 +238,7 @@ struct SyllabusSetupView: View {
                 }
             }
         }
+        .formStyle(.grouped)
     }
 
     private func extras(for category: SyllabusCategory) -> String {
@@ -291,6 +293,7 @@ struct SyllabusSetupView: View {
                     }
                 }
             }
+            .formStyle(.grouped)
         } else {
             Text("add a syllabus to match its categories.")
                 .font(.lhfSans(12))

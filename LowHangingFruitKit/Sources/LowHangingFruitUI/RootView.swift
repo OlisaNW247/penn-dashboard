@@ -1,23 +1,33 @@
 import SwiftUI
 
-/// The app's root view. The `@main` entry point lives in the Xcode app target
-/// (which owns the `WindowGroup`) and simply presents `RootView()`. Keeping the
-/// UI in a library lets a real, shippable app target import it.
-public struct RootView: View {
-    @StateObject private var state = AppState()
-    @StateObject private var scheduler = NotificationScheduler()
-    @State private var showSplash: Bool
+/// The shared root content: splash, onboarding/intro, or the dashboard,
+/// depending on `state`. Extracted out of `RootView` so `LHFScenes` (the
+/// macOS-aware `@main` entry, see `LHFScenes.swift`) can hand it an
+/// `AppState`/`NotificationScheduler` pair that lives at the *Scene* level —
+/// above any individual `WindowGroup` — rather than one scoped to a single
+/// window. That's what lets the menu-bar extra and the main window share one
+/// `AppState` instead of each spinning up its own.
+///
+/// `state`/`scheduler` are `@ObservedObject` here (not owned) precisely so
+/// this view has no opinion about who creates them or how long they live —
+/// see `OwnedRootView` below and `LHFScenes` for the two current owners.
+struct RootCore: View {
+    @ObservedObject var state: AppState
+    @ObservedObject var scheduler: NotificationScheduler
 
-    public init() {
-        // Skip the splash in demo/screenshot mode so captures land on the app.
+    /// Skip the splash in demo/screenshot mode so captures land on the app.
+    /// A default expression (rather than a custom `init`) keeps this struct's
+    /// memberwise initializer intact for callers that only care about
+    /// `state`/`scheduler`.
+    @State private var showSplash: Bool = {
         var skip = false
         #if DEBUG
         skip = ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
         #endif
-        _showSplash = State(initialValue: !skip)
-    }
+        return !skip
+    }()
 
-    public var body: some View {
+    var body: some View {
         ZStack {
             mainContent
 
@@ -72,5 +82,34 @@ public struct RootView: View {
                     await state.syncIfConfigured()
                 }
         }
+    }
+}
+
+/// The app's root view. The `@main` entry point lives in the Xcode app target
+/// (which owns the `WindowGroup`) and simply presents `RootView()`. Keeping the
+/// UI in a library lets a real, shippable app target import it.
+///
+/// This is now a thin compatibility wrapper: the shipping app (`App/LHFApp
+/// .swift`) uses `LHFScenes` directly, whose `AppState`/`NotificationScheduler`
+/// live at the Scene level so the menu-bar extra can share them with the main
+/// window. `RootView` still owns its own pair via `OwnedRootView` below, so
+/// previews and any other caller that only wants a single window keep
+/// compiling unchanged.
+public struct RootView: View {
+    public init() {}
+
+    public var body: some View {
+        OwnedRootView()
+    }
+}
+
+/// Owns the `AppState`/`NotificationScheduler` for a standalone `RootView()`.
+/// Split out so `RootView` itself can stay a trivial, stable wrapper type.
+private struct OwnedRootView: View {
+    @StateObject private var state = AppState()
+    @StateObject private var scheduler = NotificationScheduler()
+
+    var body: some View {
+        RootCore(state: state, scheduler: scheduler)
     }
 }

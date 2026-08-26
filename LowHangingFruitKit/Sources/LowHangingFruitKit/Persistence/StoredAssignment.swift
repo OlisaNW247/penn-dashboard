@@ -1,6 +1,36 @@
 import Foundation
 import SwiftData
 
+// MARK: - CloudKit-compliance defaults
+//
+// CloudKit-mirrored SwiftData rejects a schema where any non-optional stored
+// property lacks a default value — its private-database mirroring can write a
+// record field-by-field, so every attribute must be constructible on its own
+// rather than only through this type's designated init. Every non-optional
+// property below therefore now carries a neutral default (`""`, `false`, or
+// the epoch for the two lifecycle dates); optional properties (`dueAt`,
+// `urlString`, `termYear`, `termSeasonRaw`, `completedAt`, `scoreEarned`,
+// `scoreMax`, `linkedID`, `pairingConfirmedAt`) already satisfy the
+// requirement with their implicit `nil` and are unchanged.
+//
+// These defaults are never actually reached on a real row: the designated
+// `init(...)` below still assigns every property explicitly, so any row this
+// app itself creates is fully populated on write, same as before. They exist
+// solely so the CloudKit schema validation at container-open time accepts the
+// model, and so that a record arriving from another device mid-sync (one
+// field at a time) always has *something* typed in every column rather than
+// leaving SwiftData with no value to put there. A row that is momentarily
+// all-defaults reads exactly like the hidden `isCompletionOnly` bookkeeping
+// rows this type already produces (see `completionOnly(...)` below) — nothing
+// downstream trusts a row's display fields without also checking it isn't one
+// of those, so a half-synced record cannot leak into a list before its real
+// fields arrive.
+//
+// `Date(timeIntervalSince1970: 0)` (not `Date()`) is deliberate: it makes the
+// default itself deterministic, which matters because it becomes part of the
+// static schema SwiftData validates and hashes — not because any real row is
+// ever expected to carry it.
+
 /// The durable, on-disk record of an assignment the app has ever seen from a
 /// feed. This is the ledger row behind `AssignmentStore`: the app is no longer a
 /// live view of "whatever the last fetch returned" but a database that fetches
@@ -41,14 +71,14 @@ import SwiftData
 public final class StoredAssignment {
     /// `"source:sourceID"` — the same stable identity as `Assignment.id`.
     /// Unique by invariant, not by constraint (see the type's note).
-    public var id: String
+    public var id: String = ""
 
     // MARK: Feed-supplied identity & display (refreshed on every sync)
-    public var sourceRaw: String
-    public var sourceID: String
-    public var kindRaw: String
-    public var course: String
-    public var title: String
+    public var sourceRaw: String = ""
+    public var sourceID: String = ""
+    public var kindRaw: String = ""
+    public var course: String = ""
+    public var title: String = ""
     public var dueAt: Date?
     public var urlString: String?
     /// Persisted as the `YYYYTT` term code (see `Term`); nil when unknown.
@@ -57,13 +87,13 @@ public final class StoredAssignment {
 
     // MARK: Lifecycle — the heart of "don't lose things"
     /// First time this item was ever seen in any feed. Never overwritten.
-    public var firstSeen: Date
+    public var firstSeen: Date = Date(timeIntervalSince1970: 0)
     /// Refreshed to "now" on every sync the item is present in.
-    public var lastSeenInFeed: Date
+    public var lastSeenInFeed: Date = Date(timeIntervalSince1970: 0)
     /// Set true once a sync no longer returns it. The item is retained (visible
     /// until the deliberate aging rule fires), not deleted — a professor moving
     /// or briefly hiding an item, or a partial fetch, must never lose it.
-    public var isGoneFromFeed: Bool
+    public var isGoneFromFeed: Bool = false
 
     // MARK: Completion — the ledger IS the record, not a mirror of one
     /// When the user ticked this item off (or its cross-platform counterpart).
@@ -104,9 +134,9 @@ public final class StoredAssignment {
     /// Canvas's own submission signal (from Grade Watcher's `workflow_state`),
     /// stored so it survives launches instead of being blank until a live grade
     /// refresh lands. Keyed for the dashboard join via `canvasAssignmentID`.
-    public var canvasSubmitted: Bool
+    public var canvasSubmitted: Bool = false
     /// Gradescope's scraped submitted status.
-    public var gradescopeSubmitted: Bool
+    public var gradescopeSubmitted: Bool = false
 
     // MARK: How current the submission signals are
     /// When Canvas last *told us something* about this item — submitted or not.

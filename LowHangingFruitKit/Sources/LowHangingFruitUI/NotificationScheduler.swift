@@ -34,6 +34,10 @@ final class NotificationScheduler: ObservableObject {
     @Published private(set) var isEnabled: Bool
     @Published private(set) var leadOffsets: Set<LeadOffset>
     @Published private(set) var digestEnabled: Bool
+    /// Whether "Turned in ✓" confirmations post when a Grade Watcher refresh
+    /// detects a new submission. Defaults ON (unlike reminders/digest): the
+    /// feature was requested as always-on, so the toggle exists to opt OUT.
+    @Published private(set) var turnedInEnabled: Bool
     @Published private(set) var digestTime: DateComponents
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
@@ -58,6 +62,7 @@ final class NotificationScheduler: ObservableObject {
     private static let digestKey       = "notif.digestEnabled"
     private static let digestHourKey   = "notif.digestHour"
     private static let digestMinuteKey = "notif.digestMinute"
+    private static let turnedInKey     = "notif.turnedInEnabled"
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
     static let maxPending = 60
@@ -75,6 +80,9 @@ final class NotificationScheduler: ObservableObject {
             self.leadOffsets = LeadOffset.defaults
         }
         self.digestEnabled = d.bool(forKey: Self.digestKey)
+        // Default ON when never set — `bool(forKey:)` alone would read a
+        // missing key as false and silently disable the feature for everyone.
+        self.turnedInEnabled = d.object(forKey: Self.turnedInKey) as? Bool ?? true
         let hour = d.object(forKey: Self.digestHourKey) as? Int ?? 8
         let minute = d.object(forKey: Self.digestMinuteKey) as? Int ?? 0
         self.digestTime = DateComponents(hour: hour, minute: minute)
@@ -125,6 +133,11 @@ final class NotificationScheduler: ObservableObject {
     func setDigestEnabled(_ on: Bool) {
         digestEnabled = on
         defaults.set(on, forKey: Self.digestKey)
+    }
+
+    func setTurnedInEnabled(_ on: Bool) {
+        turnedInEnabled = on
+        defaults.set(on, forKey: Self.turnedInKey)
     }
 
     func setDigestTime(_ comps: DateComponents) {
@@ -300,6 +313,53 @@ final class NotificationScheduler: ObservableObject {
         var courseKey: String { item.assignment.course }
     }
 
+    // MARK: Turned-in confirmations
+
+    /// Posts one immediate "Turned in ✓" notification per newly-detected
+    /// Canvas submission (see `AppState.updateSubmissionState` /
+    /// `AppState.submissionNotifications`). Delivered with a nil trigger, like
+    /// `notifyGradeChanges` — the submission has already happened, so there's
+    /// nothing to wait for.
+    ///
+    /// Does NOT call `requestAuthorization()`: if the user has never granted
+    /// (or has declined) notifications, this silently no-ops rather than
+    /// prompting from a background Grade Watcher refresh. It reuses whatever
+    /// authorization state the reminders flow already established, exactly
+    /// like `notifyGradeChanges` does.
+    func postTurnedInNotifications(_ notifications: [(title: String, body: String)]) async {
+        guard isEnabled, turnedInEnabled, !notifications.isEmpty else { return }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return }
+        for request in Self.turnedInRequests(notifications) {
+            try? await center.add(request)
+        }
+    }
+
+    /// Pure request-building for turned-in confirmations, mirroring
+    /// `gradeRequests` — unit-testable without `UNUserNotificationCenter`.
+    ///
+    /// Identifiers use the `turnedin:` prefix, which does not collide with
+    /// any scheme already in use here: due-date reminders are
+    /// `due:<assignment id>:<offset>` (built/removed in `plannedRequests` /
+    /// `reschedule`'s `cancelAll()`), the daily summary is the fixed
+    /// `digest:daily`, and grade alerts are `grade:<assignment id>:<earned>`
+    /// or `grade:batch:<timestamp>`. A random UUID per call additionally
+    /// guarantees two confirmations for the same assignment (e.g. a
+    /// submission retracted and redone) never collide with each other either.
+    static func turnedInRequests(_ notifications: [(title: String, body: String)]) -> [UNNotificationRequest] {
+        notifications.map { notification in
+            let content = UNMutableNotificationContent()
+            content.title = notification.title
+            content.body = notification.body
+            content.sound = .default
+            return UNNotificationRequest(
+                identifier: "turnedin:\(UUID().uuidString)",
+                content: content,
+                trigger: nil
+            )
+        }
+    }
+
     // MARK: Planning (pure; no UNUserNotificationCenter access — unit-testable)
 
     /// Builds the pending requests for `items`, honouring both the global
@@ -402,11 +462,16 @@ final class NotificationScheduler: ObservableObject {
 
         var requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
             let content = UNMutableNotificationContent()
-            // Lead the title with a colored urgency dot (iOS won't let us tint
-            // notification text, so the emoji carries the tier through).
+            // Owner's notification redesign (2026-08-26): the class name is
+            // the headline and the lead phrase is the entire body — no
+            // urgency emoji, no assignment title, no formatted date. The
+            // notification's job is "look at this class now-ish"; the app is
+            // one tap away for everything else. Urgency still shapes
+            // BEHAVIOR (the time-sensitive interruption level below), it
+            // just no longer shapes the text.
             let urgency = DueState(due: pair.item.due, now: pair.fireDate)
-            content.title = "\(urgency.urgencyEmoji) \(pair.offset.headline): \(pair.item.assignment.title)"
-            content.body = "\(pair.item.assignment.course) · due \(Self.format(pair.item.due ?? pair.fireDate))"
+            content.title = pair.item.assignment.course
+            content.body = pair.offset.headline
             content.sound = .default
             content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
             let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)

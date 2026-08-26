@@ -84,19 +84,55 @@ public struct CanvasDiscoveryClient: Sendable {
         }
     }
 
-    private func discoverCourses() async -> [String: String] {
-        let urls = [
-            baseURL.appendingPathComponent("courses"),
-            baseURL.appendingPathComponent("dashboard"),
-        ]
+    /// Public wrapper over the same `/courses` + `/dashboard` scrape `scan`
+    /// already uses internally, for callers (`CourseProfileEngine`'s
+    /// caller) that need the full enrolled-course list itself rather than
+    /// just an id→name lookup table — in particular, courses with zero
+    /// calendar/feed presence are otherwise invisible to LHF, and this is
+    /// the only source that surfaces them (docs/READINGS_COURSES_PLAN.md
+    /// Phase 1.2).
+    public func discoverEnrolledCourses() async -> [CanvasCourseDiscoveryParser.Course] {
+        // `discoverCourses()` already dedupes by id (it's keyed on id in a
+        // dictionary), so this is a direct, order-unspecified projection.
+        await discoverCourses().map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
+    }
 
+    /// Fetches and parses a course's Modules page — the one new network
+    /// surface Phase 1.3 needs, alongside the syllabus/assignment-group
+    /// fetches the grades client already does — so the profile engine can
+    /// tell a course that only publishes readings through Modules apart
+    /// from one that's genuinely silent. Best-effort like the rest of this
+    /// file's HTML scraping: a parse miss yields an empty array (see
+    /// `CanvasModulesParser`), but a *fetch* failure (expired session, HTTP
+    /// error) still throws, so callers can tell "no session" (→
+    /// `.unknownSilent`) apart from "session fine, page just has nothing."
+    public func fetchModulesReadings(courseID: String) async throws -> [CanvasModulesParser.Item] {
+        let html = try await fetchHTML(baseURL.appendingPathComponent("courses/\(courseID)/modules"))
+        return CanvasModulesParser.items(from: html)
+    }
+
+    /// `/courses` and `/dashboard` need DIFFERENT parsers: `/courses` lists
+    /// past and future enrollments alongside current ones (professors often
+    /// never conclude a course), so it goes through `currentEnrollmentLinks`
+    /// to keep finished classes out of `canvasCourseIDsByCode` / Grade
+    /// Watcher. `/dashboard` only ever shows Canvas's own idea of "active"
+    /// courses (that's what the dashboard IS), so the plain, unsectioned
+    /// `courseLinks` is correct there and cheaper.
+    private func discoverCourses() async -> [String: String] {
         var courses: [String: String] = [:]
-        for url in urls {
-            guard let html = try? await fetchHTML(url) else { continue }
+
+        if let html = try? await fetchHTML(baseURL.appendingPathComponent("courses")) {
+            for course in CanvasCourseDiscoveryParser.currentEnrollmentLinks(from: html) {
+                courses[course.id] = course.name
+            }
+        }
+
+        if let html = try? await fetchHTML(baseURL.appendingPathComponent("dashboard")) {
             for course in CanvasCourseDiscoveryParser.courseLinks(from: html) {
                 courses[course.id] = course.name
             }
         }
+
         return courses
     }
 
@@ -129,6 +165,44 @@ public enum CanvasCourseDiscoveryParser {
     public struct Course: Sendable, Hashable {
         public let id: String
         public let name: String
+
+        // Explicit public init: the synthesized memberwise init is only
+        // `internal`, which would leave callers outside this module (the UI
+        // layer, and CourseProfileEngine's tests) unable to construct one
+        // even though the type and its fields are public.
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    /// Restricts course discovery to the CURRENT-enrollment section of
+    /// Canvas's classic `/courses` page. That page groups enrollments into
+    /// separate tables — `my_courses_table` for current enrollments, plus
+    /// `past_enrollments_table`/`future_enrollments_table` (headed "Past
+    /// Enrollments"/"Future Enrollments") for terms a professor never
+    /// concluded, or hasn't started — and scraping the whole page (the old
+    /// behavior) pulls long-finished classes into `canvasCourseIDsByCode`,
+    /// polluting Grade Watcher with courses that are over.
+    ///
+    /// We find the EARLIEST of those past/future markers (by DOM id or
+    /// heading text, case-insensitively — Canvas has used both across
+    /// redesigns) and only scan the page before it.
+    ///
+    /// If NO marker is found at all, we fall back to the WHOLE page rather
+    /// than an empty result: a future HTML redesign that renames or drops
+    /// these markers must degrade to the old too-inclusive behavior — extra
+    /// courses to filter elsewhere — never to an empty course list, which
+    /// would look indistinguishable from a broken login.
+    public static func currentEnrollmentLinks(from html: String) -> [Course] {
+        let markers = ["past_enrollments", "Past Enrollments", "future_enrollments", "Future Enrollments"]
+        let cutoff = markers
+            .compactMap { html.range(of: $0, options: .caseInsensitive) }
+            .map(\.lowerBound)
+            .min()
+
+        guard let cutoff else { return courseLinks(from: html) }
+        return courseLinks(from: String(html[html.startIndex..<cutoff]))
     }
 
     public static func courseLinks(from html: String) -> [Course] {

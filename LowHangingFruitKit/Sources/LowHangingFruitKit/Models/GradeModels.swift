@@ -44,6 +44,9 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
     public let omitFromFinalGrade: Bool
     /// Due date, used only to count past-due-unscored items ("pending grading").
     public let dueAt: Date?
+    /// Canvas `submission_types` — e.g. `["online_upload"]`, `["none"]`,
+    /// `["on_paper", "online_upload"]`. nil/empty when Canvas didn't say.
+    public let submissionTypes: [String]?
 
     public init(
         id: String,
@@ -53,7 +56,8 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         scoreSource: ScoreSource? = nil,
         isExcused: Bool = false,
         omitFromFinalGrade: Bool = false,
-        dueAt: Date? = nil
+        dueAt: Date? = nil,
+        submissionTypes: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -63,6 +67,17 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         self.isExcused = isExcused
         self.omitFromFinalGrade = omitFromFinalGrade
         self.dueAt = dueAt
+        self.submissionTypes = submissionTypes
+    }
+
+    /// True when Canvas expects no online submission for this assignment —
+    /// every declared submission type is `none`, `on_paper`, or `not_graded`.
+    /// A hybrid (e.g. paper OR online upload) still expects a submission and
+    /// stays false. Unknown/absent submission types stay false: never guess
+    /// an assignment out of the student's way.
+    public var requiresNoSubmission: Bool {
+        guard let submissionTypes, !submissionTypes.isEmpty else { return false }
+        return submissionTypes.allSatisfy { ["none", "on_paper", "not_graded"].contains($0) }
     }
 }
 

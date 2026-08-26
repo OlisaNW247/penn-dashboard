@@ -43,12 +43,16 @@ public enum LeadOffset: Int, CaseIterable, Identifiable, Codable, Sendable, Hash
         }
     }
 
-    /// Notification headline prefix.
+    /// The reminder notification's entire body text (see
+    /// `NotificationScheduler.plannedRequests` — the owner's notification
+    /// redesign made the lead phrase the whole message). "Due in 24 hours",
+    /// not "Due tomorrow": a 24h-before reminder for something due at 6 AM
+    /// fires at 6 AM today, where "tomorrow" reads wrong.
     public var headline: String {
         switch self {
         case .h1:  return "Due in 1 hour"
         case .h3:  return "Due in 3 hours"
-        case .h24: return "Due tomorrow"
+        case .h24: return "Due in 24 hours"
         case .d2:  return "Due in 2 days"
         case .d7:  return "Due in a week"
         }

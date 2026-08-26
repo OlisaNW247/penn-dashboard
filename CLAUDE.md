@@ -6,7 +6,7 @@ next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, als
 builds for macOS from the same source. **Everything is on-device** — no server, no
 accounts, no analytics, no third-party SDKs.
 
-Shipped on the App Store as **1.1.1 (build 3)**.
+Shipped on the App Store as **1.1.2 (build 4)**.
 
 ## Commands
 
@@ -22,8 +22,12 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
 cd LowHangingFruitKit && swift build
 ```
 
-Current baseline on `v4`: **456 tests / 40 suites green**, both builds clean.
-A change that lowers the test count has lost work — investigate rather than accept it.
+This branch is the **merge of `v3.5` and `v4`** (v4's UI, v3.5's engine work —
+readings-only courses, iCloud Tier 2 sync, background refresh, the Mac menu-bar
+tier, Canvas session renewal). The pre-merge baseline on `v4` was 456 tests /
+40 suites green; re-establish the number on this branch and then hold the same
+rule: a change that lowers the test count has lost work — investigate rather
+than accept it.
 
 ## Layout
 
@@ -95,6 +99,21 @@ course is deliberately cosmetic only.
 - **Regex patterns needing real Unicode characters must not be raw strings.**
   `#"...\u{2013}..."#` passes the escape through literally, the pattern fails to
   compile, and `try?` turns that into a silent wrong answer.
+- **`swift test` compiles the macOS slice.** iOS-only API (`PageTabViewStyle`,
+  WidgetKit, `AVAudioSession`) must sit behind `#if os(iOS)` / `canImport` or it
+  breaks the test build.
+- **An unsandboxed macOS test run resolves the App Group container WITHOUT the
+  entitlement** (learned 2026-08-24) — `swift test` on a dev Mac would reach the
+  real Mac app's ledger, shared defaults, and widget snapshot.
+  `SharedDefaults.isTestRunner` guards all three choke points. Never remove
+  those guards.
+- **Preferences go through `UserDefaults.lhf`**, never `UserDefaults.standard`.
+  Tests must save and restore through the same accessor or they are not reading
+  what `AppState` writes.
+- **Credentials never go in defaults.** Session cookies live in the Keychain
+  (`SessionCookieStore`); so does the Canvas feed URL (`ICSFeedURLStore`),
+  because `…/feeds/calendars/user_<token>.ics` is a bearer credential. This is
+  why `canvasICSURL` is absent from `SharedDefaults.legacyKeys`.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 
 ## Conventions
@@ -115,7 +134,9 @@ course is deliberately cosmetic only.
 | `main` | Old — 1.0.0 App Store prep. Not the ship line. |
 | `origin/v2.5` | The **shipped** line, 1.1.1 build 3. Grade Watcher gated off. |
 | `v3` | Grade Watcher un-gated, grade report, syllabus, the SwiftData ledger |
-| `v4` | Current. v3 plus integration + Profile tab, per-course reminders, semester rollover |
+| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal |
+| `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
+| this branch | **v3.5 + v4 merged** — v4's UI over v3.5's engine |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps
@@ -126,7 +147,57 @@ course is deliberately cosmetic only.
 - **The `LedgerSchemaV1` migration has never opened a real pre-existing on-disk
   store.** v4 runs four migrations in one launch; the failure mode is a silent
   fallback to an empty ledger.
-- **CloudKit is off and the schema is not eligible yet** — eleven properties on
-  `StoredAssignment` are non-optional with no default. See the note in that file.
+- **CloudKit sync is opt-in and default-off** (Settings → "icloud sync",
+  docs/LAPTOP_INTEGRATION_PLAN.md Tier 2). The schema is CloudKit-eligible —
+  every property on `StoredAssignment` carries a default — and every store
+  pins `cloudKitDatabase: .none` unless the toggle was on at launch. The
+  sync path has had little real-device soak time; treat it as Phase A.
 - The onboarding per-course walk is covered by tests but has never been walked on
   a device (it needs a real Canvas session; preview mode skips onboarding).
+
+## Overseer / doer split
+
+You are acting as the overseer on this project, not the implementer.
+Your job is to plan, delegate, and review — not to write code yourself.
+
+### Division of labor
+- All non-trivial file writes, edits, and command execution go through the
+  `implementer` subagent. Trivial one-line fixes you spot while reviewing are
+  fine to make yourself, but default to delegating.
+- Use the `verifier` subagent for an independent check on anything
+  security-sensitive, architecturally significant, or where you want a second
+  opinion beyond your own review.
+- You do the planning, task breakdown, delegation-brief writing,
+  acceptance-criteria review, and integration decisions yourself.
+
+### Before delegating
+Break the request into the smallest tasks that can each be verified
+independently. For each one, write a delegation brief that stands alone — the
+subagent sees NONE of your conversation. Every brief must include:
+1. The specific goal and exact scope (what NOT to touch, too).
+2. Relevant file paths, current state, and any conventions to follow.
+3. Concrete acceptance criteria — how you'll know it's done correctly.
+4. What to report back (files changed, how it was verified, open questions).
+
+### After a subagent reports back
+Don't accept on trust. Before integrating:
+1. Check the result against the acceptance criteria you gave it.
+2. Spot-check the actual diff, not just the subagent's summary.
+3. If it's wrong or incomplete, send a specific corrective follow-up to the
+   same subagent rather than redoing the work yourself.
+4. After two failed revision rounds on the same task, stop delegating it and
+   say what's going wrong — don't keep looping silently.
+
+### Working style
+- Keep a running task list so the state of play is visible.
+- Give short status updates between steps, not a transcript of every subagent
+  exchange.
+- If a task is ambiguous at the planning stage, ask before writing the
+  delegation brief — don't pass ambiguity down and hope it guesses right.
+- Flag anything security-sensitive, destructive, or architecture-changing for
+  explicit sign-off before delegating it.
+
+### The one rule that matters most here
+**A change that has not been compiled is not done.** Say so plainly rather
+than implying otherwise — from a subagent's report, or your own. Both of this
+project's worst days came from resolved-but-uncompiled Swift being pushed.

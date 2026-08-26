@@ -53,14 +53,22 @@ public final class GradeHistoryStore {
 
     // MARK: Construction
 
+    // cloudKitDatabase is pinned to .none on both inits below for the same
+    // reason as AssignmentStore's local paths: the parameter defaults to
+    // .automatic, which adopts the first iCloud container in the app's
+    // entitlements — and the app now carries one (Tier 2). Without the pin,
+    // grade history would silently mirror to CloudKit for every user, sync
+    // toggle or not. When grade history is meant to ride the iCloud sync
+    // (the "later" this type's doc mentions), that gets its own opt-in
+    // cloud init, like AssignmentStore.init(cloudKitGroupURL:).
     public init(inMemory: Bool = false) throws {
-        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
         self.container = try ModelContainer(for: StoredGradeObservation.self, configurations: config)
         self.isPersistent = !inMemory
     }
 
     public init(url: URL) throws {
-        let config = ModelConfiguration(url: url)
+        let config = ModelConfiguration(url: url, cloudKitDatabase: .none)
         self.container = try ModelContainer(for: StoredGradeObservation.self, configurations: config)
         self.isPersistent = true
     }

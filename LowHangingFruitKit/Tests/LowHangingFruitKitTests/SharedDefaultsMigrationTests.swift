@@ -198,6 +198,13 @@ struct SharedDefaultsMigrationTests {
     /// The migration list has to be *complete as of this change* — a key left
     /// off is silently abandoned data for every existing user. Pinned against
     /// the three files that declared them.
+    ///
+    /// `canvasICSURL` is the one deliberate omission: it was on this list when
+    /// preferences moved to the App Group, but the Canvas login hardening then
+    /// moved the feed URL — a bearer credential embedding a per-user token —
+    /// out of UserDefaults entirely and into the Keychain via
+    /// `ICSFeedURLStore`. It migrates by that route instead, so it must be
+    /// absent here rather than copied into unencrypted, backed-up storage.
     @Test("every key the app persisted is on the migration list")
     func keyListIsComplete() {
         let expected: Set<String> = [
@@ -215,6 +222,13 @@ struct SharedDefaultsMigrationTests {
         #expect(Set(SharedDefaultsMigration.legacyKeys) == expected)
         // No duplicates — a repeat would double-count the migrated key list.
         #expect(SharedDefaultsMigration.legacyKeys.count == expected.count)
+        // Guard against a future regression re-adding the credential to the
+        // copy list: `canvasICSURL` must never travel through the shared
+        // suite, only through `ICSFeedURLStore` into the Keychain.
+        #expect(
+            !SharedDefaultsMigration.legacyKeys.contains("canvasICSURL"),
+            "canvasICSURL is a bearer credential (Canvas feed token embedded in the URL) and must migrate via ICSFeedURLStore into the Keychain, not be copied into the shared App Group suite"
+        )
     }
 
     /// The one key whose *absence* from the list is the point.
@@ -246,6 +260,13 @@ struct SharedDefaultsMigrationTests {
     /// domain, because the widget can't follow it there. Scans the UI sources
     /// rather than trusting review. Skipped when the checkout isn't alongside
     /// the tests (a prebuilt test bundle).
+    ///
+    /// `ICSFeedURLStore.swift` is a named, narrow exception: `canvasICSURL` is
+    /// no longer migrated through the shared suite at all (see
+    /// `keyListIsComplete()`), so that file has to fall back to
+    /// `UserDefaults.standard` itself, once, to pick up a pre-hardening value
+    /// left in the app-private domain before copying it into the Keychain.
+    /// Every other UI source must still fail this check.
     @Test("no preference read is left pointing at the private domain")
     func uiSourcesUseTheSharedAccessor() throws {
         let sources = URL(fileURLWithPath: #filePath)      // .../Tests/LowHangingFruitKitTests/<this>

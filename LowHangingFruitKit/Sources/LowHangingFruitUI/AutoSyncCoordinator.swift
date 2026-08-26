@@ -40,7 +40,10 @@ enum AutoSyncCoordinator {
     /// refresh when the user opens Grade Watcher; this makes submission detection
     /// work on the dashboard without visiting that screen.
     static func refreshCanvasGrades(state: AppState, now: Date = Date()) async {
-        guard state.isCanvasConnected else { return }
+        // A pasted-calendar-link install has no cookie session at all, so this
+        // path could only ever no-op — gate on `canUseGradeWatcher`, not the
+        // weaker `isCanvasConnected` (true for that install too).
+        guard state.canUseGradeWatcher else { return }
         if let last = state.gradeWatcher.lastRefreshed,
            now.timeIntervalSince(last) < canvasGradesMinInterval {
             return
@@ -48,6 +51,12 @@ enum AutoSyncCoordinator {
         let cookies = await canvasCookies()
         guard !cookies.isEmpty else { return }
         await state.refreshGradeWatcher(cookies: cookies)
+        // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md)
+        // piggybacks on the same session rather than gathering its own —
+        // a separate, unrelated axis from Grade Watcher's course coverage
+        // (see the plan's "Hard requirement — Grade Watcher independence"),
+        // just sharing the cookies already in hand.
+        await state.refreshCourseIntel(cookies: cookies)
     }
 
     /// Gathers Gradescope session cookies: the Keychain-persisted set

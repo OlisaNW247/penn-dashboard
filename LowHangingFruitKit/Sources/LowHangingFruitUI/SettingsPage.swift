@@ -5,6 +5,9 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+#if os(macOS)
+import ServiceManagement
+#endif
 
 /// Account, appearance, reminder defaults, tasks, storage and troubleshooting.
 ///
@@ -31,8 +34,13 @@ struct SettingsPage: View {
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
-    /// "Paste your Canvas calendar link" fallback, also reachable from
-    /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
+    @State private var didCopyDiagnostics = false
+    #if os(macOS)
+    /// Bumped after every `SMAppService` register/unregister call so the
+    /// toggle below re-reads `.status` — that call doesn't publish anything
+    /// itself, and the toggle's `get` has no other reason to be re-evaluated.
+    @State private var loginItemRefreshNonce = 0
+    #endif
 
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
@@ -106,12 +114,25 @@ struct SettingsPage: View {
                 .labelsHidden()
             }
 
+            courseContentSection
+
             if FeatureFlags.gradeWatcher {
-                Section("grades") {
-                    NavigationLink {
-                        GradeWatcherView(store: state.gradeWatcher)
-                    } label: {
+                Section {
+                    if state.canUseGradeWatcher {
+                        NavigationLink {
+                            GradeWatcherView(store: state.gradeWatcher)
+                        } label: {
+                            Label("grade watcher", systemImage: "chart.bar.fill")
+                        }
+                    } else {
                         Label("grade watcher", systemImage: "chart.bar.fill")
+                            .foregroundStyle(Color.secondary)
+                    }
+                } header: {
+                    Text("grades")
+                } footer: {
+                    if !state.canUseGradeWatcher {
+                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use Disconnect Canvas above, then Connect Canvas to log in directly.")
                     }
                 }
             }
@@ -126,7 +147,15 @@ struct SettingsPage: View {
 
             remindersSection
 
+            iCloudSyncSection
+
+            #if os(macOS)
+            onThisMacSection
+            #endif
+
             storageSection
+
+            diagnosticsSection
 
             if let notice = state.syncNotice ?? state.error {
                 Section {
@@ -136,6 +165,7 @@ struct SettingsPage: View {
                 }
             }
         }
+        .formStyle(.grouped)
         .navigationTitle("settings")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -185,6 +215,18 @@ struct SettingsPage: View {
                 if let earliest = stats.earliestFirstSeen {
                     LabeledContent("tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
+                // Always shown, even at 0: this is the number that says the
+                // in-code uniqueness invariant is holding now that the
+                // database no longer enforces it (`.unique` came off for
+                // CloudKit), and a provable zero after a two-device merge is
+                // the whole point. An absent row would be indistinguishable
+                // from "nobody ever checked".
+                LabeledContent("Duplicate entries", value: "\(stats.duplicateIDs)")
+                if stats.duplicateIDs > 0 {
+                    Text("The ledger is holding more than one copy of the same assignment. It will self-heal on the next sync, but this appearing at all is a bug worth reporting.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.orange)
+                }
                 // Three states, not two. A store can be perfectly on-disk and
                 // still be failing every write, and telling that user their
                 // work "will be lost when the app quits" is both wrong and
@@ -219,6 +261,53 @@ struct SettingsPage: View {
         }
     }
 
+    // MARK: Reading & event classes
+
+    /// Management surface for courses whose readings/events the dashboard
+    /// isn't showing by default (docs/READINGS_COURSES_PLAN.md Phase 3.8) —
+    /// the durable, revisitable counterpart to `CourseNudgeSheet`'s one-time
+    /// ask. Only lists courses `AppState` considers manageable; a normal
+    /// course with submittable work never appears here.
+    @ViewBuilder
+    private var courseContentSection: some View {
+        let manageable = state.courseContentManageableCourses
+        if !manageable.isEmpty {
+            Section {
+                ForEach(manageable, id: \.courseKey) { report in
+                    Toggle(isOn: Binding(
+                        get: { state.courseContentIncluded(report.courseKey) },
+                        set: { state.setCourseContentIncluded(report.courseKey, $0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(state.courseDisplayName(report.courseKey))
+                            Text(courseContentCaption(report))
+                                .font(.lhfSans(11))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                    }
+                }
+            } header: {
+                Text("Reading & event classes")
+            } footer: {
+                Text("These classes only post readings or events \u{2014} nothing to submit. On means their items show on your list.")
+            }
+        }
+    }
+
+    /// Short summary of what was actually found for `report`, shown under its
+    /// toggle. Mirrors the counts `CourseNudgeSheet` explains at ask time.
+    private func courseContentCaption(_ report: CourseProfileReport) -> String {
+        switch report.profile {
+        case let .readingsOnCalendar(eventCount, _):
+            return "\(eventCount) calendar reading\(eventCount == 1 ? "" : "s")"
+        case let .silent(moduleReadingCount):
+            guard let moduleReadingCount, moduleReadingCount > 0 else { return "nothing found yet" }
+            return "\(moduleReadingCount) module reading\(moduleReadingCount == 1 ? "" : "s")"
+        case .normal, .unknownSilent:
+            return "nothing found yet"
+        }
+    }
+
     // MARK: Reminders
 
     /// The **global** reminder configuration: whether due-date reminders run at
@@ -249,6 +338,11 @@ struct SettingsPage: View {
                         ))
                     }
 
+                    Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
+                        get: { scheduler.turnedInEnabled },
+                        set: { scheduler.setTurnedInEnabled($0) }
+                    ))
+
                     Toggle("daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
                         get: { scheduler.digestEnabled },
                         set: { scheduler.setDigestEnabled($0) }
@@ -262,7 +356,118 @@ struct SettingsPage: View {
         }
     }
 
+    // MARK: iCloud sync
 
+    /// Settings → "Sync between my devices" (docs/LAPTOP_INTEGRATION_PLAN.md
+    /// Tier 2), placed between Reminders and the macOS section so it reads
+    /// as one more per-device preference rather than a headline feature —
+    /// matching that plan's own caution to ship it "behind a Settings
+    /// toggle... default off for one release."
+    @ViewBuilder
+    private var iCloudSyncSection: some View {
+        Section {
+            Toggle("sync between my devices", isOn: Binding(
+                get: { state.cloudSyncEnabled },
+                set: { state.setCloudSyncEnabled($0) }
+            ))
+
+            // Priority order matters here, not just presence: a toggle
+            // flipped THIS session hasn't actually reconfigured
+            // `assignmentStore` yet (see `AppState.cloudSyncEnabledAtLaunch`),
+            // so "takes effect next launch" must win over both other lines —
+            // otherwise a student who just turned sync on would see "Sync is
+            // on" immediately, which isn't true until they relaunch.
+            if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
+                Text("Takes effect after you quit and reopen LHF.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
+                Text(reason)
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.orange)
+            } else if state.cloudSyncEnabled {
+                Text("Sync is on. Changes appear on your other devices within a minute or two.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("icloud sync")
+        } footer: {
+            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to LHF\u{2019}s developer. Takes effect the next time you quit and reopen LHF. Both devices need to be signed into the same iCloud account.")
+        }
+    }
+
+    // MARK: On this Mac
+
+    #if os(macOS)
+    /// Launch-at-login (docs/LAPTOP_INTEGRATION_PLAN.md Tier 1) — what makes
+    /// the persistent menu-bar sync loop (`MenuBarLabel` in `LHFScenes.swift`)
+    /// actually start without the user remembering to open the app after
+    /// every reboot. `SMAppService.mainApp` registers/unregisters *this* app
+    /// bundle as a login item directly; no separate helper target needed.
+    @ViewBuilder
+    private var onThisMacSection: some View {
+        Section {
+            Toggle("open at login", isOn: Binding(
+                get: {
+                    _ = loginItemRefreshNonce // force a re-read after register/unregister
+                    return SMAppService.mainApp.status == .enabled
+                },
+                set: { newValue in
+                    if newValue {
+                        try? SMAppService.mainApp.register()
+                    } else {
+                        try? SMAppService.mainApp.unregister()
+                    }
+                    loginItemRefreshNonce += 1
+                }
+            ))
+        } header: {
+            Text("on this mac")
+        } footer: {
+            Text("Keeps LHF in your menu bar so assignments stay fresh all day.")
+        }
+    }
+    #endif
+
+    /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
+    /// meant to be pasted into a support message when Canvas login is stuck.
+    /// Contains no credentials, cookie values, or the ICS feed URL/token —
+    /// see `DiagnosticsReport`'s doc comment for exactly what's included.
+    private var diagnosticsSection: some View {
+        Section {
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label(didCopyDiagnostics ? "copied" : "copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+            }
+            Button {
+                reportProblem()
+            } label: {
+                Label("report a problem", systemImage: "envelope")
+            }
+        } header: {
+            Text("troubleshooting")
+        } footer: {
+            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. \u{201C}Report a problem\u{201D} opens an email with that same redacted report already in it, so you only have to describe what happened.")
+        }
+    }
+
+    private func copyDiagnostics() {
+        let report = DiagnosticsReport.generate(state: state)
+        #if canImport(UIKit)
+        UIPasteboard.general.string = report
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #endif
+        didCopyDiagnostics = true
+    }
+
+    private func reportProblem() {
+        let report = DiagnosticsReport.generate(state: state)
+        SupportContact.openReportMail(diagnostics: report)
+    }
 
     private var digestTimeBinding: Binding<Date> {
         Binding(

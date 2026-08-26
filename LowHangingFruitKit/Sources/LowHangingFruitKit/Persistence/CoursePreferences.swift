@@ -293,6 +293,13 @@ public final class CoursePreferencesStore: ObservableObject {
     /// an isolated type.
     public var willChange: (@MainActor () -> Void)?
 
+    /// Fired after a genuine change has been committed AND persisted — the
+    /// point where the blob under `storageKey` already holds the new state.
+    /// `AppState` uses it to push the blob to the iCloud key-value mirror when
+    /// sync is on. Not fired by `reloadFromDefaults()` (a pull must not echo
+    /// back as a push).
+    public var didChange: (@MainActor () -> Void)?
+
     private let defaults: UserDefaults
 
     /// `defaults` is injected so tests can drive a scratch suite. The default
@@ -501,6 +508,7 @@ public final class CoursePreferencesStore: ObservableObject {
         willChange?()
         byCourseKey = [:]
         persist()
+        didChange?()
         return true
     }
 
@@ -531,7 +539,57 @@ public final class CoursePreferencesStore: ObservableObject {
         willChange?()
         byCourseKey = next
         persist()
+        didChange?()
         return true
+    }
+
+    /// Re-reads the persisted blob, replacing the in-memory map.
+    ///
+    /// Exists for exactly one caller: `AppState.reloadMirroredPreferences`,
+    /// after an external iCloud pull has written a fresh blob under
+    /// `storageKey` (see `CloudPrefsMirror`). Whole-value last-writer-wins —
+    /// whatever is on disk is simply this device's new truth. Fires
+    /// `willChange` but deliberately NOT `didChange`: a pull must not be
+    /// pushed straight back to the cloud, or two devices would echo each
+    /// other's writes forever.
+    public func reloadFromDefaults() {
+        let next = Self.decodeMap(defaults.data(forKey: Self.storageKey))
+        guard next != byCourseKey else { return }
+        willChange?()
+        byCourseKey = next
+        // Persist only the legacy projection: the blob itself was just read
+        // from these defaults, but the widget-visible keys are derived output
+        // and must track it (see `writeLegacyProjection`).
+        persist()
+    }
+
+    /// Re-keys every record through `transform` — the migration for state
+    /// stored under raw registrar strings before `CourseCode.parse` learned to
+    /// clean them (spaced separators, cross-listing prefixes).
+    ///
+    /// Collision rule: when two old keys normalize to the same clean code,
+    /// the record whose old key was ALREADY normalized wins when one exists,
+    /// else whichever is encountered first — the variants were always the same
+    /// course, and landing on the wrong record either way is one tap to fix.
+    public func normalizeCourseKeys(_ transform: (String) -> String) {
+        var next: [String: CoursePreferences] = [:]
+        var winnerWasAlreadyNormalized: Set<String> = []
+        for (oldKey, value) in byCourseKey {
+            let newKey = transform(oldKey)
+            let isAlreadyNormalized = newKey == oldKey
+            if next[newKey] == nil
+                || (isAlreadyNormalized && !winnerWasAlreadyNormalized.contains(newKey)) {
+                var rekeyed = value
+                rekeyed.courseKey = newKey
+                next[newKey] = rekeyed
+                if isAlreadyNormalized { winnerWasAlreadyNormalized.insert(newKey) }
+            }
+        }
+        guard next != byCourseKey else { return }
+        willChange?()
+        byCourseKey = next
+        persist()
+        didChange?()
     }
 
     private func persist() {

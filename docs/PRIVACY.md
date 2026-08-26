@@ -93,4 +93,4 @@ If this policy changes, the updated version will be posted at this page.
 
 ## Contact
 
-Questions about this policy: _<add your contact email before publishing>_
+Questions about this policy: **lowhangingfruit.help@gmail.com**
