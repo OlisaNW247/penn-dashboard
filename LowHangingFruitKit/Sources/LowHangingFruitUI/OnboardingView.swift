@@ -662,6 +662,16 @@ private struct CanvasLoginPane: View {
             }
             isPurging = false
         }
+        // Session-longevity Layer 2 guard (`CanvasSessionRenewer`): this pane
+        // reads from and writes into `LoginDataStores.canvas` the same live,
+        // persistent store the background silent-renewal attempt would use,
+        // so it must never run while this pane is on screen. Set true as
+        // soon as the pane appears (before the purge/WebView above even
+        // starts) and cleared on disappear — there's no separate teardown
+        // path for this pane beyond SwiftUI removing it from the tree
+        // (`OnboardingView`'s `phase` switch), which `onDisappear` covers.
+        .onAppear { state.isCanvasLoginPaneActive = true }
+        .onDisappear { state.isCanvasLoginPaneActive = false }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
 #endif

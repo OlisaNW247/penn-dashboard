@@ -601,11 +601,70 @@ final class AppState: ObservableObject {
     /// stuck false for a feed-only user (docs/CANVAS_LOGIN_HARDENING.md item 3d).
     @Published private(set) var canvasSessionExpired = false
 
+    /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
+    /// on its appear, cleared on its disappear. Not `@Published`: nothing
+    /// renders off this, it exists purely as a guard `CanvasSessionRenewer`
+    /// consults before touching `LoginDataStores.canvas` (session-longevity
+    /// Layer 2 — see that type's doc comment), so a background silent-renewal
+    /// attempt can never run concurrently with the visible login pane reading
+    /// from/writing to the same isolated `WKWebsiteDataStore`.
+    var isCanvasLoginPaneActive = false
+
+    /// Lazily-created, reused across calls so its own cooldown/in-flight
+    /// state (see `CanvasSessionRenewer.gate`) persists between the multiple
+    /// observer sites that can trigger `attemptSilentCanvasRenewal()`.
+    private var canvasSessionRenewer: CanvasSessionRenewer?
+
     /// Recomputes `canvasSessionExpired` from `SessionCookieStore`'s current
     /// Keychain state. Call after anything that could change it: connecting,
     /// disconnecting, or a periodic dashboard refresh.
+    ///
+    /// A false-to-true transition here is also the trigger for a SILENT
+    /// Canvas re-login attempt (session-longevity Layer 2 —
+    /// `CanvasSessionRenewer`), fired once per transition rather than from
+    /// every individual call site: `CanvasSessionRenewer.renewIfNeeded()`'s
+    /// own cooldown/in-flight/pane-active guards make it safe to call from
+    /// the launch/connect/disconnect recompute sites without any further
+    /// gating here. `disconnectCanvas()` calls this too, but never actually
+    /// trips this branch in practice: `SessionCookieStore.remove(service:)`
+    /// deletes that service's Keychain item outright, so
+    /// `isExpired(service:)` — which requires a NON-empty, now-all-stale
+    /// persisted set — reads `false` (never-connected) immediately
+    /// afterward, not `true`. No special-casing needed for that call site;
+    /// verified by tracing `SessionCookieStore.isExpired`'s definition.
     func refreshCanvasSessionExpiredState() {
+        let wasExpired = canvasSessionExpired
         canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas)
+        if canvasSessionExpired && !wasExpired {
+            Task { await attemptSilentCanvasRenewal() }
+        }
+    }
+
+    /// Attempts one SILENT Canvas re-login (session-longevity Layer 2) before
+    /// the user ever sees the "needs a refresh" banner — see
+    /// `CanvasSessionRenewer`'s doc comment for the full mechanism and its
+    /// safety rules. Fire-and-forget from every call site; safe to call
+    /// redundantly since the renewer's own guards make repeat calls within
+    /// the same cooldown window a no-op.
+    ///
+    /// Gated here (rather than inside `CanvasSessionRenewer`) on
+    /// `isUsingFixtureData`: that flag is `AppState`'s own state, and the
+    /// renewer is deliberately kept free of any `AppState` dependency beyond
+    /// the `isLoginPaneActive` closure it's constructed with.
+    func attemptSilentCanvasRenewal() async {
+        guard !isUsingFixtureData else { return }
+        let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(isLoginPaneActive: { [weak self] in
+            self?.isCanvasLoginPaneActive ?? false
+        })
+        canvasSessionRenewer = renewer
+
+        let outcome = await renewer.renewIfNeeded()
+        guard outcome == .renewed else { return }
+
+        refreshCanvasSessionExpiredState()
+        let cookies = await AutoSyncCoordinator.canvasCookies()
+        guard !cookies.isEmpty else { return }
+        await refreshGradeWatcher(cookies: cookies)
     }
 
     func completeOnboarding() {
@@ -1113,6 +1172,20 @@ final class AppState: ObservableObject {
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
         updateSubmissionState()
+
+        // Second trigger site for session-longevity Layer 2
+        // (`CanvasSessionRenewer`): a per-course 401 this refresh folded into
+        // `isSessionExpired` can surface a lapsed session before
+        // `canvasSessionExpired`'s own launch/connect/disconnect cadence
+        // catches up. Fire-and-forget, kept here rather than inside
+        // `GradeWatcherStore` itself so that store stays free of any
+        // renewer/WebKit dependency; safe to call alongside the
+        // `refreshCanvasSessionExpiredState()` trigger site since the
+        // renewer's own cooldown/in-flight guards make redundant calls a
+        // no-op.
+        if gradeWatcher.isSessionExpired {
+            Task { await attemptSilentCanvasRenewal() }
+        }
     }
 
     /// Discovers the full enrolled-course list (including courses with zero
