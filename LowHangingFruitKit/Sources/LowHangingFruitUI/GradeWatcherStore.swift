@@ -138,7 +138,21 @@ final class GradeWatcherStore: ObservableObject {
         error = nil
         defer { isRefreshing = false }
 
-        let client = CanvasGradesClient(cookies: cookies)
+        // Canvas's sliding sessions re-mint the session cookie on every
+        // authenticated response; `CanvasGradesClient` surfaces those via
+        // `refreshedCookieHandler` once a page has actually decoded, and
+        // persisting them here is what keeps a session alive from regular
+        // use instead of aging out from login time no matter how often the
+        // app is opened. `SessionCookieStore` is only ever called from
+        // MainActor elsewhere in this codebase (`AutoSyncCoordinator`,
+        // `AppState`) even though its Keychain calls are thread-safe on
+        // their own, so match that discipline here rather than call it
+        // straight from whatever background executor this handler runs on.
+        let client = CanvasGradesClient(cookies: cookies) { rotated in
+            Task { @MainActor in
+                SessionCookieStore.merge(rotated, service: .canvas)
+            }
+        }
         var sawSessionExpired = false
         var lastFailure: Swift.Error?
         var fetchedAny = false
