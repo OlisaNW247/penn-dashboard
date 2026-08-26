@@ -216,3 +216,39 @@ AppState's `moduleImportLog`).
 - `docs/brief.md` and a few doc comments still say "RootView" for what
   is now `RootCore`/`OwnedRootView` — cosmetic staleness.
 - Support page could gain "don't force-quit for faster notifications".
+
+## 6. Post-bring-up additions, 2026-08-26 (same container session)
+
+All compiled green on the owner's Mac (516 tests / 55 suites) and merged
+to `v3.5` @ `129d9fa`. Each item was owner-requested, implemented via
+subagents, diff-reviewed, and (for the login work) independently
+verifier-audited before merge.
+
+- **Readings/events can't go "late"** — an incomplete `.event` stays
+  visible through its dated day and drops off the dashboard the next day
+  (`AppState.isExpiredEvent`, mirrored in `LedgerWidgetReader`). Real
+  assignments still go overdue.
+- **Course-code parsing + dedup** — `CourseCode` now parses underscore
+  cross-listing prefixes ("BAN_CIS-2400-001 202630" → "CIS 2400"), and an
+  idempotent launch-time migration (`AppState.normalizeStoredCourseNames`,
+  `AssignmentStore.normalizeCourseNames`) re-keys ledger rows and the four
+  course-keyed preference surfaces, merging duplicate class entries.
+- **No-submission assignments auto-complete at their deadline** —
+  `submission_types` decoded in `CanvasGradesClient`; past-due items whose
+  types are all none/on_paper/not_graded join the submitted set (no
+  "Turned in ✓" notification; self-heals if the deadline moves).
+- **Canvas session longevity** (docs/CANVAS_LOGIN_HARDENING.md addendum
+  has the full design): Layer 1 persists Canvas's rotated session cookies
+  on every successful grade fetch; Layer 2 (`CanvasSessionRenewer`)
+  silently re-logs-in via a hidden WebView riding the still-live
+  PennKey/Duo IdP session, with the Stale-Request safety rules structural
+  and an abort path when the visible login pane opens. Layer 2's live
+  SSO behavior is DEVICE-EMPIRICAL and unvalidated: watch whether the
+  reconnect banner reappears over the coming weeks; silent-renewal
+  attempts show in the Settings diagnostics report (host/status only).
+- Also: Settings → Storage "Duplicate entries" row (see §2b's note).
+
+Marco-review note: this widens the branch further into the login layer
+(CanvasSessionRenewer, the pane-active flag in OnboardingView) and the
+grades client. The §2.6 gates (his review, CloudKit prod schema deploy,
+1.2.0 bump) all still stand.
