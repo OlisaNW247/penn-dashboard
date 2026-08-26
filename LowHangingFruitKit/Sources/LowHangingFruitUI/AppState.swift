@@ -2307,6 +2307,15 @@ final class AppState: ObservableObject {
                 ids.insert(submission.assignmentID)
             }
         }
+        // What THIS refresh actually saw Canvas report as submitted — captured
+        // before the auto-submitted and ledger merges below, because it is the
+        // only set "Turned in ✓" may ever notify from. Ids that enter the
+        // submitted state any other way (the deadline-passed auto set, a
+        // ledger row synced in from another device via CloudKit) are state,
+        // not news: the device that first observed a real submission already
+        // announced it, and announcing a merge re-reads someone's work back
+        // to them as if it just happened.
+        let observedSubmitted = ids
         // Assignments Canvas expects nothing online for (e.g. "attend the
         // review session") can't ever go "late" the normal way — once their
         // deadline passes they belong with finished work, not in the overdue
@@ -2326,17 +2335,25 @@ final class AppState: ObservableObject {
         // onto the dashboard.
         submittedCanvasAssignmentIDs = ids.union(persistedSubmittedIDsForUnfetchedCourses())
 
-        // "Turned in ✓" confirmations for whatever just newly appeared as
-        // submitted. Skipped entirely under fixture/demo data (reviewer
-        // preview, DEBUG screenshot seam) — nothing was actually turned in
-        // there, so a stray id would just be noise. Also excludes
-        // `autoSubmitted`: nothing was turned in for those either — the
-        // deadline just passed on work Canvas never expected online — so a
-        // "Turned in ✓" notice would be noise at best and alarming at worst.
+        // "Turned in ✓" confirmations, diffed against `observedSubmitted`
+        // ONLY — never the merged set (see its comment above: a CloudKit-
+        // synced row from another device must not re-announce itself, which
+        // is exactly what happened on a phone whose laptop had auto-submitted
+        // an assignment first). Skipped entirely under fixture/demo data
+        // (reviewer preview, DEBUG screenshot seam) — nothing was actually
+        // turned in there. Also excludes every no-submission assignment
+        // outright (not just the past-due `autoSubmitted` subset): even when
+        // Canvas itself reports an on-paper assignment submitted or graded,
+        // "Turned in ✓" for something the student never turns in online is
+        // noise at best and alarming at worst — the owner's rule is that
+        // these assignments never produce turned-in notices, full stop.
         if !isUsingFixtureData {
-            let newlySubmitted = submittedCanvasAssignmentIDs
+            let noSubmission = Self.noSubmissionAssignmentIDs(
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            let newlySubmitted = observedSubmitted
                 .subtracting(previousSubmittedIDs)
-                .subtracting(autoSubmitted)
+                .subtracting(noSubmission)
             let notifications = Self.submissionNotifications(
                 newIDs: newlySubmitted,
                 previous: previousSubmittedIDs,
@@ -2386,6 +2403,26 @@ final class AppState: ObservableObject {
             for category in snapshot.categories {
                 for item in category.items {
                     guard item.requiresNoSubmission, let dueAt = item.dueAt, dueAt < now else { continue }
+                    ids.insert(item.id)
+                }
+            }
+        }
+        return ids
+    }
+
+    /// Every no-submission assignment id across `snapshots`, dated or not,
+    /// due or not — the superset of `autoSubmittedNoSubmissionIDs` that the
+    /// "Turned in ✓" exclusion uses. The auto-submit STATE only flips once a
+    /// deadline passes, but the no-notification rule has no time component:
+    /// an on-paper assignment that Canvas marks submitted or graded before
+    /// its due date still isn't something the student "turned in" in the
+    /// sense that notification announces. Pure for the same testability
+    /// reason as its sibling above.
+    static func noSubmissionAssignmentIDs(snapshots: [CourseGradeSnapshot]) -> Set<String> {
+        var ids: Set<String> = []
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items where item.requiresNoSubmission {
                     ids.insert(item.id)
                 }
             }
