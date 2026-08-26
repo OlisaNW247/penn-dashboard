@@ -69,6 +69,28 @@ struct SettingsPage: View {
                           working: state.isLoading || state.isCanvasDiscoveryLoading)
 
                 if state.isCanvasConnected {
+                    // The feed-connected-but-no-cookie-session state: the
+                    // calendar link keeps the dashboard working while
+                    // everything session-powered (Grade Watcher, submission
+                    // detection, course probes) is silently unavailable —
+                    // and, because the Grades entry and the reconnect banner
+                    // are both gated on cookie state, there was previously NO
+                    // visible way back short of Disconnect → Connect. That
+                    // pair is no longer safe advice: disconnect purges the
+                    // ledger's Canvas rows, and with iCloud sync on, those
+                    // deletions propagate to the user's other devices. This
+                    // button is the non-destructive path — same
+                    // restartOnboarding() route as "Connect Canvas", which
+                    // touches no stored data and lands on the connect
+                    // checklist where the Canvas login step can be redone.
+                    if !state.canUseGradeWatcher {
+                        Button {
+                            dismiss()
+                            state.restartOnboarding()
+                        } label: {
+                            Label("Sign in to Canvas", systemImage: "link")
+                        }
+                    }
                     Button(role: .destructive) {
                         disconnecting = .canvas
                     } label: {
@@ -146,7 +168,7 @@ struct SettingsPage: View {
                     Text("Grades")
                 } footer: {
                     if !state.canUseGradeWatcher {
-                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use Disconnect Canvas above, then Connect Canvas to log in directly.")
+                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use \u{201C}Sign in to Canvas\u{201D} in the Account section above to log in directly; your calendar feed and synced assignments stay put.")
                     }
                 }
             }
