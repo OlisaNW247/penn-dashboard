@@ -40,7 +40,7 @@ struct CanvasSessionRenewerTests {
     @Test("test runner always wins, even if every other guard would also proceed")
     func testRunnerWins() {
         #expect(gate(isTestRunner: true) == .notAttempted(reason: "test runner"))
-        #expect(gate(paneActive: true, inFlight: true, isTestRunner: true) == .notAttempted(reason: "test runner"))
+        #expect(gate(inFlight: true, paneActive: true, isTestRunner: true) == .notAttempted(reason: "test runner"))
     }
 
     @Test("login pane active blocks even with no other guard tripped")
