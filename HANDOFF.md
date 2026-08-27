@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-27 (branch `claude/v4-github-repo-kvu0e0` — the v3.5 + v4 merge)_
 
-> **Verified green baseline (owner's Mac, 2026-08-27): 636 tests / 63 suites**
+> **Verified green baseline (owner's Mac, 2026-08-27): 644 tests / 63 suites**
 > (plus 4 XCTest scheduler tests), zero failures. This supersedes the 608/61
 > figure quoted below; the delta is the 2026-08-27 work — the Profile
 > class-list fix (`CourseListSourcesTests`), the readings auto-include
@@ -11,7 +11,8 @@ _Last updated: 2026-08-27 (branch `claude/v4-github-repo-kvu0e0` — the v3.5 + 
 > (`NoSubmissionCaveatTests` + one MigrationChainTests case), and the
 > book-icon removal (three `showsNothingToSubmit` predicate cases), and the never-late rule
 > for nothing-to-submit items (due-time event expiry + offline auto-file,
-> seven cases). A change
+> seven cases), and the merged per-class "items with nothing to submit"
+> toggle that hides rather than silences (+8 cases across three suites). A change
 > that lowers either number from here has lost work.
 
 ## ⚠️ Current state: v3.5 and v4 merged (2026-08-26)
