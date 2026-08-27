@@ -76,7 +76,14 @@ struct ModuleReadingImportTests {
     func includedReadingSurfacesInCoursework() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "1", title: "Week 3 reading", dueAt: Date())
+            // Due an hour from now, not literally `Date()` — see
+            // `CourseContentDashboardTests.item`'s doc comment: since
+            // 2026-08-27's `isExpiredEvent` fix (`due < now`, no day
+            // rounding), a fixture due at the instant of construction is
+            // measurably in the past by the time `AppState.init`'s own
+            // later `rebuildDashboardItems` captures `now`, and this test
+            // exists specifically to prove the item still shows.
+            let imported = reading(id: "1", title: "Week 3 reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)
@@ -103,7 +110,8 @@ struct ModuleReadingImportTests {
     func defaultIncludeShowsImportedReading() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "2", title: "Week 4 reading", dueAt: Date())
+            // Same reasoning as `includedReadingSurfacesInCoursework` above.
+            let imported = reading(id: "2", title: "Week 4 reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)
@@ -133,7 +141,8 @@ struct ModuleReadingImportTests {
     func importedReadingWithExamLikeTitleNeverAnAssessment() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "4", title: "Midterm review reading", dueAt: Date())
+            // Same reasoning as `includedReadingSurfacesInCoursework` above.
+            let imported = reading(id: "4", title: "Midterm review reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)

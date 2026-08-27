@@ -5,6 +5,50 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — Nothing-to-submit items never show as late
+The owner's device pass found a no-submission item sitting in OVERDUE
+("Class 2: Litigation... nothing to submit — 1h late") — a state the app's
+own product rule already said should be impossible, just not one either
+existing mechanism actually enforced at the moment it mattered. Two root
+causes, two fixes, same day:
+
+- **`AppState.isExpiredEvent` compared calendar days, not due times.** A
+  `.event` (reading, lecture, exam date) dropped off the dashboard only once
+  `startOfDay(due) < startOfDay(now)` — so a 10:45am class stayed in OVERDUE,
+  reading "late," until midnight. Changed to a hard `due < now` boundary:
+  gone the moment it starts or was due, no day rounding. This does not
+  regress all-day calendar entries: Canvas's ICS feed already resolves a
+  date-only `DTSTART` to end-of-day LOCAL time (`CanvasICSClient`, see the
+  ICS test "date-only DTSTART becomes end-of-day LOCAL time"), so an
+  undated-time reading's `dueAt` is already effectively end-of-day and still
+  lasts until then. Mirrored the identical change into
+  `LedgerWidgetReader`'s own copy of the same predicate, so the Mac
+  menu-bar/widget can't advertise a class that already started either.
+- **Canvas no-submission assignments only auto-filed to Done on a live grade
+  refresh.** `autoSubmittedNoSubmissionIDs` (applied in
+  `updateSubmissionState`) requires a fresh Grade Watcher snapshot, so
+  between refreshes a past-due no-submission assignment sat in OVERDUE with
+  nothing to correct it. Added `AppState.isAutoFiledNoSubmission(_:now:)`,
+  a cache-backed twin that reads the persisted
+  `noSubmissionCanvasAssignmentIDs` set (added the same day for the caveat)
+  and answers immediately, offline: true when the assignment's Canvas id is
+  cached AND its due time has passed. Wired into `isCompleted`, so a
+  past-due no-submission assignment lands in Done the instant its due time
+  passes, from any launch, with or without a live session.
+
+**Rejected: keeping day-granularity.** It was the entire bug — a morning
+class read "late" all afternoon, which is precisely the state the owner's
+own product rule ("an 'attend the session' assignment can't be late") was
+written to prevent.
+
+**Rejected: hiding no-submission assignments instead of filing them to
+Done.** Done is the student's record of what happened; a no-submission
+assignment that simply vanished from the dashboard once its due time passed
+would look like data loss, not like the app correctly recognizing nothing
+was expected. Filing to Done — exactly where the snapshot-driven auto-file
+already puts these — keeps that record intact and consistent regardless of
+which mechanism (offline cache or live refresh) got there first.
+
 ## 2026-08-27 — Remove the readings book icon; the no-submission caveat is now the single marker
 Follow-up to the entry directly below. The owner's device pass found that the
 new "nothing to submit" caveat and the pre-existing small book icon on

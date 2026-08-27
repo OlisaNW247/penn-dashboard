@@ -2263,14 +2263,30 @@ final class AppState: ObservableObject {
     }
 
     /// An `.event`-kind item (a reading, a lecture, an exam date with nothing
-    /// to submit) has no submission to be late on, so it never belongs in
-    /// OVERDUE — the product rule is that it simply drops off the dashboard
-    /// once its calendar day is over. Undated events are never expired, since
-    /// there's no day to compare against.
+    /// to submit) has no submission to be late on, so it can never sit in
+    /// OVERDUE — the product rule is that it is gone the moment it starts, or
+    /// was due. This used to be a calendar-day comparison
+    /// (`startOfDay(due) < startOfDay(now)`), which left a 10:45am class
+    /// showing as "late" in OVERDUE for the rest of the afternoon — exactly
+    /// the state this function exists to prevent, just delayed by however
+    /// many hours were left in the day. `due < now` is the hard boundary that
+    /// actually delivers the rule: gone at the moment it happens, not at
+    /// midnight.
+    ///
+    /// This does not regress a dateless-time reading despite dropping the day
+    /// rounding: Canvas's ICS feed represents an all-day entry with a
+    /// date-only `DTSTART`, and `CanvasICSClient` already parses that to
+    /// end-of-day LOCAL time rather than midnight (see the ICS test
+    /// "date-only DTSTART becomes end-of-day LOCAL time"), so an undated-time
+    /// reading's `dueAt` is already effectively end of its day and still
+    /// lasts until then under the plain `<` comparison. Only a genuinely
+    /// timed entry — a lecture or exam with a real start time — now leaves
+    /// the list at that time instead of at midnight, which is exactly the
+    /// case the owner's device pass caught. Undated events are still never
+    /// expired, since there's no due time to compare against.
     static func isExpiredEvent(_ assignment: Assignment, now: Date = Date()) -> Bool {
         guard assignment.kind == .event, let due = assignment.dueAt else { return false }
-        let calendar = Calendar.current
-        return calendar.startOfDay(for: due) < calendar.startOfDay(for: now)
+        return due < now
     }
 
     /// Keeps the dashboard to the current term so next-term courses Canvas still
@@ -2435,8 +2451,9 @@ final class AppState: ObservableObject {
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped. An `.event` (reading,
-        // lecture, exam date) has nothing to submit, so once its calendar day
-        // has passed it isn't "overdue" — it's just gone from the dashboard.
+        // lecture, exam date) has nothing to submit, so once its due time has
+        // passed it isn't "overdue" — it's just gone from the dashboard (see
+        // `isExpiredEvent`).
         let coursework = incomplete
             .filter { $0.kind == .event || !Self.isAssessment($0) }
             .filter { !Self.isExpiredEvent($0, now: now) }
@@ -2559,8 +2576,17 @@ final class AppState: ObservableObject {
     /// True if EITHER platform reports this done: this item's own submitted
     /// flag/manual completion, its cross-platform counterpart's manual
     /// completion (`linkedID` — e.g. the user completed the Gradescope copy
-    /// before the two were ever merged), or Canvas's own submission
-    /// side-channel (`submittedCanvasAssignmentIDs`).
+    /// before the two were ever merged), Canvas's own submission
+    /// side-channel (`submittedCanvasAssignmentIDs`), or — the newest clause —
+    /// `isAutoFiledNoSubmission`, which files a past-due no-submission
+    /// assignment as done from the persisted cache even between grade
+    /// refreshes. Routing that through here rather than a separate OVERDUE
+    /// filter is deliberate: it means a no-submission item that has passed
+    /// its due time lands in Done exactly like the snapshot-driven auto-file
+    /// (`autoSubmittedNoSubmissionIDs`, applied in `updateSubmissionState`)
+    /// eventually does on refresh — it does not silently vanish from the
+    /// dashboard, which would read as data loss rather than as "nothing was
+    /// ever expected here."
     func isCompleted(_ assignment: Assignment) -> Bool {
         if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
         if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
@@ -2568,6 +2594,7 @@ final class AppState: ObservableObject {
            submittedCanvasAssignmentIDs.contains(canvasID) {
             return true
         }
+        if isAutoFiledNoSubmission(assignment) { return true }
         return false
     }
 
@@ -2587,6 +2614,33 @@ final class AppState: ObservableObject {
     /// per-class toggle are meant to have.
     func requiresNoSubmission(_ assignment: Assignment) -> Bool {
         assignment.canvasAssignmentID.map { noSubmissionCanvasAssignmentIDs.contains($0) } ?? false
+    }
+
+    /// The cache-backed, works-offline twin of `autoSubmittedNoSubmissionIDs`
+    /// below. That function only ever runs as part of a live grade refresh —
+    /// it writes durable ledger state (`applySubmissionState`) once one
+    /// lands — which left a window between refreshes where a Canvas
+    /// assignment past its due time and known to need no submission still
+    /// sat in OVERDUE, showing as "late" for something that was never
+    /// submittable in the first place. Same owner's rule as that function's
+    /// doc comment: an "attend the session" assignment can't be late, and
+    /// once its moment has passed it belongs with finished work. This
+    /// predicate answers that immediately, from `noSubmissionCanvasAssignmentIDs`
+    /// (populated on the last refresh, persisted since, available offline)
+    /// rather than waiting for the next one — `isCompleted` calls it directly
+    /// so a no-submission assignment never renders as overdue even in that
+    /// window.
+    ///
+    /// Undated items never auto-file — nothing has "passed" without a due
+    /// time to compare against. Pre-due reminders are unaffected: a lead-time
+    /// reminder only ever fires before `dueAt`, at which point this predicate
+    /// is still false by construction (`dueAt < now` cannot hold yet).
+    func isAutoFiledNoSubmission(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let canvasID = assignment.canvasAssignmentID,
+              noSubmissionCanvasAssignmentIDs.contains(canvasID),
+              let dueAt = assignment.dueAt
+        else { return false }
+        return dueAt < now
     }
 
     /// Recomputes `submittedCanvasAssignmentIDs` from the Grade Watcher snapshots'

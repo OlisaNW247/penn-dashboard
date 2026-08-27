@@ -49,7 +49,15 @@ struct ReadingsAutoImportTests {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))
     }
 
-    private func item(kind: Assignment.Kind, title: String, dueAt: Date = Date()) -> Assignment {
+    // Defaults an hour into the future rather than to the instant of
+    // construction — see `CourseContentDashboardTests.item`'s doc comment
+    // for why: since 2026-08-27's `isExpiredEvent` fix (`due < now`, no day
+    // rounding), a `.event` fixture literally due "now" is measurably in
+    // the past by the time `rebuildDashboardItems` captures its own later
+    // `now`, and `excludeHidesEventItemsFromDashboard` below relies on this
+    // item still showing before it's excluded.
+    private func item(kind: Assignment.Kind, title: String,
+                      dueAt: Date = Date().addingTimeInterval(3600)) -> Assignment {
         Assignment(source: .canvas, sourceID: "\(Self.course)-\(title)", kind: kind,
                    course: Self.course, title: title, dueAt: dueAt, url: nil)
     }

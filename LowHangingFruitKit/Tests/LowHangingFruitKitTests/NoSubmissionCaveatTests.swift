@@ -27,6 +27,12 @@ import UserNotifications
 /// because the reminder toggle above gates on that field specifically, not
 /// the display predicate.
 ///
+/// Also covers `AppState.isAutoFiledNoSubmission` / `isCompleted` — added
+/// 2026-08-27 so a past-due no-submission Canvas assignment auto-files to
+/// Done from the persisted cache immediately, offline, rather than sitting
+/// in OVERDUE until the next live grade refresh runs
+/// `autoSubmittedNoSubmissionIDs` and writes the durable ledger state.
+///
 /// The cache-update rule and the scheduler gate are both pure functions
 /// (`AppState.updatedNoSubmissionIDs`, `NotificationScheduler
 /// .plannedRequests`/`digestRequest`), so most of this needs no network, no
@@ -155,14 +161,14 @@ struct NoSubmissionCaveatTests {
 
     // MARK: - 3. AppState.requiresNoSubmission(_:)
 
-    private func canvasAssignment(id: String) -> Assignment {
+    private func canvasAssignment(id: String, dueAt: Date? = nil) -> Assignment {
         Assignment(
             source: .canvas,
             sourceID: "event-assignment-\(id)@canvas.upenn.edu",
             kind: .assignment,
             course: "TEST 1000",
             title: "Test item",
-            dueAt: nil,
+            dueAt: dueAt,
             url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/\(id)")
         )
     }
@@ -273,6 +279,83 @@ struct NoSubmissionCaveatTests {
             let bodyAfter = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
                 .first { $0.identifier == "digest:daily" }?.content.body
             #expect(bodyAfter?.contains("1 assignment ") == true)
+        }
+    }
+
+    // MARK: - 6. isAutoFiledNoSubmission / isCompleted — offline auto-file at due time
+    //
+    // Added 2026-08-27 (follow-up): the snapshot-driven auto-file
+    // (`autoSubmittedNoSubmissionIDs`, applied in `updateSubmissionState`)
+    // only ever runs alongside a live grade refresh, which left a window
+    // between refreshes where a past-due no-submission assignment sat in
+    // OVERDUE — the owner's device pass caught exactly this ("Class 2:
+    // Litigation... nothing to submit — 1h late"). `isAutoFiledNoSubmission`
+    // is the cache-backed, works-offline twin; `isCompleted` calls it
+    // directly so the dashboard never renders that state at all.
+
+    @Test("isAutoFiledNoSubmission is true for a cached-id Canvas assignment due in the past")
+    func autoFiledTrueForCachedPastDue() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let pastDue = canvasAssignment(id: "12345", dueAt: Date().addingTimeInterval(-3600))
+            #expect(state.isAutoFiledNoSubmission(pastDue))
+        }
+    }
+
+    @Test("isAutoFiledNoSubmission is false for a cached-id Canvas assignment due in the future")
+    func autoFiledFalseForCachedFutureDue() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let futureDue = canvasAssignment(id: "12345", dueAt: Date().addingTimeInterval(3600))
+            #expect(!state.isAutoFiledNoSubmission(futureDue))
+        }
+    }
+
+    @Test("isAutoFiledNoSubmission is false for an undated cached-id assignment — nothing has passed")
+    func autoFiledFalseForUndated() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let undated = canvasAssignment(id: "12345", dueAt: nil)
+            #expect(!state.isAutoFiledNoSubmission(undated))
+        }
+    }
+
+    @Test("isAutoFiledNoSubmission is false for a past-due assignment whose id isn't cached")
+    func autoFiledFalseForUncachedID() {
+        withCachedIDs(["99999"]) {
+            let state = makeState()
+            let pastDue = canvasAssignment(id: "12345", dueAt: Date().addingTimeInterval(-3600))
+            #expect(!state.isAutoFiledNoSubmission(pastDue))
+        }
+    }
+
+    @Test("isAutoFiledNoSubmission is false for a manual item — it carries no canvasAssignmentID")
+    func autoFiledFalseForManualItem() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let manual = ManualAssignment(
+                title: "My own task", course: "TEST 1000",
+                dueAt: Date().addingTimeInterval(-3600)
+            ).asAssignment()
+            #expect(!state.isAutoFiledNoSubmission(manual))
+        }
+    }
+
+    @Test("isCompleted is true for a cached-id no-submission assignment past its due time")
+    func isCompletedTrueForPastDueNoSubmission() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let pastDue = canvasAssignment(id: "12345", dueAt: Date().addingTimeInterval(-3600))
+            #expect(state.isCompleted(pastDue))
+        }
+    }
+
+    @Test("isCompleted is false for a cached-id no-submission assignment not yet due — reminders still fire beforehand")
+    func isCompletedFalseForFutureDueNoSubmission() {
+        withCachedIDs(["12345"]) {
+            let state = makeState()
+            let futureDue = canvasAssignment(id: "12345", dueAt: Date().addingTimeInterval(3600))
+            #expect(!state.isCompleted(futureDue))
         }
     }
 

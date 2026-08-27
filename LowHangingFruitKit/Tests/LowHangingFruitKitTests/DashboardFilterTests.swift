@@ -72,13 +72,18 @@ struct DashboardFilterTests {
         #expect(AppState.withinTermCap(item(term: Term(year: 2000, season: .spring))))
     }
 
-    @Test("expired events: only a dated .event whose day has fully passed is expired")
+    @Test("expired events: a dated .event expires the moment its due time passes, not at end of day")
     func expiredEventBoundaries() {
         let calendar = Calendar.current
         let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
-        let yesterday1159pm = calendar.date(byAdding: .second, value: -1, to: startOfToday)!
-        let todayMidnight = startOfToday
+        // A class that started minutes ago, same calendar day. Under the old
+        // day-granularity rule this stayed OVERDUE until midnight — exactly
+        // the "1h late" the owner's device pass caught. It must expire
+        // immediately now.
+        let minutesAgoSameDay = now.addingTimeInterval(-90 * 60)
+        // Symmetric case a moment in the future, same day: still not expired.
+        let minutesFromNowSameDay = now.addingTimeInterval(90 * 60)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
 
         func dated(kind: Assignment.Kind, dueAt: Date?) -> Assignment {
@@ -86,8 +91,9 @@ struct DashboardFilterTests {
                        title: "Reading", dueAt: dueAt, url: nil)
         }
 
-        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: yesterday1159pm), now: now))
-        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: todayMidnight), now: now))
+        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: minutesAgoSameDay), now: now))
+        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: yesterday), now: now))
+        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: minutesFromNowSameDay), now: now))
         #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: tomorrow), now: now))
         #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: nil), now: now))
         // A last-week assignment has something to submit, so it's overdue, not expired.

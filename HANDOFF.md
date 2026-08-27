@@ -174,6 +174,16 @@ simulator pass as everything else in this file, and specifically a look at
 the collapsed-card layout on a device (the caveat tag's placement was a
 judgment call, not verified visually).
 
+**Update 2026-08-27: nothing-to-submit items no longer show as late
+(uncompiled).** Device pass caught a no-submission item sitting in OVERDUE
+("1h late"); fixed by moving `AppState.isExpiredEvent` (and its
+`LedgerWidgetReader` mirror) from a calendar-day boundary to a hard
+`due < now` one, and by adding `AppState.isAutoFiledNoSubmission`/wiring it
+into `isCompleted` so a cached no-submission assignment files to Done at its
+due time offline, without waiting for a grade refresh — see
+`docs/decisions.md`'s new top entry; written from the same Linux container,
+**not compiled, not run**.
+
 Everything below this section is historical context from earlier sessions.
 
 ---

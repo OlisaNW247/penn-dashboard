@@ -53,7 +53,19 @@ struct CourseContentDashboardTests {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))
     }
 
-    private func item(kind: Assignment.Kind, title: String, dueAt: Date = Date(), url: URL? = nil) -> Assignment {
+    // `dueAt` defaults an hour into the future, not to `Date()` at the
+    // instant of construction. `AppState.isExpiredEvent` compares against
+    // `now: Date()` captured later — inside `rebuildDashboardItems`, itself
+    // called after the item is built, the ledger is touched, and often an
+    // `AppState` is constructed — and since 2026-08-27's fix (`due < now`,
+    // no day rounding) a fixture literally due "now" is measurably in the
+    // past by the time that later `now` is captured, making every `.event`
+    // fixture here expire and vanish out from under tests that exist to
+    // prove it's shown. An hour of headroom is nowhere close to being
+    // consumed by test execution and keeps these fixtures meaning "due
+    // later today," which is what they were always meant to express.
+    private func item(kind: Assignment.Kind, title: String,
+                      dueAt: Date = Date().addingTimeInterval(3600), url: URL? = nil) -> Assignment {
         Assignment(source: .canvas, sourceID: "\(Self.course)-\(title)", kind: kind,
                    course: Self.course, title: title, dueAt: dueAt, url: url)
     }
@@ -140,21 +152,32 @@ struct CourseContentDashboardTests {
 
     // MARK: - Expired events drop off (readings have nothing to submit)
 
-    @Test("an opted-in event drops off the dashboard once its calendar day has passed")
-    func optedInEventExpiresAfterItsDay() {
+    @Test("an opted-in event drops off the dashboard the moment its due time passes, not merely once its calendar day ends")
+    func optedInEventExpiresAfterItsDueTime() {
         withCleanDecision {
             let state = makeState()
             let now = Date()
             let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+            // Same calendar day as `now`, but its own moment has already
+            // passed — this is the case day-granularity used to miss
+            // entirely (it stayed "overdue" until midnight). Renamed from
+            // "Today's reading" / `dueAt: now`, which only demonstrated the
+            // day boundary and, on the new time-based rule, was really an
+            // edge case (`due == now` is not `< now`) rather than a real
+            // same-day-but-past example.
+            let earlierToday = now.addingTimeInterval(-3600)
+            let laterToday = now.addingTimeInterval(3600)
             state.canvasItems = [
                 item(kind: .event, title: "Yesterday's reading", dueAt: yesterday),
-                item(kind: .event, title: "Today's reading", dueAt: now),
+                item(kind: .event, title: "Earlier today's reading", dueAt: earlierToday),
+                item(kind: .event, title: "Later today's reading", dueAt: laterToday),
             ]
             state.setCourseContentIncluded(Self.course, true)
 
             let shown = state.assignments + state.laterAssignments
             #expect(!shown.contains { $0.title == "Yesterday's reading" })
-            #expect(shown.contains { $0.title == "Today's reading" })
+            #expect(!shown.contains { $0.title == "Earlier today's reading" })
+            #expect(shown.contains { $0.title == "Later today's reading" })
         }
     }
 
