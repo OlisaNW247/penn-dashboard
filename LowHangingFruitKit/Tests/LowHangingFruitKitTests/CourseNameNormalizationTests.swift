@@ -79,14 +79,21 @@ struct CourseNameNormalizationTests {
     private static let cleanCourse = "CIS 2400"
 
     private static let touchedKeys = [
+        CoursePreferencesStore.storageKey,
         "hiddenCourseKeys", "deletedCourseKeys", "courseNameOverrides", "courseContentDecisionsV1",
     ]
 
-    /// Snapshots whatever is currently at the four keys this migration
-    /// touches, seeds them with synthetic data keyed on the raw registrar
-    /// string, runs `body`, then restores exactly what was there before —
-    /// including "nothing was there," which `removeObject` reproduces
-    /// rather than writing back an empty-but-present value.
+    /// Snapshots whatever is currently at the keys this migration touches,
+    /// seeds synthetic data keyed on the raw registrar string, runs `body`,
+    /// then restores exactly what was there before — including "nothing was
+    /// there," which `removeObject` reproduces rather than writing back an
+    /// empty-but-present value.
+    ///
+    /// Hidden/deleted/rename are seeded through `CoursePreferencesStore` —
+    /// the canonical record since the v4 consolidation; the three raw keys
+    /// are only its widget-facing projection, and `AppState` never reads
+    /// them back. Content decisions still live in their own store, so that
+    /// half seeds exactly as it did on `v3.5`.
     private func withSeededRawCourseState(_ body: () throws -> Void) rethrows {
         let defaults = UserDefaults.lhf
         let saved = Self.touchedKeys.map { ($0, defaults.object(forKey: $0)) }
@@ -100,9 +107,11 @@ struct CourseNameNormalizationTests {
             }
         }
 
-        defaults.set([Self.rawCourse], forKey: "hiddenCourseKeys")
-        defaults.set([Self.rawCourse], forKey: "deletedCourseKeys")
-        defaults.set([Self.rawCourse: "My Class"], forKey: "courseNameOverrides")
+        defaults.removeObject(forKey: CoursePreferencesStore.storageKey)
+        let prefs = CoursePreferencesStore()
+        prefs.setVisible(Self.rawCourse, false)
+        prefs.setDeleted(Self.rawCourse, true)
+        prefs.setDisplayName(Self.rawCourse, to: "My Class")
         CourseContentDecisionStore.save([
             Self.rawCourse: CourseContentDecision(
                 choice: .include, fingerprint: "readings:1", decidedAt: Date()
