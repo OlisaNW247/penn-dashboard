@@ -1629,36 +1629,20 @@ final class AppState: ObservableObject {
         nudgePresentedThisLaunch = true
     }
 
-    /// Worth ASKING about: dated readings on the calendar, or a silent
-    /// course whose probe found actual module readings. `.normal` (already
+    /// Worth ASKING about: only a silent course whose probe found actual
+    /// module readings — those live solely in Canvas Modules, so surfacing
+    /// them requires a network import the user should get one say over.
+    /// `.readingsOnCalendar` stopped nudging when calendar events became
+    /// include-by-default (see `includesAsOptedInContent`): the content
+    /// already shows, so there is nothing left to ask. `.normal` (already
     /// represented on the dashboard), `.unknownSilent` (nothing concrete to
     /// show yet — no session to probe with), and a silent course whose probe
-    /// came back with zero/no readings never nudge — stricter than
-    /// `isManageable` below, which also lists a confirmed-empty silent
-    /// course so Settings can say so.
+    /// came back with zero/no readings never nudge.
     private static func isActionable(_ report: CourseProfileReport) -> Bool {
         switch report.profile {
-        case .readingsOnCalendar:
-            return true
         case let .silent(moduleReadingCount):
             return (moduleReadingCount ?? 0) > 0
-        case .normal, .unknownSilent:
-            return false
-        }
-    }
-
-    /// Worth LISTING in Settings' "Courses & content" management section:
-    /// readings-on-calendar, or any silent course a probe actually reached
-    /// (`moduleReadingCount != nil`) — including one that came back
-    /// confirmed-empty, which `isActionable` deliberately excludes from the
-    /// nudge queue but Settings should still be able to show and explain.
-    private static func isManageable(_ report: CourseProfileReport) -> Bool {
-        switch report.profile {
-        case .readingsOnCalendar:
-            return true
-        case let .silent(moduleReadingCount):
-            return moduleReadingCount != nil
-        case .normal, .unknownSilent:
+        case .readingsOnCalendar, .normal, .unknownSilent:
             return false
         }
     }
@@ -1694,11 +1678,11 @@ final class AppState: ObservableObject {
         pendingCourseNudge = nil
     }
 
-    /// Whether `course`'s opted-in content (readings/events) currently shows
-    /// on the dashboard. Default is false (exclude) when no decision is on
-    /// file — see `CourseContentDecision`'s doc comment.
+    /// Whether `course`'s readings/events currently show on the dashboard.
+    /// True by default — only an explicit `.exclude` decision hides them
+    /// (see `includesAsOptedInContent` for why the default flipped).
     func courseContentIncluded(_ course: String) -> Bool {
-        courseContentDecisions[course]?.choice == .include
+        courseContentDecisions[course]?.choice != .exclude
     }
 
     /// Settings surface ("Courses & content"): sets or overwrites the
@@ -1727,15 +1711,6 @@ final class AppState: ObservableObject {
         )
         CourseContentDecisionStore.save(courseContentDecisions)
         if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
-    }
-
-    /// Courses worth surfacing in Settings' "Courses & content" management
-    /// section: every course with a manageable profile (see `isManageable`),
-    /// decided or not.
-    var courseContentManageableCourses: [CourseProfileReport] {
-        courseProfileReports
-            .filter(Self.isManageable)
-            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
     }
 
     // MARK: - Diagnostics (course intel)
@@ -2361,17 +2336,21 @@ final class AppState: ObservableObject {
         return assignment.title.range(of: pattern, options: .regularExpression) != nil
     }
 
-    /// Extra content beyond assignments/assessments that the user has
-    /// specifically opted into for this course: a dated calendar event
-    /// (reading, discussion prep, etc.) for a course whose
-    /// READINGS_ON_CALENDAR/SILENT nudge was answered "include"
-    /// (docs/READINGS_COURSES_PLAN.md). Default is exclude — no stored
-    /// decision means these stay off the dashboard, so existing users see
-    /// zero change until they opt in.
+    /// Extra content beyond assignments/assessments: a dated calendar event
+    /// (reading, discussion prep, etc.) from any real course.
+    ///
+    /// **Default is include** (owner's call, 2026-08-26, reversing the
+    /// READINGS_COURSES_PLAN opt-in design): a class that only posts calendar
+    /// events used to vanish from the dashboard until its nudge was answered,
+    /// which on a real device read as "my class disappeared", not as a
+    /// feature. The wrong fix would have been deleting the decision store —
+    /// an explicit `.exclude` (recorded from a nudge answered "not for this
+    /// course", or synced from another device) is still honoured; only the
+    /// no-decision default flips.
     private func includesAsOptedInContent(_ assignment: Assignment) -> Bool {
         assignment.kind == .event
             && assignment.course != Self.unknownCourse
-            && courseContentDecisions[assignment.course]?.choice == .include
+            && courseContentDecisions[assignment.course]?.choice != .exclude
     }
 
     private func rebuildDashboardItems(now: Date = Date()) {

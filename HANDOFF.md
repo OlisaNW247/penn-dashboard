@@ -53,8 +53,10 @@ legacy UserDefaults keys, which are a write-only projection now.
    check `git branch --show-current` first.
 2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
    LowHangingFruit -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`.
-3. Device pass: onboarding walk, swipe card, readings opt-in nudge, Mac
-   menu-bar build, and — only with two devices — the iCloud sync toggle.
+3. Device pass: onboarding walk, swipe card, readings-only classes showing
+   by default (the opt-in nudge now fires only for silent courses needing a
+   module import — see AppState.includesAsOptedInContent), Mac menu-bar
+   build, and — only with two devices — the iCloud sync toggle.
 
 Everything below this section is historical context from earlier sessions.
 

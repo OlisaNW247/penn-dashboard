@@ -133,7 +133,10 @@ struct CourseNameNormalizationTests {
             #expect(!state.isCourseSelected(Self.cleanCourse))   // hidden AND deleted
             #expect(state.isCourseDeleted(Self.cleanCourse))
             #expect(state.courseDisplayName(Self.cleanCourse) == "My Class")
-            #expect(state.courseContentIncluded(Self.cleanCourse))
+            // `courseContentIncluded` is now true by default, so assert the
+            // re-keyed decision at the store level — the migration, not the
+            // default, is what's under test here.
+            #expect(CourseContentDecisionStore.load()[Self.cleanCourse]?.choice == .include)
 
             // Nothing is left keyed on the raw string.
             #expect(state.isCourseSelected(Self.rawCourse))

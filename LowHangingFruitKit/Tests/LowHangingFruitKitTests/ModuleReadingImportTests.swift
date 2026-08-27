@@ -90,10 +90,17 @@ struct ModuleReadingImportTests {
         }
     }
 
-    // MARK: - Item 2: no decision (or excluded) -> stays hidden
+    // MARK: - Item 2: only an explicit exclude hides
 
-    @Test("an imported reading with no decision on file stays off the dashboard")
-    func defaultExcludeHidesImportedReading() {
+    /// Under the 2026-08-26 include-by-default flip (see `AppState.
+    /// includesAsOptedInContent`), a ledger row with no decision on file
+    /// shows. In practice `.canvasModules` rows only exist after an opt-in
+    /// import wrote an `.include` decision — this covers the decision-less
+    /// edge (e.g. the decision store cleared on disconnect while rows
+    /// survived a partial purge) landing on the visible side, matching the
+    /// calendar-event default.
+    @Test("an imported reading with no decision on file shows on the dashboard")
+    func defaultIncludeShowsImportedReading() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
             let imported = reading(id: "2", title: "Week 4 reading", dueAt: Date())
@@ -101,8 +108,8 @@ struct ModuleReadingImportTests {
 
             let state = AppState(assignmentStore: store)
 
-            #expect(!state.courseContentIncluded(Self.course))
-            #expect(!allDashboardItems(state).contains { $0.title == "Week 4 reading" })
+            #expect(state.courseContentIncluded(Self.course))
+            #expect(allDashboardItems(state).contains { $0.title == "Week 4 reading" })
         }
     }
 

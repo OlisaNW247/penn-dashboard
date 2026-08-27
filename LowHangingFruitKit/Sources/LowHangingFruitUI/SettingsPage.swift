@@ -138,8 +138,6 @@ struct SettingsPage: View {
                 .labelsHidden()
             }
 
-            courseContentSection
-
             if FeatureFlags.gradeWatcher {
                 Section {
                     if state.canUseGradeWatcher {
@@ -285,52 +283,11 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: Reading & event classes
-
-    /// Management surface for courses whose readings/events the dashboard
-    /// isn't showing by default (docs/READINGS_COURSES_PLAN.md Phase 3.8) —
-    /// the durable, revisitable counterpart to `CourseNudgeSheet`'s one-time
-    /// ask. Only lists courses `AppState` considers manageable; a normal
-    /// course with submittable work never appears here.
-    @ViewBuilder
-    private var courseContentSection: some View {
-        let manageable = state.courseContentManageableCourses
-        if !manageable.isEmpty {
-            Section {
-                ForEach(manageable, id: \.courseKey) { report in
-                    Toggle(isOn: Binding(
-                        get: { state.courseContentIncluded(report.courseKey) },
-                        set: { state.setCourseContentIncluded(report.courseKey, $0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(state.courseDisplayName(report.courseKey))
-                            Text(courseContentCaption(report))
-                                .font(.lhfSans(11))
-                                .foregroundStyle(Color.v2DateText)
-                        }
-                    }
-                }
-            } header: {
-                Text("Reading & event classes")
-            } footer: {
-                Text("These classes only post readings or events \u{2014} nothing to submit. On means their items show on your list.")
-            }
-        }
-    }
-
-    /// Short summary of what was actually found for `report`, shown under its
-    /// toggle. Mirrors the counts `CourseNudgeSheet` explains at ask time.
-    private func courseContentCaption(_ report: CourseProfileReport) -> String {
-        switch report.profile {
-        case let .readingsOnCalendar(eventCount, _):
-            return "\(eventCount) calendar reading\(eventCount == 1 ? "" : "s")"
-        case let .silent(moduleReadingCount):
-            guard let moduleReadingCount, moduleReadingCount > 0 else { return "nothing found yet" }
-            return "\(moduleReadingCount) module reading\(moduleReadingCount == 1 ? "" : "s")"
-        case .normal, .unknownSilent:
-            return "nothing found yet"
-        }
-    }
+    // The "reading & event classes" section that used to sit here was removed
+    // when calendar events became include-by-default (owner's call,
+    // 2026-08-26 — see `AppState.includesAsOptedInContent`). A readings-only
+    // class now behaves like any other class: it lives in the Profile classes
+    // list and the normal per-class toggle is what hides it.
 
     // MARK: Reminders
 

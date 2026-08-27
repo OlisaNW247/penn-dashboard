@@ -55,12 +55,15 @@ struct CourseContentNudgeTests {
     func resolveWritesDecisionAndClearsNudge() {
         withCleanDecision {
             let state = makeState()
+            // A silent course with module readings — since the 2026-08-26
+            // include-by-default flip, that's the only profile that still
+            // nudges (calendar-readings courses show without asking).
             let report = CourseProfileReport(
                 courseKey: Self.course,
                 canvasCourseID: "1",
                 displayName: "Legal Studies Seminar",
-                profile: .readingsOnCalendar(eventCount: 6, latestDate: Date()),
-                fingerprint: "readings:5"
+                profile: .silent(moduleReadingCount: 6),
+                fingerprint: "silent:6"
             )
             state.pendingCourseNudge = report
 
@@ -70,7 +73,7 @@ struct CourseContentNudgeTests {
             #expect(state.courseContentIncluded(Self.course))
             let stored = CourseContentDecisionStore.load()[Self.course]
             #expect(stored?.choice == .include)
-            #expect(stored?.fingerprint == "readings:5")
+            #expect(stored?.fingerprint == "silent:6")
         }
     }
 

@@ -3,12 +3,14 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// `AppState`'s content-decision filtering (docs/READINGS_COURSES_PLAN.md
-/// Phase 2): `.event`-kind Canvas calendar items only reach the dashboard for
-/// a course the user has opted in via `setCourseContentIncluded`/
-/// `resolveCourseNudge`; the default (no decision on file) is exclude, and an
-/// opted-in event is never reclassified as an assessment even when its title
-/// matches the exam/quiz regex.
+/// `AppState`'s content-decision filtering. Originally the opt-in design of
+/// docs/READINGS_COURSES_PLAN.md Phase 2 — the default flipped to INCLUDE on
+/// 2026-08-26 (owner's call, after a real readings-only class silently
+/// vanished from the dashboard on device): `.event`-kind Canvas calendar
+/// items now reach the dashboard by default, and only an explicit `.exclude`
+/// decision (`setCourseContentIncluded(_, false)` / a nudge answered "not for
+/// this course") hides them. An included event is never reclassified as an
+/// assessment even when its title matches the exam/quiz regex.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, and
 /// `courseContentDecisions` is one JSON blob under "courseContentDecisionsV1"
@@ -69,8 +71,8 @@ struct CourseContentDashboardTests {
 
     // MARK: - Default exclude (item 2)
 
-    @Test("default exclude: an .event item stays off the dashboard with no decision on file")
-    func defaultExcludeHidesEvents() {
+    @Test("default include: an .event item shows on the dashboard with no decision on file")
+    func defaultIncludeShowsEvents() {
         withCleanDecision {
             let state = makeState()
             state.canvasItems = [
@@ -79,30 +81,32 @@ struct CourseContentDashboardTests {
             ]
             triggerRebuild(state)
 
-            #expect(!state.courseContentIncluded(Self.course))
+            // The regression this default fixes: a class posting only calendar
+            // events vanished entirely until its nudge was answered.
+            #expect(state.courseContentIncluded(Self.course))
             let shown = allDashboardItems(state)
             #expect(shown.contains { $0.title == "Problem set 1" })
-            #expect(!shown.contains { $0.title == "Weekly reading" })
+            #expect(shown.contains { $0.title == "Weekly reading" })
         }
     }
 
-    // MARK: - Opt-in / opt-out (item 3)
+    // MARK: - Explicit exclude / re-include (item 3)
 
-    @Test("opting in surfaces the event; opting back out hides it again")
-    func optInThenOptOut() {
+    @Test("an explicit exclude hides the event; re-including surfaces it again")
+    func excludeThenReInclude() {
         withCleanDecision {
             let state = makeState()
             state.canvasItems = [item(kind: .event, title: "Weekly reading")]
             triggerRebuild(state)
-            #expect(!(state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
-
-            state.setCourseContentIncluded(Self.course, true)
-            #expect(state.courseContentIncluded(Self.course))
             #expect((state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
 
             state.setCourseContentIncluded(Self.course, false)
             #expect(!state.courseContentIncluded(Self.course))
             #expect(!(state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
+
+            state.setCourseContentIncluded(Self.course, true)
+            #expect(state.courseContentIncluded(Self.course))
+            #expect((state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
         }
     }
 
