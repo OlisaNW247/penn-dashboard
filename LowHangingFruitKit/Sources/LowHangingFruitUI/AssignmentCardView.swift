@@ -132,6 +132,19 @@ struct AssignmentCardView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // Visible on the collapsed card, not only once expanded — a
+                // student scanning the list needs to know "nothing to turn in
+                // here" without opening every card. Kept to one small line
+                // under the title (not stacked onto the course-code row,
+                // which is already doing the "find your class" job) so it
+                // reads as a caveat about this one item rather than crowding
+                // the thing that actually identifies the card.
+                if item.requiresNoSubmission {
+                    Text("nothing to submit")
+                        .font(.lhfSans(9, weight: .semibold))
+                        .foregroundStyle(Color.v2CourseCode)
+                }
             }
 
             Spacer(minLength: 8)
@@ -193,6 +206,16 @@ struct AssignmentCardView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("edit due date")
+            }
+
+            // The collapsed tag says *that*; this says *why*, in the one
+            // moment the student has actually asked about this assignment.
+            if item.requiresNoSubmission {
+                Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
+                    .font(.lhfSans(11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
             }
         }
         .transition(.opacity.combined(with: .move(edge: .top)))

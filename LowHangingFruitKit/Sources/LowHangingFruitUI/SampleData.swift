@@ -35,10 +35,11 @@ enum SampleData {
         let semesterB = inSemester(daysAgo: 25)
 
         func active(_ source: Assignment.Source, _ id: String, _ course: String,
-                    _ title: String, due: Date) -> DashItem {
+                    _ title: String, due: Date, requiresNoSubmission: Bool = false) -> DashItem {
             DashItem(assignment: Assignment(source: source, sourceID: id, kind: .assignment,
                                             course: course, title: title, dueAt: due, url: nil),
-                     dueOverride: nil, isCompleted: false, completedAt: nil)
+                     dueOverride: nil, isCompleted: false, completedAt: nil,
+                     requiresNoSubmission: requiresNoSubmission)
         }
 
         func done(_ source: Assignment.Source, _ id: String, _ course: String,
@@ -55,7 +56,13 @@ enum SampleData {
             active(.canvas,     "s-2", "FNAR 3230", "Sketchbook review",        due: days(-4)),
             // TODAY (amber)
             active(.canvas,     "s-3", "ECON 1",    "Problem set 3",            due: hrs(5).addingTimeInterval(1800)),
-            active(.canvas,     "s-4", "MGMT 1010", "Reading response 7",       due: hrs(9).addingTimeInterval(1800)),
+            // "Reading response 7" is discussed live rather than uploaded —
+            // Canvas's real-world equivalent of an on_paper/none submission
+            // type — so it's the one sample item that exercises the
+            // "nothing to submit" caveat in previews and App Store
+            // screenshots without a live Canvas account.
+            active(.canvas,     "s-4", "MGMT 1010", "Reading response 7",       due: hrs(9).addingTimeInterval(1800),
+                   requiresNoSubmission: true),
             // REST OF WEEK (green)
             active(.canvas,     "s-5", "MEAM 1010", "Lab report 4",             due: days(2)),
             active(.canvas,     "s-6", "CIS 1210",  "PSet 6: hashing",          due: days(3)),

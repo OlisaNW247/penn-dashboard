@@ -5,6 +5,64 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — No-submission assignments: visible caveat + per-class reminder toggle
+Canvas's grades API already tells the app which assignments require no online
+submission (`GradeItem.requiresNoSubmission` — every `submission_types` entry
+is `none`, `on_paper`, or `not_graded`), and the app already used that to
+auto-file past-due no-submission items as done and to suppress "Turned in ✓"
+notices for them. Two things were missing: nothing on the dashboard *told*
+the student a given assignment was one of these (the auto-completion just
+happened silently), and there was no way to keep a class's reminders while
+turning off the ones for its attend-only/on-paper work specifically.
+
+Added both. The dashboard card now shows a small "nothing to submit" tag —
+visible on the collapsed card, not only once expanded, because the whole
+point is to answer "do I need to turn something in?" at a glance — plus one
+plain-language sentence once the card is opened. Profile → notifications
+gets a new per-class toggle, `CoursePreferences.noSubmissionRemindersEnabled`,
+that gates lead-time reminders and the daily digest count for that class's
+no-submission items without touching the caveat (which is purely
+informational and always shows) or any other class's setting.
+
+**Default ON.** Both features are additive and behavior-preserving: the
+toggle defaults to `true`, so a no-submission item schedules exactly as it
+did before this change until a student explicitly opts out. The caveat is
+informational only and cannot silence anything by itself — it is the toggle,
+not the tag, that a student who wants quiet has to find and flip. This
+matches the toggle's siblings (`recurringEnabled`, `notificationsEnabled`
+lead-offset overrides): everything in this per-course settings file starts
+at "do what the app already did."
+
+**Where the id cache lives, and why not the ledger.** Whether an assignment
+requires no submission is derived from Grade Watcher's grade snapshots, which
+are in-memory only and refreshed live — there was previously no reason to
+persist anything about them. The caveat needs to render correctly on the
+very first frame of a cold launch though, before any refresh has run, so the
+set of currently-known no-submission Canvas assignment ids is cached under
+`"noSubmissionCanvasAssignmentIDsV1"` in `UserDefaults.lhf` (never
+`.standard`), self-healing on every refresh (an id enters when observed
+no-submission, leaves when observed submittable, and is left untouched for
+any course the refresh didn't cover — the same "merge, don't replace" rule
+`submittedCanvasAssignmentIDs` already uses). This is a re-derivable cache of
+what the last refresh saw, not a fact about the student's own work, so it
+belongs in tier 2 (App Group `UserDefaults`) rather than the SwiftData
+ledger — putting it there would have meant a schema change on a migration
+path (`LedgerSchemaV1`) that, per the Known Gaps section, has never opened a
+real pre-existing on-disk store, for a value that costs nothing to
+re-observe on the next sync. It is also deliberately NOT mirrored to iCloud
+(`CloudPrefsMirror.mirroredKeys` does not list it): two devices disagreeing
+about it for a while while their own Grade Watcher refreshes catch up is
+harmless, and mirroring it would tie the cache's correctness to sync timing
+for no benefit.
+
+**Scope.** The toggle governs true Canvas assignments only — items with a
+real `canvasAssignmentID` (quizzes, discussions, events, and readings-course
+imports all yield `nil` there by design and are unaffected). Readings and
+check-ins already have their own switch (`recurringEnabled`, "readings and
+check-ins" in Profile); this is deliberately a third, independent control
+rather than a rename of either existing one, because a no-submission
+assignment is neither a recurring occurrence nor a mute of the whole class.
+
 ## 2026-08-27 — Remove the readings consent nudge; auto-import unless excluded
 Removed the one-ask "include this class's readings?" popup (`CourseNudgeSheet`,
 `AppState.pendingCourseNudge`/`resolveCourseNudge`/`dismissCourseNudge`/

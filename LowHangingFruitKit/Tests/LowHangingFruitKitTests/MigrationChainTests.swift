@@ -359,6 +359,36 @@ struct MigrationChainTests {
         #expect(reread.displayName(for: "CIS 1200") == "Discrete")
     }
 
+    /// Same failure mode, same fix, for the field added 2026-08-27
+    /// (docs/decisions.md): `noSubmissionRemindersEnabled`. A blob written by
+    /// a build that predates the per-class "assignments with nothing to
+    /// submit" toggle carries every key except this one, and it must decode
+    /// to the default (`true` — matches the pre-toggle behavior of
+    /// scheduling those reminders unconditionally) rather than throwing and
+    /// wiping every other course's settings in the same blob.
+    @Test("a course-preferences blob from before noSubmissionRemindersEnabled decodes to the default, and round-trips once set")
+    func coursePreferencesBlobSurvivesTheNoSubmissionField() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+        "notificationsEnabled":true,"recurringEnabled":true,"isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(store.noSubmissionRemindersEnabled("CIS 1200"))
+
+        // Round-trip: turning it off, writing it back, and re-reading keeps
+        // the new field AND everything the pre-toggle blob already had.
+        store.setNoSubmissionRemindersEnabled("CIS 1200", false)
+        let reread = CoursePreferencesStore(defaults: shared)
+        #expect(!reread.noSubmissionRemindersEnabled("CIS 1200"))
+        #expect(reread.isVisible("CIS 1200"))
+        #expect(reread.recurringEnabled("CIS 1200"))
+    }
+
     @Test("the v4 fields survive the whole migration chain, twice, with no App Group")
     func rolloverFieldsSurviveTheChain() throws {
         let (legacy, ln) = scratchDefaults(); defer { destroy(ln) }

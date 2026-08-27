@@ -140,6 +140,30 @@ Settings' "Courses & content" toggle (`AppState.shouldAutoImportReadings`).
 Linux container with no Swift toolchain) — it needs the same Mac
 `swift test` + simulator pass as everything else in this file.
 
+**Update 2026-08-27: no-submission caveat + per-class reminder toggle
+(uncompiled).** Two connected additions on top of `GradeItem
+.requiresNoSubmission` (see `docs/decisions.md`'s new top entry for the
+full reasoning): (1) the dashboard card now shows a small "nothing to
+submit" tag on the collapsed card, plus a plain-language sentence when
+expanded, for any assignment Canvas has reported needs no online submission
+— backed by a new self-healing, persisted id cache
+(`AppState.noSubmissionCanvasAssignmentIDs`, `UserDefaults.lhf` under
+`noSubmissionCanvasAssignmentIDsV1`) so the caveat survives a relaunch
+before the first grade refresh lands; and (2) a new per-class Profile →
+notifications toggle, `CoursePreferences.noSubmissionRemindersEnabled`
+(default on), that silences lead-time reminders and the daily digest count
+for a class's no-submission items without touching the caveat or any other
+class. Touched: `AppState.swift`, `DashboardViewModel.swift`
+(`DashItem.requiresNoSubmission`), `SampleData.swift`, `AssignmentCardView
+.swift`, `CoursePreferences.swift`, `NotificationScheduler.swift`,
+`ProfileNotificationsSection.swift`, plus a new
+`NoSubmissionCaveatTests.swift` and one added case in
+`MigrationChainTests.swift`. Written from the same Linux container as the
+change above — **not compiled, not run.** Needs the same Mac `swift test` +
+simulator pass as everything else in this file, and specifically a look at
+the collapsed-card layout on a device (the caveat tag's placement was a
+judgment call, not verified visually).
+
 Everything below this section is historical context from earlier sessions.
 
 ---

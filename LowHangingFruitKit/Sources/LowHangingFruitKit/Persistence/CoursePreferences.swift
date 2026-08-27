@@ -88,6 +88,22 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     /// switch could not express that.
     public var recurringEnabled: Bool
 
+    /// Whether reminders fire for this course's Canvas assignments that
+    /// require no online submission (`GradeItem.requiresNoSubmission` —
+    /// on_paper/none/not_graded submission types; the dashboard card shows a
+    /// "nothing to submit" caveat on these regardless of this setting, which
+    /// only controls whether they produce a lead-time reminder or count in
+    /// the daily digest). `true` by default, matching the behavior before
+    /// this toggle existed: a no-submission item scheduled exactly like any
+    /// other assignment. Separate from `recurringEnabled` because the two
+    /// govern different kinds of dashboard item — recurring readings/
+    /// check-ins are non-assignment obligations `RecurringTask` generates,
+    /// while a no-submission item is a real Canvas assignment (it has a
+    /// `canvasAssignmentID`) that simply doesn't ask for a file. A student who
+    /// wants "no reminder for attend-only assignments, but still remind me
+    /// about the weekly reading" needs both switches to exist independently.
+    public var noSubmissionRemindersEnabled: Bool
+
     /// The term this course was archived into by semester rollover; `nil` means
     /// it is still active. A `Term` rather than a `Bool` so the Done history can
     /// group archived work by semester, and so a rollover that fires twice in
@@ -129,6 +145,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         notificationsEnabled: Bool = true,
         leadOffsets: Set<LeadOffset>? = nil,
         recurringEnabled: Bool = true,
+        noSubmissionRemindersEnabled: Bool = true,
         archivedTerm: Term? = nil,
         isManuallyAdded: Bool = false
     ) {
@@ -140,6 +157,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.notificationsEnabled = notificationsEnabled
         self.leadOffsets = leadOffsets
         self.recurringEnabled = recurringEnabled
+        self.noSubmissionRemindersEnabled = noSubmissionRemindersEnabled
         self.archivedTerm = archivedTerm
         self.isManuallyAdded = isManuallyAdded
     }
@@ -201,7 +219,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case courseKey, displayName, isVisible, isDeleted, canvasCourseID
         case notificationsEnabled, leadOffsets, recurringEnabled, archivedTerm
-        case isManuallyAdded
+        case isManuallyAdded, noSubmissionRemindersEnabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -213,6 +231,9 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.canvasCourseID = try c.decodeIfPresent(String.self, forKey: .canvasCourseID)
         self.notificationsEnabled = try c.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
         self.recurringEnabled = try c.decodeIfPresent(Bool.self, forKey: .recurringEnabled) ?? true
+        self.noSubmissionRemindersEnabled = try c.decodeIfPresent(
+            Bool.self, forKey: .noSubmissionRemindersEnabled
+        ) ?? true
         self.archivedTerm = try c.decodeIfPresent(Term.self, forKey: .archivedTerm)
         self.isManuallyAdded = try c.decodeIfPresent(Bool.self, forKey: .isManuallyAdded) ?? false
 
@@ -238,6 +259,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(canvasCourseID, forKey: .canvasCourseID)
         try c.encode(notificationsEnabled, forKey: .notificationsEnabled)
         try c.encode(recurringEnabled, forKey: .recurringEnabled)
+        try c.encode(noSubmissionRemindersEnabled, forKey: .noSubmissionRemindersEnabled)
         try c.encodeIfPresent(archivedTerm, forKey: .archivedTerm)
         try c.encode(isManuallyAdded, forKey: .isManuallyAdded)
         // Sorted so the encoded blob is byte-stable across runs — `Set`'s
@@ -341,6 +363,9 @@ public final class CoursePreferencesStore: ObservableObject {
     }
     public func recurringEnabled(_ courseKey: String) -> Bool {
         preferences(for: courseKey).recurringEnabled
+    }
+    public func noSubmissionRemindersEnabled(_ courseKey: String) -> Bool {
+        preferences(for: courseKey).noSubmissionRemindersEnabled
     }
     /// `nil` means this course inherits the global lead times — see
     /// `CoursePreferences.leadOffsets`. Prefer `effectiveLeadOffsets(for:global:)`.
@@ -451,6 +476,14 @@ public final class CoursePreferencesStore: ObservableObject {
 
     public func setRecurringEnabled(_ courseKey: String, _ enabled: Bool) {
         update(courseKey) { $0.recurringEnabled = enabled }
+    }
+
+    /// Per-class opt-out for reminders on this course's no-submission
+    /// assignments (attend-only, on-paper, not-graded). Off leaves the
+    /// dashboard caveat exactly as it was — this only silences the reminder
+    /// and digest count, never the informational tag on the card.
+    public func setNoSubmissionRemindersEnabled(_ courseKey: String, _ enabled: Bool) {
+        update(courseKey) { $0.noSubmissionRemindersEnabled = enabled }
     }
 
     /// Files the course under a term (rollover) or brings it back (`nil`).

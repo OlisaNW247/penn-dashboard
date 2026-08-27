@@ -204,6 +204,27 @@ struct ProfileNotificationsSection: View {
                 .font(.lhfSans(12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("assignments with nothing to submit", isOn: Binding(
+                get: { preferences.noSubmissionRemindersEnabled(course) },
+                set: { newValue in
+                    preferences.setNoSubmissionRemindersEnabled(course, newValue)
+                    scheduler.rescheduleAfterPreferenceChange()
+                }
+            ))
+            .font(.lhfSans(14))
+
+            // A third switch, not a rename of the one above: readings/check-ins
+            // are non-assignment work `RecurringTask` generates, while a
+            // no-submission item is a real Canvas assignment that just happens
+            // to expect nothing turned in online — the card already caveats it
+            // regardless of this setting, which only controls the reminder.
+            Text(preferences.noSubmissionRemindersEnabled(course)
+                 ? "attend-only and on-paper assignments remind you too."
+                 : "assignments with nothing to submit stay silent. they still show on the dashboard.")
+                .font(.lhfSans(12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -334,14 +355,18 @@ struct ProfileNotificationsSection: View {
         let recurring = preferences.recurringEnabled(course)
             ? ""
             : " Readings and check-ins are off."
+        let noSubmission = preferences.noSubmissionRemindersEnabled(course)
+            ? ""
+            : " No-submit reminders are off."
 
         if effective.isEmpty {
             return inheriting
-                ? "No reminder times are set in Settings.\(recurring)"
-                : "No reminder times.\(recurring)"
+                ? "No reminder times are set in Settings.\(recurring)\(noSubmission)"
+                : "No reminder times.\(recurring)\(noSubmission)"
         }
         let times = offsetList(effective)
-        return (inheriting ? "Your default times: \(times)." : "Its own times: \(times).") + recurring
+        return (inheriting ? "Your default times: \(times)." : "Its own times: \(times).")
+            + recurring + noSubmission
     }
 
     /// "1 day, 1 hour" — `LeadOffset.label` with the trailing "before" trimmed,

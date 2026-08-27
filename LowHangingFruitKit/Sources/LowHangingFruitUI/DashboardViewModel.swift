@@ -14,6 +14,14 @@ struct DashItem: Identifiable, Equatable {
     var dueOverride: Date?
     var isCompleted: Bool
     var completedAt: Date?
+    /// Whether Canvas expects no online submission for this item
+    /// (`AppState.requiresNoSubmission`), snapshotted at `reload` time so the
+    /// card view can render the "nothing to submit" caveat without holding a
+    /// reference to `AppState` — see this file's own note on why `DashItem`
+    /// stays a pure presentation wrapper. Defaults `false` so every existing
+    /// construction site (`SampleData`, tests) keeps compiling and previews
+    /// render exactly as before unless a fixture opts a specific item in.
+    var requiresNoSubmission: Bool = false
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
@@ -100,7 +108,8 @@ final class DashboardViewModel: ObservableObject {
             built.append(DashItem(assignment: a,
                                   dueOverride: prior?.dueOverride,
                                   isCompleted: false,
-                                  completedAt: nil))
+                                  completedAt: nil,
+                                  requiresNoSubmission: state.requiresNoSubmission(a)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped
@@ -122,7 +131,8 @@ final class DashboardViewModel: ObservableObject {
             built.append(DashItem(assignment: a,
                                   dueOverride: priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
-                                  completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt))
+                                  completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
+                                  requiresNoSubmission: state.requiresNoSubmission(a)))
         }
 
         items = built

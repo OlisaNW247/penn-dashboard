@@ -443,6 +443,16 @@ final class NotificationScheduler: ObservableObject {
             let isRecurring = RecurringTask.isOccurrence(item.assignment)
             if isRecurring, !prefs.recurringEnabled(course) { continue }
 
+            // A no-submission item (Canvas expects nothing to be turned in —
+            // the card already carries a caveat saying so) still schedules
+            // like any other assignment by default, because the toggle this
+            // gates is opt-out, not opt-in. But some students genuinely don't
+            // want a 9pm alarm for "attend lecture", and that request is
+            // narrower than the recurring switch above: a no-submission item
+            // is a real Canvas assignment (it has a `canvasAssignmentID`),
+            // not a `RecurringTask` occurrence, so it needs its own gate.
+            if item.requiresNoSubmission, !prefs.noSubmissionRemindersEnabled(course) { continue }
+
             // `nil` here means the course never had its lead times set and
             // inherits whatever Settings currently says; an explicitly empty set
             // is the student saying "no lead-time reminders for this class" and
@@ -569,6 +579,14 @@ final class NotificationScheduler: ObservableObject {
             let course = item.assignment.course
             guard prefs.notificationsEnabled(course) else { return false }
             if RecurringTask.isOccurrence(item.assignment), !prefs.recurringEnabled(course) {
+                return false
+            }
+            // Mirrors the same gate in `plannedRequests` above — the digest
+            // must not leak what the per-class no-submission toggle silenced,
+            // or a student who turned it off would still see it counted every
+            // morning, which is the mute-that-doesn't-mute failure the digest
+            // gating exists to avoid in general.
+            if item.requiresNoSubmission, !prefs.noSubmissionRemindersEnabled(course) {
                 return false
             }
             return true

@@ -101,6 +101,34 @@ final class AppState: ObservableObject {
     /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
 
+    /// Canvas assignment ids Grade Watcher has told us require no online
+    /// submission (`GradeItem.requiresNoSubmission` — `submission_types` of
+    /// on_paper/none/not_graded), cached across refreshes and **persisted
+    /// directly in `UserDefaults.lhf`** under `noSubmissionCanvasAssignmentIDsKey`
+    /// — unlike `submittedCanvasAssignmentIDs` just above, whose durability
+    /// comes from the SwiftData ledger (`store.submittedCanvasAssignmentIDs()`,
+    /// `applySubmissionState`) rather than a raw defaults key of its own. Grade
+    /// snapshots themselves stay in-memory-only, refreshed live on every sync;
+    /// this cache exists because "does this assignment even take a
+    /// submission" is a much slower-moving fact than "was it actually turned
+    /// in" (a professor changing submission type mid-semester is rare, a
+    /// submission's status changes constantly), and the dashboard card's
+    /// caveat needs to render correctly on the very first frame of a cold
+    /// launch, before any grade refresh has run — an unpersisted cache would
+    /// show the caveat on nothing until Grade Watcher finished its first
+    /// fetch of the session. `UserDefaults.lhf` rather than the ledger
+    /// because this is a re-derivable observation cache, not the student's
+    /// own record of anything (see `docs/decisions.md`'s 2026-08-27 entry).
+    ///
+    /// Updated self-healingly by `updateSubmissionState` via
+    /// `Self.updatedNoSubmissionIDs`: every item a refresh actually observes
+    /// either enters or leaves the set depending on its current
+    /// `requiresNoSubmission`, and ids from a course this refresh never
+    /// touched are left exactly as they were — the same "merge, don't
+    /// replace" reasoning `submittedCanvasAssignmentIDs` uses for courses a
+    /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
+    @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
+
     /// Ledger ids a semester rollover has filed away. **Derived, not
     /// persisted** — rebuilt from the ledger's rows exactly as
     /// `completedAssignmentIDs` is, because the rows are the record and a second
@@ -303,6 +331,12 @@ final class AppState: ObservableObject {
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
+    /// Backs `noSubmissionCanvasAssignmentIDs`. Device-local and never
+    /// mirrored to iCloud (`CloudPrefsMirror.mirroredKeys` does not list it):
+    /// it is a re-derivable cache of what Grade Watcher has observed on this
+    /// device, not a student preference, so there is nothing here worth
+    /// syncing and no harm in two devices disagreeing about it for a while.
+    private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
     /// The term code of the most recent rollover the student waved away. A
     /// preference by every test in `docs/persistence-explained.md` §3 — losing
     /// it costs one re-offered card, nothing more — so it stays in defaults
@@ -341,6 +375,12 @@ final class AppState: ObservableObject {
         ) ?? .light
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
+        )
+        // Seeded here (not left at its `= []` default) so the dashboard's
+        // "nothing to submit" caveat is correct on the very first frame of a
+        // cold launch, before any grade refresh has had a chance to run.
+        self.noSubmissionCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
         )
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
@@ -899,6 +939,12 @@ final class AppState: ObservableObject {
         // pull resurrects decisions this disconnect just threw away.
         if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
         submittedCanvasAssignmentIDs = []
+        // The no-submission cache is Canvas-session-derived the same way the
+        // submitted-ids side channel is — clear it wholesale rather than
+        // leaving stale ids behind that a reconnect (possibly a different
+        // Canvas account) would otherwise inherit and caveat incorrectly.
+        noSubmissionCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's work survives in the store and reappears on the dashboard.
@@ -2525,6 +2571,24 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// True when Canvas has told Grade Watcher this Canvas assignment expects
+    /// no online submission — the fact the dashboard card's "nothing to
+    /// submit" caveat shows, and that
+    /// `CoursePreferences.noSubmissionRemindersEnabled` gates reminders on.
+    ///
+    /// Reads the persisted cache (`noSubmissionCanvasAssignmentIDs`) rather
+    /// than the live Grade Watcher snapshots, on purpose: the cache is what
+    /// survives a relaunch between grade refreshes, and this is the one
+    /// question ("does this even take a submission?") that should still have
+    /// an answer before the first fetch of a new session lands. False for
+    /// anything that isn't a true Canvas assignment — `canvasAssignmentID` is
+    /// nil for manual work, quizzes, discussions and events by design (see
+    /// its own doc comment), which is exactly the scope this caveat and the
+    /// per-class toggle are meant to have.
+    func requiresNoSubmission(_ assignment: Assignment) -> Bool {
+        assignment.canvasAssignmentID.map { noSubmissionCanvasAssignmentIDs.contains($0) } ?? false
+    }
+
     /// Recomputes `submittedCanvasAssignmentIDs` from the Grade Watcher snapshots'
     /// submission side-channel and rebuilds the dashboard. Called after any grade
     /// refresh. Reads every fetched course's submissions (Grade Watcher only
@@ -2595,6 +2659,27 @@ final class AppState: ObservableObject {
             if !notifications.isEmpty {
                 pendingTurnedInNotices += notifications
             }
+        }
+
+        // Self-healing no-submission id cache (the dashboard card's caveat
+        // and the per-class "assignments with nothing to submit" reminder
+        // toggle both read `noSubmissionCanvasAssignmentIDs`). Guarded on
+        // both conditions above, together: `!isUsingFixtureData` because a
+        // reviewer's Preview-mode fixture must never leak into the real
+        // persisted cache a genuine relaunch would then load, and
+        // `!gradeWatcher.snapshots.isEmpty` for the same reason the ledger
+        // persist below has it — an empty refresh (no session, nothing
+        // selected) says nothing about whether any assignment's submission
+        // type changed and must not be read as "check every cached id".
+        if !isUsingFixtureData, !gradeWatcher.snapshots.isEmpty {
+            noSubmissionCanvasAssignmentIDs = Self.updatedNoSubmissionIDs(
+                cached: noSubmissionCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(noSubmissionCanvasAssignmentIDs).sorted(),
+                forKey: Self.noSubmissionCanvasAssignmentIDsKey
+            )
         }
 
         // Persist onto the ledger so the next cold launch already knows what's
@@ -2677,6 +2762,42 @@ final class AppState: ObservableObject {
             }
         }
         return ids
+    }
+
+    /// The update rule for the persisted `noSubmissionCanvasAssignmentIDs`
+    /// cache: **per-item replace, not a wholesale rebuild.** Every item this
+    /// refresh actually observed either enters the set (its current
+    /// `requiresNoSubmission` is true) or leaves it (false) — so a professor
+    /// who changes an assignment's submission type mid-semester is reflected
+    /// on the very next refresh in either direction. Ids belonging to a
+    /// course this refresh never touched (deselected, a fetch that failed
+    /// mid-loop, a readings-only course Grade Watcher doesn't fetch at all)
+    /// are left exactly as `cached` had them, because this function only
+    /// knows what `snapshots` actually reported and has no way to tell "not
+    /// mentioned" apart from "no longer true" without that distinction being
+    /// made for it by the caller.
+    ///
+    /// Pure, mirroring `autoSubmittedNoSubmissionIDs` and
+    /// `noSubmissionAssignmentIDs` above, so the cache's self-healing
+    /// behaviour is testable without a network, a `GradeWatcherStore`, or
+    /// `UserDefaults`.
+    static func updatedNoSubmissionIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.requiresNoSubmission {
+                        next.insert(item.id)
+                    } else {
+                        next.remove(item.id)
+                    }
+                }
+            }
+        }
+        return next
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors
