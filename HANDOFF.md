@@ -34,10 +34,17 @@ bumped to **2.0.0 (build 5)**. The load-bearing reconciliations:
   (v4); readings-course toggles, iCloud sync, Mac login item, storage and
   troubleshooting live in Settings, restyled to v4's lowercase chrome.
 
+**Verified on a Mac, 2026-08-26:** `cd LowHangingFruitKit && swift test` —
+**517 tests / 55 suites green** (plus 4 XCTest scheduler tests), zero
+failures, up from the 456/40 pre-merge baseline on `v4`. The migration-chain,
+course-name-normalization, cloud-sync-toggle, and readings-filtering suites —
+the seams this merge reconciled by hand — all pass.
+
 **Not yet done on this branch** — in order:
-1. `cd LowHangingFruitKit && swift test` on a Mac (this merge was produced in
-   a Linux environment with no Swift toolchain; it has **not been compiled**).
-2. `xcodegen generate` (project.pbxproj still carries pre-merge version keys).
+1. `xcodegen generate` (project.pbxproj still carries pre-merge version keys;
+   quit Xcode first).
+2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
+   LowHangingFruit -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`.
 3. Device pass: onboarding walk, swipe card, readings opt-in nudge, Mac
    menu-bar build, and — only with two devices — the iCloud sync toggle.
 

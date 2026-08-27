@@ -24,10 +24,10 @@ cd LowHangingFruitKit && swift build
 
 This branch is the **merge of `v3.5` and `v4`** (v4's UI, v3.5's engine work —
 readings-only courses, iCloud Tier 2 sync, background refresh, the Mac menu-bar
-tier, Canvas session renewal). The pre-merge baseline on `v4` was 456 tests /
-40 suites green; re-establish the number on this branch and then hold the same
-rule: a change that lowers the test count has lost work — investigate rather
-than accept it.
+tier, Canvas session renewal). Baseline on this branch, verified post-merge on
+a Mac (2026-08-26): **517 tests / 55 suites green** (plus 4 XCTest scheduler
+tests), up from 456/40 on pre-merge `v4`. Hold the rule: a change that lowers
+the test count has lost work — investigate rather than accept it.
 
 ## Layout
 
