@@ -46,17 +46,73 @@ chain rewritten as a loop for the Swift 6 type-checker); and two v3.5-era
 test helpers re-seeded through `CoursePreferencesStore` instead of the
 legacy UserDefaults keys, which are a write-only projection now.
 
-**Not yet done on this branch** — in order:
-1. `xcodegen generate` at the repo root (quit Xcode first — the committed
-   pbxproj was regenerated on `v3.5` and still carries 1.1.2/4; this branch's
-   project.yml says 2.0.0/5). Commit the result **from this branch** —
-   check `git branch --show-current` first.
-2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
-   LowHangingFruit -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`.
-3. Device pass: onboarding walk, swipe card, readings-only classes showing
-   by default (the opt-in nudge now fires only for silent courses needing a
-   module import — see AppState.includesAsOptedInContent), Mac menu-bar
-   build, and — only with two devices — the iCloud sync toggle.
+**Since then, all done and pushed:** `xcodegen generate` ran on this branch
+(pbxproj now stamps 2.0.0/5), the iOS app + widget build clean for the
+simulator, and the device pass has started — it immediately caught the
+readings-course regression below.
+
+## 🔴 IN FLIGHT: readings/Modules-only classes missing from Profile's class list
+
+**The story so far (2026-08-26, owner's real device).** CIS 2620 — a class
+that posts no submittable Canvas assignments — was absent from the dashboard
+on first launch of the merged build. That was v3.5's readings-course opt-in
+design working as designed (default-exclude until a nudge is answered), and
+the owner reversed it: commit `597121f` makes calendar `.event` items
+**include-by-default** (`AppState.includesAsOptedInContent` /
+`courseContentIncluded` now hide only on an explicit `.exclude`), removes
+Settings' "reading & event classes" section entirely, and restricts the
+nudge to silent courses with module readings (their content needs a network
+import, so one ask survives). 608/61 tests green on the owner's Mac after
+that change.
+
+**The remaining gap — diagnosed, NOT yet fixed.** The owner reports CIS 2620
+still does not appear in Profile's classes list. Root cause, confirmed in
+code: `AppState.allCourseCodes()` (AppState.swift, ~line 1878) builds the
+class list from `canvasItems + gradescopeItems` plus
+`coursePreferences.manuallyAddedCourseKeys` — **feed items only**. A class
+whose content lives solely in Canvas Modules (a "silent" course), or an
+enrolled class that has posted nothing to the calendar yet, contributes no
+feed items and therefore never reaches the class list. The deleted Settings
+section was such a class's ONLY surface (it listed from
+`courseProfileReports`, which derive from the cached enrolled-course list) —
+so removing the section removed the class from the UI entirely.
+
+**Planned fix (agreed direction, next session implements):**
+1. Add `moduleReadingItems` to `allCourseCodes()`'s pool, so a course whose
+   imported Modules readings are on the ledger lists like any other class.
+2. Union in the cached enrolled courses: `enrolledCanvasCourses` (persisted
+   under `enrolledCanvasCoursesV1`, already junk-filtered at ingestion —
+   AppState.swift ~1283 filters on `isEnrolledCourseCurrent` +
+   `CourseCode.containsExplicitCode`), keyed through
+   `AppState.courseKey(forEnrolled:)` (~1536). This also fixes the week-one
+   problem generally: an enrolled class appears in Profile before it posts
+   anything, matching the hand-added-class precedent in `allCourseCodes`'s
+   own doc comment.
+3. Keep the silent-course readings *import* behind the nudge (network
+   consent) — the class being listed and its readings being fetched are
+   separate questions.
+4. Tests: ProfileTabTests' "a student with no feed items yet has genuinely
+   empty class lists" must still pass (it seeds no enrolled courses); add
+   coverage for (a) a course with only `.canvasModules` ledger rows
+   appearing in `allCourseCodes()`/`visibleCourseCodes()`, and (b) a cached
+   enrolled course with zero items appearing too. `enrolledCanvasCourses`
+   is `private` — tests seed it via the `enrolledCanvasCoursesV1` defaults
+   key (a `[id: name]` string map; see `AppState.init` ~347), same pattern
+   `CurrentEnrollmentTests` uses.
+
+**Working setup for the next session** (this environment has NO Swift
+toolchain — a Linux container): make changes, run the static checks you can
+(grep for dangling symbols, brace-balance), push, and the owner runs
+`cd LowHangingFruitKit && swift test` (608/61 is the current green baseline)
+and the simulator build on their Mac, pasting results back. Two traps that
+already cost time today: the owner's shell chokes on `#` comments in pasted
+commands (zsh, no interactive comments), and their local checkout was on
+`v3.5` for one round — have them run `git branch --show-current` before
+anything that commits.
+
+**Remaining device pass after the fix:** onboarding walk, swipe card,
+CIS 2620 visible in Profile + dashboard, Mac menu-bar build, widget showing
+renamed courses, and — only with two devices — the iCloud sync toggle.
 
 Everything below this section is historical context from earlier sessions.
 
