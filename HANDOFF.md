@@ -34,24 +34,26 @@ bumped to **2.0.0 (build 5)**. The load-bearing reconciliations:
   (v4); readings-course toggles, iCloud sync, Mac login item, storage and
   troubleshooting live in Settings, restyled to v4's lowercase chrome.
 
-**Correction (2026-08-26, same day):** an earlier revision of this section
-claimed a green 517/55 `swift test` run *on this branch*. That run was real
-but happened on the owner's local `v3.5` checkout — which also carried four
-then-unpushed commits (non-destructive "Sign in to Canvas", device-observed
-turned-in notices, the persimmon icon restore) that have since been merged
-in here. So: `v3.5`'s own final state is proven green at 517/55 and its iOS
-build succeeds; **this merged branch has not yet had its own test run or
-build.**
+**Verified on this branch, on a Mac (2026-08-26):** `swift test` — **608
+tests / 61 suites green** (plus 4 XCTest scheduler tests), zero failures.
+Getting there took five post-merge fixes the compiler and test run surfaced
+(worth knowing about, all in this branch's log): `loadStringMap` re-added
+after v4's consolidation deleted it out from under a v3.5 call site; a
+`nonisolated` on `CoursePreferencesStore.storageKey` for the mirror's
+static key list; the `.canvasModules` case in `RecurringTask.isOccurrence`;
+the widget's rename-override mapping restored (and its nine-link filter
+chain rewritten as a loop for the Swift 6 type-checker); and two v3.5-era
+test helpers re-seeded through `CoursePreferencesStore` instead of the
+legacy UserDefaults keys, which are a write-only projection now.
 
 **Not yet done on this branch** — in order:
-1. `git checkout claude/v4-github-repo-kvu0e0 && git pull`, then
-   `cd LowHangingFruitKit && swift test`.
-2. `xcodegen generate` at the repo root (quit Xcode first — the committed
+1. `xcodegen generate` at the repo root (quit Xcode first — the committed
    pbxproj was regenerated on `v3.5` and still carries 1.1.2/4; this branch's
-   project.yml says 2.0.0/5). Commit the result.
-3. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
+   project.yml says 2.0.0/5). Commit the result **from this branch** —
+   check `git branch --show-current` first.
+2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
    LowHangingFruit -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`.
-4. Device pass: onboarding walk, swipe card, readings opt-in nudge, Mac
+3. Device pass: onboarding walk, swipe card, readings opt-in nudge, Mac
    menu-bar build, and — only with two devices — the iCloud sync toggle.
 
 Everything below this section is historical context from earlier sessions.
