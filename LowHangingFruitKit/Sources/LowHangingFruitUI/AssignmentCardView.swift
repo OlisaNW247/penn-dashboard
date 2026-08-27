@@ -110,21 +110,18 @@ struct AssignmentCardView: View {
                 // Bold: the course is how you find your way around this list.
                 // Scanning for "the CIS one" is the actual reading pattern, and
                 // at 9pt regular it was the faintest thing on the card.
-                HStack(spacing: 4) {
-                    if item.assignment.kind == .event {
-                        // Reading/event item opted into the list (docs/
-                        // READINGS_COURSES_PLAN.md Phase 3.9) — never a
-                        // submission, so it gets a marker instead of implying
-                        // one.
-                        Image(systemName: "book")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(Color.v2CourseCode)
-                    }
-                    Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfSans(9.5, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.v2CourseCode)
-                }
+                //
+                // Readings/events used to carry a small book glyph here (a
+                // second, separate way of saying "nothing to turn in") until
+                // the owner's device pass found it and the caveat below
+                // stating the same fact for two different reasons — one icon
+                // vocabulary, one text vocabulary, for one idea. The caveat
+                // is now the single marker (see `DashItem.showsNothingToSubmit`);
+                // this row is back to being plain course-code text.
+                Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
+                    .font(.lhfSans(9.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.v2CourseCode)
 
                 Text(item.assignment.title)
                     .font(.lhfSans(14, weight: .medium))
@@ -139,8 +136,10 @@ struct AssignmentCardView: View {
                 // under the title (not stacked onto the course-code row,
                 // which is already doing the "find your class" job) so it
                 // reads as a caveat about this one item rather than crowding
-                // the thing that actually identifies the card.
-                if item.requiresNoSubmission {
+                // the thing that actually identifies the card. Covers both
+                // Canvas no-submission assignments and readings/events —
+                // see `DashItem.showsNothingToSubmit`.
+                if item.showsNothingToSubmit {
                     Text("nothing to submit")
                         .font(.lhfSans(9, weight: .semibold))
                         .foregroundStyle(Color.v2CourseCode)
@@ -210,7 +209,9 @@ struct AssignmentCardView: View {
 
             // The collapsed tag says *that*; this says *why*, in the one
             // moment the student has actually asked about this assignment.
-            if item.requiresNoSubmission {
+            // Same predicate as the collapsed tag — see
+            // `DashItem.showsNothingToSubmit`.
+            if item.showsNothingToSubmit {
                 Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
                     .font(.lhfSans(11.5))
                     .foregroundStyle(.secondary)

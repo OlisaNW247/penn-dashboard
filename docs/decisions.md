@@ -5,6 +5,32 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — Remove the readings book icon; the no-submission caveat is now the single marker
+Follow-up to the entry directly below. The owner's device pass found that the
+new "nothing to submit" caveat and the pre-existing small book icon on
+readings/event items (`AssignmentCardView`, and the same convention in the
+Mac menu-bar's `LHFScenes.row(for:)`) were two separate visual vocabularies
+stating the same fact — a reading or calendar event never takes a
+submission, by definition, exactly like a Canvas assignment the caveat
+already covers. The book icon is deleted everywhere
+(`systemName: "book"` — zero remaining hits repo-wide); the card's "nothing
+to submit" tag and expanded sentence now cover readings/events too, via a
+new `DashItem.showsNothingToSubmit` display predicate
+(`requiresNoSubmission || assignment.kind == .event`). The Mac menu-bar row
+lost its icon but did not gain the caveat text — a judgment call, not an
+owner ask: it stays a compact, glanceable list rather than growing per-row
+prose, and the dashboard card is where the full statement lives.
+
+The stored field `DashItem.requiresNoSubmission` itself is **unchanged in
+meaning** — it still means "Canvas reported this specific assignment needs
+no online submission," which is what
+`CoursePreferences.noSubmissionRemindersEnabled` (the per-class "assignments
+with nothing to submit" reminder toggle) gates on. Readings' reminders are
+already governed by the separate "readings and check-ins" toggle; widening
+`requiresNoSubmission` itself (rather than adding a new display-only
+predicate) would have made a reading answer to both toggles at once, which
+is not what was asked for. Only the display widened.
+
 ## 2026-08-27 — No-submission assignments: visible caveat + per-class reminder toggle
 Canvas's grades API already tells the app which assignments require no online
 submission (`GradeItem.requiresNoSubmission` — every `submission_types` entry

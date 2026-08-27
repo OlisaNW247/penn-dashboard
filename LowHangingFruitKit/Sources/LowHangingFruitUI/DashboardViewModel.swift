@@ -26,6 +26,30 @@ struct DashItem: Identifiable, Equatable {
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
 
+    /// Whether the card should state "nothing to submit" — the single display
+    /// predicate the caveat now uses, covering both Canvas's own
+    /// no-submission assignments AND readings/events, which the owner's
+    /// device pass found were showing the same fact through two different
+    /// vocabularies (a small book icon for `.event` items, the caveat text
+    /// for `requiresNoSubmission` ones). A reading or calendar event never
+    /// takes a submission by definition, so `.event` is folded in here rather
+    /// than the book icon staying as a second marker for the same idea.
+    /// `.event` covers both an opted-in calendar reading/event (docs/
+    /// READINGS_COURSES_PLAN.md Phase 3.9) and a Modules-imported reading —
+    /// `importModuleReadings` builds those rows with `kind: .event` too (see
+    /// `ModuleReadingImportTests`), so this predicate catches both sources
+    /// without needing to know which one produced a given item.
+    ///
+    /// `requiresNoSubmission` itself deliberately keeps its narrower,
+    /// Canvas-only meaning rather than being widened to match: it's what the
+    /// per-class "assignments with nothing to submit" reminder toggle gates
+    /// on, and a reading's reminders are already governed by the separate
+    /// "readings and check-ins" toggle. Broadening the stored field would
+    /// make an `.event` item answer to both toggles at once — this computed
+    /// property is what lets the *display* be unified while the two
+    /// reminder-toggle scopes stay exactly as they were.
+    var showsNothingToSubmit: Bool { requiresNoSubmission || assignment.kind == .event }
+
     func state(now: Date = Date()) -> DueState { DueState(due: due, now: now) }
 }
 

@@ -18,6 +18,15 @@ import UserNotifications
 ///    reminders and the daily digest for no-submission items in one class
 ///    without touching the caveat itself or any other class.
 ///
+/// Also covers `DashItem.showsNothingToSubmit` — the display predicate added
+/// after the owner's device pass found the caveat and the pre-existing
+/// readings book icon (`AssignmentCardView`, the Mac menu-bar `LHFScenes
+/// .row(for:)`) stating the same fact two different ways. The icon is gone;
+/// the caveat now covers `.event` items (readings/events) too, while
+/// `requiresNoSubmission` itself keeps its narrower Canvas-only meaning
+/// because the reminder toggle above gates on that field specifically, not
+/// the display predicate.
+///
 /// The cache-update rule and the scheduler gate are both pure functions
 /// (`AppState.updatedNoSubmissionIDs`, `NotificationScheduler
 /// .plannedRequests`/`digestRequest`), so most of this needs no network, no
@@ -101,7 +110,50 @@ struct NoSubmissionCaveatTests {
         #expect(next == ["keep-in", "newly-in", "untouched"])
     }
 
-    // MARK: - 2. AppState.requiresNoSubmission(_:)
+    // MARK: - 2. DashItem.showsNothingToSubmit (the display predicate)
+    //
+    // Added after the owner's device pass found the caveat and the
+    // pre-existing readings book icon saying the same thing two different
+    // ways. `showsNothingToSubmit` is the single display predicate the card
+    // now reads; `requiresNoSubmission` (tested above and in
+    // `NoSubmissionAutoCompleteTests`) keeps its narrower, Canvas-only
+    // meaning because it's what the per-class reminder toggle gates on.
+    // Pure — no `AppState`, no defaults.
+
+    private func eventItem(requiresNoSubmission: Bool = false) -> DashItem {
+        DashItem(
+            assignment: Assignment(source: .canvas, sourceID: "reading-1", kind: .event,
+                                   course: "TEST 1000", title: "Weekly reading", dueAt: nil, url: nil),
+            dueOverride: nil, isCompleted: false, completedAt: nil,
+            requiresNoSubmission: requiresNoSubmission
+        )
+    }
+
+    private func assignmentItem(requiresNoSubmission: Bool) -> DashItem {
+        DashItem(
+            assignment: Assignment(source: .canvas, sourceID: "hw-1", kind: .assignment,
+                                   course: "TEST 1000", title: "PSet", dueAt: nil, url: nil),
+            dueOverride: nil, isCompleted: false, completedAt: nil,
+            requiresNoSubmission: requiresNoSubmission
+        )
+    }
+
+    @Test("An .event item shows the caveat even when requiresNoSubmission is false — it's never submittable by definition")
+    func eventItemAlwaysShowsCaveat() {
+        #expect(eventItem(requiresNoSubmission: false).showsNothingToSubmit)
+    }
+
+    @Test("An .assignment item with requiresNoSubmission true shows the caveat")
+    func noSubmissionAssignmentShowsCaveat() {
+        #expect(assignmentItem(requiresNoSubmission: true).showsNothingToSubmit)
+    }
+
+    @Test("An ordinary .assignment item shows no caveat")
+    func ordinaryAssignmentShowsNoCaveat() {
+        #expect(!assignmentItem(requiresNoSubmission: false).showsNothingToSubmit)
+    }
+
+    // MARK: - 3. AppState.requiresNoSubmission(_:)
 
     private func canvasAssignment(id: String) -> Assignment {
         Assignment(
@@ -145,7 +197,7 @@ struct NoSubmissionCaveatTests {
         }
     }
 
-    // MARK: - 3. Persistence across relaunch, and the disconnect clear
+    // MARK: - 4. Persistence across relaunch, and the disconnect clear
 
     @Test("The cache is seeded from UserDefaults.lhf at construction, and disconnectCanvas() clears it")
     func seedsFromDefaultsAndDisconnectClears() {
@@ -166,7 +218,7 @@ struct NoSubmissionCaveatTests {
         }
     }
 
-    // MARK: - 4. Scheduler gate
+    // MARK: - 5. Scheduler gate
 
     @Test("Toggling the class off silences its no-submission items but not its normal ones")
     func toggleOffSilencesOnlyNoSubmissionItems() {
