@@ -2845,6 +2845,15 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(data, forKey: Self.recurringTasksKey)
     }
 
+    /// v4's CoursePreferences consolidation removed this helper along with the
+    /// four per-course maps it used to load — but the enrolled-course cache
+    /// (`enrolledCanvasCoursesKey`, a readings-course feature that never moved
+    /// into `CoursePreferences`) still stores a plain [String: String] blob and
+    /// still needs the same read in `init`.
+    private static func loadStringMap(_ key: String) -> [String: String] {
+        UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
+
     private static func loadRecurringTasks() -> [RecurringTask] {
         guard let data = UserDefaults.lhf.data(forKey: recurringTasksKey),
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)

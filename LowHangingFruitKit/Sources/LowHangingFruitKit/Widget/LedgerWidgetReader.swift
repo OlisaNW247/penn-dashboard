@@ -97,7 +97,10 @@ public enum LedgerWidgetReader {
             .filter { !hidden.contains($0.course) && !deleted.contains($0.course) }
             .compactMap { row -> (Date, WidgetItem)? in
                 guard let due = row.dueAt else { return nil }
-                return (due, WidgetItem(title: row.title, course: row.course, dueAt: due))
+                let display = nameOverrides[row.course]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let course = (display?.isEmpty == false) ? display! : row.course
+                return (due, WidgetItem(title: row.title, course: course, dueAt: due))
             }
             .sorted { $0.0 < $1.0 }
             .prefix(maxItems)

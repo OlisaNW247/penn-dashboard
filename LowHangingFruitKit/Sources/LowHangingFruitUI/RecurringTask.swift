@@ -178,7 +178,10 @@ extension RecurringTask {
             return true
         case .manual:
             return occurrenceTaskID(fromSourceID: assignment.sourceID) != nil
-        case .canvas, .gradescope:
+        case .canvas, .gradescope, .canvasModules:
+            // `.canvasModules` rows are imported module readings — real synced
+            // coursework, exactly like the other feed sources, never a
+            // generated occurrence.
             return false
         }
     }

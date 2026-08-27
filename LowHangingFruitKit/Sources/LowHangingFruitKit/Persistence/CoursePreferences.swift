@@ -274,7 +274,11 @@ public final class CoursePreferencesStore: ObservableObject {
     /// alongside the legacy three because nothing outside this type reads it —
     /// those three are public precisely because the widget, in another process,
     /// reads them by name.
-    public static let storageKey = "coursePreferences"
+    // `nonisolated`: this class is @MainActor, which would isolate even a
+    // constant String to the main actor — and `CloudPrefsMirror.mirroredKeys`
+    // (a nonisolated static) needs to name this key at type-initialization
+    // time. An immutable Sendable constant carries no state to protect.
+    public nonisolated static let storageKey = "coursePreferences"
 
     /// Records for courses that have some non-default setting. A course absent
     /// from this map is not unknown — it is a course sitting on every default.
