@@ -8,7 +8,7 @@ import Testing
 /// .moduleReadingItems`/`rebuildDashboardItems`'s `canvasPool`.
 ///
 /// `refreshCourseIntel(cookies:)`'s probe swap (JSON-first, HTML fallback)
-/// itself is NOT exercised here — same reasoning `CourseContentNudgeTests`
+/// itself is NOT exercised here — same reasoning `ReadingsAutoImportTests`
 /// documents: it requires a non-empty cookie jar and talks to
 /// `CanvasDiscoveryClient`/`CanvasModulesClient` over a real `URLSession`
 /// with no injection seam from `AppState`. Instead, these tests seed the
@@ -31,7 +31,7 @@ struct ModuleReadingImportTests {
     private static let course = "LGST 9999"
 
     /// Same backup/restore discipline as `CourseContentDashboardTests` /
-    /// `CourseContentNudgeTests` — see those files' doc comments.
+    /// `ReadingsAutoImportTests` — see those files' doc comments.
     private func withCleanDecision(_ body: () -> Void) {
         let defaults = UserDefaults.lhf
         let saved = defaults.data(forKey: Self.decisionsKey)

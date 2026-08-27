@@ -48,8 +48,11 @@ final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeItems: [Assignment] = []
     /// Readings imported from a probed (silent) course's Modules page via
-    /// `CanvasModulesClient`, for courses whose readings/silent-course nudge
-    /// was answered "include" (docs/READINGS_COURSES_PLAN.md). Kept separate
+    /// `CanvasModulesClient`. Import is now automatic for any course whose
+    /// probe finds readings — the one-ask consent popup this used to wait on
+    /// was removed 2026-08-27 (docs/decisions.md); only an explicit
+    /// `.exclude` decision (Settings' "Courses & content" toggle) stops it,
+    /// via `shouldAutoImportReadings(for:)`. Kept separate
     /// from `canvasItems` because these never came through the ICS feed —
     /// `refreshCourseIntel` is what fills it, ledger-backed the same way via
     /// `AssignmentStore.reconcile(_:source: .canvasModules)`. Read-only
@@ -213,18 +216,19 @@ final class AppState: ObservableObject {
     /// Watcher even while selected. Caching keeps a selected class fetchable.
     var canvasCourseIDsByCode: [String: String] { coursePreferences.canvasCourseIDsByCode }
 
-    /// Per-course answer to the readings/silent-course nudge
-    /// (docs/READINGS_COURSES_PLAN.md), keyed by `CourseProfileReport
-    /// .courseKey`. Default is exclude — a course with no entry here shows
-    /// none of its opted-in content, so existing users see zero change
-    /// until they answer a nudge or flip the Settings toggle. Deliberately
-    /// never consulted by Grade Watcher / course-selection paths (see the
-    /// plan's "Hard requirement — Grade Watcher independence").
+    /// Per-course answer to whether a class's opted-in content (calendar
+    /// `.event` items, Modules-imported readings) shows on the dashboard,
+    /// keyed by `CourseProfileReport.courseKey`. Default is INCLUDE — a
+    /// course with no entry here shows its content already; only an
+    /// explicit `.exclude`, set via Settings' "Courses & content" toggle,
+    /// hides it (see `courseContentIncluded`/`includesAsOptedInContent`).
+    /// This used to default to exclude until a one-ask popup was answered;
+    /// the popup was removed 2026-08-27 (docs/decisions.md) because the
+    /// data is the student's own and the ask was pure friction. Deliberately
+    /// never consulted by Grade Watcher / course-selection paths (see
+    /// docs/READINGS_COURSES_PLAN.md's "Hard requirement — Grade Watcher
+    /// independence").
     @Published private(set) var courseContentDecisions: [String: CourseContentDecision]
-    /// The one nudge the UI may present this app-open ("no nag storms" —
-    /// docs/READINGS_COURSES_PLAN.md). Set by `queueNudgeIfNeeded()`, cleared
-    /// by `resolveCourseNudge`/`dismissCourseNudge`.
-    @Published var pendingCourseNudge: CourseProfileReport?
     /// The authenticated course list from the last successful
     /// `refreshCourseIntel`, persisted (id -> name) so SILENT detection
     /// survives a launch with no live Canvas session — a course with zero
@@ -239,11 +243,6 @@ final class AppState: ObservableObject {
     /// The last computed profile for every course seen — feed- or
     /// enrollment-derived. Recomputed by `recomputeCourseProfiles()`.
     private var courseProfileReports: [CourseProfileReport] = []
-    /// Whether a nudge has already been surfaced this launch.
-    /// `pendingCourseNudge == nil` alone can't tell "never queued" apart
-    /// from "queued, then resolved" — without this a resolve during this
-    /// launch would let the next sync immediately queue another one.
-    private var nudgePresentedThisLaunch = false
 
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
@@ -546,8 +545,8 @@ final class AppState: ObservableObject {
         coursePreferences.normalizeCourseKeys(norm)
 
         // Collision rule: keep the decision with the most recent
-        // `decidedAt` — the freshest answer to the nudge is the one that
-        // should survive.
+        // `decidedAt` — the freshest choice (set via the Settings toggle)
+        // is the one that should survive.
         var normalizedDecisions: [String: CourseContentDecision] = [:]
         for (oldKey, decision) in courseContentDecisions {
             let newKey = norm(oldKey)
@@ -884,23 +883,21 @@ final class AppState: ObservableObject {
         coursePreferences.clearAllCanvasCourseIDs()
         // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md) is
         // Canvas-session-derived state too — clear it wholesale so a
-        // reconnect re-probes and re-asks from scratch instead of inheriting
-        // decisions tied to a fingerprint history the new session may never
-        // reproduce. This is deliberate, not an oversight: see the plan's
-        // "Hard requirement — Grade Watcher independence" for why this never
-        // touches `canvasCourseIDsByCode`'s Grade Watcher role beyond the
-        // clear already above.
+        // reconnect re-probes and re-imports from scratch instead of
+        // inheriting decisions tied to a fingerprint history the new session
+        // may never reproduce. This is deliberate, not an oversight: see the
+        // plan's "Hard requirement — Grade Watcher independence" for why this
+        // never touches `canvasCourseIDsByCode`'s Grade Watcher role beyond
+        // the clear already above.
         enrolledCanvasCourses = []
         UserDefaults.lhf.removeObject(forKey: Self.enrolledCanvasCoursesKey)
         courseProbes = [:]
         courseProfileReports = []
-        nudgePresentedThisLaunch = false
         courseContentDecisions = [:]
         CourseContentDecisionStore.clear()
         // Propagate the clear to the iCloud copy too, or the next external
         // pull resurrects decisions this disconnect just threw away.
         if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
-        pendingCourseNudge = nil
         submittedCanvasAssignmentIDs = []
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
@@ -1270,8 +1267,8 @@ final class AppState: ObservableObject {
         // filtered-out entry never enters `enrolledCanvasCourses`, so it's
         // never folded into `canvasCourseIDsByCode` (`mergeEnrolledCoursesIntoCourseIDCache`
         // below — keeps it out of the Grade Watcher picker), never reaches
-        // the probe loop or `CourseProfileEngine.reports` (never nudged,
-        // never listed in Settings' "Courses & content"), and a junk entry
+        // the probe loop or `CourseProfileEngine.reports` (never probed for
+        // readings, never listed in Settings' "Courses & content"), and a junk entry
         // that snuck into `canvasCourseIDsByCode` on an earlier launch gets
         // dropped by `pruneStaleCourseIDCacheEntries` below on this one,
         // since it's absent from `currentEnrolledKeys` and (being a resource
@@ -1326,19 +1323,22 @@ final class AppState: ObservableObject {
             let modulesClient = CanvasModulesClient(cookies: cookies)
             if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
                 courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
-                // A course probed for the first time this launch that ALSO
-                // already carries an "include" decision from a previous
-                // session (the common nudge-then-relaunch case) is imported
-                // right away via the shared `importModuleReadings`, instead
-                // of collecting into a batch reconciled once after this
-                // loop. This costs one extra `fetchModuleItems` call for that
+                // Import is no longer consent-gated (the one-ask popup was
+                // removed 2026-08-27, docs/decisions.md): a silent course's
+                // Modules readings are imported the moment a probe finds
+                // them, via the shared `importModuleReadings`, instead of
+                // collecting into a batch reconciled once after this loop.
+                // Only an explicit `.exclude` (Settings' "Courses & content"
+                // toggle) blocks it — `shouldAutoImportReadings` is that one
+                // check, kept as its own method so it's directly testable.
+                // This costs one extra `fetchModuleItems` call for that
                 // course (`importModuleReadings` fetches its own copy rather
                 // than taking `items` as a parameter, so it can be shared
                 // verbatim with `importReadingsIfNeeded` below) — an
                 // acceptable trade for not having a second, batch-shaped
                 // import path with its own reconcile/upsert semantics to
                 // keep in sync with this one.
-                if !items.isEmpty && courseContentDecisions[courseKey]?.choice == .include {
+                if !items.isEmpty && shouldAutoImportReadings(for: courseKey) {
                     _ = await importModuleReadings(courseKey: courseKey, courseID: course.id, cookies: cookies)
                 }
                 continue
@@ -1356,14 +1356,27 @@ final class AppState: ObservableObject {
         recomputeCourseProfiles()
     }
 
+    /// Whether a silent course's Modules readings should be imported the
+    /// moment a probe finds them. Internal (not private) so it's directly
+    /// testable without a live Canvas session. Import used to wait on a
+    /// one-ask popup (`.include` required); the popup was removed 2026-08-27
+    /// (docs/decisions.md — the data is the student's own and the ask was
+    /// friction, not consent that mattered) so this is now the single
+    /// remaining gate: only an explicit `.exclude`, set via Settings'
+    /// "Courses & content" toggle, blocks the import. A course with no
+    /// decision on file — the common case — auto-imports.
+    func shouldAutoImportReadings(for courseKey: String) -> Bool {
+        courseContentDecisions[courseKey]?.choice != .exclude
+    }
+
     /// Fetches a probed course's Modules-page readings via the JSON API and
     /// upserts them into the ledger as `.canvasModules` rows, then refreshes
     /// `moduleReadingItems` from the ledger. Shared by the probe loop above
-    /// (for a course already decided "include" when its first probe of this
-    /// launch lands) and `importReadingsIfNeeded` below (the immediate
-    /// import that runs the moment a user answers a nudge or flips the
-    /// Settings toggle). Returns whether the fetch itself succeeded — a
-    /// thrown fetch (expired session, HTTP error) leaves the ledger
+    /// (which auto-imports the moment a probe finds readings, gated only by
+    /// `shouldAutoImportReadings`) and `importReadingsIfNeeded` below (the
+    /// immediate import that runs the moment a user flips the Settings
+    /// toggle back on after excluding a course). Returns whether the fetch
+    /// itself succeeded — a thrown fetch (expired session, HTTP error) leaves the ledger
     /// untouched rather than being treated as "confirmed empty."
     ///
     /// Persists via `upsert`, not `reconcile`: `upsert` only ever inserts a
@@ -1458,20 +1471,19 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Imports a just-decided-in course's readings right away, instead of
+    /// Imports a just-re-included course's readings right away, instead of
     /// waiting for the next launch's `refreshCourseIntel` probe loop to
     /// notice the decision. Field evidence this fixes: probes run at most
-    /// once per course per launch (the `courseProbes` gate), and import only
-    /// ever happened INSIDE that same probe loop — but every include
-    /// decision necessarily arrives strictly AFTER the probe that produced
-    /// the nudge it's answering, so answering "Add to my list" (`resolveCourseNudge`)
-    /// or flipping the Settings toggle on (`setCourseContentIncluded`) used
-    /// to import nothing until the app was relaunched. Both call this.
+    /// once per course per launch (the `courseProbes` gate), and a course
+    /// that was previously excluded and gets flipped back on via
+    /// `setCourseContentIncluded` — the only remaining caller, now that
+    /// readings otherwise auto-import at probe time — would otherwise import
+    /// nothing until the app was relaunched.
     ///
     /// Fire-and-forget: started as an unstructured `Task`, not awaited by
     /// the caller. That's acceptable because the caller has already updated
-    /// `courseContentDecisions`/`pendingCourseNudge` and rebuilt the
-    /// dashboard synchronously — this call only needs to catch the ledger
+    /// `courseContentDecisions` and rebuilt the dashboard synchronously —
+    /// this call only needs to catch the ledger
     /// and dashboard up with the freshly-imported readings once the network
     /// round trip completes, the same "sync happens in the background, the
     /// toggle itself is immediate" posture as the rest of this file's
@@ -1584,9 +1596,11 @@ final class AppState: ObservableObject {
     }
 
     /// Recomputes every course's profile from current feed items, the
-    /// cached enrolled-course list, and this launch's probes, then queues a
-    /// nudge if one is warranted. Call after anything that could change any
-    /// of those three inputs — a successful `sync()`, or `refreshCourseIntel`.
+    /// cached enrolled-course list, and this launch's probes. Call after
+    /// anything that could change any of those three inputs — a successful
+    /// `sync()`, or `refreshCourseIntel`. Used to also queue a one-ask
+    /// consent popup here; that popup was removed 2026-08-27
+    /// (docs/decisions.md), so this is now purely a recompute.
     private func recomputeCourseProfiles() {
         // Deliberately `canvasItems`, never `canvasItems + moduleReadingItems`:
         // silence is a property of the ICS FEED (does this course publish
@@ -1594,88 +1608,13 @@ final class AppState: ObservableObject {
         // itself the OUTCOME of probing a course this engine already called
         // silent. Folding imported readings back in here would make an
         // opted-in silent course look `.normal` on the very next refresh and
-        // silently stop nudging/managing it.
+        // silently stop managing it as silent.
         courseProfileReports = CourseProfileEngine.reports(
             feedItems: canvasItems,
             enrolledCourses: enrolledCanvasCourses,
             probes: courseProbes
         )
-        queueNudgeIfNeeded()
         logCourseIntelDiagnostics()
-    }
-
-    /// Surfaces at most one nudge per app-open (docs/READINGS_COURSES_PLAN.md
-    /// "no nag storms"). A report is nudge-worthy when its profile is
-    /// actionable (`isActionable`) and either no decision has been recorded
-    /// for it, or the recorded decision's fingerprint CLASS (the substring
-    /// before ":" — "readings"/"silent"/…) differs from the current one: a
-    /// silent course whose reading count merely grew isn't re-asked, but one
-    /// that starts putting events on the calendar is. A deleted course is
-    /// never nudged.
-    private func queueNudgeIfNeeded() {
-        guard pendingCourseNudge == nil, !nudgePresentedThisLaunch else { return }
-
-        let candidates = courseProfileReports
-            .filter { !deletedCourseKeys.contains($0.courseKey) }
-            .filter(Self.isActionable)
-            .filter { report in
-                guard let decision = courseContentDecisions[report.courseKey] else { return true }
-                return Self.fingerprintClass(decision.fingerprint) != Self.fingerprintClass(report.fingerprint)
-            }
-            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
-
-        guard let next = candidates.first else { return }
-        pendingCourseNudge = next
-        nudgePresentedThisLaunch = true
-    }
-
-    /// Worth ASKING about: only a silent course whose probe found actual
-    /// module readings — those live solely in Canvas Modules, so surfacing
-    /// them requires a network import the user should get one say over.
-    /// `.readingsOnCalendar` stopped nudging when calendar events became
-    /// include-by-default (see `includesAsOptedInContent`): the content
-    /// already shows, so there is nothing left to ask. `.normal` (already
-    /// represented on the dashboard), `.unknownSilent` (nothing concrete to
-    /// show yet — no session to probe with), and a silent course whose probe
-    /// came back with zero/no readings never nudge.
-    private static func isActionable(_ report: CourseProfileReport) -> Bool {
-        switch report.profile {
-        case let .silent(moduleReadingCount):
-            return (moduleReadingCount ?? 0) > 0
-        case .readingsOnCalendar, .normal, .unknownSilent:
-            return false
-        }
-    }
-
-    /// The stable part of a fingerprint used to decide whether a course's
-    /// shape changed enough to re-ask — the substring before the first ":"
-    /// (e.g. "readings:10" -> "readings"), or the whole string when there's
-    /// no ":" (e.g. "normal", "unknownSilent").
-    private static func fingerprintClass(_ fingerprint: String) -> String {
-        String(fingerprint.split(separator: ":", maxSplits: 1).first ?? Substring(fingerprint))
-    }
-
-    /// Records the user's answer to a course-content nudge — writes the
-    /// decision, persists it, clears the pending nudge, and rebuilds so the
-    /// choice takes effect immediately.
-    func resolveCourseNudge(_ report: CourseProfileReport, include: Bool) {
-        setCourseContentDecision(
-            courseKey: report.courseKey,
-            choice: include ? .include : .exclude,
-            fingerprint: report.fingerprint
-        )
-        pendingCourseNudge = nil
-        rebuildDashboardItems()
-        // Import right away rather than waiting for next launch's probe loop
-        // to notice this decision — see `importReadingsIfNeeded`'s doc
-        // comment for the field evidence this fixes.
-        if include { importReadingsIfNeeded(for: report.courseKey) }
-    }
-
-    /// Dismisses the pending nudge WITHOUT recording a decision, so the same
-    /// course is asked again next launch — dismissing isn't an answer.
-    func dismissCourseNudge() {
-        pendingCourseNudge = nil
     }
 
     /// Whether `course`'s readings/events currently show on the dashboard.
@@ -1686,20 +1625,20 @@ final class AppState: ObservableObject {
     }
 
     /// Settings surface ("Courses & content"): sets or overwrites the
-    /// decision for `course` directly, independent of any pending nudge.
-    /// Uses the current profile report's fingerprint when one is on file for
-    /// this course, so a later profile-class change is still measured
-    /// against a real fingerprint; falls back to "manual" when this course
-    /// has no computed report yet (e.g. set before the first sync this
-    /// launch).
+    /// decision for `course` directly. This is now the ONLY way a decision
+    /// gets recorded — the one-ask popup that used to record a decision from
+    /// a nudge answer was removed 2026-08-27 (docs/decisions.md). Uses the
+    /// current profile report's fingerprint when one is on file for this
+    /// course, so a later profile-class change is still measured against a
+    /// real fingerprint; falls back to "manual" when this course has no
+    /// computed report yet (e.g. set before the first sync this launch).
     func setCourseContentIncluded(_ course: String, _ include: Bool) {
         let fingerprint = courseProfileReports.first { $0.courseKey == course }?.fingerprint ?? "manual"
         setCourseContentDecision(courseKey: course, choice: include ? .include : .exclude, fingerprint: fingerprint)
-        if pendingCourseNudge?.courseKey == course { pendingCourseNudge = nil }
         rebuildDashboardItems()
-        // Same immediate-import fix as `resolveCourseNudge` — flipping this
-        // toggle on used to import nothing until the next launch's probe
-        // loop happened to notice the decision.
+        // Import right away rather than waiting for the next launch's probe
+        // loop to notice this decision — see `importReadingsIfNeeded`'s doc
+        // comment for the field evidence this fixes.
         if include { importReadingsIfNeeded(for: course) }
     }
 
@@ -1888,8 +1827,12 @@ final class AppState: ObservableObject {
     ///   a cache written by this version, and they keep a cache persisted
     ///   last term (or by a pre-filter build) from resurrecting a finished
     ///   class or a Canvas resource site.
-    /// Listing is not importing: a silent course's readings still only
-    /// download after its nudge/toggle grants network consent.
+    /// Listing is not the same thing as importing: a silent course's readings
+    /// only download once `refreshCourseIntel`'s probe loop actually reaches
+    /// it, and even then only if `shouldAutoImportReadings` allows it (an
+    /// explicit `.exclude` still blocks the network fetch) — the fact a
+    /// course is *listed* here doesn't mean its readings are already on the
+    /// dashboard.
     func allCourseCodes() -> [String] {
         let pool = canvasItems + gradescopeItems + moduleReadingItems
         let enrolledKeys = enrolledCanvasCourses
@@ -2361,12 +2304,15 @@ final class AppState: ObservableObject {
     ///
     /// **Default is include** (owner's call, 2026-08-26, reversing the
     /// READINGS_COURSES_PLAN opt-in design): a class that only posts calendar
-    /// events used to vanish from the dashboard until its nudge was answered,
-    /// which on a real device read as "my class disappeared", not as a
-    /// feature. The wrong fix would have been deleting the decision store —
-    /// an explicit `.exclude` (recorded from a nudge answered "not for this
-    /// course", or synced from another device) is still honoured; only the
-    /// no-decision default flips.
+    /// events used to vanish from the dashboard until its one-ask consent
+    /// popup was answered, which on a real device read as "my class
+    /// disappeared", not as a feature. The wrong fix would have been
+    /// deleting the decision store — an explicit `.exclude` (set via
+    /// Settings' "Courses & content" toggle, or synced from another device)
+    /// is still honoured; only the no-decision default flips. The popup
+    /// itself was removed entirely 2026-08-27 (docs/decisions.md), extending
+    /// this same "default include, explicit exclude only" posture to
+    /// Modules-imported readings too.
     private func includesAsOptedInContent(_ assignment: Assignment) -> Bool {
         assignment.kind == .event
             && assignment.course != Self.unknownCourse
@@ -2379,8 +2325,8 @@ final class AppState: ObservableObject {
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
-        // assessment (quizzes/exams), plus — for a course the user opted in via
-        // a readings/silent-course nudge or Settings — its dated calendar
+        // assessment (quizzes/exams), plus — for any course the student
+        // hasn't explicitly excluded via Settings — its dated calendar
         // events (docs/READINGS_COURSES_PLAN.md), whether those events came in
         // on the ICS feed or were imported from a probed course's Modules page
         // (`moduleReadingItems`). Both are `.event`-kind, so

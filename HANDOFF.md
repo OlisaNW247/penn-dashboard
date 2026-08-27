@@ -128,6 +128,18 @@ anything that commits.
 CIS 2620 visible in Profile + dashboard, Mac menu-bar build, widget showing
 renamed courses, and — only with two devices — the iCloud sync toggle.
 
+**Update 2026-08-27: the "one ask survives" nudge above is now gone too.**
+The remaining consent popup this section describes (asking once per app-open
+before importing a silent course's Modules readings) has been removed
+entirely — see docs/decisions.md's 2026-08-27 entry. Readings now import
+automatically the moment `refreshCourseIntel`'s probe finds them; the only
+thing that still blocks an import is an explicit `.exclude` set via
+Settings' "Courses & content" toggle (`AppState.shouldAutoImportReadings`).
+`CourseNudgeSheet`, `pendingCourseNudge`, `resolveCourseNudge`, and
+`dismissCourseNudge` are deleted. This change is uncompiled (written from a
+Linux container with no Swift toolchain) — it needs the same Mac
+`swift test` + simulator pass as everything else in this file.
+
 Everything below this section is historical context from earlier sessions.
 
 ---

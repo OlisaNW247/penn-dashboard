@@ -5,6 +5,28 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — Remove the readings consent nudge; auto-import unless excluded
+Removed the one-ask "include this class's readings?" popup (`CourseNudgeSheet`,
+`AppState.pendingCourseNudge`/`resolveCourseNudge`/`dismissCourseNudge`/
+`queueNudgeIfNeeded`) that used to gate a silent course's Modules-imported
+readings. A course's readings now import automatically the moment
+`refreshCourseIntel`'s probe finds them; the only thing that still blocks an
+import is an explicit `.exclude`, set via Settings' "Courses & content"
+toggle (`AppState.setCourseContentIncluded`), via the new
+`AppState.shouldAutoImportReadings(for:)` gate. The toggle itself is
+unchanged and remains the opt-out.
+
+Rejected: keeping the one-ask consent gate. It already had a narrow scope —
+the 2026-08-26 change below in this log made calendar `.event` items
+include-by-default and left the popup asking only about silent courses whose
+Modules pages had readings, since fetching those requires a network call.
+Owner's call: the data is the student's own record of their own classes —
+the "ask" bought no real consent (a student who added LHF at all has already
+decided they want their Canvas work surfaced), and a real device pass showed
+the popup reads as one more thing standing between installing the app and
+seeing your classes. Same reasoning that flipped calendar events to
+include-by-default now extends to Modules readings too.
+
 ## 2026-06-03 — Local due-date notifications
 Added `NotificationScheduler` (app layer, `UNUserNotificationCenter`, cross-platform,
 no entitlement) for local reminders. Defaults: 24h + 1h before each assignment, plus an

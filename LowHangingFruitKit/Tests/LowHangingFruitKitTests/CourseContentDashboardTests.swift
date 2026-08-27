@@ -8,9 +8,11 @@ import Testing
 /// 2026-08-26 (owner's call, after a real readings-only class silently
 /// vanished from the dashboard on device): `.event`-kind Canvas calendar
 /// items now reach the dashboard by default, and only an explicit `.exclude`
-/// decision (`setCourseContentIncluded(_, false)` / a nudge answered "not for
-/// this course") hides them. An included event is never reclassified as an
-/// assessment even when its title matches the exam/quiz regex.
+/// decision (`setCourseContentIncluded(_, false)`) hides them — as of
+/// 2026-08-27 (docs/decisions.md) this is the ONLY way to record `.exclude`;
+/// the one-ask consent popup that used to also write it was removed. An
+/// included event is never reclassified as an assessment even when its
+/// title matches the exam/quiz regex.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, and
 /// `courseContentDecisions` is one JSON blob under "courseContentDecisionsV1"
@@ -82,7 +84,8 @@ struct CourseContentDashboardTests {
             triggerRebuild(state)
 
             // The regression this default fixes: a class posting only calendar
-            // events vanished entirely until its nudge was answered.
+            // events vanished entirely until its one-ask consent popup was
+            // answered.
             #expect(state.courseContentIncluded(Self.course))
             let shown = allDashboardItems(state)
             #expect(shown.contains { $0.title == "Problem set 1" })
