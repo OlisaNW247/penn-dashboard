@@ -122,6 +122,29 @@ struct NoSubmissionAutoCompleteTests {
         #expect(AppState.autoSubmittedNoSubmissionIDs(snapshots: [rescheduled], now: now).isEmpty)
     }
 
+    // MARK: - AppState.noSubmissionAssignmentIDs — the "never notify" superset
+
+    @Test("noSubmissionAssignmentIDs includes every no-submission item regardless of due date; submittable items stay out")
+    func noSubmissionSupersetIgnoresDueDates() {
+        let now = Date()
+        let items = [
+            GradeItem(id: "undated", name: "Attend review", pointsPossible: 0,
+                      submissionTypes: ["none"]),
+            GradeItem(id: "future", name: "Bring worksheet", pointsPossible: 5,
+                      dueAt: now.addingTimeInterval(3600), submissionTypes: ["on_paper"]),
+            GradeItem(id: "online", name: "PSet upload", pointsPossible: 100,
+                      dueAt: now.addingTimeInterval(-3600), submissionTypes: ["online_upload"]),
+        ]
+        let snap = snapshot(items: items)
+
+        // The notification exclusion has no time component — undated and
+        // not-yet-due no-submission items are in — while the auto-submit
+        // STATE set still requires a passed deadline, so neither of the two
+        // qualifies there. The submittable item appears in neither.
+        #expect(AppState.noSubmissionAssignmentIDs(snapshots: [snap]) == ["undated", "future"])
+        #expect(AppState.autoSubmittedNoSubmissionIDs(snapshots: [snap], now: now).isEmpty)
+    }
+
     // MARK: - Decoding: submission_types + due_at thread through to GradeItem
 
     private func data(_ json: String) -> Data { Data(json.utf8) }
