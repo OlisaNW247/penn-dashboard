@@ -40,7 +40,7 @@ public struct CanvasICSClient: Sendable {
     /// Transient failures worth retrying. Client errors (4xx) are excluded:
     /// an expired feed URL or auth problem needs the user to reconnect, and
     /// retrying would only delay surfacing that.
-    static func isTransient(_ error: any Error) -> Bool {
+    static func isTransient(_ error: any Swift.Error) -> Bool {
         if let clientError = error as? Error {
             switch clientError {
             case .http(let status):
