@@ -5,6 +5,17 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — Retry/backoff for unattended Canvas sync
+Unattended syncs (launch-time and the 5-minute silent refresh) now retry
+transient failures with exponential backoff: `RetryPolicy` (data layer) wraps
+`CanvasICSClient.fetchCalendarItems`, `.background` = 3 attempts, 2s → 4s
+delays. Only network drops/timeouts and HTTP 5xx/429 retry — 4xx surfaces
+immediately because an expired feed URL or auth problem needs the user to
+reconnect, not a retry. Manual header-button sync stays single-attempt so the
+spinner resolves promptly. Rejected retrying the syllabus/announcement scan for
+now: it is a multi-request scrape with its own reconnect messaging, and a
+whole-scan retry would triple its load on Canvas for little gain.
+
 ## 2026-06-03 — Local due-date notifications
 Added `NotificationScheduler` (app layer, `UNUserNotificationCenter`, cross-platform,
 no entitlement) for local reminders. Defaults: 24h + 1h before each assignment, plus an

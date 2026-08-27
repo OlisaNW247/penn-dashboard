@@ -25,8 +25,41 @@ public struct CanvasICSClient: Sendable {
         return Self.calendarItems(from: data)
     }
 
+    /// Like `fetchCalendarItems()`, but transient failures (network drops,
+    /// timeouts, HTTP 5xx/429) are retried per `policy` before giving up.
+    public func fetchCalendarItems(retryPolicy policy: RetryPolicy) async throws -> [Assignment] {
+        try await policy.run(isRetryable: Self.isTransient) {
+            try await fetchCalendarItems()
+        }
+    }
+
     public func fetchAssignments() async throws -> [Assignment] {
         try await fetchCalendarItems().filter(\.isAssignment)
+    }
+
+    /// Transient failures worth retrying. Client errors (4xx) are excluded:
+    /// an expired feed URL or auth problem needs the user to reconnect, and
+    /// retrying would only delay surfacing that.
+    static func isTransient(_ error: any Error) -> Bool {
+        if let clientError = error as? Error {
+            switch clientError {
+            case .http(let status):
+                return status == 429 || (500..<600).contains(status)
+            case .notHTTP:
+                return false
+            }
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .cannotFindHost, .cannotConnectToHost,
+                 .networkConnectionLost, .dnsLookupFailed, .notConnectedToInternet,
+                 .resourceUnavailable, .dataNotAllowed:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
     }
 
     /// Exposed as a pure function so tests don't need the network.

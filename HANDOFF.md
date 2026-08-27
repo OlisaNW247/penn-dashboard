@@ -76,7 +76,7 @@ For App Store packaging steps see [docs/appstore/CHECKLIST.md](docs/appstore/CHE
 ## Suggested Ownership Split
 
 - UI/UX owner: app layout, visual polish, onboarding, empty states, design implementation.
-- Data/scraper owner: Canvas ICS, Gradescope scraping, Canvas syllabus/announcement scanning, tests.
+- Data/scraper owner: Canvas ICS, Canvas syllabus/announcement scanning, sync coordination, tests.
 
 ## Good First UI Tasks
 
@@ -88,7 +88,7 @@ For App Store packaging steps see [docs/appstore/CHECKLIST.md](docs/appstore/CHE
 
 ## Good First Data Tasks
 
-- Add debug-safe capture for failed Gradescope date/status parsing.
 - Improve Canvas course discovery if `/courses` or `/dashboard` markup changes.
-- Add more Gradescope HTML fixtures from real pages with private details removed.
-- Add retry/backoff for background auto-sync.
+- Add more Canvas syllabus/announcement HTML fixtures from real pages with private details removed.
+- Add debug-safe capture for syllabus/announcement text the requirement scanner fails to classify.
+- ~~Add retry/backoff for background auto-sync.~~ Done: `RetryPolicy` in the kit; launch + silent refresh use `.background` (3 attempts, 2s → 4s), manual sync stays single-attempt.

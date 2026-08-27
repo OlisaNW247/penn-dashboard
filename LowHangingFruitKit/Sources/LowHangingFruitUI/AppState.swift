@@ -86,12 +86,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    func syncIfConfigured() async {
+    func syncIfConfigured(retryPolicy: RetryPolicy = .none) async {
         guard !canvasICSURL.isEmpty else { return }
-        await sync()
+        await sync(retryPolicy: retryPolicy)
     }
 
-    func sync() async {
+    func sync(retryPolicy: RetryPolicy = .none) async {
         guard let url = URL(string: canvasICSURL), !canvasICSURL.isEmpty else {
             error = "Paste your Canvas calendar feed URL first."
             return
@@ -101,7 +101,8 @@ final class AppState: ObservableObject {
         defer { isLoading = false }
         do {
             let client = CanvasICSClient(feedURL: url)
-            let fetched = try await client.fetchCalendarItems().sorted(by: Self.byDueDate)
+            let fetched = try await client.fetchCalendarItems(retryPolicy: retryPolicy)
+                .sorted(by: Self.byDueDate)
             canvasItems = fetched
             rebuildDashboardItems()
             lastSync = Date()

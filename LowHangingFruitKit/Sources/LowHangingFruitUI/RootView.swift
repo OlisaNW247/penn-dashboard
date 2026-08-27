@@ -1,4 +1,5 @@
 import SwiftUI
+import LowHangingFruitKit
 
 /// The app's root view. The `@main` entry point lives in the Xcode app target
 /// (which owns the `WindowGroup`) and simply presents `RootView()`. Keeping the
@@ -20,7 +21,8 @@ public struct RootView: View {
                     .environmentObject(scheduler)
                     .task {
                         // Calendar-feed fetch and syllabus scan are independent; run them concurrently.
-                        async let canvas: Void = state.syncIfConfigured()
+                        // Launch-time sync is unattended, so transient failures retry with backoff.
+                        async let canvas: Void = state.syncIfConfigured(retryPolicy: .background)
                         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
                         _ = await (canvas, services)
                     }

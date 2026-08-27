@@ -197,7 +197,9 @@ struct ContentView: View {
         }
         // The calendar-feed fetch and the syllabus/announcement scan are
         // independent, so run them concurrently rather than serially.
-        async let canvas: Void = state.syncIfConfigured()
+        // Silent refreshes retry transient failures with backoff; manual sync
+        // stays single-attempt so the spinner resolves promptly.
+        async let canvas: Void = state.syncIfConfigured(retryPolicy: showSpinner ? .none : .background)
         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)
         _ = await (canvas, services)
         vm.reload(preservingEdits: true)
