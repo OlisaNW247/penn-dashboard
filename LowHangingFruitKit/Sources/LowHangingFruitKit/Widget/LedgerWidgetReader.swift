@@ -76,38 +76,44 @@ public enum LedgerWidgetReader {
         let nameOverrides = UserDefaults.lhf
             .dictionary(forKey: SharedDefaults.courseNameOverridesKey) as? [String: String] ?? [:]
 
-        let items = rows
+        // A plain loop rather than the filter chain this used to be: the
+        // merged chain grew to nine links and the Swift 6 type-checker gave
+        // up on it ("unable to type-check this expression in reasonable
+        // time"). Same predicates, same order, explicit types throughout.
+        var candidates: [(due: Date, item: WidgetItem)] = []
+        for row in rows {
             // Completion-only rows are bookkeeping, not assignments: they carry
             // no trustworthy title or due date and must never reach the widget.
-            .filter { !$0.isCompletionOnly }
-            .filter { !$0.isFinished }
+            if row.isCompletionOnly { continue }
+            if row.isFinished { continue }
             // Work the student put away in a semester rollover. The app drops it
             // from the dashboard and from reminders; a widget still counting
             // down to last April's problem set would be the same bug wearing a
             // home screen. Read straight off the row rather than out of the
             // shared suite, because unlike hiding and deletion this fact is
             // per-item, not per-course — see `StoredAssignment.archivedTerm`.
-            .filter { !$0.isArchived }
-            .filter { !isAgedOut($0, now: now) }
+            if row.isArchived { continue }
+            if isAgedOut(row, now: now) { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's
             // isExpiredEvent: they simply drop off once their calendar day ends.
-            .filter { !isExpiredEvent($0, now: now) }
-            .filter { seenIDs.insert($0.id).inserted }
-            .filter { !hidden.contains($0.course) && !deleted.contains($0.course) }
-            .compactMap { row -> (Date, WidgetItem)? in
-                guard let due = row.dueAt else { return nil }
-                let display = nameOverrides[row.course]?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let course = (display?.isEmpty == false) ? display! : row.course
-                return (due, WidgetItem(title: row.title, course: course, dueAt: due))
-            }
-            .sorted { $0.0 < $1.0 }
+            if isExpiredEvent(row, now: now) { continue }
+            if !seenIDs.insert(row.id).inserted { continue }
+            if hidden.contains(row.course) || deleted.contains(row.course) { continue }
+            guard let due = row.dueAt else { continue }
+            let display = nameOverrides[row.course]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let course = (display?.isEmpty == false) ? display! : row.course
+            candidates.append((due, WidgetItem(title: row.title, course: course, dueAt: due)))
+        }
+
+        let items: [WidgetItem] = candidates
+            .sorted { $0.due < $1.due }
             .prefix(maxItems)
-            .map(\.1)
+            .map(\.item)
 
         guard !items.isEmpty else { return nil }
-        return WidgetSnapshot(items: Array(items), generatedAt: now)
+        return WidgetSnapshot(items: items, generatedAt: now)
     }
 
     /// Mirrors `AssignmentStore.isAgedOut` — kept here rather than shared
