@@ -46,13 +46,22 @@ shot "1-onboarding"
 shot "2-dashboard-thisweek" -LHFDemoData
 shot "3-dashboard-all"      -LHFDemoData -LHFTabAll
 shot "4-dashboard-done"     -LHFDemoData -LHFTabDone
-shot "5-grades"             -LHFDemoData -LHFShowGrades
-shot "6-grade-report"       -LHFDemoData -LHFShowReport
+# Grades and the grade report are NOT captured: Grade Watcher is hidden in
+# 2.0 (FeatureFlags.gradeWatcher = false, owner's call 2026-08-26). The
+# -LHFShowGrades/-LHFShowReport seams still drive the navigation directly,
+# so they WOULD render the hidden screens — and a screenshot of a feature
+# the shipping app doesn't expose is an App Review rejection (2.3.1
+# accurate metadata), not a bonus shot. Restore the two lines below when
+# the flag flips back on.
+#   shot "5-grades"        -LHFDemoData -LHFShowGrades
+#   shot "6-grade-report"  -LHFDemoData -LHFShowReport
 shot "7-settings-reminders" -LHFDemoData -LHFShowSettings
 
 xcrun simctl terminate "$DEVICE" "$BUNDLE" 2>/dev/null || true
 echo "Done → $OUT"
 echo
 echo "Not captured automatically (do these by hand):"
-echo "  • dark mode — Settings → Appearance → Dark, then retake 2 and 5"
+echo "  • dark mode — Settings → Appearance → Dark, then retake 2"
 echo "  • the Home/Lock Screen widget — add it from the widget gallery"
+echo "  • Profile (classes + per-class notifications) — navigate by hand;"
+echo "    there is no -LHFShowProfile seam yet"

@@ -15,6 +15,15 @@ _Last updated: 2026-08-27 (branch `claude/v4-github-repo-kvu0e0` — the v3.5 + 
 > toggle that hides rather than silences (+8 cases across three suites). A change
 > that lowers either number from here has lost work.
 
+> **Submission in flight (2026-08-27):** owner + Marco approved shipping this
+> branch as **2.0.0 (build 5)**. The App Store package under `docs/appstore/`
+> is rewritten for 2.0 — Grade Watcher is hidden this release, so the
+> listing, review notes, screenshots and capture script are all scrubbed of
+> grades/syllabus claims (2.3.1). Remaining steps are Mac/ASC-side and listed
+> in `docs/appstore/CHECKLIST.md` §"2.0.0 submission": regenerate
+> screenshots, verify App Groups on both distribution App IDs, archive,
+> upload, paste the new copy, submit.
+
 ## ⚠️ Current state: v3.5 and v4 merged (2026-08-26)
 
 This branch merges **`v3.5`** (engine: readings-only courses, iCloud Tier 2
