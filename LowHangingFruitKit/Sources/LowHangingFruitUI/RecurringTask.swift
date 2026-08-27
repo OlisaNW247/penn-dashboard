@@ -168,10 +168,13 @@ extension RecurringTask {
     /// Whether this assignment is one of a recurring task's occurrences — a
     /// reading or a check-in — rather than real coursework.
     ///
-    /// Gates the per-course `recurringEnabled` switch. Answering `true` here for
-    /// a genuine assignment would let that switch silence real work, so the
-    /// `.manual` branch insists on the full structural match rather than
-    /// guessing.
+    /// Gates the per-course `nothingToSubmitEnabled` switch's one carve-out
+    /// (`NotificationScheduler` silences an occurrence's reminders when the
+    /// toggle is off, but — unlike `.event` items and no-submission Canvas
+    /// assignments — never hides it from the dashboard; see that field's doc
+    /// comment). Answering `true` here for a genuine assignment would let
+    /// the switch silence real work, so the `.manual` branch insists on the
+    /// full structural match rather than guessing.
     static func isOccurrence(_ assignment: Assignment) -> Bool {
         switch assignment.source {
         case .canvasSuggestion:

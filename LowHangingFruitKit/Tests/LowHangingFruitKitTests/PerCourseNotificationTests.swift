@@ -263,14 +263,26 @@ struct PerCourseNotificationTests {
         }
     }
 
-    // MARK: Recurring work
+    // MARK: Nothing-to-submit work (2026-08-27 merged toggle)
+    //
+    // `recurringEnabled` and `noSubmissionRemindersEnabled` merged into one
+    // `nothingToSubmitEnabled` field (docs/decisions.md, same date) after a
+    // device pass found two half-working switches for one idea. At the
+    // scheduler level only one gate survives — `RecurringTask` occurrences —
+    // because a no-submission Canvas assignment or an `.event` item is now
+    // HIDDEN from `vm.items` entirely by `AppState.rebuildDashboardItems`
+    // when the toggle is off, so it never reaches `plannedRequests` to be
+    // gated here at all. These two tests used to be titled around
+    // "readings"; renamed to match what they actually prove now.
 
-    /// The request the separate switch exists for, stated as a test: "keep
-    /// telling me about assignments, stop telling me about the weekly reading."
-    /// One switch could not express it, so getting this exactly right — the
-    /// assignments untouched, the occurrences gone — is the whole feature.
-    @Test("Turning readings off silences occurrences and leaves assignments alone")
-    func recurringRespectsItsOwnToggle() {
+    /// The request the toggle exists for, stated as a test: occurrences a
+    /// student didn't ask to be reminded about go quiet; the assignment they
+    /// still care about doesn't. Getting this right — the assignment
+    /// untouched, the occurrence gone — is the whole feature at the
+    /// scheduler layer (the hiding half is `AppState`'s, covered in
+    /// `NoSubmissionCaveatTests`).
+    @Test("Turning the nothing-to-submit toggle off silences occurrences and leaves assignments alone")
+    func nothingToSubmitToggleRespectsItsOwnOccurrenceGate() {
         withFixture(global: [.h24, .h1]) { scheduler, prefs, now in
             let taskID = UUID()
             let reading = now + 3 * .day
@@ -283,7 +295,7 @@ struct PerCourseNotificationTests {
             // Both on by default: assignment + both readings, two lead times each.
             #expect(dueRequests(scheduler.plannedRequests(from: items, now: now, preferences: prefs)).count == 6)
 
-            prefs.setRecurringEnabled("CIS 1200", false)
+            prefs.setNothingToSubmitEnabled("CIS 1200", false)
             let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
 
             // CIS 1200's assignment survives; its reading does not; MATH 1400 is
@@ -294,12 +306,12 @@ struct PerCourseNotificationTests {
         }
     }
 
-    /// The recurring switch is not the mute in disguise. Silencing readings while
+    /// The toggle is not the mute in disguise. Silencing occurrences while
     /// the class stays on has to leave the class on.
-    @Test("Silencing readings does not mute the class")
-    func recurringToggleIsNotAMute() {
+    @Test("Silencing the nothing-to-submit toggle does not mute the class")
+    func nothingToSubmitToggleIsNotAMute() {
         withFixture(global: [.h24, .h1]) { scheduler, prefs, now in
-            prefs.setRecurringEnabled("CIS 1200", false)
+            prefs.setNothingToSubmitEnabled("CIS 1200", false)
             #expect(prefs.notificationsEnabled("CIS 1200"))
 
             let items = [assignment("CIS 1200", "hw1", due: now + 3 * .day)]
@@ -322,7 +334,7 @@ struct PerCourseNotificationTests {
             prefs.setNotificationsEnabled("CIS 1200", false)
             #expect(digestBody(scheduler, items, now, prefs)?.contains("2 assignments") == true)
 
-            prefs.setRecurringEnabled("MATH 1400", false)
+            prefs.setNothingToSubmitEnabled("MATH 1400", false)
             #expect(digestBody(scheduler, items, now, prefs)?.contains("1 assignment ") == true)
         }
     }

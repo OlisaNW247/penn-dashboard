@@ -1963,6 +1963,26 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Profile → notifications' "items with nothing to submit" toggle.
+    /// Mirrors `setCourse`/`setCourseContentIncluded`'s shape rather than
+    /// leaving the UI to call `coursePreferences.setNothingToSubmitEnabled`
+    /// directly, and that shape is load-bearing here, not just a style
+    /// preference: this toggle now hides items from `assignments`/
+    /// `laterAssignments` (see `rebuildDashboardItems`'s filter), and
+    /// `CoursePreferencesStore.commit`'s `willChange` hook only republishes
+    /// `AppState.objectWillChange` — it does not itself recompute those
+    /// arrays. Without the explicit `rebuildDashboardItems()` call below,
+    /// `DashboardViewModel`'s subscription would still fire and re-read
+    /// `state.assignments`/`laterAssignments`, but those would still hold
+    /// the STALE pre-toggle contents until some unrelated mutation happened
+    /// to trigger a rebuild — the toggle would visibly lag or seem to do
+    /// nothing. Calling `rebuildDashboardItems()` synchronously, before that
+    /// notification even goes out, is what makes the hide/show immediate.
+    func setNothingToSubmitEnabled(_ course: String, _ enabled: Bool) {
+        coursePreferences.setNothingToSubmitEnabled(course, enabled)
+        rebuildDashboardItems()
+    }
+
     /// Courses to render in the Profile classes list — every known course minus
     /// deleted ones and minus the ones a semester rollover took off the roster.
     /// (Hidden-but-not-deleted courses still appear here, toggled off.)
@@ -2457,6 +2477,30 @@ final class AppState: ObservableObject {
         let coursework = incomplete
             .filter { $0.kind == .event || !Self.isAssessment($0) }
             .filter { !Self.isExpiredEvent($0, now: now) }
+            // The per-class "items with nothing to submit" toggle
+            // (`CoursePreferences.nothingToSubmitEnabled`) — this is the one
+            // place its "hidden, not just silent" promise is actually
+            // enforced. Off for a course, an `.event` item (reading,
+            // lecture, calendar event) or a Canvas assignment cached as
+            // requiring no submission is dropped from the pool these two
+            // buckets are built from, not merely left unreminded — the
+            // owner's device pass is exactly why: flipping the old
+            // reminder-only toggle left the item sitting on the dashboard,
+            // which read as broken. `RecurringTask` occurrences deliberately
+            // pass through this filter untouched (`kind: .assignment`,
+            // `requiresNoSubmission` false — see `NotificationScheduler`'s
+            // matching gate for why hiding a student's own recurring task
+            // would read as data loss rather than a quieter reminder). The
+            // `assessments` bucket above is built from `incomplete` BEFORE
+            // this filter runs, so an exam date is never hidden by a
+            // notifications toggle either. Ripple: `NotificationScheduler`
+            // never has to gate a hidden item — it only ever plans from
+            // `vm.items`, which `DashboardViewModel` builds from these two
+            // arrays, so an item dropped here simply never reaches it.
+            .filter { item in
+                coursePreferences.nothingToSubmitEnabled(item.course)
+                    || !(item.kind == .event || requiresNoSubmission(item))
+            }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
         publishWidgetSnapshot()
@@ -2600,8 +2644,9 @@ final class AppState: ObservableObject {
 
     /// True when Canvas has told Grade Watcher this Canvas assignment expects
     /// no online submission — the fact the dashboard card's "nothing to
-    /// submit" caveat shows, and that
-    /// `CoursePreferences.noSubmissionRemindersEnabled` gates reminders on.
+    /// submit" caveat shows, and one of the two conditions
+    /// `CoursePreferences.nothingToSubmitEnabled` (2026-08-27's merged
+    /// toggle) gates hiding and reminders on for.
     ///
     /// Reads the persisted cache (`noSubmissionCanvasAssignmentIDs`) rather
     /// than the live Grade Watcher snapshots, on purpose: the cache is what

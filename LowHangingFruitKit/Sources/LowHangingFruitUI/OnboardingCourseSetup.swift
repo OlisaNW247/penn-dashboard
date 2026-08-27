@@ -596,13 +596,24 @@ struct OnboardingCourseSetupPane: View {
                     leadTimeControl
                     Divider().overlay(Color.v2Divider)
 
+                    // Merged toggle (2026-08-27) — used to be two separate
+                    // switches here ("Readings and check-ins" plus a
+                    // no-submission-only one on the Profile screen), which a
+                    // real device pass showed as one idea split two ways: a
+                    // reading, a lecture, and an attend-only assignment all
+                    // have the same thing in common — nothing to turn in.
+                    // Off HIDES them from this class's dashboard list, not
+                    // just their reminders (see `CoursePreferences
+                    // .nothingToSubmitEnabled`'s doc comment); a recurring
+                    // task the student created by hand stays on the list
+                    // either way, just silenced.
                     Toggle(isOn: Binding(
-                        get: { prefs.recurringEnabled },
-                        set: { state.coursePreferences.setRecurringEnabled(course, $0) }
+                        get: { prefs.nothingToSubmitEnabled },
+                        set: { state.setNothingToSubmitEnabled(course, $0) }
                     )) {
                         settingLabel(
-                            "Readings and check-ins",
-                            detail: "Recurring work like the items above. Separate from assignments, because “keep telling me about assignments, stop telling me about the weekly reading” is a real request."
+                            "Items with nothing to submit",
+                            detail: "Readings, classes and attend-only assignments. Off hides them from this class's list; recurring tasks you create yourself stay on the list, just silenced."
                         )
                     }
                     .toggleStyle(.switch)

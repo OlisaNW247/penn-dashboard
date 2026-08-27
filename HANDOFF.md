@@ -186,6 +186,29 @@ due time offline, without waiting for a grade refresh — see
 `docs/decisions.md`'s new top entry; written from the same Linux container,
 **not compiled, not run**.
 
+**Update 2026-08-27: the two per-class "readings" / "no-submission
+reminders" toggles above are merged into one (uncompiled).** A real device
+pass showed why: the owner flipped the no-submission toggle expecting the
+items gone from the dashboard and got only quieter reminders, and the
+readings toggle never touched `.event` lectures/readings at all. Replaced
+both `CoursePreferences.recurringEnabled`/`noSubmissionRemindersEnabled`
+with one `nothingToSubmitEnabled` field (decode-time fold from either old
+field, no version-gated migration — see `docs/decisions.md`'s new top entry)
+and one Profile toggle, "items with nothing to submit," that now HIDES
+`.event` items and cached no-submission assignments from
+`AppState.assignments`/`laterAssignments` when off (`RecurringTask`
+occurrences stay visible, silenced only). New `AppState
+.setNothingToSubmitEnabled` is the seam the UI calls, because the toggle now
+has to trigger `rebuildDashboardItems()`, which the store setter alone
+cannot guarantee. Known gap, not silently accepted: the iOS WidgetKit
+extension doesn't read this field and will still show a hidden class's
+readings — flagged as a follow-up. Touched: `CoursePreferences.swift`,
+`AppState.swift`, `NotificationScheduler.swift`,
+`ProfileNotificationsSection.swift`, `OnboardingCourseSetup.swift`, plus
+`PerCourseNotificationTests.swift`, `NoSubmissionCaveatTests.swift`,
+`MigrationChainTests.swift`, `OnboardingCourseSetupTests.swift`. Written
+from the same Linux container — **not compiled, not run.**
+
 Everything below this section is historical context from earlier sessions.
 
 ---

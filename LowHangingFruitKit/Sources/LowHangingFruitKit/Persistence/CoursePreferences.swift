@@ -81,28 +81,33 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     /// `effectiveLeadOffsets(global:)` rather than reading this directly.
     public var leadOffsets: Set<LeadOffset>?
 
-    /// Whether readings, check-ins and other recurring non-assignment
-    /// obligations notify for this course. Separate from
-    /// `notificationsEnabled` because the common request is "keep telling me
-    /// about assignments, stop telling me about the weekly reading" — one
-    /// switch could not express that.
-    public var recurringEnabled: Bool
-
-    /// Whether reminders fire for this course's Canvas assignments that
-    /// require no online submission (`GradeItem.requiresNoSubmission` —
-    /// on_paper/none/not_graded submission types; the dashboard card shows a
-    /// "nothing to submit" caveat on these regardless of this setting, which
-    /// only controls whether they produce a lead-time reminder or count in
-    /// the daily digest). `true` by default, matching the behavior before
-    /// this toggle existed: a no-submission item scheduled exactly like any
-    /// other assignment. Separate from `recurringEnabled` because the two
-    /// govern different kinds of dashboard item — recurring readings/
-    /// check-ins are non-assignment obligations `RecurringTask` generates,
-    /// while a no-submission item is a real Canvas assignment (it has a
-    /// `canvasAssignmentID`) that simply doesn't ask for a file. A student who
-    /// wants "no reminder for attend-only assignments, but still remind me
-    /// about the weekly reading" needs both switches to exist independently.
-    public var noSubmissionRemindersEnabled: Bool
+    /// Whether this course's non-submittable items — `.event`-kind readings,
+    /// lectures and calendar events, and Canvas assignments cached as
+    /// requiring no online submission — show on the dashboard and remind at
+    /// all. `true` by default, matching the app's behavior before this
+    /// toggle existed.
+    ///
+    /// **Replaces two short-lived, narrower switches** (`recurringEnabled`,
+    /// `noSubmissionRemindersEnabled`), both added and both retired within
+    /// the same week, on the owner's own device only. The owner flipped the
+    /// no-submission toggle expecting the items to disappear from the
+    /// dashboard; it only silenced their reminders — and the readings
+    /// toggle never touched `.event` items at all, because the scheduler's
+    /// old recurring-gate only ever matched `RecurringTask` occurrences
+    /// (`kind: .assignment`), never `.event` rows. Two switches that both
+    /// half-worked, for adjacent ideas a student experiences as one thing —
+    /// "stuff with nothing to turn in" — became a design smell the moment a
+    /// real device pass hit it. See `docs/decisions.md`'s entry for the
+    /// hide-vs-silence distinction this field now enforces:
+    /// `AppState.rebuildDashboardItems` HIDES `.event` items and cached
+    /// no-submission assignments outright when this is `false` (they never
+    /// reach `vm.items`, so `NotificationScheduler` never sees them either);
+    /// `RecurringTask` occurrences are the one exception — they stay
+    /// VISIBLE (the student made those by hand; a notifications toggle
+    /// hiding a student's own recurring task would read as data loss) but
+    /// go quiet, which is the only work left for `NotificationScheduler`'s
+    /// own gate on this field.
+    public var nothingToSubmitEnabled: Bool
 
     /// The term this course was archived into by semester rollover; `nil` means
     /// it is still active. A `Term` rather than a `Bool` so the Done history can
@@ -144,8 +149,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         canvasCourseID: String? = nil,
         notificationsEnabled: Bool = true,
         leadOffsets: Set<LeadOffset>? = nil,
-        recurringEnabled: Bool = true,
-        noSubmissionRemindersEnabled: Bool = true,
+        nothingToSubmitEnabled: Bool = true,
         archivedTerm: Term? = nil,
         isManuallyAdded: Bool = false
     ) {
@@ -156,8 +160,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.canvasCourseID = canvasCourseID
         self.notificationsEnabled = notificationsEnabled
         self.leadOffsets = leadOffsets
-        self.recurringEnabled = recurringEnabled
-        self.noSubmissionRemindersEnabled = noSubmissionRemindersEnabled
+        self.nothingToSubmitEnabled = nothingToSubmitEnabled
         self.archivedTerm = archivedTerm
         self.isManuallyAdded = isManuallyAdded
     }
@@ -216,10 +219,16 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     ///
     /// Whoever adds the next field: follow the pattern. `decodeIfPresent ?? x`,
     /// never `decode`.
+    ///
+    /// `recurringEnabled` and `noSubmissionRemindersEnabled` stay listed here
+    /// — never removed — purely so `init(from:)` can still read a blob a
+    /// build from earlier this week wrote. Nothing writes them any more (see
+    /// `encode(to:)`); they are decode-only fossils, kept for exactly the
+    /// fold reason documented on `nothingToSubmitEnabled`'s decode below.
     private enum CodingKeys: String, CodingKey {
         case courseKey, displayName, isVisible, isDeleted, canvasCourseID
         case notificationsEnabled, leadOffsets, recurringEnabled, archivedTerm
-        case isManuallyAdded, noSubmissionRemindersEnabled
+        case isManuallyAdded, noSubmissionRemindersEnabled, nothingToSubmitEnabled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -230,10 +239,30 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.isDeleted = try c.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
         self.canvasCourseID = try c.decodeIfPresent(String.self, forKey: .canvasCourseID)
         self.notificationsEnabled = try c.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
-        self.recurringEnabled = try c.decodeIfPresent(Bool.self, forKey: .recurringEnabled) ?? true
-        self.noSubmissionRemindersEnabled = try c.decodeIfPresent(
-            Bool.self, forKey: .noSubmissionRemindersEnabled
-        ) ?? true
+        // The fold: `recurringEnabled` and `noSubmissionRemindersEnabled`
+        // shipped for one week, to the owner's own device only, before being
+        // merged into this one field — so this is a fold, not a migration
+        // ceremony (no version gate, no `LegacyStateMigration` entry; see
+        // that type's own doc comment for the bar a *real* legacy key has to
+        // clear). A blob written during that week has one or both of the old
+        // keys and never the new one; a blob written after this change has
+        // only the new one. Preferring the new key when present, and
+        // otherwise ANDing the two old ones (each defaulting to their own
+        // `true`), means: if the new key is absent, a `false` in EITHER old
+        // field carries forward as `false` here — the owner's existing
+        // CIS 2400 off-state (whichever switch they'd actually flipped)
+        // survives the upgrade as the merged toggle being off, which is the
+        // only reading consistent with what both old switches meant ("quiet
+        // this class's non-assignment noise"). The next save writes only
+        // `nothingToSubmitEnabled` (see `encode(to:)`), so this branch only
+        // ever matters once, on the first launch after the merge.
+        if let merged = try c.decodeIfPresent(Bool.self, forKey: .nothingToSubmitEnabled) {
+            self.nothingToSubmitEnabled = merged
+        } else {
+            let oldRecurring = try c.decodeIfPresent(Bool.self, forKey: .recurringEnabled) ?? true
+            let oldNoSubmission = try c.decodeIfPresent(Bool.self, forKey: .noSubmissionRemindersEnabled) ?? true
+            self.nothingToSubmitEnabled = oldRecurring && oldNoSubmission
+        }
         self.archivedTerm = try c.decodeIfPresent(Term.self, forKey: .archivedTerm)
         self.isManuallyAdded = try c.decodeIfPresent(Bool.self, forKey: .isManuallyAdded) ?? false
 
@@ -258,8 +287,11 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         try c.encode(isDeleted, forKey: .isDeleted)
         try c.encodeIfPresent(canvasCourseID, forKey: .canvasCourseID)
         try c.encode(notificationsEnabled, forKey: .notificationsEnabled)
-        try c.encode(recurringEnabled, forKey: .recurringEnabled)
-        try c.encode(noSubmissionRemindersEnabled, forKey: .noSubmissionRemindersEnabled)
+        // The old `recurringEnabled` / `noSubmissionRemindersEnabled` keys are
+        // deliberately never written again — every save from here on writes
+        // only the merged field, so the fold in `init(from:)` only ever runs
+        // once, on the first decode of a blob from before this change.
+        try c.encode(nothingToSubmitEnabled, forKey: .nothingToSubmitEnabled)
         try c.encodeIfPresent(archivedTerm, forKey: .archivedTerm)
         try c.encode(isManuallyAdded, forKey: .isManuallyAdded)
         // Sorted so the encoded blob is byte-stable across runs — `Set`'s
@@ -361,11 +393,8 @@ public final class CoursePreferencesStore: ObservableObject {
     public func notificationsEnabled(_ courseKey: String) -> Bool {
         preferences(for: courseKey).notificationsEnabled
     }
-    public func recurringEnabled(_ courseKey: String) -> Bool {
-        preferences(for: courseKey).recurringEnabled
-    }
-    public func noSubmissionRemindersEnabled(_ courseKey: String) -> Bool {
-        preferences(for: courseKey).noSubmissionRemindersEnabled
+    public func nothingToSubmitEnabled(_ courseKey: String) -> Bool {
+        preferences(for: courseKey).nothingToSubmitEnabled
     }
     /// `nil` means this course inherits the global lead times — see
     /// `CoursePreferences.leadOffsets`. Prefer `effectiveLeadOffsets(for:global:)`.
@@ -474,16 +503,21 @@ public final class CoursePreferencesStore: ObservableObject {
         update(courseKey) { $0.leadOffsets = offsets }
     }
 
-    public func setRecurringEnabled(_ courseKey: String, _ enabled: Bool) {
-        update(courseKey) { $0.recurringEnabled = enabled }
-    }
-
-    /// Per-class opt-out for reminders on this course's no-submission
-    /// assignments (attend-only, on-paper, not-graded). Off leaves the
-    /// dashboard caveat exactly as it was — this only silences the reminder
-    /// and digest count, never the informational tag on the card.
-    public func setNoSubmissionRemindersEnabled(_ courseKey: String, _ enabled: Bool) {
-        update(courseKey) { $0.noSubmissionRemindersEnabled = enabled }
+    /// Store-level write only — prefer `AppState.setNothingToSubmitEnabled`
+    /// from the UI. This toggle now controls dashboard CONTENT (which items
+    /// are hidden), not merely reminders, and unlike every other setter here
+    /// that distinction is load-bearing: `AppState.rebuildDashboardItems`
+    /// has to re-run before `.event`/no-submission items are actually
+    /// hidden or restored, and nothing in this store's `commit`/`willChange`
+    /// plumbing does that on its own (`willChange` only republishes
+    /// `AppState.objectWillChange`, which redraws views off the SAME stale
+    /// `assignments`/`laterAssignments` arrays until something calls
+    /// `rebuildDashboardItems` again). Calling this directly is still
+    /// correct — the value persists either way — but the dashboard won't
+    /// reflect it until the next rebuild happens to run for some other
+    /// reason.
+    public func setNothingToSubmitEnabled(_ courseKey: String, _ enabled: Bool) {
+        update(courseKey) { $0.nothingToSubmitEnabled = enabled }
     }
 
     /// Files the course under a term (rollover) or brings it back (`nil`).

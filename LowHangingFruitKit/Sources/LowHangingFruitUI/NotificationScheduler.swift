@@ -436,22 +436,27 @@ final class NotificationScheduler: ObservableObject {
             // switch.
             guard prefs.notificationsEnabled(course) else { continue }
 
-            // The recurring switch is separate from the mute because the common
-            // request is "keep telling me about assignments, stop telling me
-            // about the weekly reading" — so it filters only the occurrences a
-            // `RecurringTask` generated and leaves real coursework alone.
+            // The merged "items with nothing to submit" toggle
+            // (`nothingToSubmitEnabled`, 2026-08-27 — see
+            // `CoursePreferences`'s doc comment for why two switches became
+            // one) is separate from the mute because the common request is
+            // "keep telling me about assignments, stop telling me about the
+            // weekly reading." It used to be two gates here: one for
+            // `RecurringTask` occurrences, one for Canvas no-submission
+            // assignments (`item.requiresNoSubmission`). The second gate is
+            // gone, not merely renamed — `AppState.rebuildDashboardItems`
+            // now HIDES `.event` items and cached no-submission assignments
+            // outright when the toggle is off, so `vm.items` (what this
+            // function is ever called with) can no longer contain one with
+            // the toggle off; a scheduler-side gate for them would be
+            // unreachable code. Only `RecurringTask` occurrences still need
+            // a gate here, because hiding was deliberately NOT extended to
+            // them — the student made those by hand, and hiding a student's
+            // own recurring task via a notifications toggle would read as
+            // data loss, not as "reminders got quieter." So they stay
+            // visible and only go silent, which is what this one gate does.
             let isRecurring = RecurringTask.isOccurrence(item.assignment)
-            if isRecurring, !prefs.recurringEnabled(course) { continue }
-
-            // A no-submission item (Canvas expects nothing to be turned in —
-            // the card already carries a caveat saying so) still schedules
-            // like any other assignment by default, because the toggle this
-            // gates is opt-out, not opt-in. But some students genuinely don't
-            // want a 9pm alarm for "attend lecture", and that request is
-            // narrower than the recurring switch above: a no-submission item
-            // is a real Canvas assignment (it has a `canvasAssignmentID`),
-            // not a `RecurringTask` occurrence, so it needs its own gate.
-            if item.requiresNoSubmission, !prefs.noSubmissionRemindersEnabled(course) { continue }
+            if isRecurring, !prefs.nothingToSubmitEnabled(course) { continue }
 
             // `nil` here means the course never had its lead times set and
             // inherits whatever Settings currently says; an explicitly empty set
@@ -578,15 +583,12 @@ final class NotificationScheduler: ObservableObject {
             guard due > now, due <= soon else { return false }
             let course = item.assignment.course
             guard prefs.notificationsEnabled(course) else { return false }
-            if RecurringTask.isOccurrence(item.assignment), !prefs.recurringEnabled(course) {
-                return false
-            }
-            // Mirrors the same gate in `plannedRequests` above — the digest
-            // must not leak what the per-class no-submission toggle silenced,
-            // or a student who turned it off would still see it counted every
-            // morning, which is the mute-that-doesn't-mute failure the digest
-            // gating exists to avoid in general.
-            if item.requiresNoSubmission, !prefs.noSubmissionRemindersEnabled(course) {
+            // Mirrors `plannedRequests`'s single occurrence-only gate above —
+            // see its comment for why the digest needs no separate
+            // no-submission clause any more: those items are hidden from
+            // `vm.items` entirely when the toggle is off, so they were never
+            // in `items` to be counted here in the first place.
+            if RecurringTask.isOccurrence(item.assignment), !prefs.nothingToSubmitEnabled(course) {
                 return false
             }
             return true

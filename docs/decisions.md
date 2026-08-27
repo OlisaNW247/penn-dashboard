@@ -5,6 +5,67 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — One "items with nothing to submit" toggle, and it hides, not just silences
+Two per-class notification switches shipped this same week — `recurringEnabled`
+("readings and check-ins") and `noSubmissionRemindersEnabled` ("assignments
+with nothing to submit") — and both turned out wrong once a real device pass
+used them. The owner flipped the no-submission toggle off expecting those
+items to disappear from the dashboard; it only silenced their reminders,
+leaving the card sitting there looking like the toggle had done nothing. The
+readings toggle never touched `.event`-kind items at all — Canvas calendar
+readings and lectures like "CIS 2400 Lecture" — because the scheduler's old
+recurring-gate only ever matched `RecurringTask` occurrences
+(`kind: .assignment`), which a `.event` row never is. Two switches, both half
+of one idea a student actually has ("stuff with nothing to turn in"), each
+solving a different half wrong.
+
+**Merged into one field**, `CoursePreferences.nothingToSubmitEnabled`
+(default on), one Profile → notifications toggle ("items with nothing to
+submit"), one behavior:
+
+- **Off HIDES, it doesn't just silence.** `.event` items (readings, lectures,
+  calendar events) and Canvas assignments cached as requiring no submission
+  are dropped from `AppState.assignments`/`laterAssignments` outright —
+  `rebuildDashboardItems` is the one place this is enforced — rather than
+  merely skipped by the notification scheduler. Why hide rather than mute
+  louder: a toggle a student flips expecting an effect and sees none reads as
+  broken, and "broken" is a worse failure than "aggressive." The `assessments`
+  bucket is untouched by construction — it's split off from `incomplete`
+  *before* this filter runs, so an exam date is never hidden by a
+  notifications toggle no matter its submission type.
+- **`RecurringTask` occurrences are the one exception, and stay visible.** A
+  weekly reading or check-in the student built themselves through Settings →
+  Tasks is not something a notifications toggle should make disappear —
+  that reads as data loss, not as "reminders got quieter." Off silences an
+  occurrence's reminders and its digest count (the one job left for
+  `NotificationScheduler`'s own gate on this field) but never removes it from
+  the list. Deleting the recurring task itself is how a student removes it.
+- **The decode fold.** Both retired fields shipped to the owner's own device
+  only, this week — not a real migration, so no version gate, no
+  `LegacyStateMigration` entry, just a fold inside `CoursePreferences
+  .init(from:)`: prefer the new key when present, otherwise AND the two old
+  ones (each defaulting `true` if absent). A `false` in *either* old switch
+  carries forward as the merged toggle being off, which is the only reading
+  consistent with what both switches meant. The old CodingKeys stay listed,
+  decode-only, so that fold keeps working; nothing writes them again after
+  the first save.
+
+**Known gap, not silently accepted.** The iOS home/lock-screen WidgetKit
+extension (`LedgerWidgetReader`, a separate process) does not read
+`CoursePreferences` at all — it only consults the three legacy
+hidden/deleted/rename keys `CoursePreferencesStore` still projects for it.
+A class with the toggle off will still show its readings and no-submission
+assignments in the iOS widget. This is a real gap, flagged as a follow-up:
+teaching the widget process about `nothingToSubmitEnabled` needs its own
+pass (either projecting a fourth legacy-style key, or letting
+`LedgerWidgetReader` read the `coursePreferences` blob directly), not
+something to fold into this change silently. The **Mac menu-bar panel**
+(`MenuBarPanel` in `LHFScenes.swift`) does NOT have this gap — verified by
+reading its `upcoming` computed property, which reads `state.assignments`/
+`state.laterAssignments` directly (not through `DashboardViewModel`), so it
+inherits the hiding automatically the moment `AppState.rebuildDashboardItems`
+applies it.
+
 ## 2026-08-27 — Nothing-to-submit items never show as late
 The owner's device pass found a no-submission item sitting in OVERDUE
 ("Class 2: Litigation... nothing to submit — 1h late") — a state the app's

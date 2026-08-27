@@ -359,34 +359,93 @@ struct MigrationChainTests {
         #expect(reread.displayName(for: "CIS 1200") == "Discrete")
     }
 
-    /// Same failure mode, same fix, for the field added 2026-08-27
-    /// (docs/decisions.md): `noSubmissionRemindersEnabled`. A blob written by
-    /// a build that predates the per-class "assignments with nothing to
-    /// submit" toggle carries every key except this one, and it must decode
-    /// to the default (`true` — matches the pre-toggle behavior of
-    /// scheduling those reminders unconditionally) rather than throwing and
-    /// wiping every other course's settings in the same blob.
-    @Test("a course-preferences blob from before noSubmissionRemindersEnabled decodes to the default, and round-trips once set")
-    func coursePreferencesBlobSurvivesTheNoSubmissionField() throws {
-        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+    /// Same failure mode, same fix, one level deeper: `recurringEnabled` and
+    /// `noSubmissionRemindersEnabled` themselves shipped 2026-08-27, then
+    /// merged into `nothingToSubmitEnabled` the same day after a device pass
+    /// (docs/decisions.md) — so `init(from:)` has to fold a blob carrying
+    /// either or both of the WEEK-OLD fields into the one new field, not
+    /// just default it, or the owner's own already-configured CIS 2400 would
+    /// silently reset to "on" the moment this build launched. The fold is
+    /// documented on `CoursePreferences.nothingToSubmitEnabled`'s decode
+    /// site: prefer the new key when present; otherwise AND the two old ones
+    /// (each defaulting `true` if absent), so a `false` in EITHER one
+    /// carries forward.
+    private static let bothFieldsAbsentBlob = """
+    {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+    "notificationsEnabled":true,"isManuallyAdded":false}}
+    """
 
+    @Test("a blob with recurringEnabled: false (the old field, no new key) folds to nothingToSubmitEnabled == false")
+    func coursePreferencesBlobFoldsOldRecurringFalse() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
         let legacyBlob = """
         {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
-        "notificationsEnabled":true,"recurringEnabled":true,"isManuallyAdded":false}}
+        "notificationsEnabled":true,"recurringEnabled":false,"isManuallyAdded":false}}
         """
         shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
 
         let store = CoursePreferencesStore(defaults: shared)
         #expect(store.byCourseKey.count == 1)
-        #expect(store.noSubmissionRemindersEnabled("CIS 1200"))
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+    }
 
-        // Round-trip: turning it off, writing it back, and re-reading keeps
-        // the new field AND everything the pre-toggle blob already had.
-        store.setNoSubmissionRemindersEnabled("CIS 1200", false)
+    @Test("a blob with noSubmissionRemindersEnabled: false (the old field, no new key) folds to nothingToSubmitEnabled == false")
+    func coursePreferencesBlobFoldsOldNoSubmissionFalse() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+        "notificationsEnabled":true,"noSubmissionRemindersEnabled":false,"isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+    }
+
+    @Test("a blob with both old fields absent decodes nothingToSubmitEnabled to true")
+    func coursePreferencesBlobDefaultsWhenBothOldFieldsAbsent() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        shared.set(Data(Self.bothFieldsAbsentBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(store.nothingToSubmitEnabled("CIS 1200"))
+    }
+
+    @Test("writing after the fold persists only the merged key, and round-trips")
+    func coursePreferencesBlobRoundTripsOnlyTheMergedKey() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        // `isVisible: false` keeps this record non-default (and therefore
+        // still in the persisted map) even after the toggle below is flipped
+        // back to its own default — otherwise `commit`'s pruning would drop
+        // the record entirely and there'd be nothing left to inspect.
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":false,"isDeleted":false,\
+        "notificationsEnabled":true,"recurringEnabled":true,"noSubmissionRemindersEnabled":false,\
+        "isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        // The AND of the two old fields (true && false).
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+
+        // Flip it on and save — this is the first write since the merge, so
+        // it's the one that has to prove the old keys stop being written.
+        store.setNothingToSubmitEnabled("CIS 1200", true)
+        let rawJSON = try #require(shared.data(forKey: CoursePreferencesStore.storageKey))
+        let jsonObject = try JSONSerialization.jsonObject(with: rawJSON)
+        let decoded = try #require(jsonObject as? [String: [String: Any]])
+        let record = try #require(decoded["CIS 1200"])
+        #expect(record["nothingToSubmitEnabled"] as? Bool == true)
+        #expect(record["recurringEnabled"] == nil)
+        #expect(record["noSubmissionRemindersEnabled"] == nil)
+
+        // And it round-trips through a fresh handle on the same domain.
         let reread = CoursePreferencesStore(defaults: shared)
-        #expect(!reread.noSubmissionRemindersEnabled("CIS 1200"))
-        #expect(reread.isVisible("CIS 1200"))
-        #expect(reread.recurringEnabled("CIS 1200"))
+        #expect(reread.nothingToSubmitEnabled("CIS 1200"))
+        #expect(!reread.isVisible("CIS 1200"))
     }
 
     @Test("the v4 fields survive the whole migration chain, twice, with no App Group")

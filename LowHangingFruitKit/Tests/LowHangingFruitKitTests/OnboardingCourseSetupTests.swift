@@ -158,7 +158,7 @@ struct OnboardingCourseSetupTests {
                 // …and the defaults are the ones a student would have chosen.
                 let prefs = state.coursePreferences.preferences(for: course)
                 #expect(prefs.notificationsEnabled)
-                #expect(prefs.recurringEnabled)
+                #expect(prefs.nothingToSubmitEnabled)
                 // `nil`, not an empty set and not a frozen copy of the global.
                 // This is the one that would silently break the global control
                 // in Settings if the walk ever seeded values on render.
@@ -181,7 +181,7 @@ struct OnboardingCourseSetupTests {
             // Reading everything the walk's controls read.
             let prefs = state.coursePreferences.preferences(for: "CIS 1210")
             _ = prefs.notificationsEnabled
-            _ = prefs.recurringEnabled
+            _ = prefs.nothingToSubmitEnabled
             _ = prefs.leadOffsets
             #expect(state.coursePreferences.byCourseKey["CIS 1210"] == nil)
         }
@@ -268,10 +268,10 @@ struct OnboardingCourseSetupTests {
             prefs.setNotificationsEnabled("CIS 1210", false)
             #expect(!prefs.notificationsEnabled("CIS 1210"))
 
-            prefs.setRecurringEnabled("ECON 1", false)
-            #expect(!prefs.recurringEnabled("ECON 1"))
+            prefs.setNothingToSubmitEnabled("ECON 1", false)
+            #expect(!prefs.nothingToSubmitEnabled("ECON 1"))
             // One class's settings never leak into another's.
-            #expect(prefs.recurringEnabled("CIS 1210"))
+            #expect(prefs.nothingToSubmitEnabled("CIS 1210"))
 
             // "Just for this class", seeded from the global.
             prefs.setLeadOffsets("ECON 1", LeadOffset.defaults)

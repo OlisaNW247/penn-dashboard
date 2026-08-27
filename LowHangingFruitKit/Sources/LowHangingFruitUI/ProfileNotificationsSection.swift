@@ -2,8 +2,9 @@ import SwiftUI
 import LowHangingFruitKit
 
 /// Per-course notification preferences: which lead times a given class uses,
-/// whether its recurring non-assignment work (weekly readings, check-ins) gets
-/// reminders at all, and whether the class is muted outright.
+/// whether its non-submittable items (readings, lectures, calendar events,
+/// and Canvas assignments cached as requiring no submission) show on the
+/// dashboard and remind at all, and whether the class is muted outright.
 ///
 /// ## The one design problem this screen has
 ///
@@ -186,42 +187,39 @@ struct ProfileNotificationsSection: View {
         if preferences.notificationsEnabled(course) {
             leadTimeControls(course)
 
-            Toggle("readings and check-ins", isOn: Binding(
-                get: { preferences.recurringEnabled(course) },
+            // One switch, not two. It used to be "readings and check-ins"
+            // (recurring, non-assignment work) plus a separate "assignments
+            // with nothing to submit" (Canvas no-submission items) — both
+            // shipped and both retired the same week, on the owner's own
+            // device, after a real device pass: the second one was flipped
+            // expecting the items to disappear from the dashboard and only
+            // silenced their reminders, and the first one never touched
+            // `.event`-kind readings/lectures at all (see
+            // `CoursePreferences.nothingToSubmitEnabled`'s doc comment for
+            // why). One toggle, one honest behavior: off HIDES this class's
+            // readings, lectures, calendar events and no-submission
+            // assignments from the dashboard outright. The one carve-out —
+            // a recurring task the student created by hand stays on the
+            // list, just silenced — is spelled out below rather than left
+            // for someone to discover the hard way.
+            Toggle("items with nothing to submit", isOn: Binding(
+                get: { preferences.nothingToSubmitEnabled(course) },
                 set: { newValue in
-                    preferences.setRecurringEnabled(course, newValue)
+                    // Routed through `AppState`, not the store directly —
+                    // this toggle changes dashboard CONTENT now, and only
+                    // `AppState.setNothingToSubmitEnabled` guarantees a
+                    // rebuild runs before anything re-renders. See that
+                    // method's doc comment for why `CoursePreferencesStore
+                    // .setNothingToSubmitEnabled` alone is not enough.
+                    state.setNothingToSubmitEnabled(course, newValue)
                     scheduler.rescheduleAfterPreferenceChange()
                 }
             ))
             .font(.lhfSans(14))
 
-            // The two switches above are easy to mistake for each other, and the
-            // distinction is the entire reason there are two: this one leaves
-            // assignment reminders running.
-            Text(preferences.recurringEnabled(course)
-                 ? "Weekly readings, check-ins and discussion posts remind you too. Turn this off to hear only about assignments."
-                 : "Only assignments remind you. Weekly readings, check-ins and discussion posts stay silent.")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Toggle("assignments with nothing to submit", isOn: Binding(
-                get: { preferences.noSubmissionRemindersEnabled(course) },
-                set: { newValue in
-                    preferences.setNoSubmissionRemindersEnabled(course, newValue)
-                    scheduler.rescheduleAfterPreferenceChange()
-                }
-            ))
-            .font(.lhfSans(14))
-
-            // A third switch, not a rename of the one above: readings/check-ins
-            // are non-assignment work `RecurringTask` generates, while a
-            // no-submission item is a real Canvas assignment that just happens
-            // to expect nothing turned in online — the card already caveats it
-            // regardless of this setting, which only controls the reminder.
-            Text(preferences.noSubmissionRemindersEnabled(course)
-                 ? "attend-only and on-paper assignments remind you too."
-                 : "assignments with nothing to submit stay silent. they still show on the dashboard.")
+            Text(preferences.nothingToSubmitEnabled(course)
+                 ? "readings, classes and attend-only assignments show on the dashboard and remind you."
+                 : "readings, classes and attend-only assignments are hidden from this class's list. weekly tasks you created stay, but stay silent.")
                 .font(.lhfSans(12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -352,21 +350,18 @@ struct ProfileNotificationsSection: View {
         }
         let effective = preferences.effectiveLeadOffsets(for: course, global: scheduler.leadOffsets)
         let inheriting = preferences.leadOffsets(for: course) == nil
-        let recurring = preferences.recurringEnabled(course)
+        let nothingToSubmit = preferences.nothingToSubmitEnabled(course)
             ? ""
-            : " Readings and check-ins are off."
-        let noSubmission = preferences.noSubmissionRemindersEnabled(course)
-            ? ""
-            : " No-submit reminders are off."
+            : " Nothing-to-submit items are hidden."
 
         if effective.isEmpty {
             return inheriting
-                ? "No reminder times are set in Settings.\(recurring)\(noSubmission)"
-                : "No reminder times.\(recurring)\(noSubmission)"
+                ? "No reminder times are set in Settings.\(nothingToSubmit)"
+                : "No reminder times.\(nothingToSubmit)"
         }
         let times = offsetList(effective)
         return (inheriting ? "Your default times: \(times)." : "Its own times: \(times).")
-            + recurring + noSubmission
+            + nothingToSubmit
     }
 
     /// "1 day, 1 hour" — `LeadOffset.label` with the trailing "before" trimmed,
