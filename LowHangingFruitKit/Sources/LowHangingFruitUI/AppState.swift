@@ -1875,10 +1875,30 @@ final class AppState: ObservableObject {
     /// `CourseCode` — so this is a set union and not a merge. When Canvas
     /// finally posts for a class the student typed in, the two are the same
     /// element and there is nothing to reconcile.
+    ///
+    /// Two more sources joined the union for the same reason (the CIS 2620
+    /// regression — a Modules-only class had no surface at all once Settings'
+    /// reading-classes section was removed):
+    /// - `moduleReadingItems`: a silent course whose imported Modules readings
+    ///   are on the ledger lists like any other class.
+    /// - the cached enrolled-course list: an enrolled class appears here
+    ///   before it posts anything anywhere, closing the week-one gap for
+    ///   real. The ingestion filters (`isEnrolledCourseCurrent` +
+    ///   `containsExplicitCode`) are re-applied at read time: idempotent for
+    ///   a cache written by this version, and they keep a cache persisted
+    ///   last term (or by a pre-filter build) from resurrecting a finished
+    ///   class or a Canvas resource site.
+    /// Listing is not importing: a silent course's readings still only
+    /// download after its nudge/toggle grants network consent.
     func allCourseCodes() -> [String] {
-        let pool = canvasItems + gradescopeItems
+        let pool = canvasItems + gradescopeItems + moduleReadingItems
+        let enrolledKeys = enrolledCanvasCourses
+            .filter { Self.isEnrolledCourseCurrent($0) && CourseCode.containsExplicitCode($0.name) }
+            .map { Self.courseKey(forEnrolled: $0) }
+            .filter { !$0.isEmpty }
         let codes = Set(pool.map(\.course))
             .union(coursePreferences.manuallyAddedCourseKeys)
+            .union(enrolledKeys)
             .subtracting([Self.unknownCourse])
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }

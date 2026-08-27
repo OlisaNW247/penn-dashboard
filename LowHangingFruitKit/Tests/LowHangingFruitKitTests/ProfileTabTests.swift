@@ -194,6 +194,10 @@ struct ProfileTabTests {
             SharedDefaults.hiddenCoursesKey,
             SharedDefaults.deletedCoursesKey,
             SharedDefaults.courseNameOverridesKey,
+            // `allCourseCodes()` also unions the cached enrolled-course list
+            // now, so the week-one empty state is only reachable with this
+            // cleared — another suite's seeded enrollment must not leak in.
+            "enrolledCanvasCoursesV1",
         ]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer {

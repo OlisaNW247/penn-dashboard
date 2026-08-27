@@ -77,6 +77,20 @@ section was such a class's ONLY surface (it listed from
 `courseProfileReports`, which derive from the cached enrolled-course list) —
 so removing the section removed the class from the UI entirely.
 
+**Status 2026-08-27: the planned fix below is IMPLEMENTED, awaiting the
+owner's Mac verification** (`swift test` against the 608/61 baseline + the
+device pass). What landed: `allCourseCodes()` now pools
+`canvasItems + gradescopeItems + moduleReadingItems` and unions in the
+cached enrolled courses via `courseKey(forEnrolled:)`, re-applying the
+ingestion filters (`isEnrolledCourseCurrent` + `containsExplicitCode`) at
+read time so a stale cache can't resurrect a finished class or a resource
+site. The readings *import* still sits behind the nudge — listing is not
+importing. New `CourseListSourcesTests` covers both sources, the past-term
+and junk filters, and that listing adds nothing to the dashboard;
+`ProfileTabTests.withCourseState` now also clears/restores
+`enrolledCanvasCoursesV1` so its week-one empty-state invariant stays
+reachable regardless of suite order.
+
 **Planned fix (agreed direction, next session implements):**
 1. Add `moduleReadingItems` to `allCourseCodes()`'s pool, so a course whose
    imported Modules readings are on the ledger lists like any other class.
