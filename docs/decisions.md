@@ -5,6 +5,18 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-27 — Readings & class events restored (Settings, under Profile)
+The pre-redesign app had an "Other" tab for non-coursework Canvas items
+(lectures, class events, readings, ungraded discussions:
+`fetched.filter { !$0.isAssignment }`). The dashboard restructure replaced the
+tabs with This week / All / Done and dropped that bucket, so those items were
+fetched but shown nowhere. They're back as a "Readings & events" section in the
+Settings sheet, below Profile: `AppState.readingsAndEvents` (non-assignment,
+non-assessment Canvas items), windowed to yesterday → +14 days so a semester of
+class meetings doesn't flood the list. Rejected putting them back in the
+dashboard timeline: they aren't completable tasks, and they'd distort the
+weekly ring and the This week list.
+
 ## 2026-08-27 — Retry/backoff for unattended Canvas sync
 Unattended syncs (launch-time and the 5-minute silent refresh) now retry
 transient failures with exponential backoff: `RetryPolicy` (data layer) wraps

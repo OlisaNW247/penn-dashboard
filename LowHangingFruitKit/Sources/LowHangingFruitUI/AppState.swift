@@ -7,6 +7,7 @@ final class AppState: ObservableObject {
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
+    @Published var readingsAndEvents: [Assignment] = []
     @Published var recurringTasks: [RecurringTask] = []
     @Published private(set) var manualAssignments: [ManualAssignment] = []
     @Published var canvasRequirementSuggestions: [CanvasRequirementSuggestion] = []
@@ -235,6 +236,21 @@ final class AppState: ObservableObject {
         return due < cutoff
     }
 
+    /// Non-coursework Canvas items — lectures, class events, readings, ungraded
+    /// discussions — that the dashboard's task lists deliberately exclude. This
+    /// is the old "Other" tab's bucket, now shown in Settings under Profile.
+    /// Windowed to the next two weeks so a whole semester of class meetings
+    /// doesn't flood the list; the recent past is kept so today's earlier
+    /// events don't vanish mid-day.
+    static let readingsAndEventsWindow: TimeInterval = 14 * 86_400
+
+    static func isReadingOrEvent(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard !assignment.isAssignment, !isAssessment(assignment) else { return false }
+        guard let due = assignment.dueAt else { return false }
+        return due >= now.addingTimeInterval(-86_400)
+            && due <= now.addingTimeInterval(readingsAndEventsWindow)
+    }
+
     /// Quizzes, midterms, and exams live on their own Assessments page rather than
     /// mixed into coursework. Detected by Canvas's quiz classification or by title.
     static func isAssessment(_ assignment: Assignment) -> Bool {
@@ -258,6 +274,10 @@ final class AppState: ObservableObject {
         let coursework = incomplete.filter { !Self.isAssessment($0) }
         assignments = coursework.filter { Self.isActive($0) }
         laterAssignments = coursework.filter { Self.isLater($0) }
+
+        readingsAndEvents = canvasItems
+            .filter { Self.isReadingOrEvent($0) }
+            .sorted(by: Self.byDueDate)
     }
 
     #if DEBUG

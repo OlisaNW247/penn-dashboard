@@ -25,6 +25,8 @@ struct SettingsSheet: View {
                     ))
                 }
 
+                readingsAndEventsSection
+
                 Section("Account") {
                     statusRow(label: "Canvas",
                               connected: state.isCanvasConnected,
@@ -107,6 +109,51 @@ struct SettingsSheet: View {
         }
         .frame(minWidth: 360, minHeight: 420)
     }
+
+    // MARK: Readings & events
+
+    /// Non-coursework Canvas items (lectures, class events, readings) for the
+    /// next two weeks. The dashboard's task lists exclude these on purpose —
+    /// this is where they live now that the old "Other" tab is gone.
+    @ViewBuilder
+    private var readingsAndEventsSection: some View {
+        Section("Readings & events") {
+            if state.readingsAndEvents.isEmpty {
+                Text(state.isCanvasConnected
+                     ? "Nothing in the next two weeks. Class events and readings from your Canvas calendar appear here."
+                     : "Connect Canvas to see class events and readings here.")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(state.readingsAndEvents) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.displayCourse.uppercased())
+                                .font(.lhfSans(9, weight: .medium))
+                                .tracking(1.2)
+                                .foregroundStyle(Color.v2CourseCode)
+                            Text(item.title)
+                                .font(.lhfSans(13, weight: .medium))
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        if let due = item.dueAt {
+                            Text(Self.eventDateFormatter.string(from: due))
+                                .font(.lhfSans(11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private static let eventDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE MMM d, h:mm a"
+        return f
+    }()
 
     // MARK: Reminders
 
