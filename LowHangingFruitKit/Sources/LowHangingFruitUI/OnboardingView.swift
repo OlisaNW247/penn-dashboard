@@ -76,6 +76,9 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
 
+                exploreButton
+                    .padding(.top, 14)
+
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 24)
@@ -133,6 +136,33 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canContinue)
+    }
+
+    /// Opens the dashboard on bundled sample data. Canvas login goes through
+    /// Penn SSO, so this is the only way in for anyone without a PennKey —
+    /// prospective users deciding whether to install, and App Review.
+    private var exploreButton: some View {
+        VStack(spacing: 6) {
+            Button {
+                state.enterDemoMode()
+            } label: {
+                Text("Explore with sample data")
+                    .font(.lhfSans(14, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule().strokeBorder(Color.v2Ink.opacity(0.2), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Explore with sample data")
+            .accessibilityHint("Opens the dashboard with example assignments. Nothing is saved.")
+
+            Text("No account needed. Nothing is saved.")
+                .font(.lhfSans(11))
+                .foregroundStyle(Color.v2RingSub)
+        }
     }
 
     private func stepCard(

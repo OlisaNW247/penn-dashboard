@@ -7,23 +7,30 @@ as one chronological "what's due next" list, with local reminders.
 
 ---
 
-## ⚠️ Important: why you can't log in with a test account
+## ✅ How to review the app without an account
 
-Sign-in is handled entirely by the **University of Pennsylvania's own Canvas
-login page** (Penn single sign-on / PennKey), shown inside the app in a web
-view. We do **not** run an authentication system and **cannot issue test
-credentials** — PennKey accounts are institutional and only the university can
-create them. There is no email/password we can give you.
+**On the first screen, tap "Explore with sample data."** That opens the full
+dashboard on built-in example assignments — no login, no account, no network.
+Everything is reviewable from there: the urgency-sorted list, This week / All /
+Done, tapping a card to complete it, the weekly progress ring, adjusting a due
+date, adding your own task with "+", and the Settings screen. A banner at the
+top of the dashboard marks it as sample data, and "Connect" in that banner
+returns to the sign-in screen. Nothing in the demo is saved to the device.
 
-**To review full functionality, please see the attached screen recording**,
-which demonstrates the complete flow end-to-end (onboarding → Canvas login →
-populated dashboard → completing items → reminders → adding tasks).
+**Why there is no test account:** sign-in is handled entirely by the
+**University of Pennsylvania's own Canvas login page** (Penn single sign-on /
+PennKey), shown inside the app in a web view. We do **not** run an
+authentication system and **cannot issue test credentials** — PennKey accounts
+are institutional and only the university can create them. There is no
+email/password we can give you.
 
-If a working in-app path is required for approval, we can ship a built-in
-"Explore with sample data" mode in the next build within 24 hours — just let us
-know and we'll turn it on.
+The attached screen recording additionally shows the real end-to-end flow
+(onboarding → Canvas login → populated dashboard → completing items →
+reminders → adding tasks) with a real student account.
 
 ## What the app does, step by step
+0. **Optional demo:** "Explore with sample data" on the first screen opens the
+   dashboard on bundled examples, with no account and no network access.
 1. **Onboarding:** the user enters a first name and taps "Connect Canvas."
 2. **Canvas login:** Penn's real Canvas login page loads in a web view. The user
    signs in with their own PennKey. The app never sees or stores the password.

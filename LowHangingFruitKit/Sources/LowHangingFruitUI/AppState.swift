@@ -22,6 +22,12 @@ final class AppState: ObservableObject {
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var userName: String
 
+    /// True while the dashboard is showing bundled sample data instead of a real
+    /// Canvas account ("Explore with sample data" in onboarding). Deliberately
+    /// never persisted: the demo lives entirely in memory, so nothing done in it
+    /// is written to disk and the next launch returns to the connect screen.
+    @Published private(set) var isDemoMode = false
+
     private static let userNameKey = "userName"
     private static let urlKey = "canvasICSURL"
     private static let completedIDsKey = "completedAssignmentIDs"
@@ -41,10 +47,10 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
 
         #if DEBUG
-        // Screenshot/preview seam: launch with `-LHFDemoData` to skip onboarding
-        // and show a fully-populated dashboard. DEBUG-only; never in release.
+        // Screenshot/preview seam: launch with `-LHFDemoData` to land straight in
+        // the same demo the "Explore with sample data" button opens.
         if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
-            hasCompletedOnboarding = true
+            enterDemoMode()
             userName = "Marco"
         }
         #endif
@@ -57,8 +63,18 @@ final class AppState: ObservableObject {
     var isCanvasConnected: Bool { !canvasICSURL.isEmpty }
 
     func completeOnboarding() {
+        isDemoMode = false
         hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+    }
+
+    /// Opens the dashboard on bundled sample data so the app can be explored
+    /// without a Canvas account — the only way in for anyone without a PennKey,
+    /// App Review included. `hasCompletedOnboarding` is flipped in memory only:
+    /// the persisted flag stays false, so quitting returns to the connect screen.
+    func enterDemoMode() {
+        isDemoMode = true
+        hasCompletedOnboarding = true
     }
 
     /// The user's first name, captured during onboarding and shown in the
@@ -69,8 +85,10 @@ final class AppState: ObservableObject {
     }
 
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
-    /// buttons). Already-connected services stay connected and show as done.
+    /// buttons, and by "Connect" while in the demo). Already-connected services
+    /// stay connected and show as done.
     func restartOnboarding() {
+        isDemoMode = false
         hasCompletedOnboarding = false
         UserDefaults.standard.set(false, forKey: Self.onboardingCompletedKey)
     }

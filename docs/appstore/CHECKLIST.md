@@ -7,8 +7,20 @@ Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple) ·
 - ✅ Version reconciled to **1.0.0 / build 1** (single source: `project.yml`)
 - ✅ `PrivacyInfo.xcprivacy` added and **verified bundled** in the app
 - ✅ Accessibility labels on card actions
-- ✅ `swift test` 13/13 green · iOS **Release** build green
+- ✅ **"Explore with sample data"** demo path in onboarding (see review risk below)
 - ✅ No tracking / analytics / third-party SDKs · `ITSAppUsesNonExemptEncryption=false`
+- 🟡 Re-run on a Mac after the demo-path change: `cd LowHangingFruitKit && swift test`
+  (13 prior tests + 8 new `DemoModeTests`) and an iOS **Release** build. Both were
+  green before the change; it was authored on Linux, where no Swift toolchain runs.
+
+## Screenshots — 🟡 one to regenerate
+`1-onboarding.png` predates the "Explore with sample data" button, so the first
+screenshot no longer matches the app. Regenerate it (the dashboard shots are
+unaffected — the demo banner is suppressed under the `-LHFDemoData` seam):
+
+```sh
+bash docs/appstore/capture-screenshots.sh
+```
 
 ## Before you can upload — 🟡 you
 - 🟡 **Set your Apple Developer Team** in signing.
@@ -45,8 +57,10 @@ xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
      reminder-permission flow once on device)
 - ⬜ Submit for review
 
-## Known review risk (your call — you chose reviewer-notes + video)
-Reviewers can't pass Penn SSO. The review notes + video address this, but Apple
-sometimes still asks for an in-app demo path. If they push back, I can add an
-"Explore with sample data" button to onboarding in ~1–2 hrs (the sample data and
-the `-LHFDemoData` seam already exist).
+## Known review risk — ✅ addressed
+Reviewers can't pass Penn SSO. Onboarding now ships an **"Explore with sample
+data"** button that opens the full dashboard on bundled examples — no login, no
+network, nothing persisted — so App Review has a working in-app path without a
+PennKey. The review notes lead with it. The demo is in-memory only: quitting
+returns to the connect screen, and no demo item, completion, or reminder is ever
+written to disk.

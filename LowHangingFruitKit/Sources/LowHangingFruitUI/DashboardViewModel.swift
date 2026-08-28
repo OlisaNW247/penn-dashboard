@@ -7,7 +7,7 @@ import LowHangingFruitKit
 // A presentation wrapper around `Assignment`. It adds purely-UI state the
 // model doesn't carry — a local due-date override and a completion timestamp
 // (completion time isn't stored by AppState, so it's only known for items
-// completed during this session or supplied by DEBUG sample data).
+// completed during this session or supplied by the sample data).
 
 struct DashItem: Identifiable, Equatable {
     let assignment: Assignment
@@ -44,9 +44,10 @@ struct DashSection: Identifiable {
 // MARK: – DashboardViewModel
 //
 // Single source of truth for the redesigned UI. Seeded from AppState's
-// published, already-grouped arrays (or from SampleData in DEBUG when there's
-// no real data yet). It NEVER reaches into the scrapers/sync and only writes
-// back to AppState through its existing public API (markCompleted/markActive).
+// published, already-grouped arrays — or, in demo mode, from SampleData, in
+// which case it writes nothing back at all. It NEVER reaches into the
+// scrapers/sync and only writes back to AppState through its existing public
+// API (markCompleted/markActive).
 
 @MainActor
 final class DashboardViewModel: ObservableObject {
@@ -68,27 +69,31 @@ final class DashboardViewModel: ObservableObject {
         reload()
         cancellable = state.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.reloadFromRealDataIfNeeded() }
+            .sink { [weak self] in self?.reload(preservingEdits: true) }
     }
 
-    private func reloadFromRealDataIfNeeded() {
-        guard !usingSampleData else { return }
-        reload(preservingEdits: true)
-    }
-
-    #if DEBUG
-    /// Preview-only: populate from bundled fixtures. The running app never calls
-    /// this — it always reads real scraped data via `reload()`.
+    /// Populates from bundled fixtures instead of real data — SwiftUI previews,
+    /// the screenshot seam, and the shipped "Explore with sample data" demo.
+    /// In this mode the view model is self-contained: completions and due-date
+    /// edits stay in memory, never reaching `AppState`, and `reload` is inert so
+    /// a background sync can't wipe the demo out from under the user.
     func loadSampleData() {
         usingSampleData = true
         items = SampleData.items()
     }
-    #endif
+
+    /// Demo-only: adds items the user creates while exploring, so the `+` flow
+    /// works without writing anything to the real store.
+    func addSampleItems(_ assignments: [Assignment]) {
+        guard usingSampleData else { return }
+        items.append(contentsOf: assignments.map {
+            DashItem(assignment: $0, dueOverride: nil, isCompleted: false, completedAt: nil)
+        })
+    }
 
     func reload(preservingEdits: Bool = false) {
-        guard let state = appState else { return }
+        guard let state = appState, !usingSampleData else { return }
 
-        usingSampleData = false
         let priorByID = preservingEdits
             ? Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             : [:]

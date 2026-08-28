@@ -11,8 +11,9 @@ Everything needed to submit Low Hanging Fruit to the App Store.
 | [screenshots/](screenshots/) | 6.9" iPhone screenshots, ready to upload |
 
 ## Screenshots (iPhone 17 Pro Max · 6.9" · 1320×2868)
-Generated from the app via the DEBUG `-LHFDemoData` seam (compiled out of release):
-1. `1-onboarding.png` — welcome / Connect Canvas
+Generated from the app via the DEBUG `-LHFDemoData` seam:
+1. `1-onboarding.png` — welcome / Connect Canvas · **stale**: predates the
+   "Explore with sample data" button, regenerate before uploading
 2. `2-dashboard-thisweek.png` — the hero shot: urgency-sorted list + progress ring
 3. `3-dashboard-all.png` — All view (includes later items)
 4. `4-dashboard-done.png` — Done view, grouped by day

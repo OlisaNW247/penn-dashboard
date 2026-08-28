@@ -1,12 +1,14 @@
 import Foundation
 import LowHangingFruitKit
 
-#if DEBUG
-/// Hardcoded fixtures for SwiftUI previews and offline UI work — no scrapers,
-/// no login, no network. Populates every section richly (2 overdue, 2 due
-/// today, 4 rest-of-week, 4 completed) so the full design is visible on first
-/// launch. Completion timestamps are synthesized here because the model
-/// doesn't store them. Compiles out of release builds.
+/// Hardcoded fixtures — no scrapers, no login, no network. Populates every
+/// section richly (2 overdue, 2 due today, 4 rest-of-week, 4 completed) so the
+/// full design is visible immediately. Completion timestamps are synthesized
+/// here because the model doesn't store them.
+///
+/// Ships in release builds: besides SwiftUI previews and the `-LHFDemoData`
+/// screenshot seam, these fixtures back the in-app "Explore with sample data"
+/// demo, which is the only way to see the dashboard without a PennKey.
 enum SampleData {
     static func items(now: Date = Date()) -> [DashItem] {
         let cal = Calendar.current
@@ -17,11 +19,15 @@ enum SampleData {
         // regardless of the actual weekday the demo is run on.
         let startToday = cal.startOfDay(for: now)
         let weekStart = cal.dateInterval(of: .weekOfYear, for: now)?.start ?? startToday
+        func daysBeforeToday(_ n: Int) -> Date {
+            cal.date(byAdding: .day, value: -n, to: startToday)
+                ?? startToday.addingTimeInterval(Double(-n) * 86_400)
+        }
         let doneA = max(startToday, hrs(-2))                                   // today
         let doneB = max(startToday, hrs(-5))                                   // today
-        let earlierA = max(weekStart, cal.date(byAdding: .day, value: -1, to: startToday)!)
+        let earlierA = max(weekStart, daysBeforeToday(1))
             .addingTimeInterval(14 * 3600)                                     // earlier this week
-        let earlierB = max(weekStart, cal.date(byAdding: .day, value: -2, to: startToday)!)
+        let earlierB = max(weekStart, daysBeforeToday(2))
             .addingTimeInterval(11 * 3600)                                     // earlier this week
 
         func active(_ source: Assignment.Source, _ id: String, _ course: String,
@@ -60,4 +66,3 @@ enum SampleData {
         ]
     }
 }
-#endif

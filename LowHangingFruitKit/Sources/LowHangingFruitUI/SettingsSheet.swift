@@ -25,12 +25,27 @@ struct SettingsSheet: View {
                     ))
                 }
 
+                if state.isDemoMode {
+                    Section("Demo") {
+                        Label("You're exploring sample data. Nothing you do here is saved.",
+                              systemImage: "sparkles")
+                            .font(.lhfSans(12))
+                            .foregroundStyle(.secondary)
+                        Button {
+                            dismiss()
+                            state.restartOnboarding()
+                        } label: {
+                            Label("Exit demo and connect Canvas", systemImage: "link")
+                        }
+                    }
+                }
+
                 Section("Account") {
                     statusRow(label: "Canvas",
                               connected: state.isCanvasConnected,
                               working: state.isLoading || state.isCanvasDiscoveryLoading)
 
-                    if !state.isCanvasConnected {
+                    if !state.isCanvasConnected && !state.isDemoMode {
                         Button {
                             dismiss()
                             state.restartOnboarding()
@@ -76,7 +91,7 @@ struct SettingsSheet: View {
 
                 #if DEBUG
                 // Hidden in demo/screenshot mode so store assets stay clean.
-                if !ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
+                if !state.isDemoMode {
                     Section("Debug") {
                         Button("Load sample data") { state.loadSampleData() }
                     }
@@ -113,6 +128,12 @@ struct SettingsSheet: View {
     @ViewBuilder
     private var remindersSection: some View {
         Section("Reminders") {
+            if state.isDemoMode {
+                Text("Reminders fire for your real assignments. Sample data never schedules a notification.")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(.secondary)
+            }
+
             Toggle("Due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
                 set: { newValue in Task { await scheduler.setEnabled(newValue) } }

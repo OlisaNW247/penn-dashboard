@@ -15,6 +15,8 @@ The app currently supports:
 - Canvas calendar feed via ICS (feed URL captured automatically after login).
 - Canvas event classification into assignments, quizzes, discussions, calendar events, and other items.
 - Canvas syllabus/announcement scan through embedded WebView login.
+- An "Explore with sample data" demo (onboarding) that opens the full dashboard
+  on bundled fixtures — no account, no network, nothing persisted.
 - Manual one-off and recurring assignments for requirements that are not official Canvas assignments.
 - Suggested recurring tasks from Canvas syllabus/announcement text, reviewed before being added.
 - This week / All / Done views with local completion state.
@@ -76,19 +78,31 @@ For App Store packaging steps see [docs/appstore/CHECKLIST.md](docs/appstore/CHE
 ## Suggested Ownership Split
 
 - UI/UX owner: app layout, visual polish, onboarding, empty states, design implementation.
-- Data/scraper owner: Canvas ICS, Gradescope scraping, Canvas syllabus/announcement scanning, tests.
+- Data/scraper owner: Canvas ICS, Canvas syllabus/announcement scanning, tests.
+
+## What's Next
+
+Submission is blocked only on things that need an Apple account — see
+[docs/appstore/CHECKLIST.md](docs/appstore/CHECKLIST.md) for the live list
+(Team ID, bundle ID, hosted privacy policy, metadata, archive + upload).
+
+Two follow-ups fall out of the demo-mode change and need a Mac:
+
+- Re-run `swift test` and an iOS Release build — the demo path was authored on
+  Linux, where no Swift toolchain is available.
+- Regenerate `docs/appstore/screenshots/1-onboarding.png`; it predates the
+  "Explore with sample data" button (`bash docs/appstore/capture-screenshots.sh`).
 
 ## Good First UI Tasks
 
-- Replace the current setup strip with the designed connection/onboarding UI.
 - Improve row layout for small windows.
-- Add a settings screen for connected services.
 - Add a recurring-task management screen to edit/delete rules.
 - Improve suggestion review UI for Canvas-found recurring tasks.
+- Let the demo show off reminders (today it truthfully says fake deadlines never
+  schedule a notification, but a reviewer sees nothing happen).
 
 ## Good First Data Tasks
 
-- Add debug-safe capture for failed Gradescope date/status parsing.
 - Improve Canvas course discovery if `/courses` or `/dashboard` markup changes.
-- Add more Gradescope HTML fixtures from real pages with private details removed.
 - Add retry/backoff for background auto-sync.
+- Capture (debug-safe) diagnostics when ICS date parsing drops an event.

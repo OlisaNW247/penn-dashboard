@@ -19,6 +19,8 @@ public struct RootView: View {
                     .environmentObject(state)
                     .environmentObject(scheduler)
                     .task {
+                        // The demo runs on bundled fixtures — never touch the network for it.
+                        guard !state.isDemoMode else { return }
                         // Calendar-feed fetch and syllabus scan are independent; run them concurrently.
                         async let canvas: Void = state.syncIfConfigured()
                         async let services: Void = AutoSyncCoordinator.syncConnectedServices(state: state)

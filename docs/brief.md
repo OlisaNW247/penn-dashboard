@@ -51,7 +51,8 @@ UI (`LowHangingFruitKit/Sources/LowHangingFruitUI/`, Marco's):
 - `SessionCookieStore.swift` — persists login cookies so the session survives launches
 - `AppState.swift` — observable app state, assignment store, filters, user name
 - `AutoSyncCoordinator.swift` — launch-time refresh; replays persisted cookies
-- `SampleData.swift` — DEBUG fixtures for previews + the `-LHFDemoData` screenshot seam
+- `SampleData.swift` — bundled fixtures: previews, the `-LHFDemoData` screenshot
+  seam, and the shipped "Explore with sample data" demo
 
 Data layer (`LowHangingFruitKit/Sources/LowHangingFruitKit/`, Olisa's):
 - `Canvas/CanvasICSClient.swift` + `Canvas/ICSParser.swift` — Canvas calendar feed
@@ -63,7 +64,9 @@ Data layer (`LowHangingFruitKit/Sources/LowHangingFruitKit/`, Olisa's):
 **Canvas-only, prepped for the App Store (1.0.0).** Runs on iPhone (and macOS)
 from one SwiftUI codebase via a real, archive-ready Xcode app target.
 - Onboarding captures your name + connects Canvas; the session **persists across
-  launches** (cookies are saved and replayed).
+  launches** (cookies are saved and replayed). It also offers **"Explore with
+  sample data"** — the full dashboard on bundled fixtures, with no account, no
+  network, and nothing persisted (the only way in without a PennKey).
 - Dashboard: weekly ring, This week / All / Done, per-card due-date adjust
   ("manually adjusted"), manual `+` assignments, and a header **Sync** button.
 - Local due-date reminders + optional daily digest (`NotificationScheduler`).

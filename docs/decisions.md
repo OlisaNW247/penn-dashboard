@@ -5,6 +5,22 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-28 — Ship an "Explore with sample data" demo mode
+Canvas login goes through Penn SSO, so nobody without a PennKey — App Review
+included — could get past onboarding. Onboarding now offers "Explore with sample
+data", which opens the real dashboard on the bundled `SampleData` fixtures (those
+moved out of `#if DEBUG` and now ship). The demo is in-memory only: `AppState`
+flips `hasCompletedOnboarding` without persisting it, `DashboardViewModel` keeps
+`usingSampleData` so completions and edits never reach the store, `reload` is
+inert (a background sync used to wipe the fixtures), sync/auto-refresh are
+skipped, and no notification is ever scheduled from fake deadlines. A dashboard
+banner marks the demo and exits it. The `-LHFDemoData` screenshot seam now enters
+the same mode, with the banner suppressed so store assets stay clean.
+Rejected shipping reviewer-notes + video alone: Apple often asks for an in-app
+demo path anyway, and it's a rejection round we can just not take. Rejected a
+persisted demo flag — a demo that survives a relaunch is a way to accidentally
+live in fake data.
+
 ## 2026-06-03 — Local due-date notifications
 Added `NotificationScheduler` (app layer, `UNUserNotificationCenter`, cross-platform,
 no entitlement) for local reminders. Defaults: 24h + 1h before each assignment, plus an

@@ -1,4 +1,5 @@
 import SwiftUI
+import LowHangingFruitKit
 
 /// Lets the user add their own assignment — a one-off, or a weekly-recurring
 /// item. User-created items are stored separately from scraped data, so a
@@ -6,6 +7,10 @@ import SwiftUI
 struct AddAssignmentSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var state: AppState
+
+    /// Set only in demo mode: the generated assignments are handed back to the
+    /// dashboard instead of being written to the real, persisted store.
+    var onAddSample: (([Assignment]) -> Void)? = nil
 
     @State private var title = ""
     @State private var course = ""
@@ -63,7 +68,7 @@ struct AddAssignmentSheet: View {
         let c = course.trimmingCharacters(in: .whitespacesAndNewlines)
         if repeatsWeekly {
             let comps = Calendar.current.dateComponents([.weekday, .hour, .minute], from: dueDate)
-            state.addRecurringTask(RecurringTask(
+            let task = RecurringTask(
                 title: t,
                 course: c,
                 weekday: comps.weekday ?? 1,
@@ -72,9 +77,19 @@ struct AddAssignmentSheet: View {
                 startDate: dueDate,
                 endDate: nil,
                 origin: .manual
-            ))
+            )
+            if let onAddSample {
+                onAddSample(task.upcomingAssignments())
+            } else {
+                state.addRecurringTask(task)
+            }
         } else {
-            state.addManualAssignment(ManualAssignment(title: t, course: c, dueAt: dueDate))
+            let manual = ManualAssignment(title: t, course: c, dueAt: dueDate)
+            if let onAddSample {
+                onAddSample([manual.asAssignment()])
+            } else {
+                state.addManualAssignment(manual)
+            }
         }
         dismiss()
     }

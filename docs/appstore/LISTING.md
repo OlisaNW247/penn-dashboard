@@ -33,6 +33,7 @@ FEATURES
 • Add your own one-off or weekly-recurring tasks
 • Optional local reminders before each due date, plus a daily digest
 • Adjust any due date by hand when your professor moves it
+• Try the whole dashboard with sample data before connecting anything
 
 PRIVATE BY DESIGN
 Everything stays on your device. LHF has no account system and no server — it

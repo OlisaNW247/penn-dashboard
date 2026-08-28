@@ -43,6 +43,12 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 
+            if state.isDemoMode && !Self.isScreenshotCapture {
+                demoBanner
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+            }
+
             SegmentedToggle(selection: $filter)
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -61,17 +67,18 @@ struct ContentView: View {
         }
         .background(Color.v2Bg.ignoresSafeArea())
         .onAppear {
-            #if DEBUG
-            let args = ProcessInfo.processInfo.arguments
-            if args.contains("-LHFDemoData") {
+            if state.isDemoMode {
                 vm.loadSampleData()
-                if args.contains("-LHFShowSettings") { showSettings = true }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-LHFShowSettings") { showSettings = true }
+                #endif
                 return
             }
-            #endif
             vm.bind(to: state)
         }
         .task {
+            // The demo has no account to refresh from.
+            guard !state.isDemoMode else { return }
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
@@ -80,7 +87,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if phase == .active && !state.isDemoMode {
                 Task {
                     await scheduler.refreshAuthStatus()
                     await refresh(showSpinner: false)
@@ -102,9 +109,65 @@ struct ContentView: View {
                 .environmentObject(scheduler)
         }
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
-            AddAssignmentSheet()
+            AddAssignmentSheet(onAddSample: sampleAddHandler)
                 .environmentObject(state)
         }
+    }
+
+    /// In the demo, items the user adds land in the view model only — the real,
+    /// persisted store stays untouched. `nil` outside the demo, which keeps the
+    /// sheet on its normal path.
+    private var sampleAddHandler: (([Assignment]) -> Void)? {
+        guard state.isDemoMode else { return nil }
+        let model = vm
+        return { model.addSampleItems($0) }
+    }
+
+    /// The screenshot seam runs in demo mode too, but store assets shouldn't
+    /// carry the demo banner across them.
+    private static var isScreenshotCapture: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
+        #else
+        return false
+        #endif
+    }
+
+    /// Shown while exploring sample data, so it's never mistaken for a real
+    /// Canvas account — and so there's always a way out of the demo.
+    private var demoBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sample data")
+                    .font(.lhfSans(12, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                Text("A demo, not your Canvas. Nothing here is saved.")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2CourseCode)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button { state.restartOnboarding() } label: {
+                Text("Connect")
+                    .font(.lhfSans(12, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .accessibilityLabel("Exit demo and connect Canvas")
+        }
+        .padding(12)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }
 
     /// Floating "+" to add a user-created assignment (one-off or recurring).
@@ -123,8 +186,10 @@ struct ContentView: View {
     }
 
     /// Reschedule due-date reminders from the current (override-aware) items.
+    /// Sample data never schedules anything — the demo must not put fake
+    /// deadlines in someone's notification center.
     private func rescheduleNotifications() {
-        guard scheduler.isEnabled else { return }
+        guard !state.isDemoMode, scheduler.isEnabled else { return }
         Task { await scheduler.reschedule(from: vm.items) }
     }
 
@@ -147,18 +212,22 @@ struct ContentView: View {
                         .font(.lhfSerif(15))
                         .foregroundStyle(Color.v2DateText)
 
-                    Button { syncNow() } label: {
-                        if isSyncing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(Color.v2DateText.opacity(0.7))
+                    // Nothing to sync against in the demo, so no dead control.
+                    if !state.isDemoMode {
+                        Button { syncNow() } label: {
+                            if isSyncing {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(Color.v2DateText.opacity(0.7))
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .disabled(isSyncing)
+                        .help("Sync now")
+                        .accessibilityLabel("Sync now")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isSyncing)
-                    .help("Sync now")
 
                     Button {
                         showSettings = true
@@ -191,6 +260,7 @@ struct ContentView: View {
     /// Re-sync Canvas using the persisted session, then reload the dashboard.
     /// `showSpinner` is false for the silent auto-refresh.
     private func refresh(showSpinner: Bool) async {
+        guard !state.isDemoMode else { return }
         if showSpinner {
             guard !isSyncing else { return }
             isSyncing = true
