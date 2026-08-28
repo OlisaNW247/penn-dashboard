@@ -1,223 +1,121 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-08-27 (branch `claude/v4-github-repo-kvu0e0` — the v3.5 + v4 merge)_
+_Last updated: 2026-08-27, end of day (branch `claude/v4-github-repo-kvu0e0` —
+the v3.5 + v4 merge line). This section supersedes everything below the
+"historical context" marker; read `CLAUDE.md` first for commands, storage
+tiers, and the traps._
 
-> **Verified green baseline (owner's Mac, 2026-08-27): 644 tests / 63 suites**
-> (plus 4 XCTest scheduler tests), zero failures. This supersedes the 608/61
-> figure quoted below; the delta is the 2026-08-27 work — the Profile
-> class-list fix (`CourseListSourcesTests`), the readings auto-include
-> (`ReadingsAutoImportTests`, replacing the removed nudge suite), and the
-> no-submission caveat + per-class reminder toggle
-> (`NoSubmissionCaveatTests` + one MigrationChainTests case), and the
-> book-icon removal (three `showsNothingToSubmit` predicate cases), and the never-late rule
-> for nothing-to-submit items (due-time event expiry + offline auto-file,
-> seven cases), and the merged per-class "items with nothing to submit"
-> toggle that hides rather than silences (+8 cases across three suites). A change
-> that lowers either number from here has lost work.
+## ⚠️ Current state: 2.0.0 (build 5) is being submitted to the App Store
 
-> **Submission in flight (2026-08-27):** owner + Marco approved shipping this
-> branch as **2.0.0 (build 5)**. The App Store package under `docs/appstore/`
-> is rewritten for 2.0 — Grade Watcher is hidden this release, so the
-> listing, review notes, screenshots and capture script are all scrubbed of
-> grades/syllabus claims (2.3.1). Remaining steps are Mac/ASC-side and listed
-> in `docs/appstore/CHECKLIST.md` §"2.0.0 submission": regenerate
-> screenshots, verify App Groups on both distribution App IDs, archive,
-> upload, paste the new copy, submit.
+Owner + Marco approved 2026-08-27. The repo side of the submission is done;
+the owner is working through the Mac/ASC side (archive → validate → upload →
+paste copy → submit; the ordered list is `docs/appstore/CHECKLIST.md`
+§"2.0.0 submission"). Screenshots are regenerated and committed. Once the
+build is uploaded, tag the release commit `v2.0.0-build5`.
 
-## ⚠️ Current state: v3.5 and v4 merged (2026-08-26)
+**Verified green baseline (owner's Mac, 2026-08-27): 644 tests / 63 suites**
+(plus 4 XCTest scheduler tests), zero failures. A change that lowers either
+number has lost work — investigate rather than accept it.
 
-This branch merges **`v3.5`** (engine: readings-only courses, iCloud Tier 2
-sync, background refresh, the Mac menu-bar tier, silent Canvas session
-renewal, the Stale Request login fix, turned-in notifications) into **`v4`**
-(product: swipe-to-complete card, lowercase chrome, per-course reminders,
-semester rollover, onboarding course setup, `CoursePreferencesStore`).
-Resolution policy: **v4 wins on UI, v3.5 wins on functionality.** Version
-bumped to **2.0.0 (build 5)**. The load-bearing reconciliations:
+**Grade Watcher is HIDDEN this release** (`FeatureFlags.gradeWatcher =
+false`, owner's call 2026-08-26). The whole `docs/appstore/` package is
+scrubbed to match (2.3.1 accurate metadata): no grades/syllabus claims in
+the listing, no grades stops in the review notes, no grades screenshots, and
+`capture-screenshots.sh` skips those shots. The v2.5-era grades copy lives
+in git history for when the flag flips back.
 
-- **Per-course state**: `CoursePreferencesStore` (v4) is the single canonical
-  record. v3.5's iCloud mirroring now syncs the store's blob itself
-  (`CloudPrefsMirror.mirroredKeys` includes `CoursePreferencesStore
-  .storageKey`); pushes ride the store's new `didChange` hook, pulls land via
-  `reloadFromDefaults()`. v3.5's `CourseContentDecisions` (readings opt-ins)
-  stays as its own store alongside — folding it into `CoursePreferences` is
-  a candidate follow-up, not done here.
-- **Ledger**: union of v4's freshness/archive fields and v3.5's
-  CloudKit-ready all-defaults constraints; still schema V1.
-- **Notifications**: v4's per-class scheduling with v3.5's redesigned content
-  (title = class name, body = lead phrase, no emoji). `LeadOffset.headline`
-  for `.h24` is now "Due in 24 hours".
-- **Course-name migration**: v3.5's launch-time normalization now re-keys the
-  `coursePreferences` blob (`normalizeCourseKeys`) instead of the four legacy
-  maps.
-- **Grade Watcher stays hidden** (`FeatureFlags.gradeWatcher = false`, owner's
-  call 2026-08-26) but all v3.5 session plumbing is merged and live for
-  submission detection.
-- **Settings vs Profile**: class management lives in the Profile surface
-  (v4); readings-course toggles, iCloud sync, Mac login item, storage and
-  troubleshooting live in Settings, restyled to v4's lowercase chrome.
+## What changed 2026-08-27 (all on this branch, all verified on the Mac)
 
-**Verified on this branch, on a Mac (2026-08-26):** `swift test` — **608
-tests / 61 suites green** (plus 4 XCTest scheduler tests), zero failures.
-Getting there took five post-merge fixes the compiler and test run surfaced
-(worth knowing about, all in this branch's log): `loadStringMap` re-added
-after v4's consolidation deleted it out from under a v3.5 call site; a
-`nonisolated` on `CoursePreferencesStore.storageKey` for the mirror's
-static key list; the `.canvasModules` case in `RecurringTask.isOccurrence`;
-the widget's rename-override mapping restored (and its nine-link filter
-chain rewritten as a loop for the Swift 6 type-checker); and two v3.5-era
-test helpers re-seeded through `CoursePreferencesStore` instead of the
-legacy UserDefaults keys, which are a write-only projection now.
+Worked owner-driven, one device-pass finding at a time; each landed with
+tests and a `docs/decisions.md` entry (read those entries for the why):
 
-**Since then, all done and pushed:** `xcodegen generate` ran on this branch
-(pbxproj now stamps 2.0.0/5), the iOS app + widget build clean for the
-simulator, and the device pass has started — it immediately caught the
-readings-course regression below.
+1. **Profile lists Modules-only / not-yet-posting classes** (`39a8aef`) —
+   the CIS 2620 fix. `allCourseCodes()` now pools
+   `canvasItems + gradescopeItems + moduleReadingItems` and unions the
+   cached enrolled courses, re-applying the ingestion filters at read time.
+   `CourseListSourcesTests`.
+2. **Readings consent popup removed; auto-import** (`1550510`) —
+   `CourseNudgeSheet`/`pendingCourseNudge` machinery deleted. Readings
+   import the moment a probe finds them; the single gate is
+   `AppState.shouldAutoImportReadings(for:)` (blocks only on an explicit
+   `.exclude` from Settings → "Courses & content"). `ReadingsAutoImportTests`
+   replaced the nudge suite.
+3. **"Nothing to submit" caveat + no-submission cache** (`e24be6a`) —
+   Canvas no-submission assignment ids (`GradeItem.requiresNoSubmission`)
+   are cached in `UserDefaults.lhf` under
+   `noSubmissionCanvasAssignmentIDsV1` (self-healing per observed item,
+   never iCloud-mirrored), so the card caveat is right on a cold launch.
+   `DashItem.showsNothingToSubmit` = `requiresNoSubmission || kind ==
+   .event` is the display predicate.
+4. **Book icon removed** (`c7baf3b`) — the caveat is the one marker; the
+   glyph is gone from the card and the Mac menu-bar row.
+5. **Nothing-to-submit items are never "late"** (`51c522e`) —
+   `isExpiredEvent` is a hard `due < now` boundary (was calendar-day;
+   all-day ICS entries already parse to end-of-day so they still last their
+   day), mirrored into `LedgerWidgetReader`; and
+   `AppState.isAutoFiledNoSubmission` (cache-backed, offline) is wired into
+   `isCompleted` so a past-due no-submission assignment files to Done
+   instantly instead of waiting for a grade refresh.
+6. **One merged per-class toggle, and off means HIDDEN** (`7bb7cff`) —
+   `CoursePreferences.nothingToSubmitEnabled` replaced `recurringEnabled` +
+   `noSubmissionRemindersEnabled` (decode fold: new key wins, else the two
+   old keys AND together; old CodingKeys are decode-only fossils). Off hides
+   the class's `.event` items and cached no-submission assignments from the
+   dashboard pools (enforced in `rebuildDashboardItems`); `RecurringTask`
+   occurrences stay visible but silent (the one remaining scheduler gate);
+   assessments are never hidden. UI routes through
+   `AppState.setNothingToSubmitEnabled` — the store setter alone does NOT
+   rebuild the pools, and that is load-bearing. Same toggle in the
+   onboarding per-course walk.
+7. **App Store package rewritten for 2.0.0** (`c78b9fe`) + regenerated
+   screenshots (`f100bdf`).
 
-## 🔴 IN FLIGHT: readings/Modules-only classes missing from Profile's class list
+## How to work in this setup (unchanged, and it bit us again today)
 
-**The story so far (2026-08-26, owner's real device).** CIS 2620 — a class
-that posts no submittable Canvas assignments — was absent from the dashboard
-on first launch of the merged build. That was v3.5's readings-course opt-in
-design working as designed (default-exclude until a nudge is answered), and
-the owner reversed it: commit `597121f` makes calendar `.event` items
-**include-by-default** (`AppState.includesAsOptedInContent` /
-`courseContentIncluded` now hide only on an explicit `.exclude`), removes
-Settings' "reading & event classes" section entirely, and restricts the
-nudge to silent courses with module readings (their content needs a network
-import, so one ask survives). 608/61 tests green on the owner's Mac after
-that change.
+- The Claude session runs in a **Linux container with NO Swift toolchain**.
+  Make changes, run static checks (greps for dangling symbols, brace
+  balance), push, and the owner runs `cd LowHangingFruitKit && swift test`
+  and builds on their Mac, pasting results back. Every change today
+  compiled first try under this discipline — keep the bar there.
+- The owner's zsh chokes on `#` comments in pasted commands. Their local
+  checkout drifts branches — have them run `git branch --show-current`
+  before anything that matters, and remember relative paths: they usually
+  sit inside `LowHangingFruitKit/`, so repo-root scripts need `../`.
+- Work happens directly on `claude/v4-github-repo-kvu0e0` (fast-forward
+  pushes). `main` is frozen at the June 1.0; do not base work on it.
+- Tests share process-wide `UserDefaults` — every test backs up and
+  restores EXACTLY the keys it writes, including the `coursePreferences`
+  blob (`CoursePreferencesStore.storageKey`) if it goes through the store
+  against `UserDefaults.lhf`. `NoSubmissionCaveatTests` has the current
+  helper patterns (`withCachedIDs`, `withCleanCoursePreferences`).
+- iOS notification banners always show the installed app icon; there is no
+  per-notification logo API. A stale icon there is device cache — restart
+  the phone before anything drastic (delete+reinstall wipes on-device data).
 
-**The remaining gap — diagnosed, NOT yet fixed.** The owner reports CIS 2620
-still does not appear in Profile's classes list. Root cause, confirmed in
-code: `AppState.allCourseCodes()` (AppState.swift, ~line 1878) builds the
-class list from `canvasItems + gradescopeItems` plus
-`coursePreferences.manuallyAddedCourseKeys` — **feed items only**. A class
-whose content lives solely in Canvas Modules (a "silent" course), or an
-enrolled class that has posted nothing to the calendar yet, contributes no
-feed items and therefore never reaches the class list. The deleted Settings
-section was such a class's ONLY surface (it listed from
-`courseProfileReports`, which derive from the cached enrolled-course list) —
-so removing the section removed the class from the UI entirely.
+## Known gaps / follow-up backlog (deliberate, not forgotten)
 
-**Status 2026-08-27: the planned fix below is IMPLEMENTED, awaiting the
-owner's Mac verification** (`swift test` against the 608/61 baseline + the
-device pass). What landed: `allCourseCodes()` now pools
-`canvasItems + gradescopeItems + moduleReadingItems` and unions in the
-cached enrolled courses via `courseKey(forEnrolled:)`, re-applying the
-ingestion filters (`isEnrolledCourseCurrent` + `containsExplicitCode`) at
-read time so a stale cache can't resurrect a finished class or a resource
-site. The readings *import* still sits behind the nudge — listing is not
-importing. New `CourseListSourcesTests` covers both sources, the past-term
-and junk filters, and that listing adds nothing to the dashboard;
-`ProfileTabTests.withCourseState` now also clears/restores
-`enrolledCanvasCoursesV1` so its week-one empty-state invariant stays
-reachable regardless of suite order.
+- **iOS WidgetKit widget ignores `nothingToSubmitEnabled`** — it reads the
+  ledger plus the three legacy per-course keys only, so a hidden class's
+  readings still appear in the widget. Needs its own pass (project a fourth
+  legacy-style key, or teach `LedgerWidgetReader` the blob).
+- **No `-LHFShowProfile` screenshot seam** — the Profile shot is manual.
+- `CourseContentDecision.fingerprint` is a decode-kept fossil (its re-ask
+  purpose died with the popup).
+- Mac icon rounded-rect margin pass (cosmetic, pre-existing).
+- iCloud Tier 2 sync is opt-in/default-off with little soak; the
+  `LedgerSchemaV1` migration has still never opened a real pre-existing
+  on-disk store; the demo screen recording for ASC shows the 1.x flow and
+  should be re-recorded or dropped.
+- Remaining device-pass items: onboarding walk end-to-end, Mac menu-bar
+  build, widget with renamed courses, two-device iCloud toggle.
 
-**Planned fix (agreed direction, next session implements):**
-1. Add `moduleReadingItems` to `allCourseCodes()`'s pool, so a course whose
-   imported Modules readings are on the ledger lists like any other class.
-2. Union in the cached enrolled courses: `enrolledCanvasCourses` (persisted
-   under `enrolledCanvasCoursesV1`, already junk-filtered at ingestion —
-   AppState.swift ~1283 filters on `isEnrolledCourseCurrent` +
-   `CourseCode.containsExplicitCode`), keyed through
-   `AppState.courseKey(forEnrolled:)` (~1536). This also fixes the week-one
-   problem generally: an enrolled class appears in Profile before it posts
-   anything, matching the hand-added-class precedent in `allCourseCodes`'s
-   own doc comment.
-3. Keep the silent-course readings *import* behind the nudge (network
-   consent) — the class being listed and its readings being fetched are
-   separate questions.
-4. Tests: ProfileTabTests' "a student with no feed items yet has genuinely
-   empty class lists" must still pass (it seeds no enrolled courses); add
-   coverage for (a) a course with only `.canvasModules` ledger rows
-   appearing in `allCourseCodes()`/`visibleCourseCodes()`, and (b) a cached
-   enrolled course with zero items appearing too. `enrolledCanvasCourses`
-   is `private` — tests seed it via the `enrolledCanvasCoursesV1` defaults
-   key (a `[id: name]` string map; see `AppState.init` ~347), same pattern
-   `CurrentEnrollmentTests` uses.
+## After the submission
 
-**Working setup for the next session** (this environment has NO Swift
-toolchain — a Linux container): make changes, run the static checks you can
-(grep for dangling symbols, brace-balance), push, and the owner runs
-`cd LowHangingFruitKit && swift test` (608/61 is the current green baseline)
-and the simulator build on their Mac, pasting results back. Two traps that
-already cost time today: the owner's shell chokes on `#` comments in pasted
-commands (zsh, no interactive comments), and their local checkout was on
-`v3.5` for one round — have them run `git branch --show-current` before
-anything that commits.
-
-**Remaining device pass after the fix:** onboarding walk, swipe card,
-CIS 2620 visible in Profile + dashboard, Mac menu-bar build, widget showing
-renamed courses, and — only with two devices — the iCloud sync toggle.
-
-**Update 2026-08-27: the "one ask survives" nudge above is now gone too.**
-The remaining consent popup this section describes (asking once per app-open
-before importing a silent course's Modules readings) has been removed
-entirely — see docs/decisions.md's 2026-08-27 entry. Readings now import
-automatically the moment `refreshCourseIntel`'s probe finds them; the only
-thing that still blocks an import is an explicit `.exclude` set via
-Settings' "Courses & content" toggle (`AppState.shouldAutoImportReadings`).
-`CourseNudgeSheet`, `pendingCourseNudge`, `resolveCourseNudge`, and
-`dismissCourseNudge` are deleted. This change is uncompiled (written from a
-Linux container with no Swift toolchain) — it needs the same Mac
-`swift test` + simulator pass as everything else in this file.
-
-**Update 2026-08-27: no-submission caveat + per-class reminder toggle
-(uncompiled).** Two connected additions on top of `GradeItem
-.requiresNoSubmission` (see `docs/decisions.md`'s new top entry for the
-full reasoning): (1) the dashboard card now shows a small "nothing to
-submit" tag on the collapsed card, plus a plain-language sentence when
-expanded, for any assignment Canvas has reported needs no online submission
-— backed by a new self-healing, persisted id cache
-(`AppState.noSubmissionCanvasAssignmentIDs`, `UserDefaults.lhf` under
-`noSubmissionCanvasAssignmentIDsV1`) so the caveat survives a relaunch
-before the first grade refresh lands; and (2) a new per-class Profile →
-notifications toggle, `CoursePreferences.noSubmissionRemindersEnabled`
-(default on), that silences lead-time reminders and the daily digest count
-for a class's no-submission items without touching the caveat or any other
-class. Touched: `AppState.swift`, `DashboardViewModel.swift`
-(`DashItem.requiresNoSubmission`), `SampleData.swift`, `AssignmentCardView
-.swift`, `CoursePreferences.swift`, `NotificationScheduler.swift`,
-`ProfileNotificationsSection.swift`, plus a new
-`NoSubmissionCaveatTests.swift` and one added case in
-`MigrationChainTests.swift`. Written from the same Linux container as the
-change above — **not compiled, not run.** Needs the same Mac `swift test` +
-simulator pass as everything else in this file, and specifically a look at
-the collapsed-card layout on a device (the caveat tag's placement was a
-judgment call, not verified visually).
-
-**Update 2026-08-27: nothing-to-submit items no longer show as late
-(uncompiled).** Device pass caught a no-submission item sitting in OVERDUE
-("1h late"); fixed by moving `AppState.isExpiredEvent` (and its
-`LedgerWidgetReader` mirror) from a calendar-day boundary to a hard
-`due < now` one, and by adding `AppState.isAutoFiledNoSubmission`/wiring it
-into `isCompleted` so a cached no-submission assignment files to Done at its
-due time offline, without waiting for a grade refresh — see
-`docs/decisions.md`'s new top entry; written from the same Linux container,
-**not compiled, not run**.
-
-**Update 2026-08-27: the two per-class "readings" / "no-submission
-reminders" toggles above are merged into one (uncompiled).** A real device
-pass showed why: the owner flipped the no-submission toggle expecting the
-items gone from the dashboard and got only quieter reminders, and the
-readings toggle never touched `.event` lectures/readings at all. Replaced
-both `CoursePreferences.recurringEnabled`/`noSubmissionRemindersEnabled`
-with one `nothingToSubmitEnabled` field (decode-time fold from either old
-field, no version-gated migration — see `docs/decisions.md`'s new top entry)
-and one Profile toggle, "items with nothing to submit," that now HIDES
-`.event` items and cached no-submission assignments from
-`AppState.assignments`/`laterAssignments` when off (`RecurringTask`
-occurrences stay visible, silenced only). New `AppState
-.setNothingToSubmitEnabled` is the seam the UI calls, because the toggle now
-has to trigger `rebuildDashboardItems()`, which the store setter alone
-cannot guarantee. Known gap, not silently accepted: the iOS WidgetKit
-extension doesn't read this field and will still show a hidden class's
-readings — flagged as a follow-up. Touched: `CoursePreferences.swift`,
-`AppState.swift`, `NotificationScheduler.swift`,
-`ProfileNotificationsSection.swift`, `OnboardingCourseSetup.swift`, plus
-`PerCourseNotificationTests.swift`, `NoSubmissionCaveatTests.swift`,
-`MigrationChainTests.swift`, `OnboardingCourseSetupTests.swift`. Written
-from the same Linux container — **not compiled, not run.**
+- App Review feedback lands in ASC; whatever it asks, the package files in
+  `docs/appstore/` are the source of truth to amend and re-paste.
+- If 2.0.0 is approved: update `CLAUDE.md`'s "Shipped on the App Store as"
+  line, and decide the branch story (this merge line is the de-facto ship
+  line; `main` needs either a fast-forward decision or retirement).
 
 Everything below this section is historical context from earlier sessions.
 
