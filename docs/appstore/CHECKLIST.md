@@ -210,20 +210,31 @@ Mac is a **separate binary and a separate review** on the same app record
 `com.lhf.lowhangingfruit`). It does not touch the iOS build that is already up.
 
 ### Before the first Mac archive
-- ⬜ **Regenerate the project** — `xcodegen generate` — so the new per-SDK
+- ✅ **Regenerate the project** — `xcodegen generate` — so the per-SDK
   `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` reaches the Xcode target. (Regenerating
-  is otherwise discouraged; see CLAUDE.md. This change requires it.)
-- ⬜ **Verify the entitlements that actually got signed in.** Archive, then
-  Organizer → the archive → right-click → Show in Finder → Show Package
-  Contents → `Products/Applications/LHF.app`, and
-  `codesign -d --entitlements - LHF.app`. It must show
-  `com.apple.security.app-sandbox`, `com.apple.security.network.client`, and
-  the group `24A3TDB277.group.com.lhf.lowhangingfruit`.
+  is otherwise discouraged; see CLAUDE.md. This change requires it.) Done
+  2026-08-29; **`ARCHIVE SUCCEEDED`** on the first Mac archive, universal
+  arm64 + x86_64, no widget embedded.
+- ✅ **Verify the entitlements that actually got signed in.** All three are
+  present — `app-sandbox`, `network.client`, and the group
+  `24A3TDB277.group.com.lhf.lowhangingfruit`. You don't need Organizer for
+  this: the archive log prints them itself, in the `ProcessProductPackaging`
+  step, which is also the proof that the per-SDK override picked the macOS
+  file rather than the iOS one. To re-check a built archive the bundle is
+  `Products/Applications/LowHangingFruit.app` (the product name, not `LHF` —
+  `LHF` is only the display name).
 - ⬜ **Run the sandboxed build once before uploading, and relaunch it.** This is
   the whole risk of the Mac build: if the App Group container doesn't resolve,
   the ledger degrades to memory and everything looks perfect until the second
   launch is empty. Add an assignment, quit, reopen, confirm it is still there.
   Settings → Storage surfaces the same fact.
+- ✅ **App category set in the build.** The first archive warned "No App
+  Category is set for target 'LowHangingFruit'" — optional on iOS, but Mac
+  App Store upload validation rejects a build without
+  `LSApplicationCategoryType`. Now `public.app-category.education` in
+  `project.yml` and `App/Info.plist`. **Check this matches the category on
+  the App Store Connect listing**; Universal Purchase means one record, so a
+  mismatch is a review flag rather than a second listing.
 - ⬜ In App Store Connect: app page → add the **macOS platform**, then category,
   Mac **screenshots** (1280×800 or 1440×900), and a Mac-specific line in the
   review notes if the reviewer needs one.
