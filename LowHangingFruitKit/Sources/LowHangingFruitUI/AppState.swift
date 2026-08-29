@@ -2340,7 +2340,8 @@ final class AppState: ObservableObject {
     static func withinTermCap(
         _ assignment: Assignment,
         now: Date = Date(),
-        archivedTerms: Set<Term> = []
+        archivedTerms: Set<Term> = [],
+        archivedCourseTerms: [String: Term] = [:]
     ) -> Bool {
         let current = Term(date: now)
         if let term = assignment.term {
@@ -2351,7 +2352,17 @@ final class AppState: ObservableObject {
         // due date is what stops an archived semester's leftovers coming back in
         // through the undated-and-overdue door — the specific clause that kept
         // showing a student work from a semester they had already put away.
-        guard let due = assignment.dueAt else { return true }
+        guard let due = assignment.dueAt else {
+            // Neither a term nor a due date to derive one from. Canvas items are
+            // rarely here (the course code carries `YYYYTT`), but a Gradescope
+            // one with no posted deadline has nothing at all — and returning
+            // `true` unconditionally is how an archived class's undated
+            // leftovers outlived the archive the student confirmed. The course
+            // is the remaining evidence: the rollover stamps every class it
+            // files (and deliberately skips one still running this term), so a
+            // stamp here means the student put this class away.
+            return archivedCourseTerms[assignment.course] == nil
+        }
         if archivedTerms.contains(Term(date: due)) { return false }
         let cap = max(current.endDate(), now.addingTimeInterval(dashboardWindow))
         return due <= cap
@@ -2450,6 +2461,15 @@ final class AppState: ObservableObject {
         // history. Only the dashboard buckets below lose it — and, through them,
         // `reschedule()`, which is driven by exactly these arrays.
         let archivedTermSet = Set(archivedTerms)
+        // Per-course archive stamps, for items carrying neither a term nor a due
+        // date — see `withinTermCap`. Read from the preferences store rather
+        // than derived from the pool: the stamp is the record of what the
+        // student archived, and an undated leftover is exactly the item whose
+        // own fields can't reproduce it.
+        var archivedCourseTerms: [String: Term] = [:]
+        for key in coursePreferences.archivedCourseKeys {
+            archivedCourseTerms[key] = coursePreferences.archivedTerm(for: key)
+        }
         let incomplete = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
@@ -2461,7 +2481,12 @@ final class AppState: ObservableObject {
                 && !archivedAssignmentIDs.contains(item.id)
                 // And the term-level bound, for items that never got a row:
                 // recurring occurrences are generated fresh on every rebuild.
-                && Self.withinTermCap(item, now: now, archivedTerms: archivedTermSet)
+                && Self.withinTermCap(
+                    item,
+                    now: now,
+                    archivedTerms: archivedTermSet,
+                    archivedCourseTerms: archivedCourseTerms
+                )
         }
         // `.event` items never land in Assessments even when their title
         // matches the exam/quiz regex (`isAssessment` is title-based, and a

@@ -58,7 +58,8 @@ public struct GradescopeClient: Sendable {
             let courseAssignments = GradescopeHTMLParser.assignments(
                 from: html,
                 courseName: course.name,
-                courseURL: course.url
+                courseURL: course.url,
+                term: course.term
             )
             assignments.append(contentsOf: GradescopeHTMLParser.filterFallbackAssignments(
                 courseAssignments,
@@ -134,9 +135,27 @@ public enum GradescopeHTMLParser {
         public let name: String
         public let url: URL
 
-        public init(name: String, url: URL) {
+        /// The term whose heading this course was listed under, when the
+        /// account page grouped it under one.
+        ///
+        /// Gradescope names the term ("Fall 2025") and, until this existed,
+        /// nothing downstream kept it: the label chose which courses to fetch
+        /// and was then discarded, so every Gradescope assignment reached the
+        /// app with `term == nil`. That is the one piece of evidence that lets
+        /// a Gradescope item take part in the semester archive on the same
+        /// footing as a Canvas item, which gets its term from the `YYYYTT`
+        /// suffix in the course code. See `GradescopeTerm.pennTerm`.
+        public let term: Term?
+
+        public init(name: String, url: URL, term: Term? = nil) {
             self.name = name
             self.url = url
+            self.term = term
+        }
+
+        /// The same link, tagged with the term heading it was found under.
+        func taggedWith(_ term: Term?) -> CourseLink {
+            CourseLink(name: name, url: url, term: term)
         }
     }
 
@@ -236,7 +255,7 @@ public enum GradescopeHTMLParser {
         // be more than one group at once (see doc comment above).
         let activeCourses = datedGroups
             .filter { $0.term.window.contains(now) }
-            .flatMap(\.courses)
+            .flatMap { group in group.courses.map { $0.taggedWith(group.term.pennTerm) } }
         if !activeCourses.isEmpty {
             return CurrentTermResult(courses: dedupedByURL(activeCourses), isFallback: false)
         }
@@ -249,7 +268,10 @@ public enum GradescopeHTMLParser {
             guard now < newest.term.window.upperBound.addingTimeInterval(fallbackGraceWindow) else {
                 return CurrentTermResult(courses: [], isFallback: false)
             }
-            return CurrentTermResult(courses: dedupedByURL(newest.courses), isFallback: true)
+            return CurrentTermResult(
+                courses: dedupedByURL(newest.courses.map { $0.taggedWith(newest.term.pennTerm) }),
+                isFallback: true
+            )
         }
 
         // …or, if no term label could be parsed at all, the first listed
@@ -308,6 +330,7 @@ public enum GradescopeHTMLParser {
         from html: String,
         courseName: String,
         courseURL: URL,
+        term: Term? = nil,
         referenceDate: Date = Date()
     ) -> [Assignment] {
         let rows = matches(#"<tr\b[^>]*>(.*?)</tr>"#, in: html).map { $0[0] }
@@ -318,6 +341,7 @@ public enum GradescopeHTMLParser {
                 row,
                 courseName: courseName,
                 courseURL: courseURL,
+                term: term,
                 referenceDate: referenceDate
             )
         }
@@ -414,6 +438,7 @@ public enum GradescopeHTMLParser {
         _ row: String,
         courseName: String,
         courseURL: URL,
+        term: Term?,
         referenceDate: Date
     ) -> Assignment? {
         let course = courseID(from: courseURL)
@@ -464,6 +489,7 @@ public enum GradescopeHTMLParser {
             title: title,
             dueAt: dueAt,
             url: url,
+            term: term,
             submitted: submitted,
             scoreEarned: score?.earned,
             scoreMax: score?.max
@@ -713,6 +739,19 @@ private struct GradescopeTerm: Comparable, Equatable {
         else { return nil }
 
         year = parsedYear
+    }
+
+    /// The Penn term this label names, for the app's shared `Term` — which has
+    /// no winter, because Penn doesn't run one. A "Winter YYYY" label's window
+    /// (Dec–Mar) sits inside Penn's spring, so it files there: approximate, but
+    /// the alternative on a Penn student's account is the `nil` every
+    /// Gradescope item used to carry, which no archive can act on.
+    var pennTerm: Term {
+        switch season {
+        case .winter, .spring: return Term(year: year, season: .spring)
+        case .summer:          return Term(year: year, season: .summer)
+        case .fall:            return Term(year: year, season: .fall)
+        }
     }
 
     /// The span of real-world dates this term label should be treated as
