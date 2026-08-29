@@ -4,6 +4,11 @@ import LowHangingFruitKit
 @MainActor
 final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
+    /// Everything in scope for the dashboard — Canvas + recurring + manual,
+    /// term-gated, completed or not. Read this rather than `canvasItems` when
+    /// you need the completed ones too: `canvasItems` is the raw feed and still
+    /// carries finished courses.
+    @Published private(set) var currentItems: [Assignment] = []
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
     @Published var assessments: [Assignment] = []
@@ -243,13 +248,34 @@ final class AppState: ObservableObject {
         return due > now.addingTimeInterval(dashboardWindow)
     }
 
-    /// Stale leftovers — anything due more than 5 months ago — are hidden
-    /// everywhere. Undated items are never "too old" since we can't date them.
-    static func isTooOld(_ assignment: Assignment, now: Date = Date()) -> Bool {
-        guard let due = assignment.dueAt,
-              let cutoff = Calendar.current.date(byAdding: .month, value: -5, to: now)
-        else { return false }
-        return due < cutoff
+    /// Nothing lingers more than a week past its due date, whichever list it
+    /// belongs to. (There is no upper bound: seeing what's coming is the point.)
+    static func isPastDueTooLong(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let due = assignment.dueAt else { return false }
+        return due < now.addingTimeInterval(-dashboardWindow)
+    }
+
+    /// The one scope gate. Canvas keeps serving a course's calendar events after
+    /// the course ends, so scope is decided by the academic calendar:
+    ///
+    /// - a dated item must be due on or after the current term started. There is
+    ///   no upper bound — next term's work is legitimately worth looking ahead to.
+    /// - an undated Canvas item rides on its course, and a course counts as live
+    ///   only while it still has current-term work of its own. Undated items
+    ///   carry no date to judge, and they used to live forever.
+    /// - a user-created item is never dropped for lacking a date; the student
+    ///   typed it in deliberately.
+    static func currentTermItems(_ pool: [Assignment], now: Date = Date()) -> [Assignment] {
+        let termStart = AcademicTerm.current(on: now).start
+        let liveCourses = Set(pool.compactMap { item -> String? in
+            guard let due = item.dueAt, due >= termStart else { return nil }
+            return item.course
+        })
+        return pool.filter { item in
+            if let due = item.dueAt { return due >= termStart }
+            if item.source == .manual { return true }
+            return liveCourses.contains(item.course)
+        }
     }
 
     /// Quizzes, midterms, and exams live on their own Assessments page rather than
@@ -260,21 +286,49 @@ final class AppState: ObservableObject {
         return assignment.title.range(of: pattern, options: .regularExpression) != nil
     }
 
+    /// Every list the dashboard can show, derived in one pass. Scope is applied
+    /// once, up front, so a stale item can't reach the screen through a list
+    /// that forgot to filter — which is exactly how a finished course's
+    /// quiz-classified homework used to surface as "27 days late".
+    struct DashboardBuckets {
+        var inScope: [Assignment] = []
+        var assignments: [Assignment] = []
+        var later: [Assignment] = []
+        var assessments: [Assignment] = []
+    }
+
+    static func buckets(
+        from pool: [Assignment],
+        now: Date = Date(),
+        isCompleted: (Assignment) -> Bool
+    ) -> DashboardBuckets {
+        let inScope = currentTermItems(pool, now: now).sorted(by: byDueDate)
+        let incomplete = inScope.filter { !isCompleted($0) }
+
+        let coursework = incomplete.filter { !isAssessment($0) }
+        return DashboardBuckets(
+            inScope: inScope,
+            assignments: coursework.filter { isActive($0, now: now) },
+            later: coursework.filter { isLater($0, now: now) },
+            assessments: incomplete.filter { isAssessment($0) && !isPastDueTooLong($0, now: now) }
+        )
+    }
+
     private func rebuildDashboardItems() {
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams that aren't classified as plain assignments).
         let canvasRelevant = canvasItems.filter { $0.isAssignment || Self.isAssessment($0) }
-        let allItems = (canvasRelevant + recurringAssignments + manualItems)
-            .sorted(by: Self.byDueDate)
+        let result = Self.buckets(
+            from: canvasRelevant + recurringAssignments + manualItems,
+            isCompleted: isCompleted
+        )
 
-        let incomplete = allItems.filter { !isCompleted($0) && !Self.isTooOld($0) }
-        assessments = incomplete.filter { Self.isAssessment($0) }
-
-        let coursework = incomplete.filter { !Self.isAssessment($0) }
-        assignments = coursework.filter { Self.isActive($0) }
-        laterAssignments = coursework.filter { Self.isLater($0) }
+        currentItems = result.inScope
+        assignments = result.assignments
+        laterAssignments = result.later
+        assessments = result.assessments
     }
 
     #if DEBUG
@@ -333,7 +387,9 @@ final class AppState: ObservableObject {
 
     private func canvasCourseIDs() -> [String: String] {
         var courses: [String: String] = [:]
-        for item in canvasItems {
+        // Scan live courses only — a finished course's syllabus would otherwise
+        // keep suggesting recurring tasks for a class that is over.
+        for item in currentItems {
             guard let url = item.url,
                   let courseID = Self.courseID(from: url)
             else { continue }

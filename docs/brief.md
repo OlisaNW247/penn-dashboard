@@ -59,6 +59,8 @@ Data layer (`LowHangingFruitKit/Sources/LowHangingFruitKit/`, Olisa's):
 - `CanvasDiscovery/CanvasDiscoveryClient.swift` — captures the per-user feed URL +
   discovers courses; `CanvasRequirementScanner.swift` — syllabus/announcement scan
 - `Models/Assignment.swift` — shared assignment model
+- `Models/AcademicTerm.swift` — which term a date is in; the dashboard is
+  scoped to the current one so finished courses can't linger in the feed
 
 ## Current state
 **Canvas-only, prepped for the App Store (1.0.0).** Runs on iPhone (and macOS)

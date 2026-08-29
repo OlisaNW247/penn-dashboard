@@ -5,6 +5,31 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-29 — Scope the dashboard to the current academic term
+A user on 1.0 saw "CIS 3200 Homework 4 — 27 days late" from a class that had
+already ended. Two holes, both now closed by one gate. (1) The assessments list
+had no date floor at all — only the 5-month `isTooOld` cutoff — and Canvas
+classifies plenty of homework as a quiz, so any quiz-shaped item from a finished
+course rode into "this week" as overdue. (2) A 5-month rolling window is shorter
+than a semester gap and says nothing about undated items, which never expired.
+
+Scope is now decided by the academic calendar (`AcademicTerm`, in the data
+layer), not by how long ago something was due: an item must be due on or after
+the current term's start. There is no upper bound — next term's work is worth
+looking ahead to. Undated Canvas items ride on their course, which counts as
+live only while it still has current-term work; user-created items are never
+dropped for lacking a date. Assessments also picked up the same "nothing lingers
+more than a week past due" floor coursework already had.
+
+The gate runs once, in `AppState.buckets`, before anything is bucketed, so a
+list added later can't reintroduce the leak — that asymmetry is what caused this
+bug. Term boundaries (Jan 1 / May 20 / Aug 15) sit earlier than Penn's first day
+of classes so syllabus-week work still counts as current.
+Rejected reading a term from the Canvas feed: the ICS carries no term field and
+Penn's course names in it ("CIS 3200") carry no term code. Rejected simply
+shortening the 5-month cutoff — any rolling window still can't tell June's
+leftovers from September's work at the start of a term.
+
 ## 2026-08-28 — Ship an "Explore with sample data" demo mode
 Canvas login goes through Penn SSO, so nobody without a PennKey — App Review
 included — could get past onboarding. Onboarding now offers "Explore with sample

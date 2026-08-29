@@ -27,6 +27,9 @@ The app currently supports:
 
 - Penn IT denied API access permanently, so Canvas assignments come from the user’s Canvas calendar ICS feed.
 - Canvas ICS does not include submission state.
+- Canvas keeps serving a course's calendar events after the course ends, so the
+  app scopes the dashboard to the current term itself (`AcademicTerm` +
+  `AppState.buckets`). Anything due before the term started is dropped.
 - Canvas calendar-feed and syllabus/announcement discovery are WebView session-cookie based.
 - Generated build artifacts (`build/`, `LowHangingFruitKit/dist*/`, `.iosbuild/`) are intentionally ignored by Git.
 
@@ -41,7 +44,7 @@ LowHangingFruitKit/
   Sources/
     LowHangingFruitUI/     # all SwiftUI (RootView, ContentView, AppState, …)
     LowHangingFruitKit/    # data layer
-      Models/Assignment.swift
+      Models/{Assignment,AcademicTerm}.swift
       Canvas/{CanvasICSClient,ICSParser}.swift
       CanvasDiscovery/{CanvasDiscoveryClient,CanvasRequirementScanner}.swift
   Tests/
