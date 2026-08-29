@@ -5,6 +5,38 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-29 — The Mac App Store gets a real Mac build, and a sandbox-aware App Group
+Downloading LHF from the Mac App Store hands you the iPhone app in a
+phone-shaped window. Nothing is misconfigured in the Mac code — that is Apple's
+"iPhone and iPad Apps on Mac" serving the iOS binary, because no macOS binary
+has ever been uploaded. The archive lane only ever built
+`generic/platform=iOS`, while the Mac app (`LHFScenes`' `MenuBarExtra` tier,
+`RootView`'s 480×600 window) has been buildable and unshipped the whole time.
+
+Shipping it requires the sandbox, and the sandbox breaks the App Group. macOS
+requires an app group identifier to begin with the team id, so a sandboxed Mac
+build asking for the bare `group.com.lhf.lowhangingfruit` gets nil back — and
+per the trap in CLAUDE.md, a nil container silently drops the ledger into memory
+and looks completely normal until a relaunch loses the student's work. So:
+
+- A macOS-only entitlements file (`App/LHFApp-macOS.entitlements`), wired in
+  through `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` so the iOS binary is untouched:
+  sandbox, `network.client` (Canvas fetch and the SSO WebView fail silently
+  without it), and the team-prefixed group.
+- `WidgetSharing.resolveAppGroupID` picks the id at runtime, and the
+  **sandbox check is the load-bearing part**. Probing the container cannot tell
+  the builds apart: an unsandboxed macOS process resolves a container for
+  practically any group id (the same quirk `SharedDefaults.isTestRunner` guards
+  against), so preferring the prefixed id on probe alone would move the existing
+  unsandboxed dev build off the ledger it has been writing to. Only a sandboxed
+  process is offered the prefixed id.
+
+Rejected a hard `#if os(macOS)` switch to the prefixed id: simpler, but it
+orphans whatever the dev Mac build has already stored, and this is the one tier
+where loss is unrecoverable. Rejected adding the bare id to the macOS
+entitlements as a belt-and-braces second group — it is not a valid macOS group
+identifier and invites a provisioning failure to buy nothing.
+
 ## 2026-08-29 — Gradescope items carry a term, and an undated leftover can't outlive its archive
 A user on the shipped build reported an assignment from a class that had
 already ended ("CIS 3200 · Homework 4 · 27 days late"). Two gaps, both specific

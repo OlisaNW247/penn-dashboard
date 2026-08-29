@@ -4,7 +4,61 @@ import Foundation
 /// widget extension. Both processes read this file (via LowHangingFruitKit),
 /// so it's the single source of truth for the group id and snapshot filename.
 public enum WidgetSharing {
-    public static let appGroupID = "group.com.lhf.lowhangingfruit"
+    /// The identifier iOS uses, and the one every entitlement carried before
+    /// the Mac App Store build existed.
+    static let bareAppGroupID = "group.com.lhf.lowhangingfruit"
+
+    /// macOS requires an app group to begin with the team identifier. A
+    /// sandboxed Mac app — which is what the Mac App Store demands — can only
+    /// open the prefixed container; ask it for the bare id and it hands back
+    /// nil, at which point the ledger silently degrades to memory and looks
+    /// completely normal until a relaunch loses everything.
+    ///
+    /// The team id is the same one `project.yml` sets as `DEVELOPMENT_TEAM`.
+    static let teamPrefixedAppGroupID = "24A3TDB277.group.com.lhf.lowhangingfruit"
+
+    /// Which identifier this process should use.
+    ///
+    /// Pure and injectable because the interesting cases can't be reproduced on
+    /// a dev Mac: the real inputs are a sandbox marker and a container probe.
+    ///
+    /// The sandbox check is doing load-bearing work. Probing the container
+    /// alone cannot tell the two builds apart — an UNSANDBOXED macOS process
+    /// resolves a container for practically any group id it asks about, with or
+    /// without the entitlement (the same quirk `SharedDefaults.isTestRunner`
+    /// exists to defend against). So an unsandboxed dev build would "resolve"
+    /// the prefixed container too, silently move off the ledger it has been
+    /// writing to, and read as data loss. Only a sandboxed process is offered
+    /// the prefixed id at all.
+    static func resolveAppGroupID(
+        isTestRunner: Bool,
+        isSandboxed: Bool,
+        prefixedContainerResolves: () -> Bool
+    ) -> String {
+        // A test runner must never reach a real container — see
+        // `SharedDefaults.isTestRunner` for what that cost us once already.
+        guard !isTestRunner else { return bareAppGroupID }
+        guard isSandboxed else { return bareAppGroupID }
+        return prefixedContainerResolves() ? teamPrefixedAppGroupID : bareAppGroupID
+    }
+
+    #if os(macOS)
+    /// Resolved once per process: the answer can't change while the app runs,
+    /// and this sits on the path of every ledger and defaults read.
+    public static let appGroupID: String = resolveAppGroupID(
+        isTestRunner: SharedDefaults.isTestRunner,
+        // Set by the system for every sandboxed macOS process, and absent
+        // otherwise.
+        isSandboxed: ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil,
+        prefixedContainerResolves: {
+            FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: teamPrefixedAppGroupID) != nil
+        }
+    )
+    #else
+    public static let appGroupID = bareAppGroupID
+    #endif
+
     static let snapshotFilename = "widget-snapshot.json"
 }
 

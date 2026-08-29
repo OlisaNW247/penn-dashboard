@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mandatory for the Mac App Store. Everything below exists because the
+	     sandbox takes it away by default. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Canvas ICS fetches, the Gradescope scrape, and the Penn SSO WKWebView.
+	     Without this the app launches, looks fine, and every network call fails
+	     with no obvious cause. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- macOS app groups MUST begin with the team identifier; the bare
+	     "group.com.lhf.lowhangingfruit" the iOS entitlement uses is not a valid
+	     macOS group and resolves to nil under the sandbox, which silently drops
+	     the ledger into memory. `WidgetSharing.resolveAppGroupID` picks this id
+	     only when the process is actually sandboxed. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>24A3TDB277.group.com.lhf.lowhangingfruit</string>
+	</array>
+
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.lhf.lowhangingfruit</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+</dict>
+</plist>
