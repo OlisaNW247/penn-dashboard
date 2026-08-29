@@ -78,7 +78,17 @@ public final class GradeHistoryStore {
     /// previews), nil only if even that fails — in which case grade history
     /// degrades to session-only rather than crashing the app.
     public static func makeDefault() -> GradeHistoryStore? {
-        if let groupURL = FileManager.default
+        // The fourth choke point. `SharedDefaults.isTestRunner` guards
+        // `AssignmentStore`, the shared defaults and the widget snapshot for the
+        // reason documented there — an unsandboxed macOS test run resolves the
+        // App Group container with no entitlement — but this store was added
+        // later and never picked the guard up, so `swift test` opened the real
+        // Mac app's GradeHistory.store on every run. It currently fails closed
+        // (the sandbox denies the read, and the run is merely buried in CoreData
+        // errors); on a machine where the open succeeds, the suite reads and
+        // writes a student's real grade history.
+        if !SharedDefaults.isTestRunner,
+           let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
             let url = groupURL.appending(path: "GradeHistory.store")
             if let store = try? GradeHistoryStore(url: url) { return store }
