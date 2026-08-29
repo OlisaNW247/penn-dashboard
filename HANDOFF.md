@@ -1,21 +1,34 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-08-27, end of day (branch `claude/v4-github-repo-kvu0e0` —
-the v3.5 + v4 merge line). This section supersedes everything below the
+_Last updated: 2026-08-29 (branch `v5` — the current line, cut from the
+2.0.0 build 5 head). This section supersedes everything below the
 "historical context" marker; read `CLAUDE.md` first for commands, storage
 tiers, and the traps._
 
-## ⚠️ Current state: 2.0.0 (build 5) is being submitted to the App Store
+## ⚠️ Current state: `v5` is the line; 2.0.0 (build 5) is with the owner at ASC
 
-Owner + Marco approved 2026-08-27. The repo side of the submission is done;
-the owner is working through the Mac/ASC side (archive → validate → upload →
-paste copy → submit; the ordered list is `docs/appstore/CHECKLIST.md`
-§"2.0.0 submission"). Screenshots are regenerated and committed. Once the
-build is uploaded, tag the release commit `v2.0.0-build5`.
+**New work goes on `v5`**, cut 2026-08-29 from `claude/v4-github-repo-kvu0e0`
+(the v3.5 + v4 merge) at the exact commit 2.0.0 build 5 is being submitted
+from. That merge branch is **frozen** while the upload is in flight: landing
+anything on it would mean the binary the owner validates is not the commit
+that was tested. Once 2.0.0 is through review, `v5` becomes the de-facto
+ship line and the merge branch can be retired.
+
+The submission itself is unchanged and still owner-side: archive → validate →
+upload → paste copy → submit, in the order `docs/appstore/CHECKLIST.md`
+§"2.0.0 submission" lists. Screenshots are regenerated and committed. Once
+the build is uploaded, tag the release commit `v2.0.0-build5` (on the merge
+branch — that is the commit that was submitted, not `v5`'s head).
 
 **Verified green baseline (owner's Mac, 2026-08-27): 644 tests / 63 suites**
 (plus 4 XCTest scheduler tests), zero failures. A change that lowers either
 number has lost work — investigate rather than accept it.
+
+**Unverified on `v5` right now:** the Gradescope term-scope fix
+(PR #8 → `v5`) was written in the Linux container with no Swift toolchain and
+has never been compiled. It should take the baseline to **654 tests / 65
+suites**; if `swift test` reports anything else, read that as the patch not
+compiling the way it was written rather than as a flaky count.
 
 **Grade Watcher is HIDDEN this release** (`FeatureFlags.gradeWatcher =
 false`, owner's call 2026-08-26). The whole `docs/appstore/` package is
@@ -81,8 +94,13 @@ tests and a `docs/decisions.md` entry (read those entries for the why):
   checkout drifts branches — have them run `git branch --show-current`
   before anything that matters, and remember relative paths: they usually
   sit inside `LowHangingFruitKit/`, so repo-root scripts need `../`.
-- Work happens directly on `claude/v4-github-repo-kvu0e0` (fast-forward
-  pushes). `main` is frozen at the June 1.0; do not base work on it.
+- Work happens on `v5` (PRs into it, or fast-forward pushes). `main` is
+  frozen at the June 1.0 — do not base work on it, and do not read its
+  `HANDOFF.md`: it still describes a Canvas-only 1.0 with no Gradescope, no
+  ledger and no widget, and a session that trusted it built a day of work
+  against a product that no longer exists. Check
+  `git for-each-ref --sort=-committerdate refs/remotes/origin` before
+  believing any handoff doc.
 - Tests share process-wide `UserDefaults` — every test backs up and
   restores EXACTLY the keys it writes, including the `coursePreferences`
   blob (`CoursePreferencesStore.storageKey`) if it goes through the store
@@ -114,8 +132,10 @@ tests and a `docs/decisions.md` entry (read those entries for the why):
 - App Review feedback lands in ASC; whatever it asks, the package files in
   `docs/appstore/` are the source of truth to amend and re-paste.
 - If 2.0.0 is approved: update `CLAUDE.md`'s "Shipped on the App Store as"
-  line, and decide the branch story (this merge line is the de-facto ship
-  line; `main` needs either a fast-forward decision or retirement).
+  line, tag the submitted commit on the merge branch, and retire that branch
+  in favour of `v5` (`main` still needs either a fast-forward decision or
+  retirement of its own — it is stuck at the Canvas-only 1.0.0 and its
+  `HANDOFF.md` describes a product two years of branches out of date).
 
 Everything below this section is historical context from earlier sessions.
 
