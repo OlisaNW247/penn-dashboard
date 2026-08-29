@@ -15,8 +15,11 @@ import SwiftData
 @MainActor
 public final class AssignmentStore {
     /// Shared App Group container id — matches the widget's, so the ledger lands
-    /// in the same place the widget can later read.
-    public static let appGroupID = "group.com.lhf.lowhangingfruit"
+    /// in the same place the widget can later read. Read through `WidgetSharing`
+    /// rather than repeating the literal: on macOS the usable id depends on
+    /// whether the process is sandboxed, and a second copy of the string is a
+    /// second answer to that question.
+    public static let appGroupID = WidgetSharing.appGroupID
 
     /// The private CloudKit database container the ledger mirrors into when
     /// sync is turned on. Opt-in only — see `init(cloudKitGroupURL:)` and

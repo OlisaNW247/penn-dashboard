@@ -70,6 +70,14 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24A3TDB277
         CODE_SIGN_ENTITLEMENTS: App/LHFApp.entitlements
+        # The Mac build needs a different entitlements file, not a superset of
+        # the iOS one. The Mac App Store requires the sandbox, and a sandboxed
+        # macOS app group MUST carry the team-id prefix — the bare
+        # `group.com.lhf.lowhangingfruit` iOS uses is not a valid macOS group at
+        # all, so shipping the iOS file would fail provisioning or, worse,
+        # resolve to no container and drop the ledger into memory.
+        # `WidgetSharing.resolveAppGroupID` is the runtime half of this.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/LHFApp-macOS.entitlements
 
   # Home Screen + Lock Screen widget. iOS-only WidgetKit extension; reads the
   # "next due" snapshot the app writes to the shared App Group container.

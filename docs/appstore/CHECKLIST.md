@@ -1,4 +1,4 @@
-# App Store submission checklist — LHF (iOS)
+# App Store submission checklist — LHF (iOS + macOS)
 
 _Last updated: 2026-09-02 — **2.0.1 (build 6)** from `v3.5`._
 
@@ -195,6 +195,55 @@ xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
 - ⬜ TestFlight smoke test on a real device: onboarding → login → dashboard →
   grades → widget → reminders
 - ⬜ Submit for review
+
+# macOS build — ⬜ never shipped
+
+**The symptom:** downloading LHF from the Mac App Store gives the iPhone app in
+a phone-shaped window. That is Apple's "iPhone and iPad Apps on Mac", serving
+the iOS binary, because no macOS binary has ever been uploaded — the archive
+lane above only ever builds `generic/platform=iOS`. The Mac app itself is real
+and has been buildable the whole time (`LHFScenes.swift`'s `MenuBarExtra` tier,
+`RootView`'s 480×600 window).
+
+Mac is a **separate binary and a separate review** on the same app record
+(Universal Purchase — the Mac target already shares
+`com.lhf.lowhangingfruit`). It does not touch the iOS build that is already up.
+
+### Before the first Mac archive
+- ⬜ **Regenerate the project** — `xcodegen generate` — so the new per-SDK
+  `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` reaches the Xcode target. (Regenerating
+  is otherwise discouraged; see CLAUDE.md. This change requires it.)
+- ⬜ **Verify the entitlements that actually got signed in.** Archive, then
+  Organizer → the archive → right-click → Show in Finder → Show Package
+  Contents → `Products/Applications/LHF.app`, and
+  `codesign -d --entitlements - LHF.app`. It must show
+  `com.apple.security.app-sandbox`, `com.apple.security.network.client`, and
+  the group `24A3TDB277.group.com.lhf.lowhangingfruit`.
+- ⬜ **Run the sandboxed build once before uploading, and relaunch it.** This is
+  the whole risk of the Mac build: if the App Group container doesn't resolve,
+  the ledger degrades to memory and everything looks perfect until the second
+  launch is empty. Add an assignment, quit, reopen, confirm it is still there.
+  Settings → Storage surfaces the same fact.
+- ⬜ In App Store Connect: app page → add the **macOS platform**, then category,
+  Mac **screenshots** (1280×800 or 1440×900), and a Mac-specific line in the
+  review notes if the reviewer needs one.
+
+```sh
+xcodegen generate
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+  -configuration Release -destination 'generic/platform=macOS' \
+  -archivePath build/LHF-mac.xcarchive -allowProvisioningUpdates archive
+```
+
+Then Organizer → Distribute App → App Store Connect, exactly as for iOS. The
+widget is not embedded on macOS (`platformFilter: iOS` in `project.yml`), so
+there is nothing extra to sign.
+
+### Until a Mac build ships
+If you would rather not serve the phone app to Macs in the meantime, App Store
+Connect → **Pricing and Availability** → uncheck "Make this app available on
+Apple Silicon Macs". That takes effect without a new build, and costs the Mac
+listing until the real one is up.
 
 ## Open decision — Gradescope
 
