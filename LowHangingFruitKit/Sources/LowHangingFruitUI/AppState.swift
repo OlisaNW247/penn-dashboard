@@ -663,6 +663,48 @@ final class AppState: ObservableObject {
         return !SessionCookieStore.load(service: .canvas).isEmpty || canvasSessionExpired
     }
 
+    /// True when the dashboard is quietly missing a whole data source — the
+    /// "half your work" warning this pair of properties exists to drive. Both
+    /// gaps below are reachable even though onboarding requires Canvas before
+    /// it lets anyone reach the dashboard at all (so "nothing connected"
+    /// itself is not a state a live user can be in): Gradescope is never
+    /// required by onboarding, and Canvas has two connection paths that look
+    /// identical from `isCanvasConnected`'s point of view but are not
+    /// equivalent in what they unlock.
+    ///
+    /// Explicitly excludes `isUsingFixtureData`, unlike `canvasIsLinkOnly`
+    /// below, because nothing else in this expression supplies that guard:
+    /// `isGradescopeConnected` is backed by a plain persisted flag that
+    /// starts (and stays) `false` for a reviewer in preview mode, since
+    /// `enterPreviewMode()` never touches it. Preview mode is deliberately
+    /// the ONE path through this app for someone who cannot pass Penn SSO —
+    /// notably an App Store reviewer — and it renders entirely off bundled
+    /// fixtures that were never going to come from Gradescope either. Without
+    /// this guard, that reviewer would be shown a "connect your accounts" nag
+    /// on the one screen the app promises will just work; the fixture data
+    /// itself would look fine, so the bug would read as a small copy problem
+    /// rather than the "reviewer sees a broken-looking dashboard" risk it
+    /// actually is.
+    var needsGradescopeConnection: Bool {
+        !isUsingFixtureData && !isGradescopeConnected
+    }
+
+    /// True when Canvas is connected only by a pasted calendar feed link
+    /// (docs/CANVAS_LOGIN_HARDENING.md item 3b) — a real connection for the
+    /// dashboard's timeline, but one with no cookie session behind it, so
+    /// automatic submission tracking, Canvas Scan and Grade Watcher are all
+    /// silently unavailable. `canUseGradeWatcher` already draws exactly this
+    /// line (see its doc comment): true for a cookie session OR fixture/
+    /// preview mode, false for a link-only connection. So this needs no
+    /// separate preview guard of its own — a reviewer in preview mode has
+    /// `canUseGradeWatcher == true`, which alone makes this `false` without
+    /// re-deriving `isUsingFixtureData` a second time. Duplicating the guard
+    /// here would not be wrong, just redundant, and redundant guards are how
+    /// two copies of the same rule quietly drift apart later.
+    var canvasIsLinkOnly: Bool {
+        isCanvasConnected && !canUseGradeWatcher
+    }
+
     /// True when the Canvas login *session* (the cookie-authed one, used for
     /// automatic submission detection and Canvas Scan — see
     /// `AutoSyncCoordinator.refreshCanvasGrades`) has gone stale and needs a
