@@ -57,6 +57,30 @@ struct ProfileView: View {
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+#if os(macOS)
+        // Unlike iOS, `Form` on macOS defaults to the *columns* style, not the
+        // grouped one: `Section` headers/footers render as plain inline text
+        // with no card background, and every labelled control (e.g. the
+        // add-a-class `TextField`) gets its title pushed into a separate
+        // leading column instead of showing it in place. `.formStyle(.grouped)`
+        // is what makes this `Form` look like the same grouped list iOS
+        // already renders. Deployment target here is macOS 14, so `.grouped`
+        // (macOS 13+) needs no availability check.
+        .formStyle(.grouped)
+        // A maximized Mac window is ~2000pt wide; an unconstrained Form
+        // stretches every row edge to edge, so trailing accessories (a
+        // "DEFAULT" badge, an add button) end up hundreds of points from the
+        // label they belong to. Capping the Form's own width keeps rows
+        // readable, and this cap must land on the Form itself, before
+        // `.lhfSheetTheme()` below — `lhfSheetTheme()` paints the window
+        // background, and if it were applied to an already-720pt-capped view,
+        // that background would shrink to 720pt too and leave the rest of the
+        // window unpainted. The `.frame(maxWidth: .infinity)` after the cap
+        // re-expands the *container* so the capped, centered Form sits inside
+        // a background that still fills the whole window.
+        .frame(maxWidth: 720)
+        .frame(maxWidth: .infinity)
+#endif
         // Same treatment the other full-screen `Form`s get: without it a bare
         // Form paints the *system* grouped background, which reads as grey
         // against the app's warm paper. See `SheetTheme.swift`.

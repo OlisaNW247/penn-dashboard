@@ -153,7 +153,18 @@ struct ProfileSemesterSection: View {
     private var addClassSection: some View {
         Section {
             HStack {
-                TextField("e.g. cis 1200", text: $newCourse)
+                // On macOS, a `TextField`'s title isn't just a placeholder —
+                // the columns form style (see `ProfileView`'s `.formStyle`
+                // comment) renders it as a leading label in its own column,
+                // which put "e.g. cis 1200" to the left of the box instead of
+                // inside it. `prompt:` is the placeholder-inside-the-field
+                // spelling on both platforms, and passing an empty title plus
+                // `.labelsHidden()` stops macOS from reserving a label column
+                // for a title that's now blank. iOS is unaffected: the title
+                // there was already only ever shown as placeholder text, so
+                // `prompt:` renders identically.
+                TextField("", text: $newCourse, prompt: Text("e.g. cis 1200"))
+                    .labelsHidden()
                     .font(.lhfSans(14))
 #if os(iOS)
                     .textInputAutocapitalization(.characters)
