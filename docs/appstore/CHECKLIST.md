@@ -1,6 +1,10 @@
-# App Store submission checklist — LHF 1.0.0 (iOS)
+# App Store submission checklist — LHF 1.0.0 (iOS + macOS)
 
 Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple) · ⬜ to do
+
+One app record covers both platforms: the iPhone app and the Mac app share the
+bundle ID, version, and listing copy — you upload one iOS build and one macOS
+build to the same 1.0.0 version.
 
 ## Code & build — ✅ done
 - ✅ Canvas-only: all Gradescope code stripped from the binary
@@ -9,6 +13,13 @@ Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple) ·
 - ✅ Accessibility labels on card actions
 - ✅ `swift test` 13/13 green · iOS **Release** build green
 - ✅ No tracking / analytics / third-party SDKs · `ITSAppUsesNonExemptEncryption=false`
+- ✅ **macOS App Sandbox** entitlements (`App/LowHangingFruit-macOS.entitlements`:
+  sandbox + outgoing network) — required for the Mac App Store
+- ✅ **macOS app icon** set (all 10 sizes, native rounded-rect style) in `AppIcon`
+- ✅ `LSApplicationCategoryType` (Education) in Info.plist — required for macOS
+- ✅ `ExportOptions.plist` added at repo root (shared by both platforms)
+- 🟡 **Verify the macOS Release build once in Xcode** (this repo was prepped
+  off-Mac; run the LowHangingFruit scheme with My Mac as destination)
 
 ## Before you can upload — 🟡 you
 - 🟡 **Set your Apple Developer Team** in signing.
@@ -23,27 +34,50 @@ Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple) ·
 
 ## App Store Connect metadata — ⬜ (copy is written in LISTING.md)
 - ⬜ Name, subtitle, description, keywords, promo text → from `LISTING.md`
+  (shared by iOS and macOS)
+- ⬜ **Add the macOS platform** to the app record (App Store Connect → your app
+  → "+" next to the platform list → macOS) and give it the same 1.0.0 version
 - ⬜ Category: Education / Productivity · Age rating: 4+
 - ⬜ **App Privacy:** answer **"No, we do not collect data"** (see LISTING.md)
-- ⬜ Upload **screenshots** (6.9") → generated in `docs/appstore/screenshots/`
-- ⬜ Paste **App Review notes** → from `REVIEW_NOTES.md` (add a contact name/email)
+- ⬜ Upload **iPhone screenshots** (6.9") → generated in `docs/appstore/screenshots/`
+- ⬜ Capture + upload **Mac screenshots** — run the app on your Mac and take
+  window screenshots at **2560×1600** (or 1280×800 / 1440×900 / 2880×1800;
+  16:10 only). Same 5 shots as the iPhone set work well.
+- ⬜ Paste **App Review notes** → from `REVIEW_NOTES.md` (add a contact
+  name/email; the notes apply to both platforms)
 - ⬜ Attach the **demo video** → record per `DEMO_VIDEO.md`
 
 ## Archive & upload — ⬜ (needs Team ID first)
+
+### iOS
 ```sh
 # From repo root, once signing is set:
 xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
   -configuration Release -destination 'generic/platform=iOS' \
-  -archivePath build/LHF.xcarchive archive
+  -archivePath build/LHF-iOS.xcarchive archive
 
-xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
-  -exportPath build/export -exportOptionsPlist ExportOptions.plist
-# then upload build/export/*.ipa via Transporter, or use Xcode Organizer.
+xcodebuild -exportArchive -archivePath build/LHF-iOS.xcarchive \
+  -exportPath build/export-ios -exportOptionsPlist ExportOptions.plist
+# then upload build/export-ios/*.ipa via Transporter, or use Xcode Organizer.
 ```
-- ⬜ Validate in Organizer → Distribute App → App Store Connect
-- ⬜ TestFlight smoke test on a real device (verify the login → dashboard →
-     reminder-permission flow once on device)
-- ⬜ Submit for review
+
+### macOS
+```sh
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+  -configuration Release -destination 'generic/platform=macOS' \
+  -archivePath build/LHF-macOS.xcarchive archive
+
+xcodebuild -exportArchive -archivePath build/LHF-macOS.xcarchive \
+  -exportPath build/export-macos -exportOptionsPlist ExportOptions.plist
+# then upload build/export-macos/*.pkg via Transporter, or use Xcode Organizer.
+```
+(Both use the shared `ExportOptions.plist`; on Xcode older than 15.3 change
+`app-store-connect` to `app-store` inside it.)
+
+- ⬜ Validate in Organizer → Distribute App → App Store Connect (each archive)
+- ⬜ TestFlight smoke test on a real iPhone **and** on your Mac (verify the
+     login → dashboard → reminder-permission flow once per platform)
+- ⬜ Submit both platforms for review
 
 ## Known review risk (your call — you chose reviewer-notes + video)
 Reviewers can't pass Penn SSO. The review notes + video address this, but Apple

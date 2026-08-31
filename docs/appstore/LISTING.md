@@ -7,6 +7,7 @@ within limits.
 - **App name** (≤30): `Low Hanging Fruit`
 - **Subtitle** (≤30): `Your next deadline, first`
 - **Bundle ID:** `com.lhf.lowhangingfruit`
+- **Platforms:** iOS (iPhone) + macOS — one app record, same copy for both
 - **Primary category:** Education
 - **Secondary category:** Productivity
 - **Age rating:** 4+
