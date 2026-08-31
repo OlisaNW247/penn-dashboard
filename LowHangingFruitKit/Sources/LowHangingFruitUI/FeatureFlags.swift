@@ -25,9 +25,15 @@ enum FeatureFlags {
     /// submission detection (work you've already turned in filing itself under
     /// Done) is derived from that same payload. The privacy policy and review
     /// notes disclose that accordingly.
-    /// **true on `v3`.** The flag exists so the 1.x App Store line could ship
-    /// with Grade Watcher's entry points hidden while the work continued here;
-    /// on this branch the grade report and syllabus ingestion ARE the release,
-    /// so the entry points are on.
-    static let gradeWatcher = false
+    /// **true on `v6`.** The `false` that sat here through the 2.0.0 line was
+    /// a merge artifact, not a decision: the doc comment above it said "on
+    /// this branch the entry points are on" while the value said off — v4's
+    /// value survived the v3.5+v4 merge and v3.5's comment came along with
+    /// it, so Grade Watcher silently vanished from the UI while remaining
+    /// fully compiled, tested, and fed by every sync. v6 turns the entry
+    /// points back on deliberately (owner's call, 2026-08-31). The runtime
+    /// gate is still `state.canUseGradeWatcher` — a calendar-link-only
+    /// install with no cookie session never shows the button regardless of
+    /// this flag, which is what makes it safe to leave on.
+    static let gradeWatcher = true
 }
