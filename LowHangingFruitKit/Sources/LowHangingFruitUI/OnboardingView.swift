@@ -706,6 +706,12 @@ private struct CanvasLoginPane: View {
             SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
                 isReadingCookies = false
+                // A fresh interactive login is proof the session is alive —
+                // clear any earlier "confirmed dead" sticky record
+                // (AppState.canvasSessionConfirmedDead) before it can leave a
+                // stale reconnect banner up over a session the user just
+                // re-established by hand.
+                state.noteCanvasLoginSessionCaptured()
                 let connected = await state.connectCanvas(cookies: canvasCookies)
                 if connected {
                     onConnected()

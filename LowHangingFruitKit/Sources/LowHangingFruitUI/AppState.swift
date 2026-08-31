@@ -264,6 +264,11 @@ final class AppState: ObservableObject {
     /// never mirrors this key itself (sync's own on/off state is
     /// necessarily per-device, not something to sync).
     private static let cloudSyncEnabledKey = "cloudSyncEnabledV1"
+    /// Backs `canvasSessionConfirmedDead` — see that property's doc comment.
+    /// Deliberately absent from `CloudPrefsMirror`'s allowlist, same
+    /// reasoning as `cloudSyncEnabledKey` above: this is per-device session
+    /// state, not a preference that makes sense synced to another device.
+    private static let canvasSessionConfirmedDeadKey = "canvasSessionConfirmedDeadV1"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -293,6 +298,12 @@ final class AppState: ObservableObject {
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
+        // See `canvasSessionConfirmedDead`'s doc comment: this is the sticky
+        // half of `canvasSessionExpired`, so it has to survive a relaunch the
+        // same way every other UserDefaults.lhf-backed flag above does —
+        // otherwise a confirmed-dead session would read as fine again on the
+        // very next cold launch, before anything re-confirms it either way.
+        self.canvasSessionConfirmedDead = UserDefaults.lhf.bool(forKey: Self.canvasSessionConfirmedDeadKey)
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
             .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
@@ -599,7 +610,61 @@ final class AppState: ObservableObject {
     /// `SessionCookieStore`'s Keychain state, not from any single failed
     /// fetch, so it can't get stuck true after a successful reconnect or
     /// stuck false for a feed-only user (docs/CANVAS_LOGIN_HARDENING.md item 3d).
+    ///
+    /// As of the sticky-dead-state fix below, this is no longer PURELY
+    /// Keychain-derived: `refreshCanvasSessionExpiredState()` ORs in
+    /// `canvasSessionConfirmedDead` too. That's necessary, not a
+    /// contradiction of the paragraph above — see that property's doc
+    /// comment for the failure mode this closes (a session dead server-side
+    /// but still Keychain-fresh, which used to produce no banner and no
+    /// recovery path at all) and for exactly how the "can't get stuck true"
+    /// guarantee is preserved despite the flag being sticky.
     @Published private(set) var canvasSessionExpired = false
+
+    /// Sticky, persisted "the Canvas session has been CONFIRMED dead
+    /// server-side" signal — the second input to `canvasSessionExpired`,
+    /// alongside the purely Keychain-derived staleness check above.
+    ///
+    /// The bug this exists to close (confirmed on a real device): a Canvas
+    /// session can die server-side while at least one persisted Keychain
+    /// cookie still looks fresh by `SessionCookieStore.isExpired`'s
+    /// client-side clock check. When that happens, the grades fetch 401s on
+    /// every launch, `GradeWatcherStore.isSessionExpired` flips true in
+    /// memory, a silent renewal is attempted and fails at the SSO wall
+    /// (`CanvasSessionRenewer.Outcome.timedOut` /
+    /// `.landedOnLoginPage`) — but none of that ever reached
+    /// `canvasSessionExpired`, so the reconnect banner never showed and
+    /// automatic submission detection died silently with no recovery path.
+    /// `canvasSessionConfirmedDead` is the durable record of that server-side
+    /// proof, set from a failed silent-renewal attempt (a real network round
+    /// trip against Penn's IdP, not a guess) rather than from the Keychain's
+    /// own clock-based heuristic.
+    ///
+    /// Persisted through `UserDefaults.lhf` (`canvasSessionConfirmedDeadKey`)
+    /// so a relaunch doesn't lose the proof and go back to showing nothing —
+    /// but deliberately NOT mirrored through `cloudPrefsMirror`, since a dead
+    /// session on this device says nothing about the session on another one.
+    ///
+    /// Being sticky is exactly why `canvasSessionExpired`'s own doc comment
+    /// can still promise it "can't get stuck true after a successful
+    /// reconnect": this flag is cleared — via `setCanvasSessionConfirmedDead`
+    /// — on every path that re-proves the session is alive or moot: a
+    /// `.renewed` silent-renewal outcome, a Grade Watcher refresh that
+    /// actually advanced `lastRefreshed` (a real course fetch that could only
+    /// have succeeded with a live session), `disconnectCanvas()` (nothing to
+    /// reconnect once signed out), and a fresh interactive login capturing
+    /// new cookies (`noteCanvasLoginSessionCaptured()`). `.notAttempted` and
+    /// `.abortedByLoginPane` outcomes prove nothing either way and leave it
+    /// unchanged — see `confirmedDeadAfterRenewal(current:outcome:)`.
+    private var canvasSessionConfirmedDead: Bool
+
+    /// Single write path for `canvasSessionConfirmedDead` — every mutation
+    /// goes through here so the persisted copy in `UserDefaults.lhf` can
+    /// never drift from the in-memory value.
+    private func setCanvasSessionConfirmedDead(_ value: Bool) {
+        canvasSessionConfirmedDead = value
+        UserDefaults.lhf.set(value, forKey: Self.canvasSessionConfirmedDeadKey)
+    }
 
     /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
     /// on its appear, cleared on its disappear. Not `@Published`: nothing
@@ -644,12 +709,64 @@ final class AppState: ObservableObject {
     /// persisted set — reads `false` (never-connected) immediately
     /// afterward, not `true`. No special-casing needed for that call site;
     /// verified by tracing `SessionCookieStore.isExpired`'s definition.
+    ///
+    /// ORs in `canvasSessionConfirmedDead` alongside the Keychain check — the
+    /// sticky, server-side-proven half of the flag (see that property's doc
+    /// comment). Either input alone is enough to show the banner: a
+    /// client-side-stale cookie set, OR a client-side-fresh one a real
+    /// renewal attempt already proved dead against Penn's IdP.
     func refreshCanvasSessionExpiredState() {
         let wasExpired = canvasSessionExpired
-        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas)
+        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas) || canvasSessionConfirmedDead
         if canvasSessionExpired && !wasExpired {
             Task { await attemptSilentCanvasRenewal() }
         }
+    }
+
+    // MARK: - Sticky dead-state pure decisions
+
+    /// Pure decision behind wiring a silent-renewal `Outcome` into
+    /// `canvasSessionConfirmedDead` — mirrors `CanvasSessionRenewer`'s own
+    /// documented "pure decision logic" pattern (see `gate(...)` /
+    /// `classifyFinalHost(...)` there) so this is unit-testable without
+    /// constructing an `AppState` or touching WebKit at all.
+    ///
+    /// `.timedOut` and `.landedOnLoginPage` are both real network round trips
+    /// against Penn's IdP that ended somewhere other than a fresh Canvas
+    /// session — that's the server-side proof of death this flag exists to
+    /// record. `.renewed` is the opposite proof: the session is alive, so any
+    /// prior "confirmed dead" record is stale and gets cleared. `.notAttempted`
+    /// (cooldown/in-flight/pane-active/test-runner) and `.abortedByLoginPane`
+    /// prove nothing either way — the attempt never actually reached the IdP
+    /// — so `current` passes through unchanged rather than being reset to
+    /// `false`, which would silently drop real evidence gathered earlier.
+    static func confirmedDeadAfterRenewal(
+        current: Bool,
+        outcome: CanvasSessionRenewer.Outcome
+    ) -> Bool {
+        switch outcome {
+        case .timedOut, .landedOnLoginPage:
+            return true
+        case .renewed:
+            return false
+        case .abortedByLoginPane, .notAttempted:
+            return current
+        }
+    }
+
+    /// Pure decision behind clearing `canvasSessionConfirmedDead` from a
+    /// Grade Watcher refresh: `lastRefreshed` only advances when at least one
+    /// course fetch actually succeeded (`GradeWatcherStore`'s own doc
+    /// comment), and a successful course fetch could only have happened with
+    /// a live, cookie-authed session — so an advance is proof strong enough
+    /// to clear a "confirmed dead" record even though this refresh never
+    /// went near `CanvasSessionRenewer`/the IdP at all.
+    static func renewalProvedSessionAlive(
+        lastRefreshedBefore: Date?,
+        lastRefreshedAfter: Date?
+    ) -> Bool {
+        guard let lastRefreshedAfter else { return false }
+        return lastRefreshedAfter != lastRefreshedBefore
     }
 
     /// Attempts one SILENT Canvas re-login (session-longevity Layer 2) before
@@ -671,12 +788,39 @@ final class AppState: ObservableObject {
         canvasSessionRenewer = renewer
 
         let outcome = await renewer.renewIfNeeded()
-        guard outcome == .renewed else { return }
-
+        // Wired on EVERY outcome, not just `.renewed` — the whole point of
+        // the sticky dead-state fix is that a `.timedOut`/`.landedOnLoginPage`
+        // result (real proof the session is dead server-side) must reach
+        // `canvasSessionExpired` too, not just a successful renewal.
+        setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(current: canvasSessionConfirmedDead, outcome: outcome))
+        // Recomputes on both the dead and renewed paths so the banner
+        // reflects whichever way this attempt cut. Note: if this call flips
+        // `canvasSessionExpired` false→true (the dead path), its own
+        // false→true branch fires one more `attemptSilentCanvasRenewal`
+        // Task — that redundant bounce no-ops inside `renewer.renewIfNeeded()`'s
+        // own 1-hour cooldown (`.notAttempted`), and `.notAttempted` leaves
+        // `canvasSessionConfirmedDead` unchanged above, so this is exactly
+        // one harmless extra bounce, never a loop.
         refreshCanvasSessionExpiredState()
+
+        guard outcome == .renewed else { return }
         let cookies = await AutoSyncCoordinator.canvasCookies()
         guard !cookies.isEmpty else { return }
         await refreshGradeWatcher(cookies: cookies)
+    }
+
+    /// Clears `canvasSessionConfirmedDead` after a fresh interactive Canvas
+    /// login captures new session cookies (`CanvasLoginPane.connect()` in
+    /// OnboardingView.swift) — a user who just typed their PennKey/Duo
+    /// credentials in has, by definition, a live session, so any earlier
+    /// "confirmed dead" record from before this login is now stale. A
+    /// should-have wiring rather than a strict must-have: the very next Grade
+    /// Watcher refresh that actually fetches a course would clear it anyway
+    /// via `renewalProvedSessionAlive`, but clearing it here means the
+    /// banner doesn't flash stale-true for even that one extra cycle.
+    func noteCanvasLoginSessionCaptured() {
+        setCanvasSessionConfirmedDead(false)
+        refreshCanvasSessionExpiredState()
     }
 
     func completeOnboarding() {
@@ -879,6 +1023,11 @@ final class AppState: ObservableObject {
         moduleReadingItems = []
         refreshCompletionFromLedger()
         rebuildDashboardItems()
+        // A disconnected user has no session to reconnect, so any earlier
+        // "confirmed dead" record is moot — clear it before the recompute
+        // below or a disconnected user would keep seeing the reconnect nag
+        // this whole method exists to let them escape.
+        setCanvasSessionConfirmedDead(false)
         refreshCanvasSessionExpiredState()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
         // store, not just the Keychain copy above — otherwise a still-resident
@@ -1175,6 +1324,12 @@ final class AppState: ObservableObject {
             return
         }
 
+        // Captured before the refresh so `renewalProvedSessionAlive` below
+        // can tell "a course actually fetched this call" apart from "nothing
+        // changed" — `lastRefreshed` only advances on at least one succeeded
+        // course fetch (`GradeWatcherStore`'s own doc comment).
+        let lastRefreshedBefore = gradeWatcher.lastRefreshed
+
         // Piggyback on Gradescope items this launch's throttled AutoSyncCoordinator
         // sync already fetched (docs/grades.md §4/§9) — never a second, unthrottled
         // Gradescope scrape just for the overlay.
@@ -1184,6 +1339,17 @@ final class AppState: ObservableObject {
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
         updateSubmissionState()
+
+        // A course actually fetching here is proof the session is alive —
+        // stronger proof than a silent-renewal attempt even gets, since this
+        // came from the real cookie-authed API, not a WebView probe. Clears
+        // any earlier "confirmed dead" record so a session that quietly
+        // recovered (or was never really dead — a false read from a stale
+        // renewal attempt) doesn't leave the reconnect banner stuck up.
+        if Self.renewalProvedSessionAlive(lastRefreshedBefore: lastRefreshedBefore, lastRefreshedAfter: gradeWatcher.lastRefreshed) {
+            setCanvasSessionConfirmedDead(false)
+            refreshCanvasSessionExpiredState()
+        }
 
         // Second trigger site for session-longevity Layer 2
         // (`CanvasSessionRenewer`): a per-course 401 this refresh folded into
