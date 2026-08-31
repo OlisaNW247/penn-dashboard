@@ -93,7 +93,7 @@ on the announcements client (matches CanvasModulesClient precedent).
 
 Morning gate, in order:
 1. `git fetch && git checkout v6`, then `cd LowHangingFruitKit && swift test`
-   — expect **663 + 24 = 687** tests / 70 suites, all green.
+   — expect **663 + 30 = 693** tests / 70 suites, all green.
 2. `xcodegen` not needed (no project.yml change); build the app, open
    Settings — "announcement watcher" section, watcher on / ai off.
 3. The "grades" button is back in the dashboard header (needs a live
