@@ -172,6 +172,24 @@ Your job is to plan, delegate, and review — not to write code yourself.
 - You do the planning, task breakdown, delegation-brief writing,
   acceptance-criteria review, and integration decisions yourself.
 
+### Model tiers and token economy
+The overseer runs on the session's top model (Fable); doers are pinned
+cheaper in `.claude/agents/` frontmatter — `implementer`/`verifier` on
+Sonnet, `mechanic` on Haiku. For built-in agents, pass the tier per call:
+`model: "haiku"` for `Explore`/searches/surveys, `model: "sonnet"` for
+anything with judgment in it. The top model never does bulk reading or
+mechanical edits, and doers never make architecture calls.
+
+Token discipline runs both directions:
+- Briefs name files by `path:line`; never paste bodies the doer can read.
+- Doer reports are a diff, verification results, and open questions —
+  no narration, no restating the brief.
+- The overseer reads targeted line ranges, not whole files, and sends
+  independent agents in one batch.
+- Delegation has overhead (~a few k tokens per spawn): a change smaller
+  than its own brief is cheaper done directly — that, not laziness, is
+  what the "trivial fixes yourself" allowance above is for.
+
 ### Before delegating
 Break the request into the smallest tasks that can each be verified
 independently. For each one, write a delegation brief that stands alone — the
