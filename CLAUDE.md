@@ -133,11 +133,12 @@ course is deliberately cosmetic only.
 | Branch | What |
 |---|---|
 | `main` | Old — 1.0.0 App Store prep. Not the ship line. |
-| `origin/v2.5` | The **shipped** line, 1.1.1 build 3. Grade Watcher gated off. |
+| `origin/v2.5` | Former ship line, 1.1.1 build 3. Grade Watcher gated off. |
 | `v3` | Grade Watcher un-gated, grade report, syllabus, the SwiftData ledger |
-| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal |
+| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **shipped** 1.1.2 build 4. |
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
-| this branch | **v3.5 + v4 merged** — v4's UI over v3.5's engine |
+| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
+| `v5` | **Current line.** Cut from the 2.0.0 head above; new work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps
@@ -170,6 +171,24 @@ Your job is to plan, delegate, and review — not to write code yourself.
   opinion beyond your own review.
 - You do the planning, task breakdown, delegation-brief writing,
   acceptance-criteria review, and integration decisions yourself.
+
+### Model tiers and token economy
+The overseer runs on the session's top model (Fable); doers are pinned
+cheaper in `.claude/agents/` frontmatter — `implementer`/`verifier` on
+Sonnet, `mechanic` on Haiku. For built-in agents, pass the tier per call:
+`model: "haiku"` for `Explore`/searches/surveys, `model: "sonnet"` for
+anything with judgment in it. The top model never does bulk reading or
+mechanical edits, and doers never make architecture calls.
+
+Token discipline runs both directions:
+- Briefs name files by `path:line`; never paste bodies the doer can read.
+- Doer reports are a diff, verification results, and open questions —
+  no narration, no restating the brief.
+- The overseer reads targeted line ranges, not whole files, and sends
+  independent agents in one batch.
+- Delegation has overhead (~a few k tokens per spawn): a change smaller
+  than its own brief is cheaper done directly — that, not laziness, is
+  what the "trivial fixes yourself" allowance above is for.
 
 ### Before delegating
 Break the request into the smallest tasks that can each be verified

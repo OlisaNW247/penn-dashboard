@@ -39,6 +39,13 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: LHF
+        # Required for the Mac App Store. Without it the archive warns "No App
+        # Category is set" and upload validation rejects the build outright;
+        # iOS never needed it, which is why it was missing for four builds.
+        # One value serves both platforms, and it must match the category on
+        # the App Store Connect listing — Universal Purchase shares one app
+        # record, so a mismatch is a review flag, not a second listing.
+        LSApplicationCategoryType: public.app-category.education
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
@@ -70,6 +77,14 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24A3TDB277
         CODE_SIGN_ENTITLEMENTS: App/LHFApp.entitlements
+        # The Mac build needs a different entitlements file, not a superset of
+        # the iOS one. The Mac App Store requires the sandbox, and a sandboxed
+        # macOS app group MUST carry the team-id prefix — the bare
+        # `group.com.lhf.lowhangingfruit` iOS uses is not a valid macOS group at
+        # all, so shipping the iOS file would fail provisioning or, worse,
+        # resolve to no container and drop the ledger into memory.
+        # `WidgetSharing.resolveAppGroupID` is the runtime half of this.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/LHFApp-macOS.entitlements
 
   # Home Screen + Lock Screen widget. iOS-only WidgetKit extension; reads the
   # "next due" snapshot the app writes to the shared App Group container.

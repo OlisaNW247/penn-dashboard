@@ -18,6 +18,17 @@ struct ContentView: View {
     /// booleans so the screenshot flag can open Settings directly.
     @State private var path: [DashRoute] = []
 
+    /// Whether the "you're not fully connected" banner has been dismissed
+    /// THIS launch. Deliberately plain `@State`, not persisted to
+    /// `UserDefaults` anywhere: the whole point of the banner is that a
+    /// student can otherwise use the app for weeks without noticing half
+    /// their work is missing, so it should come back and remind them again
+    /// next time they open the app rather than being silenced forever by one
+    /// tap. A relaunch resetting it to `false` is that behavior, for free —
+    /// persisting it would require a second flag to deliberately re-arm it
+    /// later, for no benefit over just not persisting it in the first place.
+    @State private var connectionNoticeDismissed = false
+
     /// Where the header's buttons lead. Both are pushes onto the dashboard's own
     /// stack, so Settings and Grades are full screens with a back button rather
     /// than cards presented over the list.
@@ -67,6 +78,12 @@ struct ContentView: View {
 
                     if state.canvasSessionExpired {
                         canvasSessionExpiredBanner
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                    }
+
+                    if showsConnectionNotice {
+                        connectionNoticeBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
                     }
@@ -241,6 +258,112 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("your canvas login needs a refresh. reconnect canvas.")
+    }
+
+    // MARK: Connection notice banner
+
+    /// Whether either data-source gap this feature warns about is currently
+    /// open AND the student hasn't already dismissed the notice this launch.
+    /// Deliberately one flag covering two independent conditions
+    /// (`needsGradescopeConnection`, `canvasIsLinkOnly`) rather than two
+    /// separate banners: a student who is missing both Canvas's cookie
+    /// session and Gradescope entirely should see one clear "you're not
+    /// fully connected" card, not a stack of two nags competing for the same
+    /// slot above the segmented toggle.
+    private var showsConnectionNotice: Bool {
+        !connectionNoticeDismissed && (state.needsGradescopeConnection || state.canvasIsLinkOnly)
+    }
+
+    /// Lowercase, matching `canvasSessionExpiredBanner`'s voice, and chosen
+    /// per which gap(s) are actually open so a student missing only one
+    /// source isn't told to "connect both."
+    private var connectionNoticeTitle: String {
+        if state.needsGradescopeConnection && state.canvasIsLinkOnly {
+            return "canvas and gradescope aren't fully connected"
+        } else if state.canvasIsLinkOnly {
+            return "canvas is connected by link only"
+        } else {
+            return "gradescope isn't connected"
+        }
+    }
+
+    private var connectionNoticeSubtitle: String {
+        if state.needsGradescopeConnection && state.canvasIsLinkOnly {
+            return "you're seeing calendar items only. connect both to see everything you owe."
+        } else if state.canvasIsLinkOnly {
+            return "log in to canvas for grades and automatic submission tracking."
+        } else {
+            return "connect it to see gradescope work alongside canvas."
+        }
+    }
+
+    /// Warns a student who is quietly missing a whole data source — a
+    /// Gradescope connection that was never made, or a Canvas connection
+    /// that's only a pasted calendar link with no cookie session behind it
+    /// (see `AppState.needsGradescopeConnection` and `.canvasIsLinkOnly`) —
+    /// so they don't spend weeks treating a partial dashboard as complete.
+    ///
+    /// The main tap target and the dismiss control are SIBLING `Button`s
+    /// inside one `HStack`, not one nested inside the other's label. A
+    /// control placed inside another control's label is not reliably
+    /// tappable in SwiftUI — `.buttonStyle(.plain)` on the outer button
+    /// narrows the outer hit target to its label's bounds, but that does not
+    /// guarantee the inner button gets first refusal on a tap that lands on
+    /// it, and the failure mode (a dismiss button that silently swallows or
+    /// loses the tap) is worse than not having one, since the student was
+    /// told they could dismiss the banner and then can't. What still makes
+    /// this read as one card is the shared background/padding/corner radius
+    /// applied to the outer `HStack` that contains both buttons, not a
+    /// single button wrapping everything — matching `canvasSessionExpiredBanner`'s
+    /// fonts, colors, corner radius (11) and padding (12).
+    ///
+    /// The dismiss button carries an explicit 44×44pt frame before its
+    /// `.contentShape`, per Apple's minimum tappable-target guidance; the
+    /// 11pt `xmark` glyph alone would offer a target a few points on a side.
+    /// That frame makes this card a few points taller than
+    /// `canvasSessionExpiredBanner`, which has no such control — an accepted,
+    /// deliberate cost, since correct tap routing on a control whose entire
+    /// job is "let the student make this go away" matters more than an exact
+    /// height match between the two banners.
+    private var connectionNoticeBanner: some View {
+        HStack(spacing: 10) {
+            Button {
+                state.restartOnboarding()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "link.badge.plus")
+                        .font(.system(size: 13, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(connectionNoticeTitle)
+                            .font(.lhfSans(12, weight: .semibold))
+                        Text(connectionNoticeSubtitle)
+                            .font(.lhfSans(11))
+                            .foregroundStyle(Color.v2DateText)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(connectionNoticeTitle). \(connectionNoticeSubtitle)")
+
+            Button {
+                connectionNoticeDismissed = true
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.v2DateText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("dismiss")
+        }
+        .foregroundStyle(Color.v2Ink)
+        .padding(12)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
     // MARK: Header

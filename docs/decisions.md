@@ -5,6 +5,74 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-08-29 — The Mac App Store gets a real Mac build, and a sandbox-aware App Group
+Downloading LHF from the Mac App Store hands you the iPhone app in a
+phone-shaped window. Nothing is misconfigured in the Mac code — that is Apple's
+"iPhone and iPad Apps on Mac" serving the iOS binary, because no macOS binary
+has ever been uploaded. The archive lane only ever built
+`generic/platform=iOS`, while the Mac app (`LHFScenes`' `MenuBarExtra` tier,
+`RootView`'s 480×600 window) has been buildable and unshipped the whole time.
+
+Shipping it requires the sandbox, and the sandbox breaks the App Group. macOS
+requires an app group identifier to begin with the team id, so a sandboxed Mac
+build asking for the bare `group.com.lhf.lowhangingfruit` gets nil back — and
+per the trap in CLAUDE.md, a nil container silently drops the ledger into memory
+and looks completely normal until a relaunch loses the student's work. So:
+
+- A macOS-only entitlements file (`App/LHFApp-macOS.entitlements`), wired in
+  through `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` so the iOS binary is untouched:
+  sandbox, `network.client` (Canvas fetch and the SSO WebView fail silently
+  without it), and the team-prefixed group.
+- `WidgetSharing.resolveAppGroupID` picks the id at runtime, and the
+  **sandbox check is the load-bearing part**. Probing the container cannot tell
+  the builds apart: an unsandboxed macOS process resolves a container for
+  practically any group id (the same quirk `SharedDefaults.isTestRunner` guards
+  against), so preferring the prefixed id on probe alone would move the existing
+  unsandboxed dev build off the ledger it has been writing to. Only a sandboxed
+  process is offered the prefixed id.
+
+Rejected a hard `#if os(macOS)` switch to the prefixed id: simpler, but it
+orphans whatever the dev Mac build has already stored, and this is the one tier
+where loss is unrecoverable. Rejected adding the bare id to the macOS
+entitlements as a belt-and-braces second group — it is not a valid macOS group
+identifier and invites a provisioning failure to buy nothing.
+
+## 2026-08-29 — Gradescope items carry a term, and an undated leftover can't outlive its archive
+A user on the shipped build reported an assignment from a class that had
+already ended ("CIS 3200 · Homework 4 · 27 days late"). Two gaps, both specific
+to Gradescope-sourced work.
+
+**Gradescope threw its term away.** The account page groups courses under term
+headings ("Fall 2025"), and `currentTermCourses` parsed them — to choose which
+courses to fetch, and then dropped the label. So every Gradescope assignment
+arrived with `term == nil`, where a Canvas item gets its term for free from the
+`YYYYTT` suffix `CourseCode.parse` reads. Term is the field the whole semester
+archive turns on, so Gradescope work was structurally unarchivable by term.
+`CourseLink` now carries the heading's term and `GradescopeHTMLParser.assignments`
+stamps it onto each row. `GradescopeTerm.pennTerm` maps the label onto the app's
+`Term`; a quarter school's "Winter" files under Penn's spring, whose window it
+sits inside. Courses from an ungrouped account page still carry no term — there
+is no evidence to read, and inventing one is worse than admitting it.
+
+**An item with no term AND no due date walked past the archive.**
+`withinTermCap`'s doc promised "undated and overdue items pass unless their term
+has been archived", but the undated branch returned `true` before any archive
+check — with no term and no due date there was nothing to match a term against.
+Canvas items are rarely in that state; a Gradescope assignment posted without a
+deadline always was. `archivedAssignmentIDs` covers rows that were on the ledger
+when the student confirmed, so what leaked was anything re-ingested afterwards or
+never persisted. The branch now consults the per-course archive stamp, which the
+rollover writes for every class it files and deliberately skips for a class still
+running this term (the retaken-CIS-1200 case).
+
+Rejected an automatic past-term cutoff, again: `Term(date:)` maps August to fall,
+so a summer course's live August work would vanish on the 1st. The past bound
+stays the student's confirmed archive — this only extends that same confirmation
+to items whose own fields couldn't express it. Rejected inferring a Gradescope
+term from the due date instead of the heading: the heading is evidence, the due
+date is a guess, and the guess is what the ledger's `firstSeen` fallback already
+does one tier down.
+
 ## 2026-08-27 — One "items with nothing to submit" toggle, and it hides, not just silences
 Two per-class notification switches shipped this same week — `recurringEnabled`
 ("readings and check-ins") and `noSubmissionRemindersEnabled` ("assignments

@@ -663,6 +663,48 @@ final class AppState: ObservableObject {
         return !SessionCookieStore.load(service: .canvas).isEmpty || canvasSessionExpired
     }
 
+    /// True when the dashboard is quietly missing a whole data source — the
+    /// "half your work" warning this pair of properties exists to drive. Both
+    /// gaps below are reachable even though onboarding requires Canvas before
+    /// it lets anyone reach the dashboard at all (so "nothing connected"
+    /// itself is not a state a live user can be in): Gradescope is never
+    /// required by onboarding, and Canvas has two connection paths that look
+    /// identical from `isCanvasConnected`'s point of view but are not
+    /// equivalent in what they unlock.
+    ///
+    /// Explicitly excludes `isUsingFixtureData`, unlike `canvasIsLinkOnly`
+    /// below, because nothing else in this expression supplies that guard:
+    /// `isGradescopeConnected` is backed by a plain persisted flag that
+    /// starts (and stays) `false` for a reviewer in preview mode, since
+    /// `enterPreviewMode()` never touches it. Preview mode is deliberately
+    /// the ONE path through this app for someone who cannot pass Penn SSO —
+    /// notably an App Store reviewer — and it renders entirely off bundled
+    /// fixtures that were never going to come from Gradescope either. Without
+    /// this guard, that reviewer would be shown a "connect your accounts" nag
+    /// on the one screen the app promises will just work; the fixture data
+    /// itself would look fine, so the bug would read as a small copy problem
+    /// rather than the "reviewer sees a broken-looking dashboard" risk it
+    /// actually is.
+    var needsGradescopeConnection: Bool {
+        !isUsingFixtureData && !isGradescopeConnected
+    }
+
+    /// True when Canvas is connected only by a pasted calendar feed link
+    /// (docs/CANVAS_LOGIN_HARDENING.md item 3b) — a real connection for the
+    /// dashboard's timeline, but one with no cookie session behind it, so
+    /// automatic submission tracking, Canvas Scan and Grade Watcher are all
+    /// silently unavailable. `canUseGradeWatcher` already draws exactly this
+    /// line (see its doc comment): true for a cookie session OR fixture/
+    /// preview mode, false for a link-only connection. So this needs no
+    /// separate preview guard of its own — a reviewer in preview mode has
+    /// `canUseGradeWatcher == true`, which alone makes this `false` without
+    /// re-deriving `isUsingFixtureData` a second time. Duplicating the guard
+    /// here would not be wrong, just redundant, and redundant guards are how
+    /// two copies of the same rule quietly drift apart later.
+    var canvasIsLinkOnly: Bool {
+        isCanvasConnected && !canUseGradeWatcher
+    }
+
     /// True when the Canvas login *session* (the cookie-authed one, used for
     /// automatic submission detection and Canvas Scan — see
     /// `AutoSyncCoordinator.refreshCanvasGrades`) has gone stale and needs a
@@ -2340,7 +2382,8 @@ final class AppState: ObservableObject {
     static func withinTermCap(
         _ assignment: Assignment,
         now: Date = Date(),
-        archivedTerms: Set<Term> = []
+        archivedTerms: Set<Term> = [],
+        archivedCourseTerms: [String: Term] = [:]
     ) -> Bool {
         let current = Term(date: now)
         if let term = assignment.term {
@@ -2351,7 +2394,17 @@ final class AppState: ObservableObject {
         // due date is what stops an archived semester's leftovers coming back in
         // through the undated-and-overdue door — the specific clause that kept
         // showing a student work from a semester they had already put away.
-        guard let due = assignment.dueAt else { return true }
+        guard let due = assignment.dueAt else {
+            // Neither a term nor a due date to derive one from. Canvas items are
+            // rarely here (the course code carries `YYYYTT`), but a Gradescope
+            // one with no posted deadline has nothing at all — and returning
+            // `true` unconditionally is how an archived class's undated
+            // leftovers outlived the archive the student confirmed. The course
+            // is the remaining evidence: the rollover stamps every class it
+            // files (and deliberately skips one still running this term), so a
+            // stamp here means the student put this class away.
+            return archivedCourseTerms[assignment.course] == nil
+        }
         if archivedTerms.contains(Term(date: due)) { return false }
         let cap = max(current.endDate(), now.addingTimeInterval(dashboardWindow))
         return due <= cap
@@ -2450,6 +2503,15 @@ final class AppState: ObservableObject {
         // history. Only the dashboard buckets below lose it — and, through them,
         // `reschedule()`, which is driven by exactly these arrays.
         let archivedTermSet = Set(archivedTerms)
+        // Per-course archive stamps, for items carrying neither a term nor a due
+        // date — see `withinTermCap`. Read from the preferences store rather
+        // than derived from the pool: the stamp is the record of what the
+        // student archived, and an undated leftover is exactly the item whose
+        // own fields can't reproduce it.
+        var archivedCourseTerms: [String: Term] = [:]
+        for key in coursePreferences.archivedCourseKeys {
+            archivedCourseTerms[key] = coursePreferences.archivedTerm(for: key)
+        }
         let incomplete = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
@@ -2461,7 +2523,12 @@ final class AppState: ObservableObject {
                 && !archivedAssignmentIDs.contains(item.id)
                 // And the term-level bound, for items that never got a row:
                 // recurring occurrences are generated fresh on every rebuild.
-                && Self.withinTermCap(item, now: now, archivedTerms: archivedTermSet)
+                && Self.withinTermCap(
+                    item,
+                    now: now,
+                    archivedTerms: archivedTermSet,
+                    archivedCourseTerms: archivedCourseTerms
+                )
         }
         // `.event` items never land in Assessments even when their title
         // matches the exam/quiz regex (`isAssessment` is title-based, and a
