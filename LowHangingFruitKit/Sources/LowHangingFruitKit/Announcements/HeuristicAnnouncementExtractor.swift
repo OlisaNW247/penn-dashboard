@@ -323,12 +323,14 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     /// Every pattern here is built fresh per call rather than cached in a
     /// stored `static let` — matching the convention `CanvasModulesClient
     /// .parseDate` and friends already use for `ISO8601DateFormatter`.
-    /// `NSRegularExpression` is a mutable-looking Objective-C bridge type
-    /// that Swift 6's strict concurrency checker does not treat as `Sendable`
-    /// by default; a stored static of it on a `Sendable` struct would be a
-    /// compile error (or would need an `nonisolated(unsafe)` escape hatch
-    /// this file has no need for, since this extractor never runs hot enough
-    /// for per-call regex compilation to matter).
+    /// `NSRegularExpression` is in fact immutable and thread-safe once
+    /// built, and elsewhere in this package (`SyllabusParser`,
+    /// `CanvasAnnouncementsClient`) cached `static let` patterns are the
+    /// convention. Building per call here is a choice, not a necessity:
+    /// this extractor runs a handful of times per sync, never hot enough
+    /// for compilation cost to matter, and per-call construction keeps the
+    /// type trivially `Sendable` without leaning on Foundation's
+    /// thread-safety documentation at all.
     private static func regexMatches(_ pattern: String, in text: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return false

@@ -55,8 +55,11 @@ Assignment(source: .canvasAnnouncement) ──> ledger reconcile ──> dashboa
   CLAUDE.md.
 - **New `Assignment.Source` case `.canvasAnnouncement`** rather than reusing
   `.manual`: provenance must be visible and deletable, and dedup/aging rules
-  differ. Exhaustive switches updated (GradeCourseCardView, RecurringTask,
-  GradeModels).
+  differ. The only exhaustive switch over `Assignment.Source` in the tree
+  turned out to be `RecurringTask.isOccurrence` (GradeCourseCardView and
+  GradeModels switch over the unrelated grade-provenance `ScoreSource`);
+  `StoredAssignment` round-trips the raw string, so persistence needed
+  nothing.
 - **Created items are real ledger rows** — they survive relaunch, age, and
   archive like everything else, and the card's URL opens the announcement.
 - **Dedup before insert:** normalized-title match (AssignmentDeduplicator's
@@ -77,3 +80,23 @@ any non-Anthropic model.
 2. The AI path needs an Anthropic API key. Fine for you; a shipped student
    product wants either a proxy or on-device Apple Foundation Models
    (iOS 26+). Deferred.
+
+## Status at end of overnight session (2026-08-31, pre-dawn)
+
+Everything above is implemented, on `origin/v6`, and **uncompiled** — no
+Swift toolchain where this was built. An independent verifier pass over the
+full branch diff found no blockers; its two should-fixes (direct tests for
+the pagination security guard; this document's switch claim) are fixed.
+Left open as recorded nits: within-one-batch candidate self-duplication
+isn't deduped (only against prior state); `refreshedCookieHandler` unwired
+on the announcements client (matches CanvasModulesClient precedent).
+
+Morning gate, in order:
+1. `git fetch && git checkout v6`, then `cd LowHangingFruitKit && swift test`
+   — expect **663 + 24 = 687** tests / 70 suites, all green.
+2. `xcodegen` not needed (no project.yml change); build the app, open
+   Settings — "announcement watcher" section, watcher on / ai off.
+3. The "grades" button is back in the dashboard header (needs a live
+   cookie session to appear — `canUseGradeWatcher`).
+4. To try the AI path: Settings → announcement watcher → ai assist on →
+   paste an Anthropic API key.

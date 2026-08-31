@@ -178,4 +178,39 @@ struct CanvasAnnouncementsClientTests {
     func plainTextEmptyInputIsEmptyOutput() {
         #expect(CanvasAnnouncementsClient.plainText(fromHTML: "") == "")
     }
+
+    // MARK: Pagination guard
+
+    // The next-page guard is the security boundary that keeps the session
+    // cookie from ever being replayed to a host Canvas didn't serve the
+    // Link header from. It's byte-identical to CanvasGradesClient's guard,
+    // which has its own tests — but a security check on a fresh copy earns
+    // direct coverage of its own, because "identical today" is not a
+    // property a later edit is forced to preserve.
+    @Test("same-host https next-page URL is trusted; http and off-host are not")
+    func nextPageGuard() {
+        let base = URL(string: "https://canvas.upenn.edu")!
+        #expect(CanvasAnnouncementsClient.isTrustedNextPageURL(
+            URL(string: "https://canvas.upenn.edu/api/v1/announcements?page=2")!, baseURL: base))
+        #expect(CanvasAnnouncementsClient.isTrustedNextPageURL(
+            URL(string: "https://CANVAS.UPENN.EDU/api/v1/announcements?page=2")!, baseURL: base))
+        // Plain http on the right host would replay the cookie in the clear.
+        #expect(!CanvasAnnouncementsClient.isTrustedNextPageURL(
+            URL(string: "http://canvas.upenn.edu/api/v1/announcements?page=2")!, baseURL: base))
+        // Off-host, and the suffix trick a substring check would fall for.
+        #expect(!CanvasAnnouncementsClient.isTrustedNextPageURL(
+            URL(string: "https://evil.example.com/api/v1/announcements")!, baseURL: base))
+        #expect(!CanvasAnnouncementsClient.isTrustedNextPageURL(
+            URL(string: "https://canvas.upenn.edu.evil.example.com/api")!, baseURL: base))
+    }
+
+    @Test("Link header parsing finds rel=\"next\" and returns nil without one")
+    func linkHeaderParsing() {
+        let header = "<https://canvas.upenn.edu/api/v1/announcements?page=2&per_page=100>; rel=\"next\", <https://canvas.upenn.edu/api/v1/announcements?page=1>; rel=\"first\""
+        let next = CanvasAnnouncementsClient.nextPageURL(fromLinkHeader: header)
+        #expect(next?.absoluteString == "https://canvas.upenn.edu/api/v1/announcements?page=2&per_page=100")
+        #expect(CanvasAnnouncementsClient.nextPageURL(
+            fromLinkHeader: "<https://canvas.upenn.edu/x>; rel=\"prev\"") == nil)
+        #expect(CanvasAnnouncementsClient.nextPageURL(fromLinkHeader: nil) == nil)
+    }
 }
