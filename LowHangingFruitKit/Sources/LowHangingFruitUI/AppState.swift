@@ -59,6 +59,16 @@ final class AppState: ObservableObject {
     /// outside this file; `rebuildDashboardItems` folds it into the Canvas
     /// pool it filters.
     @Published private(set) var moduleReadingItems: [Assignment] = []
+    /// Assignments `syncAnnouncements()` extracted from Canvas course
+    /// announcement text (`.canvasAnnouncement` ledger rows), read back the
+    /// same way `moduleReadingItems` is: a snapshot from the ledger, not a
+    /// live view, refreshed after each announcement sync's `upsert`. Kept
+    /// separate from `canvasItems` for the identical reason `moduleReadingItems`
+    /// is — these never came through the ICS feed either — and folded into
+    /// `canvasPool` in `rebuildDashboardItems` alongside it so an
+    /// announcement-derived task actually reaches the dashboard buckets
+    /// instead of sitting in the ledger unseen.
+    @Published private(set) var announcementItems: [Assignment] = []
     /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
     /// incomplete buckets below are filtered out of, but kept whole so callers
     /// that need completed work (the Done tab) see one item per assignment
@@ -128,6 +138,38 @@ final class AppState: ObservableObject {
     /// replace" reasoning `submittedCanvasAssignmentIDs` uses for courses a
     /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
     @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
+
+    /// Settings → "watch announcements". Default **true**, absent-key-means-on
+    /// (see `announcementWatcherEnabledKey`'s doc comment): fetching
+    /// announcements piggybacks on the exact same Canvas cookie session every
+    /// other sync in this file already uses, and on the default heuristic
+    /// extraction path nothing ever leaves the device — there's no new
+    /// privacy surface to opt into, unlike `announcementAIEnabled` below. The
+    /// off switch exists purely for a student who finds a false-positive
+    /// extraction (a wrong "due Friday" from an announcement that wasn't
+    /// really about a deadline) noisier than useful, not because the feature
+    /// needs permission to run.
+    @Published private(set) var announcementWatcherEnabled: Bool
+    /// Settings → "ai assist", nested under the watcher toggle. Default
+    /// **false**: turning this on sends announcement text to Anthropic's API
+    /// over the network, which breaks the "everything is on-device" story
+    /// this whole app is built on (CLAUDE.md) unless the student opts in
+    /// knowingly, and it requires their own API key (`AnthropicKeyStore`) —
+    /// there's no shared key this app ships with. The free heuristic backend
+    /// (`HeuristicAnnouncementExtractor`) is what runs when this is off.
+    @Published private(set) var announcementAIEnabled: Bool
+    /// Announcement ids `syncAnnouncements()` has already run through an
+    /// extractor, successfully or with zero results — never re-parsed. This
+    /// is a one-way ratchet by design: on the heuristic path a re-parse would
+    /// just be wasted work, but on the AI path a re-parse is a re-bill, and
+    /// this set doesn't know at read time which backend produced (or will
+    /// produce) the result, so it has to be conservative for the more
+    /// expensive case. Seeded here at init, like
+    /// `noSubmissionCanvasAssignmentIDs` above, rather than left at `= []`,
+    /// so a relaunch doesn't forget every announcement already seen and
+    /// re-extract (and, on the AI path, re-bill) the student's whole
+    /// announcement history on the next sync.
+    @Published private(set) var processedAnnouncementIDs: Set<String> = []
 
     /// Ledger ids a semester rollover has filed away. **Derived, not
     /// persisted** — rebuilt from the ledger's rows exactly as
@@ -337,6 +379,22 @@ final class AppState: ObservableObject {
     /// device, not a student preference, so there is nothing here worth
     /// syncing and no harm in two devices disagreeing about it for a while.
     private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
+    /// Backs `announcementWatcherEnabled`. Absent-key means on — see that
+    /// property's doc comment — so this is read with `object(forKey:) as?
+    /// Bool ?? true`, the same idiom `NotificationScheduler.turnedInEnabled`
+    /// uses for its own default-on switch, never `UserDefaults.bool(forKey:)`
+    /// (which can't distinguish "never set" from "explicitly set to false").
+    private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
+    /// Backs `announcementAIEnabled`. Default-off, so a plain
+    /// `UserDefaults.bool(forKey:)` (false for both "never set" and
+    /// "explicitly off") is fine here, unlike the key above.
+    private static let announcementAIEnabledKey = "announcementAIEnabledV1"
+    /// Backs `processedAnnouncementIDs`. Device-local and, like
+    /// `noSubmissionCanvasAssignmentIDsKey` just above, never mirrored to
+    /// iCloud — it's a re-derivable "have we looked at this yet" cache, not
+    /// the student's own record of anything, so there's nothing here worth
+    /// syncing.
+    private static let processedAnnouncementIDsKey = "processedAnnouncementIDsV1"
     /// The term code of the most recent rollover the student waved away. A
     /// preference by every test in `docs/persistence-explained.md` §3 — losing
     /// it costs one re-offered card, nothing more — so it stays in defaults
@@ -381,6 +439,17 @@ final class AppState: ObservableObject {
         // cold launch, before any grade refresh has had a chance to run.
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
+        )
+        // `object(forKey:) as? Bool ?? true`, not `.bool(forKey:)` — the
+        // latter returns `false` for a key that was never set, which would
+        // ship this watcher off by default instead of on. Mirrors
+        // `NotificationScheduler.turnedInEnabled`'s init line exactly.
+        self.announcementWatcherEnabled = UserDefaults.lhf.object(
+            forKey: Self.announcementWatcherEnabledKey
+        ) as? Bool ?? true
+        self.announcementAIEnabled = UserDefaults.lhf.bool(forKey: Self.announcementAIEnabledKey)
+        self.processedAnnouncementIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.processedAnnouncementIDsKey) ?? []
         )
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
@@ -468,6 +537,12 @@ final class AppState: ObservableObject {
             // a second ledger query, so the dashboard has last session's
             // opted-in readings from the first frame, before any refresh runs.
             self.moduleReadingItems = persisted.filter { $0.source == .canvasModules }
+            // Announcement-extracted tasks survive a relaunch the same way —
+            // read back out of the same snapshot rather than a second ledger
+            // query, so last session's extracted tasks are on the dashboard
+            // from the first frame, before `syncAnnouncements()` has had a
+            // chance to run again this launch.
+            self.announcementItems = persisted.filter { $0.source == .canvasAnnouncement }
             // Submission state used to be blank until the first successful grade
             // refresh landed — so auto-filed work sat back on the active list on
             // every cold launch, and stayed there forever if the Canvas session
@@ -816,6 +891,20 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
+    // MARK: - Announcement watcher (Settings → "announcement watcher")
+
+    /// Settings → "watch announcements".
+    func setAnnouncementWatcherEnabled(_ enabled: Bool) {
+        announcementWatcherEnabled = enabled
+        UserDefaults.lhf.set(enabled, forKey: Self.announcementWatcherEnabledKey)
+    }
+
+    /// Settings → "ai assist", nested under the watcher toggle.
+    func setAnnouncementAIEnabled(_ enabled: Bool) {
+        announcementAIEnabled = enabled
+        UserDefaults.lhf.set(enabled, forKey: Self.announcementAIEnabledKey)
+    }
+
     // MARK: - iCloud sync (Settings → "Sync between my devices")
 
     /// Persists and republishes the toggle immediately. Deliberately does
@@ -997,6 +1086,33 @@ final class AppState: ObservableObject {
         // course re-qualifies for a decision.
         assignmentStore?.purge(source: .canvasModules)
         moduleReadingItems = []
+        // Announcement-extracted tasks are session-derived the identical way
+        // — purge the ledger rows (a disconnected/reconnected account,
+        // possibly a different one, shouldn't have a prior session's
+        // extracted tasks reappear) and clear the in-memory array so they
+        // vanish from the dashboard immediately rather than waiting for the
+        // next `syncAnnouncements()` to notice they're gone.
+        assignmentStore?.purge(source: .canvasAnnouncement)
+        announcementItems = []
+        // `processedAnnouncementIDs` is the "have we looked at this yet"
+        // cache that gates re-extraction — it must be cleared alongside the
+        // rows above, or a reconnect (even to the SAME account) would treat
+        // every announcement Canvas re-serves as already processed and skip
+        // it forever, since the rows it was gating just got purged out from
+        // under it.
+        processedAnnouncementIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        // The Anthropic API key is deliberately left alone here, by the same
+        // precedent Gradescope's login already sets a few lines below this
+        // method (`disconnectGradescope` is a separate call the user never
+        // reaches from here): it is not a Canvas-session-derived credential —
+        // it's the student's own Anthropic account key, orthogonal to any
+        // Canvas login the same way a Gradescope session is, and disconnecting
+        // Canvas has never cleared Gradescope's credentials either. Clearing
+        // it here would also silently turn `announcementAIEnabled` into a
+        // no-op backend switch (falling back to the heuristic extractor)
+        // without the student ever having touched that toggle, which reads as
+        // a bug, not a safety measure.
         reloadCompletionFromLedger()
         rebuildDashboardItems()
         refreshCanvasSessionExpiredState()
@@ -1442,6 +1558,21 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
 
         recomputeCourseProfiles()
+
+        // Announcements piggyback on the exact same Canvas cookie session
+        // this whole method already has in hand, the same reasoning
+        // `AutoSyncCoordinator.refreshCanvasGrades` gives for chaining THIS
+        // method after `refreshGradeWatcher` rather than gathering its own
+        // cookies. Placed here — the end of the one secondary-import path
+        // this file has for "stuff derived from a Canvas session but not the
+        // ICS feed" — rather than as a third call `AutoSyncCoordinator` has
+        // to remember to chain: `refreshCourseIntel` already runs once per
+        // foreground sync (launch, activation, and manual Grade Watcher
+        // refreshes all reach it — see `GradeWatcherView`), and
+        // `syncAnnouncements()` is idempotent on `processedAnnouncementIDs`,
+        // so a session that reaches this method twice in one launch costs
+        // nothing beyond a cheap "nothing new" fetch the second time.
+        await syncAnnouncements()
     }
 
     /// Whether a silent course's Modules readings should be imported the
@@ -1599,6 +1730,212 @@ final class AppState: ObservableObject {
                 return
             }
             _ = await importModuleReadings(courseKey: courseKey, courseID: courseID, cookies: cookies)
+            rebuildDashboardItems()
+        }
+    }
+
+    // MARK: - Announcement watcher (Canvas announcements → dashboard items)
+
+    /// Builds the ledger-ready `Assignment`s an extractor's `ExtractedAssignment`s
+    /// become for one announcement. Pure and static so it's testable without a
+    /// network or a live `AppState` — `syncAnnouncements()` below is the only
+    /// caller.
+    ///
+    /// `sourceID` is `"announcement-<announcementID>-<index>"` rather than
+    /// something derived from the extracted title: two different sentences in
+    /// the same announcement can produce the same title (the heuristic falls
+    /// back to the announcement's own title when a sentence is too short to
+    /// stand alone — see `HeuristicAnnouncementExtractor.title`), and the index
+    /// is what keeps their ids distinct instead of one silently overwriting the
+    /// other on `upsert`. It's also stable across re-syncs for the SAME
+    /// announcement (same extraction backend, same input, same output order),
+    /// which matters not because this announcement will be re-extracted —
+    /// `processedAnnouncementIDs` ensures it won't — but because a completed
+    /// item's identity must never change out from under the ledger's completion
+    /// record.
+    static func announcementAssignments(
+        from extracted: [ExtractedAssignment],
+        announcement: CanvasAnnouncement,
+        courseCode: String
+    ) -> [Assignment] {
+        extracted.enumerated().map { index, e in
+            Assignment(
+                source: .canvasAnnouncement,
+                sourceID: "announcement-\(announcement.id)-\(index)",
+                kind: .assignment,
+                course: courseCode,
+                title: e.title,
+                dueAt: e.dueAt,
+                url: announcement.url,
+                term: nil,
+                submitted: false
+            )
+        }
+    }
+
+    /// Drops any `candidates` entry that's plausibly the same assignment as
+    /// something already on the dashboard for the same course — an
+    /// announcement restating a real Canvas (or Gradescope) assignment
+    /// ("please remember Homework 3 is due Friday") must not create a visible
+    /// twin next to the assignment it's describing.
+    ///
+    /// Course-scoped by hand here (loop + `==` on `course`) rather than
+    /// leaning on `AssignmentDeduplicator.matchPairs`, which does its own
+    /// course scoping internally but is shaped for a very different job — a
+    /// 1:1 greedy pairing between exactly two platforms that then gets merged
+    /// into one surviving item. This is a plain duplicate-suppression filter:
+    /// an announcement candidate can duplicate zero, one, or (in principle)
+    /// more than one existing item, and there is no pairing state to record
+    /// and no merge to perform, just a drop/keep decision per candidate — so
+    /// this calls the same underlying heuristic, `isLikelyDuplicate`, directly.
+    ///
+    /// `isLikelyDuplicate(titleA:dueA:titleB:dueB:)` has no notion of which
+    /// side is "Canvas" and which is "Gradescope" — it only ever compares two
+    /// titles and two optional due dates — so candidate-as-A / existing-as-B
+    /// is exactly as valid as the reverse; the two are interchangeable and
+    /// the choice below is arbitrary.
+    static func filteringAnnouncementDuplicates(
+        _ candidates: [Assignment],
+        against existing: [Assignment]
+    ) -> [Assignment] {
+        candidates.filter { candidate in
+            !existing.contains { other in
+                other.course == candidate.course &&
+                    AssignmentDeduplicator.isLikelyDuplicate(
+                        titleA: candidate.title, dueA: candidate.dueAt,
+                        titleB: other.title, dueB: other.dueAt
+                    )
+            }
+        }
+    }
+
+    /// Fetches recent Canvas course announcements, extracts candidate tasks
+    /// from them (heuristically, free, on-device by default — or via the
+    /// Anthropic API if the student opted in with their own key), dedupes
+    /// against what's already on the dashboard, and upserts the survivors as
+    /// `.canvasAnnouncement` ledger rows.
+    ///
+    /// Every guard below returns silently rather than setting `error` or
+    /// `syncNotice` — this is a background nicety layered on top of syncs
+    /// that already have their own user-facing error handling
+    /// (`syncGradescope`, `sync()`, `refreshGradeWatcher`'s session-expiry
+    /// path); a missed announcement fetch is not something worth interrupting
+    /// the student over, and the sync-banner machinery exists for failures
+    /// that ARE.
+    func syncAnnouncements() async {
+        guard !isUsingFixtureData else { return }
+        guard announcementWatcherEnabled else { return }
+        guard let store = assignmentStore else { return }
+
+        let cookies = SessionCookieStore.load(service: .canvas)
+        guard !cookies.isEmpty else { return }
+
+        // id -> code, filtered to the courses the class picker has selected —
+        // exactly `selectedCanvasCourseIDs()`'s existing contract (Grade
+        // Watcher uses the same map for the same "never fetch a hidden
+        // course" reason).
+        let courseCodesByID = selectedCanvasCourseIDs()
+        guard !courseCodesByID.isEmpty else { return }
+
+        // Constructed locally, never stored on `self` — `CanvasAnnouncementsClient`
+        // is deliberately not `Sendable` (see its type doc comment), so an
+        // instance must not outlive this single call.
+        let client = CanvasAnnouncementsClient(cookies: cookies)
+        let fourteenDaysAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
+        let fetched: [CanvasAnnouncement]
+        do {
+            fetched = try await client.fetchAnnouncements(
+                courseIDs: Array(courseCodesByID.keys),
+                since: fourteenDaysAgo
+            )
+        } catch {
+            // Silent — see the method doc comment. A lapsed Canvas session
+            // surfaces plenty loudly already through `refreshGradeWatcher`'s
+            // and `refreshCanvasSessionExpiredState`'s own paths; this method
+            // doesn't need to pile on.
+            return
+        }
+
+        let unprocessed = fetched.filter { !processedAnnouncementIDs.contains($0.id) }
+        guard !unprocessed.isEmpty else { return }
+
+        // Picked once for the whole batch, not per-announcement: a mid-batch
+        // key removal or toggle flip taking effect on the NEXT sync rather
+        // than partway through this one keeps every announcement in one run
+        // extracted by the same backend, which is what makes "processed"
+        // mean the same thing for all of them.
+        let extractor: any AnnouncementAssignmentExtractor
+        if announcementAIEnabled, !AnthropicKeyStore.load().isEmpty {
+            extractor = ClaudeAnnouncementExtractor(apiKey: AnthropicKeyStore.load())
+        } else {
+            extractor = HeuristicAnnouncementExtractor()
+        }
+
+        let now = Date()
+        // Current dashboard pool to dedupe fresh candidates against — the
+        // same three buckets `ModuleReadingImportTests.allDashboardItems`
+        // reads, i.e. everything the student can already see, not just
+        // `canvasItems` (a candidate must not duplicate a Gradescope item or
+        // a manual task either).
+        let currentDashboardItems = assignments + laterAssignments + assessments
+        var collected: [Assignment] = []
+        var newlyProcessedIDs: [String] = []
+
+        for announcement in unprocessed {
+            guard let courseCode = courseCodesByID[announcement.courseID] else {
+                // Unmapped course: the id -> code map fills in as more syncs
+                // land (a course discovered by `refreshCourseIntel` this
+                // launch, a class the picker selects mid-session), so this
+                // announcement is left OFF `processedAnnouncementIDs` and
+                // gets a second chance on the next sync rather than being
+                // permanently skipped for a mapping gap that may resolve
+                // itself in minutes.
+                continue
+            }
+
+            let sourceText = AnnouncementSourceText(
+                announcementID: announcement.id,
+                courseCode: courseCode,
+                title: announcement.title,
+                body: announcement.message,
+                postedAt: announcement.postedAt
+            )
+
+            let extracted: [ExtractedAssignment]
+            do {
+                extracted = try await extractor.extract(from: sourceText, now: now)
+            } catch {
+                // A transient extraction failure (network blip on the AI
+                // path, a rate limit) must not permanently eat this
+                // announcement — leave it unprocessed so the next sync tries
+                // again, the same reasoning as the unmapped-course branch
+                // above.
+                continue
+            }
+
+            let candidates = Self.announcementAssignments(
+                from: extracted, announcement: announcement, courseCode: courseCode
+            )
+            let deduped = Self.filteringAnnouncementDuplicates(
+                candidates, against: currentDashboardItems + collected
+            )
+            collected.append(contentsOf: deduped)
+            // Marked processed even when extraction yielded zero results —
+            // per the method's own doc comment on `processedAnnouncementIDs`,
+            // "extracted, found nothing actionable" is a completed parse, not
+            // a failure, and must not be retried forever.
+            newlyProcessedIDs.append(announcement.id)
+        }
+
+        if !collected.isEmpty {
+            store.upsert(collected)
+            announcementItems = store.assignments(source: .canvasAnnouncement)
+        }
+        if !newlyProcessedIDs.isEmpty {
+            processedAnnouncementIDs.formUnion(newlyProcessedIDs)
+            UserDefaults.lhf.set(Array(processedAnnouncementIDs), forKey: Self.processedAnnouncementIDsKey)
+        }
+        if !collected.isEmpty || !newlyProcessedIDs.isEmpty {
             rebuildDashboardItems()
         }
     }
@@ -2468,8 +2805,15 @@ final class AppState: ObservableObject {
         // `includesAsOptedInContent` gates a module-imported reading exactly
         // the same way it gates a feed one — a course toggled OFF hides its
         // already-imported readings without deleting them from the ledger.
-        // Gradescope items are already assignments.
-        let canvasPool = canvasItems + moduleReadingItems
+        // Gradescope items are already assignments. `announcementItems`
+        // (`.canvasAnnouncement` rows `syncAnnouncements()` extracted from
+        // announcement text) are folded in here too, unconditionally rather
+        // than behind `includesAsOptedInContent` — they're always
+        // `kind: .assignment` (real, if extractor-guessed, coursework, not
+        // opt-in calendar content like a reading), so `isAssignment` already
+        // admits them below without needing the opt-in gate `.event` items
+        // go through.
+        let canvasPool = canvasItems + moduleReadingItems + announcementItems
         let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)

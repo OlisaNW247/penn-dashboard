@@ -35,6 +35,18 @@ struct SettingsPage: View {
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
     @State private var didCopyDiagnostics = false
+    /// What the student is currently typing into the Anthropic API key field.
+    /// Deliberately starts empty and is never populated from
+    /// `AnthropicKeyStore.load()` — see `announcementWatcherSection`'s doc
+    /// comment for why round-tripping a secret from storage back into visible
+    /// UI state is worth avoiding even though this key never leaves the
+    /// device unencrypted.
+    @State private var anthropicAPIKeyField = ""
+    /// Whether a key is currently saved in the Keychain, read once when this
+    /// section appears (and again right after a save) so the field's helper
+    /// text can say "a key is saved" without holding the key itself in view
+    /// state.
+    @State private var hasSavedAnthropicKey = false
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -124,6 +136,8 @@ struct SettingsPage: View {
             } footer: {
                 Text("everything stays on your phone.")
             }
+
+            announcementWatcherSection
 
             Section("appearance") {
                 Picker("appearance", selection: Binding(
@@ -288,6 +302,66 @@ struct SettingsPage: View {
     // 2026-08-26 — see `AppState.includesAsOptedInContent`). A readings-only
     // class now behaves like any other class: it lives in the Profile classes
     // list and the normal per-class toggle is what hides it.
+
+    // MARK: Announcement watcher
+
+    /// Settings → "announcement watcher": turns Canvas course announcements
+    /// into dashboard items the same way the ICS feed and Modules readings
+    /// already do. Placed right after the accounts section — like Grade
+    /// Watcher above, this is session-powered (it reads announcements with
+    /// the same Canvas login the accounts section connects), so it reads as
+    /// one more thing that login unlocks rather than an unrelated preference.
+    ///
+    /// **Why the API key field never shows the saved key back.** A `SecureField`
+    /// pre-filled from `AnthropicKeyStore.load()` would round-trip a bearer
+    /// credential (see that store's own doc comment on what the key can do on
+    /// its own) from the Keychain into this view's state on every appearance
+    /// of this screen — one more place in memory carrying a secret that has
+    /// no reason to still be there once it's saved. The field starts empty
+    /// and stays that way; `hasSavedAnthropicKey` is the only thing this view
+    /// reads back from the store, and it's a boolean, not the key.
+    @ViewBuilder
+    private var announcementWatcherSection: some View {
+        Section {
+            Toggle("watch announcements", isOn: Binding(
+                get: { state.announcementWatcherEnabled },
+                set: { state.setAnnouncementWatcherEnabled($0) }
+            ))
+
+            if state.announcementWatcherEnabled {
+                Toggle("ai assist", isOn: Binding(
+                    get: { state.announcementAIEnabled },
+                    set: { state.setAnnouncementAIEnabled($0) }
+                ))
+
+                if state.announcementAIEnabled {
+                    // Same inline-Binding shape as "your name" above: the
+                    // `set` closure both updates the local field state and
+                    // persists on every edit, rather than introducing a
+                    // separate explicit "save" gesture this file has no other
+                    // example of.
+                    SecureField("anthropic api key", text: Binding(
+                        get: { anthropicAPIKeyField },
+                        set: { newValue in
+                            anthropicAPIKeyField = newValue
+                            AnthropicKeyStore.save(newValue)
+                            hasSavedAnthropicKey = !newValue.isEmpty
+                        }
+                    ))
+                    Text(hasSavedAnthropicKey ? "a key is saved on this device." : "no key saved yet \u{2014} paste one above.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("announcement watcher")
+        } footer: {
+            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. with ai assist on, announcement text is sent to anthropic's api using your key; off, everything stays on this phone.")
+        }
+        .onAppear {
+            hasSavedAnthropicKey = !AnthropicKeyStore.load().isEmpty
+        }
+    }
 
     // MARK: Reminders
 

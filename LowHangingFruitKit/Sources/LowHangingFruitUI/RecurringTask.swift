@@ -181,10 +181,15 @@ extension RecurringTask {
             return true
         case .manual:
             return occurrenceTaskID(fromSourceID: assignment.sourceID) != nil
-        case .canvas, .gradescope, .canvasModules:
+        case .canvas, .gradescope, .canvasModules, .canvasAnnouncement:
             // `.canvasModules` rows are imported module readings — real synced
             // coursework, exactly like the other feed sources, never a
-            // generated occurrence.
+            // generated occurrence. `.canvasAnnouncement` rows are real
+            // coursework too, just extracted from an announcement's text
+            // instead of a structured feed — an extractor-found "read ch. 4
+            // before Friday" is a one-off task tied to that specific
+            // announcement, not a rule this file's weekly-occurrence machinery
+            // generated, so it's never mistaken for one here.
             return false
         }
     }

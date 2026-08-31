@@ -17,6 +17,24 @@ public struct Assignment: Sendable, Hashable, Identifiable {
         /// as gone — never marks a module-imported reading gone during an ICS
         /// sync, or an ICS-synced assignment gone during a modules sync.
         case canvasModules
+        /// Extracted from a Canvas course announcement's text
+        /// (`CanvasAnnouncementsClient` + `AnnouncementAssignmentExtractor`,
+        /// the heuristic or Claude backend) rather than any structured Canvas
+        /// feed. Kept distinct from `.canvas`/`.canvasModules` for the same
+        /// partitioning reason those two are distinct from each other: an
+        /// announcement-derived row must never be marked gone by an ICS or
+        /// Modules reconcile that never touched it, and a stale announcement
+        /// extraction must never be marked gone by a fresh one for a
+        /// different announcement. It's also its own case because
+        /// provenance and dedup policy differ from every other source — a
+        /// student needs to be able to see "this came from an announcement"
+        /// (it's a guess an extractor made, not something Canvas itself
+        /// structured) and delete it if the extraction was wrong, and
+        /// `AppState.filteringAnnouncementDuplicates` dedupes these against
+        /// real Canvas/Gradescope items before they ever reach the ledger,
+        /// which is a different policy from how `.canvas` and `.gradescope`
+        /// dedupe against each other (`AssignmentDeduplicator`).
+        case canvasAnnouncement
     }
 
     /// What kind of thing this calendar entry represents. Canvas's ICS feed
