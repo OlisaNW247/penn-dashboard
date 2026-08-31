@@ -1,5 +1,113 @@
 # Low Hanging Fruit — Handoff
 
+_Last updated: 2026-08-31, end of an overnight session. This section
+supersedes everything below the "superseded" marker; read `CLAUDE.md`
+first for commands, storage tiers, traps, and the overseer/doer working
+model (which now includes model-tier routing — added this session)._
+
+## ⚠️ Current state: `v6` is the line
+
+**New work goes on `v6`** (tracking `origin/v6`), cut 2026-08-31 from the
+head of the PR #8 line, so it already contains everything ever pushed to
+`claude/gradescope-term-scope`. That PR (#8 → `v5`) is still open; merging
+it and later merging `v6 → v5` are both clean because `v6` is a superset.
+`claude/handoff-continuation-bn0e5m` is **dead work from a stale-`main`
+mistake — never resume it**, and never start from `main`'s HANDOFF.
+
+Two very different verification states coexist on `v6`:
+
+- **Verified green baseline (owner's Mac, 2026-08-30): 663 tests /
+  67 suites**, zero failures — everything up to and including the
+  connection-notice banner compiled and passed there.
+- **The v6 feature work on top is UNCOMPILED** (written in a Linux
+  container with no Swift toolchain): Grade Watcher entry points back on
+  + the whole Announcement Watcher (~2,500 lines, ~30 new tests).
+  Expected: **693 tests / 70 suites**. Anything else means the patch
+  doesn't compile as written — not a flaky count. Gate checklist and the
+  full design record: `docs/ANNOUNCEMENT_WATCHER_PLAN.md`. An
+  independent source review of the branch diff found no blockers; its
+  open nits are listed there.
+
+## What landed this session (2026-08-30 → 31)
+
+Compiled and verified by the owner (in the 663/67 baseline):
+1. **Gradescope term scoping** — Gradescope items carry their account-page
+   term; archived classes keep undated leftovers filed (the "27 days
+   late" user report). PR #8.
+2. **GradeHistoryStore test-runner guard** — `swift test` no longer opens
+   the real Mac App Group store (the CoreData error wall).
+3. **The Mac build lane** — `App/LHFApp-macOS.entitlements` (sandbox,
+   network.client, team-prefixed App Group), per-SDK
+   `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]` in `project.yml`,
+   `LSApplicationCategoryType` (education — **must match the ASC
+   listing category**). Archive verified: entitlements present, ledger
+   survives relaunch (App Group resolves), real Mac UI.
+4. **Profile page on macOS** — `.formStyle(.grouped)` + 720pt cap +
+   prompt-based placeholder; visually confirmed by the owner.
+5. **Connection-notice banner** — one dismissible dashboard card when
+   Gradescope was never connected or Canvas is pasted-link-only
+   (`needsGradescopeConnection` / `canvasIsLinkOnly`; preview mode
+   exempt). Compiled, but **the dismiss X has never been tapped on a
+   real device** — the owner's account has both services connected, so
+   the banner has never actually rendered for anyone. Still owed.
+6. **CLAUDE.md** — model-tier routing for the overseer/doer split
+   (doers pinned Sonnet/Haiku in `.claude/agents/`).
+
+Uncompiled on `v6` (overnight, owner asleep):
+7. **Grade Watcher visible again** — `FeatureFlags.gradeWatcher = true`.
+   The `false` was a **merge artifact** contradicting its own doc
+   comment, not a decision. Runtime `canUseGradeWatcher` gate unchanged.
+8. **Announcement Watcher** — `CanvasAnnouncementsClient` (cookie REST,
+   paginated, mirrors the grades client) → extractor protocol with a
+   deterministic heuristic backend (default, on-device) and an opt-in
+   `claude-haiku-4-5` backend (raw REST, forced tool call, key in
+   `AnthropicKeyStore`/Keychain) → items land as `.canvasAnnouncement`
+   ledger rows (upsert, source-partitioned like `.canvasModules`),
+   deduped against existing same-course items. Settings section with the
+   privacy contract; watcher defaults ON, AI assist OFF. Each
+   announcement parsed once ever (persisted ID set — AI re-parse is a
+   re-bill).
+
+## Mac App Store — where the submission stands
+
+iOS 2.0.0 (5) is live; **no macOS binary has ever been uploaded** (Macs
+currently get "iPhone Apps on Mac"). Owner-side state:
+- Upload candidate archive:
+  `~/Library/Developer/Xcode/Archives/2026-08-30/LHF-mac-1609.xcarchive`
+  (visible in Organizer; contains through the banner commit — **not**
+  the v6 features, which is correct: v6 is unreviewed).
+- Screenshots resized to 1440×900 in `~/Desktop/lhf-shots/out/`.
+  Cosmetic flag: the dashboard shot greets "Hello, There" — a real first
+  name would present better.
+- Remaining, all in App Store Connect: add the **macOS platform** to the
+  app record → Organizer → Distribute App → Upload → per-platform
+  description/keywords → review notes pointing at "Preview with sample
+  data" (reviewers cannot pass Penn SSO) → submit. After approval:
+  Pricing and Availability → uncheck "Make this app available on Apple
+  Silicon Macs". Full detail: `docs/appstore/CHECKLIST.md` §macOS.
+
+## Triaged, not bugs — don't "fix" these
+
+- No-submission items flashing OVERDUE for a couple of minutes on a
+  fresh install / brand-new items: the designed cold-start window before
+  the first grade refresh fills `noSubmissionCanvasAssignmentIDs`. It
+  self-corrects; closing the window would hide genuinely late work.
+- No Notifications row in iOS Settings until the in-app reminders toggle
+  first requests permission: standard iOS behavior.
+
+## Next actions, in order
+1. Owner runs the v6 morning gate (`swift test` → 693/70, then build,
+   look at Settings → announcement watcher, grades button).
+2. Fix anything red — treat as the patch not compiling as written.
+3. The Mac upload (independent of v6; the archive predates it).
+4. Decide PR #8's fate (merge to `v5`, or retire in favor of `v6`).
+5. Open decision recorded in the plan doc: auto-insert vs confirm-first
+   for AI-extracted assignments; per-course announcement toggles.
+
+---
+
+# Superseded: state as of 2026-08-29 and earlier
+
 _Last updated: 2026-08-29 (branch `v5` — the current line, cut from the
 2.0.0 build 5 head). This section supersedes everything below the
 "historical context" marker; read `CLAUDE.md` first for commands, storage
