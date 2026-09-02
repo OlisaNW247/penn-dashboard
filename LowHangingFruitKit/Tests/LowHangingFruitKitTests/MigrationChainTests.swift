@@ -157,6 +157,46 @@ struct MigrationChainTests {
         #expect(shared.stringArray(forKey: "gradeWatcherWatchedCourses") == ["CIS 1200"])
     }
 
+    /// v4 added a third migration to the same launch: the four per-course maps
+    /// fold into `CoursePreferences`. Its own behaviour is covered in
+    /// `CoursePreferencesTests`; what this asserts is the *seam*, which is where
+    /// the interesting failure lives.
+    ///
+    /// The fold reads the per-course keys out of the shared suite. Those keys
+    /// only arrive there because `SharedDefaultsMigration` copied them from the
+    /// private domain moments earlier — so if the fold ever ran first, or read
+    /// the wrong domain, an upgrading student would silently lose every hidden
+    /// class, every rename, and every cached Canvas course id, and the app would
+    /// look completely normal while doing it.
+    @Test("the per-course fold sees preferences the App Group copy has just moved")
+    func coursePreferencesFoldJoinsTheChain() throws {
+        let (legacy, ln) = scratchDefaults(); defer { destroy(ln) }
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        let (ledger, history) = try stores()
+        try seedLegacyData(legacy, completedAt: Date(timeIntervalSince1970: 1_700_000_000))
+
+        // Two more per-course maps, in the private domain like the rest.
+        legacy.set(["CIS 1600": "Discrete Math"], forKey: "courseNameOverrides")
+        legacy.set(["CIS 1600": "1234567"], forKey: "canvasCourseIDsByCode")
+
+        let summary = launch(legacy: legacy, shared: shared,
+                             assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(summary.coursePreferencesImported > 0)
+
+        let prefs = CoursePreferencesStore(defaults: shared)
+        #expect(!prefs.isVisible("canvas:CIS1200"))          // was hiddenCourseKeys
+        #expect(prefs.isDeleted("gradescope:OLD"))           // was deletedCourseKeys
+        #expect(prefs.displayName(for: "CIS 1600") == "Discrete Math")
+        #expect(prefs.canvasCourseID(for: "CIS 1600") == "1234567")
+
+        // A second launch must not re-fold. The version gate is one number
+        // shared with the ledger step, so a bug there shows up here first.
+        let second = launch(legacy: legacy, shared: shared,
+                            assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(second.coursePreferencesImported == 0)
+        #expect(CoursePreferencesStore(defaults: shared).byCourseKey == prefs.byCourseKey)
+    }
+
     /// The regression guard for the task 3 / task 5 collision.
     ///
     /// The legacy blobs exist **only** in the private domain, exactly as they do
@@ -238,6 +278,201 @@ struct MigrationChainTests {
         launch(legacy: legacy, shared: shared, assignmentStore: ledger2, gradeHistoryStore: history2)
 
         #expect(shared.string(forKey: "userName") == "Olisa")
+    }
+
+    // MARK: v4 — the semester-rollover fields joining an existing store
+    //
+    // Semester rollover added `archivedTermYear` / `archivedTermSeasonRaw` to
+    // `StoredAssignment` and `isManuallyAdded` to `CoursePreferences`. Neither
+    // needed a `LegacyStateMigration` step, because the correct value for a row
+    // written by an earlier build *is* the default — nothing was archived
+    // before archiving existed, and no class was hand-added before the feature
+    // shipped. `docs/persistence-explained.md` §4 step 3 is explicit that a
+    // migration is only needed when that isn't true.
+    //
+    // What still has to be proved is the part that has nothing to do with
+    // migration steps: that adding the fields cannot destroy what is already on
+    // disk. Both are optional-or-defaulted, which is what keeps the SwiftData
+    // change lightweight and the schema CloudKit-eligible — the tests below are
+    // what says so out loud.
+
+    @Test("the rollover fields default cleanly on a store an earlier build wrote")
+    func rolloverFieldsDefaultOnExistingStore() throws {
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lhf-chain-v4-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: ledgerURL) }
+
+        let due = Date(timeIntervalSince1970: 1_700_000_000)
+        let item = Assignment(source: .canvas, sourceID: "v4a", kind: .assignment,
+                              course: "CIS 1200", title: "HW", dueAt: due, url: nil,
+                              term: Term(year: 2026, season: .spring))
+
+        // Launch 1 — a populated store, written and closed.
+        do {
+            let ledger = try AssignmentStore(url: ledgerURL)
+            _ = ledger.reconcile([item], source: .canvas)
+            ledger.setCompleted(ids: ["canvas:v4a"], at: due)
+        }
+
+        // Launch 2 — reopened. Nothing lost, and the new fields read as "not
+        // archived" rather than as anything invented.
+        let reopened = try AssignmentStore(url: ledgerURL)
+        #expect(reopened.rowCount() == 1)
+        #expect(reopened.completionRecord().ids == ["canvas:v4a"])
+        #expect(reopened.archivedAssignmentIDs().isEmpty)
+        #expect(reopened.archivedTerms().isEmpty)
+        #expect(reopened.stats().archived == 0)
+
+        // A fresh install has nothing to offer, which is the no-op case.
+        #expect(try AssignmentStore(inMemory: true).rolloverOffer() == nil)
+    }
+
+    @Test("a course-preferences blob from before the field decodes without wiping the map")
+    func coursePreferencesBlobSurvivesTheNewField() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+
+        // Hand-built JSON in the exact shape an earlier build wrote: every key
+        // it knew about, and no `isManuallyAdded`. This is the failure mode the
+        // type's hand-written `Codable` exists to prevent — the whole map is one
+        // blob under one key, so a single throwing `decode` would not lose one
+        // course, it would reset *every* course's settings.
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":false,"isDeleted":false,\
+        "notificationsEnabled":true,"recurringEnabled":true,"displayName":"Discrete"}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(!store.isVisible("CIS 1200"))
+        #expect(store.displayName(for: "CIS 1200") == "Discrete")
+        // The new field takes its default rather than throwing.
+        #expect(!store.isManuallyAdded("CIS 1200"))
+        #expect(store.manuallyAddedCourseKeys.isEmpty)
+
+        // And it round-trips: writing it back and re-reading keeps both the old
+        // settings and the new field.
+        store.setManuallyAdded("CIS 1200", true)
+        let reread = CoursePreferencesStore(defaults: shared)
+        #expect(reread.isManuallyAdded("CIS 1200"))
+        #expect(!reread.isVisible("CIS 1200"))
+        #expect(reread.displayName(for: "CIS 1200") == "Discrete")
+    }
+
+    /// Same failure mode, same fix, one level deeper: `recurringEnabled` and
+    /// `noSubmissionRemindersEnabled` themselves shipped 2026-08-27, then
+    /// merged into `nothingToSubmitEnabled` the same day after a device pass
+    /// (docs/decisions.md) — so `init(from:)` has to fold a blob carrying
+    /// either or both of the WEEK-OLD fields into the one new field, not
+    /// just default it, or the owner's own already-configured CIS 2400 would
+    /// silently reset to "on" the moment this build launched. The fold is
+    /// documented on `CoursePreferences.nothingToSubmitEnabled`'s decode
+    /// site: prefer the new key when present; otherwise AND the two old ones
+    /// (each defaulting `true` if absent), so a `false` in EITHER one
+    /// carries forward.
+    private static let bothFieldsAbsentBlob = """
+    {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+    "notificationsEnabled":true,"isManuallyAdded":false}}
+    """
+
+    @Test("a blob with recurringEnabled: false (the old field, no new key) folds to nothingToSubmitEnabled == false")
+    func coursePreferencesBlobFoldsOldRecurringFalse() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+        "notificationsEnabled":true,"recurringEnabled":false,"isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+    }
+
+    @Test("a blob with noSubmissionRemindersEnabled: false (the old field, no new key) folds to nothingToSubmitEnabled == false")
+    func coursePreferencesBlobFoldsOldNoSubmissionFalse() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":true,"isDeleted":false,\
+        "notificationsEnabled":true,"noSubmissionRemindersEnabled":false,"isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+    }
+
+    @Test("a blob with both old fields absent decodes nothingToSubmitEnabled to true")
+    func coursePreferencesBlobDefaultsWhenBothOldFieldsAbsent() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        shared.set(Data(Self.bothFieldsAbsentBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        #expect(store.byCourseKey.count == 1)
+        #expect(store.nothingToSubmitEnabled("CIS 1200"))
+    }
+
+    @Test("writing after the fold persists only the merged key, and round-trips")
+    func coursePreferencesBlobRoundTripsOnlyTheMergedKey() throws {
+        let (shared, sn) = scratchDefaults(); defer { destroy(sn) }
+        // `isVisible: false` keeps this record non-default (and therefore
+        // still in the persisted map) even after the toggle below is flipped
+        // back to its own default — otherwise `commit`'s pruning would drop
+        // the record entirely and there'd be nothing left to inspect.
+        let legacyBlob = """
+        {"CIS 1200":{"courseKey":"CIS 1200","isVisible":false,"isDeleted":false,\
+        "notificationsEnabled":true,"recurringEnabled":true,"noSubmissionRemindersEnabled":false,\
+        "isManuallyAdded":false}}
+        """
+        shared.set(Data(legacyBlob.utf8), forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: shared)
+        // The AND of the two old fields (true && false).
+        #expect(!store.nothingToSubmitEnabled("CIS 1200"))
+
+        // Flip it on and save — this is the first write since the merge, so
+        // it's the one that has to prove the old keys stop being written.
+        store.setNothingToSubmitEnabled("CIS 1200", true)
+        let rawJSON = try #require(shared.data(forKey: CoursePreferencesStore.storageKey))
+        let jsonObject = try JSONSerialization.jsonObject(with: rawJSON)
+        let decoded = try #require(jsonObject as? [String: [String: Any]])
+        let record = try #require(decoded["CIS 1200"])
+        #expect(record["nothingToSubmitEnabled"] as? Bool == true)
+        #expect(record["recurringEnabled"] == nil)
+        #expect(record["noSubmissionRemindersEnabled"] == nil)
+
+        // And it round-trips through a fresh handle on the same domain.
+        let reread = CoursePreferencesStore(defaults: shared)
+        #expect(reread.nothingToSubmitEnabled("CIS 1200"))
+        #expect(!reread.isVisible("CIS 1200"))
+    }
+
+    @Test("the v4 fields survive the whole migration chain, twice, with no App Group")
+    func rolloverFieldsSurviveTheChain() throws {
+        let (legacy, ln) = scratchDefaults(); defer { destroy(ln) }
+        let (ledger, history) = try stores()
+        try seedLegacyData(legacy, completedAt: Date(timeIntervalSince1970: 1_700_000_000))
+
+        let spring = Term(year: 2026, season: .spring)
+        _ = ledger.reconcile([
+            Assignment(source: .canvas, sourceID: "v4b", kind: .assignment,
+                       course: "CIS 1200", title: "HW", dueAt: nil, url: nil, term: spring),
+        ], source: .canvas)
+        ledger.archive(terms: [spring])
+        CoursePreferencesStore(defaults: legacy).setManuallyAdded("MUSC 1700", true)
+
+        // `shared: nil` is the no-entitlement case: degrade, never crash.
+        launch(legacy: legacy, shared: nil, assignmentStore: ledger, gradeHistoryStore: history)
+        // Re-running must change nothing — the version key is itself a defaults
+        // value and a restored-from-backup device can present a stale one.
+        launch(legacy: legacy, shared: nil, assignmentStore: ledger, gradeHistoryStore: history)
+
+        // Neither migration touched the archive, and neither invented one.
+        #expect(ledger.archivedAssignmentIDs() == ["canvas:v4b"])
+        #expect(ledger.archivedTerms() == [spring])
+        #expect(CoursePreferencesStore(defaults: legacy).isManuallyAdded("MUSC 1700"))
+        #expect(ledger.stats().duplicateIDs == 0)
     }
 
     // MARK: No App Group entitlement

@@ -25,6 +25,28 @@ struct OnboardingView: View {
         case canvasLogin
         case gradescopeLogin
         case classPicker
+        case courseSetup
+    }
+
+    /// Whether the primary action should route through the per-course walk
+    /// rather than straight to the dashboard.
+    ///
+    /// Three conditions, all of which have to hold. Canvas connected, because
+    /// the walk has nothing to say without it. At least one class switched on,
+    /// because the class list is derived from feed items and in week one it is
+    /// routinely empty — a "set up your classes" button that opens on nothing
+    /// is worse than no button. And `OnboardingCourseSetup.needsCourseSetup`,
+    /// which is what keeps a Settings reconnect from replaying the walk; see
+    /// its doc comment for why that flag is separate from
+    /// `hasCompletedOnboarding`.
+    ///
+    /// Recomputed rather than cached in `@State` so that connecting Canvas —
+    /// which populates the class list — flips the button without needing an
+    /// invalidation path.
+    private var shouldOfferCourseSetup: Bool {
+        state.isCanvasConnected
+            && !state.selectedCourseCodes().isEmpty
+            && OnboardingCourseSetup.needsCourseSetup()
     }
 
     var body: some View {
@@ -45,6 +67,14 @@ struct OnboardingView: View {
             .environmentObject(state)
         case .classPicker:
             ClassPickerPane(onDone: { phase = .steps })
+                .environmentObject(state)
+        case .courseSetup:
+            // Finishing *or* skipping the walk goes straight to the dashboard
+            // rather than back to this checklist. The walk is the last thing
+            // between the student and the app, and depositing someone who just
+            // tapped "Skip setup" back on the screen they were trying to leave
+            // is how a skip stops reading as a skip.
+            OnboardingCourseSetupPane(onFinish: { state.completeOnboarding() })
                 .environmentObject(state)
         }
     }
@@ -85,6 +115,8 @@ struct OnboardingView: View {
                     ) { phase = .gradescopeLogin }
 
                     classPickerCard
+
+                    courseSetupCard
                 }
 
                 if let error = state.error {
@@ -99,17 +131,32 @@ struct OnboardingView: View {
                 goToDashboardButton
                     .padding(.top, 20)
 
-                Text("Connect Canvas to build your dashboard.")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2RingSub)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
+                if shouldOfferCourseSetup {
+                    skipCourseSetupLink
+                        .padding(.top, 12)
+                } else {
+                    Text("connect canvas to build your dashboard.")
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2RingSub)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
+                }
 
-                // "Preview with sample data" used to sit here, as the smallest
-                // text on the busiest screen. It now leads the intro's first
-                // pane (`IntroView.previewLink`), where it's a card of its own
-                // and arrives *before* the Canvas login ask rather than under it.
+                // "Preview with sample data" leads the intro's first pane
+                // (`IntroView.previewLink`) — but the intro is gated on
+                // `hasSeenIntro`, and Skip sets it. A reviewer who taps Skip
+                // (the most common thing to do with an intro carousel) lands
+                // here permanently, and `restartOnboarding()` does not clear
+                // `hasSeenIntro`, so there is no way back to that pane short of
+                // reinstalling. Without a door on *this* screen the app is
+                // unevaluatable behind Penn SSO.
+                //
+                // So it lives in both places. Here it is a card rather than the
+                // 11pt footnote it used to be, and it sits below the primary
+                // action so it never competes with connecting a real account.
+                previewCard
+                    .padding(.top, 18)
 
                 troubleConnectingLink
                     .padding(.top, 10)
@@ -122,7 +169,15 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
         }
-        .onAppear { name = state.userName }
+        .onAppear {
+            name = state.userName
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-LHFCourseSetupHarness") {
+                state.canvasItems = SampleData.items().map(\.assignment)
+                state.updateCanvasICSURL("https://example.com/harness.ics")
+            }
+            #endif
+        }
         .sheet(isPresented: $showPasteFeedLink) {
             PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
         }
@@ -137,13 +192,13 @@ struct OnboardingView: View {
         Button {
             showPasteFeedLink = true
         } label: {
-            Text("Or paste your Canvas calendar link instead")
+            Text("or paste your canvas calendar link instead")
                 .font(.lhfSans(11, weight: .medium))
                 .foregroundStyle(Color.v2DateText)
                 .underline()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Paste your Canvas calendar link instead of logging in")
+        .accessibilityLabel("paste your canvas calendar link instead of logging in")
     }
 
     /// Escape hatch for a stuck login (docs/CANVAS_LOGIN_DIAGNOSIS.md): clears
@@ -163,7 +218,7 @@ struct OnboardingView: View {
                 if isResettingLoginData {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("Trouble connecting? Reset login data")
+                    Text("trouble connecting? reset login data")
                         .font(.lhfSans(11, weight: .medium))
                         .foregroundStyle(Color.v2SpineRed)
                         .underline()
@@ -171,13 +226,13 @@ struct OnboardingView: View {
             }
             .buttonStyle(.plain)
             .disabled(isResettingLoginData)
-            .accessibilityLabel("Reset stored Canvas and Gradescope login data")
+            .accessibilityLabel("reset stored canvas and gradescope login data")
             .confirmationDialog(
                 "Reset login data?",
                 isPresented: $showResetConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Reset and start over", role: .destructive) {
+                Button("reset and start over", role: .destructive) {
                     didResetLoginData = false
                     isResettingLoginData = true
                     Task {
@@ -186,26 +241,53 @@ struct OnboardingView: View {
                         didResetLoginData = true
                     }
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("cancel", role: .cancel) {}
             } message: {
-                Text("Clears any stuck Canvas or Gradescope login on this device, including saved session cookies, so you can start fresh. You'll need to log in again.")
+                Text("clears any stuck canvas or gradescope login on this device, including saved session cookies, so you can start fresh. you'll need to log in again.")
             }
 
             if didResetLoginData {
-                Text("Login data cleared. Try Connect Canvas again.")
+                Text("login data cleared. try connect canvas again.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2SpineGreen)
             }
         }
     }
 
+    /// The same door as `IntroView.previewLink`, on the screen a reviewer
+    /// actually lands on after skipping the intro.
+    private var previewCard: some View {
+        Button {
+            lhfHapticLight()
+            state.enterPreviewMode()
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("just exploring?")
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2CourseCode)
+                Text("preview with sample data")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .underline()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
+    }
+
     private var nameCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("YOUR NAME")
+            Text("your name")
                 .font(.lhfSans(9, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(Color.v2CourseCode)
-            TextField("First name", text: $name)
+            TextField("first name", text: $name)
                 .textFieldStyle(.plain)
                 .font(.lhfSans(15))
                 .foregroundStyle(Color.v2Ink)
@@ -222,10 +304,10 @@ struct OnboardingView: View {
             Text("LHF")
                 .font(.lhfSerif(44))
                 .foregroundStyle(Color.v2Ink)
-            Text("Welcome to Low Hanging Fruit")
+            Text("welcome to low hanging fruit")
                 .font(.lhfSans(16, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
-            Text("Never miss another assignment")
+            Text("never miss another assignment")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -233,11 +315,29 @@ struct OnboardingView: View {
         }
     }
 
+    /// The primary action, which has two forms.
+    ///
+    /// Once Canvas is connected and there are classes to configure, it leads
+    /// into the per-course walk — that is what makes the walk part of
+    /// onboarding rather than a setting nobody finds, which is precisely the
+    /// state the requirement scanner has been in since v3 (reachable only from
+    /// Settings → Tasks). Afterwards, and for anyone reconnecting from
+    /// Settings, it goes straight to the dashboard as it always did.
+    ///
+    /// The escape hatch below it (`skipCourseSetupLink`) is not optional
+    /// decoration: routing the one obvious button into a multi-screen wizard
+    /// without a visible way past it is exactly the abandonment trap, so the
+    /// two ship together and neither is ever the only thing on screen.
     private var goToDashboardButton: some View {
         Button {
-            state.completeOnboarding()
+            lhfHapticLight()
+            if shouldOfferCourseSetup {
+                phase = .courseSetup
+            } else {
+                state.completeOnboarding()
+            }
         } label: {
-            Text("Go to dashboard")
+            Text(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
                 .font(.lhfSans(15, weight: .semibold))
                 .foregroundStyle(canContinue ? Color.v2ToggleActiveTx : Color.v2DateText.opacity(0.55))
                 .frame(maxWidth: .infinity)
@@ -248,8 +348,33 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canContinue)
-        .accessibilityLabel("Go to dashboard")
-        .accessibilityHint(canContinue ? "" : "Connect Canvas first")
+        .accessibilityLabel(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
+        .accessibilityHint(canContinue
+                           ? (shouldOfferCourseSetup ? "Choose how each class notifies you. You can skip this." : "")
+                           : "Connect Canvas first")
+    }
+
+    /// The one-tap way past the walk, on the same screen as the button that
+    /// leads into it.
+    ///
+    /// Marks the step completed on the way out, so a student who declines it
+    /// here is not asked again the next time a Settings reconnect drops them
+    /// back on this checklist. Declining costs them nothing — every class keeps
+    /// `CoursePreferences`' defaults, which is reminders on and lead times
+    /// following the global setting.
+    private var skipCourseSetupLink: some View {
+        Button {
+            OnboardingCourseSetup.markCompleted()
+            state.completeOnboarding()
+        } label: {
+            Text("skip for now. go to dashboard")
+                .font(.lhfSans(12, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+                .underline()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("skip class setup and go to the dashboard")
+        .accessibilityHint("every class keeps its default reminders")
     }
 
     private func stepCard(
@@ -329,7 +454,7 @@ struct OnboardingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Choose your classes")
+                    Text("choose your classes")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
                     Text(enabled
@@ -354,6 +479,64 @@ struct OnboardingView: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+
+    /// Optional fourth step: how each class should reach you.
+    ///
+    /// This card exists alongside the primary button that leads to the same
+    /// place, and the duplication is on purpose — it is the only route back in
+    /// for two people the primary button has stopped offering it to. One is the
+    /// student who skipped the walk and changed their mind before leaving this
+    /// screen. The other matters more: a student who connects Canvas in week
+    /// one, when no class has posted anything yet, has an empty class list, so
+    /// `shouldOfferCourseSetup` is false and they go straight to the dashboard.
+    /// A fortnight later their classes exist, and a Settings reconnect is the
+    /// only thing that brings them back here — at which point the flag says the
+    /// step is done and the button says "Go to dashboard". Without this card
+    /// the walk would be unreachable for exactly the students the app is
+    /// hardest on.
+    private var courseSetupCard: some View {
+        let courses = state.selectedCourseCodes()
+        let enabled = !courses.isEmpty
+
+        return Button {
+            if enabled { phase = .courseSetup }
+        } label: {
+            HStack(alignment: .center, spacing: 13) {
+                ZStack {
+                    Circle().fill(Color.v2Ink.opacity(0.08)).frame(width: 28, height: 28)
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("reminders, class by class")
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
+                    Text(enabled
+                         ? "We'll look for weekly readings and check-ins in each syllabus, and you decide what to keep."
+                         : "Once your classes show up, set how each one reminds you.")
+                        .font(.lhfSans(12))
+                        .foregroundStyle(Color.v2CourseCode)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 10)
+
+                if enabled {
+                    Text("\(courses.count)")
+                        .font(.lhfSans(12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .padding(16)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel("set up reminders class by class")
     }
 }
 
@@ -387,23 +570,23 @@ private struct LoginActionBar: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 14) {
-                Button("Reload", action: onReload)
+                Button("reload", action: onReload)
                     .buttonStyle(.plain)
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
                     .disabled(isBusy)
-                    .accessibilityHint("Reloads the current login page")
+                    .accessibilityHint("reloads the current login page")
 
-                Button("Start over", action: onStartOver)
+                Button("start over", action: onStartOver)
                     .buttonStyle(.plain)
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
                     .disabled(isBusy)
-                    .accessibilityHint("Clears this login's cookies and loads a fresh sign-in page")
+                    .accessibilityHint("clears this login's cookies and loads a fresh sign-in page")
             }
 
             HStack(spacing: 12) {
-                Button("Cancel", action: onCancel)
+                Button("cancel", action: onCancel)
                     .buttonStyle(.plain)
                     .font(.lhfSans(13, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
@@ -510,7 +693,7 @@ private struct LoginErrorCard: View {
                 .padding(.horizontal, 24)
 
             Button(action: onStartOver) {
-                Text("Start over")
+                Text("start over")
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .padding(.horizontal, 20)
@@ -521,7 +704,7 @@ private struct LoginErrorCard: View {
 
             if let onUseCalendarLinkInstead {
                 Button(action: onUseCalendarLinkInstead) {
-                    Text("Use calendar link instead")
+                    Text("use calendar link instead")
                         .font(.lhfSans(12, weight: .medium))
                         .foregroundStyle(Color.v2DateText)
                         .underline()
@@ -854,10 +1037,10 @@ private struct ClassPickerPane: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
-                Text("Your classes")
+                Text("your classes")
                     .font(.lhfSerif(26))
                     .foregroundStyle(Color.v2Ink)
-                Text("Turn off any class you don't want on your dashboard or in reminders.")
+                Text("turn off any class you don't want on your dashboard or in reminders.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .multilineTextAlignment(.center)
@@ -880,7 +1063,7 @@ private struct ClassPickerPane: View {
             Divider().overlay(Color.v2Divider)
 
             Button(action: onDone) {
-                Text("Done")
+                Text("done")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .frame(maxWidth: .infinity)

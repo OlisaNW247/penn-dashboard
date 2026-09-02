@@ -85,22 +85,29 @@ struct LedgerWidgetReaderTests {
         #expect(LedgerWidgetReader.snapshot(storeURL: url, now: now) == nil)
     }
 
-    @Test("an .event row expires with its calendar day; an .assignment row does not")
+    @Test("an .event row expires the moment its due time passes, not at end of its calendar day; an .assignment row does not expire at all")
     func expiredEventsDropWhileAssignmentsStayOverdue() throws {
         let (store, url) = try makeStore()
         defer { try? FileManager.default.removeItem(at: url) }
         let now = Date()
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        // A class that started an hour ago, same calendar day — the exact
+        // shape of the widget parity gap the owner's device pass caught: the
+        // day-granularity rule would have kept advertising it until midnight.
+        let anHourAgoSameDay = now.addingTimeInterval(-3600)
+        let anHourFromNowSameDay = now.addingTimeInterval(3600)
         _ = store.reconcile([
             event("1", title: "Yesterday's reading", due: yesterday),
-            event("2", title: "Today's reading", due: now),
-            canvas("3", title: "Overdue pset", due: yesterday),
+            event("2", title: "Started an hour ago", due: anHourAgoSameDay),
+            event("3", title: "Starts in an hour", due: anHourFromNowSameDay),
+            canvas("4", title: "Overdue pset", due: yesterday),
         ], source: .canvas)
 
         let snapshot = try #require(LedgerWidgetReader.snapshot(storeURL: url, now: now))
         let titles = Set(snapshot.items.map(\.title))
         #expect(!titles.contains("Yesterday's reading"))
-        #expect(titles.contains("Today's reading"))
+        #expect(!titles.contains("Started an hour ago"))
+        #expect(titles.contains("Starts in an hour"))
         #expect(titles.contains("Overdue pset"))
     }
 

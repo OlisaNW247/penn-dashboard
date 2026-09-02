@@ -17,7 +17,7 @@ import Testing
 ///
 /// `refreshCourseIntel(cookies:)` and `importReadingsIfNeeded(for:)`'s
 /// network/cookie-dependent halves are NOT exercised here — same reasoning
-/// `ModuleReadingImportTests`/`CourseContentNudgeTests` document: they talk
+/// `ModuleReadingImportTests`/`ReadingsAutoImportTests` document: they talk
 /// to `CanvasDiscoveryClient`/`CanvasModulesClient` over a real `URLSession`
 /// with no injection seam from `AppState`, and `importModuleReadings` itself
 /// is `private`. Where the brief asked for coverage of those paths, this
@@ -240,8 +240,9 @@ struct CourseIntelRefinementTests {
     }
 
     /// `importReadingsIfNeeded` is `func`, not `private`, specifically so
-    /// `resolveCourseNudge`/`setCourseContentIncluded` can call it — which
-    /// also makes its own synchronous guard directly testable. With no
+    /// `setCourseContentIncluded` can call it when a student re-includes a
+    /// previously-excluded course — which also makes its own synchronous
+    /// guard directly testable. With no
     /// enrolled-course entry and no course-profile report on file for this
     /// course, the courseID can't be resolved, so the function must return
     /// before ever spawning its cookie-fetching `Task` — deterministically

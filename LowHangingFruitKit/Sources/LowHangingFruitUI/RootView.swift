@@ -77,8 +77,8 @@ struct RootCore: View {
                 .environmentObject(state)
                 .environmentObject(scheduler)
                 .task {
-                    // Canvas-only: refresh the assignment list from the
-                    // (cookieless, self-authenticating) calendar feed.
+                    // Canvas-only: refresh from the cookieless calendar feed.
+                    // Fires once at the onboarding -> app handoff.
                     await state.syncIfConfigured()
                 }
         }

@@ -399,10 +399,123 @@ public final class AssignmentStore {
     /// abandoned — it's the archive the Done tab is built on. Without this an
     /// assignment you turned in would quietly vanish from your own record two
     /// weeks after it rolled off the Canvas feed.
+    ///
+    /// Archived work is exempt for the same reason, and the exemption is not
+    /// optional. `pruneAgedOut` **deletes** what this predicate matches, and an
+    /// archived row is by definition old, usually gone from the feed, and quite
+    /// possibly never finished — which is every clause below satisfied at once.
+    /// Without this line, agreeing to "archive Spring 2026" would hand the
+    /// student's spring to the pruner a fortnight later and take the Done
+    /// history with it. Archiving is the *deliberate* removal that aging was
+    /// only ever a crude stand-in for: the student said put it away, not throw
+    /// it out.
     private func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
-        guard !row.isFinished else { return false }
+        guard !row.isFinished, !row.isArchived else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
+    }
+
+    // MARK: Semester archival
+
+    /// Everything `AppState` needs to know about archival, from one pass over
+    /// the table.
+    ///
+    /// The three questions — what is archived, which terms hold archived work,
+    /// and is there a boundary to offer — are each answerable on their own
+    /// below, and `AppState` used to ask all three back to back on every
+    /// dashboard rebuild. A rebuild runs on every sync *and* every completion
+    /// toggle, and each of those calls resolves through `rowsByID()`, which
+    /// scans the whole table and can write. Asking once is the same answer for a
+    /// third of the work.
+    public struct ArchiveState: Sendable, Equatable {
+        public let archivedIDs: Set<String>
+        /// Newest first.
+        public let terms: [Term]
+        public let offer: SemesterRollover.Offer?
+    }
+
+    public func archiveState(now: Date = Date()) -> ArchiveState {
+        let rows = rowsByID().values.filter { !$0.isCompletionOnly }
+        return ArchiveState(
+            archivedIDs: Set(rows.filter(\.isArchived).map(\.id)),
+            terms: Array(Set(rows.compactMap(\.archivedTerm))).sorted(by: >),
+            offer: SemesterRollover.detect(rows.map { $0.rolloverItem() }, now: now)
+        )
+    }
+
+    /// What a rollover would do, or nil when there is no boundary to offer.
+    ///
+    /// Reads the whole ledger, including rows the dashboard filters out —
+    /// completion-only bookkeeping rows are the one exclusion, since they carry
+    /// no trustworthy course or date and counting them would inflate the number
+    /// the student is shown. The judgement itself lives in `SemesterRollover`;
+    /// this is only the adapter that turns rows into a census.
+    public func rolloverOffer(now: Date = Date()) -> SemesterRollover.Offer? {
+        let items = rowsByID().values
+            .filter { !$0.isCompletionOnly }
+            .map { $0.rolloverItem() }
+        return SemesterRollover.detect(items, now: now)
+    }
+
+    /// Every id a rollover has filed away, for `AppState` to filter the
+    /// dashboard by. Returned as ids rather than rows so the uniqueness
+    /// invariant can't leak out of the store (`docs/persistence-explained.md`
+    /// §4 step 2).
+    public func archivedAssignmentIDs() -> Set<String> {
+        Set(rowsByID().values.filter(\.isArchived).map(\.id))
+    }
+
+    /// Files every row belonging to one of `terms` under that term. Returns how
+    /// many rows were actually stamped.
+    ///
+    /// **This is the one operation in the app that hides a student's work, so
+    /// read what it does and does not do.** It writes two optional integers per
+    /// row and nothing else. It deletes nothing, it clears no completion, it
+    /// touches no score and no pairing. Every archived row is still on disk,
+    /// still returned by `currentAssignments()`, and still reachable in Done —
+    /// what changes is that `AppState` stops putting it on the dashboard and
+    /// stops feeding it to `reschedule()`, and the widget stops advertising it.
+    ///
+    /// A row is matched on `effectiveTerm`, whose precedence (course-code term,
+    /// then due date, then `firstSeen`) is what lets this catch the undated,
+    /// termless leftovers that no filter over the value-type `Assignment` can
+    /// see. Rows already archived are skipped rather than re-stamped, so running
+    /// this twice is a no-op and the returned count is honest.
+    @discardableResult
+    public func archive(terms: Set<Term>, now: Date = Date()) -> Int {
+        guard !terms.isEmpty else { return 0 }
+        var stamped = 0
+        for row in rowsByID().values {
+            guard !row.isArchived, !row.isCompletionOnly,
+                  let term = row.effectiveTerm(), terms.contains(term)
+            else { continue }
+            row.setArchivedTerm(term)
+            stamped += 1
+        }
+        if stamped > 0 { saveChanges() }
+        return stamped
+    }
+
+    /// Brings archived terms back onto the dashboard. The way out of a rollover
+    /// the student regrets, and the reason archiving is safe to offer at all —
+    /// nothing here was destroyed, so undoing it is just clearing two fields.
+    @discardableResult
+    public func unarchive(terms: Set<Term>, now: Date = Date()) -> Int {
+        guard !terms.isEmpty else { return 0 }
+        var cleared = 0
+        for row in rowsByID().values {
+            guard let archived = row.archivedTerm, terms.contains(archived) else { continue }
+            row.setArchivedTerm(nil)
+            cleared += 1
+        }
+        if cleared > 0 { saveChanges() }
+        return cleared
+    }
+
+    /// Terms that currently hold at least one archived row, newest first — the
+    /// "you archived these" list, and what `unarchive` is offered against.
+    public func archivedTerms() -> [Term] {
+        Array(Set(rowsByID().values.compactMap(\.archivedTerm))).sorted(by: >)
     }
 
     // MARK: User-created work
@@ -566,6 +679,20 @@ public final class AssignmentStore {
         saveChanges()
     }
 
+    /// Completion as a plain id-to-date map.
+    ///
+    /// A narrower read of `completionRecord()`, which is the authoritative one —
+    /// this exists because most callers only ever want the dates and reading
+    /// `.dates` off a record they immediately discard says less than it costs.
+    /// Both are projections of the ledger, never a second copy of the truth:
+    /// completion used to be persisted independently in UserDefaults *and*
+    /// mirrored onto rows, and when the two drifted the Done tab and the aging
+    /// exemption disagreed about what was finished — with that exemption being
+    /// the only thing standing between completed work and deletion.
+    public func completionDates() -> [String: Date] {
+        completionRecord().dates
+    }
+
     /// One-time import of the pre-ledger completion state — the
     /// `completedAssignmentIDs` array and `completionDates` JSON map that used
     /// to live in UserDefaults. Returns how many ids were recorded.
@@ -629,15 +756,38 @@ public final class AssignmentStore {
         public var isNewlyGraded: Bool { previous == nil }
     }
 
+    /// Writes this refresh's Canvas submission flags and scores onto the ledger.
+    ///
+    /// `observedCanvasAssignmentIDs` is what separates the two things a caller
+    /// hands over here. The submitted set is deliberately allowed to be wider
+    /// than this refresh — callers merge in what the ledger already knew, so a
+    /// course that 401'd mid-loop doesn't get its finished work erased — but a
+    /// carried-over id is *not* something Canvas answered for just now, and
+    /// dating it as though it were would turn a stale record into a
+    /// confident-looking fresh one. Pass the ids this pass genuinely covered and
+    /// only those get a new observation date; the rest keep the date they had,
+    /// which is the honest answer and the one `hasFreshSubmissionState` needs.
+    ///
+    /// Nil means "everything on the ledger was covered" — the whole-refresh
+    /// case, and the behaviour before partial refreshes were handled.
     @discardableResult
     public func applySubmissionState(
         submittedCanvasAssignmentIDs: Set<String>,
-        scores: [String: (earned: Double?, max: Double?)]
+        scores: [String: (earned: Double?, max: Double?)],
+        observedCanvasAssignmentIDs: Set<String>? = nil,
+        now: Date = Date()
     ) -> [ScoreChange] {
         var changes: [ScoreChange] = []
         for row in rows(source: .canvas) {
             guard let canvasID = row.canvasAssignmentID else { continue }
             row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
+            // Canvas answered for this item — either way. Absence of a
+            // submission is a real observation too, and it is the one most worth
+            // timestamping: it is what the app shows when it tells a student
+            // they still owe work.
+            if observedCanvasAssignmentIDs?.contains(canvasID) ?? true {
+                row.canvasSubmissionObservedAt = now
+            }
             guard let score = scores[canvasID] else { continue }
 
             // Only a real number counts as a grade. Canvas reports ungraded work
@@ -718,6 +868,11 @@ public final class AssignmentStore {
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.
     public func rowCount() -> Int { allRows().count }
 
+    /// The ledger's rows, duplicates already collapsed, for tests that need to
+    /// assert on stored fields the value-type `Assignment` doesn't carry —
+    /// submission observation dates in particular.
+    public func allRowsForTesting() -> [StoredAssignment] { Array(rowsByID().values) }
+
     /// A snapshot of what the ledger is actually holding. Backs the Settings →
     /// Storage panel: without it, "the database is working" and "the database
     /// silently fell back to memory and you'll lose everything on quit" look
@@ -743,6 +898,11 @@ public final class AssignmentStore {
         /// Ticked off, or reported submitted by either platform — the rows that
         /// are now exempt from aging.
         public let finished: Int
+        /// Rows a semester rollover has filed away. Worth its own number
+        /// because an archived row is retained forever (it is exempt from
+        /// aging), so this is the one count that explains a ledger that keeps
+        /// growing while the dashboard stays short.
+        public let archived: Int
         public let withScores: Int
         /// Ids the ledger is holding more than one row for. Uniqueness is a
         /// code invariant now that the database no longer enforces it, so this
@@ -768,6 +928,7 @@ public final class AssignmentStore {
             gradescope: rows.filter { $0.sourceRaw == Assignment.Source.gradescope.rawValue }.count,
             goneFromFeed: rows.filter(\.isGoneFromFeed).count,
             finished: rows.filter(\.isFinished).count,
+            archived: rows.filter(\.isArchived).count,
             withScores: rows.filter { $0.scoreEarned != nil }.count,
             duplicateIDs: rows.count - Set(rows.map(\.id)).count,
             earliestFirstSeen: rows.map(\.firstSeen).min(),

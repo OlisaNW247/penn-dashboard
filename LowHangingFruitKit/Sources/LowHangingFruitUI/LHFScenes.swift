@@ -200,22 +200,20 @@ struct MenuBarPanel: View {
         .background(Color.v2Bg)
     }
 
-    /// Title, course, and a book marker for non-submission calendar entries —
-    /// the same convention `AssignmentCardView.content(state:now:)` uses.
+    /// Title and course. Used to carry a small book marker for non-submission
+    /// calendar entries, matching a glyph `AssignmentCardView` also used to
+    /// draw — both are gone now that the caveat text on the card is the one
+    /// place that states "nothing to submit" (owner's device pass, the two
+    /// vocabularies read as redundant). This compact menu-bar list stays
+    /// icon-free rather than growing the caveat text itself: it's a
+    /// glanceable list, not the card.
     private func row(for assignment: Assignment) -> some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    if assignment.kind == .event {
-                        Image(systemName: "book")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(Color.v2CourseCode)
-                    }
-                    Text(state.courseDisplayName(assignment.course).uppercased())
-                        .font(.lhfSans(9, weight: .medium))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.v2CourseCode)
-                }
+                Text(state.courseDisplayName(assignment.course).uppercased())
+                    .font(.lhfSans(9, weight: .medium))
+                    .tracking(1.0)
+                    .foregroundStyle(Color.v2CourseCode)
                 Text(assignment.title)
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2Ink)

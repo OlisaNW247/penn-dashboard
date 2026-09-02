@@ -66,43 +66,77 @@ public enum LedgerWidgetReader {
         // is sitting there between app launches, this is what stops a five-item
         // list showing the same homework twice.
         var seenIDs: Set<String> = []
-        let items = rows
+
+        // The user's own decisions about their classes, read from the shared
+        // suite. Without these the widget cheerfully advertised a class the
+        // user had hidden or deleted, under the raw Canvas name they had
+        // already renamed.
+        let hidden = Set(UserDefaults.lhf.stringArray(forKey: SharedDefaults.hiddenCoursesKey) ?? [])
+        let deleted = Set(UserDefaults.lhf.stringArray(forKey: SharedDefaults.deletedCoursesKey) ?? [])
+        let nameOverrides = UserDefaults.lhf
+            .dictionary(forKey: SharedDefaults.courseNameOverridesKey) as? [String: String] ?? [:]
+
+        // A plain loop rather than the filter chain this used to be: the
+        // merged chain grew to nine links and the Swift 6 type-checker gave
+        // up on it ("unable to type-check this expression in reasonable
+        // time"). Same predicates, same order, explicit types throughout.
+        var candidates: [(due: Date, item: WidgetItem)] = []
+        for row in rows {
             // Completion-only rows are bookkeeping, not assignments: they carry
             // no trustworthy title or due date and must never reach the widget.
-            .filter { !$0.isCompletionOnly }
-            .filter { !$0.isFinished }
-            .filter { !isAgedOut($0, now: now) }
+            if row.isCompletionOnly { continue }
+            if row.isFinished { continue }
+            // Work the student put away in a semester rollover. The app drops it
+            // from the dashboard and from reminders; a widget still counting
+            // down to last April's problem set would be the same bug wearing a
+            // home screen. Read straight off the row rather than out of the
+            // shared suite, because unlike hiding and deletion this fact is
+            // per-item, not per-course — see `StoredAssignment.archivedTerm`.
+            if row.isArchived { continue }
+            if isAgedOut(row, now: now) { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's
-            // isExpiredEvent: they simply drop off once their calendar day ends.
-            .filter { !isExpiredEvent($0, now: now) }
-            .filter { seenIDs.insert($0.id).inserted }
-            .compactMap { row -> (Date, WidgetItem)? in
-                guard let due = row.dueAt else { return nil }
-                return (due, WidgetItem(title: row.title, course: row.course, dueAt: due))
-            }
-            .sorted { $0.0 < $1.0 }
+            // isExpiredEvent: they drop off the moment their due time passes,
+            // not at the end of their calendar day.
+            if isExpiredEvent(row, now: now) { continue }
+            if !seenIDs.insert(row.id).inserted { continue }
+            if hidden.contains(row.course) || deleted.contains(row.course) { continue }
+            guard let due = row.dueAt else { continue }
+            let display = nameOverrides[row.course]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let course = (display?.isEmpty == false) ? display! : row.course
+            candidates.append((due, WidgetItem(title: row.title, course: course, dueAt: due)))
+        }
+
+        let items: [WidgetItem] = candidates
+            .sorted { $0.due < $1.due }
             .prefix(maxItems)
-            .map(\.1)
+            .map(\.item)
 
         guard !items.isEmpty else { return nil }
-        return WidgetSnapshot(items: Array(items), generatedAt: now)
+        return WidgetSnapshot(items: items, generatedAt: now)
     }
 
     /// Mirrors `AssignmentStore.isAgedOut` — kept here rather than shared
     /// because that one is main-actor-isolated. Both must stay in step; the
-    /// rule is "finished work never ages, otherwise gone + long overdue does".
+    /// rule is "finished or archived work never ages, otherwise gone + long
+    /// overdue does". The archived clause is redundant here — the filter chain
+    /// above already dropped those rows — and is kept anyway so the two copies
+    /// of this predicate remain literally the same rule, which is the only
+    /// property that makes duplicating it survivable.
     private static func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
-        guard !row.isFinished else { return false }
+        guard !row.isFinished, !row.isArchived else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
     }
 
-    /// Mirrors `AppState.isExpiredEvent`: an `.event`-kind row with a dated
-    /// day strictly before today is expired. Undated events are never expired.
+    /// Mirrors `AppState.isExpiredEvent`: an `.event`-kind row drops off the
+    /// moment its due time passes (`due < now`), not at the end of its
+    /// calendar day — the widget must not keep advertising a class that
+    /// already started just because midnight hasn't arrived yet. Undated
+    /// events are never expired.
     private static func isExpiredEvent(_ row: StoredAssignment, now: Date) -> Bool {
         guard row.kindRaw == Assignment.Kind.event.rawValue, let due = row.dueAt else { return false }
-        let calendar = Calendar.current
-        return calendar.startOfDay(for: due) < calendar.startOfDay(for: now)
+        return due < now
     }
 }

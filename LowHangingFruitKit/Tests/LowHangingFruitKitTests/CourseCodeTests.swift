@@ -37,6 +37,28 @@ struct CourseCodeTests {
               term: Term(year: 2026, season: .fall)),
         // Same shape without a term/title suffix.
         .init(raw: "ban-cis-3200", code: "CIS 3200", term: nil),
+        // The reported bug: the same cross-listed shape, but spaced. The old
+        // pattern allowed exactly one separator character, so " - " matched
+        // nothing and the whole raw descriptor became the course's name —
+        // which is what the student then read on every card.
+        .init(raw: "ban - phys - 151 - 1234", code: "PHYS 151", term: nil),
+        .init(raw: "BAN - PHYS - 151 - 1234", code: "PHYS 151", term: nil),
+        // Same, carrying a term and title.
+        .init(raw: "ban - phys - 0150 - 001 202630 Principles of Physics",
+              code: "PHYS 0150", term: Term(year: 2026, season: .fall)),
+        // Underscores and typographically "smartened" dashes.
+        .init(raw: "ban_phys_151_1234", code: "PHYS 151", term: nil),
+        .init(raw: "phys \u{2013} 151", code: "PHYS 151", term: nil),
+        // A title ending in a bare year. "THE 1960" is shaped exactly like a
+        // course code, and under last-one-wins across the whole descriptor it
+        // won — the class quietly renamed itself after its own title. The
+        // existing "1960s" case passed only because the trailing "s" broke the
+        // word boundary, so this is the same bug with the luck removed.
+        .init(raw: "FNAR 3230-401 202610 PSYCHEDELIC ART & THE 1960",
+              code: "FNAR 3230", term: Term(year: 2026, season: .spring)),
+        // Title tail with no term code to bound the search: the code still has
+        // to win, because it comes first and the tail is not delimited.
+        .init(raw: "MUSC 2500-001 THE BEATLES 1967", code: "MUSC 2500", term: nil),
         // Underscore cross-listing prefix, as seen on live Penn Canvas
         // accounts — underscore is a regex word char, so `\b` doesn't fire
         // between "BAN_" and "CIS" without the underscore→space fix.

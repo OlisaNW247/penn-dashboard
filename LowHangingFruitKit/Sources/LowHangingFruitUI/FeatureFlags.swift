@@ -29,5 +29,5 @@ enum FeatureFlags {
     /// with Grade Watcher's entry points hidden while the work continued here;
     /// on this branch the grade report and syllabus ingestion ARE the release,
     /// so the entry points are on.
-    static let gradeWatcher = true
+    static let gradeWatcher = false
 }

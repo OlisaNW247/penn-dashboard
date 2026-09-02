@@ -3,12 +3,16 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// `AppState`'s content-decision filtering (docs/READINGS_COURSES_PLAN.md
-/// Phase 2): `.event`-kind Canvas calendar items only reach the dashboard for
-/// a course the user has opted in via `setCourseContentIncluded`/
-/// `resolveCourseNudge`; the default (no decision on file) is exclude, and an
-/// opted-in event is never reclassified as an assessment even when its title
-/// matches the exam/quiz regex.
+/// `AppState`'s content-decision filtering. Originally the opt-in design of
+/// docs/READINGS_COURSES_PLAN.md Phase 2 — the default flipped to INCLUDE on
+/// 2026-08-26 (owner's call, after a real readings-only class silently
+/// vanished from the dashboard on device): `.event`-kind Canvas calendar
+/// items now reach the dashboard by default, and only an explicit `.exclude`
+/// decision (`setCourseContentIncluded(_, false)`) hides them — as of
+/// 2026-08-27 (docs/decisions.md) this is the ONLY way to record `.exclude`;
+/// the one-ask consent popup that used to also write it was removed. An
+/// included event is never reclassified as an assessment even when its
+/// title matches the exam/quiz regex.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, and
 /// `courseContentDecisions` is one JSON blob under "courseContentDecisionsV1"
@@ -49,7 +53,19 @@ struct CourseContentDashboardTests {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))
     }
 
-    private func item(kind: Assignment.Kind, title: String, dueAt: Date = Date(), url: URL? = nil) -> Assignment {
+    // `dueAt` defaults an hour into the future, not to `Date()` at the
+    // instant of construction. `AppState.isExpiredEvent` compares against
+    // `now: Date()` captured later — inside `rebuildDashboardItems`, itself
+    // called after the item is built, the ledger is touched, and often an
+    // `AppState` is constructed — and since 2026-08-27's fix (`due < now`,
+    // no day rounding) a fixture literally due "now" is measurably in the
+    // past by the time that later `now` is captured, making every `.event`
+    // fixture here expire and vanish out from under tests that exist to
+    // prove it's shown. An hour of headroom is nowhere close to being
+    // consumed by test execution and keeps these fixtures meaning "due
+    // later today," which is what they were always meant to express.
+    private func item(kind: Assignment.Kind, title: String,
+                      dueAt: Date = Date().addingTimeInterval(3600), url: URL? = nil) -> Assignment {
         Assignment(source: .canvas, sourceID: "\(Self.course)-\(title)", kind: kind,
                    course: Self.course, title: title, dueAt: dueAt, url: url)
     }
@@ -69,8 +85,8 @@ struct CourseContentDashboardTests {
 
     // MARK: - Default exclude (item 2)
 
-    @Test("default exclude: an .event item stays off the dashboard with no decision on file")
-    func defaultExcludeHidesEvents() {
+    @Test("default include: an .event item shows on the dashboard with no decision on file")
+    func defaultIncludeShowsEvents() {
         withCleanDecision {
             let state = makeState()
             state.canvasItems = [
@@ -79,30 +95,33 @@ struct CourseContentDashboardTests {
             ]
             triggerRebuild(state)
 
-            #expect(!state.courseContentIncluded(Self.course))
+            // The regression this default fixes: a class posting only calendar
+            // events vanished entirely until its one-ask consent popup was
+            // answered.
+            #expect(state.courseContentIncluded(Self.course))
             let shown = allDashboardItems(state)
             #expect(shown.contains { $0.title == "Problem set 1" })
-            #expect(!shown.contains { $0.title == "Weekly reading" })
+            #expect(shown.contains { $0.title == "Weekly reading" })
         }
     }
 
-    // MARK: - Opt-in / opt-out (item 3)
+    // MARK: - Explicit exclude / re-include (item 3)
 
-    @Test("opting in surfaces the event; opting back out hides it again")
-    func optInThenOptOut() {
+    @Test("an explicit exclude hides the event; re-including surfaces it again")
+    func excludeThenReInclude() {
         withCleanDecision {
             let state = makeState()
             state.canvasItems = [item(kind: .event, title: "Weekly reading")]
             triggerRebuild(state)
-            #expect(!(state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
-
-            state.setCourseContentIncluded(Self.course, true)
-            #expect(state.courseContentIncluded(Self.course))
             #expect((state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
 
             state.setCourseContentIncluded(Self.course, false)
             #expect(!state.courseContentIncluded(Self.course))
             #expect(!(state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
+
+            state.setCourseContentIncluded(Self.course, true)
+            #expect(state.courseContentIncluded(Self.course))
+            #expect((state.assignments + state.laterAssignments).contains { $0.title == "Weekly reading" })
         }
     }
 
@@ -133,21 +152,32 @@ struct CourseContentDashboardTests {
 
     // MARK: - Expired events drop off (readings have nothing to submit)
 
-    @Test("an opted-in event drops off the dashboard once its calendar day has passed")
-    func optedInEventExpiresAfterItsDay() {
+    @Test("an opted-in event drops off the dashboard the moment its due time passes, not merely once its calendar day ends")
+    func optedInEventExpiresAfterItsDueTime() {
         withCleanDecision {
             let state = makeState()
             let now = Date()
             let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+            // Same calendar day as `now`, but its own moment has already
+            // passed — this is the case day-granularity used to miss
+            // entirely (it stayed "overdue" until midnight). Renamed from
+            // "Today's reading" / `dueAt: now`, which only demonstrated the
+            // day boundary and, on the new time-based rule, was really an
+            // edge case (`due == now` is not `< now`) rather than a real
+            // same-day-but-past example.
+            let earlierToday = now.addingTimeInterval(-3600)
+            let laterToday = now.addingTimeInterval(3600)
             state.canvasItems = [
                 item(kind: .event, title: "Yesterday's reading", dueAt: yesterday),
-                item(kind: .event, title: "Today's reading", dueAt: now),
+                item(kind: .event, title: "Earlier today's reading", dueAt: earlierToday),
+                item(kind: .event, title: "Later today's reading", dueAt: laterToday),
             ]
             state.setCourseContentIncluded(Self.course, true)
 
             let shown = state.assignments + state.laterAssignments
             #expect(!shown.contains { $0.title == "Yesterday's reading" })
-            #expect(shown.contains { $0.title == "Today's reading" })
+            #expect(!shown.contains { $0.title == "Earlier today's reading" })
+            #expect(shown.contains { $0.title == "Later today's reading" })
         }
     }
 

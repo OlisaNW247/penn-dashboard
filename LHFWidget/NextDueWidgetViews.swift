@@ -89,7 +89,7 @@ private struct SmallView: View {
         } else {
             VStack {
                 Spacer()
-                Text("All clear")
+                Text("all clear")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.courseGrey)
                 Spacer()
@@ -125,7 +125,7 @@ private struct MediumView: View {
     private var emptyState: some View {
         VStack {
             Spacer()
-            Text("Nothing due — you're caught up.")
+            Text("nothing due. you're caught up.")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Palette.courseGrey)
             Spacer()
@@ -177,7 +177,7 @@ private struct InlineView: View {
                 Text("\(urgency.emoji) \(item.title)")
             }
         } else {
-            Text("LHF · all clear")
+            Text("lhf · all clear")
         }
     }
 }
@@ -236,7 +236,7 @@ private struct RectangularView: View {
                             .lineLimit(1)
                     }
                 } else {
-                    Text("All clear")
+                    Text("all clear")
                         .font(.system(size: 13, weight: .semibold))
                 }
             }

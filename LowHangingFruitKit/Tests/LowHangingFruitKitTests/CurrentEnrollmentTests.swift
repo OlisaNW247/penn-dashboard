@@ -118,21 +118,33 @@ struct EnrolledCourseTermBackstopTests {
 struct StaleCourseIDCachePruneTests {
     private static let byCodeKey = "canvasCourseIDsByCode"
 
-    /// Backs up the whole `canvasCourseIDsByCode` blob, seeds it with the
-    /// given map (so the next `AppState()` construction picks it up — the
-    /// property is `private(set)`, so tests can't assign it directly), runs
-    /// `body`, then restores exactly what was on disk before.
+    /// Backs up the course-preferences blob (the canonical record since the
+    /// v4 consolidation — the raw `canvasCourseIDsByCode` key is only a
+    /// derived projection now, and `AppState` never reads it back), seeds a
+    /// fresh store with the given ids so the next `AppState()` construction
+    /// picks them up, runs `body`, then restores exactly what was on disk
+    /// before — including the legacy projection key, which seeding rewrites.
     private func withSeededCourseIDCache(_ seed: [String: String], _ body: (AppState) -> Void) {
         let defaults = UserDefaults.lhf
-        let saved = defaults.dictionary(forKey: Self.byCodeKey)
+        let savedBlob = defaults.data(forKey: CoursePreferencesStore.storageKey)
+        let savedLegacy = defaults.dictionary(forKey: Self.byCodeKey)
         defer {
-            if let saved {
-                defaults.set(saved, forKey: Self.byCodeKey)
+            if let savedBlob {
+                defaults.set(savedBlob, forKey: CoursePreferencesStore.storageKey)
+            } else {
+                defaults.removeObject(forKey: CoursePreferencesStore.storageKey)
+            }
+            if let savedLegacy {
+                defaults.set(savedLegacy, forKey: Self.byCodeKey)
             } else {
                 defaults.removeObject(forKey: Self.byCodeKey)
             }
         }
-        defaults.set(seed, forKey: Self.byCodeKey)
+        defaults.removeObject(forKey: CoursePreferencesStore.storageKey)
+        let seedStore = CoursePreferencesStore()
+        for (course, id) in seed {
+            seedStore.setCanvasCourseID(course, id)
+        }
         let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
         body(state)
     }

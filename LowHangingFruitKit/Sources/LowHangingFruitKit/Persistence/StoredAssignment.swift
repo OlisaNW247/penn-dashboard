@@ -52,6 +52,21 @@ import SwiftData
 /// `.unique` as a last-write-wins *overwrite*, so a collapsed duplicate
 /// silently discarded the older row's `firstSeen`, `completedAt` and pairing.
 /// The merge here keeps them.
+///
+/// **This schema is not CloudKit-eligible yet, despite the note above and the
+/// one on `userCompleted`.** Removing `.unique` cleared one of two blockers,
+/// and every property added since has been optional-or-defaulted — but eleven
+/// properties predating that decision are still non-optional with no default:
+/// `id`, `sourceRaw`, `sourceID`, `kindRaw`, `course`, `title`, `firstSeen`,
+/// `lastSeenInFeed`, `isGoneFromFeed`, `canvasSubmitted`, `gradescopeSubmitted`.
+/// CloudKit requires a default on every property, because it has to be able to
+/// materialize a record a peer wrote without the field. Each needs one before
+/// `ModelConfiguration(cloudKitDatabase:)` can be set.
+///
+/// Recorded here rather than only in `docs/database-explained.md` §5 because
+/// this file is where someone stands when they decide to turn sync on, and the
+/// failure without it is a launch-time crash rather than a compile error.
+/// `StoredGradeObservation` is already clean.
 @Model
 public final class StoredAssignment {
     /// `"source:sourceID"` — the same stable identity as `Assignment.id`.
@@ -122,8 +137,61 @@ public final class StoredAssignment {
     public var canvasSubmitted: Bool = false
     /// Gradescope's scraped submitted status.
     public var gradescopeSubmitted: Bool = false
+
+    // MARK: How current the submission signals are
+    /// When Canvas last *told us something* about this item — submitted or not.
+    ///
+    /// Not the same as when it was submitted: it is when the app last had a
+    /// trustworthy answer. The flag alone cannot distinguish "not submitted,
+    /// confirmed a minute ago" from "not submitted, as far as we knew last
+    /// Tuesday before the session expired", and those mean very different
+    /// things to someone deciding what to work on tonight.
+    ///
+    /// Optional and defaulted: rows written before this existed have no
+    /// observation date, which reads correctly as "we don't know how fresh
+    /// this is" rather than as a fabricated timestamp.
+    public var canvasSubmissionObservedAt: Date?
+
+    /// The same, for Gradescope's scraped status. Written whenever a feed item
+    /// carries the flag, since that scrape *is* the observation.
+    public var gradescopeSubmissionObservedAt: Date?
     public var scoreEarned: Double?
     public var scoreMax: Double?
+
+    // MARK: Semester archival — the deliberate way work leaves the dashboard
+    /// The term a semester rollover filed this row under, or nil while it is
+    /// still live. Written only when the student confirms the rollover card.
+    ///
+    /// **Why this is on the row and not only on the course.**
+    /// `CoursePreferences.archivedTerm` records that a *class* is off the
+    /// roster, which is the right shape for the class list — but it cannot
+    /// decide this question, for two independent reasons.
+    ///
+    /// The first is that `courseKey` carries no term. `CourseCode.parse` pulls
+    /// `202610` out into its own field and the code it returns is bare
+    /// ("CIS 1200"), so a course-level flag cannot tell last spring's CIS 1200
+    /// from the CIS 1200 the student is retaking this fall; archiving one would
+    /// hide the other.
+    ///
+    /// The second is the bug this whole feature exists to fix. The value type
+    /// `Assignment` carries `term` and `dueAt` and nothing else that dates it,
+    /// and `AppState.withinTermCap` lets an item through when both are absent —
+    /// that clause is precisely what keeps showing a student last semester's
+    /// work. No predicate over an `Assignment` can do better, because the
+    /// evidence isn't there. The *row* has `firstSeen`: the moment the app first
+    /// laid eyes on the item, which is the only surviving record of when an
+    /// undated, termless item entered this student's life. `effectiveTerm`
+    /// spends it, and this field records the answer so the guess is made once,
+    /// under the student's eye, rather than re-derived on every dashboard
+    /// rebuild from data that cannot support it.
+    ///
+    /// Two optional `Int`s rather than a `Term`, matching `termYear` /
+    /// `termSeasonRaw` directly above: SwiftData stores what it can describe,
+    /// and both halves are optional so this is a lightweight migration on a
+    /// store that already exists and stays CloudKit-eligible
+    /// (`docs/persistence-explained.md` §4 step 1).
+    public var archivedTermYear: Int?
+    public var archivedTermSeasonRaw: Int?
 
     // MARK: Cross-platform pairing (persisted so it survives a later date move)
     /// The `Assignment.id` of a confirmed counterpart on the other platform.
@@ -150,8 +218,12 @@ public final class StoredAssignment {
         isCompletionOnly: Bool = false,
         canvasSubmitted: Bool = false,
         gradescopeSubmitted: Bool = false,
+        canvasSubmissionObservedAt: Date? = nil,
+        gradescopeSubmissionObservedAt: Date? = nil,
         scoreEarned: Double? = nil,
         scoreMax: Double? = nil,
+        archivedTermYear: Int? = nil,
+        archivedTermSeasonRaw: Int? = nil,
         linkedID: String? = nil,
         pairingConfirmedAt: Date? = nil
     ) {
@@ -173,8 +245,12 @@ public final class StoredAssignment {
         self.isCompletionOnly = isCompletionOnly
         self.canvasSubmitted = canvasSubmitted
         self.gradescopeSubmitted = gradescopeSubmitted
+        self.canvasSubmissionObservedAt = canvasSubmissionObservedAt
+        self.gradescopeSubmissionObservedAt = gradescopeSubmissionObservedAt
         self.scoreEarned = scoreEarned
         self.scoreMax = scoreMax
+        self.archivedTermYear = archivedTermYear
+        self.archivedTermSeasonRaw = archivedTermSeasonRaw
         self.linkedID = linkedID
         self.pairingConfirmedAt = pairingConfirmedAt
     }
@@ -189,11 +265,6 @@ extension StoredAssignment {
     /// `submittedCanvasAssignmentIDs` side-channel, so it isn't folded in here).
     public var assignment: Assignment {
         let source = Assignment.Source(rawValue: sourceRaw) ?? .canvas
-        let term: Term? = {
-            guard let termYear, let termSeasonRaw,
-                  let season = Term.Season(rawValue: termSeasonRaw) else { return nil }
-            return Term(year: termYear, season: season)
-        }()
         return Assignment(
             source: source,
             sourceID: sourceID,
@@ -216,6 +287,65 @@ extension StoredAssignment {
     /// student's own record of what they did.
     var isFinished: Bool {
         isCompletedByUser || canvasSubmitted || gradescopeSubmitted
+    }
+
+    /// The term the feed told us about, rebuilt from the two stored halves.
+    var term: Term? {
+        guard let termYear, let termSeasonRaw,
+              let season = Term.Season(rawValue: termSeasonRaw) else { return nil }
+        return Term(year: termYear, season: season)
+    }
+
+    /// The term a rollover filed this row under, or nil while it is live.
+    public var archivedTerm: Term? {
+        guard let archivedTermYear, let archivedTermSeasonRaw,
+              let season = Term.Season(rawValue: archivedTermSeasonRaw) else { return nil }
+        return Term(year: archivedTermYear, season: season)
+    }
+
+    /// Whether a rollover has put this row away.
+    public var isArchived: Bool { archivedTerm != nil }
+
+    /// Which semester this row *belongs to*, on the best evidence the row has.
+    ///
+    /// The precedence is the whole feature, so it is worth stating why it runs
+    /// in this order rather than any other:
+    ///
+    /// 1. **The term Canvas stamped on the course code.** Exact, and immune to
+    ///    the fuzzy month→season boundary `Term(date:)` has to guess at. When
+    ///    it's there, nothing else gets a vote.
+    /// 2. **The due date.** Nearly as good: an assignment due in March is
+    ///    Spring work whatever else is true about it.
+    /// 3. **`firstSeen` — when the app first saw the item.** This is the clause
+    ///    that fixes the reported bug. An undated, termless row is exactly what
+    ///    slips through `AppState.withinTermCap`'s "undated items always pass",
+    ///    and it is the reason last spring's reminders are still firing. The
+    ///    ledger cannot say when such an item was *due*, but it has always known
+    ///    when it first turned up, and an item the app met in February is
+    ///    Spring work.
+    ///
+    /// Clause 3 is a judgement, not a fact, which is exactly why nothing acts on
+    /// it unprompted: it feeds a count the student is shown and confirms.
+    func effectiveTerm(calendar: Calendar = .current) -> Term? {
+        if let term { return term }
+        if let dueAt { return Term(date: dueAt, calendar: calendar) }
+        return Term(date: firstSeen, calendar: calendar)
+    }
+
+    /// The row reduced to what the rollover detector needs.
+    func rolloverItem(calendar: Calendar = .current) -> SemesterRollover.Item {
+        SemesterRollover.Item(
+            id: id,
+            course: course,
+            term: effectiveTerm(calendar: calendar),
+            isArchived: isArchived
+        )
+    }
+
+    /// Files this row under `term`, or brings it back when `term` is nil.
+    func setArchivedTerm(_ term: Term?) {
+        archivedTermYear = term?.year
+        archivedTermSeasonRaw = term?.season.rawValue
     }
 
     /// Whether the user has ticked this item off, however the row recorded it.
@@ -269,9 +399,18 @@ extension StoredAssignment {
         // so a scraped completion is retained.
         if assignment.source == .gradescope {
             gradescopeSubmitted = assignment.submitted
+            gradescopeSubmissionObservedAt = now
         }
         if let earned = assignment.scoreEarned { scoreEarned = earned }
         if let max = assignment.scoreMax { scoreMax = max }
+        // `archivedTermYear` / `archivedTermSeasonRaw` are deliberately absent
+        // from this method, and that absence is load-bearing. Archival is
+        // ledger-owned, not feed-owned (`docs/persistence-explained.md` §4 step
+        // 1 draws exactly this line). Canvas keeps publishing a concluded
+        // course's calendar for weeks after a term ends, so refreshing the flag
+        // from the feed would un-archive last semester on the very next sync and
+        // silently undo a decision the student was asked to make. Coming back
+        // from the archive is an explicit act — `AssignmentStore.unarchive`.
     }
 
     /// Folds a second row carrying this row's `id` back into this one, ahead of
@@ -308,6 +447,14 @@ extension StoredAssignment {
         } else if scoreMax == nil {
             scoreMax = other.scoreMax
         }
+        // Live beats archived, which is the same direction `isGoneFromFeed`
+        // resolves just above and for the same reason. The two mistakes are not
+        // symmetric: a row wrongly left live is clutter on the dashboard, a row
+        // wrongly archived is work that has *disappeared* from it — and this
+        // method's whole rule is to resolve toward whatever the student would
+        // notice missing. They can always archive again; they cannot notice
+        // something that isn't shown.
+        if other.archivedTerm == nil { setArchivedTerm(nil) }
         // Same for a confirmed cross-platform pairing: keep the one that exists.
         if linkedID == nil, let linked = other.linkedID {
             linkedID = linked
@@ -316,6 +463,11 @@ extension StoredAssignment {
     }
 
     /// A fresh ledger row for a never-before-seen assignment.
+    ///
+    /// Never born archived — the archival fields simply take their nil default.
+    /// An item arriving in a feed *now* is current work by construction, and a
+    /// row that came back after its term was archived is a new sighting the
+    /// student can archive again if they meant to.
     static func make(from assignment: Assignment, now: Date) -> StoredAssignment {
         StoredAssignment(
             id: assignment.id,
@@ -331,6 +483,9 @@ extension StoredAssignment {
             firstSeen: now,
             lastSeenInFeed: now,
             gradescopeSubmitted: assignment.source == .gradescope ? assignment.submitted : false,
+            // A first sighting is as much an observation as a re-sighting;
+            // `refresh(from:now:)` records the same thing on later passes.
+            gradescopeSubmissionObservedAt: assignment.source == .gradescope ? now : nil,
             scoreEarned: assignment.scoreEarned,
             scoreMax: assignment.scoreMax,
             linkedID: assignment.linkedID
@@ -388,5 +543,34 @@ extension StoredAssignment {
             userCompleted: true,
             isCompletionOnly: true
         )
+    }
+}
+
+// MARK: - Submission freshness
+
+public extension StoredAssignment {
+    /// The most recent moment any platform told us about this item's submission
+    /// state, or nil if none ever has.
+    ///
+    /// Deliberately the newest of the two rather than per-source: the question
+    /// a caller is asking is "how much should I trust what I'm about to show",
+    /// and the freshest signal is the honest answer to that.
+    var submissionObservedAt: Date? {
+        switch (canvasSubmissionObservedAt, gradescopeSubmissionObservedAt) {
+        case let (canvas?, gradescope?): return max(canvas, gradescope)
+        case let (canvas?, nil): return canvas
+        case let (nil, gradescope?): return gradescope
+        case (nil, nil): return nil
+        }
+    }
+
+    /// Whether the submission state was confirmed within `window` of `now`.
+    ///
+    /// A row that has never been observed is *not* stale — it is unknown, which
+    /// is a different thing and must not be shown as "last checked ages ago".
+    /// Callers distinguish the two by checking `submissionObservedAt` for nil.
+    func hasFreshSubmissionState(now: Date = Date(), within window: TimeInterval) -> Bool {
+        guard let observed = submissionObservedAt else { return false }
+        return now.timeIntervalSince(observed) <= window
     }
 }

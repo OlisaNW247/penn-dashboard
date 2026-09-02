@@ -60,7 +60,7 @@ struct GradeWatcherView: View {
                 courseList
             }
         }
-        .navigationTitle("Grade Watcher")
+        .navigationTitle("grade watcher")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -71,10 +71,10 @@ struct GradeWatcherView: View {
 
     private var emptyCoursesState: some View {
         VStack(spacing: 4) {
-            Text("No classes selected yet.")
+            Text("no classes selected yet.")
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
-            Text("Turn on a class in Settings \u{2192} Classes to see its grades here.")
+            Text("turn on a class in settings \u{2192} classes to see its grades here.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)
@@ -91,11 +91,11 @@ struct GradeWatcherView: View {
     /// them to a settings screen where everything already looks correct.
     private var unmatchedCoursesState: some View {
         VStack(spacing: 6) {
-            Text("Can\u{2019}t reach Canvas for your classes.")
+            Text("can\u{2019}t reach canvas for your classes.")
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
-            Text("\(selectedCodes.count) class\(selectedCodes.count == 1 ? " is" : "es are") switched on, but Canvas hasn\u{2019}t told us their course pages yet. Grades need a live Canvas login \u{2014} reconnect Canvas in Settings, then open Grades again.")
+            Text("\(selectedCodes.count) class\(selectedCodes.count == 1 ? " is" : "es are") switched on, but Canvas hasn\u{2019}t told us their course pages yet. Grades need a live Canvas login. reconnect Canvas in Settings, then open Grades again.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)
@@ -112,7 +112,7 @@ struct GradeWatcherView: View {
     private var loadingState: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("Loading grades\u{2026}")
+            Text("loading grades\u{2026}")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
         }
@@ -165,7 +165,7 @@ struct GradeWatcherView: View {
                 Text(String(format: "%.2f", gpa))
                     .font(.lhfSerif(34))
                     .foregroundStyle(Color.v2Ink)
-                Text("estimated GPA across your \(percents.count) classes \u{00b7} standard cutoffs")
+                Text("estimated gpa across your \(percents.count) classes \u{00b7} standard cutoffs")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
             }
@@ -212,7 +212,7 @@ struct GradeWatcherView: View {
                 Button {
                     state.restartOnboarding()
                 } label: {
-                    Text("Reconnect Canvas")
+                    Text("reconnect canvas")
                         .font(.lhfSans(12, weight: .semibold))
                         .foregroundStyle(Color.v2ToggleActiveTx)
                         .padding(.horizontal, 16)
@@ -240,7 +240,7 @@ struct GradeWatcherView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "wifi.slash")
                     .foregroundStyle(Color.v2DueAmber)
-                Text("Showing last known grades \u{2014} your Canvas session expired.")
+                Text("showing last known grades. your canvas session expired.")
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -256,7 +256,7 @@ struct GradeWatcherView: View {
     @ViewBuilder
     private var lastRefreshedLine: some View {
         HStack(spacing: 6) {
-            Text("Last refreshed \(relativeTimeString(store.lastRefreshed))")
+            Text("last refreshed \(relativeTimeString(store.lastRefreshed))")
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2RingSub)
             if store.isRefreshing {

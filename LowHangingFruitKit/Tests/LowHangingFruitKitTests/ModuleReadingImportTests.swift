@@ -8,7 +8,7 @@ import Testing
 /// .moduleReadingItems`/`rebuildDashboardItems`'s `canvasPool`.
 ///
 /// `refreshCourseIntel(cookies:)`'s probe swap (JSON-first, HTML fallback)
-/// itself is NOT exercised here — same reasoning `CourseContentNudgeTests`
+/// itself is NOT exercised here — same reasoning `ReadingsAutoImportTests`
 /// documents: it requires a non-empty cookie jar and talks to
 /// `CanvasDiscoveryClient`/`CanvasModulesClient` over a real `URLSession`
 /// with no injection seam from `AppState`. Instead, these tests seed the
@@ -31,7 +31,7 @@ struct ModuleReadingImportTests {
     private static let course = "LGST 9999"
 
     /// Same backup/restore discipline as `CourseContentDashboardTests` /
-    /// `CourseContentNudgeTests` — see those files' doc comments.
+    /// `ReadingsAutoImportTests` — see those files' doc comments.
     private func withCleanDecision(_ body: () -> Void) {
         let defaults = UserDefaults.lhf
         let saved = defaults.data(forKey: Self.decisionsKey)
@@ -76,7 +76,14 @@ struct ModuleReadingImportTests {
     func includedReadingSurfacesInCoursework() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "1", title: "Week 3 reading", dueAt: Date())
+            // Due an hour from now, not literally `Date()` — see
+            // `CourseContentDashboardTests.item`'s doc comment: since
+            // 2026-08-27's `isExpiredEvent` fix (`due < now`, no day
+            // rounding), a fixture due at the instant of construction is
+            // measurably in the past by the time `AppState.init`'s own
+            // later `rebuildDashboardItems` captures `now`, and this test
+            // exists specifically to prove the item still shows.
+            let imported = reading(id: "1", title: "Week 3 reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)
@@ -90,19 +97,27 @@ struct ModuleReadingImportTests {
         }
     }
 
-    // MARK: - Item 2: no decision (or excluded) -> stays hidden
+    // MARK: - Item 2: only an explicit exclude hides
 
-    @Test("an imported reading with no decision on file stays off the dashboard")
-    func defaultExcludeHidesImportedReading() {
+    /// Under the 2026-08-26 include-by-default flip (see `AppState.
+    /// includesAsOptedInContent`), a ledger row with no decision on file
+    /// shows. In practice `.canvasModules` rows only exist after an opt-in
+    /// import wrote an `.include` decision — this covers the decision-less
+    /// edge (e.g. the decision store cleared on disconnect while rows
+    /// survived a partial purge) landing on the visible side, matching the
+    /// calendar-event default.
+    @Test("an imported reading with no decision on file shows on the dashboard")
+    func defaultIncludeShowsImportedReading() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "2", title: "Week 4 reading", dueAt: Date())
+            // Same reasoning as `includedReadingSurfacesInCoursework` above.
+            let imported = reading(id: "2", title: "Week 4 reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)
 
-            #expect(!state.courseContentIncluded(Self.course))
-            #expect(!allDashboardItems(state).contains { $0.title == "Week 4 reading" })
+            #expect(state.courseContentIncluded(Self.course))
+            #expect(allDashboardItems(state).contains { $0.title == "Week 4 reading" })
         }
     }
 
@@ -126,7 +141,8 @@ struct ModuleReadingImportTests {
     func importedReadingWithExamLikeTitleNeverAnAssessment() {
         withCleanDecision {
             let store = try! AssignmentStore(inMemory: true)
-            let imported = reading(id: "4", title: "Midterm review reading", dueAt: Date())
+            // Same reasoning as `includedReadingSurfacesInCoursework` above.
+            let imported = reading(id: "4", title: "Midterm review reading", dueAt: Date().addingTimeInterval(3600))
             _ = store.reconcile([imported], source: .canvasModules)
 
             let state = AppState(assignmentStore: store)

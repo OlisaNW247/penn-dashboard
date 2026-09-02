@@ -70,6 +70,12 @@ final class CloudPrefsMirror: @unchecked Sendable {
     /// URL in particular is a bearer credential that must never leave the
     /// Keychain.
     static let mirroredKeys: [String] = [
+        // The canonical per-course record (v4's consolidated
+        // `CoursePreferencesStore` blob, stored as `Data`). The three legacy
+        // keys below are that blob's widget-visible projection — mirroring
+        // them too keeps the *receiving* device's widget correct immediately,
+        // since a pull writes the keys but runs no `persist()` there.
+        CoursePreferencesStore.storageKey,
         "courseContentDecisionsV1",
         "deletedCourseKeys",
         "courseNameOverrides",
@@ -143,7 +149,7 @@ final class CloudPrefsMirror: @unchecked Sendable {
 
     /// Pushes one mirrored key's current `UserDefaults.lhf` value to iCloud.
     /// Callers are the exact functions in `AppState` that persist these keys
-    /// locally (`persistHiddenCourses`, `persistDeletedCourses`,
+    /// locally (`CoursePreferencesStore.didChange`,
     /// `renameCourse`, `setCourseContentDecision`) — one call added at the
     /// point each already writes to `UserDefaults.lhf`, guarded on
     /// `AppState.cloudSyncEnabled` at the call site. A key outside

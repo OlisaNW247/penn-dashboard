@@ -82,7 +82,7 @@ struct GradeCourseCardView: View {
                 GradeReportView(store: store, courseID: courseID, courseName: courseName)
             } label: {
                 HStack(spacing: 4) {
-                    Text("Full report")
+                    Text("full report")
                         .font(.lhfSans(12, weight: .semibold))
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
@@ -201,12 +201,12 @@ struct GradeCourseCardView: View {
             Text(formatPercent(percent))
                 .font(.lhfSerif(34))
                 .foregroundStyle(Color.v2Ink)
-                .accessibilityLabel("Current grade \(Int(percent.rounded())) percent in \(courseName)")
+                .accessibilityLabel("current grade \(Int(percent.rounded())) percent in \(courseName)")
         } else {
-            Text("No scores yet")
+            Text("no scores yet")
                 .font(.lhfSerif(22))
                 .foregroundStyle(Color.v2DateText)
-                .accessibilityLabel("No grades yet in \(courseName)")
+                .accessibilityLabel("no grades yet in \(courseName)")
         }
     }
 
@@ -241,7 +241,7 @@ struct GradeCourseCardView: View {
                 )
             }
             if differsFromCanvas(breakdown) {
-                Text("Differs from Canvas\(canvasScoreSuffix(breakdown))")
+                Text("differs from canvas\(canvasScoreSuffix(breakdown))")
                     .font(.lhfSans(9.5))
                     .foregroundStyle(Color.v2RingSub)
                     .lineLimit(1)
@@ -263,7 +263,7 @@ struct GradeCourseCardView: View {
     private var cardLoadingState: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Loading \(courseName)\u{2026}")
+            Text("loading \(courseName)\u{2026}")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
         }
@@ -276,7 +276,7 @@ struct GradeCourseCardView: View {
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)
-                Text("Couldn\u{2019}t load this class\u{2019}s grades.")
+                Text("couldn\u{2019}t load this class\u{2019}s grades.")
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DueRed)
             }
@@ -291,7 +291,7 @@ struct GradeCourseCardView: View {
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)
-                Text("Log in to Canvas to load this class\u{2019}s grades.")
+                Text("log in to canvas to load this class\u{2019}s grades.")
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
             }
@@ -320,7 +320,7 @@ struct GradeCourseCardView: View {
             }
 
             if breakdown.mode == .points {
-                Text("This class uses points, not weights. Manual weights only apply once every category above has one \u{2014} a partial set is ignored, so this class stays points-based until then.")
+                Text("this class uses points, not weights. manual weights only apply once every category above has one. a partial set is ignored, so this class stays points-based until then.")
                     .font(.lhfSans(10.5))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
@@ -365,7 +365,7 @@ struct GradeCourseCardView: View {
                 HStack(spacing: 4) {
                     Image(systemName: isSuggestedExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
-                    Text("\(suggestedMatches.count) suggested Gradescope \(suggestedMatches.count == 1 ? "match" : "matches")")
+                    Text("\(suggestedMatches.count) suggested gradescope \(suggestedMatches.count == 1 ? "match" : "matches")")
                         .font(.lhfSans(10.5, weight: .medium))
                 }
                 .foregroundStyle(Color.v2SpineAmber)
@@ -377,7 +377,7 @@ struct GradeCourseCardView: View {
                     ForEach(Array(suggestedMatches.enumerated()), id: \.offset) { _, match in
                         suggestedMatchRow(match)
                     }
-                    Text("Not counted yet \u{2014} confirm a match to apply its score.")
+                    Text("not counted yet. confirm a match to apply its score.")
                         .font(.lhfSans(9.5))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
@@ -402,12 +402,12 @@ struct GradeCourseCardView: View {
             Button {
                 store.confirmSuggestedMatch(courseID: courseID, match: match)
             } label: {
-                Label("Confirm", systemImage: "checkmark.circle.fill")
+                Label("confirm", systemImage: "checkmark.circle.fill")
                     .font(.lhfSans(10.5, weight: .medium))
                     .foregroundStyle(Color.v2SpineGreen)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Confirm \(match.gradescopeTitle) matches \(match.itemName)")
+            .accessibilityLabel("confirm \(match.gradescopeTitle) matches \(match.itemName)")
         }
     }
 
@@ -423,7 +423,7 @@ struct GradeCourseCardView: View {
                 HStack(spacing: 4) {
                     Image(systemName: isUnmatchedExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
-                    Text("\(unmatchedScores.count) unmatched Gradescope \(unmatchedScores.count == 1 ? "score" : "scores")")
+                    Text("\(unmatchedScores.count) unmatched gradescope \(unmatchedScores.count == 1 ? "score" : "scores")")
                         .font(.lhfSans(10.5, weight: .medium))
                 }
                 .foregroundStyle(Color.v2RingSub)
@@ -444,7 +444,7 @@ struct GradeCourseCardView: View {
                                 .foregroundStyle(Color.v2RingSub)
                         }
                     }
-                    Text("Not counted \u{2014} no matching Canvas assignment.")
+                    Text("not counted. no matching canvas assignment.")
                         .font(.lhfSans(9.5))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)

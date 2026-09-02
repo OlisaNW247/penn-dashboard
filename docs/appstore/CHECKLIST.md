@@ -1,5 +1,69 @@
 # App Store submission checklist — LHF (iOS)
 
+_Last updated: 2026-08-27 — **2.0.0 (build 5)** from the v3.5+v4 merge branch._
+
+---
+
+# 2.0.0 submission (current)
+
+Shipping **2.0.0 / build 5** as the update to the live **1.1.2 / build 4**.
+Repo state: version/build already stamped in `project.yml` and the committed
+pbxproj (app + widget match); **644 tests / 63 suites green** on the owner's
+Mac; owner + Marco sign-off recorded 2026-08-27.
+
+## Done in repo — ✅
+
+- ✅ Version 2.0.0 / build 5 on both targets (exceeds shipped 1.1.2/4).
+- ✅ **Grade Watcher is hidden this release** (`FeatureFlags.gradeWatcher =
+  false`) and the whole submission package is scrubbed to match: LISTING.md
+  rewritten (no grades/syllabus claims), REVIEW_NOTES.md walkthrough no longer
+  visits Grades, the two grades screenshots are deleted, and
+  `capture-screenshots.sh` no longer captures them (the DEBUG seams would
+  render the hidden screens; a screenshot of an unexposed feature is a 2.3.1
+  rejection).
+- ✅ What's New for 2.0.0 drafted in LISTING.md — paste, don't rewrite from
+  memory.
+- ✅ Privacy: nothing new is collected; the new preference/cache keys are
+  UserDefaults, already covered by the CA92.1 declaration in both
+  `PrivacyInfo.xcprivacy` files. The nutrition-label answer stays
+  "No, we do not collect data."
+- ✅ Preview mode covers the 2.0 surfaces (dashboard incl. nothing-to-submit
+  tags, Profile class list, Settings) — regression-tested in
+  `PreviewModeTests`/`ProfileTabTests`.
+
+## Needs you, in order — 🟡
+
+1. 🟡 **Regenerate screenshots** — the live listing's shots show the pre-v4 UI
+   and the old icon. `bash docs/appstore/capture-screenshots.sh`, then by hand:
+   a dark-mode retake of the dashboard, the widget, and (optional, no seam yet)
+   the Profile screen. Upload the new 6.9" set to ASC; delete the old grades
+   shots from the listing there too.
+2. 🟡 **Distribution profiles carry App Groups on BOTH App IDs** (app +
+   widget) — without it the shipped widget's container URL is nil and the
+   widget is empty in production only. Automatic signing usually handles it;
+   verify in the archive's entitlements before uploading (Organizer → the
+   archive → Validate shows them).
+3. 🟡 **Archive + upload** (Xcode → Product → Archive on "Any iOS Device
+   (arm64)", Organizer → Distribute App → App Store Connect).
+4. 🟡 **ASC version setup**: create version 2.0.0 on the app page, attach
+   build 5 once processing finishes, paste the What's New, the rewritten
+   description/promo text/keywords from LISTING.md, and the rewritten
+   REVIEW_NOTES.md (add contact name/email). Screenshots from step 1.
+5. 🟡 **Submit for review.** Phased release: your call; harmless either way
+   for an app this size.
+
+## Watch-outs carried from the last submission
+
+- The demo/screen-recording attachment in App Review Information showed the
+  1.x flow — re-record or drop it (REVIEW_NOTES no longer depends on it, but a
+  stale video showing Grade Watcher invites questions about a hidden feature).
+- The support + privacy-policy URLs must still resolve; they're account-side,
+  nothing in-repo to do.
+
+---
+
+# 1.0.0 submission (historical — v2.5 era below, kept for reference)
+
 _Last updated: 2026-07-26 (branch `v2.5`)_
 
 Status legend: ✅ done in repo · 🟡 needs you (account / hosting / Apple / device) · ⬜ to do

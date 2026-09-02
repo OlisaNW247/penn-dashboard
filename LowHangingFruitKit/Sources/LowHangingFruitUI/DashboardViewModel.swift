@@ -14,9 +14,41 @@ struct DashItem: Identifiable, Equatable {
     var dueOverride: Date?
     var isCompleted: Bool
     var completedAt: Date?
+    /// Whether Canvas expects no online submission for this item
+    /// (`AppState.requiresNoSubmission`), snapshotted at `reload` time so the
+    /// card view can render the "nothing to submit" caveat without holding a
+    /// reference to `AppState` — see this file's own note on why `DashItem`
+    /// stays a pure presentation wrapper. Defaults `false` so every existing
+    /// construction site (`SampleData`, tests) keeps compiling and previews
+    /// render exactly as before unless a fixture opts a specific item in.
+    var requiresNoSubmission: Bool = false
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
+
+    /// Whether the card should state "nothing to submit" — the single display
+    /// predicate the caveat now uses, covering both Canvas's own
+    /// no-submission assignments AND readings/events, which the owner's
+    /// device pass found were showing the same fact through two different
+    /// vocabularies (a small book icon for `.event` items, the caveat text
+    /// for `requiresNoSubmission` ones). A reading or calendar event never
+    /// takes a submission by definition, so `.event` is folded in here rather
+    /// than the book icon staying as a second marker for the same idea.
+    /// `.event` covers both an opted-in calendar reading/event (docs/
+    /// READINGS_COURSES_PLAN.md Phase 3.9) and a Modules-imported reading —
+    /// `importModuleReadings` builds those rows with `kind: .event` too (see
+    /// `ModuleReadingImportTests`), so this predicate catches both sources
+    /// without needing to know which one produced a given item.
+    ///
+    /// `requiresNoSubmission` itself deliberately keeps its narrower,
+    /// Canvas-only meaning rather than being widened to match: it's what the
+    /// per-class "assignments with nothing to submit" reminder toggle gates
+    /// on, and a reading's reminders are already governed by the separate
+    /// "readings and check-ins" toggle. Broadening the stored field would
+    /// make an `.event` item answer to both toggles at once — this computed
+    /// property is what lets the *display* be unified while the two
+    /// reminder-toggle scopes stay exactly as they were.
+    var showsNothingToSubmit: Bool { requiresNoSubmission || assignment.kind == .event }
 
     func state(now: Date = Date()) -> DueState { DueState(due: due, now: now) }
 }
@@ -24,9 +56,9 @@ struct DashItem: Identifiable, Equatable {
 // MARK: – Toggle tabs
 
 enum DashFilter: String, CaseIterable, Identifiable {
-    case thisWeek = "This week"
-    case all      = "All"
-    case done     = "Done"
+    case thisWeek = "this week"
+    case all      = "all"
+    case done     = "done"
     var id: String { rawValue }
 }
 
@@ -100,7 +132,8 @@ final class DashboardViewModel: ObservableObject {
             built.append(DashItem(assignment: a,
                                   dueOverride: prior?.dueOverride,
                                   isCompleted: false,
-                                  completedAt: nil))
+                                  completedAt: nil,
+                                  requiresNoSubmission: state.requiresNoSubmission(a)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped
@@ -122,7 +155,8 @@ final class DashboardViewModel: ObservableObject {
             built.append(DashItem(assignment: a,
                                   dueOverride: priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
-                                  completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt))
+                                  completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
+                                  requiresNoSubmission: state.requiresNoSubmission(a)))
         }
 
         items = built
@@ -205,19 +239,19 @@ final class DashboardViewModel: ObservableObject {
 
         var sections: [DashSection] = []
         if includeOverdue && !overdue.isEmpty {
-            sections.append(.init(id: "overdue", label: "OVERDUE",
+            sections.append(.init(id: "overdue", label: "overdue",
                                   labelColor: .v2SpineRed, items: overdue))
         }
         if !today.isEmpty {
-            sections.append(.init(id: "today", label: "TODAY",
+            sections.append(.init(id: "today", label: "today",
                                   labelColor: .v2SectionMuted, items: today))
         }
         if !rest.isEmpty {
-            sections.append(.init(id: "rest", label: includeLater ? "THIS WEEK" : "REST OF WEEK",
+            sections.append(.init(id: "rest", label: includeLater ? "this week" : "rest of week",
                                   labelColor: .v2SectionMuted, items: rest))
         }
         if includeLater && !later.isEmpty {
-            sections.append(.init(id: "later", label: "LATER",
+            sections.append(.init(id: "later", label: "later",
                                   labelColor: .v2SectionMuted, items: later))
         }
         return sections
@@ -261,12 +295,12 @@ final class DashboardViewModel: ObservableObject {
 
         var sections: [DashSection] = []
         if !thisWeek.isEmpty {
-            sections.append(.init(id: "doneWeek", label: "THIS WEEK",
+            sections.append(.init(id: "doneWeek", label: "this week",
                                   labelColor: .v2SectionMuted, items: thisWeek,
                                   dayLabel: weekdayLabel))
         }
         if !semester.isEmpty {
-            sections.append(.init(id: "doneSemester", label: "EARLIER THIS SEMESTER",
+            sections.append(.init(id: "doneSemester", label: "earlier this semester",
                                   labelColor: .v2SectionMuted, items: semester,
                                   dayLabel: dateLabel))
         }

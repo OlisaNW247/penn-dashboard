@@ -35,13 +35,13 @@ struct SyllabusSetupView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Syllabus")
+                .navigationTitle("syllabus")
 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
+                        Button("done") { dismiss() }
                     }
                 }
                 .lhfSheetTheme()
@@ -72,34 +72,34 @@ struct SyllabusSetupView: View {
     private var chooser: some View {
         Form {
             Section {
-                Text("LHF reads only the grading section \u{2014} the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. It stays on your phone.")
+                Text("lhf reads only the grading section. the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. it stays on your phone.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
             }
 
-            Section("Find it automatically") {
+            Section("find it automatically") {
                 Button {
                     Task { await searchCanvas() }
                 } label: {
-                    Label("Look on Canvas", systemImage: "magnifyingglass")
+                    Label("look on canvas", systemImage: "magnifyingglass")
                 }
                 .disabled(store.snapshots[courseID] == nil)
-                Text("Checks this course\u{2019}s syllabus page, its pages, and any file named like a syllabus.")
+                Text("checks this course\u{2019}s syllabus page, its pages, and any file named like a syllabus.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
             }
 
-            Section("Or add it yourself") {
+            Section("or add it yourself") {
                 Button {
                     showPaste = true
                 } label: {
-                    Label("Paste the grading section", systemImage: "doc.on.clipboard")
+                    Label("paste the grading section", systemImage: "doc.on.clipboard")
                 }
 #if canImport(UniformTypeIdentifiers)
                 Button {
                     showFileImporter = true
                 } label: {
-                    Label("Choose a PDF", systemImage: "doc")
+                    Label("choose a pdf", systemImage: "doc")
                 }
 #endif
             }
@@ -111,7 +111,7 @@ struct SyllabusSetupView: View {
     private var pasteSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Paste the part of your syllabus that lists what each thing is worth.")
+                Text("paste the part of your syllabus that lists what each thing is worth.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .padding(.horizontal)
@@ -125,16 +125,16 @@ struct SyllabusSetupView: View {
             }
             .padding(.top, 12)
             .background(Color.v2Bg)
-            .navigationTitle("Paste syllabus")
+            .navigationTitle("paste syllabus")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showPaste = false }
+                    Button("cancel") { showPaste = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Read it") {
+                    Button("read it") {
                         showPaste = false
                         parse(SyllabusCandidate(
                             id: "pasted",
@@ -152,7 +152,7 @@ struct SyllabusSetupView: View {
     private var searching: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("Looking for your syllabus on Canvas\u{2026}")
+            Text("looking for your syllabus on canvas\u{2026}")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
         }
@@ -165,19 +165,19 @@ struct SyllabusSetupView: View {
     private func review(_ candidate: SyllabusCandidate, _ scheme: SyllabusGradingScheme) -> some View {
         Form {
             Section {
-                Text("Found in \(candidate.name).")
+                Text("found in \(candidate.name).")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                 if scheme.confidence == .medium {
-                    Label(String(format: "These add up to %.0f%%, not 100%% \u{2014} something may be missing. Check before using them.", scheme.rawWeightSum), systemImage: "exclamationmark.triangle")
+                    Label(String(format: "These add up to %.0f%%, not 100%%. something may be missing. Check before using them.", scheme.rawWeightSum), systemImage: "exclamationmark.triangle")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DueAmber)
                 }
             } header: {
-                Text("What we read")
+                Text("what we read")
             }
 
-            Section("Weights") {
+            Section("weights") {
                 ForEach(scheme.normalizedCategories) { category in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -204,7 +204,7 @@ struct SyllabusSetupView: View {
             }
 
             if let cutoffs = scheme.cutoffs {
-                Section("Letter cutoffs") {
+                Section("letter cutoffs") {
                     ForEach(cutoffs.bands) { band in
                         HStack {
                             Text(band.letter).font(.lhfSans(13, weight: .medium))
@@ -219,21 +219,21 @@ struct SyllabusSetupView: View {
 
             if scheme.mentionsCurve {
                 Section {
-                    Text("This syllabus mentions a curve or instructor discretion. LHF can\u{2019}t model that \u{2014} treat the letter grades as approximate.")
+                    Text("this syllabus mentions a curve or instructor discretion. lhf can\u{2019}t model that. treat the letter grades as approximate.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                 }
             }
 
             Section {
-                Button("Use these weights") {
+                Button("use these weights") {
                     store.attachSyllabus(
                         AttachedSyllabus(scheme: scheme, source: candidate.source, documentName: candidate.name),
                         courseID: courseID
                     )
                     stage = .matching
                 }
-                Button("That\u{2019}s not right \u{2014} start over", role: .destructive) {
+                Button("that\u{2019}s not right. start over", role: .destructive) {
                     stage = .choosing
                 }
             }
@@ -260,24 +260,24 @@ struct SyllabusSetupView: View {
             Form {
                 Section {
                     if match.isCompleteCoverage {
-                        Label("Every category is matched \u{2014} your syllabus\u{2019}s weights are in use.", systemImage: "checkmark.circle.fill")
+                        Label("every category is matched. your syllabus\u{2019}s weights are in use.", systemImage: "checkmark.circle.fill")
                             .font(.lhfSans(12))
                             .foregroundStyle(Color.v2SpineGreen)
                     } else {
-                        Text("Match each category from your syllabus to the matching Canvas group. Weights only take effect once every Canvas group is covered \u{2014} a half-matched syllabus would silently drop the rest of your grade.")
+                        Text("match each category from your syllabus to the matching canvas group. weights only take effect once every canvas group is covered. a half-matched syllabus would silently drop the rest of your grade.")
                             .font(.lhfSans(12))
                             .foregroundStyle(Color.v2DateText)
                     }
                 }
 
-                Section("Your syllabus \u{2192} Canvas") {
+                Section("your syllabus \u{2192} canvas") {
                     ForEach(match.matches) { row in
                         matchRow(row)
                     }
                 }
 
                 if !match.unmatchedCanvasCategories.isEmpty {
-                    Section("Canvas groups with no syllabus weight") {
+                    Section("canvas groups with no syllabus weight") {
                         ForEach(match.unmatchedCanvasCategories) { category in
                             Text(category.name)
                                 .font(.lhfSans(13))
@@ -287,7 +287,7 @@ struct SyllabusSetupView: View {
                 }
 
                 Section {
-                    Button("Remove this syllabus", role: .destructive) {
+                    Button("remove this syllabus", role: .destructive) {
                         store.detachSyllabus(courseID: courseID)
                         stage = .choosing
                     }
@@ -295,7 +295,7 @@ struct SyllabusSetupView: View {
             }
             .formStyle(.grouped)
         } else {
-            Text("Add a syllabus to match its categories.")
+            Text("add a syllabus to match its categories.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -314,7 +314,7 @@ struct SyllabusSetupView: View {
                     .foregroundStyle(Color.v2DateText)
             }
 
-            Picker("Canvas group", selection: Binding(
+            Picker("canvas group", selection: Binding(
                 get: { row.canvasCategoryID ?? "" },
                 set: { newValue in
                     if newValue.isEmpty {
@@ -328,7 +328,7 @@ struct SyllabusSetupView: View {
                     }
                 }
             )) {
-                Text("Not matched").tag("")
+                Text("not matched").tag("")
                 ForEach(store.gradeCategories(courseID: courseID)) { category in
                     Text(category.name).tag(category.id)
                 }
@@ -337,15 +337,15 @@ struct SyllabusSetupView: View {
 
             switch row.tier {
             case .exact:
-                Text("Names match").font(.lhfSans(10)).foregroundStyle(Color.v2SpineGreen)
+                Text("names match").font(.lhfSans(10)).foregroundStyle(Color.v2SpineGreen)
             case .confirmed:
-                Text("You matched this").font(.lhfSans(10)).foregroundStyle(Color.v2SpineGreen)
+                Text("you matched this").font(.lhfSans(10)).foregroundStyle(Color.v2SpineGreen)
             case .fuzzy:
-                Text("Suggested \u{2014} confirm it above to use it")
+                Text("suggested. confirm it above to use it")
                     .font(.lhfSans(10))
                     .foregroundStyle(Color.v2DueAmber)
             case .unmatched:
-                Text("Pick the Canvas group this covers")
+                Text("pick the canvas group this covers")
                     .font(.lhfSans(10))
                     .foregroundStyle(Color.v2RingSub)
             }
@@ -361,12 +361,12 @@ struct SyllabusSetupView: View {
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("You can still set weights by hand on the report \u{2014} tap any category\u{2019}s weight to edit it.")
+            Text("you can still set weights by hand on the report. tap any category\u{2019}s weight to edit it.")
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Try another source") { stage = .choosing }
+            Button("try another source") { stage = .choosing }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }
@@ -406,7 +406,7 @@ struct SyllabusSetupView: View {
 
     private func parse(_ candidate: SyllabusCandidate) {
         guard let scheme = SyllabusParser.parse(candidate.text) else {
-            stage = .failed("Couldn\u{2019}t find a grading breakdown in that text. It needs the lines that say what each part is worth \u{2014} and they should add up to about 100%.")
+            stage = .failed("Couldn\u{2019}t find a grading breakdown in that text. It needs the lines that say what each part is worth. and they should add up to about 100%.")
             return
         }
         stage = .reviewing(candidate, scheme)

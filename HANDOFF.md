@@ -1,6 +1,127 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-08-20 (branch `claude/lhf-v3-canvas-merge-6msbyo`)_
+_Last updated: 2026-08-27, end of day (branch `claude/v4-github-repo-kvu0e0` —
+the v3.5 + v4 merge line). This section supersedes everything below the
+"historical context" marker; read `CLAUDE.md` first for commands, storage
+tiers, and the traps._
+
+## ⚠️ Current state: 2.0.0 (build 5) is being submitted to the App Store
+
+Owner + Marco approved 2026-08-27. The repo side of the submission is done;
+the owner is working through the Mac/ASC side (archive → validate → upload →
+paste copy → submit; the ordered list is `docs/appstore/CHECKLIST.md`
+§"2.0.0 submission"). Screenshots are regenerated and committed. Once the
+build is uploaded, tag the release commit `v2.0.0-build5`.
+
+**Verified green baseline (owner's Mac, 2026-08-27): 644 tests / 63 suites**
+(plus 4 XCTest scheduler tests), zero failures. A change that lowers either
+number has lost work — investigate rather than accept it.
+
+**Grade Watcher is HIDDEN this release** (`FeatureFlags.gradeWatcher =
+false`, owner's call 2026-08-26). The whole `docs/appstore/` package is
+scrubbed to match (2.3.1 accurate metadata): no grades/syllabus claims in
+the listing, no grades stops in the review notes, no grades screenshots, and
+`capture-screenshots.sh` skips those shots. The v2.5-era grades copy lives
+in git history for when the flag flips back.
+
+## What changed 2026-08-27 (all on this branch, all verified on the Mac)
+
+Worked owner-driven, one device-pass finding at a time; each landed with
+tests and a `docs/decisions.md` entry (read those entries for the why):
+
+1. **Profile lists Modules-only / not-yet-posting classes** (`39a8aef`) —
+   the CIS 2620 fix. `allCourseCodes()` now pools
+   `canvasItems + gradescopeItems + moduleReadingItems` and unions the
+   cached enrolled courses, re-applying the ingestion filters at read time.
+   `CourseListSourcesTests`.
+2. **Readings consent popup removed; auto-import** (`1550510`) —
+   `CourseNudgeSheet`/`pendingCourseNudge` machinery deleted. Readings
+   import the moment a probe finds them; the single gate is
+   `AppState.shouldAutoImportReadings(for:)` (blocks only on an explicit
+   `.exclude` from Settings → "Courses & content"). `ReadingsAutoImportTests`
+   replaced the nudge suite.
+3. **"Nothing to submit" caveat + no-submission cache** (`e24be6a`) —
+   Canvas no-submission assignment ids (`GradeItem.requiresNoSubmission`)
+   are cached in `UserDefaults.lhf` under
+   `noSubmissionCanvasAssignmentIDsV1` (self-healing per observed item,
+   never iCloud-mirrored), so the card caveat is right on a cold launch.
+   `DashItem.showsNothingToSubmit` = `requiresNoSubmission || kind ==
+   .event` is the display predicate.
+4. **Book icon removed** (`c7baf3b`) — the caveat is the one marker; the
+   glyph is gone from the card and the Mac menu-bar row.
+5. **Nothing-to-submit items are never "late"** (`51c522e`) —
+   `isExpiredEvent` is a hard `due < now` boundary (was calendar-day;
+   all-day ICS entries already parse to end-of-day so they still last their
+   day), mirrored into `LedgerWidgetReader`; and
+   `AppState.isAutoFiledNoSubmission` (cache-backed, offline) is wired into
+   `isCompleted` so a past-due no-submission assignment files to Done
+   instantly instead of waiting for a grade refresh.
+6. **One merged per-class toggle, and off means HIDDEN** (`7bb7cff`) —
+   `CoursePreferences.nothingToSubmitEnabled` replaced `recurringEnabled` +
+   `noSubmissionRemindersEnabled` (decode fold: new key wins, else the two
+   old keys AND together; old CodingKeys are decode-only fossils). Off hides
+   the class's `.event` items and cached no-submission assignments from the
+   dashboard pools (enforced in `rebuildDashboardItems`); `RecurringTask`
+   occurrences stay visible but silent (the one remaining scheduler gate);
+   assessments are never hidden. UI routes through
+   `AppState.setNothingToSubmitEnabled` — the store setter alone does NOT
+   rebuild the pools, and that is load-bearing. Same toggle in the
+   onboarding per-course walk.
+7. **App Store package rewritten for 2.0.0** (`c78b9fe`) + regenerated
+   screenshots (`f100bdf`).
+
+## How to work in this setup (unchanged, and it bit us again today)
+
+- The Claude session runs in a **Linux container with NO Swift toolchain**.
+  Make changes, run static checks (greps for dangling symbols, brace
+  balance), push, and the owner runs `cd LowHangingFruitKit && swift test`
+  and builds on their Mac, pasting results back. Every change today
+  compiled first try under this discipline — keep the bar there.
+- The owner's zsh chokes on `#` comments in pasted commands. Their local
+  checkout drifts branches — have them run `git branch --show-current`
+  before anything that matters, and remember relative paths: they usually
+  sit inside `LowHangingFruitKit/`, so repo-root scripts need `../`.
+- Work happens directly on `claude/v4-github-repo-kvu0e0` (fast-forward
+  pushes). `main` is frozen at the June 1.0; do not base work on it.
+- Tests share process-wide `UserDefaults` — every test backs up and
+  restores EXACTLY the keys it writes, including the `coursePreferences`
+  blob (`CoursePreferencesStore.storageKey`) if it goes through the store
+  against `UserDefaults.lhf`. `NoSubmissionCaveatTests` has the current
+  helper patterns (`withCachedIDs`, `withCleanCoursePreferences`).
+- iOS notification banners always show the installed app icon; there is no
+  per-notification logo API. A stale icon there is device cache — restart
+  the phone before anything drastic (delete+reinstall wipes on-device data).
+
+## Known gaps / follow-up backlog (deliberate, not forgotten)
+
+- **iOS WidgetKit widget ignores `nothingToSubmitEnabled`** — it reads the
+  ledger plus the three legacy per-course keys only, so a hidden class's
+  readings still appear in the widget. Needs its own pass (project a fourth
+  legacy-style key, or teach `LedgerWidgetReader` the blob).
+- **No `-LHFShowProfile` screenshot seam** — the Profile shot is manual.
+- `CourseContentDecision.fingerprint` is a decode-kept fossil (its re-ask
+  purpose died with the popup).
+- Mac icon rounded-rect margin pass (cosmetic, pre-existing).
+- iCloud Tier 2 sync is opt-in/default-off with little soak; the
+  `LedgerSchemaV1` migration has still never opened a real pre-existing
+  on-disk store; the demo screen recording for ASC shows the 1.x flow and
+  should be re-recorded or dropped.
+- Remaining device-pass items: onboarding walk end-to-end, Mac menu-bar
+  build, widget with renamed courses, two-device iCloud toggle.
+
+## After the submission
+
+- App Review feedback lands in ASC; whatever it asks, the package files in
+  `docs/appstore/` are the source of truth to amend and re-paste.
+- If 2.0.0 is approved: update `CLAUDE.md`'s "Shipped on the App Store as"
+  line, and decide the branch story (this merge line is the de-facto ship
+  line; `main` needs either a fast-forward decision or retirement).
+
+Everything below this section is historical context from earlier sessions.
+
+---
+
+_Previous update: 2026-08-20 (branch `claude/lhf-v3-canvas-merge-6msbyo`)_
 
 **LHF (Low Hanging Fruit)** is a personal academic dashboard for Penn students.
 It reads the student's own **Canvas** calendar feed (plus **Gradescope**, and
@@ -269,24 +390,33 @@ Three independent notions of "done", and they are **not** interchangeable:
 
 | Signal | Source | Persisted? |
 |---|---|---|
-| Manual tick | user taps a card → `StoredAssignment.completedAt`, read back via `completionRecord()` | **Yes** (ledger) |
-| Gradescope submitted | `Assignment.submitted` from the Gradescope scrape | **Yes** (ledger) |
-| Canvas submitted | `submittedCanvasAssignmentIDs`, written by `AssignmentStore.applySubmissionState` from Grade Watcher snapshots | **Yes** (ledger) |
+| Manual tick | user taps a card → `StoredAssignment.userCompleted` / `completedAt` | **Yes** (ledger) |
+| Gradescope submitted | `Assignment.submitted` from the scrape → `gradescopeSubmitted` | **Yes** (ledger) |
+| Canvas submitted | Grade Watcher `workflow_state` → `applySubmissionState()` → `canvasSubmitted` | **Yes** (ledger) |
 
-**All three now live on the ledger.** The Canvas flag used to be deliberately
-un-persisted so a retracted submission would self-heal; `applySubmissionState`
-keeps that property a better way — it is a full **replace** of the flag on every
-refresh, not a merge, so a cleared submission still goes back to unsubmitted.
-What changed is the cold-launch behaviour: `AppState.init` seeds from
-`store.submittedCanvasAssignmentIDs()`, so an auto-filed item is in Done from
-the first frame instead of sitting in the active list until a grade refresh
-lands. With no Canvas session the app now shows the **last known** submission
-state rather than nothing at all. Canvas doesn't push, so this is still polling
-while the session is alive — best-effort, never real-time.
+All three are durable now. The Canvas flag is written as a full **replace**
+rather than a merge, which is what preserves the self-healing property the old
+recompute-every-refresh design had: a retracted or TA-cleared submission goes
+back to unsubmitted on the next refresh. `submittedCanvasAssignmentIDs()` seeds
+`AppState` at launch, so the app knows what you turned in *before* — or without —
+any grade refresh.
 
-`completedAssignmentIDs` / `completionDates` remain in defaults purely as a
-**one-time migration source**; `AppState.init` reads them, writes them onto the
-ledger, and removes the keys.
+Each flag also carries **when it was last observed**
+(`canvasSubmissionObservedAt` / `gradescopeSubmissionObservedAt`, newest of the
+two via `submissionObservedAt`). The flag alone cannot separate "not submitted,
+confirmed a minute ago" from "not submitted, as far as we knew last Tuesday",
+and those mean different things to a student deciding what to work on. Nil means
+*never observed* — unknown, which is not the same as stale, and must not be
+rendered as "last checked ages ago".
+
+Still true: Canvas state is derived from the grades fetch, so **no Canvas
+session ⇒ no fresh answer.** Canvas doesn't push, so this is polling while the
+session is alive — best-effort, never real-time. What's changed is that a stale
+answer now says so instead of disappearing.
+
+Not yet modelled: late / missing / excused / resubmitted (Canvas sends these in
+`workflow_state`; we collapse them to a Bool), and a manual student override for
+when Canvas is wrong or unreachable.
 
 ---
 

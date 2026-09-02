@@ -9,29 +9,31 @@ import AppKit
 import ServiceManagement
 #endif
 
-/// Houses everything that used to clutter the main screen: connection status,
-/// reconnect, class editing, recurring-task entry, and reminder preferences.
+/// Account, appearance, reminder defaults, tasks, storage and troubleshooting.
 ///
-/// Pushed onto the dashboard's `NavigationStack` (from the header's Settings
-/// button) rather than presented as a sheet, so it's a full screen with a back
-/// button. It therefore owns **no** `NavigationStack` of its own — nesting one
-/// would break the push and strand `Grade Watcher`'s own link below it.
+/// **The class list is no longer here.** It moved to the Profile tab in v4 —
+/// see `ProfileClassesSection`, which is that code, moved rather than rewritten.
+/// The split is "a preference vs. a thing you own": appearance and reminder
+/// lead times are preferences; which classes you're taking is not, and it was
+/// odd that turning off a course lived next to the light/dark picker.
+/// What stays here is the *global* reminder configuration that per-course
+/// settings in Profile will inherit from and override.
+///
+/// In v4 this is the root of the **Settings tab**, which is where its
+/// `NavigationStack` comes from (the dashboard's stack supplies one). It still
+/// owns **no** stack of its own — nesting one would strand `Grade Watcher`'s
+/// link below it, exactly as it would have when this was a push. It is still
+/// reachable as a push too, via `ContentView.DashRoute.settings`, which the
+/// screenshot seam drives.
 struct SettingsPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var showRecurring = false
-    /// Non-nil while the rename prompt is up; holds the course *code* being
-    /// renamed (never the display name, which is what's being edited).
-    @State private var renamingCourse: String?
-    @State private var renameDraft = ""
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
-    /// "Paste your Canvas calendar link" fallback, also reachable from
-    /// onboarding (docs/CANVAS_LOGIN_HARDENING.md item 3b).
-    @State private var showPasteFeedLink = false
     @State private var didCopyDiagnostics = false
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
@@ -56,19 +58,39 @@ struct SettingsPage: View {
 
     var body: some View {
         Form {
-            Section("Profile") {
-                TextField("Your name", text: Binding(
+            // Header deliberately isn't "Profile" any more: that word now names
+            // a tab, and a Settings section wearing the same label would read
+            // as a shortcut to it. The field itself hasn't moved — a name is a
+            // preference, and Profile is about classes.
+            Section("your name") {
+                TextField("your name", text: Binding(
                     get: { state.userName },
                     set: { state.updateName($0) }
                 ))
             }
 
+            // One row per source, connect or disconnect on the right. The
+            // paste-a-calendar-link fallback moved out of here: it belongs on
+            // the path where a login is actually failing (onboarding), not in
+            // a list of accounts, where it read as a third thing to connect.
             Section {
-                statusRow(label: "Canvas",
-                          connected: state.isCanvasConnected,
-                          working: state.isLoading || state.isCanvasDiscoveryLoading)
+                if state.isPreviewMode {
+                    // In the demo every connect action runs `restartOnboarding()`,
+                    // which drops preview mode and throws whoever tapped it at the
+                    // Penn SSO wall with no way back. One clearly labelled exit
+                    // instead, so leaving the demo is always deliberate.
+                    Button {
+                        dismiss()
+                        state.restartOnboarding()
+                    } label: {
+                        Text("exit preview")
+                    }
+                } else {
+                    accountRow(label: "canvas",
+                               connected: state.isCanvasConnected,
+                               working: state.isLoading || state.isCanvasDiscoveryLoading,
+                               disconnect: .canvas)
 
-                if state.isCanvasConnected {
                     // The feed-connected-but-no-cookie-session state: the
                     // calendar link keeps the dashboard working while
                     // everything session-powered (Grade Watcher, submission
@@ -80,63 +102,31 @@ struct SettingsPage: View {
                     // ledger's Canvas rows, and with iCloud sync on, those
                     // deletions propagate to the user's other devices. This
                     // button is the non-destructive path — same
-                    // restartOnboarding() route as "Connect Canvas", which
-                    // touches no stored data and lands on the connect
-                    // checklist where the Canvas login step can be redone.
-                    if !state.canUseGradeWatcher {
+                    // restartOnboarding() route as "connect", which touches
+                    // no stored data and lands on the connect checklist where
+                    // the Canvas login step can be redone.
+                    if state.isCanvasConnected && !state.canUseGradeWatcher {
                         Button {
                             dismiss()
                             state.restartOnboarding()
                         } label: {
-                            Label("Sign in to Canvas", systemImage: "link")
+                            Label("sign in to canvas", systemImage: "link")
                         }
                     }
-                    Button(role: .destructive) {
-                        disconnecting = .canvas
-                    } label: {
-                        Label("Disconnect Canvas", systemImage: "link.badge.plus")
-                    }
-                } else {
-                    Button {
-                        dismiss()
-                        state.restartOnboarding()
-                    } label: {
-                        Label("Connect Canvas", systemImage: "link")
-                    }
-                    Button {
-                        showPasteFeedLink = true
-                    } label: {
-                        Label("Paste calendar link instead", systemImage: "link.badge.plus")
-                    }
-                }
 
-                statusRow(label: "Gradescope",
-                          connected: state.isGradescopeConnected,
-                          working: state.isGradescopeLoading)
-
-                Button {
-                    dismiss()
-                    state.restartOnboarding()
-                } label: {
-                    Label(state.isGradescopeConnected ? "Reconnect Gradescope" : "Connect Gradescope",
-                          systemImage: "link")
-                }
-
-                if state.isGradescopeConnected {
-                    Button(role: .destructive) {
-                        disconnecting = .gradescope
-                    } label: {
-                        Label("Disconnect Gradescope", systemImage: "link.badge.plus")
-                    }
+                    accountRow(label: "gradescope",
+                               connected: state.isGradescopeConnected,
+                               working: state.isGradescopeLoading,
+                               disconnect: .gradescope)
                 }
             } header: {
-                Text("Account")
+                Text("accounts")
             } footer: {
-                Text("Disconnecting erases that service\u{2019}s saved login from this device. LHF has no account and no server \u{2014} everything it knows lives on your phone.")
+                Text("everything stays on your phone.")
             }
 
-            Section("Appearance") {
-                Picker("Appearance", selection: Binding(
+            Section("appearance") {
+                Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
                     set: { state.setAppearanceMode($0) }
                 )) {
@@ -148,24 +138,20 @@ struct SettingsPage: View {
                 .labelsHidden()
             }
 
-            classesSection
-
-            courseContentSection
-
             if FeatureFlags.gradeWatcher {
                 Section {
                     if state.canUseGradeWatcher {
                         NavigationLink {
                             GradeWatcherView(store: state.gradeWatcher)
                         } label: {
-                            Label("Grade Watcher", systemImage: "chart.bar.fill")
+                            Label("grade watcher", systemImage: "chart.bar.fill")
                         }
                     } else {
-                        Label("Grade Watcher", systemImage: "chart.bar.fill")
+                        Label("grade watcher", systemImage: "chart.bar.fill")
                             .foregroundStyle(Color.secondary)
                     }
                 } header: {
-                    Text("Grades")
+                    Text("grades")
                 } footer: {
                     if !state.canUseGradeWatcher {
                         Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use \u{201C}Sign in to Canvas\u{201D} in the Account section above to log in directly; your calendar feed and synced assignments stay put.")
@@ -173,11 +159,11 @@ struct SettingsPage: View {
                 }
             }
 
-            Section("Tasks") {
+            Section("tasks") {
                 Button {
                     showRecurring = true
                 } label: {
-                    Label("Add recurring task", systemImage: "calendar.badge.plus")
+                    Label("add recurring task", systemImage: "calendar.badge.plus")
                 }
             }
 
@@ -202,36 +188,18 @@ struct SettingsPage: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Settings")
+        .navigationTitle("settings")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
         }
-        .sheet(isPresented: $showPasteFeedLink) {
-            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
-        }
-        .alert("Rename class", isPresented: Binding(
-            get: { renamingCourse != nil },
-            set: { if !$0 { renamingCourse = nil } }
-        )) {
-            TextField("Class name", text: $renameDraft)
-            Button("Save") {
-                if let course = renamingCourse {
-                    state.renameCourse(course, to: renameDraft)
-                }
-                renamingCourse = nil
-            }
-            Button("Cancel", role: .cancel) { renamingCourse = nil }
-        } message: {
-            Text("Shown in place of \(renamingCourse ?? "the class code"). Leave it empty to go back to the original.")
-        }
         .alert(item: $disconnecting) { target in
             Alert(
-                title: Text("Disconnect \(target.label)?"),
+                title: Text("disconnect \(target.label)?"),
                 message: Text(target.message),
-                primaryButton: .destructive(Text("Disconnect")) {
+                primaryButton: .destructive(Text("disconnect")) {
                     switch target {
                     case .canvas:     state.disconnectCanvas()
                     case .gradescope: state.disconnectGradescope()
@@ -256,18 +224,18 @@ struct SettingsPage: View {
     @ViewBuilder
     private var storageSection: some View {
         if let stats = state.assignmentStore?.stats() {
-            Section("Storage") {
-                LabeledContent("Saved assignments", value: "\(stats.total)")
-                LabeledContent("Canvas / Gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
-                LabeledContent("Finished (kept forever)", value: "\(stats.finished)")
+            Section("storage") {
+                LabeledContent("saved", value: "\(stats.total)")
+                LabeledContent("canvas / gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
+                LabeledContent("finished", value: "\(stats.finished)")
                 if stats.withScores > 0 {
-                    LabeledContent("With a saved score", value: "\(stats.withScores)")
+                    LabeledContent("with a score", value: "\(stats.withScores)")
                 }
                 if stats.goneFromFeed > 0 {
-                    LabeledContent("Retained after leaving the feed", value: "\(stats.goneFromFeed)")
+                    LabeledContent("kept after leaving canvas", value: "\(stats.goneFromFeed)")
                 }
                 if let earliest = stats.earliestFirstSeen {
-                    LabeledContent("Tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
+                    LabeledContent("tracking since", value: earliest.formatted(date: .abbreviated, time: .omitted))
                 }
                 // Always shown, even at 0: this is the number that says the
                 // in-code uniqueness invariant is holding now that the
@@ -290,7 +258,7 @@ struct SettingsPage: View {
                         ? (stats.failedSaveCount == 0
                             ? "Saved on this device."
                             : "Saved on this device, but recent changes didn't stick.")
-                        : "Not saving — assignments will be lost when the app quits.",
+                        : "not saving. assignments will be lost when the app quits.",
                     systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .font(.lhfSans(12))
@@ -315,165 +283,34 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: Classes
-
-    /// Same class picker as onboarding, so a course can be turned off any time.
-    /// Off = hidden from the dashboard and from reminders. Swipe to delete a
-    /// class entirely (it drops out of this list, not just off); "Deleted
-    /// classes" below lists anything deleted so it can be brought back.
-    @ViewBuilder
-    private var classesSection: some View {
-        let courses = state.visibleCourseCodes()
-        let deletedCourses = state.deletedCourseCodes()
-        if !courses.isEmpty || !deletedCourses.isEmpty {
-            Section {
-                ForEach(courses, id: \.self) { course in
-                    classRow(course)
-                }
-
-                if !deletedCourses.isEmpty {
-                    deletedClassesRow(deletedCourses)
-                }
-            } header: {
-                Text("Classes")
-            } footer: {
-                Text("Turn a class off to hide its assignments and its reminders. Swipe to rename or delete \u{2014} renaming only changes the label, so grades and reminders keep working.")
-            }
-        }
-    }
-
-    /// One class: the on/off toggle, plus rename and delete. The row shows the
-    /// user's own name when they've set one, but every action still keys on
-    /// `course` (the code Canvas gave us) so a rename can't detach the class
-    /// from its assignments or its grades.
-    private func classRow(_ course: String) -> some View {
-        Toggle(state.courseDisplayName(course), isOn: Binding(
-            get: { state.isCourseSelected(course) },
-            set: { state.setCourse(course, selected: $0) }
-        ))
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                state.deleteCourse(course)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            Button {
-                beginRename(course)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .tint(Color.v2DateText)
-        }
-        .contextMenu {
-            Button {
-                beginRename(course)
-            } label: {
-                Label("Rename class", systemImage: "pencil")
-            }
-            if state.hasCustomName(course) {
-                Button {
-                    state.renameCourse(course, to: "")
-                } label: {
-                    Label("Reset to \(course)", systemImage: "arrow.uturn.backward")
-                }
-            }
-            Button(role: .destructive) {
-                state.deleteCourse(course)
-            } label: {
-                Label("Delete class", systemImage: "trash")
-            }
-        }
-    }
-
-    private func beginRename(_ course: String) {
-        renameDraft = state.courseDisplayName(course)
-        renamingCourse = course
-    }
-
-    private func deletedClassesRow(_ deletedCourses: [String]) -> some View {
-        DisclosureGroup {
-            ForEach(deletedCourses, id: \.self) { course in
-                HStack {
-                    Text(state.courseDisplayName(course))
-                        .font(.lhfSans(14))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Restore") {
-                        state.restoreCourse(course)
-                    }
-                    .font(.lhfSans(13))
-                }
-            }
-        } label: {
-            Label("Deleted classes (\(deletedCourses.count))", systemImage: "trash")
-                .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: Reading & event classes
-
-    /// Management surface for courses whose readings/events the dashboard
-    /// isn't showing by default (docs/READINGS_COURSES_PLAN.md Phase 3.8) —
-    /// the durable, revisitable counterpart to `CourseNudgeSheet`'s one-time
-    /// ask. Only lists courses `AppState` considers manageable; a normal
-    /// course with submittable work never appears here.
-    @ViewBuilder
-    private var courseContentSection: some View {
-        let manageable = state.courseContentManageableCourses
-        if !manageable.isEmpty {
-            Section {
-                ForEach(manageable, id: \.courseKey) { report in
-                    Toggle(isOn: Binding(
-                        get: { state.courseContentIncluded(report.courseKey) },
-                        set: { state.setCourseContentIncluded(report.courseKey, $0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(state.courseDisplayName(report.courseKey))
-                            Text(courseContentCaption(report))
-                                .font(.lhfSans(11))
-                                .foregroundStyle(Color.v2DateText)
-                        }
-                    }
-                }
-            } header: {
-                Text("Reading & event classes")
-            } footer: {
-                Text("These classes only post readings or events \u{2014} nothing to submit. On means their items show on your list.")
-            }
-        }
-    }
-
-    /// Short summary of what was actually found for `report`, shown under its
-    /// toggle. Mirrors the counts `CourseNudgeSheet` explains at ask time.
-    private func courseContentCaption(_ report: CourseProfileReport) -> String {
-        switch report.profile {
-        case let .readingsOnCalendar(eventCount, _):
-            return "\(eventCount) calendar reading\(eventCount == 1 ? "" : "s")"
-        case let .silent(moduleReadingCount):
-            guard let moduleReadingCount, moduleReadingCount > 0 else { return "nothing found yet" }
-            return "\(moduleReadingCount) module reading\(moduleReadingCount == 1 ? "" : "s")"
-        case .normal, .unknownSilent:
-            return "nothing found yet"
-        }
-    }
+    // The "reading & event classes" section that used to sit here was removed
+    // when calendar events became include-by-default (owner's call,
+    // 2026-08-26 — see `AppState.includesAsOptedInContent`). A readings-only
+    // class now behaves like any other class: it lives in the Profile classes
+    // list and the normal per-class toggle is what hides it.
 
     // MARK: Reminders
 
+    /// The **global** reminder configuration: whether due-date reminders run at
+    /// all, which lead times they use, and the daily digest. v4's Profile tab
+    /// adds a per-class layer that inherits from exactly these values and
+    /// overrides them class by class, which is why they stay in Settings rather
+    /// than following the class list over to Profile — this is the default a
+    /// student sets once, not the per-course tuning they revisit.
     @ViewBuilder
     private var remindersSection: some View {
-        Section("Reminders") {
-            Toggle("Due-date reminders", isOn: Binding(
+        Section("reminders") {
+            Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
                 set: { newValue in Task { await scheduler.setEnabled(newValue) } }
             ))
 
             if scheduler.isEnabled {
                 if scheduler.authStatus == .denied {
-                    Label("Notifications are off in System Settings.", systemImage: "bell.slash")
+                    Label("notifications are off in system settings.", systemImage: "bell.slash")
                         .font(.lhfSans(12))
                         .foregroundStyle(.secondary)
-                    Button("Open Settings") { openSystemNotificationSettings() }
+                    Button("open settings") { openSystemNotificationSettings() }
                 } else {
                     ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
                         Toggle(offset.label, isOn: Binding(
@@ -482,17 +319,17 @@ struct SettingsPage: View {
                         ))
                     }
 
-                    Toggle("\u{201C}Turned in\u{201D} confirmations", isOn: Binding(
+                    Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
                         get: { scheduler.turnedInEnabled },
                         set: { scheduler.setTurnedInEnabled($0) }
                     ))
 
-                    Toggle("Daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
+                    Toggle("daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
                         get: { scheduler.digestEnabled },
                         set: { scheduler.setDigestEnabled($0) }
                     ))
                     if scheduler.digestEnabled {
-                        DatePicker("Digest time", selection: digestTimeBinding,
+                        DatePicker("digest time", selection: digestTimeBinding,
                                    displayedComponents: .hourAndMinute)
                     }
                 }
@@ -510,7 +347,7 @@ struct SettingsPage: View {
     @ViewBuilder
     private var iCloudSyncSection: some View {
         Section {
-            Toggle("Sync between my devices", isOn: Binding(
+            Toggle("sync between my devices", isOn: Binding(
                 get: { state.cloudSyncEnabled },
                 set: { state.setCloudSyncEnabled($0) }
             ))
@@ -535,7 +372,7 @@ struct SettingsPage: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("iCloud sync")
+            Text("icloud sync")
         } footer: {
             Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to LHF\u{2019}s developer. Takes effect the next time you quit and reopen LHF. Both devices need to be signed into the same iCloud account.")
         }
@@ -552,7 +389,7 @@ struct SettingsPage: View {
     @ViewBuilder
     private var onThisMacSection: some View {
         Section {
-            Toggle("Open at login", isOn: Binding(
+            Toggle("open at login", isOn: Binding(
                 get: {
                     _ = loginItemRefreshNonce // force a re-read after register/unregister
                     return SMAppService.mainApp.status == .enabled
@@ -567,7 +404,7 @@ struct SettingsPage: View {
                 }
             ))
         } header: {
-            Text("On this Mac")
+            Text("on this mac")
         } footer: {
             Text("Keeps LHF in your menu bar so assignments stay fresh all day.")
         }
@@ -583,15 +420,15 @@ struct SettingsPage: View {
             Button {
                 copyDiagnostics()
             } label: {
-                Label(didCopyDiagnostics ? "Copied" : "Copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+                Label(didCopyDiagnostics ? "copied" : "copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
             }
             Button {
                 reportProblem()
             } label: {
-                Label("Report a problem", systemImage: "envelope")
+                Label("report a problem", systemImage: "envelope")
             }
         } header: {
-            Text("Troubleshooting")
+            Text("troubleshooting")
         } footer: {
             Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. \u{201C}Report a problem\u{201D} opens an email with that same redacted report already in it, so you only have to describe what happened.")
         }
@@ -632,7 +469,14 @@ struct SettingsPage: View {
 #endif
     }
 
-    private func statusRow(label: String, connected: Bool, working: Bool) -> some View {
+    /// One source, with its action on the right. Connected state is carried by
+    /// the action word itself rather than a separate "Connected" label: the row
+    /// only ever offers the one move that applies, so a second status string
+    /// was saying the same thing twice.
+    private func accountRow(label: String,
+                            connected: Bool,
+                            working: Bool,
+                            disconnect target: DisconnectTarget) -> some View {
         HStack(spacing: 8) {
             if working {
                 ProgressView().controlSize(.small)
@@ -642,9 +486,17 @@ struct SettingsPage: View {
             }
             Text(label)
             Spacer()
-            Text(connected ? "Connected" : "Not connected")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
+            if connected {
+                Button("disconnect", role: .destructive) { disconnecting = target }
+                    .buttonStyle(.borderless)
+            } else {
+                Button("connect") {
+                    dismiss()
+                    state.restartOnboarding()
+                }
+                .buttonStyle(.borderless)
+            }
         }
+        .accessibilityElement(children: .combine)
     }
 }

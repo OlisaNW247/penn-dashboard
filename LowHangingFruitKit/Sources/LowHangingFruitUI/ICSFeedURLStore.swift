@@ -62,8 +62,20 @@ enum ICSFeedURLStore {
         }
 
         // One-time migration from the old UserDefaults-backed storage.
+        //
+        // Deliberately `.standard` and not `UserDefaults.lhf`, which is why both
+        // lines carry the opt-out marker the source scan in
+        // `SharedDefaultsMigrationTests` looks for. The app's private domain is
+        // where this value physically is: `SharedDefaults` excludes
+        // `canvasICSURL` from its key list precisely so a bearer credential is
+        // never copied into the shared container, so reading through the shared
+        // accessor would look somewhere it was never written and quietly sign
+        // the user out on upgrade. Removing it here is what makes that
+        // exclusion complete rather than merely partial.
+        // lhf:allow-standard-defaults — migration source, see above
         if let legacy = UserDefaults.standard.string(forKey: legacyUserDefaultsKey), !legacy.isEmpty {
             save(legacy)
+            // lhf:allow-standard-defaults — migration source, see above
             UserDefaults.standard.removeObject(forKey: legacyUserDefaultsKey)
             return legacy
         }

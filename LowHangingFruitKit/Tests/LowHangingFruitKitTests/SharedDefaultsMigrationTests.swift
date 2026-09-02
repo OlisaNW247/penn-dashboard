@@ -211,7 +211,7 @@ struct SharedDefaultsMigrationTests {
             "userName", "completedAssignmentIDs", "completionDates",
             "hiddenCourseKeys", "deletedCourseKeys", "recurringTasks", "manualAssignments",
             "canvasDiscoveryConnected", "gradescopeConnected", "hasCompletedOnboarding",
-            "isPreviewMode", "appearanceMode", "courseNameOverrides",
+            "hasSeenIntro", "isPreviewMode", "appearanceMode", "courseNameOverrides",
             "canvasCourseIDsByCode", "gradeBaselinedCourses",
             "gradeWatcherManualWeights", "gradeWatcherConfirmedGradescopeMappings",
             "gradeWatcherHistory", "gradeWatcherWatchedCourses",
@@ -231,6 +231,31 @@ struct SharedDefaultsMigrationTests {
         )
     }
 
+    /// The one key whose *absence* from the list is the point.
+    ///
+    /// The Canvas feed URL carries a per-user token in the URL itself, so it is
+    /// a bearer credential and now lives in the Keychain via `ICSFeedURLStore`.
+    /// Migrating it would copy it back into an unencrypted, backed-up, widget-
+    /// readable container and leave it there. This reads like an omission, so
+    /// it gets a test that says otherwise.
+    @Test("the feed URL is never migrated into the shared suite")
+    func feedURLStaysOutOfSharedDefaults() {
+        #expect(!SharedDefaultsMigration.legacyKeys.contains("canvasICSURL"))
+
+        let legacy = UserDefaults(suiteName: "lhf.tests.legacy.\(UUID().uuidString)")!
+        let shared = UserDefaults(suiteName: "lhf.tests.shared.\(UUID().uuidString)")!
+        defer {
+            UserDefaults().removePersistentDomain(forName: legacy.description)
+            UserDefaults().removePersistentDomain(forName: shared.description)
+        }
+        legacy.set("https://canvas.upenn.edu/feeds/calendars/user_SECRET.ics",
+                   forKey: "canvasICSURL")
+
+        SharedDefaultsMigration.run(from: legacy, to: shared)
+
+        #expect(shared.string(forKey: "canvasICSURL") == nil)
+    }
+
     /// The migration is worthless if a read still goes to the app's private
     /// domain, because the widget can't follow it there. Scans the UI sources
     /// rather than trusting review. Skipped when the checkout isn't alongside
@@ -244,10 +269,6 @@ struct SharedDefaultsMigrationTests {
     /// Every other UI source must still fail this check.
     @Test("no preference read is left pointing at the private domain")
     func uiSourcesUseTheSharedAccessor() throws {
-        // The one file allowed to reference `UserDefaults.standard`, and only
-        // for the one-time migration read described above.
-        let filesAllowedToUseStandardDefaults: Set<String> = ["ICSFeedURLStore.swift"]
-
         let sources = URL(fileURLWithPath: #filePath)      // .../Tests/LowHangingFruitKitTests/<this>
             .deletingLastPathComponent()                    // .../Tests/LowHangingFruitKitTests
             .deletingLastPathComponent()                    // .../Tests
@@ -262,24 +283,26 @@ struct SharedDefaultsMigrationTests {
         #expect(!files.isEmpty)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            if filesAllowedToUseStandardDefaults.contains(file.lastPathComponent) {
-                // The exception earns its place: the file's `.standard` usage
-                // must actually be the documented legacy-migration read, not
-                // some unrelated preference that snuck in later.
-                #expect(
-                    text.contains("UserDefaults.standard"),
-                    "\(file.lastPathComponent) is listed as the migration exception but no longer reads UserDefaults.standard at all — remove it from the exception list"
-                )
-                #expect(
-                    text.contains("legacyUserDefaultsKey"),
-                    "\(file.lastPathComponent) reads UserDefaults.standard but isn't tied to the documented legacy migration key — this looks like a new, undocumented private-domain read rather than the one-time canvasICSURL migration"
-                )
-                continue
-            }
-            #expect(
-                !text.contains("UserDefaults.standard"),
-                "\(file.lastPathComponent) still reads the app-private defaults domain"
-            )
+            // A migration *source* is the one honest reason to name the private
+            // domain: that is where the legacy value physically is, and reading
+            // it through the shared accessor would look in the wrong place and
+            // find nothing. Those lines opt out explicitly, so the check keeps
+            // catching the accidental reads it was written for instead of being
+            // deleted the first time a legitimate one appears.
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            let marker = "lhf:allow-standard-defaults"
+            let offending = lines.indices
+                .filter { lines[$0].contains("UserDefaults.standard") }
+                // The opt-out is accepted on the line itself or on the one above
+                // it, because a justification long enough to be worth reading
+                // does not fit as a trailing comment.
+                .filter { i in
+                    !lines[i].contains(marker) && !(i > 0 && lines[i - 1].contains(marker))
+                }
+                .map { lines[$0] }
+            let message = "\(file.lastPathComponent) still reads the app-private "
+                + "defaults domain: " + offending.joined(separator: " / ")
+            #expect(offending.isEmpty, Comment(rawValue: message))
         }
     }
 }

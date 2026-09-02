@@ -50,10 +50,11 @@ struct IntroView: View {
             symbol: "checkmark.circle",
             lead: "Keeping track of it all shouldn’t be a second job.",
             title: "It notices when\nyou’re done.",
-            body: "Submit on Canvas and LHF files the assignment for you. It watches your grades too, and tells you the moment one posts.",
+            body: "Submit on Canvas and LHF files the assignment for you. For everything else, a swipe is all it takes.",
             points: [
                 "Finished work moves itself out of the way.",
-                "Nothing to tick off. Nothing to refresh.",
+                "Swipe a card right to mark it done yourself.",
+                "Tap one to see its due date, or change it.",
             ],
             closer: "So you can stop checking, and trust the list instead."
         ),
@@ -100,13 +101,13 @@ struct IntroView: View {
                 lhfHapticLight()
                 state.completeIntro()
             } label: {
-                Text("Skip")
+                Text("skip")
                     .font(.lhfSans(14, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip the intro")
-            .accessibilityHint("Goes straight to setup")
+            .accessibilityLabel("skip the intro")
+            .accessibilityHint("goes straight to setup")
         }
         .padding(.horizontal, 24)
         .padding(.top, 12)
@@ -224,10 +225,10 @@ struct IntroView: View {
             state.enterPreviewMode()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Just exploring?")
+                Text("just exploring?")
                     .font(.lhfSans(13))
                     .foregroundStyle(Color.v2CourseCode)
-                Text("Preview with sample data")
+                Text("preview with sample data")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
                     .underline()
@@ -239,8 +240,8 @@ struct IntroView: View {
             .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Preview the app with sample data")
-        .accessibilityHint("Explore a demo dashboard without logging in")
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     private var footer: some View {

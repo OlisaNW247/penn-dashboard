@@ -2,15 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The widget reads one file the app writes to the shared App Group
-	     container (the "next due" snapshot). It has no network access, no
-	     analytics, and no third-party SDKs. See docs/PRIVACY.md. -->
-	<key>NSPrivacyTracking</key>
-	<false/>
-	<key>NSPrivacyTrackingDomains</key>
-	<array/>
-	<key>NSPrivacyCollectedDataTypes</key>
-	<array/>
+	<!-- The widget reads the "next due" snapshot the app writes to the shared
+	     App Group container, plus the preferences that say how to render it.
+	     It has no network access, no analytics, and no third-party SDKs.
+	     See docs/PRIVACY.md.
+
+	     Apple's required-reason check runs per *binary*, not per app, so this
+	     manifest has to stand on its own: anything LowHangingFruitKit calls
+	     ends up statically linked into the appex and must be declared here
+	     even though the app's own manifest already declares it. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<!-- WidgetSnapshotStore reads/writes a file in the App Group container
@@ -23,6 +23,25 @@
 				<string>C617.1</string>
 			</array>
 		</dict>
+		<!-- Preferences moved into the App Group suite, which put UserDefaults
+		     into Kit and therefore into this binary. LedgerWidgetReader reads
+		     hidden/deleted courses and custom names so the Home Screen doesn't
+		     show a class you already told the app to forget. CA92.1: accessing
+		     only this app group's own data. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
 	</array>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
 </dict>
 </plist>

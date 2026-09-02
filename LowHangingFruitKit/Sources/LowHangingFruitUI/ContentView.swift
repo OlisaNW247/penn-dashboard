@@ -24,8 +24,14 @@ struct ContentView: View {
     /// `report` carries its own course identity so the stack can be restored
     /// (or, in DEBUG, seeded straight to the report for screenshots) without
     /// walking through the cards.
+    ///
+    /// `.settings` survives v4's tab bar even though the gear no longer pushes
+    /// it. It is what the `-LHFShowSettings` screenshot seam drives, and
+    /// keeping it means the App Store capture script keeps producing the same
+    /// frame it always did — now with the tab bar underneath it.
     enum DashRoute: Hashable {
         case settings
+        case profile
         case grades
         case report(courseID: String, courseName: String)
     }
@@ -86,6 +92,10 @@ struct ContentView: View {
                 switch route {
                 case .settings:
                     SettingsPage()
+                        .environmentObject(state)
+                        .environmentObject(scheduler)
+                case .profile:
+                    ProfileView()
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .grades:
@@ -160,23 +170,12 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
-        // `CourseProfileReport` isn't `Identifiable`, so this is
-        // `.sheet(isPresented:)` driven off a Binding over `pendingCourseNudge`
-        // rather than `.sheet(item:)`. Swipe-to-dismiss drives the setter with
-        // `false` and only calls `dismissCourseNudge()` (ask again next
-        // launch); the sheet's own two buttons call `resolveCourseNudge`
-        // first, which writes a durable decision and clears the pending nudge
-        // itself — the setter below then sees that as "already nil" and is a
-        // no-op, not a second dismiss.
-        .sheet(isPresented: courseNudgeBinding) {
-            if let report = state.pendingCourseNudge {
-                CourseNudgeSheet(
-                    report: report,
-                    onInclude: { state.resolveCourseNudge(report, include: true) },
-                    onSkip: { state.resolveCourseNudge(report, include: false) }
-                )
-            }
-        }
+        // The one-ask "include this class's readings?" popup that used to
+        // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
+        // was removed 2026-08-27 (docs/decisions.md): readings now import
+        // automatically for every class unless the student has explicitly
+        // excluded it via Settings' "Courses & content" toggle, so there is
+        // nothing left to ask about at this point in the flow.
         // Settings is a push now, so there's no sheet-dismiss hook to hang this
         // on: returning to the dashboard is the moment class toggles, deletions
         // and renames need to be reflected in the list and in reminders.
@@ -198,7 +197,7 @@ struct ContentView: View {
                 .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Add assignment")
+        .accessibilityLabel("add assignment")
         .padding(.trailing, 22)
         .padding(.bottom, 24)
     }
@@ -207,17 +206,6 @@ struct ContentView: View {
     private func rescheduleNotifications() {
         guard scheduler.isEnabled else { return }
         Task { await scheduler.reschedule(from: vm.items) }
-    }
-
-    /// Drives the course-nudge sheet's presentation off `pendingCourseNudge`
-    /// (see the `.sheet` comment above for the dismiss-vs-resolve distinction).
-    private var courseNudgeBinding: Binding<Bool> {
-        Binding(
-            get: { state.pendingCourseNudge != nil },
-            set: { isPresented in
-                if !isPresented { state.dismissCourseNudge() }
-            }
-        )
     }
 
     // MARK: Canvas session banner
@@ -236,9 +224,9 @@ struct ContentView: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Your Canvas login needs a refresh")
+                    Text("your canvas login needs a refresh")
                         .font(.lhfSans(12, weight: .semibold))
-                    Text("Reconnect to keep automatic submission tracking accurate.")
+                    Text("reconnect to keep automatic submission tracking accurate.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -252,14 +240,25 @@ struct ContentView: View {
             .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Your Canvas login needs a refresh. Reconnect Canvas.")
+        .accessibilityLabel("your canvas login needs a refresh. reconnect canvas.")
     }
 
     // MARK: Header
 
-    /// Wordmark, greeting and date on the left; the two destinations stacked on
-    /// the right, where the weekly ring used to sit. There's no manual reload —
-    /// opening the app auto-refreshes — so these are the only header controls.
+    /// Wordmark, greeting and date on the left; the destinations on the right,
+    /// where the weekly ring used to sit. There's no manual reload button:
+    /// opening the app auto-refreshes, so these are the only header controls.
+    ///
+    /// v4 briefly made profile and settings tabs. They are pushed routes again,
+    /// off one stack, which is what the gear had always been. The tab bar cost
+    /// a permanent strip of screen on a list that wants the height, and put two
+    /// screens a student visits at the start of a semester next to the one they
+    /// open every day.
+    ///
+    /// One stack also means one Settings. When the gear pushed while a Settings
+    /// tab existed, the app could hold two live independent copies, each with
+    /// its own scroll position and half-typed rename, which is the "back button
+    /// went to the wrong screen" bug pre-built.
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
@@ -282,29 +281,35 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "Grades")
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades")
                 }
-                navButton(to: .settings, icon: "gearshape.fill", title: "Settings")
+                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile")
+                navButton(to: .settings, icon: "gearshape.fill", title: "settings")
             }
             .padding(.top, 2)
         }
     }
 
-    /// Matching circular icons, side by side, so neither destination reads as
-    /// secondary to the other; Settings sits in the corner. Labels live in the
-    /// accessibility layer only.
+    /// Matching circular icons in the top right. Every one is a push onto the
+    /// dashboard's own stack, so profile and settings are full screens with a
+    /// back button. Labels live in the accessibility layer only.
     private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
         NavigationLink(value: route) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.v2DateText)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-                .contentShape(Circle())
+            headerIcon(icon)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
+    }
+
+
+    private func headerIcon(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.v2DateText)
+            .frame(width: 48, height: 48)
+            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+            .contentShape(Circle())
     }
 
     private var greeting: String {
@@ -431,7 +436,7 @@ struct ContentView: View {
                     .accessibilityHidden(true)
             }
             VStack(spacing: 8) {
-                Text("Go enjoy Life")
+                Text("go enjoy life")
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
                 Text("you're all caught up")
@@ -448,14 +453,14 @@ struct ContentView: View {
     private var loadingState: some View {
         VStack(spacing: 14) {
             ProgressView()
-            Text("Loading your assignments…")
+            Text("loading your assignments…")
                 .font(.lhfSans(15))
                 .foregroundStyle(Color.v2DateText)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 90)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Loading your assignments")
+        .accessibilityLabel("loading your assignments")
     }
 
     /// Full-screen failure state, shown only when a sync failed AND there's
@@ -466,7 +471,7 @@ struct ContentView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34, weight: .regular))
                 .foregroundStyle(Color.v2SpineRed)
-            Text("Couldn't sync")
+            Text("couldn't sync")
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
             Text(message)
@@ -476,7 +481,7 @@ struct ContentView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 28)
             Button { Task { await refresh() } } label: {
-                Text("Try again")
+                Text("try again")
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .padding(.horizontal, 22)
@@ -506,7 +511,7 @@ struct ContentView: View {
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button("Retry") { Task { await refresh() } }
+                Button("retry") { Task { await refresh() } }
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.v2SpineRed)
                     .buttonStyle(.plain)
@@ -518,7 +523,7 @@ struct ContentView: View {
                     .fill(Color.v2SpineRed.opacity(0.10))
             )
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Sync failed. \(error). Double-tap to retry.")
+            .accessibilityLabel("sync failed. \(error). double-tap to retry.")
             .accessibilityAddTraits(.isButton)
         }
     }

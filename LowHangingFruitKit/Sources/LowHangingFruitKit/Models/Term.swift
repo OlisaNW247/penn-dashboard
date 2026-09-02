@@ -89,6 +89,26 @@ public struct Term: Sendable, Hashable, Comparable, Codable {
         return calendar.date(from: comps) ?? .distantFuture
     }
 
+    /// The `YYYYTT` code this term round-trips through `init?(code:)` as.
+    ///
+    /// The inverse of the parser, and it exists so a term can be written
+    /// somewhere that only takes a string — a defaults key, a diagnostic line,
+    /// a test fixture's course descriptor — and read back as the same value.
+    /// Building the string by hand at each of those sites is how a `202630`
+    /// eventually gets typed as `20263`.
+    public var code: String {
+        String(format: "%04d%02d", year, season.rawValue)
+    }
+
+    /// What a student calls this term: "Spring 2026".
+    ///
+    /// Deliberately not the `code`. The rollover card has to ask a question the
+    /// student can answer without knowing that Penn writes fall as `30`, and
+    /// "Archive 47 items from 202610?" is not that question.
+    public var displayName: String {
+        "\(season.name) \(year)"
+    }
+
     public static func < (lhs: Term, rhs: Term) -> Bool {
         (lhs.year, lhs.season.rawValue) < (rhs.year, rhs.season.rawValue)
     }

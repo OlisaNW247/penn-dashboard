@@ -129,7 +129,7 @@ final class GradeWatcherStore: ObservableObject {
             // list rides a cookieless ICS feed, while grades need a real Canvas
             // session. An account connected before this app stored Canvas
             // cookies has none, so say what actually fixes it.
-            error = "No saved Canvas session. Grades need a live Canvas login \u{2014} the assignment list doesn\u{2019}t. Reconnect Canvas in Settings to enable grades."
+            error = "No saved Canvas session. Grades need a live Canvas login. the assignment list doesn\u{2019}t. Reconnect Canvas in Settings to enable grades."
             return
         }
         guard !courseIDs.isEmpty else { return }
@@ -236,14 +236,14 @@ final class GradeWatcherStore: ObservableObject {
             let noun = failed == 1 ? "class" : "classes"
             return RefreshOutcome(
                 isSessionExpired: false,
-                error: "Couldn\u{2019}t refresh \(failed) of \(total) \(noun) — those are showing their last grades."
+                error: "Couldn\u{2019}t refresh \(failed) of \(total) \(noun). those are showing their last grades."
             )
         }
 
         if sawSessionExpired {
             return RefreshOutcome(
                 isSessionExpired: true,
-                error: "Your Canvas session expired — grades are showing the last refresh until you reconnect."
+                error: "Your Canvas session expired. grades are showing the last refresh until you reconnect."
             )
         }
         return RefreshOutcome(

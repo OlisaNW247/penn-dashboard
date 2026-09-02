@@ -1,12 +1,18 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-_Last updated: 2026-07-26 (v2.5). Add a contact name and email before pasting._
+_Last updated: 2026-08-27 (2.0.0). Add a contact name and email before pasting._
+
+_Grade Watcher and syllabus import are **hidden in this release**
+(`FeatureFlags.gradeWatcher = false`), so unlike the v2.5-era version of this
+file, nothing below points a reviewer at a grades screen. If the flag comes
+back on, the old walkthrough is in git history._
 
 **App:** Low Hanging Fruit (LHF)
 **What it is:** A personal academic dashboard for university students. It reads
-the student's own Canvas assignment deadlines and grades and shows them as one
-chronological "what's due next" list, with local reminders and a per-class grade
-report. Everything runs on the device; we operate no server.
+the student's own Canvas deadlines — assignments, readings, and class
+sessions — and shows them as one chronological "what's due next" list, with
+local reminders and per-class notification settings. Everything runs on the
+device; we operate no server.
 
 ---
 
@@ -23,18 +29,16 @@ with no account and no network access.
 
 **Everything in the app is reachable from the demo:**
 
-1. **Dashboard** — sample assignments across **This week / All / Done**, colored
-   by urgency. Tap a card to complete it.
-2. **Grades** — tap the chart icon in the header. You'll see per-class grade
-   cards with current grade, a "% of your grade decided" bar, category
-   breakdowns, and an estimated term GPA. These are computed by the app's real
-   grading engine from bundled sample data.
-3. **Full grade report** — tap "Full report" on any class card for the
-   projection view: where the grade lands if you stop now, at your current pace,
-   or with a perfect finish, plus "what you'd need" for a target letter grade.
-4. **Settings** — the gear icon: class list, appearance (light/dark), reminders,
-   and account connections.
-5. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
+1. **Dashboard** — sample items across **This week / All / Done**, colored by
+   urgency. Swipe a card to complete it; tap it for details. Items with
+   nothing to turn in (readings, class sessions, attend-only assignments)
+   carry a "nothing to submit" label.
+2. **Profile** — the person icon in the header: the class list (rename, hide,
+   or archive a class) and per-class notification settings (reminder times,
+   mute, and the "items with nothing to submit" switch).
+3. **Settings** — the gear icon: appearance (light/dark), reminders and the
+   daily digest, storage, and account connections.
+4. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
 
 The attached screen recording additionally shows the real Canvas login flow
 end-to-end.
@@ -47,17 +51,15 @@ end-to-end.
    password.
 3. **Feed capture:** after login the app reads the user's personal Canvas
    *calendar feed* URL (an iCalendar/.ics link Canvas generates per user) and
-   fetches their assignment deadlines from it.
-4. **Dashboard:** deadlines sorted by urgency. Tapping a card marks it done. Work
-   already submitted on Canvas is filed automatically.
-5. **Grades (optional):** using the user's own logged-in Canvas session, the app
-   reads their own assignment groups, weights, and scores — the same data on
-   Canvas's own grades page — and computes a per-class breakdown on-device.
-6. **Syllabus (optional):** the user can attach their course syllabus (from
-   Canvas, a PDF, or pasted text). The app extracts only the grading section on
-   the device. The document is never uploaded.
-7. **Reminders (optional):** local notifications before each due date. No
-   remote/push notifications.
+   fetches their deadlines from it.
+4. **Readings (optional):** for a class that posts readings only to its Canvas
+   Modules page, the app fetches those readings using the user's own logged-in
+   session, so they appear in the same list.
+5. **Dashboard:** deadlines sorted by urgency. Swiping a card marks it done.
+   Work already submitted on Canvas is filed automatically — the app checks the
+   user's own submission status through their own session.
+6. **Reminders (optional):** local notifications before each due date, with
+   per-class settings. No remote/push notifications.
 
 ## Data, privacy, and networking
 
@@ -65,10 +67,9 @@ end-to-end.
   (`canvas.upenn.edu`) and, if the user connects it, `gradescope.com`. We operate
   no server and receive no user data.
 - **Everything is stored on-device.** Assignments, completions, reminder
-  settings, self-created tasks, grade settings and syllabus data live in local
-  storage. Login
-  session cookies are stored in the **iOS Keychain**, encrypted at rest and
-  marked this-device-only.
+  settings, and self-created tasks live in local storage. Login session cookies
+  are stored in the **iOS Keychain**, encrypted at rest and marked
+  this-device-only.
 - **No analytics, tracking, ads, or third-party SDKs.** Privacy manifests are
   bundled in both the app and the widget declaring no tracking and no collected
   data.
@@ -85,25 +86,20 @@ LHF is a client for services the **user already has an account with**, using the
   services' own login pages, rendered in a web view. LHF never handles or stores
   passwords.
 - The app reads only data belonging to the signed-in student — their own
-  assignments, their own scores. It cannot access any other user's content.
+  deadlines, their own readings, their own submission status. It cannot access
+  any other user's content.
 - All processing happens on the device. Nothing is re-hosted, republished,
   redistributed, or shown to anyone but the student whose account it is.
 - Canvas's developer API program is not open to us at this institution, so
   assignment data comes from the student's own personal calendar feed URL, a
   standard iCalendar link Canvas generates for each user to consume in outside
-  apps. Grades use the student's own authenticated session.
+  apps. Readings and submission status use the student's own authenticated
+  session.
 - No third-party branding is used, and the app states in its description and in
   this submission that it is independent and unaffiliated with Instructure
   (Canvas), Turnitin (Gradescope), or any university.
 
 Happy to answer any questions or make changes here — contact below.
-
-## Grade accuracy
-
-Grades in the app are labeled estimates. Professors apply curves, late policies,
-and cutoffs that Canvas does not expose, so the app compares its number against
-Canvas's own computed score where available and flags a material disagreement
-rather than presenting its figure as authoritative.
 
 ## Notifications
 
@@ -113,7 +109,7 @@ the user turns reminders on in Settings — not at launch.
 ## Technical notes
 
 - SwiftUI; iPhone; iOS 17+; includes a WidgetKit extension and an App Group used
-  only to pass the "next due" snapshot to the widget.
+  to pass the "next due" snapshot and shared preferences to the widget.
 - `WKWebView` is used solely to present Canvas's and Gradescope's own login pages.
 - No use of non-exempt encryption (`ITSAppUsesNonExemptEncryption = false`).
 

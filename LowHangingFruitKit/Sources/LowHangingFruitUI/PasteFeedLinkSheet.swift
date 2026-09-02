@@ -33,13 +33,13 @@ struct PasteFeedLinkSheet: View {
                         #endif
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Canvas calendar link")
+                    Text("canvas calendar link")
                 } footer: {
-                    Text("These steps are for the desktop Canvas site — Calendar Feed isn't available in the Canvas app or on a phone browser, so grab the link from a computer. On canvas.upenn.edu: Calendar → Calendar Feed (bottom right) → copy the link. Paste it here exactly as given — a webcal:// link works too.")
+                    Text("these steps are for the desktop canvas site — calendar feed isn't available in the canvas app or on a phone browser, so grab the link from a computer. on canvas.upenn.edu: calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given — a webcal:// link works too.")
                 }
 
                 Section {
-                    Text("Logging in to Canvas gives you a more accurate dashboard, so that's what we recommend. With a calendar link, the app can't tell what you've already submitted, so finished work keeps showing as outstanding until you check it off yourself. Grades aren't available this way either.")
+                    Text("logging in to canvas gives you a more accurate dashboard, so that's what we recommend. with a calendar link, the app can't tell what you've already submitted, so finished work keeps showing as outstanding until you check it off yourself.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -53,16 +53,16 @@ struct PasteFeedLinkSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Paste calendar link")
+            .navigationTitle("paste calendar link")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
+                    Button("save", action: save)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

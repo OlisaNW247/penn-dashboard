@@ -18,8 +18,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .light: return "Light"
-        case .dark:  return "Dark"
+        case .light: return "light"
+        case .dark:  return "dark"
         }
     }
 
@@ -48,8 +48,11 @@ final class AppState: ObservableObject {
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeItems: [Assignment] = []
     /// Readings imported from a probed (silent) course's Modules page via
-    /// `CanvasModulesClient`, for courses whose readings/silent-course nudge
-    /// was answered "include" (docs/READINGS_COURSES_PLAN.md). Kept separate
+    /// `CanvasModulesClient`. Import is now automatic for any course whose
+    /// probe finds readings — the one-ask consent popup this used to wait on
+    /// was removed 2026-08-27 (docs/decisions.md); only an explicit
+    /// `.exclude` decision (Settings' "Courses & content" toggle) stops it,
+    /// via `shouldAutoImportReadings(for:)`. Kept separate
     /// from `canvasItems` because these never came through the ICS feed —
     /// `refreshCourseIntel` is what fills it, ledger-backed the same way via
     /// `AssignmentStore.reconcile(_:source: .canvasModules)`. Read-only
@@ -76,27 +79,78 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
-    /// Completed work, as a published PROJECTION of the ledger — not a second
-    /// copy of the truth. `AssignmentStore.completionRecord()` is authoritative;
-    /// `refreshCompletionFromLedger()` is the only thing that writes these.
+    /// Everything the user has ticked off. **Derived, not persisted** — this is
+    /// a read model rebuilt from the ledger's rows (`AssignmentStore
+    /// .completionRecord()`) after every mutation and at launch. It used to be
+    /// written to UserDefaults *as well as* onto the ledger, which meant two
+    /// records of the same fact that could disagree; the ledger is now the only
+    /// one, and it's the one that survives a reinstall.
+    @Published private(set) var completedAssignmentIDs: Set<String> = []
+    /// When each completed item was marked done, for the ids where that's known.
+    /// Derived from the ledger alongside `completedAssignmentIDs`.
     ///
-    /// They used to be persisted independently in UserDefaults *and* mirrored
-    /// onto the ledger, with nothing reconciling the two on read. A divergence
-    /// meant the Done tab and the ledger's aging exemption disagreed about what
-    /// was finished — and the aging exemption is what keeps finished work from
-    /// being deleted.
-    @Published private(set) var completedAssignmentIDs: Set<String>
-    /// When each completed item was marked done, so the Done tab keeps its
-    /// history. Items completed before timestamps were tracked have no entry;
-    /// the Done view falls back to the due date to place them.
-    @Published private(set) var completionDates: [String: Date]
-
+    /// An id can be completed with no entry here: completions carried over from
+    /// builds that predate timestamps know *that* but not *when*. The Done view
+    /// falls back to the due date to place those, and the weekly ring skips
+    /// them — so the absence is load-bearing, not a gap to paper over.
+    @Published private(set) var completionDates: [String: Date] = [:]
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh and NOT persisted — so a Canvas
     /// correction (a retracted submission) self-heals on the next sync instead of
     /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
+
+    /// Canvas assignment ids Grade Watcher has told us require no online
+    /// submission (`GradeItem.requiresNoSubmission` — `submission_types` of
+    /// on_paper/none/not_graded), cached across refreshes and **persisted
+    /// directly in `UserDefaults.lhf`** under `noSubmissionCanvasAssignmentIDsKey`
+    /// — unlike `submittedCanvasAssignmentIDs` just above, whose durability
+    /// comes from the SwiftData ledger (`store.submittedCanvasAssignmentIDs()`,
+    /// `applySubmissionState`) rather than a raw defaults key of its own. Grade
+    /// snapshots themselves stay in-memory-only, refreshed live on every sync;
+    /// this cache exists because "does this assignment even take a
+    /// submission" is a much slower-moving fact than "was it actually turned
+    /// in" (a professor changing submission type mid-semester is rare, a
+    /// submission's status changes constantly), and the dashboard card's
+    /// caveat needs to render correctly on the very first frame of a cold
+    /// launch, before any grade refresh has run — an unpersisted cache would
+    /// show the caveat on nothing until Grade Watcher finished its first
+    /// fetch of the session. `UserDefaults.lhf` rather than the ledger
+    /// because this is a re-derivable observation cache, not the student's
+    /// own record of anything (see `docs/decisions.md`'s 2026-08-27 entry).
+    ///
+    /// Updated self-healingly by `updateSubmissionState` via
+    /// `Self.updatedNoSubmissionIDs`: every item a refresh actually observes
+    /// either enters or leaves the set depending on its current
+    /// `requiresNoSubmission`, and ids from a course this refresh never
+    /// touched are left exactly as they were — the same "merge, don't
+    /// replace" reasoning `submittedCanvasAssignmentIDs` uses for courses a
+    /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
+    @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
+
+    /// Ledger ids a semester rollover has filed away. **Derived, not
+    /// persisted** — rebuilt from the ledger's rows exactly as
+    /// `completedAssignmentIDs` is, because the rows are the record and a second
+    /// copy is a second thing that can disagree with it.
+    ///
+    /// This is what keeps archived work off the dashboard. It is deliberately
+    /// *not* applied to `mergedCoursework`, which is what the Done tab reads —
+    /// archiving is not deletion, and finished work from an archived semester
+    /// stays in the student's own history.
+    @Published private(set) var archivedAssignmentIDs: Set<String> = []
+
+    /// Terms holding at least one archived row, newest first. Feeds
+    /// `withinTermCap`'s past bound, so a leftover from an archived semester
+    /// that never made it onto a row — a recurring occurrence, say — is caught
+    /// by its term or its due date instead.
+    @Published private(set) var archivedTerms: [Term] = []
+
+    /// The rollover the app is currently prepared to offer, or nil when there is
+    /// no term boundary to ask about — which is the state for eleven months of
+    /// the year, and the reason `ProfileSemesterSection` can sit at the top of
+    /// Profile without costing anything.
+    @Published private(set) var rolloverOffer: SemesterRollover.Offer?
 
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
@@ -126,17 +180,21 @@ final class AppState: ObservableObject {
     /// fetch can establish a baseline silently instead of announcing a whole
     /// term of existing scores. See `notifiableGradeChanges`.
     private var gradeBaselinedCourses: Set<String> = []
-    /// Courses the user has switched OFF (no dashboard items, no notifications).
-    /// Stored as the *hidden* set so the default — empty — means every course is
-    /// shown, and any newly-discovered course shows up automatically.
-    @Published private(set) var hiddenCourseKeys: Set<String>
-    /// Courses the user deleted from the classes list. Deletion is a superset of
-    /// hiding: a deleted course is excluded everywhere a hidden course is
-    /// (dashboard, notifications, Grade Watcher) AND is also removed from the
-    /// classes list itself — unlike a merely-hidden course, which still shows
-    /// there with its toggle off. There's no server-side course to delete (it's
-    /// synced from Canvas), so this is purely a local filter the user can undo.
-    @Published private(set) var deletedCourseKeys: Set<String>
+    /// Everything the student has decided about each of their classes: which
+    /// are shown, which are deleted, custom names, resolved Canvas ids, and —
+    /// from v4 on — per-course notification settings, recurring-item opt-in and
+    /// semester archival.
+    ///
+    /// **This replaced four `UserDefaults` maps that used to live directly on
+    /// `AppState`.** Each of them cost this type a stored property, a load line,
+    /// a persist method and a key constant, and every new per-course setting
+    /// cost another set of all four — on the one file every parallel workstream
+    /// needs to touch. The four names those maps had are still exposed below as
+    /// forwarding accessors, so no existing call site changed; they now read
+    /// through here instead of holding a second copy.
+    ///
+    /// Add per-course state to `CoursePreferences`, not to `AppState`.
+    let coursePreferences: CoursePreferencesStore
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
@@ -152,29 +210,53 @@ final class AppState: ObservableObject {
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
     /// the root. Persisted like every other user preference here.
     @Published private(set) var appearanceMode: AppearanceMode
+    // MARK: Per-course state — forwarding accessors
+    //
+    // These four names are what the rest of the app has always called this
+    // state, and they keep working unchanged. They are computed, not stored:
+    // `coursePreferences` holds the single canonical record and these derive
+    // from it, so there is no second copy to fall out of step. Views still
+    // update because `AppState` republishes the store's `willChange` as its own
+    // `objectWillChange` (see `init`).
+
+    /// Courses the user has switched OFF (no dashboard items, no notifications).
+    /// Read as the *hidden* set so the default — empty — means every course is
+    /// shown, and any newly-discovered course shows up automatically.
+    var hiddenCourseKeys: Set<String> { coursePreferences.hiddenCourseKeys }
+
+    /// Courses the user deleted from the classes list. Deletion is a superset of
+    /// hiding: a deleted course is excluded everywhere a hidden course is
+    /// (dashboard, notifications, Grade Watcher) AND is also removed from the
+    /// classes list itself — unlike a merely-hidden course, which still shows
+    /// there with its toggle off. There's no server-side course to delete (it's
+    /// synced from Canvas), so this is purely a local filter the user can undo.
+    var deletedCourseKeys: Set<String> { coursePreferences.deletedCourseKeys }
+
     /// User-chosen display names, keyed by the canonical course code the rest of
     /// the app identifies a class by. Renaming is deliberately cosmetic: hiding,
     /// deletion, notifications and grades all still key on the code, so a
     /// renamed class keeps working and a re-sync can't undo the rename.
-    @Published private(set) var courseNameOverrides: [String: String]
+    var courseNameOverrides: [String: String] { coursePreferences.courseNameOverrides }
+
     /// Course code -> Canvas numeric course id, remembered once resolved. Ids
     /// only ever arrive attached to an ICS item's URL, so a course whose current
     /// feed entries carry no usable URL would otherwise be invisible to Grade
     /// Watcher even while selected. Caching keeps a selected class fetchable.
-    @Published private(set) var canvasCourseIDsByCode: [String: String]
+    var canvasCourseIDsByCode: [String: String] { coursePreferences.canvasCourseIDsByCode }
 
-    /// Per-course answer to the readings/silent-course nudge
-    /// (docs/READINGS_COURSES_PLAN.md), keyed by `CourseProfileReport
-    /// .courseKey`. Default is exclude — a course with no entry here shows
-    /// none of its opted-in content, so existing users see zero change
-    /// until they answer a nudge or flip the Settings toggle. Deliberately
-    /// never consulted by Grade Watcher / course-selection paths (see the
-    /// plan's "Hard requirement — Grade Watcher independence").
+    /// Per-course answer to whether a class's opted-in content (calendar
+    /// `.event` items, Modules-imported readings) shows on the dashboard,
+    /// keyed by `CourseProfileReport.courseKey`. Default is INCLUDE — a
+    /// course with no entry here shows its content already; only an
+    /// explicit `.exclude`, set via Settings' "Courses & content" toggle,
+    /// hides it (see `courseContentIncluded`/`includesAsOptedInContent`).
+    /// This used to default to exclude until a one-ask popup was answered;
+    /// the popup was removed 2026-08-27 (docs/decisions.md) because the
+    /// data is the student's own and the ask was pure friction. Deliberately
+    /// never consulted by Grade Watcher / course-selection paths (see
+    /// docs/READINGS_COURSES_PLAN.md's "Hard requirement — Grade Watcher
+    /// independence").
     @Published private(set) var courseContentDecisions: [String: CourseContentDecision]
-    /// The one nudge the UI may present this app-open ("no nag storms" —
-    /// docs/READINGS_COURSES_PLAN.md). Set by `queueNudgeIfNeeded()`, cleared
-    /// by `resolveCourseNudge`/`dismissCourseNudge`.
-    @Published var pendingCourseNudge: CourseProfileReport?
     /// The authenticated course list from the last successful
     /// `refreshCourseIntel`, persisted (id -> name) so SILENT detection
     /// survives a launch with no live Canvas session — a course with zero
@@ -189,11 +271,6 @@ final class AppState: ObservableObject {
     /// The last computed profile for every course seen — feed- or
     /// enrollment-derived. Recomputed by `recomputeCourseProfiles()`.
     private var courseProfileReports: [CourseProfileReport] = []
-    /// Whether a nudge has already been surfaced this launch.
-    /// `pendingCourseNudge == nil` alone can't tell "never queued" apart
-    /// from "queued, then resolved" — without this a resolve during this
-    /// launch would let the next sync immediately queue another one.
-    private var nudgePresentedThisLaunch = false
 
     /// Canvas grade snapshots for the selected courses (Settings → Grade
     /// Watcher). Its own `ObservableObject` so CP4's view can observe it
@@ -241,10 +318,10 @@ final class AppState: ObservableObject {
     let cloudPrefsMirror: CloudPrefsMirror
 
     private static let userNameKey = "userName"
-    private static let completedIDsKey = "completedAssignmentIDs"
-    private static let completionDatesKey = "completionDates"
-    private static let hiddenCoursesKey = "hiddenCourseKeys"
-    private static let deletedCoursesKey = "deletedCourseKeys"
+    // The four per-course keys that used to be listed here — `hiddenCourseKeys`,
+    // `deletedCourseKeys`, `courseNameOverrides`, `canvasCourseIDsByCode` — now
+    // belong to `CoursePreferencesStore`, which is the only thing that writes
+    // them. `SharedDefaults` still declares the three the widget reads.
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
@@ -253,9 +330,18 @@ final class AppState: ObservableObject {
     private static let introSeenKey = "hasSeenIntro"
     private static let previewModeKey = "isPreviewMode"
     private static let appearanceModeKey = "appearanceMode"
-    private static let courseNameOverridesKey = "courseNameOverrides"
-    private static let canvasCourseIDsByCodeKey = "canvasCourseIDsByCode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
+    /// Backs `noSubmissionCanvasAssignmentIDs`. Device-local and never
+    /// mirrored to iCloud (`CloudPrefsMirror.mirroredKeys` does not list it):
+    /// it is a re-derivable cache of what Grade Watcher has observed on this
+    /// device, not a student preference, so there is nothing here worth
+    /// syncing and no harm in two devices disagreeing about it for a while.
+    private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
+    /// The term code of the most recent rollover the student waved away. A
+    /// preference by every test in `docs/persistence-explained.md` §3 — losing
+    /// it costs one re-offered card, nothing more — so it stays in defaults
+    /// rather than going near the ledger.
+    private static let rolloverDismissedTermKey = "rolloverDismissedTerm"
     private static let enrolledCanvasCoursesKey = "enrolledCanvasCoursesV1"
     /// docs/LAPTOP_INTEGRATION_PLAN.md Tier 2 — read directly by
     /// `CloudSyncToggleTests`'s own hardcoded copy of this string (the same
@@ -279,11 +365,10 @@ final class AppState: ObservableObject {
         gradeHistoryStore: GradeHistoryStore? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
-        // URL is itself a bearer credential. `ICSFeedURLStore.load()`
-        // transparently migrates a pre-existing UserDefaults value in.
+        // URL is itself a bearer credential, since Canvas embeds a per-user
+        // token directly in it. `ICSFeedURLStore.load()` transparently migrates
+        // a pre-existing UserDefaults value in and deletes the original.
         self.canvasICSURL = ICSFeedURLStore.load()
-        self.hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
-        self.deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
         self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
@@ -293,8 +378,6 @@ final class AppState: ObservableObject {
         self.appearanceMode = AppearanceMode(
             rawValue: UserDefaults.lhf.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light
-        self.courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
-        self.canvasCourseIDsByCode = Self.loadStringMap(Self.canvasCourseIDsByCodeKey)
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
@@ -304,6 +387,12 @@ final class AppState: ObservableObject {
         // otherwise a confirmed-dead session would read as fine again on the
         // very next cold launch, before anything re-confirms it either way.
         self.canvasSessionConfirmedDead = UserDefaults.lhf.bool(forKey: Self.canvasSessionConfirmedDeadKey)
+        // Seeded here (not left at its `= []` default) so the dashboard's
+        // "nothing to submit" caveat is correct on the very first frame of a
+        // cold launch, before any grade refresh has had a chance to run.
+        self.noSubmissionCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
+        )
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
             .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
@@ -329,37 +418,48 @@ final class AppState: ObservableObject {
         self.gradeHistoryStore = historyStore
 
         // Move completion state and observed grade history off the old
-        // UserDefaults blobs and onto the ledger, before anything reads either.
+        // UserDefaults blobs and onto the ledger, and fold the four per-course
+        // maps into `CoursePreferences`, before anything reads any of them.
         // One-time (version-gated) and idempotent — see `LegacyStateMigration`.
         LegacyStateMigration.runIfNeeded(
             assignmentStore: store,
             gradeHistoryStore: historyStore
         )
-        // Constructed after the migration so its history cache is built from the
-        // migrated rows rather than an empty store.
+        // Both constructed after the migration so they read migrated state
+        // rather than an empty store. Ordering is load-bearing for
+        // `coursePreferences` in particular: constructing it first would load an
+        // empty map, and its next save would then write that emptiness over the
+        // four legacy keys the migration had not yet read.
+        self.coursePreferences = CoursePreferencesStore()
         self.gradeWatcher = GradeWatcherStore(historyStore: historyStore)
 
-        // Degraded no-ledger path: if the SwiftData store couldn't be created,
-        // there's no ledger to seed completion from, so it starts empty rather
-        // than leaving these stored properties uninitialized on this path.
-        self.completedAssignmentIDs = []
-        self.completionDates = [:]
+        // Republish the store's changes as our own. `hiddenCourseKeys` and the
+        // three names beside it used to be `@Published` properties here; they
+        // are computed forwarding accessors now, and a computed property
+        // publishes nothing. Without this relay, hiding or renaming a class
+        // would update the store and leave every view observing `AppState`
+        // showing the old value until something unrelated redrew it.
+        coursePreferences.willChange = { [weak self] in self?.objectWillChange.send() }
 
-        // Every stored property this class declares now has an initial
-        // value — `canvasICSURL` through `completionDates` above are all
-        // explicitly assigned, and everything else (`canvasItems`,
-        // `moduleReadingItems`, `courseProbes`, `canvasSessionExpired`, …)
-        // carries an inline default — so this is the first point in `init`
-        // where a call into `self` is legal at all, and deliberately the
-        // one used here: it must run BEFORE `store.currentAssignments()`
-        // seeds `canvasItems`/`gradescopeItems`/`moduleReadingItems` just
-        // below, not just before `rebuildDashboardItems()` — those arrays
-        // are a snapshot taken once here, not a live view of the ledger, so
-        // normalizing the ledger *after* they were seeded would leave this
-        // launch's dashboard (and its `isCourseSelected` filtering against
-        // the now-normalized `hiddenCourseKeys`/`deletedCourseKeys`, which
-        // this same call also migrates) reading stale raw course names
-        // until the next sync.
+        // Cloud push on every genuine preference change (docs/
+        // LAPTOP_INTEGRATION_PLAN.md Tier 2). The store persists synchronously
+        // in `commit`, so by the time this fires the blob under
+        // `CoursePreferencesStore.storageKey` — the value the mirror copies —
+        // is already the new state. Guarded per-call on `cloudSyncEnabled`
+        // rather than baked in at construction so flipping the toggle takes
+        // effect for pushes immediately, matching `setCourseContentDecision`.
+        coursePreferences.didChange = { [weak self] in
+            guard let self, self.cloudSyncEnabled else { return }
+            self.cloudPrefsMirror.push(key: CoursePreferencesStore.storageKey)
+        }
+
+        // Runs before `store.currentAssignments()` seeds `canvasItems`/
+        // `gradescopeItems`/`moduleReadingItems` below — those arrays are a
+        // snapshot taken once, not a live view of the ledger, so normalizing
+        // the ledger *after* they were seeded would leave this launch's
+        // dashboard reading stale raw course names until the next sync. Every
+        // stored property already has a value by this point, so the instance
+        // call is legal.
         normalizeStoredCourseNames()
 
         if let store {
@@ -400,6 +500,13 @@ final class AppState: ObservableObject {
                     .compactMap(ManualAssignment.init)
             }
         }
+
+        // Outside the block on purpose: a no-op without a store, and calling
+        // instance methods mid-init is only legal once every stored property is
+        // initialized. `LegacyStateMigration.runIfNeeded` has already folded any
+        // pre-ledger completions onto rows by this point, so this one derivation
+        // sees the complete picture.
+        reloadCompletionFromLedger()
 
         // Wired here rather than at `cloudPrefsMirror`'s own construction
         // above: forming a closure that captures `self` isn't legal until
@@ -479,48 +586,18 @@ final class AppState: ObservableObject {
 
         assignmentStore?.normalizeCourseNames(norm)
 
-        // Mapping a set through `norm` merges variants of the same course
-        // together, so a course reads as hidden/deleted if ANY of its old
-        // raw variants was — deliberate, since the variants were always the
-        // same course, and landing on the wrong side of hidden/deleted
-        // either way is one tap to reverse.
-        let normalizedHidden = Set(hiddenCourseKeys.map(norm))
-        if normalizedHidden != hiddenCourseKeys {
-            hiddenCourseKeys = normalizedHidden
-            persistHiddenCourses()
-        }
-        let normalizedDeleted = Set(deletedCourseKeys.map(norm))
-        if normalizedDeleted != deletedCourseKeys {
-            deletedCourseKeys = normalizedDeleted
-            persistDeletedCourses()
-        }
-
-        // Collision rule: if two old keys normalize to the same clean code,
-        // keep the entry whose old key was ALREADY normalized (i.e.
-        // `norm(oldKey) == oldKey`) when one exists, else keep whichever is
-        // encountered first.
-        var normalizedOverrides: [String: String] = [:]
-        var winnerIsAlreadyNormalized: Set<String> = []
-        for (oldKey, value) in courseNameOverrides {
-            let newKey = norm(oldKey)
-            let isAlreadyNormalized = newKey == oldKey
-            if normalizedOverrides[newKey] == nil {
-                normalizedOverrides[newKey] = value
-                if isAlreadyNormalized { winnerIsAlreadyNormalized.insert(newKey) }
-            } else if isAlreadyNormalized && !winnerIsAlreadyNormalized.contains(newKey) {
-                normalizedOverrides[newKey] = value
-                winnerIsAlreadyNormalized.insert(newKey)
-            }
-        }
-        if normalizedOverrides != courseNameOverrides {
-            courseNameOverrides = normalizedOverrides
-            UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
-            if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.courseNameOverridesKey) }
-        }
+        // Re-keys hidden/deleted/renames/ids in one pass — every record now
+        // lives in the `coursePreferences` blob, so this is the whole of what
+        // the four per-map normalizations used to do. Variants of the same
+        // course merge onto one record (collision rules in
+        // `normalizeCourseKeys`), and a genuine change persists, refreshes the
+        // widget's legacy projection, and pushes to the cloud mirror via
+        // `didChange` — all wired before this runs in `init`.
+        coursePreferences.normalizeCourseKeys(norm)
 
         // Collision rule: keep the decision with the most recent
-        // `decidedAt` — the freshest answer to the nudge is the one that
-        // should survive.
+        // `decidedAt` — the freshest choice (set via the Settings toggle)
+        // is the one that should survive.
         var normalizedDecisions: [String: CourseContentDecision] = [:]
         for (oldKey, decision) in courseContentDecisions {
             let newKey = norm(oldKey)
@@ -868,9 +945,7 @@ final class AppState: ObservableObject {
     /// newly-included course takes effect on screen immediately, without
     /// waiting for the next sync or relaunch.
     private func reloadMirroredPreferences() {
-        hiddenCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.hiddenCoursesKey) ?? [])
-        deletedCourseKeys = Set(UserDefaults.lhf.stringArray(forKey: Self.deletedCoursesKey) ?? [])
-        courseNameOverrides = Self.loadStringMap(Self.courseNameOverridesKey)
+        coursePreferences.reloadFromDefaults()
         courseContentDecisions = CourseContentDecisionStore.load()
         rebuildDashboardItems()
     }
@@ -989,28 +1064,31 @@ final class AppState: ObservableObject {
     func disconnectCanvas() {
         SessionCookieStore.remove(service: .canvas)
         updateCanvasICSURL("")
-        canvasCourseIDsByCode = [:]
-        UserDefaults.lhf.removeObject(forKey: Self.canvasCourseIDsByCodeKey)
+        coursePreferences.clearAllCanvasCourseIDs()
         // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md) is
         // Canvas-session-derived state too — clear it wholesale so a
-        // reconnect re-probes and re-asks from scratch instead of inheriting
-        // decisions tied to a fingerprint history the new session may never
-        // reproduce. This is deliberate, not an oversight: see the plan's
-        // "Hard requirement — Grade Watcher independence" for why this never
-        // touches `canvasCourseIDsByCode`'s Grade Watcher role beyond the
-        // clear already above.
+        // reconnect re-probes and re-imports from scratch instead of
+        // inheriting decisions tied to a fingerprint history the new session
+        // may never reproduce. This is deliberate, not an oversight: see the
+        // plan's "Hard requirement — Grade Watcher independence" for why this
+        // never touches `canvasCourseIDsByCode`'s Grade Watcher role beyond
+        // the clear already above.
         enrolledCanvasCourses = []
         UserDefaults.lhf.removeObject(forKey: Self.enrolledCanvasCoursesKey)
         courseProbes = [:]
         courseProfileReports = []
-        nudgePresentedThisLaunch = false
         courseContentDecisions = [:]
         CourseContentDecisionStore.clear()
         // Propagate the clear to the iCloud copy too, or the next external
         // pull resurrects decisions this disconnect just threw away.
         if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
-        pendingCourseNudge = nil
         submittedCanvasAssignmentIDs = []
+        // The no-submission cache is Canvas-session-derived the same way the
+        // submitted-ids side channel is — clear it wholesale rather than
+        // leaving stale ids behind that a reconnect (possibly a different
+        // Canvas account) would otherwise inherit and caveat incorrectly.
+        noSubmissionCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
         gradeWatcher.clearAll()
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's work survives in the store and reappears on the dashboard.
@@ -1021,7 +1099,7 @@ final class AppState: ObservableObject {
         // course re-qualifies for a decision.
         assignmentStore?.purge(source: .canvasModules)
         moduleReadingItems = []
-        refreshCompletionFromLedger()
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
         // A disconnected user has no session to reconnect, so any earlier
         // "confirmed dead" record is moot — clear it before the recompute
@@ -1050,7 +1128,7 @@ final class AppState: ObservableObject {
         gradescopeItems = []
         // Ledger rows too — same reasoning as disconnectCanvas.
         assignmentStore?.purge(source: .gradescope)
-        refreshCompletionFromLedger()
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
         Task {
             await WebsiteDataReset.purgeWebsiteData(
@@ -1181,11 +1259,11 @@ final class AppState: ObservableObject {
                 let result = store.reconcile(fetched, source: .canvas)
                 canvasItems = result.items.sorted(by: Self.byDueDate)
                 if result.wasSuspectedPartial {
-                    syncNotice = "Couldn't fully refresh Canvas just now — showing your saved assignments."
+                    syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
                 }
                 // Rows this reconcile just created may be the ones a carried-over
                 // completion has been waiting for.
-                refreshCompletionFromLedger()
+                reloadCompletionFromLedger()
             } else {
                 canvasItems = fetched
             }
@@ -1288,7 +1366,7 @@ final class AppState: ObservableObject {
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
                 gradescopeItems = store.reconcile(fetched, source: .gradescope).items
-                refreshCompletionFromLedger()
+                reloadCompletionFromLedger()
             } else {
                 gradescopeItems = fetched
             }
@@ -1401,8 +1479,8 @@ final class AppState: ObservableObject {
         // filtered-out entry never enters `enrolledCanvasCourses`, so it's
         // never folded into `canvasCourseIDsByCode` (`mergeEnrolledCoursesIntoCourseIDCache`
         // below — keeps it out of the Grade Watcher picker), never reaches
-        // the probe loop or `CourseProfileEngine.reports` (never nudged,
-        // never listed in Settings' "Courses & content"), and a junk entry
+        // the probe loop or `CourseProfileEngine.reports` (never probed for
+        // readings, never listed in Settings' "Courses & content"), and a junk entry
         // that snuck into `canvasCourseIDsByCode` on an earlier launch gets
         // dropped by `pruneStaleCourseIDCacheEntries` below on this one,
         // since it's absent from `currentEnrolledKeys` and (being a resource
@@ -1457,19 +1535,22 @@ final class AppState: ObservableObject {
             let modulesClient = CanvasModulesClient(cookies: cookies)
             if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
                 courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
-                // A course probed for the first time this launch that ALSO
-                // already carries an "include" decision from a previous
-                // session (the common nudge-then-relaunch case) is imported
-                // right away via the shared `importModuleReadings`, instead
-                // of collecting into a batch reconciled once after this
-                // loop. This costs one extra `fetchModuleItems` call for that
+                // Import is no longer consent-gated (the one-ask popup was
+                // removed 2026-08-27, docs/decisions.md): a silent course's
+                // Modules readings are imported the moment a probe finds
+                // them, via the shared `importModuleReadings`, instead of
+                // collecting into a batch reconciled once after this loop.
+                // Only an explicit `.exclude` (Settings' "Courses & content"
+                // toggle) blocks it — `shouldAutoImportReadings` is that one
+                // check, kept as its own method so it's directly testable.
+                // This costs one extra `fetchModuleItems` call for that
                 // course (`importModuleReadings` fetches its own copy rather
                 // than taking `items` as a parameter, so it can be shared
                 // verbatim with `importReadingsIfNeeded` below) — an
                 // acceptable trade for not having a second, batch-shaped
                 // import path with its own reconcile/upsert semantics to
                 // keep in sync with this one.
-                if !items.isEmpty && courseContentDecisions[courseKey]?.choice == .include {
+                if !items.isEmpty && shouldAutoImportReadings(for: courseKey) {
                     _ = await importModuleReadings(courseKey: courseKey, courseID: course.id, cookies: cookies)
                 }
                 continue
@@ -1487,14 +1568,27 @@ final class AppState: ObservableObject {
         recomputeCourseProfiles()
     }
 
+    /// Whether a silent course's Modules readings should be imported the
+    /// moment a probe finds them. Internal (not private) so it's directly
+    /// testable without a live Canvas session. Import used to wait on a
+    /// one-ask popup (`.include` required); the popup was removed 2026-08-27
+    /// (docs/decisions.md — the data is the student's own and the ask was
+    /// friction, not consent that mattered) so this is now the single
+    /// remaining gate: only an explicit `.exclude`, set via Settings'
+    /// "Courses & content" toggle, blocks the import. A course with no
+    /// decision on file — the common case — auto-imports.
+    func shouldAutoImportReadings(for courseKey: String) -> Bool {
+        courseContentDecisions[courseKey]?.choice != .exclude
+    }
+
     /// Fetches a probed course's Modules-page readings via the JSON API and
     /// upserts them into the ledger as `.canvasModules` rows, then refreshes
     /// `moduleReadingItems` from the ledger. Shared by the probe loop above
-    /// (for a course already decided "include" when its first probe of this
-    /// launch lands) and `importReadingsIfNeeded` below (the immediate
-    /// import that runs the moment a user answers a nudge or flips the
-    /// Settings toggle). Returns whether the fetch itself succeeded — a
-    /// thrown fetch (expired session, HTTP error) leaves the ledger
+    /// (which auto-imports the moment a probe finds readings, gated only by
+    /// `shouldAutoImportReadings`) and `importReadingsIfNeeded` below (the
+    /// immediate import that runs the moment a user flips the Settings
+    /// toggle back on after excluding a course). Returns whether the fetch
+    /// itself succeeded — a thrown fetch (expired session, HTTP error) leaves the ledger
     /// untouched rather than being treated as "confirmed empty."
     ///
     /// Persists via `upsert`, not `reconcile`: `upsert` only ever inserts a
@@ -1589,20 +1683,19 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Imports a just-decided-in course's readings right away, instead of
+    /// Imports a just-re-included course's readings right away, instead of
     /// waiting for the next launch's `refreshCourseIntel` probe loop to
     /// notice the decision. Field evidence this fixes: probes run at most
-    /// once per course per launch (the `courseProbes` gate), and import only
-    /// ever happened INSIDE that same probe loop — but every include
-    /// decision necessarily arrives strictly AFTER the probe that produced
-    /// the nudge it's answering, so answering "Add to my list" (`resolveCourseNudge`)
-    /// or flipping the Settings toggle on (`setCourseContentIncluded`) used
-    /// to import nothing until the app was relaunched. Both call this.
+    /// once per course per launch (the `courseProbes` gate), and a course
+    /// that was previously excluded and gets flipped back on via
+    /// `setCourseContentIncluded` — the only remaining caller, now that
+    /// readings otherwise auto-import at probe time — would otherwise import
+    /// nothing until the app was relaunched.
     ///
     /// Fire-and-forget: started as an unstructured `Task`, not awaited by
     /// the caller. That's acceptable because the caller has already updated
-    /// `courseContentDecisions`/`pendingCourseNudge` and rebuilt the
-    /// dashboard synchronously — this call only needs to catch the ledger
+    /// `courseContentDecisions` and rebuilt the dashboard synchronously —
+    /// this call only needs to catch the ledger
     /// and dashboard up with the freshly-imported readings once the network
     /// round trip completes, the same "sync happens in the background, the
     /// toggle itself is immediate" posture as the rest of this file's
@@ -1643,17 +1736,20 @@ final class AppState: ObservableObject {
     /// resolved from a feed item's URL (`updateCanvasCourseIDCache`) is a
     /// stronger source and is never overwritten by this name-parsed one.
     private func mergeEnrolledCoursesIntoCourseIDCache() {
-        var byCode = canvasCourseIDsByCode
+        let byCode = canvasCourseIDsByCode
+        var additions: [String: String] = [:]
         for course in enrolledCanvasCourses {
             let key = Self.courseKey(forEnrolled: course)
             // Skip only the degenerate case: an unparseable AND empty raw
-            // name, which would otherwise insert a useless "" key.
-            guard !key.isEmpty, byCode[key] == nil else { continue }
-            byCode[key] = course.id
+            // name, which would otherwise insert a useless "" key. The
+            // `byCode[key] == nil` guard keeps this pass add-only: an id
+            // already resolved from a feed item's URL is a stronger source
+            // and is never overwritten by this name-parsed one.
+            guard !key.isEmpty, byCode[key] == nil, additions[key] == nil else { continue }
+            additions[key] = course.id
         }
-        guard byCode != canvasCourseIDsByCode else { return }
-        canvasCourseIDsByCode = byCode
-        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+        guard !additions.isEmpty else { return }
+        coursePreferences.mergeCanvasCourseIDs(additions)
     }
 
     /// The same course-key derivation `CourseProfileEngine` uses internally
@@ -1695,7 +1791,7 @@ final class AppState: ObservableObject {
         let feedCourseKeys = Set(canvasItems.map(\.course))
         let gradescopeCourseKeys = Set(gradescopeItems.map(\.course))
 
-        var byCode = canvasCourseIDsByCode
+        let byCode = canvasCourseIDsByCode
         let staleKeys = byCode.keys.filter { key in
             !currentEnrolledKeys.contains(key)
                 && !feedCourseKeys.contains(key)
@@ -1703,9 +1799,7 @@ final class AppState: ObservableObject {
         }
         guard !staleKeys.isEmpty else { return }
 
-        for key in staleKeys { byCode.removeValue(forKey: key) }
-        canvasCourseIDsByCode = byCode
-        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+        for key in staleKeys { coursePreferences.setCanvasCourseID(key, nil) }
     }
 
     private func persistEnrolledCanvasCourses() {
@@ -1714,9 +1808,11 @@ final class AppState: ObservableObject {
     }
 
     /// Recomputes every course's profile from current feed items, the
-    /// cached enrolled-course list, and this launch's probes, then queues a
-    /// nudge if one is warranted. Call after anything that could change any
-    /// of those three inputs — a successful `sync()`, or `refreshCourseIntel`.
+    /// cached enrolled-course list, and this launch's probes. Call after
+    /// anything that could change any of those three inputs — a successful
+    /// `sync()`, or `refreshCourseIntel`. Used to also queue a one-ask
+    /// consent popup here; that popup was removed 2026-08-27
+    /// (docs/decisions.md), so this is now purely a recompute.
     private func recomputeCourseProfiles() {
         // Deliberately `canvasItems`, never `canvasItems + moduleReadingItems`:
         // silence is a property of the ICS FEED (does this course publish
@@ -1724,128 +1820,37 @@ final class AppState: ObservableObject {
         // itself the OUTCOME of probing a course this engine already called
         // silent. Folding imported readings back in here would make an
         // opted-in silent course look `.normal` on the very next refresh and
-        // silently stop nudging/managing it.
+        // silently stop managing it as silent.
         courseProfileReports = CourseProfileEngine.reports(
             feedItems: canvasItems,
             enrolledCourses: enrolledCanvasCourses,
             probes: courseProbes
         )
-        queueNudgeIfNeeded()
         logCourseIntelDiagnostics()
     }
 
-    /// Surfaces at most one nudge per app-open (docs/READINGS_COURSES_PLAN.md
-    /// "no nag storms"). A report is nudge-worthy when its profile is
-    /// actionable (`isActionable`) and either no decision has been recorded
-    /// for it, or the recorded decision's fingerprint CLASS (the substring
-    /// before ":" — "readings"/"silent"/…) differs from the current one: a
-    /// silent course whose reading count merely grew isn't re-asked, but one
-    /// that starts putting events on the calendar is. A deleted course is
-    /// never nudged.
-    private func queueNudgeIfNeeded() {
-        guard pendingCourseNudge == nil, !nudgePresentedThisLaunch else { return }
-
-        let candidates = courseProfileReports
-            .filter { !deletedCourseKeys.contains($0.courseKey) }
-            .filter(Self.isActionable)
-            .filter { report in
-                guard let decision = courseContentDecisions[report.courseKey] else { return true }
-                return Self.fingerprintClass(decision.fingerprint) != Self.fingerprintClass(report.fingerprint)
-            }
-            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
-
-        guard let next = candidates.first else { return }
-        pendingCourseNudge = next
-        nudgePresentedThisLaunch = true
-    }
-
-    /// Worth ASKING about: dated readings on the calendar, or a silent
-    /// course whose probe found actual module readings. `.normal` (already
-    /// represented on the dashboard), `.unknownSilent` (nothing concrete to
-    /// show yet — no session to probe with), and a silent course whose probe
-    /// came back with zero/no readings never nudge — stricter than
-    /// `isManageable` below, which also lists a confirmed-empty silent
-    /// course so Settings can say so.
-    private static func isActionable(_ report: CourseProfileReport) -> Bool {
-        switch report.profile {
-        case .readingsOnCalendar:
-            return true
-        case let .silent(moduleReadingCount):
-            return (moduleReadingCount ?? 0) > 0
-        case .normal, .unknownSilent:
-            return false
-        }
-    }
-
-    /// Worth LISTING in Settings' "Courses & content" management section:
-    /// readings-on-calendar, or any silent course a probe actually reached
-    /// (`moduleReadingCount != nil`) — including one that came back
-    /// confirmed-empty, which `isActionable` deliberately excludes from the
-    /// nudge queue but Settings should still be able to show and explain.
-    private static func isManageable(_ report: CourseProfileReport) -> Bool {
-        switch report.profile {
-        case .readingsOnCalendar:
-            return true
-        case let .silent(moduleReadingCount):
-            return moduleReadingCount != nil
-        case .normal, .unknownSilent:
-            return false
-        }
-    }
-
-    /// The stable part of a fingerprint used to decide whether a course's
-    /// shape changed enough to re-ask — the substring before the first ":"
-    /// (e.g. "readings:10" -> "readings"), or the whole string when there's
-    /// no ":" (e.g. "normal", "unknownSilent").
-    private static func fingerprintClass(_ fingerprint: String) -> String {
-        String(fingerprint.split(separator: ":", maxSplits: 1).first ?? Substring(fingerprint))
-    }
-
-    /// Records the user's answer to a course-content nudge — writes the
-    /// decision, persists it, clears the pending nudge, and rebuilds so the
-    /// choice takes effect immediately.
-    func resolveCourseNudge(_ report: CourseProfileReport, include: Bool) {
-        setCourseContentDecision(
-            courseKey: report.courseKey,
-            choice: include ? .include : .exclude,
-            fingerprint: report.fingerprint
-        )
-        pendingCourseNudge = nil
-        rebuildDashboardItems()
-        // Import right away rather than waiting for next launch's probe loop
-        // to notice this decision — see `importReadingsIfNeeded`'s doc
-        // comment for the field evidence this fixes.
-        if include { importReadingsIfNeeded(for: report.courseKey) }
-    }
-
-    /// Dismisses the pending nudge WITHOUT recording a decision, so the same
-    /// course is asked again next launch — dismissing isn't an answer.
-    func dismissCourseNudge() {
-        pendingCourseNudge = nil
-    }
-
-    /// Whether `course`'s opted-in content (readings/events) currently shows
-    /// on the dashboard. Default is false (exclude) when no decision is on
-    /// file — see `CourseContentDecision`'s doc comment.
+    /// Whether `course`'s readings/events currently show on the dashboard.
+    /// True by default — only an explicit `.exclude` decision hides them
+    /// (see `includesAsOptedInContent` for why the default flipped).
     func courseContentIncluded(_ course: String) -> Bool {
-        courseContentDecisions[course]?.choice == .include
+        courseContentDecisions[course]?.choice != .exclude
     }
 
     /// Settings surface ("Courses & content"): sets or overwrites the
-    /// decision for `course` directly, independent of any pending nudge.
-    /// Uses the current profile report's fingerprint when one is on file for
-    /// this course, so a later profile-class change is still measured
-    /// against a real fingerprint; falls back to "manual" when this course
-    /// has no computed report yet (e.g. set before the first sync this
-    /// launch).
+    /// decision for `course` directly. This is now the ONLY way a decision
+    /// gets recorded — the one-ask popup that used to record a decision from
+    /// a nudge answer was removed 2026-08-27 (docs/decisions.md). Uses the
+    /// current profile report's fingerprint when one is on file for this
+    /// course, so a later profile-class change is still measured against a
+    /// real fingerprint; falls back to "manual" when this course has no
+    /// computed report yet (e.g. set before the first sync this launch).
     func setCourseContentIncluded(_ course: String, _ include: Bool) {
         let fingerprint = courseProfileReports.first { $0.courseKey == course }?.fingerprint ?? "manual"
         setCourseContentDecision(courseKey: course, choice: include ? .include : .exclude, fingerprint: fingerprint)
-        if pendingCourseNudge?.courseKey == course { pendingCourseNudge = nil }
         rebuildDashboardItems()
-        // Same immediate-import fix as `resolveCourseNudge` — flipping this
-        // toggle on used to import nothing until the next launch's probe
-        // loop happened to notice the decision.
+        // Import right away rather than waiting for the next launch's probe
+        // loop to notice this decision — see `importReadingsIfNeeded`'s doc
+        // comment for the field evidence this fixes.
         if include { importReadingsIfNeeded(for: course) }
     }
 
@@ -1857,15 +1862,6 @@ final class AppState: ObservableObject {
         )
         CourseContentDecisionStore.save(courseContentDecisions)
         if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
-    }
-
-    /// Courses worth surfacing in Settings' "Courses & content" management
-    /// section: every course with a manageable profile (see `isManageable`),
-    /// decided or not.
-    var courseContentManageableCourses: [CourseProfileReport] {
-        courseProfileReports
-            .filter(Self.isManageable)
-            .sorted { $0.courseKey.localizedStandardCompare($1.courseKey) == .orderedAscending }
     }
 
     // MARK: - Diagnostics (course intel)
@@ -2014,68 +2010,191 @@ final class AppState: ObservableObject {
 
     // MARK: Course selection (class picker)
 
-    /// Every distinct course currently seen across the connected sources, sorted
-    /// for a stable picker order. Drives the onboarding + settings class list.
+    /// Every distinct course the app knows about, sorted for a stable picker
+    /// order. Drives the onboarding + Profile class list.
+    ///
+    /// **The union with hand-added classes is the fix for "only one class shows
+    /// up".** This list used to be derived purely from what the feeds currently
+    /// contain, which sounds reasonable and fails in exactly the week it matters
+    /// most: a course that hasn't posted an assignment yet contributes no items,
+    /// so it contributes no class, so in week one of a semester most of a
+    /// student's timetable simply doesn't exist in the app. `canvasCourseID`
+    /// already caches resolved ids so grades survive a quiet week; this is the
+    /// same idea for the class list itself.
+    ///
+    /// Feed courses and hand-added courses share one namespace — the canonical
+    /// `CourseCode` — so this is a set union and not a merge. When Canvas
+    /// finally posts for a class the student typed in, the two are the same
+    /// element and there is nothing to reconcile.
+    ///
+    /// Two more sources joined the union for the same reason (the CIS 2620
+    /// regression — a Modules-only class had no surface at all once Settings'
+    /// reading-classes section was removed):
+    /// - `moduleReadingItems`: a silent course whose imported Modules readings
+    ///   are on the ledger lists like any other class.
+    /// - the cached enrolled-course list: an enrolled class appears here
+    ///   before it posts anything anywhere, closing the week-one gap for
+    ///   real. The ingestion filters (`isEnrolledCourseCurrent` +
+    ///   `containsExplicitCode`) are re-applied at read time: idempotent for
+    ///   a cache written by this version, and they keep a cache persisted
+    ///   last term (or by a pre-filter build) from resurrecting a finished
+    ///   class or a Canvas resource site.
+    /// Listing is not the same thing as importing: a silent course's readings
+    /// only download once `refreshCourseIntel`'s probe loop actually reaches
+    /// it, and even then only if `shouldAutoImportReadings` allows it (an
+    /// explicit `.exclude` still blocks the network fetch) — the fact a
+    /// course is *listed* here doesn't mean its readings are already on the
+    /// dashboard.
     func allCourseCodes() -> [String] {
-        let pool = canvasItems + gradescopeItems
-        let codes = Set(pool.map(\.course)).subtracting([Self.unknownCourse])
+        let pool = canvasItems + gradescopeItems + moduleReadingItems
+        let enrolledKeys = enrolledCanvasCourses
+            .filter { Self.isEnrolledCourseCurrent($0) && CourseCode.containsExplicitCode($0.name) }
+            .map { Self.courseKey(forEnrolled: $0) }
+            .filter { !$0.isEmpty }
+        let codes = Set(pool.map(\.course))
+            .union(coursePreferences.manuallyAddedCourseKeys)
+            .union(enrolledKeys)
+            .subtracting([Self.unknownCourse])
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// The canonical form of a course code the student typed. Everything that
+    /// identifies a class — selection, reminders, grades, dedup — keys on the
+    /// output of `CourseCode.parse`, so an added class has to arrive through it
+    /// or it will sit next to the feed's copy of the same course forever.
+    /// "cis1200", "CIS 1200" and "cis-1200" all land on `CIS 1200`.
+    /// A class the feed has never mentioned may legitimately have no course
+    /// code at all — a thesis, a reading group, a lab that lives off Canvas — so
+    /// a name that doesn't parse is kept as typed rather than refused. The one
+    /// thing rejected is a name with nothing nameable in it: `CourseCode.parse`
+    /// falls back to the raw string when it recognises nothing, which is right
+    /// for a noisy feed descriptor and would otherwise let "???" become a class.
+    static func normalizedCourseKey(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        let parsed = CourseCode.parse(trimmed).code
+        guard parsed != Self.unknownCourse else { return nil }
+        return parsed
+    }
+
+    /// Adds a class by hand. Returns the canonical key it was filed under, or
+    /// nil when the input wasn't usable.
+    ///
+    /// Idempotent, and idempotent in the way that matters: adding a class the
+    /// feed already supplies is not an error and does not create a second entry
+    /// — it just marks the existing course as one the student also vouched for.
+    /// A previously deleted class is un-deleted, since typing its name in again
+    /// is a clearer statement of intent than the deletion it supersedes.
+    @discardableResult
+    func addCourse(_ raw: String) -> String? {
+        guard let key = Self.normalizedCourseKey(raw) else { return nil }
+        coursePreferences.update(key) {
+            $0.isManuallyAdded = true
+            $0.isDeleted = false
+            $0.isVisible = true
+            // Typing in a class is a statement about this term. If a rollover
+            // had filed it away, bring it back rather than adding a class that
+            // is invisible the moment it is created.
+            $0.archivedTerm = nil
+        }
+        rebuildDashboardItems()
+        return key
+    }
+
+    /// Undoes `addCourse`. Only clears the hand-added mark — a class the feed
+    /// is also publishing stays in the list, because it is real regardless of
+    /// who mentioned it first. Manual assignments already attached to it are
+    /// untouched; they are ledger rows and deleting a label must not delete
+    /// work.
+    func removeAddedCourse(_ course: String) {
+        coursePreferences.setManuallyAdded(course, false)
+        rebuildDashboardItems()
+    }
+
+    /// Classes the student typed in themselves, sorted.
+    func manuallyAddedCourseCodes() -> [String] {
+        coursePreferences.manuallyAddedCourseKeys
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// False if the course is hidden OR deleted — both keep it out of the
     /// dashboard, notifications, and Grade Watcher (see `selectedCanvasCourseIDs`).
     func isCourseSelected(_ course: String) -> Bool {
-        !hiddenCourseKeys.contains(course) && !deletedCourseKeys.contains(course)
+        coursePreferences.isSelected(course)
     }
 
     /// Toggle a course on/off. Off = hidden from the dashboard and notifications.
     func setCourse(_ course: String, selected: Bool) {
-        if selected { hiddenCourseKeys.remove(course) }
-        else { hiddenCourseKeys.insert(course) }
-        persistHiddenCourses()
+        coursePreferences.setVisible(course, selected)
         rebuildDashboardItems()
     }
 
-    private func persistHiddenCourses() {
-        UserDefaults.lhf.set(hiddenCourseKeys.sorted(), forKey: Self.hiddenCoursesKey)
-        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.hiddenCoursesKey) }
+    /// Profile → notifications' "items with nothing to submit" toggle.
+    /// Mirrors `setCourse`/`setCourseContentIncluded`'s shape rather than
+    /// leaving the UI to call `coursePreferences.setNothingToSubmitEnabled`
+    /// directly, and that shape is load-bearing here, not just a style
+    /// preference: this toggle now hides items from `assignments`/
+    /// `laterAssignments` (see `rebuildDashboardItems`'s filter), and
+    /// `CoursePreferencesStore.commit`'s `willChange` hook only republishes
+    /// `AppState.objectWillChange` — it does not itself recompute those
+    /// arrays. Without the explicit `rebuildDashboardItems()` call below,
+    /// `DashboardViewModel`'s subscription would still fire and re-read
+    /// `state.assignments`/`laterAssignments`, but those would still hold
+    /// the STALE pre-toggle contents until some unrelated mutation happened
+    /// to trigger a rebuild — the toggle would visibly lag or seem to do
+    /// nothing. Calling `rebuildDashboardItems()` synchronously, before that
+    /// notification even goes out, is what makes the hide/show immediate.
+    func setNothingToSubmitEnabled(_ course: String, _ enabled: Bool) {
+        coursePreferences.setNothingToSubmitEnabled(course, enabled)
+        rebuildDashboardItems()
     }
 
-    /// Courses to render in the Settings classes list — every known course
-    /// minus deleted ones. (Hidden-but-not-deleted courses still appear here,
-    /// toggled off.)
+    /// Courses to render in the Profile classes list — every known course minus
+    /// deleted ones and minus the ones a semester rollover took off the roster.
+    /// (Hidden-but-not-deleted courses still appear here, toggled off.)
+    ///
+    /// Archived courses drop out of the *list* but keep `isCourseSelected`
+    /// true, and the split is deliberate. Done reads
+    /// `isCourseSelected` when deciding whose finished work to show, so
+    /// folding archival into selection would empty last semester out of the
+    /// student's own history — which is the thing archiving exists not to do.
     func visibleCourseCodes() -> [String] {
-        allCourseCodes().filter { !deletedCourseKeys.contains($0) }
+        allCourseCodes().filter {
+            !coursePreferences.isDeleted($0) && !coursePreferences.isArchived($0)
+        }
+    }
+
+    /// Classes a rollover has taken off the roster, sorted. The "you archived
+    /// these" list.
+    func archivedCourseCodes() -> [String] {
+        allCourseCodes()
+            .filter { coursePreferences.isArchived($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Deleted courses, sorted for a stable "Deleted classes" restore list.
     func deletedCourseCodes() -> [String] {
-        allCourseCodes().filter { deletedCourseKeys.contains($0) }
+        allCourseCodes().filter { coursePreferences.isDeleted($0) }
     }
 
     func isCourseDeleted(_ course: String) -> Bool {
-        deletedCourseKeys.contains(course)
+        coursePreferences.isDeleted(course)
     }
 
     /// Removes a course from the classes list. Purely local — there's nothing
     /// to delete on Canvas's end — so it's fully reversible with `restoreCourse`.
     func deleteCourse(_ course: String) {
-        deletedCourseKeys.insert(course)
-        persistDeletedCourses()
+        coursePreferences.setDeleted(course, true)
         rebuildDashboardItems()
     }
 
     /// Undoes `deleteCourse`. The course reappears in the classes list at
-    /// whatever hidden/shown state it had before deletion.
+    /// whatever hidden/shown state it had before deletion — deletion and hiding
+    /// are separate fields on one record, so undoing one cannot disturb the
+    /// other.
     func restoreCourse(_ course: String) {
-        deletedCourseKeys.remove(course)
-        persistDeletedCourses()
+        coursePreferences.setDeleted(course, false)
         rebuildDashboardItems()
-    }
-
-    private func persistDeletedCourses() {
-        UserDefaults.lhf.set(deletedCourseKeys.sorted(), forKey: Self.deletedCoursesKey)
-        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.deletedCoursesKey) }
     }
 
     /// Classes currently switched on, by code. Kept separate from
@@ -2091,51 +2210,178 @@ final class AppState: ObservableObject {
     /// What to show for a class: the user's own name if they set one, otherwise
     /// the code parsed from Canvas/Gradescope.
     func courseDisplayName(_ course: String) -> String {
-        guard let custom = courseNameOverrides[course]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !custom.isEmpty
-        else { return course }
-        return custom
+        coursePreferences.displayName(for: course)
     }
 
     func hasCustomName(_ course: String) -> Bool {
-        courseNameOverrides[course] != nil
+        coursePreferences.hasCustomName(course)
     }
 
     /// Renames a class for display only — every other system (hiding, deletion,
     /// reminders, grades) still keys on `course`, so the rename survives a
     /// re-sync and can't orphan the class. Clearing the field restores the code.
     func renameCourse(_ course: String, to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == course {
-            courseNameOverrides.removeValue(forKey: course)
-        } else {
-            courseNameOverrides[course] = trimmed
-        }
-        UserDefaults.lhf.set(courseNameOverrides, forKey: Self.courseNameOverridesKey)
-        if cloudSyncEnabled { cloudPrefsMirror.push(key: Self.courseNameOverridesKey) }
+        coursePreferences.setDisplayName(course, to: newName)
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
     /// from `rebuildDashboardItems` (i.e. when items change) rather than from the
     /// `canvasCourseIDs` read path, because that read happens inside SwiftUI body
-    /// evaluation and must not publish changes.
+    /// evaluation and must not publish changes. `mergeCanvasCourseIDs` keeps
+    /// that guarantee: it publishes nothing when this sync revealed no new ids.
     private func updateCanvasCourseIDCache() {
-        var byCode = canvasCourseIDsByCode
+        var resolved: [String: String] = [:]
         for item in canvasItems {
             guard item.course != Self.unknownCourse,
                   let url = item.url,
                   let id = Self.courseID(from: url)
             else { continue }
-            byCode[item.course] = id
+            resolved[item.course] = id
         }
-        guard byCode != canvasCourseIDsByCode else { return }
-        canvasCourseIDsByCode = byCode
-        UserDefaults.lhf.set(byCode, forKey: Self.canvasCourseIDsByCodeKey)
+        coursePreferences.mergeCanvasCourseIDs(resolved)
     }
 
-    private static func loadStringMap(_ key: String) -> [String: String] {
-        UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
+    // MARK: Semester rollover
+
+    /// Re-derives the archive read model from the ledger, and recomputes what
+    /// the rollover card should offer.
+    ///
+    /// Called from `rebuildDashboardItems`, which is the same place the Canvas
+    /// id cache is refreshed and for the same reason: it runs whenever the pool
+    /// of known items changes, so a sync that brings in this term's first
+    /// assignment is what surfaces the offer. Nothing is published unless a
+    /// value actually changed — `rebuildDashboardItems` also runs on every
+    /// completion toggle, and re-publishing an unchanged offer would redraw the
+    /// dashboard for nothing.
+    private func refreshArchiveState(now: Date = Date()) {
+        guard let store = assignmentStore else { return }
+        // One pass over the table for all three answers — see
+        // `AssignmentStore.archiveState`. This runs on every completion toggle,
+        // so asking three separate questions was three full scans per tick.
+        let state = store.archiveState(now: now)
+        if state.archivedIDs != archivedAssignmentIDs { archivedAssignmentIDs = state.archivedIDs }
+        if state.terms != archivedTerms { archivedTerms = state.terms }
+
+        let resolved = Self.visibleRolloverOffer(
+            state.offer,
+            dismissedTerm: rolloverDismissedTerm
+        )
+        if resolved != rolloverOffer { rolloverOffer = resolved }
+    }
+
+    /// Applies the student's "not now" to a freshly-detected offer.
+    ///
+    /// A dismissal is **suppressed rather than remembered forever**, and it is
+    /// scoped to the boundary that produced it: waving away "archive Spring
+    /// 2026" in August must not also wave away "archive Fall 2026" next
+    /// January. When a later boundary comes around `currentTerm` has moved, the
+    /// stored term no longer matches, and the card asks again.
+    ///
+    /// Pure and static so the scoping can be tested without a store, a clock or
+    /// a `UserDefaults` domain — it is one comparison, and it is the difference
+    /// between a card that respects a "no" and one that nags.
+    static func visibleRolloverOffer(
+        _ offer: SemesterRollover.Offer?,
+        dismissedTerm: Term?
+    ) -> SemesterRollover.Offer? {
+        guard let offer, dismissedTerm != offer.currentTerm else { return nil }
+        return offer
+    }
+
+    /// The term whose rollover offer the student most recently dismissed.
+    private var rolloverDismissedTerm: Term? {
+        UserDefaults.lhf.string(forKey: Self.rolloverDismissedTermKey).flatMap(Term.init(code:))
+    }
+
+    /// Files every item belonging to `terms` away, and takes their classes off
+    /// the roster. Returns how many ledger rows were stamped.
+    ///
+    /// **Archiving is not deleting, and the two halves below are why.** The
+    /// ledger stamp (`store.archive`) is what stops the work reaching the
+    /// dashboard, `reschedule()` and the widget. The course stamp is what takes
+    /// the class out of the class list. Neither removes a row, clears a
+    /// completion, or touches a score — every archived item is still on disk,
+    /// still in `mergedCoursework`, and still in Done. `unarchiveTerms` puts it
+    /// all back.
+    ///
+    /// Only ever called from a control the student tapped, with the count in
+    /// front of them.
+    @discardableResult
+    func archiveTerms(_ terms: Set<Term>, now: Date = Date()) -> Int {
+        guard let store = assignmentStore, !terms.isEmpty else { return 0 }
+
+        // Which classes belong to the terms being archived has to be read
+        // *before* the rows are stamped: `rolloverOffer` skips archived rows, so
+        // asking afterwards returns nothing and the classes would stay on the
+        // roster with no items behind them.
+        let coursesByTerm = store.rolloverOffer(now: now)?
+            .candidates
+            .filter { terms.contains($0.term) }
+            ?? []
+
+        // Hoisted out of the loop below: it walks every known item, and asking
+        // it once per course made archiving quadratic in a student's timetable.
+        let stillCurrent = currentTermCourseKeys(now: now)
+
+        let stamped = store.archive(terms: terms, now: now)
+        for candidate in coursesByTerm {
+            for course in candidate.courseKeys {
+                // A class that is also in the *current* term keeps its place.
+                // A student retaking CIS 1200 has one course key spanning two
+                // terms, and taking it off the roster because last spring was
+                // archived would hide a class they are sitting in this week.
+                guard !stillCurrent.contains(course) else { continue }
+                coursePreferences.setArchivedTerm(course, candidate.term)
+            }
+        }
+        refreshArchiveState(now: now)
+        rebuildDashboardItems(now: now)
+        return stamped
+    }
+
+    /// Course keys with at least one live (unarchived) item in the current term
+    /// — the roster as the feed currently describes it.
+    private func currentTermCourseKeys(now: Date = Date()) -> Set<String> {
+        let current = Term(date: now)
+        var keys = coursePreferences.manuallyAddedCourseKeys
+        for item in canvasItems + gradescopeItems {
+            guard !archivedAssignmentIDs.contains(item.id) else { continue }
+            let term = item.term ?? item.dueAt.map { Term(date: $0) }
+            if term == current { keys.insert(item.course) }
+        }
+        return keys
+    }
+
+    /// Puts archived terms back on the dashboard and their classes back on the
+    /// roster. The way out of a rollover the student regrets.
+    @discardableResult
+    func unarchiveTerms(_ terms: Set<Term>, now: Date = Date()) -> Int {
+        guard let store = assignmentStore, !terms.isEmpty else { return 0 }
+        let cleared = store.unarchive(terms: terms, now: now)
+        // Read straight off the preferences store rather than through
+        // `archivedCourseCodes()`, which filters `allCourseCodes()` — a course
+        // whose every item had left the known pool would not appear there, and
+        // its archived stamp would then be unclearable by any route the UI
+        // offers. The record is the thing being cleared, so the record is what
+        // to enumerate.
+        for course in coursePreferences.archivedCourseKeys where
+            coursePreferences.archivedTerm(for: course).map(terms.contains) == true {
+            coursePreferences.setArchivedTerm(course, nil)
+        }
+        // Clearing the dismissal too: a student who un-archives has changed
+        // their mind about this boundary, and the card should be allowed to ask
+        // again rather than staying silenced by a tap they've since reversed.
+        UserDefaults.lhf.removeObject(forKey: Self.rolloverDismissedTermKey)
+        refreshArchiveState(now: now)
+        rebuildDashboardItems(now: now)
+        return cleared
+    }
+
+    /// Dismisses the current rollover offer without archiving anything. Scoped
+    /// to the term boundary that produced it, so the next one still asks.
+    func dismissRolloverOffer(now: Date = Date()) {
+        UserDefaults.lhf.set(Term(date: now).code, forKey: Self.rolloverDismissedTermKey)
+        refreshArchiveState(now: now)
     }
 
     func addRecurringTask(_ task: RecurringTask) {
@@ -2203,14 +2449,30 @@ final class AppState: ObservableObject {
     }
 
     /// An `.event`-kind item (a reading, a lecture, an exam date with nothing
-    /// to submit) has no submission to be late on, so it never belongs in
-    /// OVERDUE — the product rule is that it simply drops off the dashboard
-    /// once its calendar day is over. Undated events are never expired, since
-    /// there's no day to compare against.
+    /// to submit) has no submission to be late on, so it can never sit in
+    /// OVERDUE — the product rule is that it is gone the moment it starts, or
+    /// was due. This used to be a calendar-day comparison
+    /// (`startOfDay(due) < startOfDay(now)`), which left a 10:45am class
+    /// showing as "late" in OVERDUE for the rest of the afternoon — exactly
+    /// the state this function exists to prevent, just delayed by however
+    /// many hours were left in the day. `due < now` is the hard boundary that
+    /// actually delivers the rule: gone at the moment it happens, not at
+    /// midnight.
+    ///
+    /// This does not regress a dateless-time reading despite dropping the day
+    /// rounding: Canvas's ICS feed represents an all-day entry with a
+    /// date-only `DTSTART`, and `CanvasICSClient` already parses that to
+    /// end-of-day LOCAL time rather than midnight (see the ICS test
+    /// "date-only DTSTART becomes end-of-day LOCAL time"), so an undated-time
+    /// reading's `dueAt` is already effectively end of its day and still
+    /// lasts until then under the plain `<` comparison. Only a genuinely
+    /// timed entry — a lecture or exam with a real start time — now leaves
+    /// the list at that time instead of at midnight, which is exactly the
+    /// case the owner's device pass caught. Undated events are still never
+    /// expired, since there's no due time to compare against.
     static func isExpiredEvent(_ assignment: Assignment, now: Date = Date()) -> Bool {
         guard assignment.kind == .event, let due = assignment.dueAt else { return false }
-        let calendar = Calendar.current
-        return calendar.startOfDay(for: due) < calendar.startOfDay(for: now)
+        return due < now
     }
 
     /// Keeps the dashboard to the current term so next-term courses Canvas still
@@ -2218,11 +2480,45 @@ final class AppState: ObservableObject {
     /// from the Canvas course code) we use it directly — exact, and immune to the
     /// fuzzy month→season boundary. Otherwise we fall back to a due-date cap that
     /// is never tighter than the dashboard window, so genuinely-soon items are
-    /// safe at term boundaries. Undated and overdue items always pass.
-    static func withinTermCap(_ assignment: Assignment, now: Date = Date()) -> Bool {
+    /// safe at term boundaries. Undated and overdue items pass unless their term
+    /// has been archived.
+    ///
+    /// ## The past bound, and why it is a set rather than a comparison
+    ///
+    /// This function used to read `term <= current`, which bounds only the
+    /// future: every past term passed, so an entire prior semester stayed on the
+    /// dashboard and kept feeding `reschedule()`. The obvious repair — demanding
+    /// `term == current` — is wrong, and expensively so. `Term(date:)` maps
+    /// August to fall, so on 23 August a summer course with an August deadline
+    /// is a *past* term by that test, and a student still finishing it would
+    /// watch their live work vanish with no way to ask for it back.
+    ///
+    /// So the past bound is `archivedTerms`: a term is excluded once the student
+    /// has been shown a count and agreed to file it away, and not before.
+    /// Detected and offered, never automatic — the same rule the rollover card
+    /// is built on, enforced in the one filter that could otherwise quietly
+    /// break it.
+    ///
+    /// The parameter defaults to empty, which is exactly the old behaviour: with
+    /// nothing archived, a past term still passes. That is deliberate rather
+    /// than convenient. The term cap is not the mechanism that hides last
+    /// semester — the student's confirmed archive is, and this reads it.
+    static func withinTermCap(
+        _ assignment: Assignment,
+        now: Date = Date(),
+        archivedTerms: Set<Term> = []
+    ) -> Bool {
         let current = Term(date: now)
-        if let term = assignment.term { return term <= current }   // future term → excluded
+        if let term = assignment.term {
+            if archivedTerms.contains(term) { return false }   // archived past term
+            return term <= current                             // future term → excluded
+        }
+        // An item with no term of its own still belongs to one. Dating it by its
+        // due date is what stops an archived semester's leftovers coming back in
+        // through the undated-and-overdue door — the specific clause that kept
+        // showing a student work from a semester they had already put away.
         guard let due = assignment.dueAt else { return true }
+        if archivedTerms.contains(Term(date: due)) { return false }
         let cap = max(current.endDate(), now.addingTimeInterval(dashboardWindow))
         return due <= cap
     }
@@ -2251,26 +2547,34 @@ final class AppState: ObservableObject {
         return assignment.title.range(of: pattern, options: .regularExpression) != nil
     }
 
-    /// Extra content beyond assignments/assessments that the user has
-    /// specifically opted into for this course: a dated calendar event
-    /// (reading, discussion prep, etc.) for a course whose
-    /// READINGS_ON_CALENDAR/SILENT nudge was answered "include"
-    /// (docs/READINGS_COURSES_PLAN.md). Default is exclude — no stored
-    /// decision means these stay off the dashboard, so existing users see
-    /// zero change until they opt in.
+    /// Extra content beyond assignments/assessments: a dated calendar event
+    /// (reading, discussion prep, etc.) from any real course.
+    ///
+    /// **Default is include** (owner's call, 2026-08-26, reversing the
+    /// READINGS_COURSES_PLAN opt-in design): a class that only posts calendar
+    /// events used to vanish from the dashboard until its one-ask consent
+    /// popup was answered, which on a real device read as "my class
+    /// disappeared", not as a feature. The wrong fix would have been
+    /// deleting the decision store — an explicit `.exclude` (set via
+    /// Settings' "Courses & content" toggle, or synced from another device)
+    /// is still honoured; only the no-decision default flips. The popup
+    /// itself was removed entirely 2026-08-27 (docs/decisions.md), extending
+    /// this same "default include, explicit exclude only" posture to
+    /// Modules-imported readings too.
     private func includesAsOptedInContent(_ assignment: Assignment) -> Bool {
         assignment.kind == .event
             && assignment.course != Self.unknownCourse
-            && courseContentDecisions[assignment.course]?.choice == .include
+            && courseContentDecisions[assignment.course]?.choice != .exclude
     }
 
     private func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
+        refreshArchiveState(now: now)
         let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
-        // assessment (quizzes/exams), plus — for a course the user opted in via
-        // a readings/silent-course nudge or Settings — its dated calendar
+        // assessment (quizzes/exams), plus — for any course the student
+        // hasn't explicitly excluded via Settings — its dated calendar
         // events (docs/READINGS_COURSES_PLAN.md), whether those events came in
         // on the ICS feed or were imported from a probed course's Modules page
         // (`moduleReadingItems`). Both are `.event`-kind, so
@@ -2306,11 +2610,24 @@ final class AppState: ObservableObject {
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)
             .sorted(by: Self.byDueDate)
 
+        // `mergedCoursework` is assigned above, *before* this filter, and that
+        // ordering is what keeps archiving from being deletion: the Done tab
+        // reads that pool, so a semester the student put away is still their own
+        // history. Only the dashboard buckets below lose it — and, through them,
+        // `reschedule()`, which is driven by exactly these arrays.
+        let archivedTermSet = Set(archivedTerms)
         let incomplete = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && isCourseSelected(item.course)          // class picker
-                && Self.withinTermCap(item, now: now)     // end-of-term cap
+                // The per-row archive stamp. Authoritative, because it was
+                // resolved against `firstSeen` at the moment the student
+                // confirmed — evidence the value type below simply doesn't
+                // carry.
+                && !archivedAssignmentIDs.contains(item.id)
+                // And the term-level bound, for items that never got a row:
+                // recurring occurrences are generated fresh on every rebuild.
+                && Self.withinTermCap(item, now: now, archivedTerms: archivedTermSet)
         }
         // `.event` items never land in Assessments even when their title
         // matches the exam/quiz regex (`isAssessment` is title-based, and a
@@ -2320,11 +2637,36 @@ final class AppState: ObservableObject {
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped. An `.event` (reading,
-        // lecture, exam date) has nothing to submit, so once its calendar day
-        // has passed it isn't "overdue" — it's just gone from the dashboard.
+        // lecture, exam date) has nothing to submit, so once its due time has
+        // passed it isn't "overdue" — it's just gone from the dashboard (see
+        // `isExpiredEvent`).
         let coursework = incomplete
             .filter { $0.kind == .event || !Self.isAssessment($0) }
             .filter { !Self.isExpiredEvent($0, now: now) }
+            // The per-class "items with nothing to submit" toggle
+            // (`CoursePreferences.nothingToSubmitEnabled`) — this is the one
+            // place its "hidden, not just silent" promise is actually
+            // enforced. Off for a course, an `.event` item (reading,
+            // lecture, calendar event) or a Canvas assignment cached as
+            // requiring no submission is dropped from the pool these two
+            // buckets are built from, not merely left unreminded — the
+            // owner's device pass is exactly why: flipping the old
+            // reminder-only toggle left the item sitting on the dashboard,
+            // which read as broken. `RecurringTask` occurrences deliberately
+            // pass through this filter untouched (`kind: .assignment`,
+            // `requiresNoSubmission` false — see `NotificationScheduler`'s
+            // matching gate for why hiding a student's own recurring task
+            // would read as data loss rather than a quieter reminder). The
+            // `assessments` bucket above is built from `incomplete` BEFORE
+            // this filter runs, so an exam date is never hidden by a
+            // notifications toggle either. Ripple: `NotificationScheduler`
+            // never has to gate a hidden item — it only ever plans from
+            // `vm.items`, which `DashboardViewModel` builds from these two
+            // arrays, so an item dropped here simply never reaches it.
+            .filter { item in
+                coursePreferences.nothingToSubmitEnabled(item.course)
+                    || !(item.kind == .event || requiresNoSubmission(item))
+            }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
         publishWidgetSnapshot()
@@ -2370,13 +2712,16 @@ final class AppState: ObservableObject {
             rebuildDashboardItems()
             return
         }
-        // A generated occurrence of a recurring task, or a manual item created
-        // this launch, may have no row yet. Being completed is exactly what
-        // makes it worth a durable record, so create one here — otherwise the
-        // ledger could not be the single source of truth for completion.
-        store.upsert(rowsNeededToComplete(assignment))
-        store.setCompleted(ids: touched, at: date)
-        refreshCompletionFromLedger()
+        // The ledger is where completion actually lives. Both the tapped item
+        // and, for a merged cross-platform pair, its counterpart are passed as
+        // prototypes: `touched` already contains the counterpart's id, but only
+        // the tapped item is in hand, so without resolving the other out of the
+        // pools it would get a blank completion-only row — a durable record of
+        // a completion with no idea what was completed. This also covers work
+        // no feed reconciles at all, a manual or recurring task, which would
+        // otherwise be dropped for want of a row.
+        store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment))
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
 
@@ -2384,61 +2729,56 @@ final class AppState: ObservableObject {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
 
-        guard let store = assignmentStore else {
-            // No ledger at all: the old defaults keys are the only durable
-            // store, so un-ticking has to be written back to them directly.
+        guard assignmentStore != nil else {
+            // Same session-only degradation as `applyCompletionInMemory`: with
+            // no store there is nowhere for the un-tick to be recorded either.
             completedAssignmentIDs.subtract(touched)
             for id in touched { completionDates[id] = nil }
-            UserDefaults.lhf.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
-            if let data = try? JSONEncoder().encode(completionDates) {
-                UserDefaults.lhf.set(data, forKey: Self.completionDatesKey)
-            }
             rebuildDashboardItems()
             return
         }
-        store.setCompleted(ids: [], at: nil, clearing: touched)
-        refreshCompletionFromLedger()
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
+        reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
 
-    /// The item plus its cross-platform counterpart, so both identities get a
-    /// row before completion is written.
+    /// The item plus its cross-platform counterpart.
     ///
     /// Completing a merged item marks both ids, but only the item the user
-    /// tapped is in hand — the counterpart is just a `linkedID`. When the pools
-    /// were filled by a sync, both already have rows and this changes nothing.
-    /// When they weren't — preview mode and sample data assign `canvasItems` /
+    /// tapped is in hand — the counterpart is just a `linkedID`. Where the pools
+    /// came from a sync both already have rows and this changes nothing. Where
+    /// they didn't — preview mode and sample data assign `canvasItems` /
     /// `gradescopeItems` directly, and preview mode is the path App Store
     /// reviewers use because they can't pass Penn SSO — the counterpart has no
-    /// row, `setCompleted` silently skips it, and half the merge comes back
-    /// undone.
+    /// row, and half the merge comes back undone on the next launch.
     private func rowsNeededToComplete(_ assignment: Assignment) -> [Assignment] {
         guard let linkedID = assignment.linkedID else { return [assignment] }
         let counterpart = (gradescopeItems + canvasItems).first { $0.id == linkedID }
         return [assignment] + (counterpart.map { [$0] } ?? [])
     }
 
-    /// The no-ledger fallback path. Only reachable when even an in-memory store
-    /// could not be created, where the app degrades to its pre-ledger behaviour.
+    /// The no-ledger fallback path — reachable only when even an in-memory store
+    /// could not be created, where the app degrades to its pre-ledger behaviour
+    /// and completion is session-only. Nothing persists here because there is
+    /// nowhere left to persist to; `AssignmentStore.makeDefault()` records why
+    /// in `storageFailureReason`, and Settings says so out loud rather than
+    /// letting it look like it worked.
     private func applyCompletionInMemory(_ ids: Set<String>, at date: Date) {
         completedAssignmentIDs.formUnion(ids)
         for id in ids { completionDates[id] = date }
-        // With no ledger at all the old defaults keys are the only durable
-        // store left, so this path writes them directly. `LegacyStateMigration`
-        // drains them onto the ledger the moment one can be opened again.
-        UserDefaults.lhf.set(completedAssignmentIDs.sorted(), forKey: Self.completedIDsKey)
-        if let data = try? JSONEncoder().encode(completionDates) {
-            UserDefaults.lhf.set(data, forKey: Self.completionDatesKey)
-        }
     }
 
-    /// Rebuilds the published completion projection from the ledger, unioned
-    /// with anything still waiting to be migrated onto it.
-    private func refreshCompletionFromLedger() {
-        guard let store = assignmentStore else { return }
-        let record = store.completionRecord()
-        completionDates = record.dates
+    /// Re-derives the completion read models from the ledger.
+    ///
+    /// The mutators above update the published sets optimistically first, then
+    /// call this: with a store, the ledger's answer replaces the optimistic one
+    /// so the two can never drift; without one (store creation failed — see
+    /// `assignmentStore`), the optimistic values stand and completion is
+    /// session-only, which is the same degradation the rest of the ledger has.
+    private func reloadCompletionFromLedger() {
+        guard let record = assignmentStore?.completionRecord() else { return }
         completedAssignmentIDs = record.ids
+        completionDates = record.dates
     }
 
 
@@ -2446,8 +2786,17 @@ final class AppState: ObservableObject {
     /// True if EITHER platform reports this done: this item's own submitted
     /// flag/manual completion, its cross-platform counterpart's manual
     /// completion (`linkedID` — e.g. the user completed the Gradescope copy
-    /// before the two were ever merged), or Canvas's own submission
-    /// side-channel (`submittedCanvasAssignmentIDs`).
+    /// before the two were ever merged), Canvas's own submission
+    /// side-channel (`submittedCanvasAssignmentIDs`), or — the newest clause —
+    /// `isAutoFiledNoSubmission`, which files a past-due no-submission
+    /// assignment as done from the persisted cache even between grade
+    /// refreshes. Routing that through here rather than a separate OVERDUE
+    /// filter is deliberate: it means a no-submission item that has passed
+    /// its due time lands in Done exactly like the snapshot-driven auto-file
+    /// (`autoSubmittedNoSubmissionIDs`, applied in `updateSubmissionState`)
+    /// eventually does on refresh — it does not silently vanish from the
+    /// dashboard, which would read as data loss rather than as "nothing was
+    /// ever expected here."
     func isCompleted(_ assignment: Assignment) -> Bool {
         if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
         if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
@@ -2455,7 +2804,54 @@ final class AppState: ObservableObject {
            submittedCanvasAssignmentIDs.contains(canvasID) {
             return true
         }
+        if isAutoFiledNoSubmission(assignment) { return true }
         return false
+    }
+
+    /// True when Canvas has told Grade Watcher this Canvas assignment expects
+    /// no online submission — the fact the dashboard card's "nothing to
+    /// submit" caveat shows, and one of the two conditions
+    /// `CoursePreferences.nothingToSubmitEnabled` (2026-08-27's merged
+    /// toggle) gates hiding and reminders on for.
+    ///
+    /// Reads the persisted cache (`noSubmissionCanvasAssignmentIDs`) rather
+    /// than the live Grade Watcher snapshots, on purpose: the cache is what
+    /// survives a relaunch between grade refreshes, and this is the one
+    /// question ("does this even take a submission?") that should still have
+    /// an answer before the first fetch of a new session lands. False for
+    /// anything that isn't a true Canvas assignment — `canvasAssignmentID` is
+    /// nil for manual work, quizzes, discussions and events by design (see
+    /// its own doc comment), which is exactly the scope this caveat and the
+    /// per-class toggle are meant to have.
+    func requiresNoSubmission(_ assignment: Assignment) -> Bool {
+        assignment.canvasAssignmentID.map { noSubmissionCanvasAssignmentIDs.contains($0) } ?? false
+    }
+
+    /// The cache-backed, works-offline twin of `autoSubmittedNoSubmissionIDs`
+    /// below. That function only ever runs as part of a live grade refresh —
+    /// it writes durable ledger state (`applySubmissionState`) once one
+    /// lands — which left a window between refreshes where a Canvas
+    /// assignment past its due time and known to need no submission still
+    /// sat in OVERDUE, showing as "late" for something that was never
+    /// submittable in the first place. Same owner's rule as that function's
+    /// doc comment: an "attend the session" assignment can't be late, and
+    /// once its moment has passed it belongs with finished work. This
+    /// predicate answers that immediately, from `noSubmissionCanvasAssignmentIDs`
+    /// (populated on the last refresh, persisted since, available offline)
+    /// rather than waiting for the next one — `isCompleted` calls it directly
+    /// so a no-submission assignment never renders as overdue even in that
+    /// window.
+    ///
+    /// Undated items never auto-file — nothing has "passed" without a due
+    /// time to compare against. Pre-due reminders are unaffected: a lead-time
+    /// reminder only ever fires before `dueAt`, at which point this predicate
+    /// is still false by construction (`dueAt < now` cannot hold yet).
+    func isAutoFiledNoSubmission(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard let canvasID = assignment.canvasAssignmentID,
+              noSubmissionCanvasAssignmentIDs.contains(canvasID),
+              let dueAt = assignment.dueAt
+        else { return false }
+        return dueAt < now
     }
 
     /// Recomputes `submittedCanvasAssignmentIDs` from the Grade Watcher snapshots'
@@ -2530,6 +2926,27 @@ final class AppState: ObservableObject {
             }
         }
 
+        // Self-healing no-submission id cache (the dashboard card's caveat
+        // and the per-class "assignments with nothing to submit" reminder
+        // toggle both read `noSubmissionCanvasAssignmentIDs`). Guarded on
+        // both conditions above, together: `!isUsingFixtureData` because a
+        // reviewer's Preview-mode fixture must never leak into the real
+        // persisted cache a genuine relaunch would then load, and
+        // `!gradeWatcher.snapshots.isEmpty` for the same reason the ledger
+        // persist below has it — an empty refresh (no session, nothing
+        // selected) says nothing about whether any assignment's submission
+        // type changed and must not be read as "check every cached id".
+        if !isUsingFixtureData, !gradeWatcher.snapshots.isEmpty {
+            noSubmissionCanvasAssignmentIDs = Self.updatedNoSubmissionIDs(
+                cached: noSubmissionCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(noSubmissionCanvasAssignmentIDs).sorted(),
+                forKey: Self.noSubmissionCanvasAssignmentIDsKey
+            )
+        }
+
         // Persist onto the ledger so the next cold launch already knows what's
         // turned in — and, more importantly, so a launch with a lapsed Canvas
         // session still does. Only write when a refresh actually produced
@@ -2545,8 +2962,24 @@ final class AppState: ObservableObject {
                 }
             }
             let changes = assignmentStore?.applySubmissionState(
-                submittedCanvasAssignmentIDs: ids,
-                scores: scores
+                // The *union*, not the bare fetch. `applySubmissionState` is a
+                // full replace by design (so a retraction self-heals), which
+                // means handing it only this refresh's ids writes
+                // `canvasSubmitted = false` onto every course the refresh
+                // didn't cover. The session looks fine — `submittedCanvasAssignmentIDs`
+                // above is the union — but the ledger is already wrong, and the
+                // next cold launch seeds from the ledger and bounces finished
+                // work back onto the dashboard for good.
+                submittedCanvasAssignmentIDs: submittedCanvasAssignmentIDs,
+                scores: scores,
+                // Passing the union above fixes the flags but would corrupt the
+                // timestamps if left alone: the ids for courses this refresh
+                // never reached come from the ledger, and stamping them
+                // "observed now" would relabel last Tuesday's answer as today's.
+                // That is the precise lie `hasFreshSubmissionState` exists to
+                // catch, so the store is told which ids Canvas genuinely spoke
+                // for and dates only those.
+                observedCanvasAssignmentIDs: refreshedCanvasAssignmentIDs()
             ) ?? []
             pendingGradeChanges = notifiableGradeChanges(changes)
         }
@@ -2594,6 +3027,42 @@ final class AppState: ObservableObject {
             }
         }
         return ids
+    }
+
+    /// The update rule for the persisted `noSubmissionCanvasAssignmentIDs`
+    /// cache: **per-item replace, not a wholesale rebuild.** Every item this
+    /// refresh actually observed either enters the set (its current
+    /// `requiresNoSubmission` is true) or leaves it (false) — so a professor
+    /// who changes an assignment's submission type mid-semester is reflected
+    /// on the very next refresh in either direction. Ids belonging to a
+    /// course this refresh never touched (deselected, a fetch that failed
+    /// mid-loop, a readings-only course Grade Watcher doesn't fetch at all)
+    /// are left exactly as `cached` had them, because this function only
+    /// knows what `snapshots` actually reported and has no way to tell "not
+    /// mentioned" apart from "no longer true" without that distinction being
+    /// made for it by the caller.
+    ///
+    /// Pure, mirroring `autoSubmittedNoSubmissionIDs` and
+    /// `noSubmissionAssignmentIDs` above, so the cache's self-healing
+    /// behaviour is testable without a network, a `GradeWatcherStore`, or
+    /// `UserDefaults`.
+    static func updatedNoSubmissionIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.requiresNoSubmission {
+                        next.insert(item.id)
+                    } else {
+                        next.remove(item.id)
+                    }
+                }
+            }
+        }
+        return next
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors
@@ -2667,6 +3136,22 @@ final class AppState: ObservableObject {
         return notifiable
     }
 
+    /// Every Canvas assignment id this refresh actually got an answer about.
+    ///
+    /// This is the boundary between what the app *learned* just now and what it
+    /// is merely still carrying from last time, and two separate things need to
+    /// agree on where that boundary is: which persisted submissions survive a
+    /// partial refresh, and which rows are entitled to a fresh observation
+    /// timestamp. Deriving it once means they cannot drift apart.
+    private func refreshedCanvasAssignmentIDs() -> Set<String> {
+        Set(
+            gradeWatcher.snapshots.values
+                .flatMap(\.categories)
+                .flatMap(\.items)
+                .map(\.id)
+        )
+    }
+
     /// Persisted submissions belonging to courses this refresh didn't cover, so
     /// a partial or deselected refresh can't un-submit them in memory.
     private func persistedSubmittedIDsForUnfetchedCourses() -> Set<String> {
@@ -2676,13 +3161,8 @@ final class AppState: ObservableObject {
         // Anything this refresh actually saw is authoritative (including a
         // now-retracted submission, which must be allowed to clear). Everything
         // else keeps whatever the ledger last recorded.
-        let refreshedAssignmentIDs = Set(
-            gradeWatcher.snapshots.values
-                .flatMap(\.categories)
-                .flatMap(\.items)
-                .map(\.id)
-        )
-        return store.submittedCanvasAssignmentIDs().subtracting(refreshedAssignmentIDs)
+        return store.submittedCanvasAssignmentIDs()
+            .subtracting(refreshedCanvasAssignmentIDs())
     }
 
     /// When this item was marked done, if known. Items completed before the app
@@ -2691,17 +3171,18 @@ final class AppState: ObservableObject {
         completionDates[assignment.id]
     }
 
-
-    private static func loadCompletionDates() -> [String: Date] {
-        guard let data = UserDefaults.lhf.data(forKey: completionDatesKey),
-              let map = try? JSONDecoder().decode([String: Date].self, from: data)
-        else { return [:] }
-        return map
-    }
-
     private func persistRecurringTasks() {
         guard let data = try? JSONEncoder().encode(recurringTasks) else { return }
         UserDefaults.lhf.set(data, forKey: Self.recurringTasksKey)
+    }
+
+    /// v4's CoursePreferences consolidation removed this helper along with the
+    /// four per-course maps it used to load — but the enrolled-course cache
+    /// (`enrolledCanvasCoursesKey`, a readings-course feature that never moved
+    /// into `CoursePreferences`) still stores a plain [String: String] blob and
+    /// still needs the same read in `init`.
+    private static func loadStringMap(_ key: String) -> [String: String] {
+        UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
     }
 
     private static func loadRecurringTasks() -> [RecurringTask] {
