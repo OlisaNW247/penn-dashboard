@@ -3332,12 +3332,27 @@ final class AppState: ObservableObject {
         return items
     }
 
-    /// Canvas course id -> course code. Built from this sync's items **folded
-    /// over** everything resolved on earlier syncs, because a course id only
-    /// ever reaches us attached to an ICS item's URL: a class with nothing due
-    /// right now, or whose entries carry a calendar-style URL, contributes no id
-    /// this time round and would otherwise silently drop out of Grade Watcher.
-    /// Pure read — the cache is written by `updateCanvasCourseIDCache`.
+    /// Canvas course id -> course code, kept **id-keyed with possibly several
+    /// ids per code** rather than inverted from `canvasCourseIDsByCode`
+    /// (`[code: id]`, one id per code) — the mismatch a real device exposed:
+    /// a student cross-listed into two Canvas *sites* that both parse to the
+    /// same code (a lecture site and a `-402` section site; `CourseCode.parse`
+    /// deliberately drops the section number) has two distinct numeric course
+    /// ids for one code. `canvasCourseIDsByCode` can only remember one of
+    /// them — every writer to it (`updateCanvasCourseIDCache`,
+    /// `mergeEnrolledCoursesIntoCourseIDCache`) is last-write-wins per code,
+    /// on purpose, because readings import and course intel want a single
+    /// "primary" id per code and widening that cache to an array would ripple
+    /// through both. So instead this read path, which only ever feeds Grade
+    /// Watcher (`selectedCanvasCourseIDs`), reconstructs the *other* site's id
+    /// from whatever source still has it — this sync's feed items, or the
+    /// enrolled-course list readings courses already populate — and adds it
+    /// alongside the cached one rather than replacing it. The result: Grade
+    /// Watcher fetches grades from every Canvas site behind a selected code,
+    /// so a submission sitting in the second site is no longer invisible.
+    /// (The one visible consequence, left alone here: the hidden Grade
+    /// Watcher UI, which is keyed by id not code, shows one card per site for
+    /// such a course.) See `AppState.courseIDsByID` for the merge rule.
     private func canvasCourseIDs() -> [String: String] {
         // Preview mode's sample assignments carry no Canvas URLs, so nothing
         // ever resolved a course id and Grade Watcher showed "Can't reach
@@ -3347,17 +3362,72 @@ final class AppState: ObservableObject {
         // real refresh at course ids that don't exist.
         if isUsingFixtureData { return SampleData.previewCourseIDsByID }
 
-        var byCode = canvasCourseIDsByCode
-        for item in canvasItems {
+        let feedCourseIDs: [(course: String, id: String)] = canvasItems.compactMap { item in
             guard item.course != Self.unknownCourse,
                   let url = item.url,
                   let id = Self.courseID(from: url)
-            else { continue }
-            byCode[item.course] = id
+            else { return nil }
+            return (item.course, id)
         }
-        // Invert to id -> code. Two codes can theoretically point at one id
-        // (a cross-listed section); keep the first rather than trapping.
-        return Dictionary(byCode.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
+        let enrolled: [(id: String, key: String)] = enrolledCanvasCourses.map {
+            ($0.id, Self.courseKey(forEnrolled: $0))
+        }
+        return Self.courseIDsByID(
+            cache: canvasCourseIDsByCode,
+            feedCourseIDs: feedCourseIDs,
+            enrolled: enrolled
+        )
+    }
+
+    /// Pure merge behind `canvasCourseIDs()` — see that function's doc
+    /// comment for why this exists (two Canvas *sites* parsing to one course
+    /// *code*) rather than widening the persisted `[code: id]` cache to hold
+    /// several ids. Builds `[canvasCourseID: courseCode]` from three sources,
+    /// each strictly additive over the last, so a code that's already known
+    /// picks up every id that names it instead of losing all but one:
+    ///
+    /// 1. `cache` (`canvasCourseIDsByCode`, `[code: id]`) inverted to `[id:
+    ///    code]` — the persisted, one-id-per-code record.
+    /// 2. `feedCourseIDs`, this sync's ICS items' `(course, id)` pairs, minus
+    ///    any tagged `unknownCourse` — unlike the old `canvasCourseIDs()`,
+    ///    which folded these into a `[code: id]` dictionary and so kept only
+    ///    the last id seen per code, every distinct id here survives.
+    /// 3. `enrolled`, the readings-course discovery list's `(id, key)` pairs
+    ///    — this is what actually recovers a second site's id, since a
+    ///    cross-listed section's Canvas site often has nothing due and so
+    ///    never appears in the ICS feed at all. Restricted to keys already
+    ///    present among the codes from (1) and (2): the enrolled list is
+    ///    already filtered at write time (`isEnrolledCourseCurrent`,
+    ///    `CourseCode.containsExplicitCode`), but this function doesn't rely
+    ///    on that — an enrolled entry whose code nothing else has ever
+    ///    vouched for (a resource site, an old term) should not silently
+    ///    start being fetched for grades.
+    ///
+    /// Conflict rule: if the same Canvas id is claimed by two different
+    /// codes, the earliest source above wins (cache, then feed, then
+    /// enrolled) — each loop below only writes `result[id]` when nothing has
+    /// claimed that id yet, so processing the three sources in that order is
+    /// what gives cache priority over feed and feed priority over enrolled.
+    /// `unknownCourse` never appears as a value: the cache and feed sources
+    /// exclude it explicitly, and the enrolled source can only contribute a
+    /// code that already survived one of those two filters.
+    static func courseIDsByID(
+        cache: [String: String],
+        feedCourseIDs: [(course: String, id: String)],
+        enrolled: [(id: String, key: String)]
+    ) -> [String: String] {
+        var result: [String: String] = [:]
+        for (code, id) in cache where code != Self.unknownCourse && result[id] == nil {
+            result[id] = code
+        }
+        for pair in feedCourseIDs where pair.course != Self.unknownCourse && result[pair.id] == nil {
+            result[pair.id] = pair.course
+        }
+        let knownCodes = Set(result.values)
+        for pair in enrolled where knownCodes.contains(pair.key) && result[pair.id] == nil {
+            result[pair.id] = pair.key
+        }
+        return result
     }
 
     /// Canvas course id -> display name, filtered to the class-picker's
