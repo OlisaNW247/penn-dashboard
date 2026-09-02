@@ -45,6 +45,7 @@ struct ContentView: View {
         case profile
         case grades
         case report(courseID: String, courseName: String)
+        case assistant
     }
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
@@ -88,10 +89,13 @@ struct ContentView: View {
                             .padding(.top, 10)
                     }
 
-                    SegmentedToggle(selection: $filter)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 4)
+                    HStack(spacing: 10) {
+                        SegmentedToggle(selection: $filter)
+                        addInlineButton
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 4)
 
                     ScrollView {
                         listContent
@@ -102,7 +106,7 @@ struct ContentView: View {
                     }
                 }
 
-                addButton
+                assistantButton
             }
             .background(Color.v2Bg.ignoresSafeArea())
             .navigationDestination(for: DashRoute.self) { route in
@@ -115,6 +119,8 @@ struct ContentView: View {
                     ProfileView()
                         .environmentObject(state)
                         .environmentObject(scheduler)
+                case .assistant:
+                    AssistantView(courseCodes: state.allCourseCodes())
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
                         .environmentObject(state)
@@ -203,20 +209,63 @@ struct ContentView: View {
         }
     }
 
-    /// Floating "+" to add a user-created assignment (one-off or recurring).
-    private var addButton: some View {
+    /// The floating action is the persimmon, and it opens `ask`.
+    ///
+    /// This corner used to hold a "+" that created a manual assignment. The
+    /// swap is a real trade and worth being honest about: creating work is a
+    /// thing every student does, and it has been demoted to the filter row
+    /// (see `addInlineButton`). What it buys is that the app's single most
+    /// prominent control is now its most distinctive feature rather than its
+    /// most ordinary one — every to-do app on the phone has a "+" bottom
+    /// right, and none of them has this.
+    ///
+    /// The mark is deliberately not sitting on an ink-filled circle like the
+    /// old "+" did. A persimmon reversed out on near-black loses the one
+    /// thing that makes it recognisable, which is that it is orange. It gets
+    /// a raised paper disc instead, so it reads as fruit against the greige.
+    private var assistantButton: some View {
+        NavigationLink(value: DashRoute.assistant) {
+            ZStack {
+                Circle()
+                    .fill(Color.v2Card)
+                    .shadow(color: Color.v2CardShadow.opacity(0.26), radius: 8, y: 3)
+                PersimmonMark(size: 34)
+                    .frame(width: 34, height: 34)
+            }
+            .frame(width: 60, height: 60)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("ask about your classes")
+        .padding(.trailing, 22)
+        .padding(.bottom, 24)
+    }
+
+    /// The new home for "add assignment": trailing the filter row.
+    ///
+    /// Of the places it could have gone this is the only one that keeps every
+    /// property the floating button had. It is always on screen and never
+    /// scrolls away; it is one tap, from anywhere in the list; and it now sits
+    /// directly above the list it adds to, which the bottom-right corner never
+    /// did. The alternatives both lost something — a fourth icon in the header
+    /// crowds the greeting off narrow phones and puts "create" in with
+    /// navigation, and a ghost row at the end of the list is only reachable
+    /// after scrolling past everything, which is precisely backwards for the
+    /// student who has just realised something is missing.
+    ///
+    /// The cost is reach: this is no longer in the thumb zone. That is the
+    /// price of giving the corner to `ask`, and it lands on the rarer action.
+    private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Color.v2ToggleActiveTx)
-                .frame(width: 56, height: 56)
-                .background(Circle().fill(Color.v2Ink))
-                .shadow(color: Color.v2CardShadow.opacity(0.28), radius: 7, y: 3)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.v2DateText)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("add assignment")
-        .padding(.trailing, 22)
-        .padding(.bottom, 24)
+        .help("add assignment")
     }
 
     /// Reschedule due-date reminders from the current (override-aware) items.

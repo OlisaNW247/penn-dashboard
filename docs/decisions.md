@@ -5,6 +5,47 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-09-02 — The corner belongs to `ask`; add-assignment moves to the filter row
+Prototyped `ask`, a chat over the student's own class context, on branch
+`assistant-ui` (off `v6`). The floating "+" that created a manual assignment
+gave up the bottom-right corner to the persimmon, which opens the new screen.
+
+The trade is real and was made deliberately: creating work is something every
+student does, and it has been demoted. What it buys is that the app's single
+most prominent control is now its most distinctive feature rather than its most
+ordinary one — every to-do app on the phone has a "+" bottom right.
+
+Add-assignment went to the trailing end of the filter row. That is the only
+remaining slot that keeps every property the floating button had: always on
+screen, never scrolls away, one tap from anywhere in the list — and it now sits
+directly above the list it adds to, which the corner never did. The cost is
+thumb reach, and it lands on the rarer action.
+
+Rejected: a fourth icon in the header row — four 48pt circles plus "Hello,
+Marco" overflow a 393pt phone, and it files "create" in with navigation.
+Rejected: a ghost "add" row at the end of the list — only reachable after
+scrolling past everything, which is backwards for the student who has just
+noticed something missing. Rejected: long-press on the persimmon — undiscoverable.
+
+The suggested questions hang off a drawn branch as fruit. This is not ornament:
+the hard problem with an assistant is that a student facing a blank chat box
+does not know what it knows, and four answerable questions hanging where the eye
+already is are the affordance. `BranchGeometry` is a real Bézier the layout
+queries (`unitY(atX:)`), so the stems meet the wood where the wood actually is —
+a background image with buttons on top would have said the same thing and meant
+nothing.
+
+Answers are set in the display serif on bare paper with the purple *provenance*
+spine from `RedesignTokens`, not in chat bubbles, and every answer carries
+citation chips. An academic assistant that quietly invents an attendance policy
+is worse than none.
+
+UI only. `ScriptedAssistantResponder` streams hand-written answers behind the
+`AssistantResponder` protocol; wiring the real Claude backend is a one-type swap
+at the call site and touches no view code.
+
+---
+
 ## 2026-08-29 — The Mac App Store gets a real Mac build, and a sandbox-aware App Group
 Downloading LHF from the Mac App Store hands you the iPhone app in a
 phone-shaped window. Nothing is misconfigured in the Mac code — that is Apple's
