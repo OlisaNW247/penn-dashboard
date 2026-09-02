@@ -1940,6 +1940,134 @@ final class AppState: ObservableObject {
         return lines
     }
 
+    /// One line per selected course's most recent grades-fetch outcome, then
+    /// one line per overdue, uncompleted Canvas assignment currently on the
+    /// dashboard, showing how (or whether) its Canvas assignment id resolved
+    /// and what Grade Watcher last observed for it.
+    ///
+    /// This exists to tell apart three otherwise-indistinguishable silent
+    /// failure modes reported from real devices — a File-Upload assignment
+    /// Canvas shows as "Submitted" that still sits in OVERDUE on the
+    /// dashboard for one course while auto-detection works fine for another:
+    /// (a) that course's grades fetch is failing quietly
+    /// (`GradeWatcherStore.lastRefreshOutcomes` — previously every per-course
+    /// failure collapsed into one banner string, so there was no way to see
+    /// "PHYS 0151's fetch got an http 403" without instrumenting a device);
+    /// (b) the join from the ICS feed item to its numeric Canvas assignment
+    /// id failed — Canvas emits `event-assignment-override-<id>@…` UIDs for
+    /// section-specific due dates, which the plain `assignment-(\d+)` UID
+    /// fallback in `Assignment.canvasAssignmentID` cannot parse, so an item
+    /// with no `/assignments/<id>` URL and only an override UID never
+    /// resolves an id at all (`uidPrefixClass` surfaces the UID's shape
+    /// without printing the id or domain, so this is visible without
+    /// decoding a raw identifier by hand); or (c) the id resolved and the
+    /// fetch succeeded, but Canvas is genuinely reporting the item as not
+    /// submitted.
+    ///
+    /// Same privacy budget as `courseIntelDiagnosticLines`: course codes,
+    /// numeric Canvas course/assignment ids, enum states, and booleans only.
+    /// Never a title, a URL, a query string, or a raw UID — see
+    /// `uidPrefixClass`, which strips both the id and the domain before
+    /// anything is printed.
+    var submissionDiagnosticLines: [String] {
+        var lines: [String] = []
+
+        let selectedCourses = selectedCanvasCourseIDs()
+            .map { (id: $0.key, code: $0.value) }
+            .sorted { $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+        for entry in selectedCourses {
+            let outcome = gradeWatcher.lastRefreshOutcomes[entry.id] ?? "never"
+            lines.append("\(entry.code) (id \(entry.id)): grades fetch \(outcome)")
+        }
+
+        let now = Date()
+        let overdueItems = assignments
+            .filter { item in
+                item.source == .canvas
+                    && item.kind == .assignment
+                    && !isCompleted(item)
+                    && (item.dueAt.map { $0 < now } ?? false)
+            }
+            .sorted { (lhs, rhs) in
+                (lhs.dueAt ?? .distantFuture) < (rhs.dueAt ?? .distantFuture)
+            }
+
+        guard !overdueItems.isEmpty else {
+            lines.append("(no overdue Canvas assignments)")
+            return lines
+        }
+
+        let fetchedIDs = refreshedCanvasAssignmentIDs()
+        let allSubmissions = gradeWatcher.snapshots.values.flatMap(\.submissions)
+
+        for item in overdueItems.prefix(12) {
+            let id = item.canvasAssignmentID
+            let path = Self.joinPath(url: item.url, sourceID: item.sourceID)
+            let prefixClass = Self.uidPrefixClass(item.sourceID)
+            let fetched = id.map { fetchedIDs.contains($0) } ?? false
+            let submissionInfo = id.flatMap { candidateID in
+                allSubmissions.first(where: { $0.assignmentID == candidateID })
+            }
+            let observed = submissionInfo?.workflowState.rawValue ?? "-"
+            let submittedAtText = submissionInfo.map { $0.submittedAt != nil ? "yes" : "no" } ?? "-"
+            let missingText = submissionInfo.map { $0.isMissing ? "yes" : "no" } ?? "-"
+            let inSubmittedSet = id.map { submittedCanvasAssignmentIDs.contains($0) } ?? false
+            lines.append(
+                "\(item.course): id=\(id ?? "-") via=\(path) uid=\(prefixClass) "
+                    + "fetched=\(fetched ? "yes" : "no") observed=\(observed) "
+                    + "submittedAt=\(submittedAtText) missing=\(missingText) "
+                    + "inSubmittedSet=\(inSubmittedSet ? "yes" : "no")"
+            )
+        }
+        if overdueItems.count > 12 {
+            lines.append("  +\(overdueItems.count - 12) more overdue Canvas assignments")
+        }
+        return lines
+    }
+
+    /// Which of the two possible id sources resolved `item.canvasAssignmentID`
+    /// — "url" for a direct `/assignments/<id>` link, "uid" for the
+    /// `assignment-<id>@…` ICS UID fallback, or "none" when neither matched
+    /// (the hypothesis-(b) case: a section-override UID like
+    /// `event-assignment-override-<id>@…`, which contains "assignment-" but
+    /// not immediately followed by digits, so the fallback regex never
+    /// matches it either). Mirrors the exact precedence and patterns
+    /// `Assignment.canvasAssignmentID` uses, without exposing its private
+    /// `firstMatch` helper.
+    static func joinPath(url: URL?, sourceID: String) -> String {
+        if let url, Self.regexMatches(#"/assignments/(\d+)"#, in: url.absoluteString) {
+            return "url"
+        }
+        if Self.regexMatches(#"assignment-(\d+)"#, in: sourceID) {
+            return "uid"
+        }
+        return "none"
+    }
+
+    private static func regexMatches(_ pattern: String, in text: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// A privacy-safe stand-in for a raw ICS UID: everything from the first
+    /// `@` on (the domain) and everything from the first digit on (the id)
+    /// is stripped, so `event-assignment-override-1234567@canvas.upenn.edu`
+    /// becomes `event-assignment-override-` — enough to tell a
+    /// section-override UID apart from a plain assignment UID without ever
+    /// printing an id or a domain. "-" for an empty UID.
+    static func uidPrefixClass(_ sourceID: String) -> String {
+        guard !sourceID.isEmpty else { return "-" }
+        var trimmed = sourceID
+        if let atIndex = trimmed.firstIndex(of: "@") {
+            trimmed = String(trimmed[trimmed.startIndex..<atIndex])
+        }
+        if let digitIndex = trimmed.firstIndex(where: { $0.isNumber }) {
+            trimmed = String(trimmed[trimmed.startIndex..<digitIndex])
+        }
+        let result = trimmed.lowercased()
+        return result.isEmpty ? "-" : result
+    }
+
     /// Rolling record of what the module-reading import path did this
     /// launch — every silent guard exit and every fetch outcome, newest
     /// last, capped so a pathological retry loop can't grow it unbounded.

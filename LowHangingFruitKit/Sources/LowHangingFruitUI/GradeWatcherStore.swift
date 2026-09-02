@@ -26,6 +26,17 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var isSessionExpired = false
     @Published var error: String?
 
+    /// Diagnostics only — never surfaced in normal UI. `refresh` folds every
+    /// per-course failure into one banner (`outcome(...)` above), which is
+    /// the right call for the student but useless for telling "this course's
+    /// grades fetch is silently failing" apart from "the join to this
+    /// assignment's Canvas id is broken" apart from "Canvas reported it as
+    /// not-submitted." This keeps one short label per Canvas course id from
+    /// the most recent refresh that touched it, so `AppState`'s submission
+    /// diagnostics can rule hypothesis (a) — a failed grades fetch — in or
+    /// out without guessing from the single collapsed error string.
+    @Published private(set) var lastRefreshOutcomes: [String: String] = [:]
+
     /// This course's Gradescope items, already scoped by course name — the
     /// raw input `overlayResult(courseID:)` re-applies the overlay against on
     /// every read. Empty when Gradescope isn't connected. Not `@Published`:
@@ -181,10 +192,13 @@ final class GradeWatcherStore: ObservableObject {
                 fetchedAny = true
                 succeeded += 1
                 recordHistory(courseID: courseID, now: now)
+                lastRefreshOutcomes[courseID] = "ok"
             } catch CanvasGradesClient.Error.sessionExpired {
                 sawSessionExpired = true
+                lastRefreshOutcomes[courseID] = "sessionExpired"
             } catch {
                 lastFailure = error
+                lastRefreshOutcomes[courseID] = Self.fetchOutcomeLabel(for: error)
             }
         }
 
@@ -205,6 +219,27 @@ final class GradeWatcherStore: ObservableObject {
     struct RefreshOutcome: Equatable {
         let isSessionExpired: Bool
         let error: String?
+    }
+
+    /// Short, privacy-safe label for `lastRefreshOutcomes` — pure so it's
+    /// testable without a live session. Never includes a URL: `.http`'s
+    /// associated `url` can carry a query-string token (Canvas API calls are
+    /// cookie-authenticated, but some proxies append one), so only the status
+    /// code is reported.
+    static func fetchOutcomeLabel(for error: Swift.Error) -> String {
+        guard let gradesError = error as? CanvasGradesClient.Error else { return "error" }
+        switch gradesError {
+        case .sessionExpired:
+            return "sessionExpired"
+        case let .http(status, _):
+            return "http \(status)"
+        case .decodingFailed:
+            return "decode"
+        case .notHTTP:
+            return "notHTTP"
+        case .invalidURL:
+            return "invalidURL"
+        }
     }
 
     /// Turns a per-course refresh tally into the banner state. Pure and
