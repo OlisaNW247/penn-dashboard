@@ -891,6 +891,18 @@ private struct CanvasLoginPane: View {
                 isReadingCookies = false
                 let connected = await state.connectCanvas(cookies: canvasCookies)
                 if connected {
+                    // A connect that actually succeeded is proof the session
+                    // is alive — clear any earlier "confirmed dead" sticky
+                    // record (AppState.canvasSessionConfirmedDead) so it
+                    // can't leave a stale reconnect banner up over a session
+                    // the user just re-established by hand. Deliberately
+                    // INSIDE the success branch: this button can be tapped
+                    // mid-Duo with no cookies captured yet (the retry
+                    // message below exists for exactly that), and clearing a
+                    // server-side-proven dead record on a failed connect
+                    // would reopen the silent no-banner state the sticky
+                    // flag exists to close.
+                    state.noteCanvasLoginSessionCaptured()
                     onConnected()
                 } else {
                     message = state.error ?? "Couldn't connect Canvas yet. Finish logging in, then try again."
