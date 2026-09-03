@@ -44,12 +44,40 @@ struct AssistantView: View {
     /// name classes the student actually takes.
     var courseCodes: [String] = []
 
-    @StateObject private var conversation = AssistantConversation()
+    /// The rendered syllabus/deadline/announcement document, handed straight
+    /// through into every `AssistantContext` this screen builds. Building it
+    /// is somebody else's job — this view only carries it from init to
+    /// `ask(_:)`, the same way it already carries `courseCodes`. Empty by
+    /// default so every existing call site (`ContentView`, both `#Preview`s
+    /// below) keeps compiling unchanged.
+    var contextDocument: String = ""
+
+    @StateObject private var conversation: AssistantConversation
     @State private var draft = ""
     @State private var detach: Double = 0
     @FocusState private var composerFocused: Bool
 
     private let branch = BranchGeometry()
+
+    /// Picks the responder once, at construction, rather than the view
+    /// re-checking on every render: whether a key is saved shouldn't flip a
+    /// conversation already under way from one backend to another mid-chat.
+    /// A key saved after this screen opened takes effect the next time `ask`
+    /// is opened, exactly like `AppState`'s own "toggle on AND key present"
+    /// checks (see `refreshAnnouncementWatcher`) only take effect on the next
+    /// sync, not retroactively on one in flight.
+    init(courseCodes: [String] = [], contextDocument: String = "") {
+        self.courseCodes = courseCodes
+        self.contextDocument = contextDocument
+        let apiKey = AnthropicKeyStore.load()
+        let responder: AssistantResponder
+        if apiKey.isEmpty {
+            responder = ScriptedAssistantResponder()
+        } else {
+            responder = ClaudeAssistantResponder(apiKey: apiKey)
+        }
+        _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
+    }
 
     /// The bough is at full strength only until the first question. Both
     /// values are chosen against the warm greige ground: 0.5 is present
@@ -468,7 +496,10 @@ struct AssistantView: View {
         draft = ""
         composerFocused = false
         withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-            conversation.send(trimmed, context: AssistantContext(courseCodes: courseCodes))
+            conversation.send(
+                trimmed,
+                context: AssistantContext(courseCodes: courseCodes, contextDocument: contextDocument)
+            )
         }
     }
 

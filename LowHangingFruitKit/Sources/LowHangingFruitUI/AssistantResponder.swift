@@ -35,12 +35,42 @@ enum AssistantChunk: Sendable {
     case citations([AssistantCitation])
 }
 
-/// What the responder is allowed to know about the student. Deliberately
-/// small: the classes they are taking, and nothing else. A real
-/// implementation would widen this to syllabus text and announcements, and
-/// that widening is where the privacy review belongs.
+/// What the responder is allowed to know about the student.
+///
+/// `courseCodes` is the whole of it for the scripted stand-in. The real
+/// backend (`ClaudeAssistantResponder`) needs more — the syllabus, deadline
+/// and announcement text those codes name — which is what the two fields
+/// below carry. Widening this struct *is* the privacy review this type's
+/// original comment pointed at: `contextDocument` is the one piece of LHF
+/// data that ever leaves the device, and it only does when the student has
+/// supplied their own Anthropic key (see the file comment atop
+/// `ClaudeAssistantResponder.swift`).
 struct AssistantContext: Sendable {
     var courseCodes: [String]
+
+    /// The student's class data, pre-rendered as a byte-stable document.
+    /// Built elsewhere; this type only carries it. "Byte-stable" matters
+    /// more than it sounds like it should: `ClaudeAssistantResponder` marks
+    /// this string as a prompt-cache breakpoint, and a cache is a prefix
+    /// match, so whoever renders this document must produce the identical
+    /// bytes turn over turn for a fixed set of underlying data, not merely
+    /// equivalent-looking text (stable key order, stable whitespace, no
+    /// embedded "generated at" timestamp).
+    var contextDocument: String = ""
+
+    /// The moment the question was asked. Deliberately NOT baked into
+    /// `contextDocument` — see the long comment on the cache breakpoint in
+    /// `ClaudeAssistantResponder.reply(to:context:)` for why: prompt caching
+    /// is a prefix match, and a value that changes on every request (a
+    /// timestamp, "today's date") sitting inside the cached prefix would
+    /// invalidate the cache on every single turn, silently turning a
+    /// designed-to-be-cheap-and-fast path into the most expensive possible
+    /// one. This field exists so the current date can still reach the model
+    /// — just after the breakpoint, in the per-turn user message, where a
+    /// change costs nothing. (See the "wrong fix" callout in
+    /// `ClaudeAssistantResponder` — putting the date in the cached document
+    /// is the obvious-looking move that silently zeroes the cache hit rate.)
+    var askedAt: Date = Date()
 }
 
 protocol AssistantResponder: Sendable {

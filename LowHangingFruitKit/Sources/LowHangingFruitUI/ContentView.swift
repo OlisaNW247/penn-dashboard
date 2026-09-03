@@ -120,7 +120,14 @@ struct ContentView: View {
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .assistant:
-                    AssistantView(courseCodes: state.allCourseCodes())
+                    // Built at push time, not held on AppState: the document
+                    // is a snapshot of what the student has right now, and
+                    // rebuilding it per visit is cheap next to keeping a
+                    // second copy of the ledger permanently in memory.
+                    AssistantView(
+                        courseCodes: state.allCourseCodes(),
+                        contextDocument: state.assistantContextDocument()
+                    )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
                         .environmentObject(state)
