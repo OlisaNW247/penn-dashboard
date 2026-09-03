@@ -3,8 +3,16 @@
 A personal academic dashboard for Penn students. Reads the student's own **Canvas**
 calendar feed and **Gradescope**, merges them into one chronological "what's due
 next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, also
-builds for macOS from the same source. **Everything is on-device** — no server, no
+builds for macOS from the same source. **On-device by default** — no server, no
 accounts, no analytics, no third-party SDKs.
+
+Two features are the exception, and both are opt-in and off until the student
+pastes in **their own Anthropic API key** (Settings; stored in the Keychain via
+`AnthropicKeyStore`, never `UserDefaults`): the Announcement Watcher's AI assist,
+and **ask**. Those send class data to Anthropic. Nothing else leaves the device,
+there is still no LHF server or account, and a student who never enters a key is
+still fully on-device. Say it this way rather than flatly "everything is
+on-device", which stopped being true on the `assistant-ui` line.
 
 Shipped on the App Store as **1.1.2 (build 4)**.
 
@@ -22,13 +30,18 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
 cd LowHangingFruitKit && swift build
 ```
 
-This branch is the **merge of `v3.5` and `v4`** (v4's UI, v3.5's engine work —
-readings-only courses, iCloud Tier 2 sync, background refresh, the Mac menu-bar
-tier, Canvas session renewal). Baseline on this branch, verified on a Mac
-(2026-08-26): **608 tests / 61 suites green** (plus 4 XCTest scheduler
-tests), up from 456/40 on pre-merge `v4` and 517/55 on final `v3.5`. Hold
-the rule: a change that lowers the test count has lost work — investigate
-rather than accept it.
+Baseline on `assistant-ui`, verified on a Mac (2026-09-02): **736 tests / 76
+suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
+verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
+work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
+`v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
+count has lost work — investigate rather than accept it.
+
+One known flake, pre-existing and untouched: `CourseContentDashboardTests`
+("flipping a content decision never changes `canvasCourseIDsByCode`…") races
+another suite over shared `UserDefaults` and fails perhaps one run in four. It
+passes in isolation. See the shared-`UserDefaults` trap below — the fix belongs
+in the polluting suite, not in the assertion.
 
 ## Layout
 
@@ -115,6 +128,26 @@ course is deliberately cosmetic only.
   (`SessionCookieStore`); so does the Canvas feed URL (`ICSFeedURLStore`),
   because `…/feeds/calendars/user_<token>.ics` is a bearer credential. This is
   why `canvasICSURL` is absent from `SharedDefaults.legacyKeys`.
+- **`Path.addLines` moves, it does not connect.** Building a filled outline as
+  `addLines(leftEdge)` then `addLines(rightEdge.reversed())` produces two
+  separate open polylines, not one closed region, because the second call does
+  a `move(to:)` to its first point. Filling that yields two zero-area slivers.
+  The shape still *draws* — as a pair of hairlines with the page showing
+  between them, which reads as a pale object with dark edges rather than as
+  nothing — so it survives code review and previews and is only obvious on a
+  device screenshot. Walk the second edge with explicit `addLine(to:)`
+  (`BranchBackdrop.taperedPath`).
+- **A prompt-cache prefix must be byte-stable or it is not a cache.** Anthropic
+  caching is a *prefix match*: one changed byte anywhere invalidates everything
+  after it, silently, with no error and no symptom except the bill. So
+  `AssistantContextDocument` never reads a clock, never emits a relative date
+  ("in 3 days"), sorts every collection, and pins its formatters to
+  `en_US_POSIX`/UTC. The wrong fix — and it looks completely reasonable — is
+  "put today's date at the top of the document so the model knows what day it
+  is": that changes the prefix every day, and with a timestamp, every request.
+  The current date belongs in the user message, after the `cache_control`
+  breakpoint. Verify with `usage.cache_read_input_tokens`; a persistent zero
+  means something upstream is varying.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 
 ## Conventions
@@ -138,7 +171,9 @@ course is deliberately cosmetic only.
 | `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **shipped** 1.1.2 build 4. |
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
-| `v5` | **Current line.** Cut from the 2.0.0 head above; new work goes here. |
+| `v5` | Cut from the 2.0.0 head above. Superseded by `v6`, which is a superset. |
+| `v6` | v5 plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
+| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat and its Claude backend. 736/76. New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

@@ -1,5 +1,157 @@
 # Low Hanging Fruit — Handoff
 
+_Last updated: 2026-09-02. This section supersedes everything below the
+first "Superseded" marker; read `CLAUDE.md` first for commands, storage
+tiers, traps, and the overseer/doer working model._
+
+## ⚠️ Current state: `assistant-ui` is the line
+
+**New work goes on `assistant-ui`** (tracking `origin/assistant-ui`), cut
+2026-09-02 from `origin/v6`. Everything is pushed; the tree is clean.
+
+Two commits on top of `v6`:
+
+- `cda2794` — the **ask** screen: a chat over the student's own class
+  context, plus the button swap that gave it the bottom-right corner.
+- `3c50275` — the **real Claude backend** behind it, keyed off the
+  student's own Anthropic API key.
+
+**Verified green baseline (owner's Mac, 2026-09-02): 736 tests / 76
+suites**, zero failures, plus a clean iOS simulator build. Both gates were
+run on the Mac this session — this is not a predicted number.
+
+**Bonus finding: `v6`'s own baseline is now verified.** `v6` shipped its
+Announcement Watcher work uncompiled and predicted 693 tests / 70 suites.
+That is exactly what it produces on a real Mac. The v6 patch compiles as
+written; the note below claiming it is unverified is now closed out.
+
+## What ask is, and what state it's in
+
+The **UI is a prototype the owner has seen and called "not quite there"**
+— they like it and specifically flagged it as a good fit for part of
+**onboarding**. Treat the current screen as a design study to be reworked,
+not as settled. The backend under it is real and is the part to build on.
+
+Files, all new unless marked:
+
+| Path | What |
+|---|---|
+| `LowHangingFruitUI/AssistantView.swift` | The screen. Branch backdrop, hanging suggestions, transcript, composer. |
+| `LowHangingFruitUI/BranchBackdrop.swift` | The bough as a real Bézier (`BranchGeometry`), queryable by the layout. |
+| `LowHangingFruitUI/PersimmonMark.swift` | The app's mark as a vector, 22–60pt, dark-mode aware. |
+| `LowHangingFruitUI/AssistantConversation.swift` | Transcript state, streaming, stop/clear. |
+| `LowHangingFruitUI/AssistantResponder.swift` | `AssistantResponder` protocol, `AssistantContext`, and the scripted stand-in. |
+| `LowHangingFruitUI/ClaudeAssistantResponder.swift` | The real backend. SSE streaming over `URLSession.bytes`. |
+| `LowHangingFruitUI/AssistantContextAssembly.swift` | `AppState` → context document. **The disclosure boundary.** |
+| `LowHangingFruitKit/Assistant/AssistantContextDocument.swift` | The byte-stable context document builder. |
+| `ContentView.swift` (modified) | `.assistant` route; fruit FAB; add-assignment moved to the filter row. |
+
+**No `xcodegen generate` is needed** — the app consumes
+`LowHangingFruitKit` as a local SPM package, so new files under `Sources`
+are picked up without touching `project.yml`. Do not regenerate.
+
+## The one thing that blocks the flagship demo
+
+The screen's own headline example — *"what's my phys attendance policy"* —
+**cannot be answered from real data**, and this is a data problem, not a
+model problem.
+
+`SyllabusSetupView` does ingest syllabus text (PDF, Canvas page, pasted).
+`SyllabusParser` keeps only the grading section and **discards the prose**.
+There is no attendance policy, late-work policy or office-hours text
+anywhere on disk to send. Announcement bodies are gone too:
+`announcementItems` holds rows the watcher *extracted*, not the
+announcements, whose `AnnouncementSourceText` is transient.
+
+So ask can currently answer: what is outstanding, what is due when, what a
+class's grade categories weigh, what is done. It cannot answer any policy
+question.
+
+The context document says so in its own header and instructs the model to
+admit the gap rather than infer — because a page of due dates and
+percentages *looks* complete, and a model handed it will otherwise invent
+a plausible policy. **Do not remove that line** while the gap exists.
+
+**Retaining syllabus text is the unlock, and it is a real decision, not a
+chore**: that same screen currently promises the student "it stays on your
+phone." Scope it deliberately.
+
+## Design decisions that must not be accidentally undone
+
+Four things in this work look like they could be simplified and cannot:
+
+1. **The context document never reads a clock** and never emits a relative
+   date. It is a prompt-cache prefix, and caching is a *prefix match* — one
+   changed byte re-bills the whole document on every question. The
+   obvious-looking "put today's date at the top so the model knows what day
+   it is" is exactly what guarantees a 0% cache hit rate. The date goes in
+   the user message, after the `cache_control` breakpoint.
+2. **`assistantSourceLabel` has no `default:` case.** That is deliberate.
+   It is a disclosure boundary, so adding a seventh `Assignment.Source`
+   should stop the build there and make someone decide what a third party
+   gets told about it.
+3. **Citations come back through a `<sources>` delimiter, not tool use.**
+   Tool use would cost a second round trip and kill the streaming feel. The
+   parser buffers on a partial match so `<sou` never flashes on screen and
+   gets yanked back.
+4. **Refusals arrive as HTTP 200** with `stop_reason == "refusal"`, not as
+   an error status. Code that reads `content[0]` blind breaks on them.
+
+Request shape, checked against current API docs this session:
+`claude-opus-5`, `max_tokens` 2048, `stream: true`,
+`output_config.effort: "low"` (retrieval-style Q&A, latency-sensitive),
+`fallbacks: "default"` with header `server-side-fallback-2026-07-01`. **No
+`thinking` field** (adaptive is the default on that model and
+`budget_tokens` is a 400) and **no `temperature`/`top_p`/`top_k`** (also
+400). Do not "helpfully" add them back.
+
+## Never verified
+
+- **No call has ever been made against the live Anthropic API.** Every
+  test is offline by construction. The SSE event shapes, the refusal
+  payload, and the beta header's real behaviour are unproven against a
+  live endpoint. This is the highest-value next check and needs only a real
+  key and one question.
+- **The ask screen's solid bough is unverified on screen.** A device
+  screenshot caught that `Path.addLines` *moves* rather than connects, so
+  the branch was rendering as two hairlines with the page showing between
+  them. The fix compiles and tests pass, but the simulator stopped
+  responding before it could be photographed. Look at this first.
+- The API key field itself already exists (Settings, added by `v6` for the
+  Announcement Watcher). ask reads that same key — **do not add a second
+  key field.**
+
+## Owed before this could ship
+
+1. **`CLAUDE.md` and `docs/PRIVACY.md` overstate the privacy position.**
+   `CLAUDE.md` is corrected as of this session; `docs/PRIVACY.md` is **not
+   touched** deliberately — it is published App Store material and should
+   not be rewritten to describe an unshipped feature. Revisit at ship time.
+2. **A pre-existing flake.** `CourseContentDashboardTests` ("flipping a
+   content decision never changes `canvasCourseIDsByCode`…") failed once in
+   a full run, then passed three consecutive full runs, and passes in
+   isolation. It races another suite over shared `UserDefaults` — the trap
+   `CLAUDE.md` documents. Untouched by this work. Fix the isolation at the
+   source; do not relax the assertion.
+3. The device build is signed and ready
+   (`Apple Development: Gabriel Nkolisa Nwogugu`, team `24A3TDB277`,
+   Developer Mode on) but the owner's iPhone was not connected, so it was
+   never installed. `tunnelState: unavailable`, last seen 2026-08-28.
+
+## Next actions, in order
+
+1. Look at the ask screen on a device; confirm the bough fills solid.
+2. Paste a real API key and ask one question — the first live call.
+3. Decide the syllabus-text question. Without it ask cannot answer policy.
+4. Rework the UI, likely toward onboarding, per the owner's read.
+5. Fix the `CourseContentDashboardTests` flake.
+6. Independent of all of this: the Mac App Store upload, still owed from
+   the `v6` session below.
+
+---
+
+# Superseded: state as of 2026-08-31 (the `v6` line)
+
 _Last updated: 2026-08-31, end of an overnight session. This section
 supersedes everything below the "superseded" marker; read `CLAUDE.md`
 first for commands, storage tiers, traps, and the overseer/doer working
