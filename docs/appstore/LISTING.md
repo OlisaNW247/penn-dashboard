@@ -77,6 +77,18 @@ don't collect, track, or share anything.
 LHF is an independent app and is not affiliated with or endorsed by Instructure
 (Canvas), Turnitin (Gradescope), or any university.
 
+## What's New in 2.0.1 (release notes, ≤4000)
+
+Two fixes for work you've already turned in:
+
+• If your Canvas login lapses, LHF now tells you and offers a one-tap
+  reconnect — before, submitted work could silently stop filing itself away
+• Classes with more than one Canvas site (a lecture site plus a section
+  site) are now checked in full, so submissions in either site file
+  themselves under Done
+• "Nothing to submit" labels and auto-filing recover as soon as you
+  reconnect
+
 ## What's New in 2.0.0 (release notes, ≤4000)
 
 LHF 2.0 is a big one — a redesigned app that finally treats your whole course
@@ -131,8 +143,8 @@ optionally Gradescope), accessed with the user's own credentials. See
 
 ## Build / version
 
-- Marketing version: **2.0.0**
-- Build: **5** (must exceed the shipped 1.1.2 / build 4 — it does)
+- Marketing version: **2.0.1**
+- Build: **6** (must exceed the live 2.0.0 / build 5 — it does)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  already 2.0.0 / 5 in the committed project.
+  already 2.0.1 / 6 in the committed project.

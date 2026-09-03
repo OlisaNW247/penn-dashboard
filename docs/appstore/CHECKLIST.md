@@ -1,10 +1,27 @@
 # App Store submission checklist — LHF (iOS)
 
-_Last updated: 2026-08-27 — **2.0.0 (build 5)** from the v3.5+v4 merge branch._
+_Last updated: 2026-09-02 — **2.0.1 (build 6)** from `v3.5`._
 
 ---
 
-# 2.0.0 submission (current)
+# 2.0.1 submission (current)
+
+Shipping **2.0.1 / build 6** as the update to the live **2.0.0 / build 5**:
+the same code plus two submission-tracking fixes (a reconnect prompt when
+the Canvas session lapses; grades fetched for every Canvas site that shares
+a course code) and a diagnostics section. Grade Watcher stays hidden.
+Repo state: version/build stamped in `project.yml` and the committed pbxproj
+(app + widget match); **674 tests / 66 suites green** on the owner's Mac
+(2026-09-02); both fixes confirmed on the owner's phone.
+
+Steps: Xcode → Product → Archive ("Any iOS Device (arm64)") → Organizer →
+Distribute App → App Store Connect. In ASC: create version 2.0.1, attach
+build 6 once processed, paste the 2.0.1 What's New from `LISTING.md`
+(description/keywords/screenshots unchanged from 2.0.0), submit.
+
+---
+
+# 2.0.0 submission (shipped 2026-08, kept for reference)
 
 Shipping **2.0.0 / build 5** as the update to the live **1.1.2 / build 4**.
 Repo state: version/build already stamped in `project.yml` and the committed
