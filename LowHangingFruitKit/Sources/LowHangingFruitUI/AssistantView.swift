@@ -1,7 +1,7 @@
 import SwiftUI
 import LowHangingFruitKit
 
-// MARK: – ask
+// MARK: – the tree
 //
 // A chat over everything LHF already holds about the student's classes:
 // syllabi, deadlines, announcements. "what's my phys attendance policy" →
@@ -10,19 +10,47 @@ import LowHangingFruitKit
 // ## The idea the screen is built on
 //
 // The app is called Low Hanging Fruit and its mark is a persimmon on a
-// branch. This screen takes that literally: the bough is drawn across the
-// top, and the suggested questions hang off it as fruit you pick. That is
-// not ornament — it is the only bit of the design doing real work, because
-// the hardest problem with an assistant like this is not answering, it is
-// that a student opening a blank chat box has no idea what it knows. Four
-// answerable questions, hanging where the eye already is, are the affordance.
-// A row of grey suggestion pills would have said the same thing and meant
-// nothing.
+// branch. This screen takes that literally: the backdrop is the whole tree —
+// a rooted trunk and its full canopy — and the suggested questions sit as
+// fruit-bearing chips over it, four of them, zigzagging down the page. That
+// is not ornament — it is the only bit of the design doing real work,
+// because the hardest problem with an assistant like this is not answering,
+// it is that a student opening a blank chat box has no idea what it knows.
+// Four answerable questions, sitting where the eye already is, are the
+// affordance. A row of grey suggestion pills would have said the same thing
+// and meant nothing.
 //
-// Once a question is asked the branch does not go away — it fades from a
-// scene-setting 0.5 to a faint 0.12 and the transcript scrolls straight over
-// the top of it. The tree is the room the conversation happens in, so the
-// room stays.
+// The tree itself used to be drawn — vectors, boughs, a full `Canvas` of
+// `BranchGeometry` curves — specifically so the chips could hang from actual
+// branch tips on short stems. Two things about that are now history rather
+// than current fact, and it is worth being honest about both:
+//
+// The backdrop is now a bundled illustration (`TreeBackdrop`, `thetree.png`)
+// rather than a drawing, supplied by the product owner in place of the
+// hand-built vector tree. A raster has no queryable branch tips, so the
+// chip layout stopped being tied to the backdrop's geometry the moment the
+// backdrop became a picture — see `TreeGeometry` for what's left of the
+// old branch-tip table now that nothing draws limbs to hang chips from.
+//
+// The stems are gone too, and for a reason that predates the illustration:
+// a single bough with the suggestion chips at fixed depths down its length
+// used to put every chip on one shared stem run, and because the chips are
+// wide and left-anchored, a lower chip's stem ran *behind* every chip above
+// it before re-emerging below it — three parallel strings threading through
+// cards on a real device. Moving to four separate branch tips fixed that
+// structurally, by giving each chip its own short stem with nowhere far
+// enough to reach sideways. Now that there is no branch drawn at all, a stem
+// would be pointing at nothing — a line drawn toward an attachment point
+// that doesn't exist in the artwork reads as a rendering bug, not as
+// craft — so the chips sit flush against the screen edges with no stem at
+// all. `PersimmonMark` already draws its own short stem on the fruit itself,
+// which is enough to say "this is hanging fruit" without a second one
+// reaching for a branch that isn't there.
+//
+// Once a question is asked the tree does not go away — it fades from a
+// scene-setting 0.5 down to a faint 0.10 and the transcript scrolls straight
+// over the top of it. The tree is the room the conversation happens in, so
+// the room stays.
 //
 // ## Why the answers do not look like chat bubbles
 //
@@ -40,7 +68,7 @@ import LowHangingFruitKit
 // every answer names its sources and the student can go and check.
 
 struct AssistantView: View {
-    /// Course codes drive the suggested questions, so the fruit on the branch
+    /// Course codes drive the suggested questions, so the fruit on the tree
     /// name classes the student actually takes.
     var courseCodes: [String] = []
 
@@ -55,9 +83,17 @@ struct AssistantView: View {
     @StateObject private var conversation: AssistantConversation
     @State private var draft = ""
     @State private var detach: Double = 0
+    /// Which suggestion chip, if any, is mid-pick — driving the fade on the
+    /// other three chips and, together with `pickedDetach`, that one chip's
+    /// own falling persimmon. `nil` at rest and reset in `conversation.clear()`
+    /// so a second visit to the empty state never shows a chip already fallen.
+    @State private var pickedIndex: Int?
+    /// 0 at rest, 1 fully detached — the picked chip's `PersimmonMark` reads
+    /// this the same way the send button's does.
+    @State private var pickedDetach: Double = 0
     @FocusState private var composerFocused: Bool
 
-    private let branch = BranchGeometry()
+    private let tree = TreeGeometry()
 
     /// Picks the responder once, at construction, rather than the view
     /// re-checking on every render: whether a key is saved shouldn't flip a
@@ -79,11 +115,23 @@ struct AssistantView: View {
         _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
     }
 
-    /// The bough is at full strength only until the first question. Both
-    /// values are chosen against the warm greige ground: 0.5 is present
-    /// without competing with the serif, and 0.12 survives behind body text
-    /// without ever making a line of it harder to read.
-    private var wash: Double { conversation.isFresh ? 0.5 : 0.16 }
+    /// The tree is a *backdrop*, and these two values are both much lower
+    /// than the ones the drawn version wanted.
+    ///
+    /// Those older numbers (0.5 fresh, 0.10 answering) were tuned for a
+    /// sparse line drawing — a bough, a few leaves, mostly empty page. The
+    /// illustration that replaced it is a dense, fully-painted object with
+    /// saturated greens and browns edge to edge, and at 0.5 it stopped being
+    /// a backdrop: on a device it competed with the suggestion chips sitting
+    /// on top of it and turned the screen into two things fighting for the
+    /// eye. Roughly halving it is not timidity, it is the same *apparent*
+    /// weight arrived at from a much heavier drawing.
+    ///
+    /// The trap worth recording: the fix looks like it should be raising the
+    /// chips' contrast so they win against the tree. That is backwards — it
+    /// treats the backdrop as the thing to beat rather than the thing to
+    /// recede, and it ends with an even louder page. Fade the tree instead.
+    private var wash: Double { conversation.isFresh ? 0.22 : 0.07 }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -95,7 +143,7 @@ struct AssistantView: View {
 
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
-                        BranchBackdrop(geometry: branch, wash: wash)
+                        TreeBackdrop(geometry: tree, wash: wash)
                             .frame(width: geo.size.width, height: geo.size.height)
                             .animation(.easeInOut(duration: 0.55), value: conversation.isFresh)
 
@@ -119,7 +167,14 @@ struct AssistantView: View {
             if !conversation.isFresh {
                 ToolbarItem(placement: .primaryAction) {
                     Button("new") {
-                        withAnimation { conversation.clear() }
+                        withAnimation {
+                            conversation.clear()
+                            // Otherwise the next empty state opens with one
+                            // chip already fallen and faded, from the last
+                            // conversation's pick.
+                            pickedIndex = nil
+                            pickedDetach = 0
+                        }
                     }
                     .font(.lhfSans(14, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
@@ -137,7 +192,7 @@ struct AssistantView: View {
     private var titleBlock: some View {
         if conversation.isFresh {
             VStack(alignment: .leading, spacing: 6) {
-                Text("ask")
+                Text("the tree")
                     .font(.lhfSerif(38))
                     .foregroundStyle(Color.v2Ink)
                 Text("your syllabi, deadlines and announcements — in one place, in plain language.")
@@ -152,95 +207,88 @@ struct AssistantView: View {
         }
     }
 
-    // MARK: The fruit on the branch
+    // MARK: The fruit on the tree
 
-    /// The suggestions, hung from the bough on stems that meet the wood where
-    /// the wood actually is — `BranchGeometry.unitY(atX:)` is what makes that
-    /// exact rather than eyeballed, and what keeps it exact if the curve is
-    /// ever retuned.
-    ///
-    /// Each one is staggered horizontally as well as vertically. A tidy left
-    /// column would read as a list that happens to have a tree behind it;
-    /// what sells the metaphor is that they are at different depths, the way
-    /// fruit is.
+    /// The suggestions, positioned against `TreeGeometry.slots` — four
+    /// fixed points down the page, alternating sides, with no branch tip or
+    /// stem involved any more (see this file's header for why: the backdrop
+    /// is a bundled illustration now, not a drawing with queryable limbs).
+    /// `growsRight` on each slot says which screen edge the chip sits flush
+    /// against: `true` docks it to the left with the fruit first and the
+    /// text running right of it, `false` docks it to the right with the
+    /// mirror image — text first, fruit trailing — so in both cases the
+    /// fruit sits on the outer edge, away from the centre of the screen,
+    /// the same visual role it had when it was the part nearest the wood.
     private func hangingSuggestions(in size: CGSize) -> some View {
-        let items = suggestions
-        return ZStack(alignment: .topLeading) {
-            // Stems first, so the chips sit on top of where they terminate.
-            Canvas { context, _ in
-                for (index, item) in items.enumerated() {
-                    let x = item.unitX * size.width
-                    guard let unitY = branch.unitY(atX: item.unitX) else { continue }
-                    let top = unitY * size.height
-                    let bottom = Self.chipYFractions[index] * size.height
-                    var stem = Path()
-                    stem.move(to: CGPoint(x: x, y: top))
-                    // A slight bow, because a stem under load is not a
-                    // plumb line.
-                    stem.addQuadCurve(
-                        to: CGPoint(x: x, y: bottom),
-                        control: CGPoint(x: x + (index.isMultiple(of: 2) ? 7 : -7),
-                                         y: (top + bottom) / 2)
-                    )
-                    // Longer drops are drawn fainter. All four at one weight
-                    // turned the left gutter into a thicket on device — the
-                    // stems competed with the chips they were supposed to be
-                    // serving. Fading with length keeps the nearest one crisp
-                    // and lets the deep ones recede.
-                    let depth = Double(index) / Double(max(1, items.count - 1))
-                    context.stroke(
-                        stem,
-                        with: .color(.lhfBark.opacity(0.44 - 0.16 * depth)),
-                        lineWidth: 1.5 - 0.35 * depth
-                    )
-                }
-            }
+        let pairs = Array(zip(suggestions, tree.slots).enumerated())
+        // Every slot uses the same near-edge inset on both sides, so the
+        // room available to grow toward the opposite edge is identical for
+        // a left-docked and a right-docked chip; there is nothing left that
+        // varies per chip, unlike the old tip-relative calculation.
+        let width = Self.availableWidth(totalWidth: size.width)
 
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                suggestionChip(item, maxWidth: size.width - item.unitX * size.width - 14 + 25)
-                    .offset(
-                        // Pull the chip left by its own leading padding plus
-                        // half the fruit, so the *fruit* lands on the stem
-                        // rather than the chip's corner.
-                        x: item.unitX * size.width - 25,
-                        y: Self.chipYFractions[index] * size.height
-                    )
+        return ZStack(alignment: .topLeading) {
+            ForEach(pairs, id: \.element.0.id) { index, pair in
+                let (item, slot) = pair
+                let boxX = slot.growsRight ? Self.edgeInset : size.width - Self.edgeInset - width
+                let boxY = slot.y * size.height
+
+                suggestionChip(item, index: index, growsRight: slot.growsRight, maxWidth: width)
+                    .opacity(pickedIndex == nil || pickedIndex == index ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: pickedIndex)
+                    .offset(x: boxX, y: boxY)
             }
         }
     }
 
-    private func suggestionChip(_ item: Suggestion, maxWidth: CGFloat) -> some View {
+    /// How wide a chip may grow before it would run into the screen edge
+    /// opposite the one it's docked against. Both edges use the same inset,
+    /// so this no longer depends on which slot is asking — it did back when
+    /// width was measured from a branch tip's x-position toward whichever
+    /// screen edge was farther away.
+    private static func availableWidth(totalWidth: CGFloat) -> CGFloat {
+        max(150, totalWidth - Self.edgeInset * 2)
+    }
+
+    /// Distance kept between a chip's docked edge (and, symmetrically, the
+    /// opposite edge it must not run into) and the actual screen edge.
+    private static let edgeInset: CGFloat = 20
+
+    private func suggestionChip(_ item: Suggestion, index: Int, growsRight: Bool, maxWidth: CGFloat) -> some View {
         Button {
-            ask(item.prompt)
+            pickSuggestion(index)
         } label: {
-            HStack(spacing: 9) {
-                PersimmonMark(size: 26)
+            HStack(alignment: .top, spacing: 9) {
+                let fruit = PersimmonMark(size: 26, detach: index == pickedIndex ? pickedDetach : 0)
                     .frame(width: 26, height: 26)
-                Text(item.prompt)
+                let label = Text(item.prompt)
                     .font(.lhfSerif(16))
                     .foregroundStyle(Color.v2Ink)
-                    .multilineTextAlignment(.leading)
+                    .multilineTextAlignment(growsRight ? .leading : .trailing)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if growsRight {
+                    fruit
+                    label
+                } else {
+                    label
+                    fruit
+                }
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 15)
+            .padding(.leading, growsRight ? 12 : 15)
+            .padding(.trailing, growsRight ? 15 : 12)
             .padding(.vertical, 10)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.v2Card)
                     .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 6, y: 2)
             )
-            .frame(maxWidth: max(150, maxWidth), alignment: .leading)
+            .frame(maxWidth: maxWidth, alignment: growsRight ? .leading : .trailing)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.prompt)
         .accessibilityHint("Asks this question")
     }
-
-    /// Vertical positions as fractions of the canvas, not absolute points, so
-    /// the arrangement holds its proportions from an SE to a 16 Pro Max
-    /// instead of bunching up or running off the bottom.
-    private static let chipYFractions: [CGFloat] = [0.40, 0.55, 0.70, 0.85]
 
     // MARK: Transcript
 
@@ -424,7 +472,7 @@ struct AssistantView: View {
         .padding(.top, 10)
         .padding(.bottom, 12)
         .background(
-            // A soft fade rather than a hard bar, so the branch and the
+            // A soft fade rather than a hard bar, so the tree and the
             // transcript pass underneath instead of being cut off by a line.
             LinearGradient(
                 colors: [Color.v2Bg.opacity(0), Color.v2Bg.opacity(0.92), Color.v2Bg],
@@ -462,12 +510,17 @@ struct AssistantView: View {
                         .frame(width: 28, height: 28)
                         // Unsendable state: dimmed rather than hidden, so the
                         // target never moves under the thumb. The first pass
-                        // took this to 0.9 grayscale at 45% and the fruit went
-                        // to a pale blob that read as a broken image — an
-                        // empty composer should look like unripe fruit, not
-                        // like a missing asset, so it keeps most of its colour.
-                        .grayscale(canSend ? 0 : 0.45)
-                        .opacity(canSend ? 1 : 0.62)
+                        // took this to 0.9 grayscale at 45% opacity and the
+                        // fruit went to a pale blob that read as a broken
+                        // image. The first correction, 0.45 grayscale at 62%
+                        // opacity, still didn't back off far enough — on a
+                        // device it read as a pale beige blob, a missing
+                        // asset rather than unripe fruit. This second
+                        // correction backs off further again, to 0.2
+                        // grayscale at 78% opacity, which is the point it
+                        // reads as fruit that just isn't ripe yet.
+                        .grayscale(canSend ? 0 : 0.2)
+                        .opacity(canSend ? 1 : 0.78)
                 }
             }
             .frame(width: 48, height: 48)
@@ -503,33 +556,53 @@ struct AssistantView: View {
         }
     }
 
+    /// Tapping a suggestion picks its fruit rather than quietly filling the
+    /// composer: that chip's own `PersimmonMark` runs the detach animation
+    /// the send button uses, the other three chips fade out over the same
+    /// beat so the picked one is the last thing left on screen, and the
+    /// actual send — `ask(_:)`, which is what calls `conversation.send` — is
+    /// delayed just long enough for the fall to read before the transcript
+    /// replaces the empty state under it. Any longer than this and the
+    /// screen would feel unresponsive; any shorter and the fall never
+    /// finishes before the tree it's falling in front of disappears.
+    private func pickSuggestion(_ index: Int) {
+        guard pickedIndex == nil, suggestions.indices.contains(index) else { return }
+        let prompt = suggestions[index].prompt
+        pickedIndex = index
+        withAnimation(.easeIn(duration: 0.34)) { pickedDetach = 1 }
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            ask(prompt)
+        }
+    }
+
     // MARK: Suggestions
 
     struct Suggestion: Identifiable {
         let id = UUID()
         var prompt: String
-        /// Horizontal anchor in unit space — where on the bough it hangs.
-        var unitX: CGFloat
     }
 
     /// Built against the student's real classes where possible, because "what's
     /// my PHYS 0151 attendance policy" is a question they might actually have
     /// and "what's my attendance policy" is not.
     ///
-    /// The x positions increase down the list. They were staggered freely at
-    /// first, which looked more organic in the abstract and much worse on a
-    /// device: a chip set left of the one above it sends its stem back across
-    /// every chip in between, and since the chips are wide the result was a
-    /// tangle. Monotonic left-to-right keeps each stem in its own lane while
-    /// still reading as fruit at different depths.
+    /// There is no x-position carried here at all — that was this list's job
+    /// back when every chip hung off a branch tip and had to stay in its own
+    /// lane to avoid crossing the chips above it. Now that the backdrop is a
+    /// bundled illustration with no branch tips to hang from, each suggestion
+    /// is simply paired by index with a slot in `TreeGeometry.slots` (see
+    /// `hangingSuggestions`), which docks it flush against a screen edge
+    /// instead of a point on the tree; there is no lane to keep and nothing
+    /// left to tune.
     private var suggestions: [Suggestion] {
         let codes = courseCodes.isEmpty ? ScriptedAssistantResponder.placeholderCodes : courseCodes
         func code(_ index: Int) -> String { codes[index % codes.count].lowercased() }
         return [
-            Suggestion(prompt: "what's my \(code(0)) attendance policy?", unitX: 0.11),
-            Suggestion(prompt: "when's my next exam?", unitX: 0.22),
-            Suggestion(prompt: "what am i actually missing right now?", unitX: 0.31),
-            Suggestion(prompt: "how much is the \(code(1)) final worth?", unitX: 0.40),
+            Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
+            Suggestion(prompt: "when's my next exam?"),
+            Suggestion(prompt: "what am i actually missing right now?"),
+            Suggestion(prompt: "how much is the \(code(1)) final worth?"),
         ]
     }
 

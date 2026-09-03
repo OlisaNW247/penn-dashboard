@@ -150,6 +150,7 @@ struct ContentView: View {
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.settings] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
+                if args.contains("-LHFShowAssistant") { path = [.assistant] }
                 if args.contains("-LHFShowReport") {
                     // Deepest screenshot target: Grades → the full report for
                     // the richest fixture course.
