@@ -9,10 +9,11 @@ accounts, no analytics, no third-party SDKs.
 Two features are the exception, and both are opt-in and off until the student
 pastes in **their own Anthropic API key** (Settings; stored in the Keychain via
 `AnthropicKeyStore`, never `UserDefaults`): the Announcement Watcher's AI assist,
-and **ask**. Those send class data to Anthropic. Nothing else leaves the device,
-there is still no LHF server or account, and a student who never enters a key is
-still fully on-device. Say it this way rather than flatly "everything is
-on-device", which stopped being true on the `assistant-ui` line.
+and **ask** (the screen itself is titled **"the tree"**). Those send class data
+to Anthropic. Nothing else leaves the device, there is still no LHF server or
+account, and a student who never enters a key is still fully on-device. Say it
+this way rather than flatly "everything is on-device", which stopped being true
+on the `assistant-ui` line.
 
 Shipped on the App Store as **1.1.2 (build 4)**.
 
@@ -28,6 +29,15 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
 
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
+```
+
+`-LHFDemoData` (DEBUG only) seeds the bundled sample courses so the app is
+usable without a real Canvas session, and pairs with `-LHFShowSettings`,
+`-LHFShowGrades`, `-LHFShowReport` or `-LHFShowAssistant` to land directly on a
+screen instead of tapping through to it on every rebuild:
+
+```bash
+xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
 Baseline on `assistant-ui`, verified on a Mac (2026-09-02): **736 tests / 76
@@ -49,6 +59,7 @@ in the polluting suite, not in the assertion.
 |---|---|
 | `LowHangingFruitKit/Sources/LowHangingFruitKit/` | Pure model + parsing + persistence. No SwiftUI. |
 | `LowHangingFruitKit/Sources/LowHangingFruitUI/` | Views and `AppState`. Imports the Kit. |
+| `…/LowHangingFruitUI/Resources/` | Bundled media. Load via `bundledImage(_:ext:)` (`Bundle.module`) — a bare `Image("name")` resolves against the *main* bundle and silently renders nothing. |
 | `App/` | iOS/macOS app target, entitlements, assets |
 | `LHFWidget/` | Home/Lock Screen widget extension — a **separate process** |
 | `docs/` | Design docs and plain-language explainers |
@@ -148,6 +159,19 @@ course is deliberately cosmetic only.
   The current date belongs in the user message, after the `cache_control`
   breakpoint. Verify with `usage.cache_read_input_tokens`; a persistent zero
   means something upstream is varying.
+- **Knocking a flat background out of artwork is a flood fill, not a colour
+  key.** `Resources/persimmon.png` is the app logo with its cream plate
+  removed, and the obvious approach — make every cream pixel transparent —
+  destroys it: the seams *between* the calyx lobes are the same cream as the
+  plate, so keying on colour punches holes straight through the calyx and the
+  lobes lose the separation that makes them legible at 26pt. Fill from the
+  image border instead, so only cream reachable from the edge goes. The same
+  logic catches a subtler case — an *excluded* shape's enclosed detail (a
+  leaf's cream vein) is equally unreachable from the border, so it survives as
+  a stray mark floating where its leaf used to be, and has to be culled by
+  asking which shape encloses it. There is no PIL, ImageMagick or numpy on the
+  dev Mac; `sips` resizes and converts but does none of this. A short
+  CoreGraphics script run with `swift file.swift` is the tool.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 
 ## Conventions
@@ -173,7 +197,7 @@ course is deliberately cosmetic only.
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
 | `v5` | Cut from the 2.0.0 head above. Superseded by `v6`, which is a superset. |
 | `v6` | v5 plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
-| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat and its Claude backend. 736/76. New work goes here. |
+| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps
