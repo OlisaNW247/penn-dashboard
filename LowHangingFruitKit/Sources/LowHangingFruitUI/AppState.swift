@@ -408,6 +408,11 @@ final class AppState: ObservableObject {
     /// never mirrors this key itself (sync's own on/off state is
     /// necessarily per-device, not something to sync).
     private static let cloudSyncEnabledKey = "cloudSyncEnabledV1"
+    /// Backs `canvasSessionConfirmedDead` — see that property's doc comment.
+    /// Deliberately absent from `CloudPrefsMirror`'s allowlist, same
+    /// reasoning as `cloudSyncEnabledKey` above: this is per-device session
+    /// state, not a preference that makes sense synced to another device.
+    private static let canvasSessionConfirmedDeadKey = "canvasSessionConfirmedDeadV1"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -434,6 +439,12 @@ final class AppState: ObservableObject {
         self.gradeBaselinedCourses = Set(
             UserDefaults.lhf.stringArray(forKey: Self.gradeBaselinedCoursesKey) ?? []
         )
+        // See `canvasSessionConfirmedDead`'s doc comment: this is the sticky
+        // half of `canvasSessionExpired`, so it has to survive a relaunch the
+        // same way every other UserDefaults.lhf-backed flag above does —
+        // otherwise a confirmed-dead session would read as fine again on the
+        // very next cold launch, before anything re-confirms it either way.
+        self.canvasSessionConfirmedDead = UserDefaults.lhf.bool(forKey: Self.canvasSessionConfirmedDeadKey)
         // Seeded here (not left at its `= []` default) so the dashboard's
         // "nothing to submit" caveat is correct on the very first frame of a
         // cold launch, before any grade refresh has had a chance to run.
@@ -793,7 +804,61 @@ final class AppState: ObservableObject {
     /// `SessionCookieStore`'s Keychain state, not from any single failed
     /// fetch, so it can't get stuck true after a successful reconnect or
     /// stuck false for a feed-only user (docs/CANVAS_LOGIN_HARDENING.md item 3d).
+    ///
+    /// As of the sticky-dead-state fix below, this is no longer PURELY
+    /// Keychain-derived: `refreshCanvasSessionExpiredState()` ORs in
+    /// `canvasSessionConfirmedDead` too. That's necessary, not a
+    /// contradiction of the paragraph above — see that property's doc
+    /// comment for the failure mode this closes (a session dead server-side
+    /// but still Keychain-fresh, which used to produce no banner and no
+    /// recovery path at all) and for exactly how the "can't get stuck true"
+    /// guarantee is preserved despite the flag being sticky.
     @Published private(set) var canvasSessionExpired = false
+
+    /// Sticky, persisted "the Canvas session has been CONFIRMED dead
+    /// server-side" signal — the second input to `canvasSessionExpired`,
+    /// alongside the purely Keychain-derived staleness check above.
+    ///
+    /// The bug this exists to close (confirmed on a real device): a Canvas
+    /// session can die server-side while at least one persisted Keychain
+    /// cookie still looks fresh by `SessionCookieStore.isExpired`'s
+    /// client-side clock check. When that happens, the grades fetch 401s on
+    /// every launch, `GradeWatcherStore.isSessionExpired` flips true in
+    /// memory, a silent renewal is attempted and fails at the SSO wall
+    /// (`CanvasSessionRenewer.Outcome.timedOut` /
+    /// `.landedOnLoginPage`) — but none of that ever reached
+    /// `canvasSessionExpired`, so the reconnect banner never showed and
+    /// automatic submission detection died silently with no recovery path.
+    /// `canvasSessionConfirmedDead` is the durable record of that server-side
+    /// proof, set from a failed silent-renewal attempt (a real network round
+    /// trip against Penn's IdP, not a guess) rather than from the Keychain's
+    /// own clock-based heuristic.
+    ///
+    /// Persisted through `UserDefaults.lhf` (`canvasSessionConfirmedDeadKey`)
+    /// so a relaunch doesn't lose the proof and go back to showing nothing —
+    /// but deliberately NOT mirrored through `cloudPrefsMirror`, since a dead
+    /// session on this device says nothing about the session on another one.
+    ///
+    /// Being sticky is exactly why `canvasSessionExpired`'s own doc comment
+    /// can still promise it "can't get stuck true after a successful
+    /// reconnect": this flag is cleared — via `setCanvasSessionConfirmedDead`
+    /// — on every path that re-proves the session is alive or moot: a
+    /// `.renewed` silent-renewal outcome, a Grade Watcher refresh that
+    /// actually advanced `lastRefreshed` (a real course fetch that could only
+    /// have succeeded with a live session), `disconnectCanvas()` (nothing to
+    /// reconnect once signed out), and a fresh interactive login capturing
+    /// new cookies (`noteCanvasLoginSessionCaptured()`). `.notAttempted` and
+    /// `.abortedByLoginPane` outcomes prove nothing either way and leave it
+    /// unchanged — see `confirmedDeadAfterRenewal(current:outcome:)`.
+    private var canvasSessionConfirmedDead: Bool
+
+    /// Single write path for `canvasSessionConfirmedDead` — every mutation
+    /// goes through here so the persisted copy in `UserDefaults.lhf` can
+    /// never drift from the in-memory value.
+    private func setCanvasSessionConfirmedDead(_ value: Bool) {
+        canvasSessionConfirmedDead = value
+        UserDefaults.lhf.set(value, forKey: Self.canvasSessionConfirmedDeadKey)
+    }
 
     /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
     /// on its appear, cleared on its disappear. Not `@Published`: nothing
@@ -838,12 +903,64 @@ final class AppState: ObservableObject {
     /// persisted set — reads `false` (never-connected) immediately
     /// afterward, not `true`. No special-casing needed for that call site;
     /// verified by tracing `SessionCookieStore.isExpired`'s definition.
+    ///
+    /// ORs in `canvasSessionConfirmedDead` alongside the Keychain check — the
+    /// sticky, server-side-proven half of the flag (see that property's doc
+    /// comment). Either input alone is enough to show the banner: a
+    /// client-side-stale cookie set, OR a client-side-fresh one a real
+    /// renewal attempt already proved dead against Penn's IdP.
     func refreshCanvasSessionExpiredState() {
         let wasExpired = canvasSessionExpired
-        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas)
+        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas) || canvasSessionConfirmedDead
         if canvasSessionExpired && !wasExpired {
             Task { await attemptSilentCanvasRenewal() }
         }
+    }
+
+    // MARK: - Sticky dead-state pure decisions
+
+    /// Pure decision behind wiring a silent-renewal `Outcome` into
+    /// `canvasSessionConfirmedDead` — mirrors `CanvasSessionRenewer`'s own
+    /// documented "pure decision logic" pattern (see `gate(...)` /
+    /// `classifyFinalHost(...)` there) so this is unit-testable without
+    /// constructing an `AppState` or touching WebKit at all.
+    ///
+    /// `.timedOut` and `.landedOnLoginPage` are both real network round trips
+    /// against Penn's IdP that ended somewhere other than a fresh Canvas
+    /// session — that's the server-side proof of death this flag exists to
+    /// record. `.renewed` is the opposite proof: the session is alive, so any
+    /// prior "confirmed dead" record is stale and gets cleared. `.notAttempted`
+    /// (cooldown/in-flight/pane-active/test-runner) and `.abortedByLoginPane`
+    /// prove nothing either way — the attempt never actually reached the IdP
+    /// — so `current` passes through unchanged rather than being reset to
+    /// `false`, which would silently drop real evidence gathered earlier.
+    static func confirmedDeadAfterRenewal(
+        current: Bool,
+        outcome: CanvasSessionRenewer.Outcome
+    ) -> Bool {
+        switch outcome {
+        case .timedOut, .landedOnLoginPage:
+            return true
+        case .renewed:
+            return false
+        case .abortedByLoginPane, .notAttempted:
+            return current
+        }
+    }
+
+    /// Pure decision behind clearing `canvasSessionConfirmedDead` from a
+    /// Grade Watcher refresh: `lastRefreshed` only advances when at least one
+    /// course fetch actually succeeded (`GradeWatcherStore`'s own doc
+    /// comment), and a successful course fetch could only have happened with
+    /// a live, cookie-authed session — so an advance is proof strong enough
+    /// to clear a "confirmed dead" record even though this refresh never
+    /// went near `CanvasSessionRenewer`/the IdP at all.
+    static func renewalProvedSessionAlive(
+        lastRefreshedBefore: Date?,
+        lastRefreshedAfter: Date?
+    ) -> Bool {
+        guard let lastRefreshedAfter else { return false }
+        return lastRefreshedAfter != lastRefreshedBefore
     }
 
     /// Attempts one SILENT Canvas re-login (session-longevity Layer 2) before
@@ -865,12 +982,39 @@ final class AppState: ObservableObject {
         canvasSessionRenewer = renewer
 
         let outcome = await renewer.renewIfNeeded()
-        guard outcome == .renewed else { return }
-
+        // Wired on EVERY outcome, not just `.renewed` — the whole point of
+        // the sticky dead-state fix is that a `.timedOut`/`.landedOnLoginPage`
+        // result (real proof the session is dead server-side) must reach
+        // `canvasSessionExpired` too, not just a successful renewal.
+        setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(current: canvasSessionConfirmedDead, outcome: outcome))
+        // Recomputes on both the dead and renewed paths so the banner
+        // reflects whichever way this attempt cut. Note: if this call flips
+        // `canvasSessionExpired` false→true (the dead path), its own
+        // false→true branch fires one more `attemptSilentCanvasRenewal`
+        // Task — that redundant bounce no-ops inside `renewer.renewIfNeeded()`'s
+        // own 1-hour cooldown (`.notAttempted`), and `.notAttempted` leaves
+        // `canvasSessionConfirmedDead` unchanged above, so this is exactly
+        // one harmless extra bounce, never a loop.
         refreshCanvasSessionExpiredState()
+
+        guard outcome == .renewed else { return }
         let cookies = await AutoSyncCoordinator.canvasCookies()
         guard !cookies.isEmpty else { return }
         await refreshGradeWatcher(cookies: cookies)
+    }
+
+    /// Clears `canvasSessionConfirmedDead` after a fresh interactive Canvas
+    /// login captures new session cookies (`CanvasLoginPane.connect()` in
+    /// OnboardingView.swift) — a user who just typed their PennKey/Duo
+    /// credentials in has, by definition, a live session, so any earlier
+    /// "confirmed dead" record from before this login is now stale. A
+    /// should-have wiring rather than a strict must-have: the very next Grade
+    /// Watcher refresh that actually fetches a course would clear it anyway
+    /// via `renewalProvedSessionAlive`, but clearing it here means the
+    /// banner doesn't flash stale-true for even that one extra cycle.
+    func noteCanvasLoginSessionCaptured() {
+        setCanvasSessionConfirmedDead(false)
+        refreshCanvasSessionExpiredState()
     }
 
     func completeOnboarding() {
@@ -1115,6 +1259,11 @@ final class AppState: ObservableObject {
         // a bug, not a safety measure.
         reloadCompletionFromLedger()
         rebuildDashboardItems()
+        // A disconnected user has no session to reconnect, so any earlier
+        // "confirmed dead" record is moot — clear it before the recompute
+        // below or a disconnected user would keep seeing the reconnect nag
+        // this whole method exists to let them escape.
+        setCanvasSessionConfirmedDead(false)
         refreshCanvasSessionExpiredState()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
         // store, not just the Keychain copy above — otherwise a still-resident
@@ -1411,6 +1560,12 @@ final class AppState: ObservableObject {
             return
         }
 
+        // Captured before the refresh so `renewalProvedSessionAlive` below
+        // can tell "a course actually fetched this call" apart from "nothing
+        // changed" — `lastRefreshed` only advances on at least one succeeded
+        // course fetch (`GradeWatcherStore`'s own doc comment).
+        let lastRefreshedBefore = gradeWatcher.lastRefreshed
+
         // Piggyback on Gradescope items this launch's throttled AutoSyncCoordinator
         // sync already fetched (docs/grades.md §4/§9) — never a second, unthrottled
         // Gradescope scrape just for the overlay.
@@ -1420,6 +1575,17 @@ final class AppState: ObservableObject {
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
         updateSubmissionState()
+
+        // A course actually fetching here is proof the session is alive —
+        // stronger proof than a silent-renewal attempt even gets, since this
+        // came from the real cookie-authed API, not a WebView probe. Clears
+        // any earlier "confirmed dead" record so a session that quietly
+        // recovered (or was never really dead — a false read from a stale
+        // renewal attempt) doesn't leave the reconnect banner stuck up.
+        if Self.renewalProvedSessionAlive(lastRefreshedBefore: lastRefreshedBefore, lastRefreshedAfter: gradeWatcher.lastRefreshed) {
+            setCanvasSessionConfirmedDead(false)
+            refreshCanvasSessionExpiredState()
+        }
 
         // Second trigger site for session-longevity Layer 2
         // (`CanvasSessionRenewer`): a per-course 401 this refresh folded into
@@ -2151,6 +2317,134 @@ final class AppState: ObservableObject {
             "enrolled=\(enrolledCanvasCourses.count) probed=\(courseProbes.count) decisions=\(courseContentDecisions.count)"
         )
         return lines
+    }
+
+    /// One line per selected course's most recent grades-fetch outcome, then
+    /// one line per overdue, uncompleted Canvas assignment currently on the
+    /// dashboard, showing how (or whether) its Canvas assignment id resolved
+    /// and what Grade Watcher last observed for it.
+    ///
+    /// This exists to tell apart three otherwise-indistinguishable silent
+    /// failure modes reported from real devices — a File-Upload assignment
+    /// Canvas shows as "Submitted" that still sits in OVERDUE on the
+    /// dashboard for one course while auto-detection works fine for another:
+    /// (a) that course's grades fetch is failing quietly
+    /// (`GradeWatcherStore.lastRefreshOutcomes` — previously every per-course
+    /// failure collapsed into one banner string, so there was no way to see
+    /// "PHYS 0151's fetch got an http 403" without instrumenting a device);
+    /// (b) the join from the ICS feed item to its numeric Canvas assignment
+    /// id failed — Canvas emits `event-assignment-override-<id>@…` UIDs for
+    /// section-specific due dates, which the plain `assignment-(\d+)` UID
+    /// fallback in `Assignment.canvasAssignmentID` cannot parse, so an item
+    /// with no `/assignments/<id>` URL and only an override UID never
+    /// resolves an id at all (`uidPrefixClass` surfaces the UID's shape
+    /// without printing the id or domain, so this is visible without
+    /// decoding a raw identifier by hand); or (c) the id resolved and the
+    /// fetch succeeded, but Canvas is genuinely reporting the item as not
+    /// submitted.
+    ///
+    /// Same privacy budget as `courseIntelDiagnosticLines`: course codes,
+    /// numeric Canvas course/assignment ids, enum states, and booleans only.
+    /// Never a title, a URL, a query string, or a raw UID — see
+    /// `uidPrefixClass`, which strips both the id and the domain before
+    /// anything is printed.
+    var submissionDiagnosticLines: [String] {
+        var lines: [String] = []
+
+        let selectedCourses = selectedCanvasCourseIDs()
+            .map { (id: $0.key, code: $0.value) }
+            .sorted { $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+        for entry in selectedCourses {
+            let outcome = gradeWatcher.lastRefreshOutcomes[entry.id] ?? "never"
+            lines.append("\(entry.code) (id \(entry.id)): grades fetch \(outcome)")
+        }
+
+        let now = Date()
+        let overdueItems = assignments
+            .filter { item in
+                item.source == .canvas
+                    && item.kind == .assignment
+                    && !isCompleted(item)
+                    && (item.dueAt.map { $0 < now } ?? false)
+            }
+            .sorted { (lhs, rhs) in
+                (lhs.dueAt ?? .distantFuture) < (rhs.dueAt ?? .distantFuture)
+            }
+
+        guard !overdueItems.isEmpty else {
+            lines.append("(no overdue Canvas assignments)")
+            return lines
+        }
+
+        let fetchedIDs = refreshedCanvasAssignmentIDs()
+        let allSubmissions = gradeWatcher.snapshots.values.flatMap(\.submissions)
+
+        for item in overdueItems.prefix(12) {
+            let id = item.canvasAssignmentID
+            let path = Self.joinPath(url: item.url, sourceID: item.sourceID)
+            let prefixClass = Self.uidPrefixClass(item.sourceID)
+            let fetched = id.map { fetchedIDs.contains($0) } ?? false
+            let submissionInfo = id.flatMap { candidateID in
+                allSubmissions.first(where: { $0.assignmentID == candidateID })
+            }
+            let observed = submissionInfo?.workflowState.rawValue ?? "-"
+            let submittedAtText = submissionInfo.map { $0.submittedAt != nil ? "yes" : "no" } ?? "-"
+            let missingText = submissionInfo.map { $0.isMissing ? "yes" : "no" } ?? "-"
+            let inSubmittedSet = id.map { submittedCanvasAssignmentIDs.contains($0) } ?? false
+            lines.append(
+                "\(item.course): id=\(id ?? "-") via=\(path) uid=\(prefixClass) "
+                    + "fetched=\(fetched ? "yes" : "no") observed=\(observed) "
+                    + "submittedAt=\(submittedAtText) missing=\(missingText) "
+                    + "inSubmittedSet=\(inSubmittedSet ? "yes" : "no")"
+            )
+        }
+        if overdueItems.count > 12 {
+            lines.append("  +\(overdueItems.count - 12) more overdue Canvas assignments")
+        }
+        return lines
+    }
+
+    /// Which of the two possible id sources resolved `item.canvasAssignmentID`
+    /// — "url" for a direct `/assignments/<id>` link, "uid" for the
+    /// `assignment-<id>@…` ICS UID fallback, or "none" when neither matched
+    /// (the hypothesis-(b) case: a section-override UID like
+    /// `event-assignment-override-<id>@…`, which contains "assignment-" but
+    /// not immediately followed by digits, so the fallback regex never
+    /// matches it either). Mirrors the exact precedence and patterns
+    /// `Assignment.canvasAssignmentID` uses, without exposing its private
+    /// `firstMatch` helper.
+    static func joinPath(url: URL?, sourceID: String) -> String {
+        if let url, Self.regexMatches(#"/assignments/(\d+)"#, in: url.absoluteString) {
+            return "url"
+        }
+        if Self.regexMatches(#"assignment-(\d+)"#, in: sourceID) {
+            return "uid"
+        }
+        return "none"
+    }
+
+    private static func regexMatches(_ pattern: String, in text: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// A privacy-safe stand-in for a raw ICS UID: everything from the first
+    /// `@` on (the domain) and everything from the first digit on (the id)
+    /// is stripped, so `event-assignment-override-1234567@canvas.upenn.edu`
+    /// becomes `event-assignment-override-` — enough to tell a
+    /// section-override UID apart from a plain assignment UID without ever
+    /// printing an id or a domain. "-" for an empty UID.
+    static func uidPrefixClass(_ sourceID: String) -> String {
+        guard !sourceID.isEmpty else { return "-" }
+        var trimmed = sourceID
+        if let atIndex = trimmed.firstIndex(of: "@") {
+            trimmed = String(trimmed[trimmed.startIndex..<atIndex])
+        }
+        if let digitIndex = trimmed.firstIndex(where: { $0.isNumber }) {
+            trimmed = String(trimmed[trimmed.startIndex..<digitIndex])
+        }
+        let result = trimmed.lowercased()
+        return result.isEmpty ? "-" : result
     }
 
     /// Rolling record of what the module-reading import path did this
@@ -3449,12 +3743,27 @@ final class AppState: ObservableObject {
         return items
     }
 
-    /// Canvas course id -> course code. Built from this sync's items **folded
-    /// over** everything resolved on earlier syncs, because a course id only
-    /// ever reaches us attached to an ICS item's URL: a class with nothing due
-    /// right now, or whose entries carry a calendar-style URL, contributes no id
-    /// this time round and would otherwise silently drop out of Grade Watcher.
-    /// Pure read — the cache is written by `updateCanvasCourseIDCache`.
+    /// Canvas course id -> course code, kept **id-keyed with possibly several
+    /// ids per code** rather than inverted from `canvasCourseIDsByCode`
+    /// (`[code: id]`, one id per code) — the mismatch a real device exposed:
+    /// a student cross-listed into two Canvas *sites* that both parse to the
+    /// same code (a lecture site and a `-402` section site; `CourseCode.parse`
+    /// deliberately drops the section number) has two distinct numeric course
+    /// ids for one code. `canvasCourseIDsByCode` can only remember one of
+    /// them — every writer to it (`updateCanvasCourseIDCache`,
+    /// `mergeEnrolledCoursesIntoCourseIDCache`) is last-write-wins per code,
+    /// on purpose, because readings import and course intel want a single
+    /// "primary" id per code and widening that cache to an array would ripple
+    /// through both. So instead this read path, which only ever feeds Grade
+    /// Watcher (`selectedCanvasCourseIDs`), reconstructs the *other* site's id
+    /// from whatever source still has it — this sync's feed items, or the
+    /// enrolled-course list readings courses already populate — and adds it
+    /// alongside the cached one rather than replacing it. The result: Grade
+    /// Watcher fetches grades from every Canvas site behind a selected code,
+    /// so a submission sitting in the second site is no longer invisible.
+    /// (The one visible consequence, left alone here: the hidden Grade
+    /// Watcher UI, which is keyed by id not code, shows one card per site for
+    /// such a course.) See `AppState.courseIDsByID` for the merge rule.
     private func canvasCourseIDs() -> [String: String] {
         // Preview mode's sample assignments carry no Canvas URLs, so nothing
         // ever resolved a course id and Grade Watcher showed "Can't reach
@@ -3464,17 +3773,72 @@ final class AppState: ObservableObject {
         // real refresh at course ids that don't exist.
         if isUsingFixtureData { return SampleData.previewCourseIDsByID }
 
-        var byCode = canvasCourseIDsByCode
-        for item in canvasItems {
+        let feedCourseIDs: [(course: String, id: String)] = canvasItems.compactMap { item in
             guard item.course != Self.unknownCourse,
                   let url = item.url,
                   let id = Self.courseID(from: url)
-            else { continue }
-            byCode[item.course] = id
+            else { return nil }
+            return (item.course, id)
         }
-        // Invert to id -> code. Two codes can theoretically point at one id
-        // (a cross-listed section); keep the first rather than trapping.
-        return Dictionary(byCode.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
+        let enrolled: [(id: String, key: String)] = enrolledCanvasCourses.map {
+            ($0.id, Self.courseKey(forEnrolled: $0))
+        }
+        return Self.courseIDsByID(
+            cache: canvasCourseIDsByCode,
+            feedCourseIDs: feedCourseIDs,
+            enrolled: enrolled
+        )
+    }
+
+    /// Pure merge behind `canvasCourseIDs()` — see that function's doc
+    /// comment for why this exists (two Canvas *sites* parsing to one course
+    /// *code*) rather than widening the persisted `[code: id]` cache to hold
+    /// several ids. Builds `[canvasCourseID: courseCode]` from three sources,
+    /// each strictly additive over the last, so a code that's already known
+    /// picks up every id that names it instead of losing all but one:
+    ///
+    /// 1. `cache` (`canvasCourseIDsByCode`, `[code: id]`) inverted to `[id:
+    ///    code]` — the persisted, one-id-per-code record.
+    /// 2. `feedCourseIDs`, this sync's ICS items' `(course, id)` pairs, minus
+    ///    any tagged `unknownCourse` — unlike the old `canvasCourseIDs()`,
+    ///    which folded these into a `[code: id]` dictionary and so kept only
+    ///    the last id seen per code, every distinct id here survives.
+    /// 3. `enrolled`, the readings-course discovery list's `(id, key)` pairs
+    ///    — this is what actually recovers a second site's id, since a
+    ///    cross-listed section's Canvas site often has nothing due and so
+    ///    never appears in the ICS feed at all. Restricted to keys already
+    ///    present among the codes from (1) and (2): the enrolled list is
+    ///    already filtered at write time (`isEnrolledCourseCurrent`,
+    ///    `CourseCode.containsExplicitCode`), but this function doesn't rely
+    ///    on that — an enrolled entry whose code nothing else has ever
+    ///    vouched for (a resource site, an old term) should not silently
+    ///    start being fetched for grades.
+    ///
+    /// Conflict rule: if the same Canvas id is claimed by two different
+    /// codes, the earliest source above wins (cache, then feed, then
+    /// enrolled) — each loop below only writes `result[id]` when nothing has
+    /// claimed that id yet, so processing the three sources in that order is
+    /// what gives cache priority over feed and feed priority over enrolled.
+    /// `unknownCourse` never appears as a value: the cache and feed sources
+    /// exclude it explicitly, and the enrolled source can only contribute a
+    /// code that already survived one of those two filters.
+    static func courseIDsByID(
+        cache: [String: String],
+        feedCourseIDs: [(course: String, id: String)],
+        enrolled: [(id: String, key: String)]
+    ) -> [String: String] {
+        var result: [String: String] = [:]
+        for (code, id) in cache where code != Self.unknownCourse && result[id] == nil {
+            result[id] = code
+        }
+        for pair in feedCourseIDs where pair.course != Self.unknownCourse && result[pair.id] == nil {
+            result[pair.id] = pair.course
+        }
+        let knownCodes = Set(result.values)
+        for pair in enrolled where knownCodes.contains(pair.key) && result[pair.id] == nil {
+            result[pair.id] = pair.key
+        }
+        return result
     }
 
     /// Canvas course id -> display name, filtered to the class-picker's
