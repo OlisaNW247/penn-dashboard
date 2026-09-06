@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 
 // MARK: – The one place LHF sends class data off-device
 //
@@ -75,6 +76,13 @@ struct ClaudeAssistantResponder: AssistantResponder, Sendable {
     Write the way a classmate who actually read the syllabus would: the \
     answer up front, the exception or caveat second, no restating the \
     question, no "As an AI" framing.
+
+    The student's message may also carry a RETRIEVED EXCERPTS section: \
+    short passages from their course materials (syllabus prose, \
+    announcements, assignment descriptions, course pages) that the app \
+    matched to the question on the device. Treat those excerpts as part of \
+    the document, and prefer them for any policy question — they are the \
+    only place attendance, late-work and office-hours text can appear.
 
     If your answer relies on specific facts from the document, end it with \
     a line of its own — nothing else on that line, nothing after it — in \
@@ -245,9 +253,47 @@ struct ClaudeAssistantResponder: AssistantResponder, Sendable {
                 SystemBlock(text: context.contextDocument, cacheControl: CacheControl()),
             ],
             messages: [
-                ChatTurn(role: "user", content: userContent(question: question, askedAt: context.askedAt)),
+                ChatTurn(role: "user", content: userContent(
+                    question: question,
+                    askedAt: context.askedAt,
+                    excerpts: retrievedExcerpts(question: question, context: context)
+                )),
             ]
         )
+    }
+
+    /// How many passages ride along with a question, and how long each may
+    /// be. Four passages of ~700 characters is roughly a page: enough for a
+    /// policy section and its exception, small enough that the per-turn
+    /// (uncached) part of the request stays cheap.
+    static let excerptLimit = 4
+    static let excerptCharacterLimit = 700
+
+    /// The passages of the student's synced course materials that best match
+    /// the question, rendered as a block for the user message. Empty when
+    /// nothing has been synced or nothing matches — the model is told in the
+    /// document header that policy text is then simply absent.
+    ///
+    /// Retrieval happens here rather than in the cached document on purpose:
+    /// putting every syllabus in the system block would work, but the
+    /// document would then change on every sync and re-bill the whole prefix,
+    /// and a 4-course corpus is tens of thousands of tokens the question
+    /// almost never needs. Three or four matched passages after the
+    /// breakpoint cost a few hundred tokens and nothing in cache terms.
+    static func retrievedExcerpts(question: String, context: AssistantContext) -> String {
+        guard !context.knowledge.isEmpty else { return "" }
+        let courses = context.knowledge.courses
+        let parsed = QuestionParser.parse(question, courses: courses)
+        let courseID = parsed.course.flatMap { course in
+            courses.first(where: { CourseMatcher.sameCourse($0.code, as: course) })?.courseID
+        }
+        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseID: courseID, limit: excerptLimit)
+        guard !hits.isEmpty else { return "" }
+        let lines = hits.enumerated().map { index, hit -> String in
+            let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
+            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \"\(hit.document.title)\": \(body)"
+        }
+        return (["RETRIEVED EXCERPTS (from the student's synced course materials):"] + lines).joined(separator: "\n")
     }
 
     /// The current-date line plus the question, joined the same way
@@ -265,9 +311,11 @@ struct ClaudeAssistantResponder: AssistantResponder, Sendable {
     /// while looking, from the code, like caching was wired up correctly.
     /// The date belongs in the per-turn user message, which is never
     /// cached and costs nothing to vary.
-    static func userContent(question: String, askedAt: Date) -> String {
+    static func userContent(question: String, askedAt: Date, excerpts: String = "") -> String {
         let iso = ISO8601DateFormatter()
-        return "Current date: \(iso.string(from: askedAt))\n\n\(question)"
+        let head = "Current date: \(iso.string(from: askedAt))"
+        guard !excerpts.isEmpty else { return "\(head)\n\n\(question)" }
+        return "\(head)\n\n\(excerpts)\n\nQUESTION: \(question)"
     }
 
     // MARK: - SSE parsing (pure — no network, fully unit-testable)

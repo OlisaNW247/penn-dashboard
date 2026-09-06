@@ -5,6 +5,46 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-09-06 — `v5` is the line again: `assistant-ui` + `v3.5` + on-device course materials for ask
+Three lines had drifted apart: `v3.5` carried the uploaded 2.0.1 build 6,
+`assistant-ui` carried Marco's ask screen and its Claude backend on top of `v6`,
+and a chatbot knowledge engine had been drafted against the long-stale `main`.
+`v5` was reset to `assistant-ui`, `v3.5` merged in (one conflict, this file),
+and the engine ported on top with the parts that duplicated existing code
+removed.
+
+**What the engine adds.** ask's handoff named its blocker: no syllabus prose or
+announcement bodies were kept on disk, so it could not answer a policy question.
+`CourseKnowledgeCollector` now keeps them — syllabus text from
+`CanvasSyllabusClient`, announcement bodies from `CanvasAnnouncementsClient`,
+modules from `CanvasModulesClient`, and assignment descriptions plus course
+pages from a small new `CanvasCourseContentClient` — in an on-device JSON store,
+re-synced on the grades refresh path when older than six hours. Over that store:
+BM25 retrieval (`CourseSearch`), a rule-based question parser, and
+`ClassQuestionAnswerer`, which computes exact answers (what's due, next exam,
+did I submit) from the dashboard's items and quotes the best passage for
+everything else.
+
+**Two backends, one screen.** Without an Anthropic key — every student by
+default — `OnDeviceAssistantResponder` answers from that engine, so ask works
+with nothing leaving the phone; on iOS 26 / macOS 26 Apple Intelligence devices
+Apple's on-device model rephrases retrieval answers, validated so it cannot add
+a number the sources lack. With a key, `ClaudeAssistantResponder` gets the same
+retrieved passages in the per-turn user message, *after* the cache breakpoint,
+so the cached context document stays byte-stable and the paid path can finally
+answer policy questions too.
+
+Rejected: putting whole syllabi into the cached context document — it would
+re-bill the prefix on every sync and send tens of thousands of tokens a
+question rarely needs. Rejected: a second chat UI (the draft had one) — the
+tree stays; the engine plugs in behind `AssistantResponder`. Rejected: a second
+Canvas client for syllabi/announcements/modules — the existing ones are reused;
+only descriptions and pages needed new fetches. Rejected: rewriting
+`docs/PRIVACY.md` now — it is published App Store material and, per the
+`assistant-ui` handoff, is revised at ship time.
+
+---
+
 ## 2026-09-02 — The corner belongs to `ask`; add-assignment moves to the filter row
 Prototyped `ask`, a chat over the student's own class context, on branch
 `assistant-ui` (off `v6`). The floating "+" that created a manual assignment

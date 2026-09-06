@@ -57,6 +57,17 @@ enum AutoSyncCoordinator {
         // (see the plan's "Hard requirement — Grade Watcher independence"),
         // just sharing the cookies already in hand.
         await state.refreshCourseIntel(cookies: cookies)
+        // Course materials for `ask` ride the same session, throttled by
+        // their own staleness window (`AppState.courseKnowledgeStaleAfter`)
+        // rather than this function's 15-minute one — a syllabus does not
+        // change every quarter hour.
+        await state.refreshCourseKnowledge(cookies: cookies)
+    }
+
+    /// On-demand course-materials sync (Settings → "sync course materials").
+    static func refreshCourseKnowledge(state: AppState) async {
+        let cookies = await canvasCookies()
+        await state.refreshCourseKnowledge(cookies: cookies, force: true)
     }
 
     /// Gathers Gradescope session cookies: the Keychain-persisted set

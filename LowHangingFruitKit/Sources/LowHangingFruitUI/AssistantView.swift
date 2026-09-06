@@ -102,15 +102,39 @@ struct AssistantView: View {
     /// is opened, exactly like `AppState`'s own "toggle on AND key present"
     /// checks (see `refreshAnnouncementWatcher`) only take effect on the next
     /// sync, not retroactively on one in flight.
-    init(courseCodes: [String] = [], contextDocument: String = "") {
+    /// Synced course materials and the dashboard's work items, both read by
+    /// the responders through `AssistantContext`. Defaulted so previews and
+    /// the existing call sites compile unchanged.
+    var knowledge: CourseKnowledgeBase = .empty
+    var work: [WorkItem] = []
+    var userName: String = ""
+
+    /// Without a saved key the on-device answerer takes the conversation:
+    /// exact answers from the dashboard's own items, retrieval over synced
+    /// course materials, no network. With a key, Claude does — and gets the
+    /// same retrieved passages in its user message. The scripted stand-in is
+    /// used only when there is nothing at all to answer from (previews).
+    init(
+        courseCodes: [String] = [],
+        contextDocument: String = "",
+        knowledge: CourseKnowledgeBase = .empty,
+        work: [WorkItem] = [],
+        userName: String = "",
+        preferScripted: Bool = false
+    ) {
         self.courseCodes = courseCodes
         self.contextDocument = contextDocument
+        self.knowledge = knowledge
+        self.work = work
+        self.userName = userName
         let apiKey = AnthropicKeyStore.load()
         let responder: AssistantResponder
-        if apiKey.isEmpty {
+        if !apiKey.isEmpty {
+            responder = ClaudeAssistantResponder(apiKey: apiKey)
+        } else if preferScripted || (knowledge.isEmpty && work.isEmpty) {
             responder = ScriptedAssistantResponder()
         } else {
-            responder = ClaudeAssistantResponder(apiKey: apiKey)
+            responder = OnDeviceAssistantResponder()
         }
         _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
     }
@@ -551,7 +575,13 @@ struct AssistantView: View {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
             conversation.send(
                 trimmed,
-                context: AssistantContext(courseCodes: courseCodes, contextDocument: contextDocument)
+                context: AssistantContext(
+                    courseCodes: courseCodes,
+                    contextDocument: contextDocument,
+                    knowledge: knowledge,
+                    work: work,
+                    userName: userName
+                )
             )
         }
     }

@@ -235,8 +235,10 @@ public enum AssistantContextDocument {
             "",
             "Does NOT contain syllabus prose: attendance policy, late-work policy,",
             "office hours, or any text beyond the grading weights listed under",
-            "\"grading:\" below. If asked about a policy not stated in this document,",
-            "say it isn't in the app's records rather than inferring one.",
+            "\"grading:\" below. When the app has synced course materials, matching",
+            "passages of that prose arrive as RETRIEVED EXCERPTS in the student's",
+            "message; answer policy questions from those. If no excerpt states the",
+            "policy, say it isn't in the app's records rather than inferring one.",
         ]
     }
 

@@ -18,7 +18,13 @@ import LowHangingFruitKit
 //
 // ## What is deliberately absent
 //
-// Three things a reader will expect to find and won't:
+// Three things a reader will expect to find and won't. (Since 2026-09-06 the
+// first two reach the model by a different route: `CourseKnowledgeCollector`
+// keeps syllabus prose and announcement bodies on-device, and
+// `ClaudeAssistantResponder.retrievedExcerpts` sends the few passages that
+// match a question in the per-turn user message — after the cache breakpoint,
+// so nothing here has to change. This document stays the small, stable,
+// cached part.)
 //
 //  1. **Syllabus prose.** `SyllabusSetupView` does ingest syllabus text — from
 //     a PDF, a Canvas page, or pasted text — but `SyllabusParser` keeps only

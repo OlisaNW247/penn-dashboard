@@ -9,13 +9,18 @@ accounts, no analytics, no third-party SDKs.
 Two features are the exception, and both are opt-in and off until the student
 pastes in **their own Anthropic API key** (Settings; stored in the Keychain via
 `AnthropicKeyStore`, never `UserDefaults`): the Announcement Watcher's AI assist,
-and **ask** (the screen itself is titled **"the tree"**). Those send class data
-to Anthropic. Nothing else leaves the device, there is still no LHF server or
-account, and a student who never enters a key is still fully on-device. Say it
-this way rather than flatly "everything is on-device", which stopped being true
-on the `assistant-ui` line.
+and the Claude backend of **ask** (the screen itself is titled **"the tree"**).
+Those send class data to Anthropic. Nothing else leaves the device, there is
+still no LHF server or account, and a student who never enters a key is still
+fully on-device — including ask itself, which without a key runs
+`OnDeviceAssistantResponder`: exact answers computed from the dashboard's items,
+policy and content answers retrieved from the course materials the app syncs
+(`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 / macOS 26
+Apple Intelligence devices a rephrase by Apple's on-device model
+(`OnDeviceLanguageModel`). Say it this way rather than flatly "everything is
+on-device", which stopped being true on the `assistant-ui` line.
 
-Shipped on the App Store as **1.1.2 (build 4)**.
+Shipped on the App Store as **2.0.1 (build 6)** from `v3.5`; `v5` carries it.
 
 ## Commands
 
@@ -39,6 +44,12 @@ screen instead of tapping through to it on every rebuild:
 ```bash
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
+
+**`v5` (2026-09-06) has NOT yet been compiled on a Mac.** It is `assistant-ui`
++ `v3.5` + the ask knowledge engine, written on a Linux host with no Swift
+toolchain. Expected: 736 + v3.5's three suites + the seven new ask suites; the
+first `swift test` on a Mac sets the real number. Until then treat every count
+below as the last *verified* mark, not the current one.
 
 Baseline on `assistant-ui`, verified on a Mac (2026-09-02): **736 tests / 76
 suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
@@ -192,12 +203,13 @@ course is deliberately cosmetic only.
 | `main` | Old — 1.0.0 App Store prep. Not the ship line. |
 | `origin/v2.5` | Former ship line, 1.1.1 build 3. Grade Watcher gated off. |
 | `v3` | Grade Watcher un-gated, grade report, syllabus, the SwiftData ledger |
-| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **shipped** 1.1.2 build 4. |
+| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **uploaded** 2.0.1 build 6 (and the shipped 2.0.0 build 5 before it). |
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
-| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
-| `v5` | Cut from the 2.0.0 head above. Superseded by `v6`, which is a superset. |
-| `v6` | v5 plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
-| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. New work goes here. |
+| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
+| `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
+| `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. |
+| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend. New work goes here. |
+| `claude/adhd-information-i19klh` | Dead. The knowledge engine's first draft, built against stale `main`; everything worth keeping was ported to `v5`. Delete once `v5` is verified. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

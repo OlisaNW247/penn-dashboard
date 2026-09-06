@@ -126,7 +126,10 @@ struct ContentView: View {
                     // second copy of the ledger permanently in memory.
                     AssistantView(
                         courseCodes: state.allCourseCodes(),
-                        contextDocument: state.assistantContextDocument()
+                        contextDocument: state.assistantContextDocument(),
+                        knowledge: state.assistantKnowledge,
+                        work: state.assistantWorkItems(),
+                        userName: state.userName
                     )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)

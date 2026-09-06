@@ -1,8 +1,76 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-09-02. This section supersedes everything below the
-first "Superseded" marker; read `CLAUDE.md` first for commands, storage
+_Last updated: 2026-09-06. Read `CLAUDE.md` first for commands, storage
 tiers, traps, and the overseer/doer working model._
+
+## ⚠️ Current state: `v5` is the line — and it has not been compiled yet
+
+**New work goes on `v5`.** On 2026-09-06 `v5` was rebuilt as
+`assistant-ui` (Marco's ask screen + Claude backend, on `v6`) merged with
+`v3.5` (the **uploaded 2.0.1 build 6**), plus the ask knowledge engine —
+on-device course materials, the no-key `OnDeviceAssistantResponder`, and
+retrieved excerpts for the Claude backend. See the 2026-09-06 entry in
+`docs/decisions.md` for the shape and the rejected alternatives.
+
+**Nothing on `v5` past the merge commit has been compiled.** It was written
+on a Linux host with no Swift toolchain. The very first thing to do on a
+Mac:
+
+```bash
+cd LowHangingFruitKit && swift test
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+  -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+```
+
+Expected count: 736 (assistant-ui) + 3 suites from v3.5 + 8 new ask suites
+(`CourseContentAPITests`, `HTMLTextTests`, `CourseKnowledgeBaseTests`,
+`CourseSearchTests`, `QuestionParserTests`, `ClassQuestionAnswererTests`,
+`OnDeviceModelTests`, `AskKnowledgeWiringTests`). A lower number has lost
+work.
+
+### What landed (all new unless marked)
+
+| Path | What |
+|---|---|
+| `Kit/Models/CourseDocument.swift` | `CourseDocument`, `CourseSummary`, `CourseKnowledgeBase` (merge keeps unchanged docs' fetch dates) |
+| `Kit/CanvasAPI/CanvasCourseContentClient.swift` | Assignment descriptions + submission state, course pages. `CourseDocumentBuilder` maps every source to documents. |
+| `Kit/Knowledge/CourseKnowledgeCollector.swift` | One sync over the existing syllabus/announcement/module clients + the content client |
+| `Kit/Knowledge/{CourseKnowledgeStore,HTMLText,PassageChunker,BM25Index,CourseSearch}.swift` | On-device JSON store, HTML→text, passages, BM25, retrieval with NLEmbedding rerank |
+| `Kit/Assistant/{WorkItem,CourseMatcher,QuestionIntent,ClassQuestionAnswerer,OnDeviceLanguageModel,SourceReference}.swift` | Rule-based parser, exact + retrieval answerer, Apple on-device model wrapper (`FoundationModels`, gated) |
+| `UI/OnDeviceAssistantResponder.swift` | The no-key backend behind `AssistantResponder` |
+| `UI/AppState+CourseKnowledge.swift` | `refreshCourseKnowledge(cookies:)`, `assistantWorkItems()`, `assistantKnowledge` (sample data in preview mode) |
+| `UI/AssistantResponder.swift` (modified) | `AssistantContext` gains `knowledge`, `work`, `userName` |
+| `UI/ClaudeAssistantResponder.swift` (modified) | `retrievedExcerpts` → user turn; one added paragraph in the frozen instructions |
+| `UI/AssistantView.swift`, `ContentView.swift` (modified) | Responder choice: key → Claude; data → on-device; nothing → scripted |
+| `UI/AutoSyncCoordinator.swift`, `SettingsPage.swift`, `SampleData.swift` (modified) | Sync on the grades refresh; Settings → "ask" section; sample syllabi |
+| `Kit/Assistant/AssistantContextDocument.swift` (modified) | Header now says policy prose arrives as excerpts (the literal "Does NOT contain syllabus prose" the test checks is kept) |
+
+### Verify before shipping (needs a Penn login)
+
+1. Settings → ask → *sync course materials*. Expect "N items · M courses".
+   A repeated "session expired" notice means Penn's Canvas rejects
+   session-cookie JSON calls for these endpoints; the syllabus/announcement
+   clients already in use would be failing the same way, so check those.
+2. Open ask with **no** key and ask the flagship question — "what's my
+   <course> attendance policy" — and one deadline question. Both should
+   answer with citations, no network.
+3. Paste a key, ask the same policy question. The answer should now quote
+   the syllabus; that is the excerpts reaching Claude.
+4. `docs/PRIVACY.md` is deliberately untouched (published material); revise
+   at ship time to say course materials are stored on-device.
+
+### Loose ends inherited, unchanged
+- `CourseContentDashboardTests` flake (shared `UserDefaults` race).
+- The ask screen's UI is still the prototype the owner called "not quite
+  there"; the engine underneath is what changed here.
+- No call has ever been made against the live Anthropic API.
+- Four old branches carry a handful of July/August 1.0.0-era commits found
+  nowhere else (`claude/handoff-continuation-4a4vnv`, `-bn0e5m`,
+  `claude/agent-operating-model-0lyx87`); judged superseded, left alone.
+
+---
+
+_Superseded (2026-09-02) — kept for the reasoning behind ask's design._
 
 ## ⚠️ Current state: `assistant-ui` is the line
 

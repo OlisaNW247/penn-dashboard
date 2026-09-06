@@ -249,6 +249,14 @@ final class AppState: ObservableObject {
     @Published private(set) var hasSeenIntro: Bool
     @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
+
+    /// Course materials synced for `ask` — syllabus prose, announcement
+    /// bodies, assignment descriptions, modules, pages. A re-fetchable cache,
+    /// not a tier: see `CourseKnowledgeStore`. Methods live in
+    /// `AppState+CourseKnowledge.swift`.
+    @Published private(set) var courseKnowledge: CourseKnowledgeBase
+    @Published var isCourseKnowledgeSyncing = false
+    @Published var courseKnowledgeNotice: String?
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
     /// the root. Persisted like every other user preference here.
     @Published private(set) var appearanceMode: AppearanceMode
@@ -433,6 +441,9 @@ final class AppState: ObservableObject {
         self.hasSeenIntro = UserDefaults.lhf.bool(forKey: Self.introSeenKey)
         self.isPreviewMode = UserDefaults.lhf.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.lhf.string(forKey: Self.userNameKey) ?? ""
+        // Test runners must not read the dev Mac's real app-support store, for
+        // the same reason `SharedDefaults.isTestRunner` guards the ledger.
+        self.courseKnowledge = SharedDefaults.isTestRunner ? .empty : CourseKnowledgeStore.default().load()
         self.appearanceMode = AppearanceMode(
             rawValue: UserDefaults.lhf.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .light

@@ -249,4 +249,87 @@ enum SampleData {
             psyc.courseID: psyc,
         ]
     }
+
+    // MARK: - Course materials for ask (preview mode)
+
+    /// Syllabus prose, an announcement, and an assignment description for the
+    /// sample courses, so `ask` can answer a policy question in preview mode
+    /// and on the `-LHFDemoData` seam with no Canvas account — the same role
+    /// `gradeSnapshots()` plays for Grade Watcher. Course ids match
+    /// `previewCourseIDsByID`.
+    static func knowledge(now: Date = Date()) -> CourseKnowledgeBase {
+        func days(_ d: Double) -> Date { now.addingTimeInterval(d * 86_400) }
+        let cis = CourseSummary(courseID: "900001", code: "CIS 1210", name: "CIS 1210 Programming Languages and Techniques II", url: nil)
+        let econ = CourseSummary(courseID: "900002", code: "ECON 1", name: "ECON 1 Introduction to Micro Economics", url: nil)
+        let mgmt = CourseSummary(courseID: "900003", code: "MGMT 1010", name: "MGMT 1010 Introduction to Management", url: nil)
+
+        let documents = [
+            CourseDocument(
+                courseID: cis.courseID, course: cis.code, kind: .syllabus, sourceID: "syllabus",
+                title: "CIS 1210 syllabus", url: nil,
+                text: """
+                Course overview
+                Data structures and algorithms in Java. Lectures Monday and Wednesday 10:15 to 11:45 in Towne 100.
+                Grading
+                Problem sets 40%, midterm 20%, final exam 30%, recitation participation 10%.
+                Late policy
+                Each student has 4 late days for the semester. Late days are applied automatically in whole-day units. After late days are used up, late work loses 10% per day and is not accepted more than 3 days late.
+                Attendance
+                Lecture attendance is not taken. Recitation attendance counts toward participation; two absences are free.
+                Exams
+                The midterm is on Wednesday, October 14 in class. The final exam is scheduled by the registrar during finals week.
+                Office hours
+                TA office hours run Sunday through Thursday evenings in Levine 6th floor.
+                """,
+                fetchedAt: now
+            ),
+            CourseDocument(
+                courseID: cis.courseID, course: cis.code, kind: .announcement, sourceID: "a1",
+                title: "PSet 6 released; recitation moved this week", url: nil,
+                text: "PSet 6 (hashing) is out and due Thursday at 11:59 PM. This week's Friday recitation moves to Thursday 4 PM in Towne 313 because of the career fair.",
+                updatedAt: days(-1), fetchedAt: now
+            ),
+            CourseDocument(
+                courseID: cis.courseID, course: cis.code, kind: .assignment, sourceID: "s-6",
+                title: "PSet 6: hashing", url: nil,
+                text: "Due: \(DateText.long(days(3)))\nPoints: 100\nStatus: not submitted\nImplement an open-addressing hash table with linear probing and compare it against chaining on the provided workloads. Submit HashTable.java and a short writeup.",
+                fetchedAt: now, dueAt: days(3), pointsPossible: 100, submitted: false
+            ),
+            CourseDocument(
+                courseID: econ.courseID, course: econ.code, kind: .syllabus, sourceID: "syllabus",
+                title: "ECON 1 syllabus", url: nil,
+                text: """
+                Grading
+                Weekly problem sets 25%, two midterms 20% each, final 35%.
+                Late policy
+                Problem sets are due at 5 PM on Fridays. Late problem sets receive half credit within 24 hours and no credit after that. Your lowest problem set score is dropped.
+                Textbook
+                Krugman and Wells, Microeconomics, 6th edition. Older editions are fine.
+                Exams
+                Midterm 1 is Thursday, October 1 at 7 PM. Midterm 2 is Thursday, November 5 at 7 PM. Both are in Meyerson B1.
+                """,
+                fetchedAt: now
+            ),
+            CourseDocument(
+                courseID: econ.courseID, course: econ.code, kind: .announcement, sourceID: "a2",
+                title: "Midterm 1 review session", url: nil,
+                text: "The review session for Midterm 1 is Sunday at 3 PM in Huntsman 245. Bring questions from problem sets 1 through 3.",
+                updatedAt: days(-3), fetchedAt: now
+            ),
+            CourseDocument(
+                courseID: mgmt.courseID, course: mgmt.code, kind: .syllabus, sourceID: "syllabus",
+                title: "MGMT 1010 syllabus", url: nil,
+                text: """
+                Attendance
+                Attendance is required. You may miss two sessions without penalty; each additional absence lowers the participation grade by one third of a letter.
+                Group case writeups
+                Teams of four submit a two-page case writeup before each case discussion. Writeups are due at 9 AM on the day of the case.
+                Late policy
+                Late case writeups are not accepted because the discussion depends on them. Contact the teaching team in advance if your team has a conflict.
+                """,
+                fetchedAt: now
+            ),
+        ]
+        return CourseKnowledgeBase(courses: [cis, econ, mgmt], documents: documents, lastSyncedAt: now)
+    }
 }

@@ -139,6 +139,8 @@ struct SettingsPage: View {
 
             announcementWatcherSection
 
+            askSection
+
             Section("appearance") {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
@@ -361,6 +363,65 @@ struct SettingsPage: View {
         .onAppear {
             hasSavedAnthropicKey = !AnthropicKeyStore.load().isEmpty
         }
+    }
+
+    // MARK: Ask (course materials)
+
+    /// What `ask` knows. The row is a status line, not a toggle: materials
+    /// sync on their own whenever the grades refresh runs with a live Canvas
+    /// session, and this section exists so a student can see that it
+    /// happened, force it, or throw the cache away.
+    @ViewBuilder
+    private var askSection: some View {
+        Section {
+            HStack(spacing: 8) {
+                if state.isCourseKnowledgeSyncing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
+                        .foregroundStyle(state.courseKnowledge.isEmpty ? .secondary : Color.v2SpineGreen)
+                }
+                Text("course materials")
+                Spacer()
+                Text(courseKnowledgeSummary)
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task { await AutoSyncCoordinator.refreshCourseKnowledge(state: state) }
+            } label: {
+                Label("sync course materials", systemImage: "arrow.down.doc")
+            }
+            .disabled(state.isCourseKnowledgeSyncing || !state.canUseGradeWatcher)
+
+            if !state.courseKnowledge.isEmpty {
+                Button("clear course materials", role: .destructive) {
+                    state.clearCourseKnowledge()
+                }
+            }
+
+            if let notice = state.courseKnowledgeNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(.orange)
+            }
+        } header: {
+            Text("ask")
+        } footer: {
+            Text(OnDeviceLanguageModel.isAvailable
+                 ? "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers are phrased by apple's on-device model unless you've added an anthropic key above."
+                 : "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. without an anthropic key, answers come straight from that data and nothing leaves the phone.")
+        }
+    }
+
+    private var courseKnowledgeSummary: String {
+        let knowledge = state.courseKnowledge
+        guard let synced = knowledge.lastSyncedAt else { return "not synced" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        let when = formatter.localizedString(for: synced, relativeTo: Date())
+        return "\(knowledge.documents.count) items · \(knowledge.courses.count) courses · \(when)"
     }
 
     // MARK: Reminders

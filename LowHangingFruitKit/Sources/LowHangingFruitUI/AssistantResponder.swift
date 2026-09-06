@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 
 // MARK: – What answers a question
 //
@@ -71,6 +72,21 @@ struct AssistantContext: Sendable {
     /// `ClaudeAssistantResponder` — putting the date in the cached document
     /// is the obvious-looking move that silently zeroes the cache hit rate.)
     var askedAt: Date = Date()
+
+    /// The course materials synced on-device (syllabus prose, announcement
+    /// bodies, assignment descriptions, modules, pages). Both backends read
+    /// it: `OnDeviceAssistantResponder` answers from it directly, and
+    /// `ClaudeAssistantResponder` retrieves the few passages relevant to the
+    /// question and sends only those — in the per-turn user message, after
+    /// the cache breakpoint, so the cached document stays byte-stable.
+    var knowledge: CourseKnowledgeBase = .empty
+
+    /// The dashboard's items with the app's completion state applied. This
+    /// is what the on-device answerer computes "what's due" from; the Claude
+    /// backend already has the same facts inside `contextDocument`.
+    var work: [WorkItem] = []
+
+    var userName: String = ""
 }
 
 protocol AssistantResponder: Sendable {
@@ -312,7 +328,10 @@ struct ScriptedAssistantResponder: AssistantResponder {
     }
 }
 
-private extension String {
+// Module-internal (not file-private) because `OnDeviceAssistantResponder`
+// streams its answers through the same splitter, so both no-network paths
+// feel identical on screen.
+extension String {
     /// Splits into word-sized pieces that still carry their trailing
     /// whitespace, so `pieces.joined()` is exactly the original string.
     /// Streaming word-by-word and then re-adding spaces by hand is how
