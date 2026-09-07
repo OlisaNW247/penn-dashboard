@@ -59,7 +59,7 @@ supabase functions deploy
 
 Paste the project's URL and anon (public) key into
 `LowHangingFruitKit/Sources/LowHangingFruitUI/BackendConfiguration.swift`.
-Both values are safe to embed in the app binary — the anon key is meant to be
+Both values are safe to embed in the app binary — the publishable key (`sb_publishable_…`; the legacy JWT `anon` key also works but is disabled on this project) is meant to be
 public; every row it can touch is behind RLS scoped to the caller's own
 (anonymous) auth id. Never put the service-role key or `OPENROUTER_API_KEY`
 in the app; both live only as function secrets on the server.

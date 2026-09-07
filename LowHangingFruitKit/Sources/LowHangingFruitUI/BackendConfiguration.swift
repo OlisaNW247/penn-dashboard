@@ -26,8 +26,8 @@ struct BackendConfiguration: Sendable {
     /// step, and every test run regardless of it, fully on-device: nothing
     /// in this Kit calls a hostname that still reads "REPLACE-ME".
     static let production = BackendConfiguration(
-        url: URL(string: "https://REPLACE-ME.supabase.co")!,
-        anonKey: "REPLACE-ME"
+        url: URL(string: "https://ynetfjixexksxqrrkwsg.supabase.co")!,
+        anonKey: "sb_publishable_jOEUk139Kvir7R3CfxI0SA_bQv87jqt"
     )
 
     var isConfigured: Bool {

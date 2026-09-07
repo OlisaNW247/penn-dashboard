@@ -58,19 +58,18 @@ run for real.
 1. ~~`swift test`~~ — done 2026-09-07, 838/89 green. Re-run after any
    further Swift change; a count below 838 has lost work.
 2. ~~iOS build~~ — done 2026-09-07, `BUILD SUCCEEDED`.
-3. Paste the Supabase project URL and anon key into
-   `LowHangingFruitKit/Sources/LowHangingFruitUI/BackendConfiguration.swift`.
-4. Deploy the backend:
-   ```bash
-   cd backend
-   supabase link
-   supabase db push
-   supabase secrets set OPENROUTER_API_KEY=…
-   supabase functions deploy
-   ```
-5. In the Supabase dashboard, Authentication → Providers, enable **Anonymous
-   sign-ins** (off by default on a new project; `sync`/`ask` will 401 without
-   it).
+3. ~~Paste the project URL and key into `BackendConfiguration.swift`~~ —
+   done 2026-09-07 (project `ynetfjixexksxqrrkwsg`, the `sb_publishable_…`
+   key; the legacy JWT `anon`/`service_role` keys were disabled after both
+   leaked into a chat transcript, so nothing may depend on them).
+4. ~~Deploy the backend~~ — done 2026-09-07: `db push` applied the migration
+   first time; the first `functions deploy` failed bundling because the edge
+   bundler ignores `backend/deno.json`'s import map (fixed by importing
+   `npm:@supabase/supabase-js@2` directly); the second deployed all five.
+5. ~~Enable anonymous sign-ins~~ — done 2026-09-07; the smoke test
+   (anonymous signup → `sync` manifest → streamed `ask` answer from
+   GLM-5.3-Flash) passed end to end from a terminal. The OpenRouter key was
+   also pasted into a transcript and must be treated as rotated.
 6. Device run: connect Canvas, then watch Settings → ask for "synced N min
    ago"; ask a policy question and confirm it answers (server path); turn on
    Airplane Mode and ask again to confirm the on-device fallback still
