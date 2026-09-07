@@ -3,7 +3,7 @@
 _Last updated: 2026-09-06. Read `CLAUDE.md` first for commands, storage
 tiers, traps, and the overseer/doer working model._
 
-## ⚠️ Current state: `v5` is the line — and it has not been compiled yet
+## ⚠️ Current state: `v5` is the line
 
 **New work goes on `v5`.** On 2026-09-06 `v5` was rebuilt as
 `assistant-ui` (Marco's ask screen + Claude backend, on `v6`) merged with
@@ -12,21 +12,15 @@ on-device course materials, the no-key `OnDeviceAssistantResponder`, and
 retrieved excerpts for the Claude backend. See the 2026-09-06 entry in
 `docs/decisions.md` for the shape and the rejected alternatives.
 
-**Nothing on `v5` past the merge commit has been compiled.** It was written
-on a Linux host with no Swift toolchain. The very first thing to do on a
-Mac:
+**Verified green baseline (owner's Mac, 2026-09-06): 804 tests / 87
+suites** (plus 4 XCTest scheduler tests), zero failures, up from 736/76 on
+`assistant-ui`. The iOS simulator build has **not** been run on this head
+yet:
 
 ```bash
-cd LowHangingFruitKit && swift test
 xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
   -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
-
-Expected count: 736 (assistant-ui) + 3 suites from v3.5 + 8 new ask suites
-(`CourseContentAPITests`, `HTMLTextTests`, `CourseKnowledgeBaseTests`,
-`CourseSearchTests`, `QuestionParserTests`, `ClassQuestionAnswererTests`,
-`OnDeviceModelTests`, `AskKnowledgeWiringTests`). A lower number has lost
-work.
 
 ### What landed (all new unless marked)
 

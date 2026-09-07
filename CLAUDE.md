@@ -45,13 +45,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-**`v5` (2026-09-06) has NOT yet been compiled on a Mac.** It is `assistant-ui`
-+ `v3.5` + the ask knowledge engine, written on a Linux host with no Swift
-toolchain. Expected: 736 + v3.5's three suites + the seven new ask suites; the
-first `swift test` on a Mac sets the real number. Until then treat every count
-below as the last *verified* mark, not the current one.
+Baseline on `v5`, verified on a Mac (2026-09-06): **804 tests / 87 suites
+green** (plus 4 XCTest scheduler tests), up from 736/76 on `assistant-ui` — the
+merge of `v3.5` (three suites) and the ask knowledge engine (eight suites),
+first compiled on the owner's Mac the same day the code was written.
 
-Baseline on `assistant-ui`, verified on a Mac (2026-09-02): **736 tests / 76
+Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
 suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
 verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
 work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
