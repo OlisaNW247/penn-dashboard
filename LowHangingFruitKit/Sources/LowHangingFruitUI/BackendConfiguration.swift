@@ -49,15 +49,16 @@ struct BackendConfiguration: Sendable {
         guard !SharedDefaults.isTestRunner else { return nil }
         #if DEBUG
         // `-LHFBackendURL <url> -LHFBackendAnonKey <key>` launch-argument
-        // overrides, in the same spirit as `-LHFDemoData` and friends
-        // (CLAUDE.md's `Commands` section) but read through
-        // `UserDefaults.standard` rather than `ProcessInfo.arguments`
-        // directly: Foundation registers "-Key Value" launch arguments into
-        // `UserDefaults.standard`'s volatile argument domain automatically,
-        // which is what lets `xcrun simctl launch ... -LHFBackendURL
-        // https://localhost:54321` (a local `supabase start` stack) reach
-        // this code without a rebuild. DEBUG-only so a Release build can
-        // never be redirected by a stray launch argument.
+        // overrides, read from `ProcessInfo.arguments` the way `-LHFDemoData`
+        // and friends are (CLAUDE.md's `Commands` section). Foundation would
+        // also surface these through `UserDefaults.standard`'s argument
+        // domain, and that was the first version of this code — but
+        // `SharedDefaultsMigrationTests` scans this module for any read of
+        // the private domain, because a preference read that lands there is
+        // invisible to the widget, and it has no way to tell a launch-arg
+        // lookup from a real preference. Walking the argument list is the
+        // same one line of work and keeps that guard honest. DEBUG-only so a
+        // Release build can never be redirected by a stray launch argument.
         if let override = debugOverride, override.isConfigured {
             return override
         }
@@ -67,12 +68,19 @@ struct BackendConfiguration: Sendable {
 
     #if DEBUG
     private static var debugOverride: BackendConfiguration? {
-        let defaults = UserDefaults.standard
-        guard let urlString = defaults.string(forKey: "LHFBackendURL"),
-              let anonKey = defaults.string(forKey: "LHFBackendAnonKey"),
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let urlString = value(following: "-LHFBackendURL", in: arguments),
+              let anonKey = value(following: "-LHFBackendAnonKey", in: arguments),
               let url = URL(string: urlString)
         else { return nil }
         return BackendConfiguration(url: url, anonKey: anonKey)
+    }
+
+    /// The token after `flag` in the argument list, if there is one.
+    private static func value(following flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.endIndex else { return nil }
+        let candidate = arguments[index + 1]
+        return candidate.hasPrefix("-") ? nil : candidate
     }
     #endif
 }
