@@ -1,9 +1,6 @@
 {
   "tasks": {
     "test": "deno test --allow-env --allow-net test/",
-    "check": "deno check supabase/functions/sync/index.ts supabase/functions/delete-account/index.ts"
-  },
-  "imports": {
-    "@supabase/supabase-js": "npm:@supabase/supabase-js@2"
+    "check": "deno check supabase/functions/*/index.ts"
   }
 }

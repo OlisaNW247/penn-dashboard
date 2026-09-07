@@ -5,7 +5,7 @@
 // index.ts should never see a raw row shape, and manifest.ts (pure,
 // dependency-free, unit tested without a database) should never import
 // this file.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type {
   CourseDocumentWire,
   CourseSummaryWire,

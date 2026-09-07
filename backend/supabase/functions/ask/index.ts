@@ -10,7 +10,7 @@
 // or the model's answer -- only status codes and token counts, per the
 // module's brief and the same discipline `ClaudeAssistantResponder` already
 // holds itself to on the iOS side for exactly the same data.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";

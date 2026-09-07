@@ -6,7 +6,7 @@
 // (pure logic, unit tested without a database) or `_shared/db.ts` (the
 // database wrappers), so this file reads as the sequence of steps the
 // protocol document already describes.
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import {

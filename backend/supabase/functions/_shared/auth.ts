@@ -15,7 +15,7 @@
 // per-row RLS can't express as cleanly as `is_enrolled()` already does, and
 // the functions need to *write* at all, which RLS deliberately blocks for
 // every role except service_role.
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError } from "./http.ts";
 
 export interface AuthContext {
