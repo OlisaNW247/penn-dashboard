@@ -36,27 +36,28 @@ in `docs/decisions.md` for the reasoning and what was rejected.
 - **Settings → "delete my class data from lhf's server"**, calling
   `delete-account`.
 
-### What has NOT been compiled
+### Compile status
 
-**All Swift written for this change — `BackendConfiguration.swift`, the
-Supabase auth/session client, the `sync`/`ask` request plumbing, the Settings
-delete button, and the responder wiring that picks the backend path over
-`OnDeviceAssistantResponder` — was written without a compiler and has never
-been built, let alone run.** Treat every claim above about behavior as a
-design description, not a verified fact, until the steps below are actually
-run on a Mac. The backend's own Deno/TypeScript side is likewise unexercised
-beyond whatever `deno task test`/`deno task check` catch; it has never been
-deployed to a live Supabase project or called from a real client.
+Verified on the owner's Mac, 2026-09-07: `swift test` → **838 tests / 89
+suites passed**; the iOS simulator build (iPhone 17 Pro) → `BUILD SUCCEEDED`.
+The Swift was written without a compiler and compiled first time; the single
+first-run failure was `SharedDefaultsMigrationTests`' scan for
+`UserDefaults.standard` reads catching the debug launch-arg override in
+`BackendConfiguration.swift`, fixed by reading `ProcessInfo.arguments` like
+every other launch flag (commits `1ea20e5`, `0519932`).
+
+**What is still unexercised:** the live backend. `BackendServices.client` is
+nil under tests and in an unconfigured build, so nothing above has talked to
+a deployed Supabase project or to OpenRouter from a real client. The deno
+suite (96 tests) and the SQL policy tests pass against a local Postgres, but
+that is not a deployment. Steps 3 onward below are the first time it will
+run for real.
 
 ### Mac verification steps, in order
 
-1. `cd LowHangingFruitKit && swift test` — expect **at least** the prior
-   baseline (804 tests / 87 suites; see `CLAUDE.md`). A lower count means the
-   backend changes broke something in the Kit/UI build, not that tests were
-   removed on purpose.
-2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
-   LowHangingFruit -configuration Debug -destination 'platform=iOS
-   Simulator,name=iPhone 17 Pro' build`.
+1. ~~`swift test`~~ — done 2026-09-07, 838/89 green. Re-run after any
+   further Swift change; a count below 838 has lost work.
+2. ~~iOS build~~ — done 2026-09-07, `BUILD SUCCEEDED`.
 3. Paste the Supabase project URL and anon key into
    `LowHangingFruitKit/Sources/LowHangingFruitUI/BackendConfiguration.swift`.
 4. Deploy the backend:
