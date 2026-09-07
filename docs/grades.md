@@ -424,8 +424,7 @@ PDFKit). Paste and file import are always available and are the only route for
 a syllabus hosted off Canvas. Finding nothing is a normal outcome, not an error.
 
 **Parsing is deterministic — no model, no network** (`SyllabusParser`). The app
-has no backend and a privacy manifest that says nothing leaves the device;
-both would have to change to send a student's syllabus somewhere to be read.
+sends grades nowhere: the backend added 2026-09-07 receives course materials and ask questions only, never grades. A privacy manifest declares what leaves the device, and grades are not it.
 Regex suffices because of one property of the domain:
 
 > **A grading scheme's weights sum to 100.** Accept only 90–110 (normalize to

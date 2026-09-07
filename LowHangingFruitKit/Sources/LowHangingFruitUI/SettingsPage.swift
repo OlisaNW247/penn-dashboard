@@ -35,18 +35,11 @@ struct SettingsPage: View {
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
     @State private var didCopyDiagnostics = false
-    /// What the student is currently typing into the Anthropic API key field.
-    /// Deliberately starts empty and is never populated from
-    /// `AnthropicKeyStore.load()` — see `announcementWatcherSection`'s doc
-    /// comment for why round-tripping a secret from storage back into visible
-    /// UI state is worth avoiding even though this key never leaves the
-    /// device unencrypted.
-    @State private var anthropicAPIKeyField = ""
-    /// Whether a key is currently saved in the Keychain, read once when this
-    /// section appears (and again right after a save) so the field's helper
-    /// text can say "a key is saved" without holding the key itself in view
-    /// state.
-    @State private var hasSavedAnthropicKey = false
+    /// Drives the "are you sure" confirmation on "delete my class data from
+    /// lhf's server" (`askSection`) — a destructive, server-side action, so
+    /// it gets the same confirm-before-acting treatment `disconnecting`
+    /// above gives disconnecting an account.
+    @State private var confirmingBackendDataDeletion = false
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -314,14 +307,13 @@ struct SettingsPage: View {
     /// the same Canvas login the accounts section connects), so it reads as
     /// one more thing that login unlocks rather than an unrelated preference.
     ///
-    /// **Why the API key field never shows the saved key back.** A `SecureField`
-    /// pre-filled from `AnthropicKeyStore.load()` would round-trip a bearer
-    /// credential (see that store's own doc comment on what the key can do on
-    /// its own) from the Keychain into this view's state on every appearance
-    /// of this screen — one more place in memory carrying a secret that has
-    /// no reason to still be there once it's saved. The field starts empty
-    /// and stays that way; `hasSavedAnthropicKey` is the only thing this view
-    /// reads back from the store, and it's a boolean, not the key.
+    /// **Why the "ai assist" toggle only shows up with a backend
+    /// configured.** There used to be a student-pasted Anthropic key here
+    /// (`AnthropicKeyStore`, removed); now the AI path is LHF's own server
+    /// (`BackendAnnouncementExtractor`), and with no key for a student to
+    /// paste there is nothing this toggle could turn on when
+    /// `BackendServices.client` is `nil` — showing it anyway would just be a
+    /// switch that silently does nothing.
     @ViewBuilder
     private var announcementWatcherSection: some View {
         Section {
@@ -330,38 +322,16 @@ struct SettingsPage: View {
                 set: { state.setAnnouncementWatcherEnabled($0) }
             ))
 
-            if state.announcementWatcherEnabled {
+            if state.announcementWatcherEnabled, BackendServices.client != nil {
                 Toggle("ai assist", isOn: Binding(
                     get: { state.announcementAIEnabled },
                     set: { state.setAnnouncementAIEnabled($0) }
                 ))
-
-                if state.announcementAIEnabled {
-                    // Same inline-Binding shape as "your name" above: the
-                    // `set` closure both updates the local field state and
-                    // persists on every edit, rather than introducing a
-                    // separate explicit "save" gesture this file has no other
-                    // example of.
-                    SecureField("anthropic api key", text: Binding(
-                        get: { anthropicAPIKeyField },
-                        set: { newValue in
-                            anthropicAPIKeyField = newValue
-                            AnthropicKeyStore.save(newValue)
-                            hasSavedAnthropicKey = !newValue.isEmpty
-                        }
-                    ))
-                    Text(hasSavedAnthropicKey ? "a key is saved on this device." : "no key saved yet \u{2014} paste one above.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(.secondary)
-                }
             }
         } header: {
             Text("announcement watcher")
         } footer: {
-            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. with ai assist on, announcement text is sent to anthropic's api using your key; off, everything stays on this phone.")
-        }
-        .onAppear {
-            hasSavedAnthropicKey = !AnthropicKeyStore.load().isEmpty
+            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. with ai assist on, announcement text is sent to lhf's server to be read by an ai model; off, it stays on this phone.")
         }
     }
 
@@ -369,8 +339,13 @@ struct SettingsPage: View {
 
     /// What `ask` knows. The row is a status line, not a toggle: materials
     /// sync on their own whenever the grades refresh runs with a live Canvas
-    /// session, and this section exists so a student can see that it
-    /// happened, force it, or throw the cache away.
+    /// session (`AutoSyncCoordinator.refreshCanvasGrades`) — there is no
+    /// on-demand "sync now" here anymore, since with a backend configured
+    /// that sync is a manifest exchange the phone should just always be
+    /// current on, not a heavy action worth a button. What stays is a way to
+    /// see that it happened, and — only with a backend configured, since
+    /// there's nothing server-side to delete otherwise — a way to erase this
+    /// student's row on LHF's server.
     @ViewBuilder
     private var askSection: some View {
         Section {
@@ -388,30 +363,37 @@ struct SettingsPage: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button {
-                Task { await AutoSyncCoordinator.refreshCourseKnowledge(state: state) }
-            } label: {
-                Label("sync course materials", systemImage: "arrow.down.doc")
-            }
-            .disabled(state.isCourseKnowledgeSyncing || !state.canUseGradeWatcher)
-
-            if !state.courseKnowledge.isEmpty {
-                Button("clear course materials", role: .destructive) {
-                    state.clearCourseKnowledge()
-                }
-            }
-
             if let notice = state.courseKnowledgeNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.lhfSans(12))
                     .foregroundStyle(.orange)
             }
+
+            if BackendServices.client != nil {
+                Button("delete my class data from lhf's server", role: .destructive) {
+                    confirmingBackendDataDeletion = true
+                }
+            }
         } header: {
             Text("ask")
         } footer: {
-            Text(OnDeviceLanguageModel.isAvailable
-                 ? "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers are phrased by apple's on-device model unless you've added an anthropic key above."
-                 : "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. without an anthropic key, answers come straight from that data and nothing leaves the phone.")
+            Text(BackendServices.client != nil
+                 ? "ask reads your syllabi, announcements and assignment pages with your canvas login. course materials are pooled with classmates in the same canvas course so everyone's ask knows the class; your grades, work and login never leave this phone. questions are answered by an ai model on lhf's server."
+                 : (OnDeviceLanguageModel.isAvailable
+                    ? "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers are phrased by apple's on-device model."
+                    : "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers come straight from that data and nothing leaves the phone."))
+        }
+        .confirmationDialog(
+            "delete my class data from lhf's server?",
+            isPresented: $confirmingBackendDataDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("delete", role: .destructive) {
+                Task { _ = await state.deleteBackendData() }
+            }
+            Button("cancel", role: .cancel) {}
+        } message: {
+            Text("removes your enrollment and question history from lhf's server, and the course materials synced on this phone. classmates' access to shared course material is unaffected.")
         }
     }
 

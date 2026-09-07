@@ -151,11 +151,13 @@ final class AppState: ObservableObject {
     /// needs permission to run.
     @Published private(set) var announcementWatcherEnabled: Bool
     /// Settings → "ai assist", nested under the watcher toggle. Default
-    /// **false**: turning this on sends announcement text to Anthropic's API
-    /// over the network, which breaks the "everything is on-device" story
-    /// this whole app is built on (CLAUDE.md) unless the student opts in
-    /// knowingly, and it requires their own API key (`AnthropicKeyStore`) —
-    /// there's no shared key this app ships with. The free heuristic backend
+    /// **false**: turning this on sends announcement text to LHF's own
+    /// server (`BackendAnnouncementExtractor`, `PROTOCOL.md`'s
+    /// `extract-announcement`) to be read by an AI model, which breaks the
+    /// "on-device by default" story this whole app is built on (CLAUDE.md)
+    /// unless the student opts in knowingly — and only shows at all when
+    /// `BackendServices.client` is configured, since there's nowhere for the
+    /// request to go otherwise. The free heuristic backend
     /// (`HeuristicAnnouncementExtractor`) is what runs when this is off.
     @Published private(set) var announcementAIEnabled: Bool
     /// Announcement ids `syncAnnouncements()` has already run through an
@@ -1257,17 +1259,14 @@ final class AppState: ObservableObject {
         // under it.
         processedAnnouncementIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
-        // The Anthropic API key is deliberately left alone here, by the same
-        // precedent Gradescope's login already sets a few lines below this
-        // method (`disconnectGradescope` is a separate call the user never
-        // reaches from here): it is not a Canvas-session-derived credential —
-        // it's the student's own Anthropic account key, orthogonal to any
-        // Canvas login the same way a Gradescope session is, and disconnecting
-        // Canvas has never cleared Gradescope's credentials either. Clearing
-        // it here would also silently turn `announcementAIEnabled` into a
-        // no-op backend switch (falling back to the heuristic extractor)
-        // without the student ever having touched that toggle, which reads as
-        // a bug, not a safety measure.
+        // The backend identity (`BackendIdentityStore`) is deliberately left
+        // alone here, by the same precedent Gradescope's login already sets:
+        // it is not a Canvas-session-derived credential. It is the anonymous
+        // LHF account that scopes the student's quota and enrollments, and
+        // disconnecting Canvas has never cleared Gradescope's credentials
+        // either. The one path that removes it is Settings' "delete my class
+        // data" button (`deleteBackendData`), which the student reaches on
+        // purpose.
         reloadCompletionFromLedger()
         rebuildDashboardItems()
         // A disconnected user has no session to reconnect, so any earlier
@@ -1469,6 +1468,21 @@ final class AppState: ObservableObject {
 
         await sync()
         refreshCanvasSessionExpiredState()
+
+        if isCanvasConnected {
+            // Not awaited: the first course-materials sync can be several
+            // seconds per course (syllabus, modules, assignments,
+            // announcements), and onboarding's job is "get the student to
+            // the dashboard", not "have ask fully indexed before the first
+            // screen shows." `refreshCourseKnowledge` records its own
+            // notice in `courseKnowledgeNotice` on failure, so nothing here
+            // needs to observe how it turns out.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.refreshCourseKnowledge(cookies: cookies, force: true)
+            }
+        }
+
         return isCanvasConnected
     }
 
@@ -1987,8 +2001,8 @@ final class AppState: ObservableObject {
     }
 
     /// Fetches recent Canvas course announcements, extracts candidate tasks
-    /// from them (heuristically, free, on-device by default — or via the
-    /// Anthropic API if the student opted in with their own key), dedupes
+    /// from them (heuristically, free, on-device by default — or through
+    /// LHF's backend if the student turned on "ai assist"), dedupes
     /// against what's already on the dashboard, and upserts the survivors as
     /// `.canvasAnnouncement` ledger rows.
     ///
@@ -2042,8 +2056,8 @@ final class AppState: ObservableObject {
         // extracted by the same backend, which is what makes "processed"
         // mean the same thing for all of them.
         let extractor: any AnnouncementAssignmentExtractor
-        if announcementAIEnabled, !AnthropicKeyStore.load().isEmpty {
-            extractor = ClaudeAnnouncementExtractor(apiKey: AnthropicKeyStore.load())
+        if announcementAIEnabled, let client = BackendServices.client {
+            extractor = BackendAnnouncementExtractor(client: client)
         } else {
             extractor = HeuristicAnnouncementExtractor()
         }

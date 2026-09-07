@@ -70,9 +70,13 @@ FEATURES
 • Adjust any due date by hand when your professor moves it
 
 PRIVATE BY DESIGN
-Everything stays on your device. LHF has no account system and no server — it
-talks only to your school's Canvas (and Gradescope, if you connect it). We
-don't collect, track, or share anything.
+Your grades, your work, and your Canvas/Gradescope logins never leave your
+device. LHF talks to your school's Canvas (and Gradescope, if you connect it),
+and to a small server of ours that pools shared course material — syllabi,
+pages, assignments, announcements — across classmates in the same class, and
+answers optional questions you ask "the tree" with an AI model. Nothing
+personal is in that pool, questions and answers aren't stored, and there's no
+tracking, no ads, and no third-party SDKs.
 
 LHF is an independent app and is not affiliated with or endorsed by Instructure
 (Canvas), Turnitin (Gradescope), or any university.
@@ -120,15 +124,21 @@ canvas,assignments,deadlines,homework,planner,student,college,readings,reminders
 
 ## App Privacy ("nutrition label") answers
 
-When prompted in App Store Connect → App Privacy:
+When prompted in App Store Connect → App Privacy, this app now collects data:
 
-- **Do you collect data from this app?** → **No, we do not collect data.**
+- **User ID** — linked to the user, used for App Functionality (the anonymous
+  backend account that scopes enrollment and quota; not used for tracking).
+- **Other User Content** — linked to the user, used for App Functionality
+  (pooled Canvas course material — syllabi, pages, assignment descriptions,
+  announcements — uploaded from the student's own Canvas session; not used for
+  tracking).
 
-That single answer is the whole label, and it stays correct: schedules,
-sessions, and preferences are all processed and stored on-device only, and the
-developer receives nothing. It is consistent with the bundled
-`PrivacyInfo.xcprivacy` files (app and widget) and with `docs/PRIVACY.md`. Do
-not add any data types.
+No data type is used for tracking, and there is no third-party advertising or
+analytics SDK. Grades, completions, the work list, the student's name, and
+login credentials are not collected — they never leave the device. This is
+consistent with the bundled `PrivacyInfo.xcprivacy` files (app and widget) and
+with `docs/PRIVACY.md`. See `REVIEW_NOTES.md` → "Backend" for the full
+description.
 
 ## Content rights
 

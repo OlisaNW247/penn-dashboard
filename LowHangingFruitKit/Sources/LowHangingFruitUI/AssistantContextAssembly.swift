@@ -21,10 +21,10 @@ import LowHangingFruitKit
 // Three things a reader will expect to find and won't. (Since 2026-09-06 the
 // first two reach the model by a different route: `CourseKnowledgeCollector`
 // keeps syllabus prose and announcement bodies on-device, and
-// `ClaudeAssistantResponder.retrievedExcerpts` sends the few passages that
-// match a question in the per-turn user message — after the cache breakpoint,
-// so nothing here has to change. This document stays the small, stable,
-// cached part.)
+// `BackendAssistantResponder.retrievedExcerpts` sends the few passages that
+// match a question as a separate field on the request — after the cache
+// breakpoint, so nothing here has to change. This document stays the small,
+// stable, cached part.)
 //
 //  1. **Syllabus prose.** `SyllabusSetupView` does ingest syllabus text — from
 //     a PDF, a Canvas page, or pasted text — but `SyllabusParser` keeps only
@@ -55,7 +55,7 @@ import LowHangingFruitKit
 // bargain is not to introduce per-call variation of its own, which is why
 // `isCompleted` is the only piece of derived state consulted and why nothing
 // here formats a date. The current date reaches the model through the user
-// message instead (`ClaudeAssistantResponder.buildRequestBody`).
+// turn instead (`BackendAssistantResponder.makeRequest`).
 
 extension AppState {
     /// Renders this student's classes and work as the document the assistant

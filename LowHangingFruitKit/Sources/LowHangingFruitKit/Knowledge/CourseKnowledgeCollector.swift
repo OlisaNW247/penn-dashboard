@@ -11,16 +11,34 @@ import Foundation
 /// thrown, so one course with a broken Modules page can't hide the rest. An
 /// expired session is the exception: it is thrown so the caller can stop
 /// hammering Canvas and tell the student to reconnect.
+///
+/// `fetchFully` (see `run`) lets a caller skip the Canvas fetch for courses
+/// the shared backend already has fresh: if a classmate in the same Canvas
+/// site fully synced a course an hour ago, that course's syllabus,
+/// assignments, pages and modules are already sitting in the shared store
+/// and can be downloaded instead of re-scraped from Canvas, which is both
+/// cheaper for the student's device and gentler on Canvas itself.
+/// Announcements are the one exception: they're fetched for every course
+/// regardless of freshness, because a brand-new post can't wait for the
+/// next full-sync window.
 public struct CourseKnowledgeCollector: Sendable {
     public struct Report: Sendable {
         public let knowledge: CourseKnowledgeBase
         public let syncedCourses: Int
         public let errors: [String]
+        /// Which courses this run actually re-fetched from Canvas and
+        /// merged as a full resync — i.e. the `fetchFully` set that
+        /// succeeded (or, when `fetchFully` was `nil`, every course whose
+        /// endpoints mostly answered). A caller uploading to the shared
+        /// backend needs exactly this set for `SyncPlanner.uploads(fullyFetched:)`,
+        /// and `syncedCourses` alone (a count) can't reconstruct it.
+        public let fullyFetchedCourseIDs: Set<String>
 
-        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String]) {
+        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String], fullyFetchedCourseIDs: Set<String> = []) {
             self.knowledge = knowledge
             self.syncedCourses = syncedCourses
             self.errors = errors
+            self.fullyFetchedCourseIDs = fullyFetchedCourseIDs
         }
     }
 
@@ -45,7 +63,16 @@ public struct CourseKnowledgeCollector: Sendable {
         self.session = session
     }
 
-    public func run(courses: [CourseSummary], now: Date = Date()) async throws -> Report {
+    /// - Parameter fetchFully: Which courses to actually fetch from Canvas
+    ///   this run. `nil` (the default, and the only behavior before this
+    ///   parameter existed) means every course. A course in `courses` but
+    ///   not in this set still gets its announcements collected — that call
+    ///   covers every course in one request regardless — but is skipped for
+    ///   assignments/pages/syllabus/modules and is not inserted into
+    ///   `synced`, so `merge` leaves its existing documents exactly as they
+    ///   were rather than treating the (empty, for those endpoints) fetch
+    ///   this run as a full resync that erases them.
+    public func run(courses: [CourseSummary], fetchFully: Set<String>? = nil, now: Date = Date()) async throws -> Report {
         guard !courses.isEmpty else {
             return Report(knowledge: store.load(), syncedCourses: 0, errors: ["No Canvas courses with ids to sync."])
         }
@@ -73,6 +100,15 @@ public struct CourseKnowledgeCollector: Sendable {
         let modules = CanvasModulesClient(baseURL: baseURL, cookies: cookies, session: session)
 
         for course in courses {
+            guard fetchFully == nil || fetchFully!.contains(course.courseID) else {
+                // Already fresh on the shared backend for this run: leave
+                // its assignments/pages/syllabus/modules alone (they were,
+                // or will be, applied from `SyncPlanner.applyDownloads`
+                // instead) and don't touch `synced`, so the merge below
+                // keeps whatever this course already has on disk.
+                continue
+            }
+
             var courseErrors = 0
 
             do {
@@ -123,6 +159,6 @@ public struct CourseKnowledgeCollector: Sendable {
         var knowledge = store.load()
         knowledge.merge(courses: courses, documents: documents, resyncedCourseIDs: synced, syncedAt: now)
         try store.save(knowledge)
-        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors)
+        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors, fullyFetchedCourseIDs: synced)
     }
 }

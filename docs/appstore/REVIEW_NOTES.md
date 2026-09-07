@@ -11,8 +11,41 @@ back on, the old walkthrough is in git history._
 **What it is:** A personal academic dashboard for university students. It reads
 the student's own Canvas deadlines — assignments, readings, and class
 sessions — and shows them as one chronological "what's due next" list, with
-local reminders and per-class notification settings. Everything runs on the
-device; we operate no server.
+local reminders and per-class notification settings. Grades, completions, and
+the student's own work stay on the device. A small backend of ours pools
+shared, non-personal course material (syllabi, pages, assignment descriptions,
+announcements) per Canvas course and answers optional AI questions; see
+"Backend" below.
+
+## Backend
+
+On first launch the app creates an anonymous account with our backend
+(Supabase — Postgres plus a few serverless functions): no email, password, or
+name, just an id used to scope enrollment and quota. After the student
+connects Canvas, the app fetches that class's syllabus, pages, modules,
+assignment descriptions, and announcements with the student's own logged-in
+session — as it always has — and uploads the extracted text, keyed by Canvas's
+own course id, so every student in the same course site shares one copy
+instead of each fetching and storing it independently; a new student gets the
+course's material instantly. This sync is automatic (after Canvas connect,
+then on the existing hourly refresh) — there is no manual sync button and
+nothing for the student to type in. Grades, completions, submission state, the
+work list, the student's name, and login cookies are never uploaded.
+Questions asked in "the tree" (the in-app ask screen) are sent to the backend
+along with on-device dashboard context and matched course-material excerpts,
+answered by an AI model reached through OpenRouter with its data-collection
+denied, and neither the question nor the answer is stored — only a per-user
+daily request count and a token total, to enforce a fair-use limit. Offline,
+over that limit, or if the backend is unreachable, the app answers from what
+it already has on-device, exactly as before. Settings has a button to delete
+the student's enrollment records, usage counters, and anonymous account from
+the server at any time; the shared course material itself is not deleted,
+because it isn't the deleting student's data — it's the same course content
+every enrolled student already sees on Canvas. This also means App Privacy
+("nutrition label") answers change from "we do not collect data" to: **Data
+linked to user** — User ID (app functionality), and **User Content: other user
+content** — the pooled course materials (app functionality). None of it is
+used for tracking.
 
 ---
 
@@ -63,19 +96,22 @@ end-to-end.
 
 ## Data, privacy, and networking
 
-- **No backend of ours.** The app talks only to the user's school Canvas
-  (`canvas.upenn.edu`) and, if the user connects it, `gradescope.com`. We operate
-  no server and receive no user data.
-- **Everything is stored on-device.** Assignments, completions, reminder
-  settings, and self-created tasks live in local storage. Login session cookies
-  are stored in the **iOS Keychain**, encrypted at rest and marked
-  this-device-only.
+- **The app talks to the user's school Canvas** (`canvas.upenn.edu`), to
+  `gradescope.com` if the user connects it, and to our own small backend
+  (Supabase) for course-material pooling and the optional AI-answered
+  questions described above. See "Backend."
+- **Grades, completions, work list, and identity stay on-device.**
+  Assignments, completions, reminder settings, self-created tasks, and the
+  student's name live in local storage and are never uploaded. Login session
+  cookies are stored in the **iOS Keychain**, encrypted at rest and marked
+  this-device-only, and are also never uploaded.
 - **No analytics, tracking, ads, or third-party SDKs.** Privacy manifests are
-  bundled in both the app and the widget declaring no tracking and no collected
-  data.
+  bundled in both the app and the widget; the backend does not add tracking —
+  see the updated data-type answers under "Backend" above.
 - **Sign-out:** Settings → Account has **Disconnect Canvas** and **Disconnect
-  Gradescope**, which erase the stored session for that service. There is no
-  account to delete — the app never creates one.
+  Gradescope**, which erase the stored session for that service. Settings also
+  has **Delete my class data from LHF's server**, which removes the backend's
+  anonymous account and its enrollment/usage rows.
 
 ## Third-party services (Guideline 5.2.2)
 

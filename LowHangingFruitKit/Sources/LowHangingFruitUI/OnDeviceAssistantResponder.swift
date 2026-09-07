@@ -1,8 +1,9 @@
 import Foundation
 import LowHangingFruitKit
 
-/// The backend `ask` runs on when the student has **not** entered an
-/// Anthropic key — which is every student by default. Nothing here touches
+/// The responder `ask` falls back to when LHF's backend is unconfigured,
+/// unreachable, or over quota (`BackendAssistantResponder` delegates here),
+/// and the only one under tests. Nothing here touches
 /// the network: `ClassQuestionAnswerer` computes exact answers (what's due,
 /// next exam, did I submit) from `context.work` and answers policy and
 /// content questions by retrieval over `context.knowledge`; on iOS 26 /

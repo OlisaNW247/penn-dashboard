@@ -1,9 +1,105 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-09-06. Read `CLAUDE.md` first for commands, storage
+_Last updated: 2026-09-07. Read `CLAUDE.md` first for commands, storage
 tiers, traps, and the overseer/doer working model._
 
-## ⚠️ Current state: `v5` is the line
+## ⚠️ Current state: `v5` is the line, now with a backend
+
+**New work goes on `v5`.** This session added a small backend of our own
+(Supabase: Postgres + Edge Functions, contract in `backend/PROTOCOL.md`) on
+top of the 2026-09-06 `v5` rebuild described below. See the 2026-09-07 entry
+in `docs/decisions.md` for the reasoning and what was rejected.
+
+### What landed
+
+- **The backend itself** (`backend/`): SQL migrations for `courses`,
+  `course_documents`, `enrollments`, `course_profiles`, `ask_usage`, RLS
+  policies scoping every row to the caller's enrollment; Edge Functions
+  `sync`, `ask`, `extract-profile`, `extract-announcement`, `delete-account`.
+- **Anonymous accounts.** First launch signs up anonymously with Supabase
+  GoTrue (no email, no password, no name) and stores the refresh token in the
+  Keychain beside the session cookies.
+- **Automatic course-material sync.** The manifest/upload exchange in
+  `PROTOCOL.md` § `sync` pools syllabus/page/module/assignment-description/
+  announcement text per Canvas course id, runs after Canvas connect and again
+  on the existing hourly-staleness refresh loop — no manual sync button, no
+  user-entered key.
+- **`ask` gets a server path.** With the backend reachable and under quota,
+  questions go to `ask` (context document + retrieved excerpts, streamed back)
+  answered via OpenRouter, default model `z-ai/glm-5.3-flash`, fallback
+  `openai/gpt-5.6-luna`, data-collection denied. `OnDeviceAssistantResponder`
+  remains the fallback — offline, over quota, or backend down — unchanged
+  from the 2026-09-06 work below.
+- **Announcement Watcher's "AI assist"** (still opt-in, still default off) now
+  calls `extract-announcement` on the backend instead of a user-supplied
+  Anthropic key.
+- **Settings → "delete my class data from lhf's server"**, calling
+  `delete-account`.
+
+### What has NOT been compiled
+
+**All Swift written for this change — `BackendConfiguration.swift`, the
+Supabase auth/session client, the `sync`/`ask` request plumbing, the Settings
+delete button, and the responder wiring that picks the backend path over
+`OnDeviceAssistantResponder` — was written without a compiler and has never
+been built, let alone run.** Treat every claim above about behavior as a
+design description, not a verified fact, until the steps below are actually
+run on a Mac. The backend's own Deno/TypeScript side is likewise unexercised
+beyond whatever `deno task test`/`deno task check` catch; it has never been
+deployed to a live Supabase project or called from a real client.
+
+### Mac verification steps, in order
+
+1. `cd LowHangingFruitKit && swift test` — expect **at least** the prior
+   baseline (804 tests / 87 suites; see `CLAUDE.md`). A lower count means the
+   backend changes broke something in the Kit/UI build, not that tests were
+   removed on purpose.
+2. iOS build: `xcodebuild -project LowHangingFruit.xcodeproj -scheme
+   LowHangingFruit -configuration Debug -destination 'platform=iOS
+   Simulator,name=iPhone 17 Pro' build`.
+3. Paste the Supabase project URL and anon key into
+   `LowHangingFruitKit/Sources/LowHangingFruitUI/BackendConfiguration.swift`.
+4. Deploy the backend:
+   ```bash
+   cd backend
+   supabase link
+   supabase db push
+   supabase secrets set OPENROUTER_API_KEY=…
+   supabase functions deploy
+   ```
+5. In the Supabase dashboard, Authentication → Providers, enable **Anonymous
+   sign-ins** (off by default on a new project; `sync`/`ask` will 401 without
+   it).
+6. Device run: connect Canvas, then watch Settings → ask for "synced N min
+   ago"; ask a policy question and confirm it answers (server path); turn on
+   Airplane Mode and ask again to confirm the on-device fallback still
+   answers (no citations to material fetched only server-side, but no
+   hard failure either); use the Settings delete button and confirm the
+   enrollment/usage rows and anonymous user disappear from the Supabase
+   dashboard.
+
+### Loose ends inherited, unchanged
+- `CourseContentDashboardTests` flake (shared `UserDefaults` race).
+- The ask screen's UI is still the prototype the owner called "not quite
+  there"; this session did not touch it.
+- No call has ever been made against the live Anthropic *or* OpenRouter API.
+- Four old branches carry a handful of July/August 1.0.0-era commits found
+  nowhere else (`claude/handoff-continuation-4a4vnv`, `-bn0e5m`,
+  `claude/agent-operating-model-0lyx87`); judged superseded, left alone.
+- `ClaudeAnnouncementExtractor` (Kit, `Announcements/`) is now dead code: nothing
+  can construct it with a key, but it still compiles and its decode tests in
+  `AnnouncementExtractionTests` still run. Left in place so this uncompiled
+  change did not also delete a tested file blind; retire it, and its tests,
+  on a Mac with the suite green.
+- Enrollment is asserted by the client, not proven — see `PROTOCOL.md` §
+  Limitations. Known and accepted for v1, not a bug to fix here.
+
+---
+
+_Superseded (2026-09-06) — kept for the reasoning behind the ask knowledge
+engine, folded into the backend work above._
+
+## ⚠️ Prior state: `v5` is the line (pre-backend)
 
 **New work goes on `v5`.** On 2026-09-06 `v5` was rebuilt as
 `assistant-ui` (Marco's ask screen + Claude backend, on `v6`) merged with
@@ -15,7 +111,9 @@ retrieved excerpts for the Claude backend. See the 2026-09-06 entry in
 **Verified green baseline (owner's Mac, 2026-09-06): 804 tests / 87
 suites** (plus 4 XCTest scheduler tests), zero failures, up from 736/76 on
 `assistant-ui`. The iOS simulator build (iPhone 17 Pro, Xcode 17 / iOS 26.2
-SDK) is also clean on this head — only pre-existing warnings.
+SDK) is also clean on this head — only pre-existing warnings. This baseline
+predates the 2026-09-07 backend work above and needs re-verification per the
+steps above.
 
 ### What landed (all new unless marked)
 
@@ -45,8 +143,9 @@ SDK) is also clean on this head — only pre-existing warnings.
    answer with citations, no network.
 3. Paste a key, ask the same policy question. The answer should now quote
    the syllabus; that is the excerpts reaching Claude.
-4. `docs/PRIVACY.md` is deliberately untouched (published material); revise
-   at ship time to say course materials are stored on-device.
+4. `docs/PRIVACY.md` was deliberately left untouched at the time (published
+   material); it has since been rewritten for the backend — see the entry
+   above.
 
 ### Loose ends inherited, unchanged
 - `CourseContentDashboardTests` flake (shared `UserDefaults` race).

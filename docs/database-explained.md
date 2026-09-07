@@ -14,7 +14,7 @@ class with `@Model` — `StoredAssignment`, `StoredGradeObservation` — and eac
 instance becomes a row in a table. `ModelContainer` opens the file,
 `ModelContext` reads and writes it, `context.save()` commits.
 
-That is the whole of it. There is **no server, no account, and no network**.
+That is the whole of it for the ledger described in this document: **no server, no account, and no network**. (Since 2026-09-07, LHF also runs a small backend that pools course materials and answers ask questions — see docs/PRIVACY.md and backend/PROTOCOL.md — but the ledger itself, covered in this document, is never sent to it.)
 Nothing about SwiftData involves iCloud unless you explicitly ask for it, and
 this app doesn't (§5). When `AssignmentStore.reconcile()` runs, the only thing
 that leaves the process is a write to a local file.
@@ -104,9 +104,7 @@ exercised by `MigrationChainTests`.
 app removes the App Group container along with it, and the Keychain items with
 it. Both `.store` files, the shared defaults, the widget snapshot, the session
 cookies — all of it. A reinstall starts from a genuinely empty database and the
-student signs in to Canvas again from scratch. There is no server-side copy to
-restore from, because there is no server. `docs/PRIVACY.md` states this to the
-user in the same terms, and it is accurate.
+student signs in to Canvas again from scratch. There is no server-side copy of the ledger to restore from (the backend added in 2026-09-07 holds course materials and per-user question counts, not the student's assignments or completions). `docs/PRIVACY.md` states this to the user, and it is accurate.
 
 This is the one lifecycle answer people find surprising, so don't soften it. An
 uninstall is a full data loss, by design.
@@ -200,8 +198,7 @@ nothing.
 Short version, suitable for adapting into the App Store listing. Every claim
 below is checkable against the repo, and I checked them:
 
-- **No server, no account.** There is no LHF backend, so there is nothing for
-  your data to be uploaded to. The app never creates an account.
+- **No server-side copy of the ledger.** The backend that exists since 2026-09-07 never receives the student's assignments, completions, or grades — only pooled course materials and a count of questions asked; questions and answers themselves are not stored. The app never creates an account tied to your identity.
 - **No analytics, no tracking, no advertising.** `App/PrivacyInfo.xcprivacy` and
   `LHFWidget/PrivacyInfo.xcprivacy` both declare `NSPrivacyTracking` false, an
   empty `NSPrivacyTrackingDomains`, and an empty `NSPrivacyCollectedDataTypes`.

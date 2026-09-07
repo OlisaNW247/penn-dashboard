@@ -3,24 +3,39 @@
 A personal academic dashboard for Penn students. Reads the student's own **Canvas**
 calendar feed and **Gradescope**, merges them into one chronological "what's due
 next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, also
-builds for macOS from the same source. **On-device by default** — no server, no
-accounts, no analytics, no third-party SDKs.
+builds for macOS from the same source. **The student's own data is on-device by
+default** — grades, completions, submission state, the work list, the student's
+name, and Canvas/Gradescope cookies never leave the phone. There is no analytics,
+tracking, or third-party SDK.
 
-Two features are the exception, and both are opt-in and off until the student
-pastes in **their own Anthropic API key** (Settings; stored in the Keychain via
-`AnthropicKeyStore`, never `UserDefaults`): the Announcement Watcher's AI assist,
-and the Claude backend of **ask** (the screen itself is titled **"the tree"**).
-Those send class data to Anthropic. Nothing else leaves the device, there is
-still no LHF server or account, and a student who never enters a key is still
-fully on-device — including ask itself, which without a key runs
-`OnDeviceAssistantResponder`: exact answers computed from the dashboard's items,
-policy and content answers retrieved from the course materials the app syncs
-(`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 / macOS 26
-Apple Intelligence devices a rephrase by Apple's on-device model
-(`OnDeviceLanguageModel`). Say it this way rather than flatly "everything is
-on-device", which stopped being true on the `assistant-ui` line.
+That said, the app is no longer backendless. LHF runs a small Supabase project
+(Postgres + Edge Functions; see `backend/PROTOCOL.md`) that every install talks
+to via an anonymous account created on first launch — no email, no password, no
+name. Two things go through it: course materials (syllabus, course pages,
+modules, assignment descriptions, announcements) fetched from Canvas with the
+student's own login are uploaded and pooled per Canvas course, so classmates
+share one copy and a new student gets the course instantly (sync is automatic —
+after Canvas connect, then on the existing refresh loop, hourly staleness; no
+manual sync, no user-entered API key); and questions to **ask** (the screen
+itself is titled **"the tree"**) are sent to the backend with the on-device
+context document and matched excerpts, answered by an AI model via OpenRouter
+under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
+data-collection-deny flag), with the Announcement Watcher's opt-in "AI assist"
+toggle routed the same way. Neither questions nor answers are stored — only
+per-user daily request counts and token totals. Settings has a button to delete
+a student's enrollment/usage rows and anonymous account from the backend.
+Offline, over quota, or with the backend unreachable, ask answers on-device as
+before: `OnDeviceAssistantResponder` computes exact answers from the dashboard's
+items, retrieves policy and content answers from the course materials the app
+syncs (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
+macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
+(`OnDeviceLanguageModel`). Say it this way — "the student's own data stays
+on-device; course material is pooled server-side; ask has an on-device
+fallback" — rather than flatly "everything is on-device" (stopped being true on
+`assistant-ui`) or "no server" (stopped being true adding the backend).
 
-Shipped on the App Store as **2.0.1 (build 6)** from `v3.5`; `v5` carries it.
+Shipped on the App Store as **2.0.1 (build 6)** from `v3.5`; `v5` carries it,
+now with the backend on top.
 
 ## Commands
 
@@ -34,6 +49,10 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
 
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
+
+# Backend — Deno/Supabase Edge Functions, a separate toolchain from the above
+cd backend && deno task test
+cd backend && deno task check
 ```
 
 `-LHFDemoData` (DEBUG only) seeds the bundled sample courses so the app is
@@ -48,7 +67,10 @@ xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistan
 Baseline on `v5`, verified on a Mac (2026-09-06): **804 tests / 87 suites
 green** (plus 4 XCTest scheduler tests), up from 736/76 on `assistant-ui` — the
 merge of `v3.5` (three suites) and the ask knowledge engine (eight suites),
-first compiled on the owner's Mac the same day the code was written.
+first compiled on the owner's Mac the same day the code was written. This
+baseline predates the backend work described above and must be re-verified on
+a Mac (`swift test`, then the iOS build) now that it's landed — see the one
+rule at the bottom of this file.
 
 Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
 suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
@@ -72,6 +94,7 @@ in the polluting suite, not in the assertion.
 | `…/LowHangingFruitUI/Resources/` | Bundled media. Load via `bundledImage(_:ext:)` (`Bundle.module`) — a bare `Image("name")` resolves against the *main* bundle and silently renders nothing. |
 | `App/` | iOS/macOS app target, entitlements, assets |
 | `LHFWidget/` | Home/Lock Screen widget extension — a **separate process** |
+| `backend/` | The Supabase project: SQL migrations, Edge Functions, `PROTOCOL.md` (the contract the app and server are both written against) |
 | `docs/` | Design docs and plain-language explainers |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
@@ -183,6 +206,11 @@ course is deliberately cosmetic only.
   dev Mac; `sips` resizes and converts but does none of this. A short
   CoreGraphics script run with `swift file.swift` is the tool.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
+- **Nothing under `backend/` can be exercised from `swift test`**; run its deno
+  tests separately (`cd backend && deno task test`, `deno task check`).
+  `BackendServices.client` is nil under tests and in an unconfigured build, so
+  the app is fully on-device there — a green test run proves nothing about the
+  backend path.
 
 ## Conventions
 
@@ -207,7 +235,7 @@ course is deliberately cosmetic only.
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
 | `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
 | `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. |
-| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend. New work goes here. |
+| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback. New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

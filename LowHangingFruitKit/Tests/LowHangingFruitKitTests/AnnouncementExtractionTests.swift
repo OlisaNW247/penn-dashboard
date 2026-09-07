@@ -13,12 +13,12 @@ import Testing
 /// a real extractor or makes a network call, matching the brief's
 /// no-network constraint.
 ///
-/// `AnthropicKeyStore` (UI target) gets no test in this file: it's a
-/// line-for-line mirror of `ICSFeedURLStore`, whose Keychain save/load/clear
-/// behavior is already covered elsewhere, and Keychain access inside a
-/// sandboxed test runner is exactly the kind of environment-dependent
-/// behavior this suite avoids (see `SharedDefaults.isTestRunner`'s doc
-/// comment on the same theme, one layer down).
+/// The user-supplied-key path this comment used to describe
+/// (`AnthropicKeyStore`, UI target) is gone: the AI backend is LHF's own
+/// server now, reached through `BackendAnnouncementExtractor` (UI target),
+/// which gets no test in this file for the same reason a real
+/// `ClaudeAnnouncementExtractor` never does — it's a network call, and this
+/// suite's whole point is exercising the pure, no-network seams.
 @Suite("Announcement extraction")
 struct AnnouncementExtractionTests {
 
