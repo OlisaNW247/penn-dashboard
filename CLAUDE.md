@@ -208,7 +208,6 @@ course is deliberately cosmetic only.
 | `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
 | `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. |
 | `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend. New work goes here. |
-| `claude/adhd-information-i19klh` | Dead. The knowledge engine's first draft, built against stale `main`; everything worth keeping was ported to `v5`. Delete once `v5` is verified. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps
