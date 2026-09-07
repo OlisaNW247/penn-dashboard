@@ -254,7 +254,7 @@ final class AppState: ObservableObject {
     /// bodies, assignment descriptions, modules, pages. A re-fetchable cache,
     /// not a tier: see `CourseKnowledgeStore`. Methods live in
     /// `AppState+CourseKnowledge.swift`.
-    @Published private(set) var courseKnowledge: CourseKnowledgeBase
+    @Published var courseKnowledge: CourseKnowledgeBase
     @Published var isCourseKnowledgeSyncing = false
     @Published var courseKnowledgeNotice: String?
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
