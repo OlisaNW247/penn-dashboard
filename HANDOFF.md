@@ -14,13 +14,8 @@ retrieved excerpts for the Claude backend. See the 2026-09-06 entry in
 
 **Verified green baseline (owner's Mac, 2026-09-06): 804 tests / 87
 suites** (plus 4 XCTest scheduler tests), zero failures, up from 736/76 on
-`assistant-ui`. The iOS simulator build has **not** been run on this head
-yet:
-
-```bash
-xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
-  -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-```
+`assistant-ui`. The iOS simulator build (iPhone 17 Pro, Xcode 17 / iOS 26.2
+SDK) is also clean on this head — only pre-existing warnings.
 
 ### What landed (all new unless marked)
 
