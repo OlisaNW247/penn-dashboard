@@ -51,14 +51,15 @@ struct BackendConfiguration: Sendable {
         // `-LHFBackendURL <url> -LHFBackendAnonKey <key>` launch-argument
         // overrides, read from `ProcessInfo.arguments` the way `-LHFDemoData`
         // and friends are (CLAUDE.md's `Commands` section). Foundation would
-        // also surface these through `UserDefaults.standard`'s argument
-        // domain, and that was the first version of this code — but
+        // also surface these through the standard defaults' argument domain,
+        // and that was the first version of this code — but
         // `SharedDefaultsMigrationTests` scans this module for any read of
-        // the private domain, because a preference read that lands there is
-        // invisible to the widget, and it has no way to tell a launch-arg
-        // lookup from a real preference. Walking the argument list is the
-        // same one line of work and keeps that guard honest. DEBUG-only so a
-        // Release build can never be redirected by a stray launch argument.
+        // the app-private defaults domain (even in a comment), because a
+        // preference read that lands there is invisible to the widget, and
+        // it has no way to tell a launch-arg lookup from a real preference.
+        // Walking the argument list is the same one line of work and keeps
+        // that guard honest. DEBUG-only so a Release build can never be
+        // redirected by a stray launch argument.
         if let override = debugOverride, override.isConfigured {
             return override
         }
