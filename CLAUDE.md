@@ -66,9 +66,11 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-08): **924 tests / 91 suites
+Baseline on `v5`, verified on a Mac (2026-09-08): **937 tests / 92 suites
 green** (plus 4 XCTest scheduler tests), up from 853/90 the day before, after
-the course-websites layer and the Announcement Watcher rewrite. Both were
+the course-websites layer, the Announcement Watcher rewrite, and multi-site
+course identity (a code can now be several Canvas sites; each site's
+documents are labelled by the registrar's activity for its section). Both were
 written without a compiler; the one first-run compile error was a raw string
 closed early by a `"#` inside `href="#"` (double the delimiter). The backend
 is deployed to the live Supabase project with all six functions; the live

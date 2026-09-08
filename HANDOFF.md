@@ -57,9 +57,14 @@ Two more layers, same shape (backend tested here, Swift compiled on the Mac):
   overdue); due times resolve to class meeting times from the registrar;
   AI assist is on by default with the heuristic as a free pre-filter; a
   one-time repair purges uncompleted announcement-derived rows.
-- **Verified on the Mac 2026-09-08: 924 tests / 91 suites green**, and both
-  the websites migration and all six functions are deployed to the live
-  project. Device checks still outstanding: CIS 2400 site crawled and cited
+- **Multi-site courses.** PHYS 0151 is two Canvas sites (lecture 401, lab
+  151) that both parse to one code; the materials sync had fetched only the
+  lab. The parser keeps the section, the sync fetches every site whose code
+  is known, search scopes by code across sites, and each site's documents
+  are labelled by the registrar's activity for its section. Server keys the
+  per-site profiles by a site label.
+- **Verified on the Mac 2026-09-08: 937 tests / 92 suites green**, and all
+  four migrations plus all six functions are deployed to the live project. Device checks still outstanding: CIS 2400 site crawled and cited
   by ask; the "Thursday Slides Posted" item gone after the repair and not
   re-created; a real "read before class" item filed as an event.
 
