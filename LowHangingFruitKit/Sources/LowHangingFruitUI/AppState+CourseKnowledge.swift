@@ -64,9 +64,29 @@ extension AppState {
     /// hours' worth of staleness.
     static let courseKnowledgeStaleAfter: TimeInterval = 60 * 60
 
+    /// Bump this whenever the sync logic changes what it would fetch or how it
+    /// keys it. The staleness window alone let a build that taught the sync
+    /// to fetch every Canvas site of a course sit idle for an hour after
+    /// install, because the previous build had synced recently and the
+    /// knowledge base looked fresh — nothing on disk knew the *rules* had
+    /// changed. A stored version older than this one counts as stale.
+    ///   2: courses come from every Canvas site of a code (2026-09-08).
+    static let courseKnowledgeSyncVersion = 2
+    private static let courseKnowledgeSyncVersionKey = "courseKnowledgeSyncVersionV1"
+
     var courseKnowledgeIsStale: Bool {
+        if UserDefaults.lhf.integer(forKey: Self.courseKnowledgeSyncVersionKey) < Self.courseKnowledgeSyncVersion {
+            return true
+        }
         guard let last = courseKnowledge.lastSyncedAt else { return true }
         return Date().timeIntervalSince(last) > Self.courseKnowledgeStaleAfter
+    }
+
+    /// Recorded only after a run that reached the collector, so a launch that
+    /// bails early (no cookies, backend down before the fetch) keeps the
+    /// forced resync pending.
+    private func markCourseKnowledgeSyncVersion() {
+        UserDefaults.lhf.set(Self.courseKnowledgeSyncVersion, forKey: Self.courseKnowledgeSyncVersionKey)
     }
 
     /// The knowledge `ask` reasons over. Preview mode (the App Store
@@ -119,6 +139,7 @@ extension AppState {
             do {
                 let report = try await collector.run(courses: courses, fetchFully: nil)
                 courseKnowledge = report.knowledge
+                markCourseKnowledgeSyncVersion()
                 if report.syncedCourses == 0 {
                     courseKnowledgeNotice = "couldn't read course materials from canvas. \(report.errors.first ?? "")"
                 } else if !report.errors.isEmpty {
@@ -168,6 +189,7 @@ extension AppState {
         do {
             let report = try await collector.run(courses: courses, fetchFully: Set(plan.coursesToFetch.map(\.courseID)))
             courseKnowledge = report.knowledge
+            markCourseKnowledgeSyncVersion()
             if !report.errors.isEmpty {
                 courseKnowledgeNotice = "synced \(report.fullyFetchedCourseIDs.count) courses; some pages were skipped."
             } else if manifestSucceeded {
