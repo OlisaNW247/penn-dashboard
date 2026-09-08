@@ -110,4 +110,20 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
         }
         return nil
     }
+
+    /// Whether labelling a hit from this course as `[lecture]` or `[lab]`
+    /// tells the reader anything. It does only when the course is actually
+    /// split: at least one of its documents classifies as a lab or a
+    /// recitation. A plain lecture course with a syllabus that happens to
+    /// mention exams would otherwise sprout a "[lecture]" tag on every
+    /// answer, which reads as noise to the student and as a hint of a lab
+    /// that doesn't exist to the model.
+    public static func courseIsSplit(_ documents: [CourseDocument]) -> Bool {
+        documents.contains { document in
+            switch classify(title: document.title, text: document.text) {
+            case .lab, .recitation: return true
+            case .lecture, .general: return false
+            }
+        }
+    }
 }

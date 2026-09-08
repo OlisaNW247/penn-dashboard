@@ -102,4 +102,19 @@ struct DocumentComponentTests {
         #expect(DocumentComponent.recitation.label == "recitation")
         #expect(DocumentComponent.lecture.label == "lecture")
     }
+
+    @Test("courseIsSplit is true only when a lab or recitation document exists")
+    func courseIsSplit() {
+        func doc(_ title: String, _ text: String) -> CourseDocument {
+            CourseDocument(courseID: "1", course: "PHYS 0151", kind: .syllabus, sourceID: title, title: title, url: nil, text: text, fetchedAt: Date(timeIntervalSince1970: 0))
+        }
+        let lecture = doc("PHYS 0151 lecture syllabus", "Lecture meets twice a week. Two midterm exams and problem sets weekly.")
+        let lab = doc("PHYS 0151 lab syllabus", "Lab reports are due one week after each lab session.")
+        let plain = doc("CIS 2400 syllabus", "Late policy: three late days for the semester. Homework and exams as scheduled.")
+        #expect(DocumentComponent.courseIsSplit([lecture, lab]))
+        #expect(DocumentComponent.courseIsSplit([lab]))
+        #expect(!DocumentComponent.courseIsSplit([lecture]))
+        #expect(!DocumentComponent.courseIsSplit([plain]))
+        #expect(!DocumentComponent.courseIsSplit([]))
+    }
 }

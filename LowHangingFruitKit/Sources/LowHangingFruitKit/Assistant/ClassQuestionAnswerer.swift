@@ -388,7 +388,10 @@ public struct ClassQuestionAnswerer: Sendable {
     /// course. Empty for `.general`, which is most documents and shouldn't
     /// look labelled as if it were part of a split.
     private func componentLabel(_ hit: SearchHit) -> String {
-        hit.component == .general ? "" : "[\(hit.component.label)] "
+        guard hit.component != .general,
+              DocumentComponent.courseIsSplit(context.knowledge.documents(for: hit.document.courseID))
+        else { return "" }
+        return "[\(hit.component.label)] "
     }
 
     private func sources(for hits: [SearchHit]) -> [SourceReference] {

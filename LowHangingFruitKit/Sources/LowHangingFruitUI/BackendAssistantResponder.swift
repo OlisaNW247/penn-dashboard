@@ -214,13 +214,19 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         let preferredComponent = DocumentComponent.mentioned(in: question)
         let hits = CourseSearch(knowledge: context.knowledge).search(question, courseID: courseID, preferredComponent: preferredComponent, limit: excerptLimit)
         guard !hits.isEmpty else { return "" }
+        // Labelled only for courses that are actually split (a lecture
+        // syllabus and a lab syllabus sharing one Canvas site) so the model
+        // can tell the two apart — see `DocumentComponent.courseIsSplit`.
+        // Computed once per course, not per hit: classification reads every
+        // document of the course.
+        var splitByCourse: [String: Bool] = [:]
+        for hit in hits where splitByCourse[hit.document.courseID] == nil {
+            splitByCourse[hit.document.courseID] = DocumentComponent.courseIsSplit(context.knowledge.documents(for: hit.document.courseID))
+        }
         let lines = hits.enumerated().map { index, hit -> String in
             let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
-            // A non-general component is labelled so a multi-component course
-            // (a lecture syllabus and a lab syllabus sharing one Canvas site)
-            // doesn't read as one undifferentiated blob to the model — see
-            // `DocumentComponent`'s doc comment for the bug this fixes.
-            let componentTag = hit.component == .general ? "" : "[\(hit.component.label)] · "
+            let labelled = hit.component != .general && (splitByCourse[hit.document.courseID] ?? false)
+            let componentTag = labelled ? "[\(hit.component.label)] · " : ""
             return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
         }
         return (["RETRIEVED EXCERPTS (from the student's synced course materials):"] + lines).joined(separator: "\n")
