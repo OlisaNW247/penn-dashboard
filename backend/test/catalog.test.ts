@@ -5,11 +5,13 @@
 // which this container's network cannot reach anyway.
 import { strict as assert } from "node:assert";
 import {
+  activityForSection,
   catalogCode,
   catalogEntryWire,
   catalogIsStale,
   fetchCatalogCourse,
   parsePennLabsCourse,
+  siteLabel,
   structureBlock,
   type CatalogCourseRow,
 } from "../supabase/functions/_shared/catalog.ts";
@@ -459,4 +461,61 @@ Deno.test("catalogEntryWire: a row with no meetings produces an empty meetings a
   const row: CatalogCourseRow = { ...PHYS_ROW, components: [] };
   const wire = catalogEntryWire(row, "some-canvas-id");
   assert.deepEqual(wire.meetings, []);
+});
+
+// ---------------------------------------------------------------------
+// activityForSection
+// ---------------------------------------------------------------------
+
+Deno.test("activityForSection: 401 resolves to LEC on the PHYS 0151 fixture", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  assert.equal(activityForSection(row, "401"), "LEC");
+});
+
+Deno.test("activityForSection: 151 resolves to LAB on the PHYS 0151 fixture", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  assert.equal(activityForSection(row, "151"), "LAB");
+});
+
+Deno.test("activityForSection: a section absent from every component's sectionIDs is undefined", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  assert.equal(activityForSection(row, "999"), undefined);
+});
+
+Deno.test("activityForSection: matches the suffix, not a substring anywhere in the id", () => {
+  // "01" is a substring of "PHYS-0151-401" but is not the section suffix --
+  // must not false-match.
+  assert.equal(activityForSection(PHYS_ROW, "01"), undefined);
+});
+
+// ---------------------------------------------------------------------
+// siteLabel
+// ---------------------------------------------------------------------
+
+Deno.test("siteLabel: no section is just the code", () => {
+  assert.equal(siteLabel("PHYS 0151", undefined, undefined), "PHYS 0151");
+});
+
+Deno.test("siteLabel: lecture site", () => {
+  assert.equal(siteLabel("PHYS 0151", "401", "LEC"), "PHYS 0151 — lecture site (section 401)");
+});
+
+Deno.test("siteLabel: lab site", () => {
+  assert.equal(siteLabel("PHYS 0151", "151", "LAB"), "PHYS 0151 — lab site (section 151)");
+});
+
+Deno.test("siteLabel: recitation and seminar site words", () => {
+  assert.equal(siteLabel("CIS 1200", "201", "REC"), "CIS 1200 — recitation site (section 201)");
+  assert.equal(siteLabel("ENGL 1010", "301", "SEM"), "ENGL 1010 — seminar site (section 301)");
+});
+
+Deno.test("siteLabel: section present but activity unknown/unresolved omits the site word", () => {
+  assert.equal(siteLabel("PHYS 0151", "002", undefined), "PHYS 0151 (section 002)");
+});
+
+Deno.test("siteLabel: an activity code with no named word lowercases the raw code", () => {
+  assert.equal(siteLabel("CIS 1200", "501", "STU"), "CIS 1200 — stu site (section 501)");
 });

@@ -172,3 +172,46 @@ Deno.test("SYSTEM_INSTRUCTIONS explains the [website] excerpt label", () => {
   assert.ok(SYSTEM_INSTRUCTIONS.includes("[website]"));
   assert.ok(SYSTEM_INSTRUCTIONS.includes("as authoritative as the syllabus"));
 });
+
+Deno.test("SYSTEM_INSTRUCTIONS explains multi-site course profiles", () => {
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("lecture site"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("lab site"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("site labels"));
+});
+
+// ---------------------------------------------------------------------
+// Multi-site course profiles / structure dedupe
+// ---------------------------------------------------------------------
+
+const LAB_CATALOG_ROW: CatalogCourseRow = { ...PHYS_CATALOG_ROW };
+
+Deno.test("buildMessages: COURSE PROFILES block is keyed by site label, not bare course code", () => {
+  const profiles = {
+    "PHYS 0151 — lecture site (section 401)": { latePolicy: "24 hour grace" },
+    "PHYS 0151 — lab site (section 151)": { attendancePolicy: "two absences allowed" },
+  };
+  const messages = buildMessages({ ...BASE_INPUT, profiles });
+  const profileMessage = messages.find((m) => m.content.startsWith("COURSE PROFILES"));
+  assert.ok(profileMessage);
+  assert.ok(profileMessage.content.includes("PHYS 0151 — lecture site (section 401)"));
+  assert.ok(profileMessage.content.includes("PHYS 0151 — lab site (section 151)"));
+});
+
+Deno.test("buildMessages: COURSE PROFILES block is byte-stable for identical multi-site input, called twice", () => {
+  const profiles = {
+    "PHYS 0151 — lecture site (section 401)": { latePolicy: "24 hour grace" },
+    "PHYS 0151 — lab site (section 151)": { attendancePolicy: "two absences allowed" },
+  };
+  const input = { ...BASE_INPUT, profiles };
+  const first = buildMessages(input).find((m) => m.content.startsWith("COURSE PROFILES"))?.content;
+  const second = buildMessages(input).find((m) => m.content.startsWith("COURSE PROFILES"))?.content;
+  assert.equal(first, second);
+});
+
+Deno.test("buildMessages: COURSE STRUCTURE block renders a shared catalog code only once, even when two rows (one per site) carry it", () => {
+  const messages = buildMessages({ ...BASE_INPUT, catalog: [PHYS_CATALOG_ROW, LAB_CATALOG_ROW] });
+  const structureMessage = messages.find((m) => m.content.startsWith("COURSE STRUCTURE"));
+  assert.ok(structureMessage);
+  const occurrences = structureMessage.content.split("PHYS-0151").length - 1;
+  assert.equal(occurrences, 1);
+});

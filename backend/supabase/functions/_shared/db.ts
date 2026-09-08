@@ -20,6 +20,7 @@ export interface CourseRow {
   name: string;
   url: string | null;
   term: string | null;
+  section: string | null;
   first_seen_at: string;
   last_full_sync_at: string | null;
   profile_stale: boolean;
@@ -103,8 +104,8 @@ function chunk<T>(items: T[], size: number): T[][] {
 const UPSERT_BATCH_SIZE = 200;
 
 /** Upserts course rows by `course_id`. Only the columns that can change on
- * a re-sync (code, name, url, term) are included in the payload -- the
- * upsert therefore leaves `first_seen_at`, `last_full_sync_at` and
+ * a re-sync (code, name, url, term, section) are included in the payload --
+ * the upsert therefore leaves `first_seen_at`, `last_full_sync_at` and
  * `profile_stale` untouched on conflict, because those are set elsewhere
  * for reasons specific to the sync step in progress (see
  * `setLastFullSyncNow` / `setProfileStale` below) and must never be
@@ -118,6 +119,7 @@ export async function upsertCourses(client: SupabaseClient, courses: CourseSumma
     name: course.name,
     url: course.url ?? null,
     term: course.term ?? null,
+    section: course.section ?? null,
   }));
   const { error } = await client.from("courses").upsert(rows, { onConflict: "course_id" });
   if (error) throw error;
@@ -585,11 +587,11 @@ export async function upsertCourseWebsiteCandidates(
   }
   const existingByKey = new Map<string, ExistingSlice>();
   for (const row of (existingRows ?? []) as Array<ExistingSlice & { course_id: string; url: string }>) {
-    existingByKey.set(`${row.course_id} ${row.url}`, row);
+    existingByKey.set(`${row.course_id}\u0000${row.url}`, row);
   }
 
   const rows = candidates.map((candidate) => {
-    const existing = existingByKey.get(`${candidate.courseID} ${candidate.url}`);
+    const existing = existingByKey.get(`${candidate.courseID}\u0000${candidate.url}`);
     return {
       course_id: candidate.courseID,
       url: candidate.url,

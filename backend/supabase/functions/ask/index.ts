@@ -15,8 +15,8 @@ import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_share
 import { requireUser } from "../_shared/auth.ts";
 import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
 import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
-import { selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
-import type { CatalogCourseRow } from "../_shared/catalog.ts";
+import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
+import { activityForSection, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
 import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
 
@@ -194,11 +194,32 @@ async function loadEnrolledCourseIDs(
 }
 
 /**
- * `{ courseID: profile }` for `enrolledIDs`. Two queries rather than one
- * join because `serviceClient` runs as `service_role` and bypasses RLS
- * entirely -- the enrollment check already happened in
- * `loadEnrolledCourseIDs`, so this function's only job left is the
- * `course_profiles` lookup itself.
+ * `{ label: profile }` for `enrolledIDs`, one entry per enrolled Canvas
+ * course id -- not one per registrar course -- keyed by
+ * `_shared/catalog.ts`'s `siteLabel` rather than the bare course code so
+ * that a course split across a lecture Canvas site and a lab Canvas site
+ * (PHYS 0151's two sites, see `20260908090000_course_section.sql`) gets
+ * two distinct entries instead of one clobbering the other under a
+ * shared `"PHYS 0151"` key. Resolving each course's label needs its own
+ * `courses` row (`code`, `section`, `catalog_code`) plus, when a
+ * `catalog_code` resolved, that code's `catalog_courses` row (to turn a
+ * bare section number into "lecture"/"lab" via `activityForSection`) --
+ * three queries total (courses, the catalog rows their codes point at,
+ * course_profiles), all scoped to `enrolledIDs`/the codes those rows
+ * resolve to, none joined, for the same "`serviceClient` is service_role
+ * and bypasses RLS so there's no policy doing this join for us" reason
+ * every other multi-table read in this backend is written as separate
+ * queries. A lookup failure on any of the three degrades that piece
+ * (no label refinement, or no profile) rather than failing the whole
+ * request -- consistent with every other best-effort fallback `ask`
+ * already takes toward missing profile/catalog data.
+ *
+ * Every enrolled course id gets an entry, whether or not it has an
+ * extracted profile yet (a fresh sync, or a course whose material hasn't
+ * cleared `extract-profile`) -- the entry's `profile` is `null` in that
+ * case rather than the course being absent, so the model still sees that
+ * a lecture site and a lab site both exist even before either has a
+ * profile of its own.
  */
 async function loadCourseProfiles(
   serviceClient: SupabaseClient,
@@ -206,18 +227,49 @@ async function loadCourseProfiles(
 ): Promise<Record<string, unknown>> {
   if (enrolledIDs.length === 0) return {};
 
+  const { data: courseRows, error: courseError } = await serviceClient
+    .from("courses")
+    .select("course_id, code, section, catalog_code")
+    .in("course_id", enrolledIDs);
+  if (courseError || !courseRows) {
+    console.error("ask: courses lookup failed", courseError?.message);
+    return {};
+  }
+  const courses = courseRows as Array<{
+    course_id: string;
+    code: string;
+    section: string | null;
+    catalog_code: string | null;
+  }>;
+
+  const catalogCodes = [
+    ...new Set(courses.map((row) => row.catalog_code).filter((code): code is string => code !== null)),
+  ];
+  let catalogByCode = new Map<string, CatalogCourseRow>();
+  try {
+    catalogByCode = await selectCatalogCoursesByCodes(serviceClient, catalogCodes);
+  } catch (err) {
+    console.error("ask: catalog lookup for profile labels failed", err instanceof Error ? err.message : String(err));
+  }
+
   const { data: profileRows, error: profileError } = await serviceClient
     .from("course_profiles")
     .select("course_id, profile")
     .in("course_id", enrolledIDs);
-  if (profileError || !profileRows) {
-    console.error("ask: course_profiles lookup failed", profileError?.message);
-    return {};
+  if (profileError) {
+    console.error("ask: course_profiles lookup failed", profileError.message);
+  }
+  const profileByCourseID = new Map<string, unknown>();
+  for (const row of (profileRows ?? []) as Array<{ course_id: string; profile: unknown }>) {
+    profileByCourseID.set(row.course_id, row.profile);
   }
 
   const profiles: Record<string, unknown> = {};
-  for (const row of profileRows as Array<{ course_id: string; profile: unknown }>) {
-    profiles[row.course_id] = row.profile;
+  for (const row of courses) {
+    const catalogRow = row.catalog_code ? catalogByCode.get(row.catalog_code) : undefined;
+    const activity = row.section && catalogRow ? activityForSection(catalogRow, row.section) : undefined;
+    const label = siteLabel(row.code, row.section ?? undefined, activity);
+    profiles[label] = profileByCourseID.get(row.course_id) ?? null;
   }
   return profiles;
 }

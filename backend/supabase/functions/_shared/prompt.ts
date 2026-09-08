@@ -53,7 +53,13 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `each course's syllabus — grading weights, late and attendance `
   + `policies, exam dates, office hours, contacts, textbooks. Treat it as `
   + `reliable, but the document's own prose may be more current or more `
-  + `detailed; prefer the document when the two disagree.`,
+  + `detailed; prefer the document when the two disagree. Its keys are `
+  + `site labels, not bare course codes — a course split across a lecture `
+  + `Canvas site and a lab Canvas site has one profile keyed to each `
+  + `(e.g. "PHYS 0151 — lecture site (section 401)" and "PHYS 0151 — lab `
+  + `site (section 151)"); answer a "class" or "lecture" question from the `
+  + `lecture site's profile and a "lab" question from the lab site's, and `
+  + `say which site your answer came from when a course has more than one.`,
 
   `A COURSE STRUCTURE block, when present, comes from the Penn registrar, `
   + `not the professor, and lists each course's components — a Canvas `
@@ -115,10 +121,17 @@ export interface BuildMessagesInput {
    *  answered for, simply contributes nothing here rather than blocking
    *  the rest of the prompt. */
   catalog: CatalogCourseRow[];
-  /** Course id -> profile JSON (or `null`), for the courses in `courseIDs`
-   *  the caller resolved to have a `course_profiles` row. `ask/index.ts` is
-   *  responsible for excluding courses the caller isn't enrolled in before
-   *  this is ever called; this function trusts its input. */
+  /** Site label (`_shared/catalog.ts`'s `siteLabel`, e.g. "PHYS 0151 —
+   *  lecture site (section 401)") -> profile JSON (or `null`), one entry
+   *  per enrolled Canvas course the caller resolved. Keyed by label
+   *  rather than bare course code so a course split across a lecture
+   *  Canvas site and a lab Canvas site carries two distinct entries
+   *  instead of one clobbering the other -- see
+   *  `20260908090000_course_section.sql` and the SYSTEM_INSTRUCTIONS
+   *  paragraph above this block feeds. `ask/index.ts`'s
+   *  `loadCourseProfiles` is responsible for excluding courses the caller
+   *  isn't enrolled in before this is ever called; this function trusts
+   *  its input. */
   profiles: Record<string, unknown>;
   /** Prior turns, oldest first. May be `[]`. */
   history: HistoryTurn[];
@@ -150,7 +163,17 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
   // an empty `structureBlock` (no course in `courseIDs` resolved a catalog
   // code, or none has been fetched yet) would otherwise add a header with
   // nothing under it, all cached-prefix cost for zero information.
-  const structure = structureBlock(input.catalog);
+  //
+  // Deduped by `catalogCode` before rendering: a multi-site course (PHYS
+  // 0151's lecture site and lab site, see the section-column migration)
+  // resolves the *same* `catalog_courses` row from more than one enrolled
+  // Canvas course id, and `input.catalog` is one row per resolved Canvas
+  // course id, not per unique registrar code -- without this dedupe, a
+  // student enrolled in both of PHYS 0151's sites would see "PHYS-0151"
+  // described twice in one COURSE STRUCTURE block, identically, which is
+  // both wasted prefix and reads as a copy-paste bug rather than the two
+  // sites the COURSE PROFILES block below already distinguishes by label.
+  const structure = structureBlock(dedupeByCatalogCode(input.catalog));
   if (structure.length > 0) {
     messages.push({
       role: "system",
@@ -175,6 +198,29 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
   messages.push({ role: "user", content: userContent });
 
   return messages;
+}
+
+/**
+ * Collapses `rows` to at most one `CatalogCourseRow` per unique
+ * `catalogCode`, keeping the first occurrence of each -- the fix for the
+ * multi-site duplication `buildMessages` documents at its own call site
+ * above. First-occurrence rather than "merge" because every row for a
+ * given `catalogCode` reaching this function is, by construction, the
+ * exact same `catalog_courses` row read twice (once per Canvas course id
+ * that resolved to it) -- there is nothing to merge, only a duplicate to
+ * drop. Order of the surviving rows follows `rows`' own order;
+ * `structureBlock` sorts by `catalogCode` itself regardless, so this
+ * function doesn't need to.
+ */
+function dedupeByCatalogCode(rows: CatalogCourseRow[]): CatalogCourseRow[] {
+  const seen = new Set<string>();
+  const deduped: CatalogCourseRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.catalogCode)) continue;
+    seen.add(row.catalogCode);
+    deduped.push(row);
+  }
+  return deduped;
 }
 
 /**

@@ -623,3 +623,84 @@ export function catalogEntryWire(row: CatalogCourseRow, courseID: string): Catal
     meetings,
   };
 }
+
+// ---------------------------------------------------------------------
+// activityForSection / siteLabel: resolving which Canvas *site* a
+// `courses` row is, for ask's per-site course-profile labeling.
+// ---------------------------------------------------------------------
+
+/**
+ * Which registrar component (`"LEC"`, `"LAB"`, ...) a Canvas course site's
+ * own SIS `section` belongs to, found by matching against `row`'s
+ * components' `sectionIDs` -- each id is `{catalogCode}-{section}`
+ * (`PHYS-0151-401`), so "ends with `-${section}`" is the match, not an
+ * exact-equals, since `sectionIDs` carries the full id, not the bare
+ * section suffix `courses.section` stores. Returns `undefined` when no
+ * component's section list contains this section at all: a stale
+ * registrar snapshot, a section from a semester the fetched
+ * `catalog_courses` row isn't for, or simply a section number that came
+ * from somewhere other than Penn Labs. Never throws and never guesses --
+ * the same "missing is not an error" posture this whole file takes
+ * toward absent registrar data elsewhere (see `parsePennLabsCourse`'s doc
+ * comment).
+ */
+export function activityForSection(row: CatalogCourseRow, section: string): string | undefined {
+  const suffix = `-${section}`;
+  for (const component of row.components) {
+    if (component.sectionIDs.some((sectionID) => sectionID.endsWith(suffix))) {
+      return component.activity;
+    }
+  }
+  return undefined;
+}
+
+/** Same activity-code -> word table `structureBlock`'s `componentPhrase`
+ *  reads through `activityLabel` above, but lowercase for use inline in a
+ *  sentence fragment ("lecture site", not "Lecture site") -- kept as its
+ *  own small map here rather than lowercasing `activityLabel`'s output,
+ *  because `activityLabel`'s fallback for an unknown code is the raw code
+ *  itself (`"STU"`), and `siteLabel` below wants that fallback lowercased
+ *  too (`"stu"`), which lowercasing after the fact handles fine, but
+ *  keeping the two call sites' intent explicit (one renders prose, one
+ *  renders a label) reads clearer than sharing a helper that both then
+ *  have to lowercase around. */
+const SITE_ACTIVITY_WORDS: ReadonlyMap<string, string> = new Map([
+  ["LEC", "lecture"],
+  ["LAB", "lab"],
+  ["REC", "recitation"],
+  ["SEM", "seminar"],
+]);
+
+function siteActivityWord(activity: string): string {
+  return SITE_ACTIVITY_WORDS.get(activity) ?? activity.toLowerCase();
+}
+
+/**
+ * The human label `ask/index.ts`'s `loadCourseProfiles` keys a course's
+ * profile by in the COURSE PROFILES prompt block, so the model can tell
+ * two Canvas sites sharing one course code apart -- see
+ * `20260908090000_course_section.sql` and PROTOCOL.md's multi-site
+ * paragraph for the PHYS 0151 lecture-site/lab-site story this exists to
+ * fix. Four shapes, in the order a caller resolves less and less
+ * information:
+ *
+ * - no `section` at all (an older client, or a course `catalogCode`
+ *   never resolved a code for): just `code` -- there's only one site to
+ *   talk about, so no parenthetical is needed.
+ * - `section` present but `activity` unresolved (no catalog row yet, or
+ *   the section doesn't match any of the row's components): `code
+ *   (section NNN)` -- enough to disambiguate two sites even without
+ *   knowing which is which.
+ * - `section` present and `activity` is one of the four common ones this
+ *   file already gives a word to (`activityForSection` returning "LEC",
+ *   "LAB", "REC", "SEM"): `code — {word} site (section NNN)`.
+ * - `section` present and `activity` is some other Penn Labs code: same
+ *   shape, with the code itself lowercased as the word (matching
+ *   `activityLabel`'s own "fall back to the raw code" posture for an
+ *   activity this table doesn't otherwise name).
+ */
+export function siteLabel(code: string, section: string | undefined, activity: string | undefined): string {
+  if (!section) return code;
+  if (!activity) return `${code} (section ${section})`;
+  return `${code} — ${siteActivityWord(activity)} site (section ${section})`;
+}

@@ -58,7 +58,28 @@ export interface CourseSummaryWire {
   url?: string;
   term?: string;
   sectionIDs?: string[];
+  /** The Canvas SIS section number this specific Canvas course *site*
+   *  syncs under (Penn Labs' section-id suffix, e.g. "401" for
+   *  "PHYS-0151-401") -- distinct from `sectionIDs` above, which is a
+   *  student's own per-enrollment list merged onto `enrollments`. This one
+   *  describes the site itself: a Canvas course code can be split across
+   *  more than one Canvas site (PHYS 0151's lecture and lab are separate
+   *  sites), and `section` combined with the course's resolved
+   *  `catalog_code` is what `_shared/catalog.ts`'s `activityForSection`
+   *  uses to tell a lecture site's `courses` row from a lab site's row
+   *  sharing the same `code`. See the `20260908090000_course_section.sql`
+   *  migration and PROTOCOL.md's multi-site paragraph. Validated to at
+   *  most 8 characters matching `^[0-9A-Za-z]{1,8}$` -- generous enough
+   *  for every real Penn section number (typically 3 digits) while
+   *  bounding what a malformed or malicious client can push into a column
+   *  with no length constraint of its own. */
+  section?: string;
 }
+
+/** `CourseSummaryWire.section`'s validation pattern -- see that field's
+ *  doc comment. Exported so `catalog.test.ts`/`manifest.test.ts` can
+ *  assert against it directly rather than duplicating the literal. */
+export const SECTION_PATTERN = /^[0-9A-Za-z]{1,8}$/;
 
 export interface DocumentStub {
   id: string;
@@ -153,6 +174,10 @@ export function validateCourse(raw: unknown): CourseSummaryWire {
   if (!isRecord(raw)) {
     throw new ManifestValidationError("course entry must be an object");
   }
+  const section = optionalString(raw, "section");
+  if (section !== undefined && !SECTION_PATTERN.test(section)) {
+    throw new ManifestValidationError(`invalid section "${section}"`);
+  }
   return {
     courseID: requireString(raw, "courseID"),
     code: requireString(raw, "code"),
@@ -160,6 +185,7 @@ export function validateCourse(raw: unknown): CourseSummaryWire {
     url: optionalString(raw, "url"),
     term: optionalString(raw, "term"),
     sectionIDs: optionalStringArray(raw, "sectionIDs"),
+    section,
   };
 }
 

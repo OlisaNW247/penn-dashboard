@@ -42,7 +42,7 @@ Dates are ISO 8601 strings with fractional seconds allowed
 (`2026-09-07T14:03:00Z`). Canvas ids are strings, never numbers.
 
 ```
-CourseSummaryWire   { courseID, code, name, url?, term?, sectionIDs? }
+CourseSummaryWire   { courseID, code, name, url?, term?, sectionIDs?, section? }
 DocumentStub        { id, contentHash }
 CourseDocumentWire  { id, courseID, course, kind, sourceID, title, url?,
                       text, updatedAt?, fetchedAt, contentHash,
@@ -66,6 +66,18 @@ times 100. See `_shared/catalog.ts`'s `CatalogMeeting`/`catalogEntryWire`.
 `id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client for
 every kind except `website`, which the server computes itself (see "Course
 websites" below) since a crawled page has no Canvas id to key on.
+
+`CourseSummaryWire.section` is the Canvas SIS section number for *this
+Canvas course site* (e.g. `"401"`), at most 8 characters matching
+`^[0-9A-Za-z]{1,8}$` -- not to be confused with `sectionIDs`, which is a
+student's own per-enrollment list merged onto their `enrollments` row.
+`section` exists because a Penn course can be more than one Canvas site:
+PHYS 0151's 1.0 CU lecture and its 0.5 CU lab are two entirely separate
+Canvas sites, sharing one registrar code but not one Canvas course id, and
+until `section` existed the server had no way to tell a `courses` row for
+one site from a `courses` row for the other beyond their (identical) Canvas
+`code`. See "Catalog" below for how `section` combines with a course's
+resolved `catalog_code` to label which site a course's material came from.
 
 ## `sync` — manifest exchange, then upload
 
@@ -157,8 +169,9 @@ JSON with an HTTP status: 401 unauthorized, 429
 `{ "error": "quota_exceeded", "resetAt": ISO8601 }`, 502 upstream.
 
 Server prompt order (stable prefix first, for provider prefix caching):
-frozen system instructions → `contextDocument` → course profiles JSON for
-`courseIDs` → history → user turn `Current date: …\n\n{excerpts}\n\nQUESTION: {question}`.
+frozen system instructions → `contextDocument` → course profiles JSON,
+keyed by site label (see "Catalog" below), for `courseIDs` → history → user
+turn `Current date: …\n\n{excerpts}\n\nQUESTION: {question}`.
 
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month
@@ -231,6 +244,38 @@ RLS: `catalog_courses` needs no enrollment gate, unlike every other table in
 this schema -- it's public registrar data with no student-specific angle,
 so every `authenticated` caller may `SELECT` every row. There are still no
 write policies; only `sync`'s service-role client ever writes it.
+
+Multi-site courses: a single registrar course can be more than one Canvas
+*site* -- PHYS 0151 is one `catalog_code` but two separate `courses` rows,
+each with its own `course_id`, both resolving to the same catalog code but
+carrying different `section` values (`"401"` for the lecture site, `"151"`
+for the lab site; see `CourseSummaryWire.section` under "Wire types" above).
+`sync`'s manifest `catalog` array reflects this directly: it is one entry
+*per manifest `courseID`*, not per unique `catalog_code`
+(`_shared/db.ts`'s `selectCatalogEntriesForCourses` keeps the
+`course_id`/`catalog_code` pairing rather than deduplicating catalog rows
+the way `ask`'s own catalog lookup does), so a student enrolled in both of
+PHYS 0151's sites gets two `CatalogEntryWire` entries, one per `courseID`,
+both carrying `catalogCode: "PHYS-0151"`.
+
+`ask` uses `section` plus the resolved `catalog_courses` row to tell the two
+sites apart for the model: `_shared/catalog.ts`'s `activityForSection` finds
+which component (`"LEC"`, `"LAB"`, ...) a `section` belongs to, and
+`siteLabel` turns that into a label like `"PHYS 0151 — lecture site (section
+401)"` or `"PHYS 0151 — lab site (section 151)"` (falling back to `"PHYS
+0151 (section 002)"` when the activity can't be resolved yet, and to the
+bare code when there's no section at all). `ask/index.ts`'s
+`loadCourseProfiles` keys the COURSE PROFILES prompt block by this label
+rather than by course code or course id, so a course split across a lecture
+site and a lab site carries one profile entry per site instead of one
+clobbering the other; `SYSTEM_INSTRUCTIONS` tells the model to answer a
+"class"/"lecture" question from the lecture site's profile and a "lab"
+question from the lab site's, and to say which site an answer came from.
+The COURSE STRUCTURE block, by contrast, is per `catalog_code`, not per
+site -- `_shared/prompt.ts`'s `buildMessages` dedupes `catalog` rows by
+`catalogCode` before calling `structureBlock`, so a course with two synced
+sites still gets exactly one registrar-structure paragraph, not two
+identical copies.
 
 ## Course websites
 

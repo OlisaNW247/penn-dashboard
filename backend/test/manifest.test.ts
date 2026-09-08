@@ -116,6 +116,42 @@ Deno.test("validateCourse accepts a well-formed course and rejects a missing fie
   assertThrows(() => validateCourse({ code: "PHYS 151", name: "Physics 151" }), ManifestValidationError);
 });
 
+Deno.test("validateCourse accepts a well-formed section", () => {
+  const course = validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151", section: "401" });
+  assertEquals(course.section, "401");
+});
+
+Deno.test("validateCourse accepts an 8-character alphanumeric section", () => {
+  const course = validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151", section: "AbC12345" });
+  assertEquals(course.section, "AbC12345");
+});
+
+Deno.test("validateCourse leaves section undefined when absent", () => {
+  const course = validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151" });
+  assertEquals(course.section, undefined);
+});
+
+Deno.test("validateCourse rejects a section longer than 8 characters", () => {
+  assertThrows(
+    () => validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151", section: "123456789" }),
+    ManifestValidationError,
+  );
+});
+
+Deno.test("validateCourse rejects a section with non-alphanumeric characters", () => {
+  assertThrows(
+    () => validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151", section: "401-A" }),
+    ManifestValidationError,
+  );
+});
+
+Deno.test("validateCourse rejects an empty-string section", () => {
+  assertThrows(
+    () => validateCourse({ courseID: "100", code: "PHYS 151", name: "Physics 151", section: "" }),
+    ManifestValidationError,
+  );
+});
+
 Deno.test("validateDocumentStub accepts a well-formed stub and rejects a bad one", () => {
   const stub = validateDocumentStub({ id: "syllabus:100:1", contentHash: "abc" });
   assertEquals(stub.id, "syllabus:100:1");
