@@ -2,8 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- LHF runs entirely on-device, has no backend, and contains no
-	     analytics, tracking, or advertising SDKs. See docs/PRIVACY.md. -->
+	<!-- LHF runs on-device by default and contains no analytics, tracking,
+	     or advertising SDKs. Two things leave the device beyond talking to
+	     Canvas/Gradescope: a small, identifier-free update-manifest check
+	     against a host the maintainer controls (see
+	     LowHangingFruitKit/Sources/LowHangingFruitKit/Update/), and, only
+	     if the student pastes in their own Anthropic API key, two opt-in
+	     AI features (Announcement Watcher assist, ask/"the tree") that
+	     send class data to Anthropic's API. There is still no LHF server
+	     or account. See docs/PRIVACY.md. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>

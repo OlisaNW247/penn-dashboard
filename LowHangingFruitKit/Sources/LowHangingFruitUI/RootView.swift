@@ -15,6 +15,14 @@ struct RootCore: View {
     @ObservedObject var state: AppState
     @ObservedObject var scheduler: NotificationScheduler
 
+    /// Owns the forced-update version gate end to end: the synchronous
+    /// cached-policy check at construction, the fetch-and-recompute in
+    /// `refresh()`, and the per-version banner-dismissal state. See
+    /// `UpdateGate.swift` for the fail-open contract this store guarantees.
+    @StateObject private var updateGate = UpdateGateStore()
+
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Skip the splash in demo/screenshot mode so captures land on the app.
     /// A default expression (rather than a custom `init`) keeps this struct's
     /// memberwise initializer intact for callers that only care about
@@ -30,6 +38,37 @@ struct RootCore: View {
     var body: some View {
         ZStack {
             mainContent
+                // Nested inside `mainContent`'s own layer rather than a
+                // sibling `ZStack` child: `.overlay` respects the safe area
+                // by default (nothing here calls `.ignoresSafeArea()`), so
+                // this floats above the dashboard/onboarding content without
+                // sitting under the status bar or a notch, and it stays
+                // beneath the wall and the splash below simply because it's
+                // painted as part of the first child, not a later one.
+                .overlay(alignment: .top) {
+                    if case .updateAvailable(let latest) = updateGate.verdict,
+                       !updateGate.isAvailableBannerDismissed {
+                        UpdateAvailableBanner(latest: latest) {
+                            updateGate.dismissAvailableBanner()
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+
+            // Above the app, below the splash: a build under the enforced
+            // floor should do nothing at all — including onboarding, which
+            // is why this sits above `mainContent` rather than only inside
+            // the dashboard branch of it — but the splash still gets to play
+            // first (`.zIndex(1)` below), so the wall is what the student is
+            // left looking at once it finishes, not what flashes underneath it.
+            if case .updateRequired(let minimum, let message) = updateGate.verdict {
+                UpdateRequiredView(
+                    minimum: minimum,
+                    message: message,
+                    appStoreURL: updateGate.appStoreURL
+                )
+                .transition(.opacity)
+            }
 
             if showSplash {
                 // isDarkMode is read straight from `state.appearanceMode`
@@ -44,6 +83,14 @@ struct RootCore: View {
                 }
                 .transition(.opacity)
                 .zIndex(1)
+            }
+        }
+        .task {
+            await updateGate.refresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await updateGate.refresh() }
             }
         }
         // Applied at the root so both the dashboard and the splash (which

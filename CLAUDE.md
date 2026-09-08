@@ -40,10 +40,11 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `assistant-ui`, verified on a Mac (2026-09-02): **736 tests / 76
-suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
-verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
-work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
+Baseline on `assistant-ui`, verified on a Mac (2026-09-07): **769 tests / 78
+suites green** (plus 4 XCTest scheduler tests), the update gate adding 33 tests
+and 2 suites to the 736/76 mark verified on a Mac on 2026-09-02. That 736/76 was
+itself up from 693/70 on `v6`, verified the same day, closing out v6's
+uncompiled Announcement Watcher work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
 `v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
 count has lost work — investigate rather than accept it.
 
@@ -102,6 +103,19 @@ Canvas's descriptor (`PSYC 1010-005 202430 Intro to Psych`). A failed parse fall
 back to the raw descriptor, which is both an ugly label *and* a key nothing else
 agrees with — so parsing bugs are identity bugs, not cosmetic ones. Renaming a
 course is deliberately cosmetic only.
+
+### Update gate
+
+`LowHangingFruitKit/Sources/LowHangingFruitKit/Update/` (`AppVersion`,
+`UpdatePolicy`, `UpdateManifestClient`, `UpdatePolicyCache`) and the
+`LowHangingFruitUI` trio `UpdateGate.swift` / `UpdateRequiredView.swift` /
+`UpdateAvailableBanner.swift` are a forced-update version gate: on launch and
+foreground it fetches one small public static manifest and can show an
+undismissable wall below `minimumVersion` or a dismissible banner below
+`latestVersion`. The contract is **fail open** — any fetch failure, unset
+manifest URL, or unparseable version leaves the last-known verdict untouched
+rather than inventing a block, because a broken version check must never be
+the thing that locks a student out of their own ledger.
 
 ## Traps that have already bitten
 
@@ -172,6 +186,20 @@ course is deliberately cosmetic only.
   asking which shape encloses it. There is no PIL, ImageMagick or numpy on the
   dev Mac; `sips` resizes and converts but does none of this. A short
   CoreGraphics script run with `swift file.swift` is the tool.
+- **`PersimmonMark`'s `size:` argument does not constrain it.** Its body is a
+  `GeometryReader` that ends in `.frame(maxWidth: .infinity, maxHeight:
+  .infinity)`, so the view expands to fill whatever space its parent hands
+  it; `size:` only sizes the image drawn *inside* that already-expanded
+  frame. Passing `size: 64` into an unconstrained `VStack` slot renders a
+  full-screen persimmon, not a 64pt one — a caller must also apply an
+  explicit `.frame(width:height:)`, exactly as the file's own `#Preview`
+  does. The wrong fix would have been either hunting for a magic `size:`
+  value that happens to look right in one place, or editing `PersimmonMark`
+  to drop the `GeometryReader`/fill-to-frame behavior — every existing
+  caller relies on that behavior and already pairs it with its own explicit
+  frame. This is invisible in code review and in Xcode previews, where the
+  surrounding layout happens to be bounded anyway, and only showed up on a
+  device screenshot.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 
 ## Conventions
@@ -197,7 +225,7 @@ course is deliberately cosmetic only.
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
 | `v5` | Cut from the 2.0.0 head above. Superseded by `v6`, which is a superset. |
 | `v6` | v5 plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
-| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. New work goes here. |
+| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on — plus the forced-update version gate. 769/78. New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps
