@@ -131,15 +131,28 @@ struct CanvasCourseSummariesTests {
     /// already matches something the cache vouched for — see
     /// `AppState.courseIDsByID`'s doc comment.
     private func seedTwoSitesOneCode() {
+        // Start from an empty preferences blob. `setCanvasCourseID` MERGES into
+        // whatever is already stored, and other suites leave course→id entries
+        // behind under small ids like "1" — on the first Mac run one of those
+        // mapped id "1" to a different code, dictionary order put it first in
+        // `courseIDsByID`'s cache pass, the PHYS entry was skipped as a
+        // duplicate id, and the lab site was then never recognised. The key
+        // is restored by `withRestoredDefaults` afterwards.
+        UserDefaults.lhf.removeObject(forKey: CoursePreferencesStore.storageKey)
         UserDefaults.lhf.set(
             [
-                "1": "PHYS 0151-401 202630 Principles II",
-                "2": "PHYS 0151-151 202630 Principles II Lab",
+                Self.lectureSiteID: "PHYS 0151-401 202630 Principles II",
+                Self.labSiteID: "PHYS 0151-151 202630 Principles II Lab",
             ],
             forKey: Self.enrolledCanvasCoursesKey
         )
-        CoursePreferencesStore().setCanvasCourseID("PHYS 0151", "1")
+        CoursePreferencesStore().setCanvasCourseID("PHYS 0151", Self.lectureSiteID)
     }
+
+    /// Real-looking Canvas ids, chosen so no other suite's fixture can collide
+    /// with them in the shared defaults.
+    private static let lectureSiteID = "1946718"
+    private static let labSiteID = "1946719"
 
     @Test("two Canvas sites sharing one course code yield two summaries, not one")
     func twoSitesYieldTwoSummaries() {
@@ -150,7 +163,7 @@ struct CanvasCourseSummariesTests {
             let summaries = state.canvasCourseSummaries()
             #expect(summaries.count == 2)
             #expect(summaries.allSatisfy { $0.code == "PHYS 0151" })
-            #expect(Set(summaries.map(\.courseID)) == ["1", "2"])
+            #expect(Set(summaries.map(\.courseID)) == [Self.lectureSiteID, Self.labSiteID])
         }
     }
 
@@ -161,8 +174,8 @@ struct CanvasCourseSummariesTests {
             let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
 
             let summaries = state.canvasCourseSummaries()
-            let lecture = summaries.first { $0.courseID == "1" }
-            let lab = summaries.first { $0.courseID == "2" }
+            let lecture = summaries.first { $0.courseID == Self.lectureSiteID }
+            let lab = summaries.first { $0.courseID == Self.labSiteID }
             #expect(lecture?.section == "401")
             #expect(lab?.section == "151")
         }
@@ -175,8 +188,8 @@ struct CanvasCourseSummariesTests {
             let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
 
             let summaries = state.canvasCourseSummaries()
-            let lecture = summaries.first { $0.courseID == "1" }
-            let lab = summaries.first { $0.courseID == "2" }
+            let lecture = summaries.first { $0.courseID == Self.lectureSiteID }
+            let lab = summaries.first { $0.courseID == Self.labSiteID }
             #expect(lecture?.name == "PHYS 0151-401 202630 Principles II")
             #expect(lab?.name == "PHYS 0151-151 202630 Principles II Lab")
         }
