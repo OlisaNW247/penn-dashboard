@@ -15,6 +15,8 @@ import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_share
 import { requireUser } from "../_shared/auth.ts";
 import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
 import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
+import { selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
+import type { CatalogCourseRow } from "../_shared/catalog.ts";
 import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
 
@@ -77,10 +79,13 @@ Deno.serve(async (req) => {
     const quotaResponse = await checkAskQuota(serviceClient, userId);
     if (quotaResponse) return quotaResponse;
 
-    const profiles = await loadCourseProfiles(serviceClient, userId, body.courseIDs);
+    const enrolledIDs = await loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
+    const profiles = await loadCourseProfiles(serviceClient, enrolledIDs);
+    const catalog = await loadCatalogCourses(serviceClient, enrolledIDs);
 
     const messages = buildMessages({
       contextDocument: body.contextDocument,
+      catalog,
       profiles,
       history: body.history,
       excerpts: body.excerpts,
@@ -158,22 +163,22 @@ async function checkAskQuota(
 }
 
 /**
- * Resolves `courseIDs` to `{ courseID: profile }` for only the courses
- * `userId` is actually enrolled in, silently ignoring any id in the
- * request the caller isn't enrolled in (per PROTOCOL.md's recorded
- * limitation: enrollment is asserted by the client, so this is the one
- * place the server can still refuse to hand back another course's
- * profile). Two queries rather than one join because `serviceClient` runs
- * as `service_role` and bypasses RLS entirely -- the enrollment check has
- * to happen in application code here, not by relying on the database
- * policies that gate the `authenticated` role.
+ * Resolves the request's `courseIDs` down to the subset `userId` is
+ * actually enrolled in, silently dropping any id the caller isn't
+ * enrolled in (per PROTOCOL.md's recorded limitation: enrollment is
+ * asserted by the client, so this is the one place the server can still
+ * refuse to hand back another course's data). Both `loadCourseProfiles`
+ * and `loadCatalogCourses` below are handed this same already-checked
+ * list rather than each re-deriving it, and each trusts it rather than
+ * re-checking enrollment itself -- one place decides who's enrolled in
+ * what for this request, not two that could drift apart.
  */
-async function loadCourseProfiles(
+async function loadEnrolledCourseIDs(
   serviceClient: SupabaseClient,
   userId: string,
   courseIDs: string[],
-): Promise<Record<string, unknown>> {
-  if (courseIDs.length === 0) return {};
+): Promise<string[]> {
+  if (courseIDs.length === 0) return [];
 
   const { data: enrollments, error: enrollError } = await serviceClient
     .from("enrollments")
@@ -182,10 +187,23 @@ async function loadCourseProfiles(
     .in("course_id", courseIDs);
   if (enrollError || !enrollments) {
     console.error("ask: enrollments lookup failed", enrollError?.message);
-    return {};
+    return [];
   }
 
-  const enrolledIDs = enrollments.map((row: { course_id: string }) => row.course_id);
+  return enrollments.map((row: { course_id: string }) => row.course_id);
+}
+
+/**
+ * `{ courseID: profile }` for `enrolledIDs`. Two queries rather than one
+ * join because `serviceClient` runs as `service_role` and bypasses RLS
+ * entirely -- the enrollment check already happened in
+ * `loadEnrolledCourseIDs`, so this function's only job left is the
+ * `course_profiles` lookup itself.
+ */
+async function loadCourseProfiles(
+  serviceClient: SupabaseClient,
+  enrolledIDs: string[],
+): Promise<Record<string, unknown>> {
   if (enrolledIDs.length === 0) return {};
 
   const { data: profileRows, error: profileError } = await serviceClient
@@ -202,6 +220,24 @@ async function loadCourseProfiles(
     profiles[row.course_id] = row.profile;
   }
   return profiles;
+}
+
+/** `catalog_courses` rows reachable from `enrolledIDs` through
+ *  `courses.catalog_code`, for `buildMessages`'s COURSE STRUCTURE block.
+ *  A lookup failure degrades to an empty list rather than failing the
+ *  whole request -- exactly `loadCourseProfiles`'s posture toward its own
+ *  lookup failing, since a missing catalog block is a strictly smaller
+ *  loss to the answer than a missing course-profiles block. */
+async function loadCatalogCourses(
+  serviceClient: SupabaseClient,
+  enrolledIDs: string[],
+): Promise<CatalogCourseRow[]> {
+  try {
+    return await selectCatalogCoursesForCourseIDs(serviceClient, enrolledIDs);
+  } catch (err) {
+    console.error("ask: catalog lookup failed", err instanceof Error ? err.message : String(err));
+    return [];
+  }
 }
 
 function providerFromEnv(): { order?: string[] } | undefined {

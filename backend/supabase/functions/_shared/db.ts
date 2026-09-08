@@ -12,6 +12,7 @@ import type {
   DocumentKind,
   DocumentStub,
 } from "./manifest.ts";
+import type { CatalogComponent, CatalogCourseRow } from "./catalog.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -266,6 +267,146 @@ export async function selectEnrolledCourseIDs(client: SupabaseClient, userId: st
   const { data, error } = await client.from("enrollments").select("course_id").eq("user_id", userId);
   if (error) throw error;
   return new Set((data ?? []).map((row) => (row as { course_id: string }).course_id));
+}
+
+// ---------------------------------------------------------------------
+// Course catalog (supabase/migrations/20260907120000_catalog.sql). See
+// _shared/catalog.ts for the pure fetch/parse/render logic this section
+// wraps in the snake_case <-> camelCase mapping the rest of this file
+// already does for `course_documents`.
+// ---------------------------------------------------------------------
+
+export interface CatalogCourseDBRow {
+  catalog_code: string;
+  semester: string;
+  title: string;
+  description: string;
+  credits: number | null;
+  prerequisites: string;
+  crosslistings: string[];
+  grade_modes: string[];
+  attributes: unknown[];
+  components: CatalogComponent[];
+  source: string;
+  fetched_at: string;
+}
+
+function catalogRowToDBRow(row: CatalogCourseRow): CatalogCourseDBRow {
+  return {
+    catalog_code: row.catalogCode,
+    semester: row.semester,
+    title: row.title,
+    description: row.description,
+    credits: row.credits,
+    prerequisites: row.prerequisites,
+    crosslistings: row.crosslistings,
+    grade_modes: row.gradeModes,
+    attributes: row.attributes,
+    components: row.components,
+    source: row.source,
+    fetched_at: row.fetchedAt,
+  };
+}
+
+function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
+  return {
+    catalogCode: row.catalog_code,
+    semester: row.semester,
+    title: row.title,
+    description: row.description,
+    credits: row.credits,
+    prerequisites: row.prerequisites,
+    crosslistings: row.crosslistings,
+    gradeModes: row.grade_modes,
+    attributes: row.attributes,
+    components: row.components,
+    source: row.source,
+    fetchedAt: row.fetched_at,
+  };
+}
+
+/** The `catalog_courses` rows sync already has for a set of catalog codes,
+ *  keyed by code -- used to decide which of a manifest call's courses need
+ *  a fresh Penn Labs fetch (missing entirely, or `catalogIsStale`) versus
+ *  which can be left alone this run. */
+export async function selectCatalogCoursesByCodes(
+  client: SupabaseClient,
+  catalogCodes: string[],
+): Promise<Map<string, CatalogCourseRow>> {
+  if (catalogCodes.length === 0) return new Map();
+  const { data, error } = await client
+    .from("catalog_courses")
+    .select(
+      "catalog_code, semester, title, description, credits, prerequisites, crosslistings, grade_modes, attributes, components, source, fetched_at",
+    )
+    .in("catalog_code", catalogCodes);
+  if (error) throw error;
+  const byCode = new Map<string, CatalogCourseRow>();
+  for (const row of (data ?? []) as CatalogCourseDBRow[]) {
+    byCode.set(row.catalog_code, dbRowToCatalogRow(row));
+  }
+  return byCode;
+}
+
+/** Sets `courses.catalog_code` for a course whose Canvas code
+ *  `catalogCode()` (see `_shared/catalog.ts`) resolved successfully.
+ *  Separate from `upsertCourses` above (which only ever writes the columns
+ *  a manifest call itself carries) because this is derived data computed
+ *  by the sync function, not part of the client's `CourseSummaryWire`. */
+export async function setCourseCatalogCode(
+  client: SupabaseClient,
+  courseID: string,
+  catalogCode: string,
+): Promise<void> {
+  const { error } = await client.from("courses").update({ catalog_code: catalogCode }).eq("course_id", courseID);
+  if (error) throw error;
+}
+
+/** Upserts one freshly-fetched Penn Labs course by `catalog_code`. Called
+ *  once per successful `fetchCatalogCourse` result in sync's catalog
+ *  refresh step -- there is no batching helper here the way
+ *  `upsertDocuments` batches, because the per-call cap on catalog fetches
+ *  (see sync/index.ts) already keeps this to a handful of single-row
+ *  upserts per manifest call. */
+export async function upsertCatalogCourse(client: SupabaseClient, row: CatalogCourseRow): Promise<void> {
+  const { error } = await client
+    .from("catalog_courses")
+    .upsert(catalogRowToDBRow(row), { onConflict: "catalog_code" });
+  if (error) throw error;
+}
+
+/**
+ * Every `catalog_courses` row reachable from `courseIDs` through
+ * `courses.catalog_code` -- the join `ask/index.ts` needs to build the
+ * COURSE STRUCTURE block for the courses the caller is asking about. Two
+ * queries rather than a single joined one for the same reason
+ * `loadCourseProfiles` in ask/index.ts is two queries: `serviceClient` runs
+ * as `service_role` and bypasses RLS, so there is no policy doing the
+ * enrollment-scoping here -- but the caller is responsible for restricting
+ * `courseIDs` to courses it already checked the user is enrolled in, and
+ * this function trusts that, exactly as `loadCourseProfiles` trusts its own
+ * `courseIDs` after doing that check.
+ */
+export async function selectCatalogCoursesForCourseIDs(
+  client: SupabaseClient,
+  courseIDs: string[],
+): Promise<CatalogCourseRow[]> {
+  if (courseIDs.length === 0) return [];
+
+  const { data: courseRows, error: courseError } = await client
+    .from("courses")
+    .select("catalog_code")
+    .in("course_id", courseIDs)
+    .not("catalog_code", "is", null);
+  if (courseError) throw courseError;
+
+  const catalogCodes = [
+    ...new Set((courseRows ?? []).map((row) => (row as { catalog_code: string }).catalog_code)),
+  ];
+  if (catalogCodes.length === 0) return [];
+
+  const byCode = await selectCatalogCoursesByCodes(client, catalogCodes);
+  return [...byCode.values()];
 }
 
 /** Deletes the caller's private rows ahead of deleting the auth user

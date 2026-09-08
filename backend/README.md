@@ -64,6 +64,17 @@ public; every row it can touch is behind RLS scoped to the caller's own
 (anonymous) auth id. Never put the service-role key or `OPENROUTER_API_KEY`
 in the app; both live only as function secrets on the server.
 
+## Course catalog
+
+`sync` also links each Canvas course to a `catalog_courses` row pulled from
+Penn Labs' public Penn Courses API (`penncoursereview.com`) -- registrar
+facts like credits, prerequisites, grade modes and, most importantly, a
+course's components (a lecture with a separate lab or recitation, which one
+Canvas site otherwise gives no sign of). This needs no key and no account:
+the endpoint is unauthenticated, so there's nothing to configure here
+beyond what `supabase functions deploy` already ships. See `PROTOCOL.md`'s
+"Catalog" section for the refresh rule and exactly what gets sent to `ask`.
+
 ## Local testing
 
 Two independent checks, neither of which needs a deployed project:

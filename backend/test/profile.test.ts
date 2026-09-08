@@ -108,6 +108,29 @@ Deno.test("parseProfile drops an empty array down to an omitted key", () => {
   assert.ok(!("textbooks" in profile));
 });
 
+Deno.test("parseProfile keeps a components entry with its optional sub-fields", () => {
+  const profile = parseProfile(JSON.stringify({
+    components: [
+      { name: "Lab", gradingBasis: "Pass/Fail", creditUnits: 0.5, notes: "meets weekly in DRLB" },
+      { name: "Lecture" },
+    ],
+  }));
+  assert.deepEqual(profile.components, [
+    { name: "Lab", gradingBasis: "Pass/Fail", creditUnits: 0.5, notes: "meets weekly in DRLB" },
+    { name: "Lecture" },
+  ]);
+});
+
+Deno.test("parseProfile drops a components entry missing \"name\" and coerces a non-numeric creditUnits away", () => {
+  const profile = parseProfile(JSON.stringify({
+    components: [
+      { gradingBasis: "no name, should be dropped" },
+      { name: "Lab", creditUnits: "0.5 CU" },
+    ],
+  }));
+  assert.deepEqual(profile.components, [{ name: "Lab" }]);
+});
+
 Deno.test("profileSourceHash is stable regardless of input order", async () => {
   const a = await profileSourceHash([{ id: "1", content_hash: "h1" }, { id: "2", content_hash: "h2" }]);
   const b = await profileSourceHash([{ id: "2", content_hash: "h2" }, { id: "1", content_hash: "h1" }]);

@@ -41,11 +41,26 @@ export const PROFILE_INSTRUCTIONS: string = [
   + `  "contacts": [ { "name", "role"?, "email"? } ],\n`
   + `  "textbooks": [ string ],\n`
   + `  "keyPolicies": [ { "topic", "text" } ],\n`
+  + `  "components": [ { "name", "gradingBasis"?, "creditUnits"?, "notes"? } ],\n`
   + `  "sourceDocumentIDs": [ string ] }`,
 
   `"percent" is a plain number (12.5, not "12.5%"). "date" fields are ISO `
   + `8601 dates when the source gives an exact date, omitted otherwise --`
   + ` never guess a date from a vague reference like "midterm week".`,
+
+  `"components" is for a course that is more than one thing under one `
+  + `syllabus -- a lecture with a separate lab or recitation graded on its `
+  + `own terms. Emit one entry per component *only* when the syllabus `
+  + `itself distinguishes them (e.g. "the lab is graded pass/fail, 0.5 `
+  + `CU" or "recitation attendance is 10% of the recitation grade"); a `
+  + `course the syllabus never splits into parts should have no `
+  + `"components" key at all, even if you happen to know from context that `
+  + `its Canvas site has a lab. "name" is the component as the syllabus `
+  + `names it ("Lab", "Recitation"); "gradingBasis" is a short phrase like `
+  + `"Pass/Fail" or "20% of course grade" only when the syllabus states `
+  + `one for that component specifically; "creditUnits" is a plain number `
+  + `only when the syllabus states that component's own credit value; `
+  + `"notes" is any other component-specific rule worth keeping verbatim.`,
 ].join("\n\n");
 
 /**
@@ -129,6 +144,23 @@ export interface KeyPolicy {
   topic: string;
   text: string;
 }
+/** One syllabus-distinguished component of a course that is more than one
+ *  thing under a single Canvas site -- e.g. PHYS 0151's lab, graded
+ *  separately from its lecture. Deliberately a *narrower* fact than
+ *  `_shared/catalog.ts`'s `CatalogComponent`: the catalog's components come
+ *  from the registrar's section list (every course with a lab section has
+ *  one, whether or not its syllabus ever mentions grading it separately),
+ *  while this one only exists when the syllabus itself states something
+ *  component-specific -- see `PROFILE_INSTRUCTIONS`'s "only when the
+ *  syllabus itself distinguishes them" instruction. The two are combined
+ *  by nothing in this codebase; `ask`'s prompt carries both blocks and
+ *  leaves reconciling them to the model. */
+export interface ProfileComponent {
+  name: string;
+  gradingBasis?: string;
+  creditUnits?: number;
+  notes?: string;
+}
 
 export interface CourseProfile {
   gradingWeights?: GradingWeight[];
@@ -139,6 +171,7 @@ export interface CourseProfile {
   contacts?: Contact[];
   textbooks?: string[];
   keyPolicies?: KeyPolicy[];
+  components?: ProfileComponent[];
   sourceDocumentIDs?: string[];
 }
 
@@ -246,6 +279,16 @@ function sanitizeProfile(raw: Record<string, unknown>): CourseProfile {
       ? { topic: item.topic, text: item.text }
       : undefined);
   if (keyPolicies) out.keyPolicies = keyPolicies;
+
+  const components = sanitizeArray(raw.components, (item) => {
+    if (!isString(item.name)) return undefined;
+    const component: ProfileComponent = { name: item.name };
+    if (isString(item.gradingBasis)) component.gradingBasis = item.gradingBasis;
+    if (isFiniteNumber(item.creditUnits)) component.creditUnits = item.creditUnits;
+    if (isString(item.notes)) component.notes = item.notes;
+    return component;
+  });
+  if (components) out.components = components;
 
   if (Array.isArray(raw.textbooks)) {
     const textbooks = raw.textbooks.filter(isString);

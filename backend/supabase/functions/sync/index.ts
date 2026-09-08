@@ -9,15 +9,19 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { catalogCode, catalogIsStale, fetchCatalogCourse } from "../_shared/catalog.ts";
 import {
   markDocumentsGone,
   documentRowToWire,
+  selectCatalogCoursesByCodes,
   selectCoursesByIDs,
   selectEnrolledCourseIDs,
   selectLiveDocumentIDsForCourse,
   selectLiveDocumentsForCourses,
+  setCourseCatalogCode,
   setLastFullSyncNow,
   setProfileStale,
+  upsertCatalogCourse,
   upsertCourses,
   upsertDocuments,
   upsertEnrollments,
@@ -44,6 +48,18 @@ import {
 const MAX_MANIFEST_COURSES = 60;
 const MAX_UPLOAD_DOCUMENTS = 200;
 
+// A manifest call's catalog refresh is bounded on two axes at once: at most
+// this many Penn Labs fetches per call (a student rarely has more than a
+// handful of *distinct* registrar courses linked across all their Canvas
+// sites in one manifest, but nothing stops a pathological one from listing
+// 60), and each fetch itself capped at this timeout. Run concurrently
+// (`Promise.allSettled`, not a loop of `await`s), the two together bound
+// the total added latency to roughly the timeout, not the timeout times
+// the course count -- the "~3 s total" ceiling the brief for this feature
+// sets on top of the manifest response the client is waiting on.
+const MAX_CATALOG_FETCHES_PER_MANIFEST = 8;
+const CATALOG_FETCH_TIMEOUT_MS = 2500;
+
 interface ManifestResult {
   coursesFresh: string[];
   serverManifest: DocumentStub[];
@@ -53,6 +69,79 @@ interface ManifestResult {
 interface UploadResult {
   accepted: number;
   profileStale: string[];
+}
+
+/**
+ * Links every course in this manifest call whose Canvas code resolves to a
+ * Penn Labs course code, and fetches/upserts a fresh `catalog_courses` row
+ * for whichever of those (capped, see `MAX_CATALOG_FETCHES_PER_MANIFEST`)
+ * either has none yet or is `catalogIsStale`.
+ *
+ * This piggybacks on the manifest step rather than running as its own
+ * cron for two reasons that both come down to "a cron would just be
+ * redoing work this call already does for free": (1) only courses someone
+ * is actually enrolled in are worth a Penn Labs request for, and this
+ * function already has exactly that list -- the courses in the manifest
+ * the caller is currently syncing -- with no separate query needed to
+ * rediscover it; (2) every enrolled course reaches this code path at
+ * least once an hour regardless (a student's app calls `sync` on its own
+ * refresh loop, hourly at minimum per PROTOCOL.md's staleness story), so
+ * catalog data can never go stale for longer than a routine cron would
+ * tolerate anyway -- there is no gap a cron would close that this doesn't
+ * already close on its own.
+ *
+ * Failures (a 404, a timeout, a transport error -- `fetchCatalogCourse`
+ * never throws, it returns `undefined`) are silent to the manifest
+ * response's caller and only ever logged as a count: a missing or stale
+ * catalog row degrades `ask`'s COURSE STRUCTURE block to simply not
+ * mentioning that course's components, not a broken sync.
+ */
+async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSummaryWire[]): Promise<void> {
+  const catalogCodeByCourseID = new Map<string, string>();
+  for (const course of courses) {
+    const code = catalogCode(course.code);
+    if (code) catalogCodeByCourseID.set(course.courseID, code);
+  }
+  if (catalogCodeByCourseID.size === 0) return;
+
+  // Linking a course to its catalog code is a single-column write with no
+  // network dependency, so it happens for every resolved course this run,
+  // independent of which (capped) subset below actually gets a fresh Penn
+  // Labs fetch this time.
+  await Promise.allSettled(
+    [...catalogCodeByCourseID.entries()].map(([courseID, code]) =>
+      setCourseCatalogCode(serviceClient, courseID, code)
+    ),
+  );
+
+  const uniqueCodes = [...new Set(catalogCodeByCourseID.values())];
+  const existingByCode = await selectCatalogCoursesByCodes(serviceClient, uniqueCodes);
+  const now = new Date();
+  const codesToFetch = uniqueCodes
+    .filter((code) => {
+      const existing = existingByCode.get(code);
+      return existing === undefined || catalogIsStale(existing.fetchedAt, now);
+    })
+    .slice(0, MAX_CATALOG_FETCHES_PER_MANIFEST);
+  if (codesToFetch.length === 0) return;
+
+  const fetchResults = await Promise.allSettled(
+    codesToFetch.map((code) =>
+      fetchCatalogCourse({ fetchImpl: fetch, catalogCode: code, timeoutMs: CATALOG_FETCH_TIMEOUT_MS })
+    ),
+  );
+
+  const rowsToUpsert = fetchResults
+    .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchCatalogCourse>>> =>
+      result.status === "fulfilled" && result.value !== undefined
+    )
+    .map((result) => result.value!);
+  await Promise.allSettled(rowsToUpsert.map((row) => upsertCatalogCourse(serviceClient, row)));
+
+  const failedCount = codesToFetch.length - rowsToUpsert.length;
+  if (failedCount > 0) {
+    console.error(`sync: catalog refresh had ${failedCount}/${codesToFetch.length} failure(s)`);
+  }
 }
 
 async function handleManifest(
@@ -74,6 +163,7 @@ async function handleManifest(
 
   await upsertCourses(serviceClient, courses);
   await upsertEnrollments(serviceClient, userId, courses);
+  await refreshCatalog(serviceClient, courses);
 
   const courseIDs = courses.map((course) => course.courseID);
   const liveRows = await selectLiveDocumentsForCourses(serviceClient, courseIDs);

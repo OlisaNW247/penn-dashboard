@@ -1,8 +1,10 @@
 import { strict as assert } from "node:assert";
 import { buildMessages, SYSTEM_INSTRUCTIONS } from "../supabase/functions/_shared/prompt.ts";
+import type { CatalogCourseRow } from "../supabase/functions/_shared/catalog.ts";
 
 const BASE_INPUT = {
   contextDocument: "PHYS 0151 syllabus text here.",
+  catalog: [] as CatalogCourseRow[],
   profiles: { "phys-151": { latePolicy: "24 hour grace" } },
   history: [] as { role: "user" | "assistant"; content: string }[],
   excerpts: "",
@@ -10,7 +12,25 @@ const BASE_INPUT = {
   askedAt: "2026-09-07T12:00:00.000Z",
 };
 
-Deno.test("buildMessages orders: instructions, context document, profiles, history, user turn", () => {
+const PHYS_CATALOG_ROW: CatalogCourseRow = {
+  catalogCode: "PHYS-0151",
+  semester: "2026C",
+  title: "Principles II",
+  description: "Electric and magnetic fields.",
+  credits: 1.5,
+  prerequisites: "",
+  crosslistings: [],
+  gradeModes: [],
+  attributes: [],
+  components: [
+    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["a", "b"] },
+    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["c", "d", "e"] },
+  ],
+  source: "penn-labs",
+  fetchedAt: "2026-09-07T00:00:00Z",
+};
+
+Deno.test("buildMessages orders: instructions, context document, profiles, history, user turn (no catalog)", () => {
   const history = [
     { role: "user" as const, content: "hi" },
     { role: "assistant" as const, content: "hello" },
@@ -35,6 +55,34 @@ Deno.test("buildMessages orders: instructions, context document, profiles, histo
   assert.equal(last.role, "user");
   assert.ok(last.content.startsWith("Current date: 2026-09-07T12:00:00.000Z"));
   assert.ok(last.content.includes("QUESTION: When is the midterm?"));
+});
+
+Deno.test("buildMessages omits the COURSE STRUCTURE block when catalog is empty", () => {
+  const messages = buildMessages(BASE_INPUT);
+  assert.equal(messages.length, 4); // instructions, context, profiles, user turn
+  assert.ok(!messages.some((m) => m.content.startsWith("COURSE STRUCTURE")));
+});
+
+Deno.test("buildMessages inserts COURSE STRUCTURE after the context document and before COURSE PROFILES", () => {
+  const messages = buildMessages({ ...BASE_INPUT, catalog: [PHYS_CATALOG_ROW] });
+
+  assert.equal(messages[0].content, SYSTEM_INSTRUCTIONS);
+  assert.equal(messages[1].content, BASE_INPUT.contextDocument);
+
+  assert.equal(messages[2].role, "system");
+  assert.ok(messages[2].content.startsWith("COURSE STRUCTURE (from the Penn registrar via Penn Labs):\n"));
+  assert.ok(messages[2].content.includes("PHYS-0151"));
+  assert.ok(messages[2].content.includes("Lecture (2 sections)"));
+
+  assert.equal(messages[3].role, "system");
+  assert.ok(messages[3].content.startsWith("COURSE PROFILES (extracted from syllabi):\n"));
+});
+
+Deno.test("buildMessages's COURSE STRUCTURE block is byte-stable for identical input, called twice", () => {
+  const input = { ...BASE_INPUT, catalog: [PHYS_CATALOG_ROW] };
+  const first = buildMessages(input)[2].content;
+  const second = buildMessages(input)[2].content;
+  assert.equal(first, second);
 });
 
 Deno.test("buildMessages omits the excerpts block from the user turn when excerpts is empty", () => {

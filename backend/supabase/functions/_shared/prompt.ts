@@ -15,7 +15,12 @@
 // `Object.keys` insertion order for the course-profiles JSON (Postgres
 // `jsonb` does not promise a stable key order across reads, so this file
 // sorts keys itself rather than trusting the input), and any
-// non-deterministic iteration (`Set`, unsorted `Map`) over `courseIDs`.
+// non-deterministic iteration (`Set`, unsorted `Map`) over `courseIDs`. The
+// same rule applies to `structureBlock` (_shared/catalog.ts), which is why
+// that function sorts its own rows by `catalogCode` rather than trusting
+// the order a Postgres query happened to return them in.
+
+import { structureBlock, type CatalogCourseRow } from "./catalog.ts";
 
 /** Ported near-verbatim from `ClaudeAssistantResponder.systemInstructions`
  *  (`LowHangingFruitUI/ClaudeAssistantResponder.swift:64-97`) -- same voice,
@@ -49,6 +54,19 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `policies, exam dates, office hours, contacts, textbooks. Treat it as `
   + `reliable, but the document's own prose may be more current or more `
   + `detailed; prefer the document when the two disagree.`,
+
+  `A COURSE STRUCTURE block, when present, comes from the Penn registrar, `
+  + `not the professor, and lists each course's components — a Canvas `
+  + `course site can bundle more than one, such as a 1.0 CU lecture plus a `
+  + `0.5 CU lab under one course code. When a course has more than one `
+  + `component, say which component your answer is about rather than `
+  + `speaking of "the class" as if it were one undifferentiated thing. `
+  + `Treat "the class" or "lecture" as asking about the lecture component `
+  + `and "the lab" as asking about the lab component. Retrieved excerpts `
+  + `are sometimes labelled [lab] or [lecture] by the app; when they are, `
+  + `prefer the label matching the question, and never state a lab-specific `
+  + `rule (grading, attendance, late work) as if it were the whole course's `
+  + `rule without saying it's the lab's.`,
 
   `The student's message may also carry a RETRIEVED EXCERPTS section: `
   + `short passages from their course materials (syllabus prose, `
@@ -84,6 +102,13 @@ export interface HistoryTurn {
 export interface BuildMessagesInput {
   /** The rendered, byte-stable `AssistantContext.contextDocument`. */
   contextDocument: string;
+  /** `catalog_courses` rows reachable from the caller's `courseIDs` through
+   *  `courses.catalog_code` (see `_shared/db.ts`'s
+   *  `selectCatalogCoursesForCourseIDs`). May be `[]` -- a course with no
+   *  resolved catalog code, or one Penn Labs has never successfully
+   *  answered for, simply contributes nothing here rather than blocking
+   *  the rest of the prompt. */
+  catalog: CatalogCourseRow[];
   /** Course id -> profile JSON (or `null`), for the courses in `courseIDs`
    *  the caller resolved to have a `course_profiles` row. `ask/index.ts` is
    *  responsible for excluding courses the caller isn't enrolled in before
@@ -109,6 +134,24 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
 
   messages.push({ role: "system", content: SYSTEM_INSTRUCTIONS });
   messages.push({ role: "system", content: input.contextDocument });
+
+  // Inserted after the context document and before the course-profiles
+  // block per the catalog delegation brief -- the registrar's view of a
+  // course's shape (does it even have a lab?) is more fundamental than the
+  // syllabus-derived profile facts that follow it, but still belongs after
+  // the context document itself, which is the single most authoritative
+  // source this prompt has. Only added when there's something to say --
+  // an empty `structureBlock` (no course in `courseIDs` resolved a catalog
+  // code, or none has been fetched yet) would otherwise add a header with
+  // nothing under it, all cached-prefix cost for zero information.
+  const structure = structureBlock(input.catalog);
+  if (structure.length > 0) {
+    messages.push({
+      role: "system",
+      content: `COURSE STRUCTURE (from the Penn registrar via Penn Labs):\n${structure}`,
+    });
+  }
+
   messages.push({
     role: "system",
     content: `COURSE PROFILES (extracted from syllabi):\n${stableStringify(input.profiles)}`,

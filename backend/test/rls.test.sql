@@ -45,6 +45,16 @@ insert into public.course_profiles (course_id, profile, source_hash) values
   ('200', '{"latePolicy":"24 hour grace"}'::jsonb, 'src-hash-200');
 reset role;
 
+-- One catalog_courses row, deliberately not linked via any course's
+-- catalog_code -- this table's whole point is that it needs no enrollment
+-- gate (see the 20260907120000_catalog.sql migration's RLS comment), so
+-- whether a course row happens to reference it is irrelevant to who can
+-- read it.
+set role service_role;
+insert into public.catalog_courses (catalog_code, semester, title) values
+  ('PHYS-0151', '2026C', 'Principles II');
+reset role;
+
 -- Impersonate student A the way PostgREST would: set the JWT claims GUC and
 -- assume the `authenticated` role for the rest of the transaction.
 begin;
@@ -105,6 +115,20 @@ begin
   end if;
 end $$;
 
+-- catalog_courses is the one table in this schema with no enrollment gate
+-- at all -- student A can read it despite not being enrolled in any course
+-- linked to it, because it's public registrar data, not shared-because-
+-- enrolled course material.
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.catalog_courses where catalog_code = 'PHYS-0151';
+  if n <> 1 then
+    raise exception 'expected student A to see the catalog_courses row despite no enrollment link, saw %', n;
+  end if;
+end $$;
+
 -- Writes: no INSERT policy exists for authenticated, so this must fail.
 do $$
 begin
@@ -117,6 +141,18 @@ begin
   exception
     when insufficient_privilege then
       -- expected: no INSERT grant for authenticated at all.
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    insert into public.catalog_courses (catalog_code, semester, title)
+    values ('CIS-9999', '2026C', 'Injected');
+    raise exception 'authenticated was able to INSERT into catalog_courses -- RLS/grant hole';
+  exception
+    when insufficient_privilege then
       null;
   end;
 end $$;
@@ -147,6 +183,19 @@ begin
   select count(*) into n from public.courses;
   if n <> 0 then
     raise exception 'expected anon to see zero courses rows, saw %', n;
+  end if;
+end $$;
+
+do $$
+declare
+  n int;
+begin
+  -- catalog_courses' policy names only `authenticated` (see the migration's
+  -- RLS comment) -- being public registrar data doesn't mean it's served
+  -- to a caller with no session at all.
+  select count(*) into n from public.catalog_courses;
+  if n <> 0 then
+    raise exception 'expected anon to see zero catalog_courses rows, saw %', n;
   end if;
 end $$;
 

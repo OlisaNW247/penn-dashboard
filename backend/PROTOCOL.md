@@ -126,6 +126,62 @@ Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 (default 100000). Usage is recorded in `ask_usage` after the stream ends;
 questions and answers are never stored.
 
+## Catalog
+
+The problem this solves: a Canvas course site is one thing, but the
+registrar course underneath it can be several -- PHYS 0151 is one Canvas
+site containing a 1.0 CU lecture and a 0.5 CU lab, and nothing before this
+told `ask` that, so a question about "the class" could get answered from
+whichever component's syllabus text happened to be retrieved.
+
+Source: Penn Labs' public Penn Courses API (the backend behind Penn Course
+Review), `GET https://penncoursereview.com/api/base/current/courses/{DEPT-NNNN}/`,
+no auth, no key. `{DEPT-NNNN}` is the Canvas course code with its space
+replaced by a dash (`PHYS 0151` -> `PHYS-0151`; see `_shared/catalog.ts`'s
+`catalogCode`). Review-score fields the response also carries
+(`course_quality`, `instructor_quality`, `difficulty`, `work_required`, at
+both the course and section level) are Penn Labs' own aggregated Penn
+Course Review data, not the registrar's, and are never stored -- out of
+scope for this table on purpose.
+
+Storage: `catalog_courses`, one row per registrar course code (not one per
+Canvas course id, and not one per enrolled student -- a registrar course is
+the same fact for every semester's offering and every student in it).
+`courses.catalog_code` is the join from a Canvas course site to its
+registrar course; nullable, since a code `catalogCode` can't confidently
+parse is left unlinked rather than guessed at.
+
+Refresh rule: piggybacks on `sync`'s manifest step rather than a cron. After
+`upsertCourses`, for every course in the manifest whose code resolves to a
+catalog code, the server links `courses.catalog_code` and -- for at most 8
+of those codes per call, each fetched concurrently with a 2.5 s timeout --
+fetches a fresh `catalog_courses` row if none exists yet or the existing one
+is more than 7 days old. This is deliberately not its own scheduled job:
+only courses someone is enrolled in are worth a Penn Labs request for, and
+every enrolled course already reaches this code path at least once an hour
+(the app's own refresh loop calls `sync` that often), so there is no
+staleness gap a cron would close that this doesn't already close on its
+own. Failures (a 404, a timeout, a network error) are silent to the
+manifest response and only ever logged as a count.
+
+Structure block: `ask`'s prompt carries a `COURSE STRUCTURE (from the Penn
+registrar via Penn Labs)` system block, built by `_shared/catalog.ts`'s
+`structureBlock` from the `catalog_courses` rows reachable through the
+caller's enrolled courses' `catalog_code`. It sits after the context
+document and before the course-profiles block (see "Server prompt order"
+under `ask` above), one paragraph per course, sorted by catalog code for
+the same byte-stability reason `buildMessages` sorts everything else in the
+cached prefix: title and overall credits, then each component ("Lecture
+(2 sections, 1.5 CU each)", "Lab (3 sections)" -- credits omitted per
+component when no section states one), then grade modes offered, then
+prerequisites, then a 600-character description. Empty when no enrolled
+course has a resolved, fetched catalog row.
+
+RLS: `catalog_courses` needs no enrollment gate, unlike every other table in
+this schema -- it's public registrar data with no student-specific angle,
+so every `authenticated` caller may `SELECT` every row. There are still no
+write policies; only `sync`'s service-role client ever writes it.
+
 ## `extract-profile`
 
 Request `{ "courseIDs": [courseID] }`. For each listed course that the
@@ -145,8 +201,17 @@ paraphrases of the source, never inferred):
   "contacts": [ { "name", "role"?, "email"? } ],
   "textbooks": [ string ],
   "keyPolicies": [ { "topic", "text" } ],
+  "components": [ { "name", "gradingBasis"?, "creditUnits"?, "notes"? } ],
   "sourceDocumentIDs": [ string ] }
 ```
+
+`components` is only populated when the syllabus itself distinguishes parts
+of the course (e.g. "the lab is graded pass/fail, 0.5 CU") -- not simply
+because the registrar's section list says there is a lab (that's
+`catalog_courses.components` below, a different fact from a different
+source). "name" is the component as the syllabus names it; "gradingBasis",
+"creditUnits" and "notes" are each omitted unless the syllabus states that
+component's own value.
 
 ## `extract-announcement`
 
