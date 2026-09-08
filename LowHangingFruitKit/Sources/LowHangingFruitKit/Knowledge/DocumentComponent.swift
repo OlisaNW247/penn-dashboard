@@ -118,8 +118,19 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
     /// mention exams would otherwise sprout a "[lecture]" tag on every
     /// answer, which reads as noise to the student and as a hint of a lab
     /// that doesn't exist to the model.
+    ///
+    /// Only structural documents count — a syllabus, a page, a module, the
+    /// course home. An announcement saying "recitation moved this week" or
+    /// an assignment called "Lab 3" mentions a component without proving
+    /// the course is graded in two parts; the first version of this check
+    /// counted them and labelled every CIS 2400 answer "[lecture]" on the
+    /// strength of one rescheduled recitation.
     public static func courseIsSplit(_ documents: [CourseDocument]) -> Bool {
         documents.contains { document in
+            switch document.kind {
+            case .announcement, .assignment: return false
+            case .syllabus, .home, .page, .module: break
+            }
             switch classify(title: document.title, text: document.text) {
             case .lab, .recitation: return true
             case .lecture, .general: return false
