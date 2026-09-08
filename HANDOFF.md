@@ -66,6 +66,8 @@ run for real.
    first time; the first `functions deploy` failed bundling because the edge
    bundler ignores `backend/deno.json`'s import map (fixed by importing
    `npm:@supabase/supabase-js@2` directly); the second deployed all five.
+   Always deploy with `--use-api`: the default path bundles through a local
+   Docker image and hung for hours on a Mac without Docker running.
 5. ~~Enable anonymous sign-ins~~ — done 2026-09-07; the smoke test
    (anonymous signup → `sync` manifest → streamed `ask` answer from
    GLM-5.3-Flash) passed end to end from a terminal. The OpenRouter key was

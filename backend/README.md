@@ -52,7 +52,7 @@ legible, not strictly required on day one.
 Deploy the functions:
 
 ```bash
-supabase functions deploy
+supabase functions deploy --use-api
 ```
 
 ## Wiring up the app
@@ -72,7 +72,9 @@ facts like credits, prerequisites, grade modes and, most importantly, a
 course's components (a lecture with a separate lab or recitation, which one
 Canvas site otherwise gives no sign of). This needs no key and no account:
 the endpoint is unauthenticated, so there's nothing to configure here
-beyond what `supabase functions deploy` already ships. See `PROTOCOL.md`'s
+beyond what `supabase functions deploy --use-api` already ships. (`--use-api`
+bundles on Supabase's side; without it the CLI bundles through a local Docker
+image and sits silently forever when Docker Desktop isn't running.) See `PROTOCOL.md`'s
 "Catalog" section for the refresh rule and exactly what gets sent to `ask`.
 
 ## Local testing
