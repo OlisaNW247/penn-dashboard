@@ -289,6 +289,7 @@ export interface CatalogCourseDBRow {
   components: CatalogComponent[];
   source: string;
   fetched_at: string;
+  syllabus_url: string | null;
 }
 
 function catalogRowToDBRow(row: CatalogCourseRow): CatalogCourseDBRow {
@@ -305,6 +306,7 @@ function catalogRowToDBRow(row: CatalogCourseRow): CatalogCourseDBRow {
     components: row.components,
     source: row.source,
     fetched_at: row.fetchedAt,
+    syllabus_url: row.syllabusURL ?? null,
   };
 }
 
@@ -322,6 +324,7 @@ function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
     components: row.components,
     source: row.source,
     fetchedAt: row.fetched_at,
+    syllabusURL: row.syllabus_url ?? undefined,
   };
 }
 
@@ -337,7 +340,7 @@ export async function selectCatalogCoursesByCodes(
   const { data, error } = await client
     .from("catalog_courses")
     .select(
-      "catalog_code, semester, title, description, credits, prerequisites, crosslistings, grade_modes, attributes, components, source, fetched_at",
+      "catalog_code, semester, title, description, credits, prerequisites, crosslistings, grade_modes, attributes, components, source, fetched_at, syllabus_url",
     )
     .in("catalog_code", catalogCodes);
   if (error) throw error;
@@ -407,6 +410,298 @@ export async function selectCatalogCoursesForCourseIDs(
 
   const byCode = await selectCatalogCoursesByCodes(client, catalogCodes);
   return [...byCode.values()];
+}
+
+// ---------------------------------------------------------------------
+// Course websites (supabase/migrations/20260907180000_websites.sql). See
+// _shared/websites.ts and _shared/crawl.ts for the pure discovery/crawl
+// logic, and `discover-websites/index.ts` for how these are wired
+// together. As with the catalog section above, this is only the
+// snake_case <-> camelCase mapping and the Supabase calls; no discovery
+// policy (what counts as a candidate, when to re-verify) lives here.
+// ---------------------------------------------------------------------
+
+export type CourseWebsiteSource = "canvas-link" | "cis-directory" | "convention" | "penn-labs-syllabus";
+export type CourseWebsiteStatus = "candidate" | "verified" | "rejected";
+
+export interface CourseWebsiteRow {
+  id: number;
+  courseID: string;
+  url: string;
+  source: CourseWebsiteSource;
+  confidence: number;
+  status: CourseWebsiteStatus;
+  anchorText: string | null;
+  verifiedTerm: string | null;
+  verifiedAt: string | null;
+  lastCrawledAt: string | null;
+  pageCount: number;
+  gradescopeCourseID: string | null;
+  edCourseID: string | null;
+  createdAt: string;
+}
+
+interface CourseWebsiteDBRow {
+  id: number;
+  course_id: string;
+  url: string;
+  source: CourseWebsiteSource;
+  confidence: number;
+  status: CourseWebsiteStatus;
+  anchor_text: string | null;
+  verified_term: string | null;
+  verified_at: string | null;
+  last_crawled_at: string | null;
+  page_count: number;
+  gradescope_course_id: string | null;
+  ed_course_id: string | null;
+  created_at: string;
+}
+
+const COURSE_WEBSITE_COLUMNS =
+  "id, course_id, url, source, confidence, status, anchor_text, verified_term, verified_at, last_crawled_at, page_count, gradescope_course_id, ed_course_id, created_at";
+
+function dbRowToCourseWebsite(row: CourseWebsiteDBRow): CourseWebsiteRow {
+  return {
+    id: row.id,
+    courseID: row.course_id,
+    url: row.url,
+    source: row.source,
+    confidence: row.confidence,
+    status: row.status,
+    anchorText: row.anchor_text,
+    verifiedTerm: row.verified_term,
+    verifiedAt: row.verified_at,
+    lastCrawledAt: row.last_crawled_at,
+    pageCount: row.page_count,
+    gradescopeCourseID: row.gradescope_course_id,
+    edCourseID: row.ed_course_id,
+    createdAt: row.created_at,
+  };
+}
+
+/** Every `course_websites` row (any status) for the given courses --
+ *  `discover-websites` uses this both to gather already-known candidates
+ *  before adding directory/convention/Penn-Labs ones, and to pick which
+ *  verified row (if any) is due for a re-crawl. */
+export async function selectCourseWebsites(
+  client: SupabaseClient,
+  courseIDs: string[],
+): Promise<CourseWebsiteRow[]> {
+  if (courseIDs.length === 0) return [];
+  const { data, error } = await client
+    .from("course_websites")
+    .select(COURSE_WEBSITE_COLUMNS)
+    .in("course_id", courseIDs);
+  if (error) throw error;
+  return ((data ?? []) as CourseWebsiteDBRow[]).map(dbRowToCourseWebsite);
+}
+
+export interface NewCourseWebsiteCandidate {
+  courseID: string;
+  url: string;
+  source: CourseWebsiteSource;
+  confidence: number;
+  anchorText?: string;
+}
+
+/**
+ * Upserts candidate rows by `(course_id, url)`, taking the *greater* of an
+ * existing row's confidence and the new signal's -- two different sources
+ * agreeing on the same URL (a Canvas link and a CIS directory entry both
+ * pointing at `~cis2400/current/`) is stronger evidence than either alone,
+ * so the row should reflect whichever discovery so far thought most highly
+ * of it, never regress to a weaker one. `status` is deliberately left
+ * alone when a row already exists: rediscovering an already-`verified` or
+ * already-`rejected` URL from a fresh sync's links is not new evidence
+ * that overrides a verification outcome only `discover-websites`' own
+ * verify step is allowed to change. Supabase's JS client has no
+ * `GREATEST(...)`-in-an-upsert primitive, so this reads existing rows
+ * first and computes the merge in application code -- the same pattern
+ * `upsertEnrollments` above already uses to merge `section_ids`.
+ */
+export async function upsertCourseWebsiteCandidates(
+  client: SupabaseClient,
+  candidates: NewCourseWebsiteCandidate[],
+): Promise<void> {
+  if (candidates.length === 0) return;
+
+  const courseIDs = [...new Set(candidates.map((candidate) => candidate.courseID))];
+  const { data: existingRows, error: selectError } = await client
+    .from("course_websites")
+    .select("course_id, url, confidence, status, anchor_text")
+    .in("course_id", courseIDs);
+  if (selectError) throw selectError;
+
+  interface ExistingSlice {
+    confidence: number;
+    status: CourseWebsiteStatus;
+    anchor_text: string | null;
+  }
+  const existingByKey = new Map<string, ExistingSlice>();
+  for (const row of (existingRows ?? []) as Array<ExistingSlice & { course_id: string; url: string }>) {
+    existingByKey.set(`${row.course_id} ${row.url}`, row);
+  }
+
+  const rows = candidates.map((candidate) => {
+    const existing = existingByKey.get(`${candidate.courseID} ${candidate.url}`);
+    return {
+      course_id: candidate.courseID,
+      url: candidate.url,
+      source: candidate.source,
+      confidence: Math.max(existing?.confidence ?? 0, candidate.confidence),
+      status: existing?.status ?? "candidate",
+      anchor_text: candidate.anchorText ?? existing?.anchor_text ?? null,
+    };
+  });
+
+  const { error } = await client.from("course_websites").upsert(rows, { onConflict: "course_id,url" });
+  if (error) throw error;
+}
+
+/** Marks one `course_websites` row verified for `verifiedTerm`, with the
+ *  caller-computed `confidence` (existing confidence + the verify bonus --
+ *  computed by the caller, which already has the row in hand from
+ *  `selectCourseWebsites`, rather than this function re-reading it). */
+export async function setCourseWebsiteVerified(
+  client: SupabaseClient,
+  id: number,
+  input: { verifiedTerm: string; confidence: number },
+): Promise<void> {
+  const { error } = await client
+    .from("course_websites")
+    .update({
+      status: "verified",
+      verified_term: input.verifiedTerm,
+      verified_at: new Date().toISOString(),
+      confidence: input.confidence,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Marks one `course_websites` row rejected -- fetched successfully but
+ *  `verifyPage` didn't match. Kept (not deleted) so this URL isn't
+ *  re-fetched-and-rejected every single `discover-websites` call; see the
+ *  migration's `status` column comment. */
+export async function setCourseWebsiteRejected(client: SupabaseClient, id: number): Promise<void> {
+  const { error } = await client.from("course_websites").update({ status: "rejected" }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Records the outcome of crawling one verified `course_websites` row --
+ *  when it was last crawled, how many pages it yielded, and any
+ *  Gradescope/Ed course id `sideIDs` recovered from its pages. */
+export async function setCourseWebsiteCrawlStats(
+  client: SupabaseClient,
+  id: number,
+  input: {
+    lastCrawledAt: string;
+    pageCount: number;
+    gradescopeCourseID?: string;
+    edCourseID?: string;
+  },
+): Promise<void> {
+  const { error } = await client
+    .from("course_websites")
+    .update({
+      last_crawled_at: input.lastCrawledAt,
+      page_count: input.pageCount,
+      gradescope_course_id: input.gradescopeCourseID ?? null,
+      ed_course_id: input.edCourseID ?? null,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** The subset of `courses` columns `discover-websites` (and `sync`'s
+ *  link-candidate scoring) needs per course: its own Canvas code (what
+ *  `candidateFromLink` matches a link's URL/text against), its resolved
+ *  registrar `catalog_code`, if any (the join to
+ *  `catalog_courses.semester`/`syllabus_url` and to `parseCisDirectory`
+ *  entries, which key on catalog code, not the raw Canvas code), and its
+ *  own Canvas `url` -- used only as the base a relative link href resolves
+ *  against, since the wire's `LinkWire` carries no page URL of its own,
+ *  only which kind of Canvas page (`origin`) it came from. */
+export interface DiscoveryCourseInfo {
+  courseID: string;
+  code: string;
+  catalogCode: string | null;
+  url: string | null;
+}
+
+export async function selectCoursesForDiscovery(
+  client: SupabaseClient,
+  courseIDs: string[],
+): Promise<DiscoveryCourseInfo[]> {
+  if (courseIDs.length === 0) return [];
+  const { data, error } = await client
+    .from("courses")
+    .select("course_id, code, catalog_code, url")
+    .in("course_id", courseIDs);
+  if (error) throw error;
+  return (
+    (data ?? []) as Array<{ course_id: string; code: string; catalog_code: string | null; url: string | null }>
+  ).map((row) => ({
+    courseID: row.course_id,
+    code: row.code,
+    catalogCode: row.catalog_code,
+    url: row.url,
+  }));
+}
+
+/** Live `website`-kind document ids for one course -- `discover-websites`'
+ *  own equivalent of `selectLiveDocumentIDsForCourse`, scoped to `kind =
+ *  'website'` because a crawl only ever knows about that course's website
+ *  pages, never its Canvas-sourced documents; marking a Canvas page gone
+ *  just because a crawl didn't happen to re-see it would be wrong. */
+export async function selectLiveWebsiteDocumentIDsForCourse(
+  client: SupabaseClient,
+  courseID: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("course_documents")
+    .select("id")
+    .eq("course_id", courseID)
+    .eq("kind", "website")
+    .is("gone_at", null);
+  if (error) throw error;
+  return (data ?? []).map((row) => (row as { id: string }).id);
+}
+
+// ---------------------------------------------------------------------
+// directory_cache (supabase/migrations/20260907180000_websites.sql):
+// service-role-only key/value cache so `discover-websites` fetches the CIS
+// Advising Handbook's course directory at most once per 24h *total* across
+// every student's call, not once per student -- see that function and
+// PROTOCOL.md's course-website section.
+// ---------------------------------------------------------------------
+
+export interface DirectoryCacheEntry {
+  body: string;
+  fetchedAt: string;
+}
+
+export async function selectDirectoryCache(
+  client: SupabaseClient,
+  key: string,
+): Promise<DirectoryCacheEntry | undefined> {
+  const { data, error } = await client
+    .from("directory_cache")
+    .select("body, fetched_at")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return undefined;
+  const row = data as { body: string; fetched_at: string };
+  return { body: row.body, fetchedAt: row.fetched_at };
+}
+
+export async function upsertDirectoryCache(client: SupabaseClient, key: string, body: string): Promise<void> {
+  const { error } = await client
+    .from("directory_cache")
+    .upsert({ key, body, fetched_at: new Date().toISOString() }, { onConflict: "key" });
+  if (error) throw error;
 }
 
 /** Deletes the caller's private rows ahead of deleting the auth user

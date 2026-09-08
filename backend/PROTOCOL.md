@@ -50,8 +50,10 @@ CourseDocumentWire  { id, courseID, course, kind, sourceID, title, url?,
 FullySyncedCourse   { courseID, documentIDs: [string] }
 ```
 
-`kind` is one of `home | syllabus | assignment | announcement | module | page`.
-`id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client.
+`kind` is one of `home | syllabus | assignment | announcement | module | page | website`.
+`id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client for
+every kind except `website`, which the server computes itself (see "Course
+websites" below) since a crawled page has no Canvas id to key on.
 
 ## `sync` — manifest exchange, then upload
 
@@ -71,24 +73,47 @@ for every course NOT in `coursesFresh` (announcements are fetched for all
 courses in one call regardless; they are cheap and change daily). Local
 merge runs as today.
 
-### Step 2: `{ "action": "upload", "documents": [CourseDocumentWire], "fullySyncedCourses": [FullySyncedCourse] }`
+### Step 2: `{ "action": "upload", "documents": [CourseDocumentWire], "fullySyncedCourses": [FullySyncedCourse], "links"?: [LinkWire] }`
 
 `documents` = local docs whose `(id, contentHash)` is not in
 `serverManifest`. `fullySyncedCourses` = the courses the client fetched from
-Canvas this run with every doc id it now holds for that course. Server:
-upserts docs by id (clearing `gone_at`), sets `gone_at = now()` on live docs
-of a fully-synced course whose id is absent from `documentIDs`, sets
-`courses.last_full_sync_at = now()` for those courses, and sets
+Canvas this run with every doc id it now holds for that course.
+
+`links` (optional, at most 400 entries per call, each `href` at most 2048
+characters) is the raw material for course-website discovery -- see
+"Course websites" below:
+
+```
+LinkWire { courseID, href, text, origin }   -- origin: "page" | "assignment" | "module" | "syllabus"
+```
+
+Every `href` the client finds while extracting course material from
+Canvas (a link in a page body, an assignment description, a module item, a
+syllabus) is worth sending, not just ones that look like a course
+homepage -- the server does the filtering (`_shared/websites.ts`'s
+`candidateFromLink`), and a link the client's own heuristics would have
+discarded may still score.
+
+Server: upserts docs by id (clearing `gone_at`), sets `gone_at = now()` on
+live docs of a fully-synced course whose id is absent from `documentIDs`,
+sets `courses.last_full_sync_at = now()` for those courses, sets
 `courses.profile_stale = true` for any course whose set of
-`(id, contentHash)` for kinds `syllabus|home|page` changed. Answers
+`(id, contentHash)` for kinds `syllabus|home|page|website` changed, and
+scores `links` into `course_websites` candidate rows. Answers
 
 ```
-{ "accepted": n, "profileStale": [courseID] }
+{ "accepted": n, "profileStale": [courseID], "websitesPending": [courseID] }
 ```
 
-Client then POSTs `extract-profile` for `profileStale` without awaiting.
-Maximum request body 6 MB; the client chunks `documents` into batches of at
-most 200.
+Client then POSTs `extract-profile` for `profileStale` without awaiting,
+and fires `discover-websites` (at most 3 course ids per call; batch a
+longer list across calls) for `websitesPending`, also without awaiting.
+`websitesPending` is the affected courses (from `documents` +
+`fullySyncedCourses` + `links`) that have no website verified within the
+last 7 days *and* either already have a candidate row or are a CIS/CIT
+course (the one department a URL can be guessed for with zero candidates
+at all -- see `conventionURLs`). Maximum request body 6 MB; the client
+chunks `documents` into batches of at most 200.
 
 ## `ask` — streamed answer
 
@@ -182,13 +207,93 @@ this schema -- it's public registrar data with no student-specific angle,
 so every `authenticated` caller may `SELECT` every row. There are still no
 write policies; only `sync`'s service-role client ever writes it.
 
+## Course websites
+
+The problem this solves: a lot of Penn courses -- all of CIS, for one --
+keep their real material on an external course website instead of Canvas.
+Until this existed, none of that reached `ask`: a Canvas course site with
+just a home page and a syllabus stub told the assistant almost nothing
+about grading, the schedule, or projects, even though the professor's own
+site had all of it.
+
+**Discovery.** A URL becomes a `course_websites` candidate one of four
+ways, recorded as `source`:
+
+- `canvas-link` -- a link the client reported in `sync`'s upload `links`,
+  scored by `_shared/websites.ts`'s `candidateFromLink`: +3 confidence when
+  the URL contains the course's compact code (`cis2400`, `cis-2400`,
+  `~cis2400`), +2 when the anchor text reads like "course website"/"course
+  page", +1 when the host is `*.upenn.edu`. A link on an `IGNORED_HOSTS`
+  host (Canvas, Gradescope, Ed, Zoom, Panopto, YouTube, Google Calendar/
+  Docs/Forms, ...) is never a candidate.
+- `cis-directory` -- an entry from the CIS Advising Handbook's course
+  directory (`https://advising.cis.upenn.edu/course-dir/`), fetched by
+  `discover-websites` at most once per 24 hours *total* (across every
+  student's call, not once per student) via the service-role-only
+  `directory_cache` table.
+- `convention` -- the guessed `~courseN/current/` pattern off
+  `seas.upenn.edu` and `cis.upenn.edu`, CIS/CIT only.
+- `penn-labs-syllabus` -- Penn Labs' own `syllabus_url` field on the
+  course's `catalog_courses` row, when present (often `null`).
+
+**Verification.** `discover-websites` fetches every `candidate` row (and
+every `verified` row whose `verified_at` is more than 7 days old) and
+checks it with `verifyPage`: does the page's title/heading/first 3000
+characters of body state both this course's code and the current
+semester (`catalog_courses.semester`, matched via `termAliases` -- "2026C"
+also matches "fall 2026", "26fa", "fa26", ...)? Both must hit for
+`status` to become `verified`; a code match with no term match (a stale
+prior-semester page) or vice versa leaves it `candidate`; a page that
+doesn't match either becomes `rejected` and is not re-fetched on future
+calls. A 404 or network failure leaves the row untouched -- neither
+outcome is evidence the URL is wrong, only that this attempt to check it
+failed.
+
+**Crawling.** Once a course has a `verified` site, `discover-websites`
+crawls it (`_shared/crawl.ts`): same host, same-or-deeper path as wherever
+the start URL's redirects landed (so `~cis2400/current/` -> `~cis2400/
+26fa/` never wanders into `~cis1210/...`), breadth-first, at most 40 pages,
+depth 2, an 8-second per-request timeout, honoring `robots.txt`'s
+`Disallow` for `User-agent: *`, and never following a link onto an
+`IGNORED_HOSTS` host. A linked PDF (capped at 200 KB) is read via `unpdf`;
+everything else is read as HTML. Re-crawled at most once per 7 days per
+site. Every page becomes a `course_documents` row with `kind: "website"`,
+`id` and `source_id` derived from a hash of the page's own URL (a crawled
+page has no Canvas id to key on) rather than client-computed; a
+previously-crawled page absent from a fresh crawl is marked `gone_at`, the
+same rule `sync`'s fully-synced-course upload step applies to Canvas
+documents. A crawled page whose title or URL matches
+`/syllabus|polic|grading|logistics/i` also sets `courses.profile_stale =
+true`, since that page is exactly the kind `extract-profile` wants to read
+(see below).
+
+## `discover-websites`
+
+Request `{ "courseIDs": [courseID] }`, at most 3 per call (batch a longer
+`websitesPending` list across calls). The caller must be enrolled in every
+listed course. Runs discovery, verification and (for at most one
+newly-or-still-eligible site per course) a crawl for each, within a 45
+second overall budget. Response:
+
+```
+{ "discovered": [ { "courseID", "url", "status" } ], "crawled": [courseID] }
+```
+
+`status` is the row's status *after* this call (`candidate`, `verified` or
+`rejected`) for every candidate this call looked at, whether or not it
+changed. `crawled` lists only the courses a crawl was actually attempted
+for this call. Logs counts only, never a URL, title or page body.
+
 ## `extract-profile`
 
 Request `{ "courseIDs": [courseID] }`. For each listed course that the
 caller is enrolled in and whose `profile_stale` is true, the server builds
 one `course_profiles` row from that course's live `syllabus`, `home` and
-`page` documents (at most `PROFILE_INPUT_CHARS`, default 60000, syllabus
-first) and clears `profile_stale`. Response `{ "updated": [courseID] }`.
+`page` documents plus any `website` document whose title or URL matches
+`/syllabus|polic|grading|logistics|schedule/i` (at most
+`PROFILE_INPUT_CHARS`, default 60000; input order is syllabus, then a
+matching website page, then home, then page) and clears `profile_stale`.
+Response `{ "updated": [courseID] }`.
 
 Profile JSON (every field optional, strings are verbatim quotes or close
 paraphrases of the source, never inferred):

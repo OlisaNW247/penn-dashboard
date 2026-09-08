@@ -36,6 +36,25 @@ in `docs/decisions.md` for the reasoning and what was rejected.
 - **Settings → "delete my class data from lhf's server"**, calling
   `delete-account`.
 
+### Added 2026-09-08 (after the head below was written)
+
+Two more layers, same shape (backend tested here, Swift compiled on the Mac):
+
+- **Registrar catalog.** `catalog_courses`, fed on sync from Penn Labs' public
+  Penn Courses API; ask gets a COURSE STRUCTURE block (components, credits,
+  grade modes, description) and the retriever labels `[lecture]`/`[lab]`
+  excerpts for split courses. Fixes the PHYS 0151 "class vs lab" answer.
+  Verified on the Mac: 853 tests / 90 suites.
+- **Course websites.** Canvas links (syllabus page, pages, assignments,
+  External URL module items) ride the upload; `discover-websites` verifies
+  candidates against the course code + current term (also the CIS Advising
+  Handbook directory and the `~cisNNNN/current/` convention), crawls the
+  best verified site (same host, depth 2, 40 pages, robots.txt, PDFs), and
+  stores pages as `website`-kind documents. **Swift for this layer was
+  written without a compiler**; expect roughly 881 tests / 91 suites on the
+  Mac. Deploy needs `supabase db push` (migration `20260907180000_websites`)
+  and `supabase functions deploy --use-api` (adds `discover-websites`).
+
 ### Compile status
 
 Verified on the owner's Mac, 2026-09-07: `swift test` → **838 tests / 89

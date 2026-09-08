@@ -4,16 +4,22 @@
 // and so `sync/index.ts` stays a thin wiring layer around it: parse the
 // request, call into here, call into db.ts, respond.
 
-/** The six document kinds the protocol recognizes. Anything else is a bug
- * on the client (a new kind must be added here and in the migration's
- * CHECK constraint together, never just one side). */
+/** The seven document kinds the protocol recognizes. Anything else is a
+ * bug on the client (a new kind must be added here and in the migration's
+ * CHECK constraint together, never just one side). `website` is the one
+ * kind never uploaded by the client at all -- it is written directly by
+ * `discover-websites/index.ts` for a course's own crawled site (see
+ * PROTOCOL.md's course-website section) -- but it still has to be a
+ * recognized `DocumentKind` here so a `website` row reads back through
+ * `documentRowToWire`/the manifest diff exactly like any other document. */
 export type DocumentKind =
   | "home"
   | "syllabus"
   | "assignment"
   | "announcement"
   | "module"
-  | "page";
+  | "page"
+  | "website";
 
 const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "home",
@@ -22,6 +28,7 @@ const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "announcement",
   "module",
   "page",
+  "website",
 ];
 
 function isDocumentKind(value: unknown): value is DocumentKind {
@@ -29,16 +36,17 @@ function isDocumentKind(value: unknown): value is DocumentKind {
 }
 
 // Only the kinds a course's "shape" -- its syllabus, its home page, its
-// static pages -- live in count toward profile staleness. Assignments and
-// announcements change constantly (a new announcement posts every week)
-// and re-extracting a profile every time one changes would be both wasteful
-// and wrong: the profile is meant to capture grading weights, office hours,
-// policies -- things that live on the pages the protocol lists here, not
-// on a Tuesday's reminder email.
+// static pages, and now its own crawled website -- count toward profile
+// staleness. Assignments and announcements change constantly (a new
+// announcement posts every week) and re-extracting a profile every time
+// one changes would be both wasteful and wrong: the profile is meant to
+// capture grading weights, office hours, policies -- things that live on
+// the pages the protocol lists here, not on a Tuesday's reminder email.
 const PROFILE_RELEVANT_KINDS: ReadonlySet<DocumentKind> = new Set([
   "syllabus",
   "home",
   "page",
+  "website",
 ]);
 
 export const MAX_TEXT_LENGTH = 200_000;
@@ -173,6 +181,55 @@ export function validateFullySyncedCourse(raw: unknown): FullySyncedCourse {
     courseID: requireString(raw, "courseID"),
     documentIDs: requireStringArray(raw, "documentIDs"),
   };
+}
+
+/** Where on Canvas the client found a link -- carried through for
+ * provenance/debugging only; `_shared/websites.ts`'s `candidateFromLink`
+ * scoring (code match, "course site" wording, `.upenn.edu` host) does not
+ * currently vary by it. Kept as a closed set here, matching `DocumentKind`
+ * above, rather than an open string, so a client typo produces a 400
+ * instead of a silently-uncategorized row. */
+export type LinkOrigin = "page" | "assignment" | "module" | "syllabus";
+
+const LINK_ORIGINS: readonly LinkOrigin[] = ["page", "assignment", "module", "syllabus"];
+
+function isLinkOrigin(value: unknown): value is LinkOrigin {
+  return typeof value === "string" && (LINK_ORIGINS as readonly string[]).includes(value);
+}
+
+/** One link the client found while extracting course material from
+ * Canvas -- the raw material `_shared/websites.ts`'s `candidateFromLink`
+ * scores into a `course_websites` candidate row. See PROTOCOL.md's
+ * course-website section for the wire shape and `sync/index.ts`'s upload
+ * step for how these become candidates. */
+export interface LinkWire {
+  courseID: string;
+  href: string;
+  text: string;
+  origin: LinkOrigin;
+}
+
+/** Matches the brief's "href <= 2048 chars" cap -- long enough for any
+ * real URL a Canvas page would ever contain, short enough that a
+ * pathological or malicious href can't be used to smuggle a large payload
+ * into a table with no length constraint of its own on `url`. */
+export const MAX_LINK_HREF_LENGTH = 2048;
+
+export function validateLink(raw: unknown): LinkWire {
+  if (!isRecord(raw)) {
+    throw new ManifestValidationError("link entry must be an object");
+  }
+  const courseID = requireString(raw, "courseID");
+  const href = requireString(raw, "href");
+  if (href.length > MAX_LINK_HREF_LENGTH) {
+    throw new ManifestValidationError(`link href exceeds ${MAX_LINK_HREF_LENGTH} characters`);
+  }
+  const text = optionalString(raw, "text") ?? "";
+  const originRaw = raw["origin"];
+  if (!isLinkOrigin(originRaw)) {
+    throw new ManifestValidationError(`unknown link origin "${String(originRaw)}"`);
+  }
+  return { courseID, href, text, origin: originRaw };
 }
 
 /** Parses the client-computed `"{kind}:{courseID}:{sourceID}"` id format.

@@ -77,6 +77,23 @@ bundles on Supabase's side; without it the CLI bundles through a local Docker
 image and sits silently forever when Docker Desktop isn't running.) See `PROTOCOL.md`'s
 "Catalog" section for the refresh rule and exactly what gets sent to `ask`.
 
+## Course websites
+
+Many Penn courses -- all of CIS, in particular -- keep their real material
+on an external course website rather than Canvas, so `sync` also collects
+links the client finds while extracting Canvas material and scores them as
+candidate course websites; `discover-websites` (a separate function, fired
+by the client whenever `sync` reports a course in `websitesPending`)
+verifies a candidate actually states the right course and term, then
+crawls it -- same host, a few dozen pages, obeying `robots.txt` -- and adds
+what it finds as `website`-kind course documents, right alongside Canvas
+pages in everything `ask` and `extract-profile` already do with them. No
+extra configuration or key: it reaches only public course websites plus
+the CIS Advising Handbook's own public directory page, cached in
+`directory_cache` so it's fetched at most once a day. See `PROTOCOL.md`'s
+"Course websites" and "`discover-websites`" sections for the full
+discovery/verify/crawl rules.
+
 ## Local testing
 
 Two independent checks, neither of which needs a deployed project:

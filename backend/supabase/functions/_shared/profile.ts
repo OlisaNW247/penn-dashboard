@@ -8,13 +8,17 @@
 /** Live documents of a profile-eligible kind, reduced to the columns this
  *  module reads. Matches the relevant subset of the `course_documents`
  *  table (see PROTOCOL.md and the init migration); `extract-profile`'s
- *  Supabase query selects exactly these columns. */
+ *  Supabase query selects exactly these columns. `url` is only read for
+ *  `website`-kind rows (see `isProfileRelevantWebsiteDoc` below) -- every
+ *  other kind's selection has never needed it, so it's nullable rather
+ *  than required. */
 export interface ProfileSourceDocument {
   id: string;
-  kind: "home" | "syllabus" | "assignment" | "announcement" | "module" | "page";
+  kind: "home" | "syllabus" | "assignment" | "announcement" | "module" | "page" | "website";
   title: string;
   text: string;
   content_hash: string;
+  url: string | null;
 }
 
 /** Sent as the system message for the extraction call. Demands JSON-only
@@ -63,10 +67,35 @@ export const PROFILE_INSTRUCTIONS: string = [
   + `"notes" is any other component-specific rule worth keeping verbatim.`,
 ].join("\n\n");
 
+/** A crawled website page is only profile input when its title or URL
+ *  reads like the kind of page that actually states policy -- a course's
+ *  own syllabus/schedule page, not its projects index or staff list.
+ *  There is no document-*kind* distinction to lean on the way there is
+ *  for Canvas documents (every crawled page is `website`), so this
+ *  substitutes the same title/URL heuristic `discover-websites/index.ts`
+ *  uses to decide whether a crawl should flip `profile_stale` -- kept as
+ *  two independent regexes rather than one shared constant because the
+ *  two call sites' patterns have already drifted (this one adds
+ *  "schedule", which due dates and exam dates make relevant to a
+ *  profile but which isn't, on its own, evidence that a *whole course's*
+ *  profile-relevant shape changed enough to justify a fresh
+ *  `extract-profile` model call). */
+const PROFILE_RELEVANT_WEBSITE_PATTERN = /syllabus|polic|grading|logistics|schedule/i;
+
+function isProfileRelevantWebsiteDoc(doc: ProfileSourceDocument): boolean {
+  if (doc.kind !== "website") return false;
+  return PROFILE_RELEVANT_WEBSITE_PATTERN.test(doc.title) || PROFILE_RELEVANT_WEBSITE_PATTERN.test(doc.url ?? "");
+}
+
 /**
  * Concatenates `docs` into one string for the model, syllabus first, then
- * home, then page (the priority order PROTOCOL.md specifies), stopping
- * once `maxChars` would be exceeded.
+ * a profile-relevant crawled website page (see
+ * `isProfileRelevantWebsiteDoc`), then home, then page (the priority order
+ * PROTOCOL.md specifies), stopping once `maxChars` would be exceeded.
+ * Website content sits ahead of `home`/`page` because it is filtered --
+ * only the pages that look like they actually state policy make it in at
+ * all -- while `home`/`page` are simply "every live Canvas page of that
+ * kind", a weaker signal by construction.
  *
  * Truncation happens at a document boundary wherever possible: adding a
  * whole document that would overflow the budget is simply skipped rather
@@ -81,10 +110,11 @@ export function selectProfileInput(
   docs: ProfileSourceDocument[],
   maxChars: number,
 ): string {
-  const priority: Record<string, number> = { syllabus: 0, home: 1, page: 2 };
+  const priority: Record<string, number> = { syllabus: 0, website: 1, home: 2, page: 3 };
 
   const ordered = docs
-    .filter((doc) => doc.kind in priority)
+    .filter((doc) => doc.kind === "syllabus" || doc.kind === "home" || doc.kind === "page" ||
+      isProfileRelevantWebsiteDoc(doc))
     .slice()
     .sort((a, b) => {
       const byKind = priority[a.kind] - priority[b.kind];

@@ -10,11 +10,14 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { catalogCode, catalogIsStale, fetchCatalogCourse } from "../_shared/catalog.ts";
+import { candidateFromLink, olderThan, SEVEN_DAYS_MS, websitesPendingCourses } from "../_shared/websites.ts";
 import {
   markDocumentsGone,
   documentRowToWire,
   selectCatalogCoursesByCodes,
   selectCoursesByIDs,
+  selectCoursesForDiscovery,
+  selectCourseWebsites,
   selectEnrolledCourseIDs,
   selectLiveDocumentIDsForCourse,
   selectLiveDocumentsForCourses,
@@ -23,8 +26,10 @@ import {
   setProfileStale,
   upsertCatalogCourse,
   upsertCourses,
+  upsertCourseWebsiteCandidates,
   upsertDocuments,
   upsertEnrollments,
+  type NewCourseWebsiteCandidate,
 } from "../_shared/db.ts";
 import {
   diffManifest,
@@ -35,10 +40,12 @@ import {
   validateDocument,
   validateDocumentStub,
   validateFullySyncedCourse,
+  validateLink,
   type CourseDocumentWire,
   type CourseSummaryWire,
   type DocumentKind,
   type DocumentStub,
+  type LinkWire,
 } from "../_shared/manifest.ts";
 
 // Guards against a pathological or malicious request forcing the function
@@ -47,6 +54,11 @@ import {
 // never approaches these anyway.
 const MAX_MANIFEST_COURSES = 60;
 const MAX_UPLOAD_DOCUMENTS = 200;
+// Per the course-website brief: a well-behaved client sends at most a few
+// dozen links per course per run (nav + a handful of in-page ones); 400
+// covers even a link-dense course several times over while still bounding
+// a single call's work.
+const MAX_UPLOAD_LINKS = 400;
 
 // A manifest call's catalog refresh is bounded on two axes at once: at most
 // this many Penn Labs fetches per call (a student rarely has more than a
@@ -69,6 +81,7 @@ interface ManifestResult {
 interface UploadResult {
   accepted: number;
   profileStale: string[];
+  websitesPending: string[];
 }
 
 /**
@@ -197,13 +210,24 @@ async function handleUpload(
   if (rawDocuments.length > MAX_UPLOAD_DOCUMENTS) {
     throw new HttpError(400, "bad_request", `at most ${MAX_UPLOAD_DOCUMENTS} documents per upload call`);
   }
+  // `links` is optional -- older clients, and any call with nothing new to
+  // report, simply omit it rather than sending `[]` every time.
+  const rawLinks = body["links"];
+  if (rawLinks !== undefined && !Array.isArray(rawLinks)) {
+    throw new HttpError(400, "bad_request", "\"links\" must be an array when present");
+  }
+  if (Array.isArray(rawLinks) && rawLinks.length > MAX_UPLOAD_LINKS) {
+    throw new HttpError(400, "bad_request", `at most ${MAX_UPLOAD_LINKS} links per upload call`);
+  }
 
   const documents = rawDocuments.map(validateDocument);
   const fullySyncedCourses = rawFullySynced.map(validateFullySyncedCourse);
+  const links: LinkWire[] = Array.isArray(rawLinks) ? rawLinks.map(validateLink) : [];
 
   const affectedCourseIDs = new Set<string>();
   for (const doc of documents) affectedCourseIDs.add(doc.courseID);
   for (const course of fullySyncedCourses) affectedCourseIDs.add(course.courseID);
+  for (const link of links) affectedCourseIDs.add(link.courseID);
 
   // Enrollment is asserted by the client at the manifest step (see
   // PROTOCOL.md's "Limitations" section), but the upload step still
@@ -257,7 +281,88 @@ async function handleUpload(
   const staleCourseIDs = profileStaleCourses(beforeHashByID, afterHashByID, (id) => kindByID.get(id));
   await setProfileStale(serviceClient, [...staleCourseIDs]);
 
-  return { accepted: documents.length, profileStale: [...staleCourseIDs] };
+  // Course info (Canvas code, own URL, resolved catalog code) for every
+  // affected course -- needed both to score this call's `links` into
+  // `course_websites` candidates and, below, to decide `websitesPending`.
+  // One query serves both, fetched even when `links` is empty because
+  // `websitesPending` still has to reflect documents/fullySyncedCourses-
+  // only calls.
+  const courseInfoByID = new Map(
+    (await selectCoursesForDiscovery(serviceClient, [...affectedCourseIDs])).map((info) => [info.courseID, info]),
+  );
+
+  if (links.length > 0) {
+    const newCandidates: NewCourseWebsiteCandidate[] = [];
+    for (const link of links) {
+      const info = courseInfoByID.get(link.courseID);
+      // Canvas rich content links are almost always already absolute; the
+      // course's own Canvas URL is used only as the base for the rare
+      // relative one, since `LinkWire` carries no page URL of its own (see
+      // `_shared/manifest.ts`'s `LinkWire` comment).
+      const candidate = candidateFromLink({
+        href: link.href,
+        text: link.text,
+        origin: info?.url ?? "https://canvas.upenn.edu/",
+        courseCode: info?.code ?? "",
+      });
+      if (!candidate) continue;
+      newCandidates.push({
+        courseID: link.courseID,
+        url: candidate.url,
+        source: candidate.source,
+        confidence: candidate.confidence,
+        anchorText: link.text.length > 0 ? link.text : undefined,
+      });
+    }
+    await upsertCourseWebsiteCandidates(serviceClient, newCandidates);
+  }
+
+  const websitesPending = await computeWebsitesPending(serviceClient, [...affectedCourseIDs], courseInfoByID);
+
+  return { accepted: documents.length, profileStale: [...staleCourseIDs], websitesPending };
+}
+
+/**
+ * `websitesPending` in the upload response: the affected courses that
+ * don't yet have a website verified within the last week, and are worth a
+ * `discover-websites` call because there's a candidate waiting or the
+ * course is CIS/CIT (see `_shared/websites.ts`'s `websitesPendingCourses`
+ * for the exact rule -- this function is only the database read that
+ * feeds it). Fetched *after* this call's own candidate upserts above, so
+ * a link scored just now already counts toward `hasCandidate`.
+ */
+async function computeWebsitesPending(
+  serviceClient: SupabaseClient,
+  courseIDs: string[],
+  courseInfoByID: Map<string, { catalogCode: string | null }>,
+): Promise<string[]> {
+  if (courseIDs.length === 0) return [];
+
+  const websiteRows = await selectCourseWebsites(serviceClient, courseIDs);
+  const rowsByCourseID = new Map<string, typeof websiteRows>();
+  for (const row of websiteRows) {
+    const existing = rowsByCourseID.get(row.courseID);
+    if (existing) {
+      existing.push(row);
+    } else {
+      rowsByCourseID.set(row.courseID, [row]);
+    }
+  }
+
+  const now = new Date();
+  const inputs = courseIDs.map((courseID) => {
+    const rows = rowsByCourseID.get(courseID) ?? [];
+    return {
+      courseID,
+      hasCandidate: rows.length > 0,
+      recentlyVerified: rows.some(
+        (row) => row.status === "verified" && !olderThan(row.verifiedAt, now, SEVEN_DAYS_MS),
+      ),
+      catalogCode: courseInfoByID.get(courseID)?.catalogCode ?? undefined,
+    };
+  });
+
+  return websitesPendingCourses(inputs);
 }
 
 Deno.serve(async (req: Request) => {

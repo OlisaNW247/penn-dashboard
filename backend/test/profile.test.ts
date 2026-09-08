@@ -11,6 +11,7 @@ function doc(partial: Partial<ProfileSourceDocument> & Pick<ProfileSourceDocumen
     title: "untitled",
     text: "",
     content_hash: "hash",
+    url: null,
     ...partial,
   };
 }
@@ -56,6 +57,40 @@ Deno.test("selectProfileInput truncates a single oversized first document rather
   const input = selectProfileInput(docs, 50);
   assert.ok(input.length <= 50);
   assert.ok(input.length > 0);
+});
+
+Deno.test("selectProfileInput includes a website doc whose title matches, ordered after syllabus and before home/page", () => {
+  const docs = [
+    doc({ id: "p1", kind: "page", title: "Projects", text: "page text" }),
+    doc({ id: "h1", kind: "home", title: "Home", text: "home text" }),
+    doc({ id: "w1", kind: "website", title: "Syllabus", url: "https://example.org/26fa/syllabus/", text: "website syllabus text" }),
+    doc({ id: "s1", kind: "syllabus", title: "Syllabus", text: "canvas syllabus text" }),
+  ];
+  const input = selectProfileInput(docs, 100000);
+  const syllabusIndex = input.indexOf("canvas syllabus text");
+  const websiteIndex = input.indexOf("website syllabus text");
+  const homeIndex = input.indexOf("home text");
+  const pageIndex = input.indexOf("page text");
+  assert.ok(syllabusIndex >= 0 && websiteIndex >= 0 && homeIndex >= 0 && pageIndex >= 0);
+  assert.ok(syllabusIndex < websiteIndex);
+  assert.ok(websiteIndex < homeIndex);
+  assert.ok(homeIndex < pageIndex);
+});
+
+Deno.test("selectProfileInput includes a website doc whose URL (not title) matches", () => {
+  const docs = [
+    doc({ id: "w1", kind: "website", title: "Fall 2026", url: "https://example.org/26fa/grading/", text: "grading breakdown here" }),
+  ];
+  const input = selectProfileInput(docs, 100000);
+  assert.ok(input.includes("grading breakdown here"));
+});
+
+Deno.test("selectProfileInput excludes a website doc whose title/url don't look profile-relevant", () => {
+  const docs = [
+    doc({ id: "w1", kind: "website", title: "Projects", url: "https://example.org/26fa/projects/", text: "project specs here" }),
+  ];
+  const input = selectProfileInput(docs, 100000);
+  assert.equal(input, "");
 });
 
 Deno.test("parseProfile accepts a bare JSON object", () => {

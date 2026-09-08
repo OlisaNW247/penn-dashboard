@@ -56,6 +56,15 @@ export interface CatalogCourseRow {
   components: CatalogComponent[];
   source: string;
   fetchedAt: string;
+  /** Penn Labs' own `syllabus_url` field -- often `null` (most course
+   *  responses don't carry one), so `undefined` rather than a required
+   *  string here, matching this file's usual "the source didn't state it"
+   *  posture. When present, `discover-websites/index.ts` treats it as one
+   *  more website candidate (`source: 'penn-labs-syllabus'` in
+   *  `course_websites`) alongside a Canvas-page link, a CIS Advising
+   *  Handbook entry, and the guessed `~courseN/current/` convention --
+   *  see PROTOCOL.md's course-website section. */
+  syllabusURL?: string;
 }
 
 // ---------------------------------------------------------------------
@@ -151,6 +160,14 @@ function asNumberOrNull(value: unknown): number | null {
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+/** Unlike `asString`, an absent or non-string (including Penn Labs' own
+ *  `null`) value comes back `undefined` rather than `""` -- an empty
+ *  string would read as "this course states an empty syllabus URL", which
+ *  is a different, false claim from "Penn Labs simply doesn't have one". */
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** Reads `raw.sections` (an array of Penn Labs section objects) down to
@@ -279,6 +296,7 @@ export function parsePennLabsCourse(json: unknown): CatalogCourseRow | undefined
     gradeModes: gradeModesFromAttributes(attributesRaw),
     attributes: attributesRaw,
     components: buildComponents(sections),
+    syllabusURL: asOptionalString(json["syllabus_url"]),
     source: "penn-labs",
     fetchedAt: new Date().toISOString(),
   };

@@ -1,0 +1,2 @@
+User-agent: *
+Disallow: /~cis2400/26fa/staff/

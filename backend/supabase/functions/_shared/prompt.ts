@@ -73,15 +73,21 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `announcements, assignment descriptions, course pages) that the app `
   + `matched to the question. Treat those excerpts as part of the `
   + `document, and prefer them for any policy question — they are the only `
-  + `place attendance, late-work and office-hours text can appear in full.`,
+  + `place attendance, late-work and office-hours text can appear in full. `
+  + `An excerpt labelled [website] comes from the course's own external `
+  + `website (its syllabus, schedule or policy pages, not Canvas) — treat `
+  + `it as every bit as authoritative as the syllabus itself, not as a `
+  + `secondary or unofficial source.`,
 
   `If your answer relies on specific facts from the document, end it with `
   + `a line of its own — nothing else on that line, nothing after it — in `
   + `exactly this form:\n`
   + `<sources>COURSE|kind|detail; COURSE|kind|detail</sources>\n`
   + `COURSE is the course code as it appears in the document, such as `
-  + `"PHYS 0151". kind is one short lowercase word: syllabus, canvas, or `
-  + `announcement. detail is a few words locating the fact, such as "§4 `
+  + `"PHYS 0151". kind is one short lowercase word: syllabus, canvas, `
+  + `website, or announcement — use "website" for a fact drawn from the `
+  + `course's own external website rather than Canvas. detail is a few `
+  + `words locating the fact, such as "§4 `
   + `attendance, p.2". Separate multiple sources with "; ". If nothing in `
   + `your answer traces back to a specific cited fact, omit the <sources> `
   + `block entirely — never emit an empty or invented one.`,

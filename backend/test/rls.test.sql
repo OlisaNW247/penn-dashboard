@@ -1,10 +1,13 @@
 -- Proves the RLS policies and the two ask_usage functions in
--- supabase/migrations/20260907000000_init.sql behave as PROTOCOL.md
+-- supabase/migrations/20260907000000_init.sql, plus the course-website
+-- tables added by 20260907180000_websites.sql, behave as PROTOCOL.md
 -- requires. Run against a scratch database after local_auth_stub.sql and
--- the migration:
+-- every migration in order:
 --
 --   psql ... -f test/local_auth_stub.sql
 --   psql ... -f supabase/migrations/20260907000000_init.sql
+--   psql ... -f supabase/migrations/20260907120000_catalog.sql
+--   psql ... -f supabase/migrations/20260907180000_websites.sql
 --   psql ... -v ON_ERROR_STOP=1 -f test/rls.test.sql
 --
 -- Every check is a `DO $$ ... RAISE EXCEPTION ... $$` block so a failure
@@ -55,6 +58,28 @@ insert into public.catalog_courses (catalog_code, semester, title) values
   ('PHYS-0151', '2026C', 'Principles II');
 reset role;
 
+-- A `website`-kind course_documents row (proves the migration's widened
+-- kind check constraint actually accepts it, and that it's readable
+-- through the same enrolled-live policy as every other kind), plus
+-- course_websites rows for both courses (one candidate for course A, one
+-- verified for course B) and a directory_cache row -- the two tables
+-- 20260907180000_websites.sql adds.
+set role service_role;
+insert into public.course_documents
+  (id, course_id, course_code, kind, source_id, title, text, content_hash, url, fetched_at, gone_at)
+values
+  ('website:100:abcd1234abcd1234', '100', 'PHYS 151', 'website', 'abcd1234abcd1234',
+   'Syllabus', 'crawled website syllabus text', 'h4', 'https://example.org/phys151/syllabus/', now(), null);
+
+insert into public.course_websites (course_id, url, source, confidence, status, verified_term, verified_at)
+values
+  ('100', 'https://example.org/phys151/current/', 'canvas-link', 3, 'candidate', null, null),
+  ('200', 'https://example.org/cis121/current/', 'cis-directory', 9, 'verified', '2026C', now());
+
+insert into public.directory_cache (key, body) values
+  ('cis-directory', '<html>the cached directory page</html>');
+reset role;
+
 -- Impersonate student A the way PostgREST would: set the JWT claims GUC and
 -- assume the `authenticated` role for the rest of the transaction.
 begin;
@@ -65,9 +90,10 @@ do $$
 declare
   n int;
 begin
+  -- The syllabus doc plus the website-kind one inserted below.
   select count(*) into n from public.course_documents where course_id = '100' and gone_at is null;
-  if n <> 1 then
-    raise exception 'expected student A to see 1 live doc in course A, saw %', n;
+  if n <> 2 then
+    raise exception 'expected student A to see 2 live docs in course A, saw %', n;
   end if;
 end $$;
 
@@ -129,6 +155,54 @@ begin
   end if;
 end $$;
 
+-- A `website`-kind course_documents row is readable through exactly the
+-- same enrolled-live policy as every other kind -- the migration widened
+-- the kind check constraint, not the RLS policy, so there is no separate
+-- rule to prove here beyond "it isn't somehow excluded".
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.course_documents where id = 'website:100:abcd1234abcd1234';
+  if n <> 1 then
+    raise exception 'expected student A to see the website-kind doc in course A, saw %', n;
+  end if;
+end $$;
+
+-- course_websites: readable only for courses the caller is enrolled in,
+-- same is_enrolled() gate as course_documents/course_profiles.
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.course_websites where course_id = '100';
+  if n <> 1 then
+    raise exception 'expected student A to see course A''s course_websites row, saw %', n;
+  end if;
+  select count(*) into n from public.course_websites where course_id = '200';
+  if n <> 0 then
+    raise exception 'expected student A NOT to see course B''s course_websites row (not enrolled), saw %', n;
+  end if;
+end $$;
+
+-- directory_cache has no SELECT grant for `authenticated` at all -- unlike
+-- catalog_courses (grant present, zero matching policy, so a SELECT
+-- executes and returns no rows), this table was never granted to
+-- `authenticated` in the first place, so the query itself is refused
+-- rather than silently coming back empty. See the migration's table
+-- comment for why the stricter "no grant" was chosen over "grant plus no
+-- policy" here.
+do $$
+begin
+  begin
+    perform count(*) from public.directory_cache;
+    raise exception 'authenticated was able to SELECT directory_cache -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
 -- Writes: no INSERT policy exists for authenticated, so this must fail.
 do $$
 begin
@@ -151,6 +225,29 @@ begin
     insert into public.catalog_courses (catalog_code, semester, title)
     values ('CIS-9999', '2026C', 'Injected');
     raise exception 'authenticated was able to INSERT into catalog_courses -- RLS/grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    insert into public.course_websites (course_id, url, source, confidence)
+    values ('100', 'https://example.org/injected/', 'canvas-link', 1);
+    raise exception 'authenticated was able to INSERT into course_websites -- RLS/grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    insert into public.directory_cache (key, body) values ('injected', 'nope');
+    raise exception 'authenticated was able to INSERT into directory_cache -- RLS/grant hole';
   exception
     when insufficient_privilege then
       null;
@@ -197,6 +294,27 @@ begin
   if n <> 0 then
     raise exception 'expected anon to see zero catalog_courses rows, saw %', n;
   end if;
+end $$;
+
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.course_websites;
+  if n <> 0 then
+    raise exception 'expected anon to see zero course_websites rows, saw %', n;
+  end if;
+end $$;
+
+do $$
+begin
+  begin
+    perform count(*) from public.directory_cache;
+    raise exception 'anon was able to SELECT directory_cache -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
 end $$;
 
 rollback;

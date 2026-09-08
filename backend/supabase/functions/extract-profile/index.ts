@@ -16,7 +16,14 @@ import {
 
 const MAX_COURSE_IDS = 20;
 const DEFAULT_PROFILE_INPUT_CHARS = 60000;
-const PROFILE_KINDS = ["syllabus", "home", "page"] as const;
+// `website` is included here even though not every `website`-kind row is
+// actually used -- `selectProfileInput` (see `_shared/profile.ts`) filters
+// those further to the ones whose title/URL looks profile-relevant
+// (syllabus/policy/grading/logistics/schedule). Fetching the kind here and
+// filtering there, rather than filtering in this query, keeps that
+// judgment call in the one pure, unit-tested module rather than splitting
+// it across a SQL filter and application code.
+const PROFILE_KINDS = ["syllabus", "home", "page", "website"] as const;
 
 interface ExtractProfileBody {
   courseIDs: string[];
@@ -192,7 +199,7 @@ async function rebuildProfile(options: RebuildProfileOptions): Promise<boolean> 
 
   const { data: docs, error: docsError } = await serviceClient
     .from("course_documents")
-    .select("id, kind, title, text, content_hash")
+    .select("id, kind, title, text, content_hash, url")
     .eq("course_id", courseID)
     .in("kind", PROFILE_KINDS)
     .is("gone_at", null);

@@ -6,6 +6,7 @@ import {
   diffManifest,
   freshCourses,
   goneIDs,
+  MAX_LINK_HREF_LENGTH,
   MAX_TEXT_LENGTH,
   ManifestValidationError,
   parseDocumentID,
@@ -14,6 +15,7 @@ import {
   validateDocument,
   validateDocumentStub,
   validateFullySyncedCourse,
+  validateLink,
   type CourseDocumentWire,
   type DocumentKind,
 } from "../supabase/functions/_shared/manifest.ts";
@@ -237,4 +239,65 @@ Deno.test("freshCourses: a course with no prior full sync is never fresh", () =>
   const now = new Date("2026-09-07T12:00:00Z");
   const result = freshCourses([{ courseID: "100", lastFullSyncAt: null }], now);
   assertEquals(result, []);
+});
+
+// ---------------------------------------------------------------------
+// validateLink
+// ---------------------------------------------------------------------
+
+function validLinkInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    courseID: "100",
+    href: "https://www.seas.upenn.edu/~cis2400/current/",
+    text: "course website",
+    origin: "page",
+    ...overrides,
+  };
+}
+
+Deno.test("validateLink: accepts a well-formed link", () => {
+  const link = validateLink(validLinkInput());
+  assertEquals(link, {
+    courseID: "100",
+    href: "https://www.seas.upenn.edu/~cis2400/current/",
+    text: "course website",
+    origin: "page",
+  });
+});
+
+Deno.test("validateLink: text defaults to empty string when absent", () => {
+  const input = validLinkInput();
+  delete input["text"];
+  const link = validateLink(input);
+  assertEquals(link.text, "");
+});
+
+Deno.test("validateLink: accepts every LinkOrigin value", () => {
+  for (const origin of ["page", "assignment", "module", "syllabus"]) {
+    const link = validateLink(validLinkInput({ origin }));
+    assertEquals(link.origin, origin);
+  }
+});
+
+Deno.test("validateLink: rejects an unknown origin", () => {
+  assertThrows(() => validateLink(validLinkInput({ origin: "announcement" })), ManifestValidationError);
+});
+
+Deno.test("validateLink: rejects a missing courseID or href", () => {
+  const withoutCourseID = validLinkInput();
+  delete withoutCourseID["courseID"];
+  assertThrows(() => validateLink(withoutCourseID), ManifestValidationError);
+
+  const withoutHref = validLinkInput();
+  delete withoutHref["href"];
+  assertThrows(() => validateLink(withoutHref), ManifestValidationError);
+});
+
+Deno.test("validateLink: rejects an href over MAX_LINK_HREF_LENGTH", () => {
+  const longHref = "https://example.org/" + "a".repeat(MAX_LINK_HREF_LENGTH);
+  assertThrows(() => validateLink(validLinkInput({ href: longHref })), ManifestValidationError);
+});
+
+Deno.test("validateLink: rejects a non-object entry", () => {
+  assertThrows(() => validateLink("not an object"), ManifestValidationError);
 });

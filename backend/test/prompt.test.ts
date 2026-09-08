@@ -165,5 +165,10 @@ Deno.test("buildMessages keeps at least the most recent turn even if it alone ex
 
 Deno.test("SYSTEM_INSTRUCTIONS keeps the exact <sources> trailer contract the app parses", () => {
   assert.ok(SYSTEM_INSTRUCTIONS.includes("<sources>COURSE|kind|detail; COURSE|kind|detail</sources>"));
-  assert.ok(SYSTEM_INSTRUCTIONS.includes("syllabus, canvas, or announcement"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("syllabus, canvas, website, or announcement"));
+});
+
+Deno.test("SYSTEM_INSTRUCTIONS explains the [website] excerpt label", () => {
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("[website]"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("as authoritative as the syllabus"));
 });
