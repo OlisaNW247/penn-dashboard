@@ -229,15 +229,29 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
     public let coursesFresh: [String]
     public let serverManifest: [DocumentStub]
     public let download: [CourseDocumentWire]
+    /// The registrar-derived catalog entries (course meetings, credits) the
+    /// server has for this student's courses, folded into
+    /// `CourseKnowledgeBase.catalog` by `SyncPlanner.applyCatalog` so
+    /// `HeuristicAnnouncementExtractor` can resolve "before class" phrasing.
+    /// Defaults to empty for the same reason every other field here does —
+    /// a server with no catalog data yet for a brand-new course is normal,
+    /// not malformed.
+    public let catalog: [CourseCatalogEntry]
 
-    public init(coursesFresh: [String] = [], serverManifest: [DocumentStub] = [], download: [CourseDocumentWire] = []) {
+    public init(
+        coursesFresh: [String] = [],
+        serverManifest: [DocumentStub] = [],
+        download: [CourseDocumentWire] = [],
+        catalog: [CourseCatalogEntry] = []
+    ) {
         self.coursesFresh = coursesFresh
         self.serverManifest = serverManifest
         self.download = download
+        self.catalog = catalog
     }
 
     private enum CodingKeys: String, CodingKey {
-        case coursesFresh, serverManifest, download
+        case coursesFresh, serverManifest, download, catalog
     }
 
     public init(from decoder: Decoder) throws {
@@ -245,6 +259,7 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
         coursesFresh = try container.decodeIfPresent([String].self, forKey: .coursesFresh) ?? []
         serverManifest = try container.decodeIfPresent([DocumentStub].self, forKey: .serverManifest) ?? []
         download = try container.decodeIfPresent([CourseDocumentWire].self, forKey: .download) ?? []
+        catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
     }
 }
 
@@ -416,10 +431,37 @@ public struct ExtractAnnouncementRequest: Encodable, Sendable, Equatable {
 public struct ExtractedAssignmentWire: Codable, Sendable, Equatable {
     public let title: String
     public let dueAt: Date?
+    /// The server's raw string for `ExtractedTaskKind` ("submission" /
+    /// "preparation"), kept as an optional `String` rather than decoding
+    /// straight to the enum: an older server that predates this field sends
+    /// nothing at all, and a value this client doesn't recognize yet should
+    /// degrade through `taskKind` below, not fail the whole decode.
+    public let kind: String?
 
-    public init(title: String, dueAt: Date?) {
+    public init(title: String, dueAt: Date?, kind: String? = nil) {
         self.title = title
         self.dueAt = dueAt
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, dueAt, kind
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        dueAt = try container.decodeIfPresent(Date.self, forKey: .dueAt)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+    }
+
+    /// `"preparation"` maps to `.preparation`; a missing key (older server),
+    /// or any value this client doesn't recognize, falls back to
+    /// `.submission` — the field's entire pre-existing meaning before
+    /// `ExtractedTaskKind` existed, so an unrecognized future value degrades
+    /// to "treat it like homework" rather than losing the assignment.
+    public var taskKind: ExtractedTaskKind {
+        kind == "preparation" ? .preparation : .submission
     }
 }
 

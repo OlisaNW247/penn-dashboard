@@ -59,8 +59,9 @@ on-device alone:
   generate an answer streamed back to you. Neither the question nor the answer
   is stored anywhere — see "What we keep and for how long" below.
 
-  If the Announcement Watcher's optional "AI assist" toggle is on, extracting a
-  due date from an announcement's text works the same way — the announcement
+  The Announcement Watcher's "AI assist" toggle is on by default (you can turn
+  it off in Settings). With it on, extracting a task and due date from an
+  announcement's text works the same way — the announcement
   text goes to the same server and model, and the result isn't stored either.
 
 - **An anonymous account id.** The first time you launch the app, it creates an

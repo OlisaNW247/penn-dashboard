@@ -72,6 +72,23 @@ struct SyncPlannerTests {
         #expect(knowledge.documents.isEmpty)
     }
 
+    // MARK: - applyCatalog
+
+    @Test("applyCatalog folds new catalog entries into an empty knowledge base")
+    func applyCatalogAddsEntries() {
+        var knowledge = CourseKnowledgeBase.empty
+        let entry = CourseCatalogEntry(courseID: "1", catalogCode: "CIS 1", title: "CIS 1")
+        SyncPlanner.applyCatalog([entry], to: &knowledge)
+        #expect(knowledge.catalog == [entry])
+    }
+
+    @Test("applyCatalog never removes an existing entry not mentioned in the batch")
+    func applyCatalogNeverRemovesExistingEntries() {
+        var knowledge = CourseKnowledgeBase(catalog: [CourseCatalogEntry(courseID: "1", catalogCode: "CIS 1", title: "CIS 1")])
+        SyncPlanner.applyCatalog([CourseCatalogEntry(courseID: "2", catalogCode: "CIS 2", title: "CIS 2")], to: &knowledge)
+        #expect(knowledge.catalog.map(\.courseID).sorted() == ["1", "2"])
+    }
+
     // MARK: - uploads
 
     @Test("uploads excludes documents the server already has with a matching hash")

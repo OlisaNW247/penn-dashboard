@@ -30,6 +30,14 @@ struct BackendAnnouncementExtractor: AnnouncementAssignmentExtractor {
             now: now
         )
         let response = try await client.extractAnnouncement(request)
-        return response.assignments.map { ExtractedAssignment(title: $0.title, dueAt: $0.dueAt) }
+        // `taskKind` is `ExtractedAssignmentWire`'s resolved `ExtractedTaskKind`
+        // (`.kind` is the raw string the server actually sent, kept on the
+        // wire type for whatever fallback decoding it does with an
+        // unrecognized value — see that property's own doc comment) — reading
+        // through `taskKind` here keeps this extractor agnostic to how that
+        // resolution happens.
+        return response.assignments.map {
+            ExtractedAssignment(title: $0.title, dueAt: $0.dueAt, kind: $0.taskKind)
+        }
     }
 }

@@ -156,6 +156,13 @@ extension AppState {
 
         var withDownloads = courseKnowledge
         SyncPlanner.applyDownloads(manifest.download, to: &withDownloads, courses: courses, now: Date())
+        // The course catalog (`ClassMeeting`s per course, from the server's
+        // own registrar-derived data) rides the same manifest response as
+        // the document downloads above — folded in here, before the save
+        // below, so it survives on-device the same way and is available to
+        // `syncAnnouncements()`'s `CourseKnowledgeBase.catalogEntry(
+        // forCourseCode:)` lookup on the very next announcement sync.
+        SyncPlanner.applyCatalog(manifest.catalog, to: &withDownloads)
         // Saved before the collector runs so its own `store.load()` merge
         // starts from what the manifest just handed down, not from what was
         // on disk before this sync began.

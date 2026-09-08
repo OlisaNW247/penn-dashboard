@@ -20,8 +20,10 @@ manual sync, no user-entered API key); and questions to **ask** (the screen
 itself is titled **"the tree"**) are sent to the backend with the on-device
 context document and matched excerpts, answered by an AI model via OpenRouter
 under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
-data-collection-deny flag), with the Announcement Watcher's opt-in "AI assist"
-toggle routed the same way. Neither questions nor answers are stored — only
+data-collection-deny flag), with the Announcement Watcher's "AI assist"
+toggle (on by default since 2026-09-08; a student can turn it off in
+Settings) routed the same way, and only for announcements a cheap on-device
+gate judges could carry a task. Neither questions nor answers are stored — only
 per-user daily request counts and token totals. Settings has a button to delete
 a student's enrollment/usage rows and anonymous account from the backend.
 Offline, over quota, or with the backend unreachable, ask answers on-device as

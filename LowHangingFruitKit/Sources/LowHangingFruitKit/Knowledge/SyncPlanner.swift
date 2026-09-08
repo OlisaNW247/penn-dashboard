@@ -66,6 +66,18 @@ public enum SyncPlanner {
         knowledge.merge(courses: courses, documents: documents, resyncedCourseIDs: [], syncedAt: now)
     }
 
+    /// Applies `SyncManifestResponse.catalog` to the local knowledge base.
+    /// A thin wrapper over `CourseKnowledgeBase.mergeCatalog` rather than
+    /// folding the catalog into `applyDownloads`'s signature: the manifest
+    /// response carries both `download` and `catalog` at once, but they're
+    /// two independent pieces of data with two independent merge rules (one
+    /// keyed by document id, one keyed by course id), and giving each its
+    /// own small function keeps `applyDownloads`'s existing signature and
+    /// every existing call/test of it untouched.
+    public static func applyCatalog(_ entries: [CourseCatalogEntry], to knowledge: inout CourseKnowledgeBase) {
+        knowledge.mergeCatalog(entries)
+    }
+
     /// Builds the upload half of the manifest exchange: only documents the
     /// server doesn't already have byte-for-byte (matched by id *and*
     /// `contentHash`, so an edited document re-uploads even though its id

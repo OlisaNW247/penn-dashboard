@@ -319,6 +319,28 @@ public final class AssignmentStore {
         saveChanges()
     }
 
+    /// `purge(source:)`'s narrower sibling: deletes every row for a source
+    /// EXCEPT ones the student has already finished (`isFinished` — ticked
+    /// off, or reported turned in by either platform). Written for the
+    /// announcement-extraction repair (`AppState`'s one-time bump past
+    /// `announcementExtractionVersion`): the old heuristic extractor filed
+    /// purely informational announcements as assignments, and the fix is to
+    /// re-derive `.canvasAnnouncement` rows from scratch with the corrected
+    /// extractor rather than patch what's already on disk — but a student who
+    /// had already checked one of those rows off did real work marking it
+    /// done, and wiping it out from under them on the next launch would be
+    /// exactly the kind of silent data loss "the ledger is the point" exists
+    /// to prevent. A wrong-but-completed row is a harmless leftover; a
+    /// wrong-and-incomplete one is the actual bug being fixed.
+    @discardableResult
+    public func purgeIncomplete(source: Assignment.Source) -> Int {
+        let doomed = rows(source: source).filter { !$0.isFinished }
+        guard !doomed.isEmpty else { return 0 }
+        for row in doomed { context.delete(row) }
+        saveChanges()
+        return doomed.count
+    }
+
     // MARK: Identity — uniqueness is enforced here, not by the database
 
     /// Every row keyed by `id`, with any duplicate ids collapsed on the spot.

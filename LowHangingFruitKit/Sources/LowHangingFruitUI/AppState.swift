@@ -151,14 +151,23 @@ final class AppState: ObservableObject {
     /// needs permission to run.
     @Published private(set) var announcementWatcherEnabled: Bool
     /// Settings → "ai assist", nested under the watcher toggle. Default
-    /// **false**: turning this on sends announcement text to LHF's own
-    /// server (`BackendAnnouncementExtractor`, `PROTOCOL.md`'s
-    /// `extract-announcement`) to be read by an AI model, which breaks the
-    /// "on-device by default" story this whole app is built on (CLAUDE.md)
-    /// unless the student opts in knowingly — and only shows at all when
-    /// `BackendServices.client` is configured, since there's nowhere for the
-    /// request to go otherwise. The free heuristic backend
-    /// (`HeuristicAnnouncementExtractor`) is what runs when this is off.
+    /// **true**, absent-key-means-on, same idiom as
+    /// `announcementWatcherEnabled` just above: it runs under LHF's own
+    /// OpenRouter key (`BackendAnnouncementExtractor`, `PROTOCOL.md`'s
+    /// `extract-announcement`), costs a fraction of a cent per call, and is
+    /// the more accurate of the two backends at telling a real deadline
+    /// apart from an informational post — exactly the class of mistake this
+    /// feature's original bug was. `HeuristicAnnouncementExtractor
+    /// .mightContainTask` is the spend control that keeps this from being
+    /// a per-announcement bill regardless: it's a cheap, deliberately
+    /// generous on-device gate (any student-directed verb OR any deadline
+    /// cue, anywhere in the text) run before this toggle is even consulted,
+    /// so the model only ever sees announcements that could plausibly carry
+    /// a task. Only shows in Settings at all when `BackendServices.client`
+    /// is configured, since there's nowhere for the request to go otherwise
+    /// — with no backend, or with this off, the free on-device heuristic
+    /// backend (`HeuristicAnnouncementExtractor`) runs instead, exactly as
+    /// it always has.
     @Published private(set) var announcementAIEnabled: Bool
     /// Announcement ids `syncAnnouncements()` has already run through an
     /// extractor, successfully or with zero results — never re-parsed. This
@@ -395,9 +404,12 @@ final class AppState: ObservableObject {
     /// uses for its own default-on switch, never `UserDefaults.bool(forKey:)`
     /// (which can't distinguish "never set" from "explicitly set to false").
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
-    /// Backs `announcementAIEnabled`. Default-off, so a plain
-    /// `UserDefaults.bool(forKey:)` (false for both "never set" and
-    /// "explicitly off") is fine here, unlike the key above.
+    /// Backs `announcementAIEnabled`. Default-**on** now — see that
+    /// property's doc comment — so, like `announcementWatcherEnabledKey`
+    /// just above, this is read with `object(forKey:) as? Bool ?? true`,
+    /// never plain `UserDefaults.bool(forKey:)` (which can't tell "never
+    /// set" from "explicitly set to false" and would silently flip this
+    /// off for every existing install the moment the default changed).
     private static let announcementAIEnabledKey = "announcementAIEnabledV1"
     /// Backs `processedAnnouncementIDs`. Device-local and, like
     /// `noSubmissionCanvasAssignmentIDsKey` just above, never mirrored to
@@ -405,6 +417,18 @@ final class AppState: ObservableObject {
     /// the student's own record of anything, so there's nothing here worth
     /// syncing.
     private static let processedAnnouncementIDsKey = "processedAnnouncementIDsV1"
+    /// Version-gates `repairAnnouncementExtractionIfNeeded()`, the one-time
+    /// sweep run from `init` that cleans up after the extractor rewrite that
+    /// added `HeuristicAnnouncementExtractor.isLikelyInformational` /
+    /// `.mightContainTask` and `ExtractedTaskKind` — see that method's doc
+    /// comment for what it does and why. Same shape as
+    /// `LegacyStateMigration.versionKey`/`currentVersion` (a plain int,
+    /// bumped when a new repair step is added), kept local to `AppState`
+    /// rather than folded into `LegacyStateMigration` because this repair is
+    /// specific to one feature's on-disk mistakes, not a general
+    /// storage-shape migration.
+    private static let announcementExtractionVersionKey = "announcementExtractionVersionV1"
+    private static let announcementExtractionVersion = 2
     /// The term code of the most recent rollover the student waved away. A
     /// preference by every test in `docs/persistence-explained.md` §3 — losing
     /// it costs one re-offered card, nothing more — so it stays in defaults
@@ -471,7 +495,12 @@ final class AppState: ObservableObject {
         self.announcementWatcherEnabled = UserDefaults.lhf.object(
             forKey: Self.announcementWatcherEnabledKey
         ) as? Bool ?? true
-        self.announcementAIEnabled = UserDefaults.lhf.bool(forKey: Self.announcementAIEnabledKey)
+        // `object(forKey:) as? Bool ?? true` — see `announcementAIEnabledKey`'s
+        // doc comment for why this can no longer be the plain
+        // `.bool(forKey:)` it used to be now that the default is on.
+        self.announcementAIEnabled = UserDefaults.lhf.object(
+            forKey: Self.announcementAIEnabledKey
+        ) as? Bool ?? true
         self.processedAnnouncementIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.processedAnnouncementIDsKey) ?? []
         )
@@ -567,6 +596,14 @@ final class AppState: ObservableObject {
             // from the first frame, before `syncAnnouncements()` has had a
             // chance to run again this launch.
             self.announcementItems = persisted.filter { $0.source == .canvasAnnouncement }
+            // One-time repair for the extractor rewrite that added
+            // `HeuristicAnnouncementExtractor.isLikelyInformational` /
+            // `.mightContainTask` and `ExtractedTaskKind` — see
+            // `repairAnnouncementExtractionIfNeeded`'s doc comment. Placed
+            // right after the line above (not before) so it is free to
+            // overwrite `announcementItems` with the purge's own result
+            // rather than racing whichever assignment happened to run last.
+            repairAnnouncementExtractionIfNeeded(store: store)
             // Submission state used to be blank until the first successful grade
             // refresh landed — so auto-filed work sat back on the active list on
             // every cold launch, and stayed there forever if the Canvas session
@@ -704,6 +741,71 @@ final class AppState: ObservableObject {
             // instead of on a user action.
             if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
         }
+    }
+
+    /// One-time repair for the Announcement Watcher extractor rewrite that
+    /// added `ExtractedTaskKind`, `HeuristicAnnouncementExtractor
+    /// .isLikelyInformational`, and `.mightContainTask`. The extractor this
+    /// replaces had no notion of "informational, not a task" — it filed
+    /// sentences like "the slides discussed today have been posted" as a
+    /// graded assignment due 11:59 PM, which then showed up OVERDUE the
+    /// moment midnight passed. Those wrong rows are already on disk, under
+    /// `.canvasAnnouncement`, and the new extractor can only stop making
+    /// that mistake going *forward* — it has no way to reach back and
+    /// re-judge a row it never produced. So this sweeps them away instead,
+    /// via `AssignmentStore.purgeIncomplete(source:)`, and lets the very
+    /// next `syncAnnouncements()` re-derive `.canvasAnnouncement` from
+    /// scratch with the corrected extractor.
+    ///
+    /// **Why `purgeIncomplete`, not `purge`.** A row the student had already
+    /// ticked off is done work, not a live false positive sitting on the
+    /// dashboard — deleting it out from under a completed checkbox would be
+    /// exactly the "nothing the student did is ever lost" violation
+    /// `AssignmentStore`'s header exists to rule out, for the sake of
+    /// cleaning up rows that were never shown as done in the first place.
+    ///
+    /// `processedAnnouncementIDs` is cleared alongside the purge and for the
+    /// same reason: every announcement this ratchet has already marked
+    /// "seen" was seen by the OLD extractor, so leaving it in place would
+    /// permanently hide those announcements from ever being re-parsed by the
+    /// new one — the purge would remove the wrong rows, and nothing would
+    /// ever put corrected ones back. Re-processing a whole announcement
+    /// history once is the intended one-time cost here, not a bug; it's the
+    /// same trade `LegacyStateMigration` and `normalizeStoredCourseNames()`
+    /// make for their own one-time sweeps.
+    ///
+    /// Not folded into `LegacyStateMigration`: that type's version number is
+    /// shared across unrelated migration steps (ledger completions, the
+    /// per-course preference fold), and bumping it here would force every
+    /// install through steps that have nothing to do with this repair. A
+    /// second, feature-scoped version key keeps the two independent, the
+    /// same reason `announcementExtractionVersionKey`'s own doc comment
+    /// gives for not sharing `LegacyStateMigration.versionKey`.
+    ///
+    /// No `rebuildDashboardItems()` call here: `init` already calls it
+    /// unconditionally once every stored property (including
+    /// `announcementItems`, updated above this call) has its final value,
+    /// so a second call here would just be redundant work on every cold
+    /// launch, not a correctness requirement.
+    ///
+    /// Gated on the stored version the same way `LegacyStateMigration` gates
+    /// its steps: only bumped once `store` was actually available to purge,
+    /// so a launch where the ledger failed to open leaves the version
+    /// unclaimed and gets a real second attempt on a later, working launch,
+    /// rather than silently skipping the repair forever.
+    private func repairAnnouncementExtractionIfNeeded(store: AssignmentStore) {
+        let defaults = UserDefaults.lhf
+        let storedVersion = defaults.integer(forKey: Self.announcementExtractionVersionKey)
+        guard storedVersion < Self.announcementExtractionVersion else { return }
+
+        let purged = store.purgeIncomplete(source: .canvasAnnouncement)
+        if purged > 0 {
+            announcementItems = store.assignments(source: .canvasAnnouncement)
+        }
+        processedAnnouncementIDs = []
+        defaults.removeObject(forKey: Self.processedAnnouncementIDsKey)
+
+        defaults.set(Self.announcementExtractionVersion, forKey: Self.announcementExtractionVersionKey)
     }
 
     /// First-run onboarding is required until both core data sources are connected.
@@ -1944,6 +2046,19 @@ final class AppState: ObservableObject {
     /// `processedAnnouncementIDs` ensures it won't — but because a completed
     /// item's identity must never change out from under the ledger's completion
     /// record.
+    ///
+    /// `ExtractedTaskKind.preparation` becomes `Assignment.Kind.event` —
+    /// `.event` is the dashboard's "nothing to hand in" kind (`isCompleted`,
+    /// `isExpiredEvent`, `DashboardViewModel.showsNothingToSubmit` all key off
+    /// it), which is exactly what "the slides discussed today have been
+    /// posted" or "read chapter 4 before Friday" are: visible until the
+    /// moment they describe has passed, never OVERDUE. `.submission` becomes
+    /// `.assignment`, the ordinary "this needs to be turned in" kind. Getting
+    /// this wrong the first time — every extraction filed as `.assignment` —
+    /// is exactly the bug this file's `announcementExtractionVersion` repair
+    /// exists to clean up: a purely informational post with an invented
+    /// 11:59 PM due time read as overdue for something nobody was ever
+    /// meant to submit.
     static func announcementAssignments(
         from extracted: [ExtractedAssignment],
         announcement: CanvasAnnouncement,
@@ -1953,7 +2068,7 @@ final class AppState: ObservableObject {
             Assignment(
                 source: .canvasAnnouncement,
                 sourceID: "announcement-\(announcement.id)-\(index)",
-                kind: .assignment,
+                kind: e.kind == .preparation ? .event : .assignment,
                 course: courseCode,
                 title: e.title,
                 dueAt: e.dueAt,
@@ -2050,18 +2165,6 @@ final class AppState: ObservableObject {
         let unprocessed = fetched.filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else { return }
 
-        // Picked once for the whole batch, not per-announcement: a mid-batch
-        // key removal or toggle flip taking effect on the NEXT sync rather
-        // than partway through this one keeps every announcement in one run
-        // extracted by the same backend, which is what makes "processed"
-        // mean the same thing for all of them.
-        let extractor: any AnnouncementAssignmentExtractor
-        if announcementAIEnabled, let client = BackendServices.client {
-            extractor = BackendAnnouncementExtractor(client: client)
-        } else {
-            extractor = HeuristicAnnouncementExtractor()
-        }
-
         let now = Date()
         // Current dashboard pool to dedupe fresh candidates against — the
         // same three buckets `ModuleReadingImportTests.allDashboardItems`
@@ -2084,6 +2187,22 @@ final class AppState: ObservableObject {
                 continue
             }
 
+            // A purely informational announcement ("the slides discussed
+            // today have been posted") has nothing to extract regardless of
+            // which backend would otherwise run — checked before either
+            // backend is even constructed, so it costs nothing on the AI
+            // path either. This is the fix for the bug that motivated this
+            // whole gate: that exact sentence used to be filed as a graded
+            // assignment due 11:59 PM and then shown OVERDUE. Still marked
+            // processed: "read it, there was nothing to do" is a completed
+            // parse, same as an extractor running and finding nothing.
+            if HeuristicAnnouncementExtractor.isLikelyInformational(
+                title: announcement.title, body: announcement.message
+            ) {
+                newlyProcessedIDs.append(announcement.id)
+                continue
+            }
+
             let sourceText = AnnouncementSourceText(
                 announcementID: announcement.id,
                 courseCode: courseCode,
@@ -2091,6 +2210,31 @@ final class AppState: ObservableObject {
                 body: announcement.message,
                 postedAt: announcement.postedAt
             )
+
+            // Built per announcement now, not once for the batch — the
+            // extractor choice used to be picked once outside this loop so a
+            // mid-batch key removal or toggle flip couldn't split one run
+            // across backends. That reasoning doesn't apply once the AI path
+            // has its own per-announcement gate below: the whole point of
+            // `mightContainTask` is that the model is only ever paid for an
+            // announcement whose text could plausibly carry a task, which is
+            // a per-announcement question by construction, not something a
+            // single batch-wide choice could express. `meetings` comes from
+            // the course catalog `SyncPlanner.applyCatalog` folds into
+            // `courseKnowledge` (`AppState+CourseKnowledge.swift`) — empty
+            // when this course has no synced catalog entry yet, which the
+            // heuristic extractor's own default already tolerates.
+            let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
+            let extractor: any AnnouncementAssignmentExtractor
+            if announcementAIEnabled,
+               let client = BackendServices.client,
+               HeuristicAnnouncementExtractor.mightContainTask(
+                   title: announcement.title, body: announcement.message
+               ) {
+                extractor = BackendAnnouncementExtractor(client: client)
+            } else {
+                extractor = HeuristicAnnouncementExtractor(meetings: meetings)
+            }
 
             let extracted: [ExtractedAssignment]
             do {

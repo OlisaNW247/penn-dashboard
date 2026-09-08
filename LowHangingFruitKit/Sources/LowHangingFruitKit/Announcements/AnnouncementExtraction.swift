@@ -44,6 +44,27 @@ public struct AnnouncementSourceText: Sendable, Equatable {
     }
 }
 
+/// What kind of obligation an extracted item describes. This distinction is
+/// the fix for the bug where "the slides discussed today have been posted"
+/// — an announcement about something the *professor* did, with no verb
+/// aimed at the student and nothing to hand in — got filed as an assignment
+/// due 11:59 PM and then shown overdue. Not every actionable sentence in an
+/// announcement describes a deliverable: "bring a calculator to Tuesday's
+/// exam" and "read chapter 3 before class" are real, useful things to
+/// surface, but there is nothing to *submit*, so nothing should ever be able
+/// to mark them overdue the way a missed problem set is overdue.
+public enum ExtractedTaskKind: String, Sendable, Codable, Hashable {
+    /// Something handed in — a problem set, a form, a quiz. Behaves like
+    /// ordinary homework: it has a due time (defaulting to end of day when
+    /// the announcement gives a date but no clock time), and can be overdue.
+    case submission
+    /// Something to read, watch, review, bring, or otherwise prepare, with
+    /// nothing to submit. The app files these as events visible up to their
+    /// time and never overdue — there is no "turned it in late" state for
+    /// "I didn't bring a calculator."
+    case preparation
+}
+
 /// A candidate assignment an extractor believes an announcement describes.
 ///
 /// Deliberately *not* `Assignment` — this is a proposal, not a ledger row.
@@ -60,10 +81,16 @@ public struct ExtractedAssignment: Sendable, Equatable {
     /// extractor that refused to emit anything without a date would silently
     /// drop real, useful "there's a reading, no clue when it's due" signal.
     public let dueAt: Date?
+    /// Defaults to `.submission` — the historical, only-ever behavior before
+    /// this distinction existed — so every call site that predates
+    /// `ExtractedTaskKind` (the Claude backend's decode seam, in particular)
+    /// keeps compiling and keeps its old meaning unchanged.
+    public let kind: ExtractedTaskKind
 
-    public init(title: String, dueAt: Date?) {
+    public init(title: String, dueAt: Date?, kind: ExtractedTaskKind = .submission) {
         self.title = title
         self.dueAt = dueAt
+        self.kind = kind
     }
 }
 

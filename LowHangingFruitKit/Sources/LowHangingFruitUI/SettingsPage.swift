@@ -331,7 +331,7 @@ struct SettingsPage: View {
         } header: {
             Text("announcement watcher")
         } footer: {
-            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. with ai assist on, announcement text is sent to lhf's server to be read by an ai model; off, it stays on this phone.")
+            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. ai assist is on by default: announcements that might carry a task are read by an ai model on lhf's server to decide what, if anything, you need to do and by when; off, a simpler on-phone rule decides.")
         }
     }
 

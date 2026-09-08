@@ -227,6 +227,63 @@ struct BackendWireTests {
         #expect(response.serverManifest == [DocumentStub(id: "page:1234:1", contentHash: "abc")])
     }
 
+    // MARK: - SyncManifestResponse.catalog
+
+    @Test("SyncManifestResponse decodes a missing catalog to empty")
+    func manifestResponseDefaultsCatalogToEmpty() throws {
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data("{}".utf8))
+        #expect(response.catalog.isEmpty)
+    }
+
+    @Test("SyncManifestResponse decodes a present catalog, including a meeting")
+    func manifestResponseDecodesCatalog() throws {
+        let json = """
+        {"catalog":[{"courseID":"1234","catalogCode":"CIS-2400","title":"Intro to Computer Systems","meetings":[{"sectionID":"001","activity":"LEC","weekday":3,"startMinutes":615,"endMinutes":704}]}]}
+        """
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.catalog.count == 1)
+        #expect(response.catalog.first?.courseID == "1234")
+        #expect(response.catalog.first?.catalogCode == "CIS-2400")
+        #expect(response.catalog.first?.credits == nil)
+        #expect(response.catalog.first?.meetings.first?.activity == "LEC")
+    }
+
+    // MARK: - CourseCatalogEntry decoding
+
+    @Test("CourseCatalogEntry decodes without a meetings key, defaulting to empty")
+    func catalogEntryDecodesWithoutMeetings() throws {
+        let json = #"{"courseID":"1234","catalogCode":"CIS 2400","title":"Intro to Computer Systems"}"#
+        let entry = try BackendJSON.decoder().decode(CourseCatalogEntry.self, from: Data(json.utf8))
+        #expect(entry.meetings.isEmpty)
+        #expect(entry.credits == nil)
+        #expect(entry.id == "1234")
+    }
+
+    // MARK: - ExtractedAssignmentWire.kind / taskKind
+
+    @Test("ExtractedAssignmentWire.taskKind defaults to .submission when kind is absent")
+    func extractedAssignmentWireTaskKindDefaultsToSubmission() throws {
+        let json = #"{"title":"Read chapter 4","dueAt":null}"#
+        let wire = try BackendJSON.decoder().decode(ExtractedAssignmentWire.self, from: Data(json.utf8))
+        #expect(wire.kind == nil)
+        #expect(wire.taskKind == .submission)
+    }
+
+    @Test("ExtractedAssignmentWire.taskKind is .preparation when kind is \"preparation\"")
+    func extractedAssignmentWireTaskKindPreparation() throws {
+        let json = #"{"title":"Bring a calculator","dueAt":null,"kind":"preparation"}"#
+        let wire = try BackendJSON.decoder().decode(ExtractedAssignmentWire.self, from: Data(json.utf8))
+        #expect(wire.kind == "preparation")
+        #expect(wire.taskKind == .preparation)
+    }
+
+    @Test("ExtractedAssignmentWire.taskKind falls back to .submission for an unrecognized kind")
+    func extractedAssignmentWireTaskKindUnrecognizedFallsBackToSubmission() throws {
+        let json = #"{"title":"Read chapter 4","dueAt":null,"kind":"something-new"}"#
+        let wire = try BackendJSON.decoder().decode(ExtractedAssignmentWire.self, from: Data(json.utf8))
+        #expect(wire.taskKind == .submission)
+    }
+
     @Test("SyncUploadResponse decodes a missing profileStale to empty")
     func uploadResponseDefaultsToEmpty() throws {
         let response = try BackendJSON.decoder().decode(SyncUploadResponse.self, from: Data(#"{"accepted":3}"#.utf8))

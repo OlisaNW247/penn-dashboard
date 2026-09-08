@@ -188,6 +188,55 @@ struct CourseKnowledgeBaseTests {
         #expect(base.lastSyncedAt == t1)
     }
 
+    // MARK: - catalog
+
+    @Test("decoding legacy JSON with no catalog key still loads, with catalog empty")
+    func decodesLegacyJSONWithoutCatalog() throws {
+        let json = """
+        {"courses":[{"courseID":"1","code":"CIS 1","name":"CIS 1","url":null}],"documents":[]}
+        """
+        // Plain `JSONDecoder()`, matching `CourseKnowledgeStore.load()`'s own
+        // decoder — this is testing what an on-disk file written before
+        // `catalog` existed decodes as, not the backend wire format.
+        let base = try JSONDecoder().decode(CourseKnowledgeBase.self, from: Data(json.utf8))
+        #expect(base.catalog.isEmpty)
+        #expect(base.courses.count == 1)
+    }
+
+    @Test("mergeCatalog upserts by courseID and never removes an existing entry")
+    func mergeCatalogUpserts() {
+        var base = CourseKnowledgeBase(catalog: [
+            CourseCatalogEntry(courseID: "1", catalogCode: "CIS 1", title: "Old Title"),
+            CourseCatalogEntry(courseID: "2", catalogCode: "CIS 2", title: "CIS 2"),
+        ])
+        base.mergeCatalog([CourseCatalogEntry(courseID: "1", catalogCode: "CIS 1", title: "New Title")])
+        #expect(base.catalog.count == 2)
+        #expect(base.catalog.first { $0.courseID == "1" }?.title == "New Title")
+        #expect(base.catalog.first { $0.courseID == "2" }?.title == "CIS 2")
+
+        // An empty merge is a no-op, not a wipe.
+        base.mergeCatalog([])
+        #expect(base.catalog.count == 2)
+    }
+
+    @Test("catalogEntry(forCourseCode:) finds an entry via the courses code -> courseID mapping")
+    func catalogEntryFindsByCoursesMapping() {
+        let base = CourseKnowledgeBase(
+            courses: [CourseSummary(courseID: "1234", code: "CIS 2400", name: "CIS 2400", url: nil)],
+            catalog: [CourseCatalogEntry(courseID: "1234", catalogCode: "CIS-2400", title: "Intro to Computer Systems")]
+        )
+        #expect(base.catalogEntry(forCourseCode: "CIS 2400")?.courseID == "1234")
+    }
+
+    @Test("catalogEntry(forCourseCode:) falls back to a normalized catalogCode match")
+    func catalogEntryFallsBackToNormalizedCatalogCode() {
+        let base = CourseKnowledgeBase(catalog: [
+            CourseCatalogEntry(courseID: "1234", catalogCode: "CIS-2400", title: "Intro to Computer Systems"),
+        ])
+        #expect(base.catalogEntry(forCourseCode: "CIS 2400")?.courseID == "1234")
+        #expect(base.catalogEntry(forCourseCode: "PHYS 151") == nil)
+    }
+
     @Test("store round-trips through JSON in a scratch directory")
     func storeRoundTrip() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lhf-tests-\(UUID().uuidString)")

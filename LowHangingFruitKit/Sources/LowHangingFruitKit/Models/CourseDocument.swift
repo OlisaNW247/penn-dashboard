@@ -113,11 +113,46 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
     public var courses: [CourseSummary]
     public var documents: [CourseDocument]
     public var lastSyncedAt: Date?
+    /// The registrar-derived course catalog (`CourseCatalogEntry`, one per
+    /// course), synced down alongside `documents` so
+    /// `HeuristicAnnouncementExtractor` can resolve "before class" phrasing
+    /// to an actual clock time. Decoded with `decodeIfPresent` in this
+    /// type's custom `init(from:)` below rather than through ordinary
+    /// `Codable` synthesis, because — unlike `documents`/`courses`, which
+    /// have always been present in every `CourseKnowledgeStore` file this
+    /// app has ever written — `catalog` is new. Every knowledge-base JSON
+    /// already sitting on a student's disk predates it, and a struct
+    /// decoded through synthesis would fail outright on a key that simply
+    /// never existed until now. A failed decode here doesn't surface as "no
+    /// catalog data" — `CourseKnowledgeStore.load()` treats a decode failure
+    /// as "nothing synced yet" and falls back to `.empty`, silently
+    /// discarding every document and course the student already had. This
+    /// custom `init(from:)` is what stands between adding this field and
+    /// that data loss.
+    public var catalog: [CourseCatalogEntry]
 
-    public init(courses: [CourseSummary] = [], documents: [CourseDocument] = [], lastSyncedAt: Date? = nil) {
+    public init(
+        courses: [CourseSummary] = [],
+        documents: [CourseDocument] = [],
+        lastSyncedAt: Date? = nil,
+        catalog: [CourseCatalogEntry] = []
+    ) {
         self.courses = courses
         self.documents = documents
         self.lastSyncedAt = lastSyncedAt
+        self.catalog = catalog
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case courses, documents, lastSyncedAt, catalog
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        courses = try container.decode([CourseSummary].self, forKey: .courses)
+        documents = try container.decode([CourseDocument].self, forKey: .documents)
+        lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
     }
 
     public static let empty = CourseKnowledgeBase()
@@ -160,6 +195,43 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
         lastSyncedAt = syncedAt
+    }
+
+    /// Upserts catalog entries by `courseID`. Never removes an entry this
+    /// call wasn't told about, unlike `merge(courses:documents:...)`'s
+    /// `resyncedCourseIDs` path: a catalog fetch scoped to "the course the
+    /// student is looking at right now" is normal, and a partial fetch like
+    /// that must never be read as "every other course's catalog entry is
+    /// now stale and should go" — the same "add or update, never wholesale
+    /// replace" rule the file header on `AssignmentStore.reconcile`
+    /// describes for the ledger.
+    public mutating func mergeCatalog(_ entries: [CourseCatalogEntry]) {
+        guard !entries.isEmpty else { return }
+        var byCourseID = Dictionary(catalog.map { ($0.courseID, $0) }, uniquingKeysWith: { _, last in last })
+        for entry in entries { byCourseID[entry.courseID] = entry }
+        catalog = byCourseID.values.sorted { $0.courseID < $1.courseID }
+    }
+
+    /// Looks up a catalog entry by the display course code
+    /// (`CourseCode.parse`'s output, e.g. "PHYS 151"). Tries `courses` first
+    /// — the code → Canvas `courseID` mapping the sync already resolved,
+    /// which is exact — and only falls back to matching `catalogCode`
+    /// directly, with spaces and dashes stripped on both sides, since the
+    /// registrar's own code spelling ("PHYS-151") doesn't necessarily agree
+    /// with Canvas's ("PHYS 151") and a caller with no `courses` entry yet
+    /// (a course discovered this launch, before its first course-summary
+    /// sync) shouldn't lose catalog data it could otherwise find.
+    public func catalogEntry(forCourseCode code: String) -> CourseCatalogEntry? {
+        if let courseID = courses.first(where: { $0.code.caseInsensitiveCompare(code) == .orderedSame })?.courseID,
+           let entry = catalog.first(where: { $0.courseID == courseID }) {
+            return entry
+        }
+        let normalizedTarget = Self.normalizedCourseCode(code)
+        return catalog.first { Self.normalizedCourseCode($0.catalogCode) == normalizedTarget }
+    }
+
+    private static func normalizedCourseCode(_ code: String) -> String {
+        code.lowercased().filter { !$0.isWhitespace && $0 != "-" }
     }
 }
 
