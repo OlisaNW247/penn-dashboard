@@ -50,10 +50,18 @@ Two more layers, same shape (backend tested here, Swift compiled on the Mac):
   candidates against the course code + current term (also the CIS Advising
   Handbook directory and the `~cisNNNN/current/` convention), crawls the
   best verified site (same host, depth 2, 40 pages, robots.txt, PDFs), and
-  stores pages as `website`-kind documents. **Swift for this layer was
-  written without a compiler**; expect roughly 881 tests / 91 suites on the
-  Mac. Deploy needs `supabase db push` (migration `20260907180000_websites`)
-  and `supabase functions deploy --use-api` (adds `discover-websites`).
+  stores pages as `website`-kind documents.
+- **Announcement Watcher rewrite.** Informational announcements yield
+  nothing; only student-directed sentences count; tasks carry a kind
+  (submission vs preparation, the latter filed as `.event` so it never goes
+  overdue); due times resolve to class meeting times from the registrar;
+  AI assist is on by default with the heuristic as a free pre-filter; a
+  one-time repair purges uncompleted announcement-derived rows.
+- **Verified on the Mac 2026-09-08: 924 tests / 91 suites green**, and both
+  the websites migration and all six functions are deployed to the live
+  project. Device checks still outstanding: CIS 2400 site crawled and cited
+  by ask; the "Thursday Slides Posted" item gone after the repair and not
+  re-created; a real "read before class" item filed as an event.
 
 ### Compile status
 

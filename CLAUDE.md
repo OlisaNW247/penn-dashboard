@@ -66,19 +66,18 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-07): **838 tests / 89 suites
-green** (plus 4 XCTest scheduler tests) and a clean iOS simulator build, up
-from 804/87 the day before — the backend change (wire types, sync planner,
-backend responder) added 34 tests and 2 suites. The Swift for that change was
-written without a compiler and compiled first time on the owner's Mac; the
-one failure on that first run was a repo guard test (`SharedDefaultsMigrationTests`
-scanning for private-domain defaults reads), fixed the same hour. The live
-backend path is still unexercised: `BackendServices.client` is nil under
-tests, so this baseline proves the on-device path and the compile, nothing
-about a deployed Supabase project.
+Baseline on `v5`, verified on a Mac (2026-09-08): **924 tests / 91 suites
+green** (plus 4 XCTest scheduler tests), up from 853/90 the day before, after
+the course-websites layer and the Announcement Watcher rewrite. Both were
+written without a compiler; the one first-run compile error was a raw string
+closed early by a `"#` inside `href="#"` (double the delimiter). The backend
+is deployed to the live Supabase project with all six functions; the live
+path is still exercised only by hand on a device, never by `swift test`
+(`BackendServices.client` is nil under tests).
 
-Earlier on `v5` (2026-09-06): 804/87, the merge of `v3.5` and the ask
-knowledge engine.
+Earlier on `v5`: 853/90 (2026-09-07, registrar catalog + component
+tagging); 838/89 (2026-09-07, the backend change); 804/87 (2026-09-06, the
+merge of `v3.5` and the ask knowledge engine).
 
 Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
 suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
