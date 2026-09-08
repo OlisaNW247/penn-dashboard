@@ -208,24 +208,30 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         guard !context.knowledge.isEmpty else { return "" }
         let courses = context.knowledge.courses
         let parsed = QuestionParser.parse(question, courses: courses)
-        let courseID = parsed.course.flatMap { course in
-            courses.first(where: { CourseMatcher.sameCourse($0.code, as: course) })?.courseID
-        }
+        // A course's display code can span more than one Canvas site (PHYS
+        // 0151's lecture and lab), so scoping retrieval by a single
+        // `courseID` — the old behavior — silently searched only whichever
+        // one site a dictionary-style lookup happened to keep.
+        // `courseIDs(forCode:)` returns every site sharing the code; `nil`
+        // (a question that doesn't name a course) stays unscoped exactly as
+        // before.
+        let courseIDs = parsed.course.map { context.knowledge.courseIDs(forCode: $0.code) }
         let preferredComponent = DocumentComponent.mentioned(in: question)
-        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseID: courseID, preferredComponent: preferredComponent, limit: excerptLimit)
+        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseIDs: courseIDs, preferredComponent: preferredComponent, limit: excerptLimit)
         guard !hits.isEmpty else { return "" }
         // Labelled only for courses that are actually split (a lecture
-        // syllabus and a lab syllabus sharing one Canvas site) so the model
-        // can tell the two apart — see `DocumentComponent.courseIsSplit`.
-        // Computed once per course, not per hit: classification reads every
-        // document of the course.
+        // syllabus and a lab syllabus, whether on one Canvas site or two)
+        // so the model can tell the two apart — see
+        // `DocumentComponent.courseIsSplit(code:in:)`. Computed once per
+        // display code, not per hit: the check re-derives every site
+        // sharing the code and reads every document of each.
         var splitByCourse: [String: Bool] = [:]
-        for hit in hits where splitByCourse[hit.document.courseID] == nil {
-            splitByCourse[hit.document.courseID] = DocumentComponent.courseIsSplit(context.knowledge.documents(for: hit.document.courseID))
+        for hit in hits where splitByCourse[hit.document.course] == nil {
+            splitByCourse[hit.document.course] = DocumentComponent.courseIsSplit(code: hit.document.course, in: context.knowledge)
         }
         let lines = hits.enumerated().map { index, hit -> String in
             let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
-            let labelled = hit.component != .general && (splitByCourse[hit.document.courseID] ?? false)
+            let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
             return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
         }

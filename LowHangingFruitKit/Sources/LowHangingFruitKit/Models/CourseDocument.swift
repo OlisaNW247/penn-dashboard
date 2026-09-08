@@ -99,13 +99,39 @@ public struct CourseSummary: Codable, Sendable, Hashable, Identifiable {
     public let code: String
     public let name: String
     public let url: URL?
+    /// The registrar section token (`CourseCode.Parsed.section`) off this
+    /// site's own Canvas descriptor, kept so more than one Canvas site can
+    /// share one `code` — Penn's PHYS 0151 lecture and lab are two separate
+    /// sites, "PHYS 0151-151 …" and "PHYS 0151-401 …", that both parse to
+    /// the code "PHYS 0151" — and something downstream can still tell which
+    /// site is which (`DocumentComponent.component(of:in:)`). `nil` for any
+    /// course summary written before this field existed, or whose
+    /// descriptor never carried a dash-section; every call site that reads
+    /// it must treat that as "unknown," not "not split." Declared last with
+    /// a default so every existing `CourseSummary(...)` call in this Kit,
+    /// the UI module, and every fixture in both test targets keeps
+    /// compiling unchanged.
+    public let section: String?
 
-    public init(courseID: String, code: String, name: String, url: URL?) {
+    public init(courseID: String, code: String, name: String, url: URL?, section: String? = nil) {
         self.courseID = courseID
         self.code = code
         self.name = name
         self.url = url
+        self.section = section
     }
+
+    /// Synthesized `Codable` would in fact `decodeIfPresent` an optional
+    /// stored property automatically and treat a missing `section` key as
+    /// `nil` — verified against the Swift Evolution `Codable` synthesis
+    /// rules (SE-0166): a property of `Optional` type gets a
+    /// `decodeIfPresent`, not a `decode`, in the compiler-generated
+    /// `init(from:)`. So a `CourseKnowledgeStore` file written before this
+    /// field existed decodes cleanly with `section == nil`, same as
+    /// `CourseKnowledgeBase.catalog`'s hand-written `init(from:)` achieves
+    /// deliberately elsewhere in this file. No custom `init(from:)` is
+    /// needed here; this comment exists so a future reader doesn't wonder
+    /// why `CourseSummary` skipped the treatment `CourseKnowledgeBase` got.
 }
 
 /// Everything the chatbot can draw on, as one persisted snapshot.
@@ -165,6 +191,26 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
 
     public func documents(ofKind kind: CourseDocument.Kind) -> [CourseDocument] {
         documents.filter { $0.kind == kind }
+    }
+
+    /// Every Canvas `courseID` whose `CourseSummary.code` names the same
+    /// course as `code` — the fix for PHYS 0151's lecture and lab (and any
+    /// other course split the same way) collapsing to one display code but
+    /// remaining two separate Canvas sites with two separate document sets.
+    /// Everything that used to resolve "the one `courseID` for this code"
+    /// (materials sync, retrieval scoping) needs every site now, not
+    /// whichever one happened to win a dictionary upsert first. Matched
+    /// with `CourseMatcher.sameCourse` rather than a direct string compare
+    /// so this agrees with every other place in the Kit that decides two
+    /// course strings name the same class.
+    public func courseIDs(forCode code: String) -> Set<String> {
+        Set(courses.filter { CourseMatcher.sameCourse(code, as: $0) }.map(\.courseID))
+    }
+
+    /// The `CourseSummary` for one Canvas site, or `nil` if this knowledge
+    /// base has never synced that `courseID`.
+    public func summary(forCourseID courseID: String) -> CourseSummary? {
+        courses.first { $0.courseID == courseID }
     }
 
     /// Merges freshly fetched documents in. Unchanged documents keep their

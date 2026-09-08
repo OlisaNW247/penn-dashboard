@@ -25,19 +25,30 @@ public struct CourseSummaryWire: Codable, Sendable, Equatable {
     public let url: String?
     public let term: String?
     public let sectionIDs: [String]?
+    /// This site's own registrar section token (`CourseCode.Parsed.section`,
+    /// carried on-device as `CourseSummary.section`) — distinct from
+    /// `sectionIDs` above, which is a different, not-yet-populated field
+    /// this protocol reserves for a list of section identifiers. Sent so
+    /// the server can tell PHYS 0151's lecture site from its lab site by
+    /// the same token the client uses for `DocumentComponent.component(
+    /// of:in:)`, rather than only by `courseID`.
+    public let section: String?
 
-    public init(courseID: String, code: String, name: String, url: String?, term: String? = nil, sectionIDs: [String]? = nil) {
+    public init(courseID: String, code: String, name: String, url: String?, term: String? = nil, sectionIDs: [String]? = nil, section: String? = nil) {
         self.courseID = courseID
         self.code = code
         self.name = name
         self.url = url
         self.term = term
         self.sectionIDs = sectionIDs
+        self.section = section
     }
 
     /// `term` and `sectionIDs` aren't tracked on `CourseSummary` today (the
     /// protocol notes sections are recorded for future scoping only), so
     /// they're separate parameters rather than derived from the model.
+    /// `section`, unlike those two, *is* tracked on `CourseSummary` — it
+    /// comes straight off `summary.section`.
     public init(summary: CourseSummary, term: String? = nil, sectionIDs: [String]? = nil) {
         self.courseID = summary.courseID
         self.code = summary.code
@@ -45,6 +56,7 @@ public struct CourseSummaryWire: Codable, Sendable, Equatable {
         self.url = summary.url?.absoluteString
         self.term = term
         self.sectionIDs = sectionIDs
+        self.section = summary.section
     }
 }
 

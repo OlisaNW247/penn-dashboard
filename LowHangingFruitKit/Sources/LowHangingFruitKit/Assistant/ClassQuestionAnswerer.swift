@@ -323,11 +323,19 @@ public struct ClassQuestionAnswerer: Sendable {
     }
 
     private func search(_ query: String, parsed: ParsedQuestion, kinds: Set<CourseDocument.Kind>?) -> [SearchHit] {
-        let courseID = parsed.course.flatMap { course in
-            context.knowledge.courses.first(where: { CourseMatcher.sameCourse($0.code, as: course) })?.courseID
-        }
-        var hits = context.search.search(query, courseID: courseID, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
-        if courseID == nil, let course = parsed.course {
+        // A course's display code can span more than one Canvas site (PHYS
+        // 0151's lecture and lab), so scoping by a single `courseID` — the
+        // old behavior — silently searched only whichever one site a
+        // dictionary-style lookup happened to keep. `courseIDs(forCode:)`
+        // returns every site sharing the code. An empty result means "the
+        // question names a course `context.knowledge` hasn't synced yet,"
+        // not "matches nothing" — same as the old `courseID == nil` branch
+        // below, which is why an empty set is passed through as `nil`
+        // (unscoped) rather than as a scope that excludes everything.
+        let courseIDs = parsed.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        let scopedIDs = (courseIDs?.isEmpty ?? true) ? nil : courseIDs
+        var hits = context.search.search(query, courseIDs: scopedIDs, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
+        if scopedIDs == nil, let course = parsed.course {
             hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
         }
         return hits
@@ -389,7 +397,7 @@ public struct ClassQuestionAnswerer: Sendable {
     /// look labelled as if it were part of a split.
     private func componentLabel(_ hit: SearchHit) -> String {
         guard hit.component != .general,
-              DocumentComponent.courseIsSplit(context.knowledge.documents(for: hit.document.courseID))
+              DocumentComponent.courseIsSplit(code: hit.document.course, in: context.knowledge)
         else { return "" }
         return "[\(hit.component.label)] "
     }

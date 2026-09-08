@@ -3959,6 +3959,49 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// One `CourseSummary` per Canvas *site*, not per course code — course
+    /// materials sync (`refreshCourseKnowledge`) used to build its course
+    /// list straight from `canvasCourseIDsByCode`, the persisted `[code:
+    /// id]` cache that (deliberately, for Grade Watcher's and readings
+    /// import's sake — see that property's doc comment) can only remember
+    /// one id per code. That is the wrong source here: Penn runs PHYS 0151
+    /// as two Canvas sites, a lecture site and a lab site, that both parse
+    /// to the code "PHYS 0151", so whichever site last won the cache was the
+    /// only one ever synced for `ask` — the other site's announcements and
+    /// pages were simply never fetched. `canvasCourseIDs()` already solves
+    /// this for Grade Watcher by reconstructing every known site's id
+    /// (id-keyed, several ids per code) from this sync's feed items and
+    /// `enrolledCanvasCourses` rather than inverting the one-id-per-code
+    /// cache; this builds on the same map so materials sync sees every site
+    /// Grade Watcher does.
+    ///
+    /// The raw Canvas name (when a matching `enrolledCanvasCourses` entry
+    /// has one) is preferred over the cosmetic display name because it
+    /// carries the "Lab"/section text (`CourseCode.parse`'s `section`) that
+    /// downstream component classification uses to tell the two sites'
+    /// material apart; falls back to `courseDisplayName(code)` only when no
+    /// enrolled entry names this specific id.
+    func canvasCourseSummaries() -> [CourseSummary] {
+        canvasCourseIDs()
+            .map { id, code -> CourseSummary in
+                let enrolledMatch = enrolledCanvasCourses.first(where: { $0.id == id })
+                let name = enrolledMatch?.name ?? courseDisplayName(code)
+                return CourseSummary(
+                    courseID: id,
+                    code: code,
+                    name: name,
+                    url: URL(string: "https://canvas.upenn.edu/courses/\(id)"),
+                    section: CourseCode.parse(name).section
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.code != rhs.code {
+                    return lhs.code.localizedStandardCompare(rhs.code) == .orderedAscending
+                }
+                return (lhs.section ?? "") < (rhs.section ?? "")
+            }
+    }
+
     /// Pure merge behind `canvasCourseIDs()` — see that function's doc
     /// comment for why this exists (two Canvas *sites* parsing to one course
     /// *code*) rather than widening the persisted `[code: id]` cache to hold

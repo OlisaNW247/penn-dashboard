@@ -121,4 +121,19 @@ struct DocumentComponentTests {
         let labAssignment = doc("Lab 3: circuits", "Submit the lab report by Friday.", kind: .assignment)
         #expect(!DocumentComponent.courseIsSplit([plain, moved, labAssignment]))
     }
+
+    @Test("component(of:in:) falls back to the site's own name when there is no registrar section to look up")
+    func componentUsesSiteNameFallback() {
+        // No `section` on the summary (so step 1, the catalog lookup,
+        // never runs) and no lab/lecture word in the document's own title
+        // or text (so `classify` alone would call this `.general`) — the
+        // site's name, "PHYS 0151 Lab", is the only signal available.
+        let summary = CourseSummary(courseID: "9", code: "PHYS 0151", name: "PHYS 0151 Lab", url: nil)
+        let document = CourseDocument(
+            courseID: "9", course: "PHYS 0151", kind: .syllabus, sourceID: "syllabus", title: "Syllabus",
+            url: nil, text: "Standard university policies apply.", fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        let knowledge = CourseKnowledgeBase(courses: [summary], documents: [document])
+        #expect(DocumentComponent.component(of: document, in: knowledge) == .lab)
+    }
 }

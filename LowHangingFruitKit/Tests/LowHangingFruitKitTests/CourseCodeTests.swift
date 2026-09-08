@@ -103,6 +103,26 @@ struct CourseCodeTests {
         #expect(!CourseCode.containsExplicitCode(""))
     }
 
+    @Test("section is captured from a dash-delimited registrar section token")
+    func sectionCaptured() {
+        // Penn's lab site for the same course as the lecture: same code,
+        // different section — this is the pair the materials-sync bug
+        // collapsed into one Canvas courseID.
+        #expect(CourseCode.parse("PHYS 0151-151 202630 Physics Lab").section == "151")
+        #expect(CourseCode.parse("PHYS 0151-401 202630 Physics Lecture").section == "401")
+    }
+
+    @Test("section survives underscore normalization the same way the code does")
+    func sectionUnderscoreForm() {
+        #expect(CourseCode.parse("PHYS_0151-401_202630").section == "401")
+    }
+
+    @Test("section is nil when the descriptor has no dash-section")
+    func sectionAbsent() {
+        #expect(CourseCode.parse("PHYS 0151 202630 Physics").section == nil)
+        #expect(CourseCode.parse("CIS 1200").section == nil)
+    }
+
     @Test("term code round-trips and orders correctly")
     func termCodes() {
         #expect(Term(code: "202610") == Term(year: 2026, season: .spring))

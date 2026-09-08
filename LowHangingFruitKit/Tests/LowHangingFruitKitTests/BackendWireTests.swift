@@ -97,6 +97,25 @@ struct BackendWireTests {
         #expect(!json.contains("submitted"))
     }
 
+    @Test("CourseSummaryWire encodes a summary's section, and decodes an absent one to nil")
+    func courseSummaryWireSection() throws {
+        let sectioned = CourseSummary(courseID: "1234", code: "PHYS 0151", name: "PHYS 0151-401 Lab", url: nil, section: "401")
+        let wire = CourseSummaryWire(summary: sectioned)
+        #expect(wire.section == "401")
+        let data = try BackendJSON.encoder().encode(wire)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json.contains("\"section\":\"401\""))
+
+        // A payload with no "section" key at all — the shape every server
+        // response predating this field has — decodes to nil rather than
+        // failing the whole struct.
+        let legacyJSON = """
+        {"courseID":"1234","code":"CIS 2400","name":"CIS 2400","url":null}
+        """
+        let decoded = try BackendJSON.decoder().decode(CourseSummaryWire.self, from: Data(legacyJSON.utf8))
+        #expect(decoded.section == nil)
+    }
+
     @Test("CourseDocumentWire never encodes a submitted key")
     func documentWireNeverEncodesSubmitted() throws {
         let wire = CourseDocumentWire(document: assignmentDoc())

@@ -84,3 +84,101 @@ struct AskKnowledgeWiringTests {
         #expect(answer.sources.first?.title == "CIS 1210 syllabus")
     }
 }
+
+/// Penn runs PHYS 0151 as two Canvas *sites* — a lecture site and a lab site
+/// — that both parse to the course code "PHYS 0151" (`CourseCode.parse`
+/// deliberately drops the section number). `AppState.canvasCourseSummaries()`
+/// exists because `refreshCourseKnowledge` used to build its course list from
+/// `canvasCourseIDsByCode`, a `[code: id]` cache that can only remember one
+/// id per code, so materials sync only ever pulled one of the two sites.
+///
+/// `AppState` persists into the process-wide `UserDefaults.lhf`
+/// (`enrolledCanvasCoursesV1` and `CoursePreferencesStore.storageKey`), so —
+/// exactly like `AnnouncementWatcherWiringTests` — this suite is
+/// `.serialized`, `@MainActor` (`AppState` itself is `@MainActor`), and backs
+/// up/restores every key it touches.
+@MainActor
+@Suite("Canvas course summaries span both sites of a split course", .serialized)
+struct CanvasCourseSummariesTests {
+    private static let enrolledCanvasCoursesKey = "enrolledCanvasCoursesV1"
+
+    /// Snapshots the two process-wide keys this suite writes, runs `body`,
+    /// then restores them exactly as found (`nil` meaning "the key was
+    /// absent," restored by removing it) — mirrors
+    /// `AnnouncementWatcherWiringTests.withRestoredDefaults`.
+    private func withRestoredDefaults(_ body: () -> Void) {
+        let defaults = UserDefaults.lhf
+        let keys = [Self.enrolledCanvasCoursesKey, CoursePreferencesStore.storageKey]
+        let saved = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+        body()
+    }
+
+    /// Seeds both storage tiers `canvasCourseSummaries()` reads through
+    /// `canvasCourseIDs()`: the enrolled-course cache (both sites, by id) and
+    /// `canvasCourseIDsByCode` (one id — the lecture site's, "1" — the same
+    /// way onboarding/Grade Watcher would have cached whichever site it saw
+    /// first). `canvasCourseIDs()`'s merge rule then recovers the lab site's
+    /// id "2" from the enrolled list because its parsed code, "PHYS 0151",
+    /// already matches something the cache vouched for — see
+    /// `AppState.courseIDsByID`'s doc comment.
+    private func seedTwoSitesOneCode() {
+        UserDefaults.lhf.set(
+            [
+                "1": "PHYS 0151-401 202630 Principles II",
+                "2": "PHYS 0151-151 202630 Principles II Lab",
+            ],
+            forKey: Self.enrolledCanvasCoursesKey
+        )
+        CoursePreferencesStore().setCanvasCourseID("PHYS 0151", "1")
+    }
+
+    @Test("two Canvas sites sharing one course code yield two summaries, not one")
+    func twoSitesYieldTwoSummaries() {
+        withRestoredDefaults {
+            seedTwoSitesOneCode()
+            let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+
+            let summaries = state.canvasCourseSummaries()
+            #expect(summaries.count == 2)
+            #expect(summaries.allSatisfy { $0.code == "PHYS 0151" })
+            #expect(Set(summaries.map(\.courseID)) == ["1", "2"])
+        }
+    }
+
+    @Test("each site's section is derived from its own Canvas name, not shared across the split code")
+    func sitesHaveDistinctSections() {
+        withRestoredDefaults {
+            seedTwoSitesOneCode()
+            let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+
+            let summaries = state.canvasCourseSummaries()
+            let lecture = summaries.first { $0.courseID == "1" }
+            let lab = summaries.first { $0.courseID == "2" }
+            #expect(lecture?.section == "401")
+            #expect(lab?.section == "151")
+        }
+    }
+
+    @Test("the raw Canvas name is carried, not the cosmetic display name, so the lab site keeps its 'Lab' text")
+    func rawNamesAreCarried() {
+        withRestoredDefaults {
+            seedTwoSitesOneCode()
+            let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+
+            let summaries = state.canvasCourseSummaries()
+            let lecture = summaries.first { $0.courseID == "1" }
+            let lab = summaries.first { $0.courseID == "2" }
+            #expect(lecture?.name == "PHYS 0151-401 202630 Principles II")
+            #expect(lab?.name == "PHYS 0151-151 202630 Principles II Lab")
+        }
+    }
+}

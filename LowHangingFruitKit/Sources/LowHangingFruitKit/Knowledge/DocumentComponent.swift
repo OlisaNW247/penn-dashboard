@@ -58,6 +58,12 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
     private static let lectureHeadWords = stemmed(["lecture", "lectures", "exam", "exams", "midterm", "midterms", "problem", "homework", "homeworks"])
     private static let classWords = stemmed(["lecture", "lectures", "class", "classes"])
     private static let recitationQuestionWords = stemmed(["recitation", "recitations", "rec"])
+    /// Narrower than `lectureTitleWords` on purpose: that set includes
+    /// "syllabus", which is a fine signal in a *document title* ("PHYS 0151
+    /// Syllabus" is almost certainly the lecture's) but not in a *course
+    /// site's own name*, where "syllabus" never appears and would just be
+    /// dead weight.
+    private static let siteNameLectureWords = stemmed(["lecture", "lectures"])
     private static let headTextLength = 400
 
     /// Deterministic, word-boundary classification of one document. Reuses
@@ -136,5 +142,101 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
             case .lecture, .general: return false
             }
         }
+    }
+
+    /// The component a document belongs to, now that one course `code` can
+    /// span several Canvas *sites* (PHYS 0151's lecture and lab are two
+    /// sites sharing one code — see `CourseCode.Parsed.section` and
+    /// `CourseKnowledgeBase.courseIDs(forCode:)`). Prefers identity signals
+    /// specific to the *site* a document came from over guessing from the
+    /// document's own title/text, because a plainly-titled "Syllabus" on
+    /// the lab site should still classify as `.lab` even though nothing in
+    /// its title or body says so — `classify(title:text:)` alone would call
+    /// that `.general` and the labelling this type exists for would go
+    /// missing for exactly the documents that need it most.
+    ///
+    /// Falls back to `classify(title:text:)` — unchanged from before this
+    /// method existed — whenever the site itself gives no identity signal:
+    /// a course that was never split, a document whose `courseID` isn't in
+    /// `knowledge` yet, or a site whose registrar section and name are both
+    /// uninformative.
+    public static func component(of document: CourseDocument, in knowledge: CourseKnowledgeBase) -> DocumentComponent {
+        if let summary = knowledge.summary(forCourseID: document.courseID),
+           let identity = siteIdentityComponent(for: summary, in: knowledge) {
+            return identity
+        }
+        return classify(title: document.title, text: document.text)
+    }
+
+    /// Steps 1 and 2 of `component(of:in:)`'s lookup, factored out so
+    /// `courseIsSplit(code:in:)` can ask "do this code's sites disagree on
+    /// identity?" without also pulling in step 3's per-document text guess
+    /// — a course whose two sites both fall through to `classify` on their
+    /// syllabi isn't "split by identity," it's "split (or not) by the
+    /// existing per-document heuristic," which `courseIsSplit(code:in:)`
+    /// checks separately.
+    ///
+    /// **Step 1 — the registrar catalog.** `summary.section` is this site's
+    /// own section token ("151", "401"); Penn Labs meeting ids are shaped
+    /// like `PHYS-0151-151`, i.e. the catalog code plus a dash plus that
+    /// same section token, so a meeting whose `sectionID` ends with
+    /// `-<section>` is this site's own meeting, and its registrar
+    /// `activity` ("LEC"/"LAB"/"REC") is about as authoritative a signal as
+    /// exists. An activity code the client doesn't recognize (or a section
+    /// with no matching meeting) falls through to step 2 rather than
+    /// stopping here — a future registrar code shouldn't regress a split
+    /// course to unlabelled.
+    ///
+    /// **Step 2 — the site's own name.** Canvas course names routinely say
+    /// the quiet part out loud ("PHYS 0151-401 Lab", "PHYS 0151-151
+    /// Recitation"), so before giving up and guessing from one document's
+    /// text, check the one piece of text that describes the whole site.
+    private static func siteIdentityComponent(for summary: CourseSummary, in knowledge: CourseKnowledgeBase) -> DocumentComponent? {
+        if let section = summary.section, let catalogEntry = knowledge.catalogEntry(forCourseCode: summary.code) {
+            for meeting in catalogEntry.meetings where meeting.sectionID.hasSuffix("-\(section)") {
+                switch meeting.activity {
+                case "LEC": return .lecture
+                case "LAB": return .lab
+                case "REC": return .recitation
+                default: continue
+                }
+            }
+        }
+
+        let nameTokens = Set(TextTokenizer.tokens(summary.name, minLength: 1))
+        if !nameTokens.isDisjoint(with: labWords) { return .lab }
+        if !nameTokens.isDisjoint(with: recitationWords) { return .recitation }
+        if !nameTokens.isDisjoint(with: siteNameLectureWords) { return .lecture }
+        return nil
+    }
+
+    /// Whether a course `code` is actually split into more than one
+    /// component, now that a code can span several Canvas sites. True in
+    /// either of two independent ways:
+    ///
+    /// - The sites sharing `code` resolve to more than one distinct,
+    ///   non-`.general` component by *identity* (`siteIdentityComponent`,
+    ///   steps 1/2 of `component(of:in:)`) — this is the PHYS 0151 case,
+    ///   where the lecture and lab are two whole Canvas sites and neither
+    ///   one's documents need to mention "lab" anywhere for the split to
+    ///   be real.
+    /// - OR any single one of those sites is split the old way — one site
+    ///   whose own structural documents disagree (`courseIsSplit(_:)`,
+    ///   unchanged) — which is the pre-existing "one site, two syllabi"
+    ///   case this type was originally built for and must keep detecting.
+    public static func courseIsSplit(code: String, in knowledge: CourseKnowledgeBase) -> Bool {
+        let courseIDs = knowledge.courseIDs(forCode: code)
+        guard !courseIDs.isEmpty else { return false }
+
+        var siteComponents: Set<DocumentComponent> = []
+        for courseID in courseIDs {
+            guard let summary = knowledge.summary(forCourseID: courseID),
+                  let identity = siteIdentityComponent(for: summary, in: knowledge)
+            else { continue }
+            siteComponents.insert(identity)
+        }
+        if siteComponents.count > 1 { return true }
+
+        return courseIDs.contains { courseIsSplit(knowledge.documents(for: $0)) }
     }
 }

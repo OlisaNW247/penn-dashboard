@@ -9,11 +9,16 @@ import LowHangingFruitKit
 // dropped (see the header of `AssistantContextAssembly.swift`). The
 // collector below keeps them, on-device, keyed by Canvas course id.
 //
-// Which courses: `canvasCourseIDsByCode`, the same code → id map Grade
-// Watcher is keyed by, so a course becomes askable exactly when it becomes
-// watchable. Which cookies: the ones `AutoSyncCoordinator.canvasCookies()`
-// already gathers for grades — this sync piggybacks on that refresh rather
-// than opening its own session axis, the way readings detection does.
+// Which courses: every Canvas site whose code the app knows, not one per
+// code — see `canvasCourseSummaries()`. `canvasCourseIDsByCode`, the
+// persisted `[code: id]` cache, can only remember one id per code, and Penn
+// runs some courses (PHYS 0151's lecture and lab) as two Canvas sites that
+// both parse to the same code; building this sync's course list from that
+// cache silently dropped whichever site lost the cache, so half a course's
+// material was never fetched. Which cookies: the ones
+// `AutoSyncCoordinator.canvasCookies()` already gathers for grades — this
+// sync piggybacks on that refresh rather than opening its own session axis,
+// the way readings detection does.
 //
 // ## The shared store (`backend/PROTOCOL.md`)
 //
@@ -100,16 +105,7 @@ extension AppState {
             return
         }
 
-        let courses = canvasCourseIDsByCode
-            .map { code, id in
-                CourseSummary(
-                    courseID: id,
-                    code: code,
-                    name: courseDisplayName(code),
-                    url: URL(string: "https://canvas.upenn.edu/courses/\(id)")
-                )
-            }
-            .sorted { $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+        let courses = canvasCourseSummaries()
 
         isCourseKnowledgeSyncing = true
         defer { isCourseKnowledgeSyncing = false }

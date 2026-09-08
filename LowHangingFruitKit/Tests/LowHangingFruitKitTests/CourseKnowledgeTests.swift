@@ -237,6 +237,73 @@ struct CourseKnowledgeBaseTests {
         #expect(base.catalogEntry(forCourseCode: "PHYS 151") == nil)
     }
 
+    // MARK: - Split courses spanning several Canvas sites
+
+    /// PHYS 0151's lecture and lab are two separate Canvas sites that both
+    /// parse (via `CourseCode.parse`) to the display code "PHYS 0151" — the
+    /// bug this whole feature fixes. This fixture is shared by the tests
+    /// below: two `CourseSummary`s with distinct `courseID`s and sections,
+    /// one `CourseCatalogEntry` (attached to courseID "1", but looked up by
+    /// code, so either site's lookup finds it) whose meetings carry the
+    /// registrar's own LEC/LAB activity, and a plainly-titled syllabus on
+    /// each site that carries no lab/lecture words of its own — proving the
+    /// classification comes from the site's identity, not from guessing at
+    /// the document's text.
+    private static let splitLectureSummary = CourseSummary(courseID: "1", code: "PHYS 0151", name: "PHYS 0151-401 Physics I", url: nil, section: "401")
+    private static let splitLabSummary = CourseSummary(courseID: "2", code: "PHYS 0151", name: "PHYS 0151-151 Physics I", url: nil, section: "151")
+    private static let splitCatalog = CourseCatalogEntry(
+        courseID: "1",
+        catalogCode: "PHYS-0151",
+        title: "Physics I",
+        meetings: [
+            ClassMeeting(sectionID: "PHYS-0151-401", activity: "LEC", weekday: 2, startMinutes: 600, endMinutes: 650),
+            ClassMeeting(sectionID: "PHYS-0151-151", activity: "LAB", weekday: 3, startMinutes: 780, endMinutes: 900),
+        ]
+    )
+    private static let splitLectureSyllabus = CourseDocument(
+        courseID: "1", course: "PHYS 0151", kind: .syllabus, sourceID: "syllabus", title: "Syllabus",
+        url: nil, text: "This course meets twice a week. Standard university policies apply.",
+        fetchedAt: Date(timeIntervalSince1970: 0)
+    )
+    private static let splitLabSyllabus = CourseDocument(
+        courseID: "2", course: "PHYS 0151", kind: .syllabus, sourceID: "syllabus", title: "Syllabus",
+        url: nil, text: "This course meets once a week. Standard university policies apply.",
+        fetchedAt: Date(timeIntervalSince1970: 0)
+    )
+    private static let splitKnowledge = CourseKnowledgeBase(
+        courses: [splitLectureSummary, splitLabSummary],
+        documents: [splitLectureSyllabus, splitLabSyllabus],
+        catalog: [splitCatalog]
+    )
+
+    @Test("courseIDs(forCode:) returns every Canvas site sharing a display code")
+    func courseIDsForCode() {
+        #expect(Self.splitKnowledge.courseIDs(forCode: "PHYS 0151") == ["1", "2"])
+        #expect(Self.splitKnowledge.courseIDs(forCode: "CIS 9999").isEmpty)
+    }
+
+    @Test("component(of:in:) resolves a plainly-titled document by its site's registrar section")
+    func componentUsesCatalogBySite() {
+        // Neither document's title or text says "lab" or "lecture" — if
+        // this passed via `classify(title:text:)` instead of the catalog
+        // lookup, both would come back `.general`.
+        #expect(DocumentComponent.component(of: Self.splitLectureSyllabus, in: Self.splitKnowledge) == .lecture)
+        #expect(DocumentComponent.component(of: Self.splitLabSyllabus, in: Self.splitKnowledge) == .lab)
+    }
+
+    @Test("courseIsSplit(code:in:) is true when a code's sites resolve to different components")
+    func courseIsSplitTrueAcrossSites() {
+        #expect(DocumentComponent.courseIsSplit(code: "PHYS 0151", in: Self.splitKnowledge))
+    }
+
+    @Test("courseIsSplit(code:in:) is false for a single, unsplit site")
+    func courseIsSplitFalseSingleSite() {
+        let summary = CourseSummary(courseID: "3", code: "CIS 2400", name: "CIS 2400", url: nil)
+        let syllabus = CourseDocument(courseID: "3", course: "CIS 2400", kind: .syllabus, sourceID: "syllabus", title: "Syllabus", url: nil, text: "Standard course policies apply.", fetchedAt: Date(timeIntervalSince1970: 0))
+        let knowledge = CourseKnowledgeBase(courses: [summary], documents: [syllabus])
+        #expect(!DocumentComponent.courseIsSplit(code: "CIS 2400", in: knowledge))
+    }
+
     @Test("store round-trips through JSON in a scratch directory")
     func storeRoundTrip() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lhf-tests-\(UUID().uuidString)")
@@ -305,6 +372,29 @@ struct CourseSearchTests {
         #expect(recitation.document.id == announcement.id)
 
         #expect(search.search("quantum chromodynamics").isEmpty)
+    }
+
+    @Test("search(_:courseIDs:...) scopes to every site sharing a code, not just one")
+    func searchAcrossSites() {
+        let lectureDoc = CourseDocument(courseID: "1", course: "PHYS 0151", kind: .syllabus, sourceID: "lecture", title: "Lecture Syllabus", url: nil,
+                                         text: "Late work loses points after the posted deadline.")
+        let labDoc = CourseDocument(courseID: "2", course: "PHYS 0151", kind: .syllabus, sourceID: "lab", title: "Lab Syllabus", url: nil,
+                                     text: "Late lab reports lose ten percent per day, no exceptions.")
+        let other = CourseDocument(courseID: "3", course: "ECON 1", kind: .syllabus, sourceID: "syllabus", title: "ECON 1 syllabus", url: nil,
+                                    text: "Late problem sets are not accepted.")
+        let search = CourseSearch(knowledge: CourseKnowledgeBase(documents: [lectureDoc, labDoc, other]))
+
+        let hits = search.search("late policy", courseIDs: ["1", "2"])
+        #expect(!hits.isEmpty)
+        #expect(Set(hits.map(\.document.courseID)).isSubset(of: ["1", "2"]))
+        #expect(Set(hits.map(\.document.courseID)) == ["1", "2"])
+
+        // `nil` stays unscoped, same as before this overload existed.
+        #expect(search.search("late policy", courseIDs: nil).count >= hits.count)
+
+        // A non-nil, empty set matches nothing — scoped to zero known sites,
+        // not silently unscoped.
+        #expect(search.search("late policy", courseIDs: []).isEmpty)
     }
 
     @Test("preferredComponent ranks the matching component's passage first without hiding the other")

@@ -68,23 +68,43 @@ public struct CourseSearch: Sendable {
         preferredComponent: DocumentComponent? = nil,
         limit: Int = 5
     ) -> [SearchHit] {
+        search(query, courseIDs: courseID.map { [$0] }, kinds: kinds, preferredComponent: preferredComponent, limit: limit)
+    }
+
+    /// Like the `courseID:` overload above, except a question can now be
+    /// scoped to every Canvas site of one course code at once — PHYS 0151's
+    /// lecture and lab are two separate `courseID`s that share one display
+    /// code, so "the late policy in PHYS 0151" has to search both sites'
+    /// documents, not whichever single site an old single-`courseID` filter
+    /// happened to have kept. `nil` means unscoped, same as `courseID:
+    /// nil`; a non-nil, empty set means "scoped to nothing," matching
+    /// nothing rather than falling back to unscoped — a caller resolving
+    /// zero courseIDs for a named course should get no hits, not every
+    /// course's.
+    public func search(
+        _ query: String,
+        courseIDs: Set<String>?,
+        kinds: Set<CourseDocument.Kind>? = nil,
+        preferredComponent: DocumentComponent? = nil,
+        limit: Int = 5
+    ) -> [SearchHit] {
         guard !index.isEmpty else { return [] }
         // Over-fetch so filters and the rerank have something to work with.
         let raw = index.search(query, limit: max(limit * 6, 30))
         var hits: [SearchHit] = []
         // Classify once per document per search, not once per passage: a
         // syllabus contributing two passages (the `perDocument` cap below)
-        // should not pay for `DocumentComponent.classify` twice.
+        // should not pay for `DocumentComponent.component(of:in:)` twice.
         var componentByDocument: [String: DocumentComponent] = [:]
         for hit in raw {
             guard let passage = passages[hit.passageID], let document = documents[passage.documentID] else { continue }
-            if let courseID, document.courseID != courseID { continue }
+            if let courseIDs, !courseIDs.contains(document.courseID) { continue }
             if let kinds, !kinds.contains(document.kind) { continue }
             let component: DocumentComponent
             if let cached = componentByDocument[document.id] {
                 component = cached
             } else {
-                component = DocumentComponent.classify(title: document.title, text: document.text)
+                component = DocumentComponent.component(of: document, in: knowledge)
                 componentByDocument[document.id] = component
             }
             let score = hit.score * kindBoost(document.kind, query: query) * componentBoost(component, preferredComponent: preferredComponent)
