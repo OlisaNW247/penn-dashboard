@@ -205,8 +205,14 @@ function capHistory(history: HistoryTurn[]): HistoryTurn[] {
  * schema's `gradingWeights`, `examDates`, etc. are meaningfully ordered
  * lists, not sets), it's only object *key* order that `jsonb` and
  * `JSON.parse` don't promise to preserve.
+ *
+ * Exported so `_shared/announcement.ts`'s `courseProfileBlock` can render
+ * its own (smaller) subset of a course profile with the same
+ * jsonb-key-order-independence this file needs for its own COURSE
+ * PROFILES block -- one stable-stringify implementation, not two that
+ * could drift.
  */
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }

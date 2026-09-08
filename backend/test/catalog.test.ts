@@ -6,6 +6,7 @@
 import { strict as assert } from "node:assert";
 import {
   catalogCode,
+  catalogEntryWire,
   catalogIsStale,
   fetchCatalogCourse,
   parsePennLabsCourse,
@@ -249,8 +250,8 @@ const PHYS_ROW: CatalogCourseRow = {
   gradeModes: ["Standard Letter Grade", "Pass/Fail"],
   attributes: [],
   components: [
-    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["PHYS-0151-401", "PHYS-0151-402"] },
-    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["PHYS-0151-151", "PHYS-0151-152", "PHYS-0151-153"] },
+    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["PHYS-0151-401", "PHYS-0151-402"], meetings: [] },
+    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["PHYS-0151-151", "PHYS-0151-152", "PHYS-0151-153"], meetings: [] },
   ],
   source: "penn-labs",
   fetchedAt: "2026-09-07T12:00:00Z",
@@ -307,12 +308,155 @@ Deno.test("structureBlock: states component credits only when they differ from t
   const row = {
     ...PHYS_ROW,
     components: [
-      { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["X-1"] },
-      { activity: "LAB", label: "Lab", sectionCount: 1, credits: 0, sectionIDs: ["X-2"] },
-      { activity: "REC", label: "Recitation", sectionCount: 1, credits: 0.5, sectionIDs: ["X-3"] },
+      { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["X-1"], meetings: [] },
+      { activity: "LAB", label: "Lab", sectionCount: 1, credits: 0, sectionIDs: ["X-2"], meetings: [] },
+      { activity: "REC", label: "Recitation", sectionCount: 1, credits: 0.5, sectionIDs: ["X-3"], meetings: [] },
     ],
   };
   const block = structureBlock([row]);
   assert.ok(block.includes("Lecture (1 section), Lab (1 section), Recitation (1 section, 0.5 CU each)"), block);
   assert.ok(!block.includes("0 CU"), block);
+});
+
+// ---------------------------------------------------------------------
+// meetings (parsePennLabsCourse)
+// ---------------------------------------------------------------------
+
+Deno.test("parsePennLabsCourse: parses the fixture's LAB-151 Monday meeting to weekday 2, 15:30-17:29", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const lab = row.components.find((c) => c.activity === "LAB");
+  assert.ok(lab);
+  const meeting = lab.meetings.find((m) => m.sectionID === "PHYS-0151-151");
+  assert.ok(meeting);
+  assert.equal(meeting.weekday, 2); // Monday
+  assert.equal(meeting.startMinutes, 15 * 60 + 30);
+  assert.equal(meeting.endMinutes, 17 * 60 + 29);
+});
+
+Deno.test("parsePennLabsCourse: parses the fixture's LAB-152 Tuesday meeting to weekday 3, 13:45-15:44", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const lab = row.components.find((c) => c.activity === "LAB");
+  assert.ok(lab);
+  const meeting = lab.meetings.find((m) => m.sectionID === "PHYS-0151-152");
+  assert.ok(meeting);
+  assert.equal(meeting.weekday, 3); // Tuesday
+  assert.equal(meeting.startMinutes, 13 * 60 + 45);
+  assert.equal(meeting.endMinutes, 15 * 60 + 44);
+});
+
+Deno.test("parsePennLabsCourse: rounds a decimal HH.MM time correctly despite floating-point noise", () => {
+  const raw = {
+    id: "TEST-0001",
+    semester: "2026C",
+    sections: [
+      {
+        id: "TEST-0001-001",
+        activity: "LEC",
+        credits: 1.0,
+        meetings: [{ day: "M", start: 9.05, end: 9.55, room: "X" }],
+      },
+    ],
+  };
+  const row = parsePennLabsCourse(raw);
+  assert.ok(row);
+  const [component] = row.components;
+  const [meeting] = component.meetings;
+  assert.equal(meeting.startMinutes, 9 * 60 + 5);
+  assert.equal(meeting.endMinutes, 9 * 60 + 55);
+});
+
+Deno.test("parsePennLabsCourse: splits a multi-letter day (\"MWF\") into one meeting per weekday", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const lecture = row.components.find((c) => c.activity === "LEC");
+  assert.ok(lecture);
+  const section401Meetings = lecture.meetings.filter((m) => m.sectionID === "PHYS-0151-401");
+  assert.equal(section401Meetings.length, 3);
+  assert.deepEqual(section401Meetings.map((m) => m.weekday).sort((a, b) => a - b), [2, 4, 6]); // Mon, Wed, Fri
+  for (const meeting of section401Meetings) {
+    assert.equal(meeting.startMinutes, 10 * 60);
+    assert.equal(meeting.endMinutes, 10 * 60 + 99);
+  }
+});
+
+Deno.test("parsePennLabsCourse: an unknown day letter is skipped without affecting a valid letter in the same string", () => {
+  const raw = {
+    id: "TEST-0002",
+    semester: "2026C",
+    sections: [
+      {
+        id: "TEST-0002-001",
+        activity: "LEC",
+        credits: 1.0,
+        meetings: [{ day: "MX", start: 10.0, end: 10.5, room: "X" }],
+      },
+    ],
+  };
+  const row = parsePennLabsCourse(raw);
+  assert.ok(row);
+  const [component] = row.components;
+  assert.equal(component.meetings.length, 1);
+  assert.equal(component.meetings[0].weekday, 2); // Monday only -- "X" contributed nothing
+});
+
+Deno.test("parsePennLabsCourse: a malformed meeting (missing start) is skipped, other meetings on the same section still parse", () => {
+  const raw = {
+    id: "TEST-0003",
+    semester: "2026C",
+    sections: [
+      {
+        id: "TEST-0003-001",
+        activity: "LEC",
+        credits: 1.0,
+        meetings: [
+          { day: "M", room: "X" }, // missing start/end -- malformed, skipped
+          { day: "W", start: 10.0, end: 10.5, room: "X" },
+        ],
+      },
+    ],
+  };
+  const row = parsePennLabsCourse(raw);
+  assert.ok(row);
+  const [component] = row.components;
+  assert.equal(component.meetings.length, 1);
+  assert.equal(component.meetings[0].weekday, 4); // Wednesday, the well-formed one
+});
+
+// ---------------------------------------------------------------------
+// catalogEntryWire
+// ---------------------------------------------------------------------
+
+Deno.test("catalogEntryWire: flattens every component's meetings, tagging each with its activity", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const wire = catalogEntryWire(row, "canvas-course-123");
+  assert.equal(wire.courseID, "canvas-course-123");
+  assert.equal(wire.catalogCode, "PHYS-0151");
+  assert.equal(wire.title, "Principles II");
+  assert.equal(wire.credits, 1.5);
+
+  const labMeeting = wire.meetings.find((m) => m.sectionID === "PHYS-0151-151");
+  assert.ok(labMeeting);
+  assert.equal(labMeeting.activity, "LAB");
+  assert.equal(labMeeting.weekday, 2);
+
+  const lecMeetings = wire.meetings.filter((m) => m.sectionID === "PHYS-0151-401");
+  assert.equal(lecMeetings.length, 3);
+  for (const meeting of lecMeetings) {
+    assert.equal(meeting.activity, "LEC");
+  }
+});
+
+Deno.test("catalogEntryWire: courseID is the passed-in id, not the catalog code", () => {
+  const wire = catalogEntryWire(PHYS_ROW, "some-canvas-id");
+  assert.equal(wire.courseID, "some-canvas-id");
+  assert.notEqual(wire.courseID, wire.catalogCode);
+});
+
+Deno.test("catalogEntryWire: a row with no meetings produces an empty meetings array", () => {
+  const row: CatalogCourseRow = { ...PHYS_ROW, components: [] };
+  const wire = catalogEntryWire(row, "some-canvas-id");
+  assert.deepEqual(wire.meetings, []);
 });

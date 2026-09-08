@@ -9,12 +9,13 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { catalogCode, catalogIsStale, fetchCatalogCourse } from "../_shared/catalog.ts";
+import { catalogCode, catalogIsStale, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
 import { candidateFromLink, olderThan, SEVEN_DAYS_MS, websitesPendingCourses } from "../_shared/websites.ts";
 import {
   markDocumentsGone,
   documentRowToWire,
   selectCatalogCoursesByCodes,
+  selectCatalogEntriesForCourses,
   selectCoursesByIDs,
   selectCoursesForDiscovery,
   selectCourseWebsites,
@@ -76,6 +77,7 @@ interface ManifestResult {
   coursesFresh: string[];
   serverManifest: DocumentStub[];
   download: CourseDocumentWire[];
+  catalog: CatalogEntryWire[];
 }
 
 interface UploadResult {
@@ -190,7 +192,13 @@ async function handleManifest(
     new Date(),
   );
 
-  return { coursesFresh, serverManifest, download };
+  // Read after `refreshCatalog` above so a `catalog_code` link (or a fresh
+  // Penn Labs fetch) made by *this* call is already reflected here -- a
+  // student's very first sync for a newly-added course shouldn't have to
+  // wait for a second manifest call before its meeting times show up.
+  const catalog = await selectCatalogEntriesForCourses(serviceClient, courseIDs);
+
+  return { coursesFresh, serverManifest, download, catalog };
 }
 
 async function handleUpload(

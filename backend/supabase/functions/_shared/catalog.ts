@@ -17,6 +17,21 @@
 // could get answered from whichever component's syllabus text happened to
 // be retrieved. `components` below is the fact that fixes that.
 
+/** One weekly meeting of one section, resolved from Penn Labs' own
+ *  per-section `meetings` array (see `parseMeetings` below). `weekday`
+ *  uses the same convention `Foundation`'s `Calendar` does on the iOS side
+ *  (1 = Sunday .. 7 = Saturday) rather than Penn Labs' own letter, so the
+ *  app and the Announcement Watcher's date math never have to carry a
+ *  second day-of-week encoding. `startMinutes`/`endMinutes` are minutes
+ *  after local midnight -- see `parseMeetings` for how Penn Labs' decimal
+ *  `HH.MM` times are converted. */
+export interface CatalogMeeting {
+  sectionID: string;
+  weekday: number;
+  startMinutes: number;
+  endMinutes: number;
+}
+
 /** One registrar activity group -- every section of a given `activity`
  *  code (Penn Labs' short strings: "LEC", "LAB", "REC", ...) folded into a
  *  single entry. `credits` is the *component's* credit units: Penn Labs
@@ -25,13 +40,18 @@
  *  credit depending which of its own sections you're in) -- and `null`
  *  when no section in the group states a credits value at all, which
  *  `structureBlock` below is careful never to paper over with an assumed
- *  number. */
+ *  number. `meetings` is every section's own meetings flattened into one
+ *  list, in section-then-original-meeting order (the same convention
+ *  `sectionIDs` already follows) -- this is the fact that lets the
+ *  Announcement Watcher resolve "before class Thursday" to an actual class
+ *  start time instead of defaulting to 11:59 PM. */
 export interface CatalogComponent {
   activity: string;
   label: string;
   sectionCount: number;
   credits: number | null;
   sectionIDs: string[];
+  meetings: CatalogMeeting[];
 }
 
 /** Mirrors `catalog_courses` (see the `20260907120000_catalog.sql`
@@ -108,6 +128,72 @@ interface RawSection {
   id: string;
   activity: string;
   credits: number | null;
+  meetings: CatalogMeeting[];
+}
+
+/** Penn Labs' letter for each day of the week, mapped to the `Calendar`
+ *  weekday convention `CatalogMeeting.weekday` uses (1 = Sunday .. 7 =
+ *  Saturday) -- see the doc comment on `CatalogMeeting`. A letter not in
+ *  this table (a Penn Labs schema surprise, or a typo'd fixture) is simply
+ *  not looked up, which `parseMeetings` treats as "skip this one day of a
+ *  possibly-multi-day meeting" rather than failing the whole meeting. */
+const WEEKDAY_LETTERS: ReadonlyMap<string, number> = new Map([
+  ["U", 1],
+  ["M", 2],
+  ["T", 3],
+  ["W", 4],
+  ["R", 5],
+  ["F", 6],
+  ["S", 7],
+]);
+
+/** Penn Labs encodes a clock time as a decimal `HH.MM` -- the digits after
+ *  the point are literally minutes, not a fraction of an hour, so `15.3`
+ *  is 15:30 and `13.45` is 13:45, not 15:18 or 13:27. `Math.round` (rather
+ *  than truncation) on the fractional part times 100 is what keeps this
+ *  correct in the face of ordinary floating-point noise -- `15.3 - 15` is
+ *  actually `0.29999999999999982` in IEEE 754, and `Math.floor` of that
+ *  times 100 would silently produce :29 instead of :30. Returns minutes
+ *  after local midnight, or `undefined` for a non-finite or missing input
+ *  (the caller treats that as "this meeting is malformed, skip it" rather
+ *  than guessing a time). */
+function pennLabsTimeToMinutes(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const hours = Math.floor(value);
+  const minutes = Math.round((value - hours) * 100);
+  return hours * 60 + minutes;
+}
+
+/** Reads one section's raw `meetings` array into `CatalogMeeting`s. A
+ *  meeting whose `day` is missing/non-string, or whose `start`/`end`
+ *  doesn't parse as a Penn Labs decimal time, is skipped in its entirety
+ *  without affecting any other meeting on this section or any other --
+ *  one garbled meeting is exactly as recoverable as one garbled section
+ *  elsewhere in this file's existing tolerance (see `readSections`'s own
+ *  comment). `day` is a string of one or more weekday letters concatenated
+ *  -- Penn Labs represents a lecture that meets Monday/Wednesday/Friday at
+ *  the same time as a single meeting object with `day: "MWF"`, not three
+ *  separate objects -- so each letter in `day` becomes its own
+ *  `CatalogMeeting` sharing this meeting's `sectionID`/start/end; an
+ *  unrecognized letter within an otherwise-valid multi-letter string is
+ *  skipped on its own, leaving the recognized letters intact. */
+function parseMeetings(sectionID: string, value: unknown): CatalogMeeting[] {
+  if (!Array.isArray(value)) return [];
+  const meetings: CatalogMeeting[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const day = item["day"];
+    if (typeof day !== "string" || day.length === 0) continue;
+    const startMinutes = pennLabsTimeToMinutes(item["start"]);
+    const endMinutes = pennLabsTimeToMinutes(item["end"]);
+    if (startMinutes === undefined || endMinutes === undefined) continue;
+    for (const letter of day) {
+      const weekday = WEEKDAY_LETTERS.get(letter);
+      if (weekday === undefined) continue;
+      meetings.push({ sectionID, weekday, startMinutes, endMinutes });
+    }
+  }
+  return meetings;
 }
 
 /** Penn Labs' short activity codes mapped to the human word this file's
@@ -184,7 +270,7 @@ function readSections(value: unknown): RawSection[] {
     const activity = item["activity"];
     if (typeof id !== "string" || id.length === 0) continue;
     if (typeof activity !== "string" || activity.length === 0) continue;
-    sections.push({ id, activity, credits: asNumberOrNull(item["credits"]) });
+    sections.push({ id, activity, credits: asNumberOrNull(item["credits"]), meetings: parseMeetings(id, item["meetings"]) });
   }
   return sections;
 }
@@ -218,6 +304,7 @@ function buildComponents(sections: RawSection[]): CatalogComponent[] {
       sectionCount: group.length,
       credits,
       sectionIDs: group.map((section) => section.id),
+      meetings: group.flatMap((section) => section.meetings),
     });
   }
 
@@ -472,4 +559,67 @@ export function structureBlock(rows: CatalogCourseRow[]): string {
   });
 
   return paragraphs.join("\n\n");
+}
+
+// ---------------------------------------------------------------------
+// CatalogEntryWire: the per-course wire shape `sync`'s manifest response
+// hands the client, distinct from `CatalogCourseRow`/`structureBlock`
+// (which serve `ask`'s prompt). Where `structureBlock` renders prose meant
+// for a model to read, this is meant for the *app* to read: the
+// Announcement Watcher resolves a phrase like "before class Thursday"
+// against `meetings` to find the actual class start time, rather than
+// falling back to a fixed end-of-day default.
+// ---------------------------------------------------------------------
+
+export interface CatalogEntryMeetingWire {
+  sectionID: string;
+  activity: string;
+  weekday: number;
+  startMinutes: number;
+  endMinutes: number;
+}
+
+export interface CatalogEntryWire {
+  courseID: string;
+  catalogCode: string;
+  title: string;
+  credits: number | null;
+  meetings: CatalogEntryMeetingWire[];
+}
+
+/**
+ * Flattens one `CatalogCourseRow`'s per-component meetings into the single
+ * list `CatalogEntryWire` carries, tagging each with its component's
+ * `activity` code (a `CatalogMeeting` on its own doesn't know which
+ * component it belongs to -- that's only implicit in which
+ * `CatalogComponent.meetings` array it lives in). `courseID` is the
+ * caller's Canvas course id, not `row.catalogCode` -- the same row can
+ * back more than one Canvas course id in principle (a cross-listed
+ * course), so the caller (`db.ts`'s `selectCatalogEntriesForCourses`)
+ * passes the specific course id this wire entry is *for*. No sorting is
+ * done here: `row.components` is already in `buildComponents`'s fixed
+ * activity order, and each component's `meetings` is already in
+ * section-then-original-meeting order, so the result is already
+ * deterministic for identical input.
+ */
+export function catalogEntryWire(row: CatalogCourseRow, courseID: string): CatalogEntryWire {
+  const meetings: CatalogEntryMeetingWire[] = [];
+  for (const component of row.components) {
+    for (const meeting of component.meetings) {
+      meetings.push({
+        sectionID: meeting.sectionID,
+        activity: component.activity,
+        weekday: meeting.weekday,
+        startMinutes: meeting.startMinutes,
+        endMinutes: meeting.endMinutes,
+      });
+    }
+  }
+  return {
+    courseID,
+    catalogCode: row.catalogCode,
+    title: row.title,
+    credits: row.credits,
+    meetings,
+  };
 }

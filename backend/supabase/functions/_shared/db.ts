@@ -12,7 +12,7 @@ import type {
   DocumentKind,
   DocumentStub,
 } from "./manifest.ts";
-import type { CatalogComponent, CatalogCourseRow } from "./catalog.ts";
+import { catalogEntryWire, type CatalogComponent, type CatalogCourseRow, type CatalogEntryWire } from "./catalog.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -410,6 +410,51 @@ export async function selectCatalogCoursesForCourseIDs(
 
   const byCode = await selectCatalogCoursesByCodes(client, catalogCodes);
   return [...byCode.values()];
+}
+
+/**
+ * The per-course `CatalogEntryWire` list `sync`'s manifest response hands
+ * the client -- distinct from `selectCatalogCoursesForCourseIDs` just
+ * above in that this one keeps the `course_id` <-> `catalog_code` pairing
+ * (that function dedupes down to unique catalog rows for `ask`'s prompt,
+ * which never needs to know which specific Canvas course id a row came
+ * from). A course whose `catalog_code` hasn't yet had a successful Penn
+ * Labs fetch (no `catalog_courses` row exists for it yet) simply
+ * contributes nothing here, the same "missing is not an error" posture
+ * `selectCatalogCoursesForCourseIDs` and `fetchCatalogCourse` both take.
+ */
+export async function selectCatalogEntriesForCourses(
+  client: SupabaseClient,
+  courseIDs: string[],
+): Promise<CatalogEntryWire[]> {
+  if (courseIDs.length === 0) return [];
+
+  const { data: courseRows, error: courseError } = await client
+    .from("courses")
+    .select("course_id, catalog_code")
+    .in("course_id", courseIDs)
+    .not("catalog_code", "is", null);
+  if (courseError) throw courseError;
+
+  const linked = (courseRows ?? []) as Array<{ course_id: string; catalog_code: string }>;
+  if (linked.length === 0) return [];
+
+  const uniqueCodes = [...new Set(linked.map((row) => row.catalog_code))];
+  const byCode = await selectCatalogCoursesByCodes(client, uniqueCodes);
+
+  const entries: CatalogEntryWire[] = [];
+  for (const row of linked) {
+    const catalogRow = byCode.get(row.catalog_code);
+    if (!catalogRow) continue;
+    entries.push(catalogEntryWire(catalogRow, row.course_id));
+  }
+  // Sorted by courseID for the same determinism reason every other
+  // manifest-response list in this codebase is sorted before being
+  // handed back, even though this particular field isn't part of any
+  // cached prompt prefix -- a stable order makes a client-side diff or
+  // test assertion meaningful without also asserting on Postgres's
+  // unspecified row order.
+  return entries.sort((a, b) => a.courseID.localeCompare(b.courseID));
 }
 
 // ---------------------------------------------------------------------

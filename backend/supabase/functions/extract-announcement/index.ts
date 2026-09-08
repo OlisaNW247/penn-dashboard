@@ -1,10 +1,18 @@
 // Server-side replacement for the iOS `ClaudeAnnouncementExtractor`. See
 // PROTOCOL.md's "extract-announcement" section for the wire contract.
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
-import { ANNOUNCEMENT_INSTRUCTIONS, buildAnnouncementUserContent, parseAssignments } from "../_shared/announcement.ts";
+import {
+  ANNOUNCEMENT_INSTRUCTIONS,
+  buildAnnouncementUserContent,
+  courseCodesMatch,
+  parseAssignments,
+} from "../_shared/announcement.ts";
+import { selectCatalogCoursesByCodes, selectCoursesForDiscovery, selectEnrolledCourseIDs } from "../_shared/db.ts";
+import type { CatalogCourseRow } from "../_shared/catalog.ts";
 
 interface ExtractAnnouncementBody {
   announcementID: string;
@@ -82,12 +90,16 @@ Deno.serve(async (req) => {
     const model = Deno.env.get("LHF_MODEL") ?? "z-ai/glm-5.3-flash";
     const fallbackModel = Deno.env.get("LHF_FALLBACK_MODEL") ?? "openai/gpt-5.6-luna";
 
+    const context = await resolveAnnouncementContext(serviceClient, userId, body.courseCode);
+
     const userContent = buildAnnouncementUserContent({
       courseCode: body.courseCode,
       title: body.title,
       message: body.message,
       postedAt: body.postedAt,
       now: body.now,
+      catalog: context.catalog,
+      profile: context.profile,
     });
 
     let text: string;
@@ -133,6 +145,65 @@ Deno.serve(async (req) => {
     return errorResponse("bad_request", "request failed", 400);
   }
 });
+
+interface AnnouncementResolvedContext {
+  catalog?: CatalogCourseRow;
+  profile?: unknown;
+}
+
+/**
+ * Resolves the request's free-text `courseCode` against the caller's own
+ * enrollments -- per PROTOCOL.md, "among the caller's enrollments, the
+ * `courses` row whose `code` equals `courseCode` (case-insensitive,
+ * space/dash normalised)" -- and, when found, loads that course's
+ * registrar catalog row and syllabus-derived profile for
+ * `buildAnnouncementUserContent`'s COURSE STRUCTURE, CLASS MEETINGS and
+ * COURSE PROFILE blocks. Every failure mode here -- no enrollments, no
+ * matching code, no resolved catalog code, no fetched catalog row, no
+ * profile row, or an outright database error -- degrades to "proceed
+ * without that context" rather than failing the whole request: none of
+ * this context is required to extract a task, it only makes a date
+ * resolve better when it's available, the same posture `ask/index.ts`
+ * takes toward its own catalog/profile lookups failing.
+ */
+async function resolveAnnouncementContext(
+  serviceClient: SupabaseClient,
+  userId: string,
+  courseCode: string,
+): Promise<AnnouncementResolvedContext> {
+  try {
+    const enrolledCourseIDs = await selectEnrolledCourseIDs(serviceClient, userId);
+    if (enrolledCourseIDs.size === 0) return {};
+
+    const courseInfos = await selectCoursesForDiscovery(serviceClient, [...enrolledCourseIDs]);
+    const match = courseInfos.find((info) => courseCodesMatch(info.code, courseCode));
+    if (!match) return {};
+
+    let catalog: CatalogCourseRow | undefined;
+    if (match.catalogCode) {
+      const byCode = await selectCatalogCoursesByCodes(serviceClient, [match.catalogCode]);
+      catalog = byCode.get(match.catalogCode);
+    }
+
+    const { data: profileRow, error: profileError } = await serviceClient
+      .from("course_profiles")
+      .select("profile")
+      .eq("course_id", match.courseID)
+      .maybeSingle();
+    if (profileError) {
+      console.error("extract-announcement: course_profiles lookup failed", profileError.message);
+    }
+    const profile = (profileRow as { profile: unknown } | null)?.profile;
+
+    return { catalog, profile };
+  } catch (err) {
+    console.error(
+      "extract-announcement: course context resolution failed",
+      err instanceof Error ? err.message : String(err),
+    );
+    return {};
+  }
+}
 
 function providerFromEnv(): { order?: string[] } | undefined {
   const raw = Deno.env.get("LHF_PROVIDER_ORDER");

@@ -48,7 +48,19 @@ CourseDocumentWire  { id, courseID, course, kind, sourceID, title, url?,
                       text, updatedAt?, fetchedAt, contentHash,
                       dueAt?, pointsPossible? }        -- no `submitted`
 FullySyncedCourse   { courseID, documentIDs: [string] }
+CatalogEntryWire    { courseID, catalogCode, title, credits,
+                      meetings: [{ sectionID, activity, weekday,
+                                   startMinutes, endMinutes }] }
 ```
+
+`CatalogEntryWire.meetings[].weekday` is 1 (Sunday) through 7 (Saturday) --
+the same convention `Foundation`'s `Calendar` uses on the iOS side. Penn
+Labs' own meeting-day letters (`M T W R F S U`) map to it as `2 3 4 5 6 7
+1`. `startMinutes`/`endMinutes` are minutes after local midnight, parsed
+from Penn Labs' decimal `HH.MM` encoding of a clock time (the digits after
+the point are literally minutes, not a fraction of an hour -- `15.3` is
+15:30, not 15:18): hours = floor, minutes = round of the fractional part
+times 100. See `_shared/catalog.ts`'s `CatalogMeeting`/`catalogEntryWire`.
 
 `kind` is one of `home | syllabus | assignment | announcement | module | page | website`.
 `id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client for
@@ -65,7 +77,9 @@ course listed (this is the enrollment proof; see Limitations), then answers
 ```
 { "coursesFresh":   [courseID],           -- server has a full sync newer than FRESH_WINDOW
   "serverManifest": [DocumentStub],       -- every live (gone_at IS NULL) doc for these courses
-  "download":       [CourseDocumentWire] } -- live docs whose (id, contentHash) the client didn't list
+  "download":       [CourseDocumentWire], -- live docs whose (id, contentHash) the client didn't list
+  "catalog":        [CatalogEntryWire] }  -- one entry per manifest course with a resolved,
+                                           -- fetched catalog_courses row (see "Catalog" below)
 ```
 
 Client: applies `download` to local knowledge first, then fetches Canvas
@@ -202,6 +216,17 @@ component when no section states one), then grade modes offered, then
 prerequisites, then a 600-character description. Empty when no enrolled
 course has a resolved, fetched catalog row.
 
+Manifest exchange: alongside `structureBlock`'s prose for `ask`, `sync`'s
+manifest response also carries a `catalog` array (`CatalogEntryWire`, see
+"Wire types" above) for the *app itself* to read -- meeting weekday/times
+the Announcement Watcher resolves a phrase like "before class Thursday"
+against, rather than defaulting to a fixed end-of-day time. One entry per
+manifest course whose `catalog_code` already has a fetched `catalog_courses`
+row (built by `_shared/catalog.ts`'s `catalogEntryWire`, looked up by
+`_shared/db.ts`'s `selectCatalogEntriesForCourses`); a course that hasn't
+resolved a code, or whose code hasn't had a successful Penn Labs fetch yet,
+simply contributes nothing this call rather than an error or a placeholder.
+
 RLS: `catalog_courses` needs no enrollment gate, unlike every other table in
 this schema -- it's public registrar data with no student-specific angle,
 so every `authenticated` caller may `SELECT` every row. There are still no
@@ -321,8 +346,40 @@ component's own value.
 ## `extract-announcement`
 
 Request `{ "announcementID", "courseCode", "title", "message", "postedAt"?, "now": ISO8601 }`.
-Response `{ "assignments": [ { "title", "dueAt"? } ] }`. Replaces the
-user-key `ClaudeAnnouncementExtractor`. Counted against the same daily quota.
+Response `{ "assignments": [ { "title", "dueAt"?, "kind" } ] }`, where `kind`
+is `"submission"` (handed in or completed on a platform -- homework, a
+quiz, a survey, an upload) or `"preparation"` (read/watch/review/bring/
+prepare, nothing to hand in); the model defaults to `"submission"` when it
+omits or misstates `kind`. Replaces the user-key
+`ClaudeAnnouncementExtractor`. Counted against the same daily quota.
+
+The server resolves `courseCode` against the caller's own enrollments (the
+`courses` row whose `code` matches case-insensitively and ignoring
+space/dash differences -- `_shared/announcement.ts`'s `courseCodesMatch`)
+to load that course's registrar catalog row and syllabus-derived profile,
+and folds three optional blocks into the model's user message ahead of the
+announcement body, in this order: `COURSE STRUCTURE` (`structureBlock` for
+the one resolved course), `CLASS MEETINGS` (one line per class meeting,
+e.g. `LEC Tue 10:15–11:44 (section 401)`, sorted by weekday then start
+time -- see `_shared/catalog.ts`'s weekday/time convention under "Wire
+types" above), and `COURSE PROFILE` (a small stable-JSON subset of the
+course's profile -- only `gradingWeights`, `latePolicy`, `components`,
+`keyPolicies`). This is what lets the model resolve "before class
+Thursday" to the section's actual start time (`ANNOUNCEMENT_INSTRUCTIONS`
+tells it to prefer this over guessing 11:59 PM) instead of the
+one-size-fits-all end-of-day default it used before class meeting times
+existed anywhere in this system. Any step of that resolution coming up
+empty -- no enrollment match, no catalog code, no fetched catalog row, no
+profile row -- degrades to omitting that block, never an error; extracting
+a task never depends on this context being available.
+
+`ANNOUNCEMENT_INSTRUCTIONS` also draws an explicit line the on-device
+heuristic used to miss: a sentence in passive voice or the first person
+about the instructor's *own* action ("the slides discussed today have been
+posted", "I uploaded the recording", "we will cover chapter 6 next week")
+is informational and yields no task, even when it names course material by
+title -- this is the fix for the real failure that turned "The slides
+discussed today have been posted." into an overdue assignment.
 
 ## `delete-account`
 

@@ -23,8 +23,8 @@ const PHYS_CATALOG_ROW: CatalogCourseRow = {
   gradeModes: [],
   attributes: [],
   components: [
-    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["a", "b"] },
-    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["c", "d", "e"] },
+    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["a", "b"], meetings: [] },
+    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["c", "d", "e"], meetings: [] },
   ],
   source: "penn-labs",
   fetchedAt: "2026-09-07T00:00:00Z",
