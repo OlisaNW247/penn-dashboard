@@ -3,15 +3,43 @@ import WebKit
 import LowHangingFruitKit
 import os
 
-/// First-run welcome flow. Blocks the dashboard until both core data sources are
-/// connected. The Canvas calendar feed URL is captured automatically from the
-/// logged-in session — the user never pastes it.
+/// First-run welcome flow. Blocks the dashboard until Canvas is connected. The
+/// Canvas calendar feed URL is captured automatically from the logged-in
+/// session — the user never pastes it.
 ///
 /// Styled to match the LHF redesign (greige surface, white cards, serif
 /// wordmark). Logins are presented inline (the view swaps to the WebView).
+///
+/// **This used to be one long scrolling checklist** — a single screen with a
+/// name field and four cards ("Connect Canvas", "Connect Gradescope", "Choose
+/// your classes", a per-course reminder walk) that each opened a full-screen
+/// pane and, on completion or cancel, dropped the student straight back on
+/// the same checklist. That hub-and-spoke shape read as a chore list rather
+/// than a walk: everything was visible at once, nothing signaled how far
+/// along you were, and "Connect Gradescope" sat at the same visual weight as
+/// the one connection that actually matters, so an optional step could look
+/// exactly as urgent as the required one. It is now a straight line — one
+/// step, one screen, one ask — with a back chevron and a five-dot progress
+/// indicator instead of a checklist a student re-reads after every pane. If
+/// a future change needs the old "see everything, do it in any order" shape
+/// back, that is a deliberate reversion, not a bug fix — write down why,
+/// the way this comment does.
 struct OnboardingView: View {
     @EnvironmentObject var state: AppState
-    @State private var phase: Phase = .steps
+    /// Reminders (step 5) reads and writes the exact same global lead-time/
+    /// digest settings Settings → Reminders and Profile → Notifications do,
+    /// which means it has to be the *same instance* those screens will later
+    /// see — `NotificationScheduler`'s published properties are loaded from
+    /// `UserDefaults.lhf` once, at `init`, and never re-read afterward,
+    /// so a scheduler this view constructed for itself would go stale the
+    /// moment `RootCore` handed `ContentView` its own separate instance at
+    /// the onboarding → dashboard handoff, and Profile would show whatever
+    /// was on disk *before* this step ran rather than what the student just
+    /// chose. So this is `@EnvironmentObject`, supplied by the same
+    /// `RootCore` that owns the one scheduler for the rest of the app's
+    /// lifetime (see `RootView.swift`), not a locally-owned `@StateObject`.
+    @EnvironmentObject var scheduler: NotificationScheduler
+    @State private var phase: Phase = .name
     @State private var name: String = ""
     @State private var isResettingLoginData = false
     @State private var showResetConfirmation = false
@@ -20,11 +48,16 @@ struct OnboardingView: View {
     /// item 3b) — reachable without ever touching the in-app login WebView.
     @State private var showPasteFeedLink = false
 
+    /// One case per screen in the linear walk, plus the per-course walk that
+    /// can follow it. Order here is the order a student walks them in; there
+    /// is no case for "the hub" any more; see this type's doc comment for
+    /// what used to live there.
     private enum Phase {
-        case steps
+        case name
         case canvasLogin
         case gradescopeLogin
         case classPicker
+        case reminders
         case courseSetup
     }
 
@@ -50,74 +83,83 @@ struct OnboardingView: View {
     }
 
     var body: some View {
+        stepContent
+            // The walk has to declare that it fills. `RootCore` hosts this
+            // inside a `ZStack` — it shares that stack with the splash — and a
+            // ZStack centres any child that reports back a smaller size than
+            // the proposal it was handed. Several steps embed login panes whose
+            // content is intrinsically sized rather than expanding, so without
+            // this the entire step, chrome included, floats vertically centred
+            // while its `.ignoresSafeArea()` background still paints
+            // full-bleed. That combination is deceptive: the screen looks like
+            // a correctly coloured full-screen view with a third of its top
+            // mysteriously empty and the back chevron and progress dots
+            // stranded partway down, rather than like a view that is simply
+            // too short. Two earlier fixes went hunting inside the panes for
+            // the missing height; the height was never missing, the step just
+            // never claimed it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
         switch phase {
-        case .steps:
-            stepList
+        case .name:
+            nameStep
         case .canvasLogin:
-            CanvasLoginPane(
-                onConnected: { phase = .steps },
-                onCancel: { phase = .steps }
-            )
-            .environmentObject(state)
+            canvasStep
         case .gradescopeLogin:
-            GradescopeLoginPane(
-                onConnected: { phase = .steps },
-                onCancel: { phase = .steps }
-            )
-            .environmentObject(state)
+            gradescopeStep
         case .classPicker:
-            ClassPickerPane(onDone: { phase = .steps })
-                .environmentObject(state)
+            classesStep
+        case .reminders:
+            remindersStep
         case .courseSetup:
             // Finishing *or* skipping the walk goes straight to the dashboard
-            // rather than back to this checklist. The walk is the last thing
+            // rather than back to an earlier step. The walk is the last thing
             // between the student and the app, and depositing someone who just
-            // tapped "Skip setup" back on the screen they were trying to leave
+            // tapped "Skip setup" back on a screen they were trying to leave
             // is how a skip stops reading as a skip.
             OnboardingCourseSetupPane(onFinish: { state.completeOnboarding() })
                 .environmentObject(state)
         }
     }
 
-    /// Canvas is the only required connection; Gradescope and the class picker
-    /// are optional refinements.
-    private var canContinue: Bool {
-        state.isCanvasConnected
+    /// Exactly the branch the old checklist's single "Go to dashboard" button
+    /// used at the very end — preserved verbatim (same two conditions, same
+    /// order) so the destination after this walk never diverges from what
+    /// `shouldOfferCourseSetup`'s own gating expects. Called from both of
+    /// Reminders' forward actions (`remindersFooter`), since turning
+    /// notifications on or skipping them is orthogonal to whether the
+    /// per-course walk comes next.
+    private func finishOnboarding() {
+        if shouldOfferCourseSetup {
+            phase = .courseSetup
+        } else {
+            state.completeOnboarding()
+        }
     }
 
-    private var stepList: some View {
+    // MARK: - Step 1: name
+
+    /// The mission header ("LHF" / "never miss another assignment") and the
+    /// reviewer's door (`previewCard`) both live only here — see that
+    /// property's doc comment for why "just exploring?" has to be reachable
+    /// from the very first screen rather than five steps in.
+    private var nameStep: some View {
         ZStack {
             Color.v2Bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer(minLength: 24)
+                Spacer(minLength: 56)
 
                 header
                     .padding(.bottom, 28)
 
-                VStack(spacing: 12) {
-                    nameCard
+                nameCard
 
-                    stepCard(
-                        index: 1,
-                        title: "Connect Canvas",
-                        subtitle: "Log in once. We'll pull in your assignments and deadlines automatically.",
-                        connected: state.isCanvasConnected,
-                        working: state.isCanvasDiscoveryLoading || state.isLoading
-                    ) { phase = .canvasLogin }
-
-                    stepCard(
-                        index: 2,
-                        title: "Connect Gradescope",
-                        subtitle: "Optional. Log in once to fold your Gradescope assignments in too.",
-                        connected: state.isGradescopeConnected,
-                        working: state.isGradescopeLoading
-                    ) { phase = .gradescopeLogin }
-
-                    classPickerCard
-
-                    courseSetupCard
-                }
+                previewCard
+                    .padding(.top, 18)
 
                 if let error = state.error {
                     Text(error)
@@ -128,43 +170,25 @@ struct OnboardingView: View {
                         .padding(.top, 16)
                 }
 
-                goToDashboardButton
-                    .padding(.top, 20)
-
-                if shouldOfferCourseSetup {
-                    skipCourseSetupLink
-                        .padding(.top, 12)
-                } else {
-                    Text("connect canvas to build your dashboard.")
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2RingSub)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 12)
-                }
-
-                // "Preview with sample data" leads the intro's first pane
-                // (`IntroView.previewLink`) — but the intro is gated on
-                // `hasSeenIntro`, and Skip sets it. A reviewer who taps Skip
-                // (the most common thing to do with an intro carousel) lands
-                // here permanently, and `restartOnboarding()` does not clear
-                // `hasSeenIntro`, so there is no way back to that pane short of
-                // reinstalling. Without a door on *this* screen the app is
-                // unevaluatable behind Penn SSO.
-                //
-                // So it lives in both places. Here it is a card rather than the
-                // 11pt footnote it used to be, and it sits below the primary
-                // action so it never competes with connecting a real account.
-                previewCard
-                    .padding(.top, 18)
-
-                troubleConnectingLink
-                    .padding(.top, 10)
-
-                pasteFeedLinkLink
-                    .padding(.top, 6)
-
                 Spacer(minLength: 24)
+
+                VStack(spacing: 14) {
+                    progressDots(current: 1)
+
+                    Button {
+                        lhfHapticLight()
+                        phase = .canvasLogin
+                    } label: {
+                        Text("continue")
+                            .font(.lhfSans(15, weight: .semibold))
+                            .foregroundStyle(Color.v2ToggleActiveTx)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(Color.v2Ink))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.bottom, 24)
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: 480)
@@ -178,8 +202,136 @@ struct OnboardingView: View {
             }
             #endif
         }
-        .sheet(isPresented: $showPasteFeedLink) {
-            PasteFeedLinkSheet(onSaved: {}).environmentObject(state)
+    }
+
+    private var nameCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("your name")
+                .font(.lhfSans(9, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(Color.v2CourseCode)
+            TextField("first name", text: $name)
+                .textFieldStyle(.plain)
+                .font(.lhfSans(15))
+                .foregroundStyle(Color.v2Ink)
+                .onChange(of: name) { _, newValue in state.updateName(newValue) }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+
+    private var header: some View {
+        VStack(spacing: 6) {
+            Text("LHF")
+                .font(.lhfSerif(44))
+                .foregroundStyle(Color.v2Ink)
+            Text("welcome to low hanging fruit")
+                .font(.lhfSans(16, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+            Text("never miss another assignment")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The same door as `IntroView.previewLink`, on the first screen of this
+    /// walk — the screen a reviewer actually lands on after skipping the
+    /// intro, and now the only screen in this file that doesn't require
+    /// walking forward through anything to reach.
+    private var previewCard: some View {
+        Button {
+            lhfHapticLight()
+            state.enterPreviewMode()
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("just exploring?")
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2CourseCode)
+                Text("preview with sample data")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .underline()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
+    }
+
+    // MARK: - Step 2: Connect Canvas (required, not skippable)
+
+    /// Canvas is the only required step. If it's already connected — the
+    /// student stepped forward once and then used the back chevron on a
+    /// later step to glance backward — this shows a plain confirmation
+    /// instead of re-mounting `CanvasLoginPane`. Without that check, going
+    /// back "just to look" would re-run the pane's own pre-login cookie
+    /// purge and load a fresh WebView for a login that already succeeded:
+    /// harmless, but a needless network round trip and a confusing
+    /// "log in again?" prompt for a login that isn't being redone.
+    @ViewBuilder
+    private var canvasStep: some View {
+        if state.isCanvasConnected {
+            connectedStep(
+                step: 2,
+                message: "canvas is connected.",
+                onBack: { phase = .name },
+                onContinue: { phase = .gradescopeLogin }
+            )
+        } else {
+            // Chrome is a `.safeAreaInset(edge: .top)` over the pane, not a
+            // `VStack` sibling beside it. `CanvasLoginPane` was written as the
+            // root view of this phase: it lays itself out top-to-bottom with
+            // its own `Spacer()`s and its own bottom action bar, sized against
+            // the *whole* screen. Stack `topBar`/`canvasEscapeHatches` above it
+            // as ordinary siblings and the pane no longer gets the whole
+            // screen — it gets whatever's left under two fixed-height views in
+            // the same `VStack`, which is a fraction of the height its
+            // internal `Spacer()`s were written against. On device that
+            // measured out to the WebView getting squeezed into roughly the
+            // bottom quarter of the screen while the top ~55% sat empty,
+            // because the top bar and escape hatches, having no `Spacer` of
+            // their own, hugged the pane instead of pinning to the actual top
+            // of the screen. `safeAreaInset` keeps the pane as the one full-
+            // size view — it lays out exactly as it did as a standalone
+            // phase — and reserves screen space at the top for the chrome
+            // without the chrome and the pane ever competing for height in
+            // the same stack.
+            CanvasLoginPane(
+                onConnected: { phase = .gradescopeLogin },
+                onCancel: { phase = .name }
+            )
+            .environmentObject(state)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    topBar(onBack: { phase = .name }, dots: 2)
+                    canvasEscapeHatches
+                }
+                .background(Color.v2Bg)
+            }
+            .background(Color.v2Bg.ignoresSafeArea())
+            .sheet(isPresented: $showPasteFeedLink) {
+                // Advances the walk on a successful save, unlike the old
+                // hub's no-op `onSaved` — the hub could afford to do nothing
+                // because the checklist stayed on screen and the "Connect
+                // Canvas" card just flipped to "connected" underneath the
+                // closed sheet. There is no checklist to fall back on now:
+                // without this, a student who pastes a working link would
+                // close the sheet and land right back on the Canvas
+                // WebView/tips card with no forward control in sight, since
+                // `CanvasLoginPane.onConnected` only ever fires from an
+                // actual WebView login.
+                PasteFeedLinkSheet(onSaved: { phase = .gradescopeLogin })
+                    .environmentObject(state)
+            }
         }
     }
 
@@ -254,112 +406,273 @@ struct OnboardingView: View {
         }
     }
 
-    /// The same door as `IntroView.previewLink`, on the screen a reviewer
-    /// actually lands on after skipping the intro.
-    private var previewCard: some View {
-        Button {
-            lhfHapticLight()
-            state.enterPreviewMode()
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("just exploring?")
-                    .font(.lhfSans(13))
-                    .foregroundStyle(Color.v2CourseCode)
-                Text("preview with sample data")
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .underline()
+    /// Both Canvas escape hatches, stacked above the WebView so neither
+    /// competes with the pane's own bottom action bar for the literal bottom
+    /// of the screen.
+    private var canvasEscapeHatches: some View {
+        VStack(spacing: 8) {
+            troubleConnectingLink
+            pasteFeedLinkLink
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Step 3: Connect Gradescope (optional, skippable)
+
+    @ViewBuilder
+    private var gradescopeStep: some View {
+        if state.isGradescopeConnected {
+            connectedStep(
+                step: 3,
+                message: "gradescope is connected.",
+                onBack: { phase = .canvasLogin },
+                onContinue: { phase = .classPicker }
+            )
+        } else {
+            // Same `safeAreaInset` treatment as `.canvasLogin` above, and for
+            // the identical reason: `GradescopeLoginPane` is its own root
+            // view with its own `Spacer()`s and bottom action bar, so a
+            // `VStack` sibling on top of it collapses the WebView into a thin
+            // band and leaves the top bar floating over empty background
+            // instead of pinned to the top of the screen. See the comment at
+            // `.canvasLogin` for the on-device symptom.
+            GradescopeLoginPane(
+                onConnected: { phase = .classPicker },
+                onCancel: { phase = .canvasLogin }
+            )
+            .environmentObject(state)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topBar(
+                    onBack: { phase = .canvasLogin },
+                    skip: (label: "skip for now", action: { phase = .classPicker }),
+                    dots: 3
+                )
+                .background(Color.v2Bg)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+            .background(Color.v2Bg.ignoresSafeArea())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("preview the app with sample data")
-        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
-    private var nameCard: some View {
+    // MARK: - Step 4: choose classes (optional, skippable)
+
+    private var classesStep: some View {
+        // Same `safeAreaInset` treatment as `.canvasLogin`/`.gradescopeLogin`
+        // above: `ClassPickerPane` is its own root view (header, scrollable
+        // list, "done" bar), so stacking the top bar above it as a `VStack`
+        // sibling would squeeze its scroll area the same way it squeezed the
+        // Canvas WebView.
+        ClassPickerPane(onDone: { phase = .reminders })
+            .environmentObject(state)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topBar(
+                    onBack: { phase = .gradescopeLogin },
+                    skip: (label: "skip for now", action: { phase = .reminders }),
+                    dots: 4
+                )
+                .background(Color.v2Bg)
+            }
+            .background(Color.v2Bg.ignoresSafeArea())
+    }
+
+    // MARK: - Step 5: set reminders (optional content, always reachable forward)
+
+    /// The main reason this step exists at all: asking for notification
+    /// permission here, after the student has already seen four screens'
+    /// worth of "here's what this app is going to do for you," converts far
+    /// better than the cold, first-launch ask most apps lead with — by the
+    /// time this screen shows up there's something concrete to say yes to.
+    ///
+    /// Writes into `scheduler` exactly the way Settings → Reminders
+    /// (`SettingsPage.remindersSection`) and Profile → Notifications
+    /// (`ProfileNotificationsSection.leadTimeControls`) already do — the
+    /// global `leadOffsets` set and the `digestEnabled`/`digestTime` pair —
+    /// so nothing set here can ever disagree with what those two screens
+    /// show later. There is no separate "onboarding reminder preference";
+    /// there is only the one the rest of the app already reads.
+    ///
+    /// `LeadOffset` has no case for "the morning of," which briefs for this
+    /// screen sometimes reach for as a third example alongside "the day
+    /// before" and "two days before": every lead-time reminder fires at a
+    /// fixed offset *before the due timestamp itself*
+    /// (`NotificationScheduler.plannedRequests`), so it can land at any hour
+    /// depending on when the assignment is actually due — there is no
+    /// "always in the morning" variant to offer honestly. The one thing in
+    /// this app that *does* have a fixed clock time is the daily digest
+    /// (`digestSection` below), which is the real mechanism behind a
+    /// "morning of" reminder — a single daily notification arriving at
+    /// whatever hour the student picks. Rather than mislabel `.h1` as
+    /// "morning of" to hit three example strings, this screen offers the
+    /// real five `LeadOffset` cases as they're spelled everywhere else in
+    /// the app, plus the digest's own time picker for the part of the ask
+    /// that's genuinely about a time of day.
+    private var remindersStep: some View {
+        VStack(spacing: 0) {
+            topBar(onBack: { phase = .classPicker })
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    remindersHeadline
+                    leadTimeSection
+                    digestSection
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+            }
+
+            remindersFooter
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.v2Bg.ignoresSafeArea())
+    }
+
+    private var remindersHeadline: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("your name")
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
-            TextField("first name", text: $name)
-                .textFieldStyle(.plain)
-                .font(.lhfSans(15))
+            Text("One heads-up before it\u{2019}s due.")
+                .font(.lhfSerif(28))
                 .foregroundStyle(Color.v2Ink)
-                .onChange(of: name) { _, newValue in state.updateName(newValue) }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-    }
-
-    private var header: some View {
-        VStack(spacing: 6) {
-            Text("LHF")
-                .font(.lhfSerif(44))
-                .foregroundStyle(Color.v2Ink)
-            Text("welcome to low hanging fruit")
-                .font(.lhfSans(16, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-            Text("never miss another assignment")
-                .font(.lhfSans(12))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("We\u{2019}ll remind you before things are due. Turn on notifications so it can actually reach you, then pick when you want the first nudge.")
+                .font(.lhfSans(14))
                 .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// The primary action, which has two forms.
-    ///
-    /// Once Canvas is connected and there are classes to configure, it leads
-    /// into the per-course walk — that is what makes the walk part of
-    /// onboarding rather than a setting nobody finds, which is precisely the
-    /// state the requirement scanner has been in since v3 (reachable only from
-    /// Settings → Tasks). Afterwards, and for anyone reconnecting from
-    /// Settings, it goes straight to the dashboard as it always did.
-    ///
-    /// The escape hatch below it (`skipCourseSetupLink`) is not optional
-    /// decoration: routing the one obvious button into a multi-screen wizard
-    /// without a visible way past it is exactly the abandonment trap, so the
-    /// two ship together and neither is ever the only thing on screen.
-    private var goToDashboardButton: some View {
-        Button {
-            lhfHapticLight()
-            if shouldOfferCourseSetup {
-                phase = .courseSetup
-            } else {
-                state.completeOnboarding()
+    private var leadTimeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("remind me")
+                .font(.lhfSans(9, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(Color.v2CourseCode)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                    leadTimePill(offset)
+                }
             }
-        } label: {
-            Text(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
-                .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(canContinue ? Color.v2ToggleActiveTx : Color.v2DateText.opacity(0.55))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    Capsule().fill(canContinue ? Color.v2Ink : Color.v2Ink.opacity(0.08))
-                )
+
+            Text("every class follows these times until you give it its own in profile.")
+                .font(.lhfSans(11))
+                .foregroundStyle(Color.v2CourseCode)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
-        .disabled(!canContinue)
-        .accessibilityLabel(shouldOfferCourseSetup ? "Set up your classes" : "Go to dashboard")
-        .accessibilityHint(canContinue
-                           ? (shouldOfferCourseSetup ? "Choose how each class notifies you. You can skip this." : "")
-                           : "Connect Canvas first")
     }
 
-    /// The one-tap way past the walk, on the same screen as the button that
-    /// leads into it.
+    private func leadTimePill(_ offset: NotificationScheduler.LeadOffset) -> some View {
+        let isOn = scheduler.leadOffsets.contains(offset)
+        return Button {
+            lhfHapticLight()
+            scheduler.setOffset(offset, on: !isOn)
+        } label: {
+            Text(offset.label)
+                .font(.lhfSans(12, weight: .medium))
+                .foregroundStyle(isOn ? Color.v2ToggleActiveTx : Color.v2Ink)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(Capsule().fill(isOn ? Color.v2Ink : Color.v2Ink.opacity(0.06)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? [.isSelected] : [])
+    }
+
+    private var digestSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("and when")
+                .font(.lhfSans(9, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(Color.v2CourseCode)
+
+            Toggle("also send a daily heads-up", isOn: Binding(
+                get: { scheduler.digestEnabled },
+                set: { scheduler.setDigestEnabled($0) }
+            ))
+            .font(.lhfSans(14, weight: .medium))
+            .tint(Color.v2SpineGreen)
+
+            if scheduler.digestEnabled {
+                DatePicker("what time", selection: digestTimeBinding, displayedComponents: .hourAndMinute)
+                    .font(.lhfSans(13))
+            }
+        }
+    }
+
+    /// Same shape as `SettingsPage.digestTimeBinding` — a `DateComponents`
+    /// can't back a `DatePicker` directly, so this round-trips through
+    /// today's date purely to get a `Date` the picker can bind to; only the
+    /// hour/minute ever survive back into `scheduler`.
+    private var digestTimeBinding: Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(from: scheduler.digestTime) ?? Date() },
+            set: { scheduler.setDigestTime(Calendar.current.dateComponents([.hour, .minute], from: $0)) }
+        )
+    }
+
+    /// Three ways off this screen, and each means something different:
+    /// "turn on reminders" requests authorization (a no-op if already
+    /// granted or denied — see below) and proceeds; "skip reminders for now"
+    /// proceeds without ever requesting it, leaving `scheduler.isEnabled`
+    /// however it already was; and — only when the per-course walk is about
+    /// to open — `skipCourseSetupLink` bypasses that walk too. The first two
+    /// converge on the exact same `finishOnboarding()`, because whether
+    /// notifications got turned on has nothing to do with whether the walk
+    /// comes next.
+    ///
+    /// Denial is never treated as an error here. `requestAuthorization`
+    /// (inside `scheduler.setEnabled`) resolves immediately either way —
+    /// granted, denied, or already-decided — and this screen proceeds on
+    /// every outcome. Blocking onboarding on a permission the student is
+    /// entitled to refuse would be the actual bug.
+    private var remindersFooter: some View {
+        VStack(spacing: 10) {
+            progressDots(current: 5)
+
+            Button {
+                lhfHapticLight()
+                Task {
+                    await scheduler.setEnabled(true)
+                    finishOnboarding()
+                }
+            } label: {
+                Text("turn on reminders")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(Color.v2Ink))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                finishOnboarding()
+            } label: {
+                Text("skip reminders for now")
+                    .font(.lhfSans(12, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+
+            if shouldOfferCourseSetup {
+                skipCourseSetupLink
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 24)
+    }
+
+    /// The one-tap way past the per-course walk, on the same screen as the
+    /// button ("turn on reminders") that can lead into it — moved here from
+    /// the old hub, where it sat under the same button for the same reason.
+    /// See `finishOnboarding()`: the walk it's skipping is entered from
+    /// there, never from this link directly.
     ///
     /// Marks the step completed on the way out, so a student who declines it
     /// here is not asked again the next time a Settings reconnect drops them
-    /// back on this checklist. Declining costs them nothing — every class keeps
+    /// back on this walk. Declining costs them nothing — every class keeps
     /// `CoursePreferences`' defaults, which is reminders on and lead times
     /// following the global setting.
     private var skipCourseSetupLink: some View {
@@ -367,7 +680,7 @@ struct OnboardingView: View {
             OnboardingCourseSetup.markCompleted()
             state.completeOnboarding()
         } label: {
-            Text("skip for now. go to dashboard")
+            Text("skip class setup too. go to dashboard")
                 .font(.lhfSans(12, weight: .medium))
                 .foregroundStyle(Color.v2DateText)
                 .underline()
@@ -377,166 +690,137 @@ struct OnboardingView: View {
         .accessibilityHint("every class keeps its default reminders")
     }
 
-    private func stepCard(
-        index: Int,
-        title: String,
-        subtitle: String,
-        connected: Bool,
-        working: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        HStack(alignment: .center, spacing: 13) {
-            ZStack {
-                Circle()
-                    .fill(connected ? Color.v2SpineGreen : Color.v2Ink.opacity(0.08))
-                    .frame(width: 28, height: 28)
-                if connected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                } else {
-                    Text("\(index)")
-                        .font(.lhfSans(13, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
+    // MARK: - Shared chrome
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+    /// Back chevron, an optional "skip" for the steps that allow one, and —
+    /// only for the three steps whose screen is a full-bleed pane this file
+    /// must not edit (`CanvasLoginPane`, `GradescopeLoginPane`,
+    /// `ClassPickerPane` each already own their own bottom action bar) — the
+    /// progress dots too, since there's no bottom left on those screens to
+    /// put dots in. Steps 1 and 5, the two screens this file builds from
+    /// scratch, put the dots in their own footer next to the primary button
+    /// instead, matching `IntroView`'s footer — see `nameStep`/`remindersFooter`.
+    /// Passing `nil` for `dots` (Reminders' case, which has its own footer
+    /// dots) omits them here rather than showing two progress indicators on
+    /// one screen.
+    private func topBar(
+        onBack: (() -> Void)?,
+        skip: (label: String, action: () -> Void)? = nil,
+        dots step: Int? = nil
+    ) -> some View {
+        HStack {
+            backButton(onBack)
+                .frame(width: 44, height: 32, alignment: .leading)
+            Spacer(minLength: 8)
+            if let step {
+                progressDots(current: step)
+            }
+            Spacer(minLength: 8)
+            skipButton(skip)
+                .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    @ViewBuilder
+    private func backButton(_ onBack: (() -> Void)?) -> some View {
+        if let onBack {
+            Button(action: onBack) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("back")
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
+    private func skipButton(_ skip: (label: String, action: () -> Void)?) -> some View {
+        if let skip {
+            Button(action: skip.action) {
+                Text(skip.label)
+                    .font(.lhfSans(13, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(skip.label)
+        } else {
+            // Sized here, at the source. `Color.clear` has no intrinsic size
+            // and expands to fill whatever it is offered, and the caller's
+            // `.frame(minWidth:minHeight:)` sets a floor, not a ceiling — so
+            // an unsized placeholder stretched to the full height on offer,
+            // inflating the whole `topBar` HStack. On device that centred the
+            // back chevron a third of the way down the screen and pushed
+            // everything below the top bar down with it, which read as a
+            // broken, half-empty step rather than as an oversized spacer.
+            // Three separate fixes went looking for that missing height in
+            // the login panes before the cause turned out to be an invisible
+            // placeholder in the chrome.
+            Color.clear.frame(width: 44, height: 32)
+        }
+    }
+
+    /// Five dots, filled in green up to the current step — the same
+    /// vocabulary `IntroView.dots` uses, just re-tinted: `IntroView` marks
+    /// its current page in ink, this walk marks it in `v2SpineGreen`, the
+    /// app's one accent color, to read as progress made rather than merely
+    /// "which page."
+    private func progressDots(current: Int) -> some View {
+        HStack(spacing: 7) {
+            ForEach(1...5, id: \.self) { index in
+                Circle()
+                    .fill(index == current ? Color.v2SpineGreen : Color.v2Ink.opacity(0.15))
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Shown instead of the live login pane when a required/optional
+    /// connection step is revisited after it already succeeded earlier in
+    /// this same walk (via the back chevron on a later step) — see
+    /// `canvasStep`'s doc comment for why re-mounting the pane itself would
+    /// be the wrong fix.
+    private func connectedStep(
+        step: Int,
+        message: String,
+        onBack: @escaping () -> Void,
+        onContinue: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 0) {
+            topBar(onBack: onBack, dots: step)
+
+            Spacer()
+
+            VStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundStyle(Color.v2SpineGreen)
+                Text(message)
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
-                Text(subtitle)
-                    .font(.lhfSans(12))
-                    .foregroundStyle(Color.v2CourseCode)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 10)
+            Spacer()
 
-            if working {
-                ProgressView().controlSize(.small)
-            } else {
-                Button(action: action) {
-                    Text(connected ? "Reconnect" : "Connect")
-                        .font(.lhfSans(12, weight: .semibold))
-                        .foregroundStyle(connected ? Color.v2DateText : Color.v2ToggleActiveTx)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule().fill(connected ? Color.v2Ink.opacity(0.07) : Color.v2Ink)
-                        )
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
+            Button(action: onContinue) {
+                Text("continue")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(Color.v2Ink))
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .padding(16)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-    }
-
-    /// Optional third step: pick which classes count. Enabled once Canvas is
-    /// connected so there are courses to list; everything is on by default.
-    private var classPickerCard: some View {
-        let courses = state.allCourseCodes()
-        let enabled = !courses.isEmpty
-        let onCount = courses.filter { state.isCourseSelected($0) }.count
-
-        return Button {
-            if enabled { phase = .classPicker }
-        } label: {
-            HStack(alignment: .center, spacing: 13) {
-                ZStack {
-                    Circle().fill(Color.v2Ink.opacity(0.08)).frame(width: 28, height: 28)
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("choose your classes")
-                        .font(.lhfSans(15, weight: .semibold))
-                        .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
-                    Text(enabled
-                         ? "All on by default. Turn off any you don't want reminders from."
-                         : "Connect Canvas first to see your classes.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.v2CourseCode)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 10)
-
-                if enabled {
-                    Text("\(onCount)/\(courses.count) on")
-                        .font(.lhfSans(12, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
-            .padding(16)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-    }
-
-    /// Optional fourth step: how each class should reach you.
-    ///
-    /// This card exists alongside the primary button that leads to the same
-    /// place, and the duplication is on purpose — it is the only route back in
-    /// for two people the primary button has stopped offering it to. One is the
-    /// student who skipped the walk and changed their mind before leaving this
-    /// screen. The other matters more: a student who connects Canvas in week
-    /// one, when no class has posted anything yet, has an empty class list, so
-    /// `shouldOfferCourseSetup` is false and they go straight to the dashboard.
-    /// A fortnight later their classes exist, and a Settings reconnect is the
-    /// only thing that brings them back here — at which point the flag says the
-    /// step is done and the button says "Go to dashboard". Without this card
-    /// the walk would be unreachable for exactly the students the app is
-    /// hardest on.
-    private var courseSetupCard: some View {
-        let courses = state.selectedCourseCodes()
-        let enabled = !courses.isEmpty
-
-        return Button {
-            if enabled { phase = .courseSetup }
-        } label: {
-            HStack(alignment: .center, spacing: 13) {
-                ZStack {
-                    Circle().fill(Color.v2Ink.opacity(0.08)).frame(width: 28, height: 28)
-                    Image(systemName: "bell.badge")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("reminders, class by class")
-                        .font(.lhfSans(15, weight: .semibold))
-                        .foregroundStyle(enabled ? Color.v2Ink : Color.v2Ink.opacity(0.4))
-                    Text(enabled
-                         ? "We'll look for weekly readings and check-ins in each syllabus, and you decide what to keep."
-                         : "Once your classes show up, set how each one reminds you.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.v2CourseCode)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 10)
-
-                if enabled {
-                    Text("\(courses.count)")
-                        .font(.lhfSans(12, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
-            .padding(16)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel("set up reminders class by class")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.v2Bg.ignoresSafeArea())
     }
 }
 
@@ -775,7 +1059,16 @@ private struct CanvasLoginPane: View {
     var body: some View {
         VStack(spacing: 0) {
             if showsSignInTips {
+                // Told to fill, not left at its intrinsic height. Without
+                // this the whole pane collapses to card + divider + action
+                // bar, SwiftUI centres that stack vertically, and the result
+                // on device is a tips card floating in the middle of an empty
+                // screen with the step's back chevron and progress dots
+                // stranded a third of the way down beside it. Layout only —
+                // nothing here touches the login, cookie or navigation
+                // handling.
                 CanvasSignInTipsCard(onContinue: { showsSignInTips = false })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isPurging {
                 Spacer()
                 ProgressView("Preparing a clean sign-in…")
@@ -809,6 +1102,12 @@ private struct CanvasLoginPane: View {
                         navigationObserver: navObserver
                     )
                 }
+                // `LoginWebView` is a UIViewRepresentable and reports no
+                // intrinsic size, so in a VStack that isn't told to fill it
+                // is handed almost no height and renders as a thin band with
+                // empty background above it. This is what gives the WebView
+                // the whole area between the step chrome and the action bar.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             Divider().overlay(Color.v2Divider)
@@ -954,6 +1253,10 @@ private struct GradescopeLoginPane: View {
                         navigationObserver: navObserver
                     )
                 }
+                // Same reason as the Canvas pane: `LoginWebView` has no
+                // intrinsic size, so without an explicit fill it collapses to
+                // a thin band under a screenful of empty background.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             Divider().overlay(Color.v2Divider)
@@ -1192,6 +1495,7 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
 #Preview {
     OnboardingView()
         .environmentObject(AppState())
+        .environmentObject(NotificationScheduler())
         .frame(width: 393, height: 852)
 }
 #endif

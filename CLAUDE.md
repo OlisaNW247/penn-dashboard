@@ -200,6 +200,25 @@ the thing that locks a student out of their own ledger.
   frame. This is invisible in code review and in Xcode previews, where the
   surrounding layout happens to be bounded anyway, and only showed up on a
   device screenshot.
+- **An unsized `Color.clear` expands to fill, and `minHeight:` is a floor, not a
+  ceiling.** `OnboardingView.skipButton` returned a bare `Color.clear` for steps
+  with no skip action, and `topBar` wrapped it in
+  `.frame(minWidth: 44, minHeight: 32)`. `Color.clear` has no intrinsic size, so
+  it took every point of height on offer, inflated the top bar, centred the back
+  chevron a third of the way down the screen and pushed everything below it with
+  it. The symptom pointed elsewhere entirely — the Canvas WebView rendered as a
+  thin band under a screenful of empty background, which reads as "the login
+  pane isn't filling" — so three separate fixes went looking for missing height
+  inside the panes (`.frame(maxHeight: .infinity)` on the pane, a
+  `safeAreaInset` restructure of the chrome, a fill on `OnboardingView.body`)
+  and none of them touched the cause. The height was never missing; an invisible
+  view was eating it. Size the placeholder at the source
+  (`Color.clear.frame(width: 44, height: 32)`). Two tells worth remembering:
+  `backButton` was never affected because it uses fixed `width:height:`, so the
+  asymmetry between the two ends of one bar was the clue; and temporary
+  `.border(Color.red)` on three views found this in one build cycle after three
+  cycles of reasoning had not. When a layout bug survives two fixes, stop
+  reasoning and draw the frames.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 
 ## Conventions

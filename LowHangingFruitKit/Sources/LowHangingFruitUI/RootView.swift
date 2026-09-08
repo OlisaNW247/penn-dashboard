@@ -108,16 +108,28 @@ struct RootCore: View {
     private var mainContent: some View {
         if state.needsOnboarding {
             // The mission panes come first on a true first run, then the
-            // connect checklist. Nested rather than a sibling `else if` on
-            // purpose: the intro is only ever reachable *inside* onboarding, so
-            // a Settings reconnect (which clears `hasCompletedOnboarding` but
-            // not `hasSeenIntro`) lands on the checklist, not the pitch.
+            // linear connect walk (`OnboardingView`). Nested rather than a
+            // sibling `else if` on purpose: the intro is only ever reachable
+            // *inside* onboarding, so a Settings reconnect (which clears
+            // `hasCompletedOnboarding` but not `hasSeenIntro`) lands on the
+            // walk, not the pitch.
             if state.needsIntro {
                 IntroView()
                     .environmentObject(state)
             } else {
+                // `.environmentObject(scheduler)` matters here, not just in
+                // the dashboard branch below: step 5 of `OnboardingView`
+                // ("set reminders") reads and writes this exact instance, and
+                // it has to be the same one `ContentView` gets a few lines
+                // down, since `NotificationScheduler`'s published properties
+                // are loaded from `UserDefaults.lhf` once at construction and
+                // never re-read — a second, locally-owned scheduler would let
+                // onboarding's choices sit in `UserDefaults` while the
+                // dashboard kept showing whatever was on disk before
+                // onboarding ran.
                 OnboardingView()
                     .environmentObject(state)
+                    .environmentObject(scheduler)
             }
         } else {
             ContentView()
