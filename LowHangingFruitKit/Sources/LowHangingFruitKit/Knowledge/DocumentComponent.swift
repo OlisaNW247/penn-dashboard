@@ -129,7 +129,7 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
         documents.contains { document in
             switch document.kind {
             case .announcement, .assignment: return false
-            case .syllabus, .home, .page, .module: break
+            case .syllabus, .home, .page, .module, .website: break
             }
             switch classify(title: document.title, text: document.text) {
             case .lab, .recitation: return true

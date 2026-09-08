@@ -153,4 +153,42 @@ struct SyncPlannerTests {
         #expect(batches.count == 1)
         #expect(batches[0].fullySyncedCourses.count == 1)
     }
+
+    // MARK: - uploads(links:) / uploadBatches links placement
+
+    @Test("uploads forwards links onto the request unfiltered")
+    func uploadsForwardsLinks() {
+        let knowledge = CourseKnowledgeBase(courses: [course("1")], documents: [doc(courseID: "1", sourceID: "a", text: "a")])
+        let link = CourseLink(courseID: "1", href: "https://example.com", text: "Site", origin: .page)
+        let request = SyncPlanner.uploads(local: knowledge, serverManifest: [], fullyFetched: [], links: [link])
+        #expect(request.links.map(\.href) == ["https://example.com"])
+        #expect(request.links.map(\.origin) == ["page"])
+    }
+
+    @Test("uploads defaults links to empty when not given")
+    func uploadsDefaultsLinksToEmpty() {
+        let knowledge = CourseKnowledgeBase(courses: [course("1")], documents: [doc(courseID: "1", sourceID: "a", text: "a")])
+        let request = SyncPlanner.uploads(local: knowledge, serverManifest: [], fullyFetched: [])
+        #expect(request.links.isEmpty)
+    }
+
+    @Test("uploadBatches puts links only on the last batch")
+    func uploadBatchesPutsLinksOnLastBatchOnly() {
+        let docs = (0..<5).map { CourseDocumentWire(document: doc(courseID: "1", sourceID: "\($0)", text: "t\($0)")) }
+        let link = CourseLinkWire(link: CourseLink(courseID: "1", href: "https://example.com", text: "Site", origin: .page))
+        let request = SyncUploadRequest(documents: docs, fullySyncedCourses: [], links: [link])
+        let batches = SyncPlanner.uploadBatches(request, maxDocuments: 2)
+        #expect(batches.count == 3)
+        #expect(batches.dropLast().allSatisfy { $0.links.isEmpty })
+        #expect(batches.last?.links == [link])
+    }
+
+    @Test("uploadBatches with no documents still carries links on the single batch")
+    func uploadBatchesEmptyDocumentsCarriesLinks() {
+        let link = CourseLinkWire(link: CourseLink(courseID: "1", href: "https://example.com", text: "Site", origin: .page))
+        let request = SyncUploadRequest(documents: [], fullySyncedCourses: [], links: [link])
+        let batches = SyncPlanner.uploadBatches(request)
+        #expect(batches.count == 1)
+        #expect(batches[0].links == [link])
+    }
 }

@@ -113,6 +113,63 @@ struct BackendWireTests {
         #expect(json.contains("\"action\":\"upload\""))
     }
 
+    // MARK: - CourseLinkWire / SyncUploadRequest.links
+
+    @Test("CourseLinkWire round-trips a CourseLink")
+    func courseLinkWireRoundTrips() {
+        let link = CourseLink(courseID: "1234", href: "https://example.com/syllabus", text: "Course site", origin: .page)
+        let wire = CourseLinkWire(link: link)
+        #expect(wire.courseID == "1234")
+        #expect(wire.href == "https://example.com/syllabus")
+        #expect(wire.text == "Course site")
+        #expect(wire.origin == "page")
+    }
+
+    @Test("SyncUploadRequest encodes an empty links array when none are given")
+    func encodesEmptyLinksArray() throws {
+        let request = SyncUploadRequest(documents: [], fullySyncedCourses: [])
+        let data = try BackendJSON.encoder().encode(request)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json.contains("\"links\":[]"))
+    }
+
+    @Test("SyncUploadRequest encodes non-empty links")
+    func encodesNonEmptyLinks() throws {
+        let link = CourseLinkWire(link: CourseLink(courseID: "1234", href: "https://example.com", text: "Site", origin: .syllabus))
+        let request = SyncUploadRequest(documents: [], fullySyncedCourses: [], links: [link])
+        let data = try BackendJSON.encoder().encode(request)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let links = try #require(object["links"] as? [[String: Any]])
+        #expect(links.count == 1)
+        #expect(links[0]["href"] as? String == "https://example.com")
+        #expect(links[0]["origin"] as? String == "syllabus")
+        #expect(links[0]["courseID"] as? String == "1234")
+    }
+
+    // MARK: - SyncUploadResponse.websitesPending
+
+    @Test("SyncUploadResponse decodes a missing websitesPending to empty")
+    func uploadResponseDefaultsWebsitesPendingToEmpty() throws {
+        let response = try BackendJSON.decoder().decode(SyncUploadResponse.self, from: Data(#"{"accepted":3}"#.utf8))
+        #expect(response.websitesPending.isEmpty)
+    }
+
+    @Test("SyncUploadResponse decodes a present websitesPending")
+    func uploadResponseDecodesWebsitesPending() throws {
+        let response = try BackendJSON.decoder().decode(SyncUploadResponse.self, from: Data(#"{"accepted":3,"websitesPending":["1234","5678"]}"#.utf8))
+        #expect(response.websitesPending == ["1234", "5678"])
+    }
+
+    // MARK: - DiscoverWebsitesRequest
+
+    @Test("DiscoverWebsitesRequest encodes courseIDs")
+    func encodesDiscoverWebsitesRequest() throws {
+        let request = DiscoverWebsitesRequest(courseIDs: ["1234", "5678"])
+        let data = try BackendJSON.encoder().encode(request)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["courseIDs"] as? [String] == ["1234", "5678"])
+    }
+
     @Test("AskRequest encodes askedAt as an ISO 8601 string")
     func encodesAskedAtAsISO8601() throws {
         let request = AskRequest(

@@ -166,6 +166,32 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
     }
 }
 
+/// An outbound link found in Canvas content, sent up so the server has the
+/// instructor's own pointer to an external course website
+/// (`backend/PROTOCOL.md`'s `discover-websites`). Wire form of `CourseLink`
+/// — field-for-field identical, since (unlike `CourseDocumentWire`) there's
+/// no on-device-only field to strip here.
+public struct CourseLinkWire: Codable, Sendable, Equatable {
+    public let courseID: String
+    public let href: String
+    public let text: String
+    public let origin: String
+
+    public init(courseID: String, href: String, text: String, origin: String) {
+        self.courseID = courseID
+        self.href = href
+        self.text = text
+        self.origin = origin
+    }
+
+    public init(link: CourseLink) {
+        self.courseID = link.courseID
+        self.href = link.href
+        self.text = link.text
+        self.origin = link.origin
+    }
+}
+
 /// One course the client fully fetched from Canvas this sync, with every
 /// document id it now holds — the server uses the difference between this
 /// list and its own live rows to mark vanished documents gone.
@@ -228,10 +254,17 @@ public struct SyncUploadRequest: Encodable, Sendable, Equatable {
     public let action: String = "upload"
     public let documents: [CourseDocumentWire]
     public let fullySyncedCourses: [FullySyncedCourse]
+    /// Outbound links this run found in Canvas content, so the server has
+    /// the instructor's own pointer to an external course website to crawl.
+    /// Defaulted so every existing call site keeps compiling; always
+    /// encodes, even when empty (`[]`), rather than being omitted, since the
+    /// server's decode doesn't need to treat "no links this run" as absent.
+    public let links: [CourseLinkWire]
 
-    public init(documents: [CourseDocumentWire], fullySyncedCourses: [FullySyncedCourse]) {
+    public init(documents: [CourseDocumentWire], fullySyncedCourses: [FullySyncedCourse], links: [CourseLinkWire] = []) {
         self.documents = documents
         self.fullySyncedCourses = fullySyncedCourses
+        self.links = links
     }
 }
 
@@ -241,20 +274,28 @@ public struct SyncUploadRequest: Encodable, Sendable, Equatable {
 public struct SyncUploadResponse: Decodable, Sendable, Equatable {
     public let accepted: Int
     public let profileStale: [String]
+    /// Course ids the server queued for website discovery this call — a
+    /// course whose uploaded `links` (or newly-fresh material) gave it a
+    /// crawl candidate it didn't already have. The client uses this only to
+    /// decide whether to call `discover-websites`; defaults to empty for
+    /// the same "absent means nothing changed" reason as `profileStale`.
+    public let websitesPending: [String]
 
-    public init(accepted: Int, profileStale: [String] = []) {
+    public init(accepted: Int, profileStale: [String] = [], websitesPending: [String] = []) {
         self.accepted = accepted
         self.profileStale = profileStale
+        self.websitesPending = websitesPending
     }
 
     private enum CodingKeys: String, CodingKey {
-        case accepted, profileStale
+        case accepted, profileStale, websitesPending
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         accepted = try container.decode(Int.self, forKey: .accepted)
         profileStale = try container.decodeIfPresent([String].self, forKey: .profileStale) ?? []
+        websitesPending = try container.decodeIfPresent([String].self, forKey: .websitesPending) ?? []
     }
 }
 
@@ -394,6 +435,19 @@ public struct ExtractAnnouncementResponse: Decodable, Sendable, Equatable {
 /// (enrollment + `profile_stale`); the client just names which courses it
 /// cares about right now.
 public struct ExtractProfileRequest: Encodable, Sendable, Equatable {
+    public let courseIDs: [String]
+
+    public init(courseIDs: [String]) {
+        self.courseIDs = courseIDs
+    }
+}
+
+/// Request body for `discover-websites`. Response body is ignored — this is
+/// a fire-and-forget trigger, the same shape of call as `extractProfile`:
+/// the client names which courses might have an external site worth
+/// crawling (typically `SyncUploadResponse.websitesPending`) and doesn't
+/// wait on the result, since a crawl can take tens of seconds.
+public struct DiscoverWebsitesRequest: Encodable, Sendable, Equatable {
     public let courseIDs: [String]
 
     public init(courseIDs: [String]) {

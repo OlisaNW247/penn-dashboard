@@ -146,11 +146,18 @@ public struct SyllabusCandidate: Sendable, Hashable, Identifiable {
     public let name: String
     /// Plain text, already extracted (HTML stripped / PDF flattened).
     public let text: String
+    /// Outbound links the HTML carried before it was flattened. The
+    /// syllabus page is the single most likely place an instructor points
+    /// at an external course website, and stripping to text used to throw
+    /// that pointer away; `CourseKnowledgeCollector` forwards these to the
+    /// backend's website discovery. Empty for PDF and pasted sources.
+    public let links: [HTMLLink]
 
-    public init(id: String, source: SyllabusSource, name: String, text: String) {
+    public init(id: String, source: SyllabusSource, name: String, text: String, links: [HTMLLink] = []) {
         self.id = id
         self.source = source
         self.name = name
         self.text = text
+        self.links = links
     }
 }

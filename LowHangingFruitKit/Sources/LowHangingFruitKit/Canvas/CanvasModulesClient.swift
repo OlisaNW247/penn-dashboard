@@ -51,6 +51,14 @@ public struct CanvasModulesClient: Sendable {
         /// free on this same payload and is a likely future fallback for dating
         /// items the planner overlay still can't place (not used for that yet).
         public let moduleName: String?
+        /// Canvas's `external_url`, present only when `typeRaw == "ExternalUrl"`
+        /// — an instructor-added link to a site outside Canvas, most often
+        /// the course's own external website. `CourseDocumentBuilder.links(from:)`
+        /// reads this to build a `CourseLink` with `origin: .module`; every
+        /// other module-item type carries `nil` because Canvas has nothing
+        /// to give here for them. Added as the last init parameter (default
+        /// `nil`) so every existing call site keeps compiling unchanged.
+        public let externalURL: URL?
 
         public init(
             id: String,
@@ -58,7 +66,8 @@ public struct CanvasModulesClient: Sendable {
             dueAt: Date?,
             typeRaw: String,
             contentID: String? = nil,
-            moduleName: String? = nil
+            moduleName: String? = nil,
+            externalURL: URL? = nil
         ) {
             self.id = id
             self.title = title
@@ -66,6 +75,7 @@ public struct CanvasModulesClient: Sendable {
             self.typeRaw = typeRaw
             self.contentID = contentID
             self.moduleName = moduleName
+            self.externalURL = externalURL
         }
     }
 
@@ -259,7 +269,13 @@ public struct CanvasModulesClient: Sendable {
                         dueAt: parseDate(item.contentDetails?.dueAt),
                         typeRaw: item.type,
                         contentID: item.contentID.map(String.init),
-                        moduleName: module.name
+                        moduleName: module.name,
+                        // Only an ExternalUrl item's `external_url` is
+                        // trustworthy as a course-website candidate — other
+                        // types can carry the field with unrelated meaning
+                        // in principle, so this narrows on Canvas's own type
+                        // tag rather than "is the field present".
+                        externalURL: item.type == "ExternalUrl" ? item.externalURL : nil
                     ))
                 }
             }
@@ -388,7 +404,8 @@ public struct CanvasModulesClient: Sendable {
                     dueAt: planned,
                     typeRaw: item.typeRaw,
                     contentID: item.contentID,
-                    moduleName: item.moduleName
+                    moduleName: item.moduleName,
+                    externalURL: item.externalURL
                 )
             }
 
@@ -402,7 +419,8 @@ public struct CanvasModulesClient: Sendable {
                     dueAt: planned,
                     typeRaw: item.typeRaw,
                     contentID: item.contentID,
-                    moduleName: item.moduleName
+                    moduleName: item.moduleName,
+                    externalURL: item.externalURL
                 )
             }
 
@@ -458,11 +476,13 @@ private struct ModuleItemDTO: Decodable {
     let type: String
     let contentID: Int?
     let contentDetails: ContentDetailsDTO?
+    let externalURL: URL?
 
     enum CodingKeys: String, CodingKey {
         case id, title, type
         case contentID = "content_id"
         case contentDetails = "content_details"
+        case externalURL = "external_url"
     }
 
     struct ContentDetailsDTO: Decodable {

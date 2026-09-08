@@ -11,6 +11,11 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         case announcement
         case module
         case page
+        /// Crawled from an external course website the instructor linked
+        /// from Canvas (a page, assignment description, module item, or the
+        /// syllabus) — discovered and fetched server-side (see
+        /// `backend/PROTOCOL.md`'s `discover-websites`), not by this client.
+        case website
 
         /// Human label used in source cards ("From the CIS 2400 syllabus").
         public var label: String {
@@ -21,6 +26,7 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
             case .announcement: return "announcement"
             case .module:       return "module"
             case .page:         return "page"
+            case .website:      return "course website"
             }
         }
     }

@@ -362,6 +362,37 @@ public enum CourseDocumentBuilder {
             )
         }
     }
+
+    // MARK: - Outbound links (course-website discovery)
+
+    /// Every `<a href>` in a wiki page's body, tagged `origin: .page`. The
+    /// server decides which (if any) point at an external course website;
+    /// this only surfaces what Canvas's own content already links to.
+    public static func links(from page: CourseContentPage, course: CourseSummary) -> [CourseLink] {
+        HTMLText.links(in: page.body ?? "").map {
+            CourseLink(courseID: course.courseID, href: $0.href, text: $0.text, origin: .page)
+        }
+    }
+
+    /// Every `<a href>` in an assignment's description, tagged
+    /// `origin: .assignment`.
+    public static func links(from assignment: CourseContentAssignment, course: CourseSummary) -> [CourseLink] {
+        HTMLText.links(in: assignment.description ?? "").map {
+            CourseLink(courseID: course.courseID, href: $0.href, text: $0.text, origin: .assignment)
+        }
+    }
+
+    /// One `CourseLink` per module item that carries an `externalURL`
+    /// (`typeRaw == "ExternalUrl"`), tagged `origin: .module`. Unlike the
+    /// page/assignment variants this doesn't run `HTMLText.links(in:)` —
+    /// Canvas already hands back a structured URL for these, not HTML to
+    /// scrape — so the item's own `title` is the link text.
+    public static func links(from items: [CanvasModulesClient.ModuleItem], course: CourseSummary) -> [CourseLink] {
+        items.compactMap { item in
+            guard let externalURL = item.externalURL else { return nil }
+            return CourseLink(courseID: course.courseID, href: externalURL.absoluteString, text: item.title, origin: .module)
+        }
+    }
 }
 
 /// Date/number rendering shared by the builder and the answerer. Formatters

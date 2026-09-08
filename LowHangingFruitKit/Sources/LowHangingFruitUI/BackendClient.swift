@@ -48,6 +48,18 @@ struct BackendClient: Sendable {
         let _: IgnoredResponse = try await post("extract-profile", body: ExtractProfileRequest(courseIDs: courseIDs))
     }
 
+    // MARK: - discover-websites
+
+    /// Same fire-and-forget shape as `extractProfile`: triggers the
+    /// server's crawl of a course's linked external website and never waits
+    /// on the result — a crawl can take tens of seconds, and nothing on
+    /// this phone needs it to finish before the sync that kicked it off can
+    /// consider itself done.
+    func discoverWebsites(courseIDs: [String]) async throws {
+        struct IgnoredResponse: Decodable {}
+        let _: IgnoredResponse = try await post("discover-websites", body: DiscoverWebsitesRequest(courseIDs: courseIDs))
+    }
+
     // MARK: - extract-announcement
 
     func extractAnnouncement(_ request: ExtractAnnouncementRequest) async throws -> ExtractAnnouncementResponse {

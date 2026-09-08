@@ -95,6 +95,46 @@ struct CourseContentAPITests {
         #expect(pageDoc.id == "page:1234:course-policies")
         #expect(pageDoc.text == "No laptops in lecture.")
     }
+
+    @Test("links(from: CourseContentPage) returns both an internal Canvas link and an external one")
+    func buildsLinksFromPage() throws {
+        let pageJSON = #"""
+        {"url": "course-policies", "title": "Course policies",
+         "body": "<p>See <a href=\"https://canvas.upenn.edu/courses/1234/assignments/1\">the syllabus</a> and the <a href=\"https://example.com/course-site\">course website</a>.</p>",
+         "html_url": "https://canvas.upenn.edu/courses/1234/pages/course-policies", "published": true}
+        """#
+        let page = try CourseContentAPI.decoder().decode(CourseContentPage.self, from: Data(pageJSON.utf8))
+        let links = CourseDocumentBuilder.links(from: page, course: Self.course)
+        #expect(links.count == 2)
+        #expect(links.allSatisfy { $0.courseID == "1234" })
+        #expect(links.allSatisfy { $0.origin == "page" })
+        #expect(links.map(\.href).contains("https://canvas.upenn.edu/courses/1234/assignments/1"))
+        #expect(links.map(\.href).contains("https://example.com/course-site"))
+    }
+
+    @Test("links(from: CourseContentAssignment) pulls links from the assignment description")
+    func buildsLinksFromAssignment() throws {
+        let json = """
+        while(1);[{
+          "id": 555, "name": "PSet 3", "due_at": null, "html_url": null,
+          "points_possible": null, "updated_at": null,
+          "description": "<p>See <a href=\\"https://example.com/handout\\">the handout</a>.</p>"
+        }]
+        """
+        let assignments = try CourseContentAPI.decoder().decode([CourseContentAssignment].self, from: CourseContentAPI.stripAntiHijackPrefix(Data(json.utf8)))
+        let links = CourseDocumentBuilder.links(from: try #require(assignments.first), course: Self.course)
+        #expect(links == [CourseLink(courseID: "1234", href: "https://example.com/handout", text: "the handout", origin: .assignment)])
+    }
+
+    @Test("links(from: [ModuleItem]) returns one CourseLink per ExternalUrl item, named by its title")
+    func buildsLinksFromModuleItems() {
+        let items = [
+            CanvasModulesClient.ModuleItem(id: "1", title: "Lecture 3 slides", dueAt: nil, typeRaw: "File", moduleName: "Week 2"),
+            CanvasModulesClient.ModuleItem(id: "2", title: "Course website", dueAt: nil, typeRaw: "ExternalUrl", moduleName: "Week 2", externalURL: URL(string: "https://example.com/course")),
+        ]
+        let links = CourseDocumentBuilder.links(from: items, course: Self.course)
+        #expect(links == [CourseLink(courseID: "1234", href: "https://example.com/course", text: "Course website", origin: .module)])
+    }
 }
 
 @Suite("HTML to text")

@@ -74,10 +74,16 @@ public enum SyncPlanner {
     /// from Canvas this run, listing every document id it now holds for
     /// that course, so the server can mark vanished documents gone for
     /// exactly those courses and no others.
+    /// - Parameter links: this run's `CourseKnowledgeCollector.Report.links`
+    ///   (already deduplicated and capped there). Defaulted to `[]` so
+    ///   existing call sites keep compiling; forwarded onto the request
+    ///   unfiltered — the server, not the client, decides which links are
+    ///   worth crawling.
     public static func uploads(
         local: CourseKnowledgeBase,
         serverManifest: [DocumentStub],
-        fullyFetched: Set<String>
+        fullyFetched: Set<String>,
+        links: [CourseLink] = []
     ) -> SyncUploadRequest {
         let known = Set(serverManifest)
         let documents = local.documents
@@ -89,7 +95,7 @@ public enum SyncPlanner {
             FullySyncedCourse(courseID: courseID, documentIDs: local.documents(for: courseID).map(\.id).sorted())
         }
 
-        return SyncUploadRequest(documents: documents, fullySyncedCourses: fullySyncedCourses)
+        return SyncUploadRequest(documents: documents, fullySyncedCourses: fullySyncedCourses, links: links.map(CourseLinkWire.init(link:)))
     }
 
     /// Splits an upload into batches under the protocol's 6 MB body cap.
@@ -99,18 +105,21 @@ public enum SyncPlanner {
     /// serialized yet, and 200 documents of course-material text is a
     /// conservative stand-in for "well under 6 MB" in practice.
     ///
-    /// `fullySyncedCourses` rides only on the last batch. The server only
-    /// marks a fully-synced course's vanished documents gone once every
-    /// live document for that course has actually arrived; attaching
-    /// `fullySyncedCourses` to an earlier batch would tell the server that
-    /// before it was true, and it could mark documents in a later batch
-    /// gone before they ever land.
+    /// `fullySyncedCourses` and `links` both ride only on the last batch.
+    /// The server only marks a fully-synced course's vanished documents
+    /// gone once every live document for that course has actually arrived;
+    /// attaching `fullySyncedCourses` to an earlier batch would tell the
+    /// server that before it was true, and it could mark documents in a
+    /// later batch gone before they ever land. `links` has no such ordering
+    /// hazard — it exists to piggyback on the same request rather than earn
+    /// its own — but there is equally no reason to repeat it on every
+    /// batch, so it follows `fullySyncedCourses`'s placement.
     public static func uploadBatches(_ request: SyncUploadRequest, maxDocuments: Int = 200) -> [SyncUploadRequest] {
         guard !request.documents.isEmpty else {
             // No documents to chunk, but there may still be courses to
             // report as fully synced (e.g. a course with zero documents
             // this run) — that's one batch, not zero.
-            return [SyncUploadRequest(documents: [], fullySyncedCourses: request.fullySyncedCourses)]
+            return [SyncUploadRequest(documents: [], fullySyncedCourses: request.fullySyncedCourses, links: request.links)]
         }
 
         var batches: [SyncUploadRequest] = []
@@ -119,7 +128,11 @@ public enum SyncPlanner {
             let end = min(index + max(maxDocuments, 1), request.documents.count)
             let chunk = Array(request.documents[index..<end])
             let isLastBatch = end == request.documents.count
-            batches.append(SyncUploadRequest(documents: chunk, fullySyncedCourses: isLastBatch ? request.fullySyncedCourses : []))
+            batches.append(SyncUploadRequest(
+                documents: chunk,
+                fullySyncedCourses: isLastBatch ? request.fullySyncedCourses : [],
+                links: isLastBatch ? request.links : []
+            ))
             index = end
         }
         return batches

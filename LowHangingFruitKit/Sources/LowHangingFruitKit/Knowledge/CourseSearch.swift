@@ -143,6 +143,10 @@ public struct CourseSearch: Sendable {
         case .page: return 1.0
         case .module: return 0.9
         case .home: return 0.9
+        // Crawled site content is unvetted (no per-course policy signal
+        // like a syllabus's late-work words) and of unknown freshness, so
+        // it neither gets boosted nor muted — same neutral weight as `.page`.
+        case .website: return 1.0
         }
     }
 

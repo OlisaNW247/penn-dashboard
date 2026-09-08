@@ -180,13 +180,16 @@ extension AppState {
                 let uploadRequest = SyncPlanner.uploads(
                     local: courseKnowledge,
                     serverManifest: manifest.serverManifest,
-                    fullyFetched: report.fullyFetchedCourseIDs
+                    fullyFetched: report.fullyFetchedCourseIDs,
+                    links: report.links
                 )
                 do {
                     var profileStale: [String] = []
+                    var websitesPending: [String] = []
                     for batch in SyncPlanner.uploadBatches(uploadRequest, maxDocuments: 200) {
                         let response = try await client.syncUpload(batch)
                         profileStale.append(contentsOf: response.profileStale)
+                        websitesPending.append(contentsOf: response.websitesPending)
                     }
                     if !profileStale.isEmpty {
                         // Fire-and-forget: `extract-profile` only refreshes
@@ -195,6 +198,16 @@ extension AppState {
                         // make this sync (or onboarding, on the caller that
                         // kicks this off from `connectCanvas`) wait on it.
                         Task { try? await client.extractProfile(courseIDs: profileStale) }
+                    }
+                    if !websitesPending.isEmpty {
+                        // Fire-and-forget for the same reason as
+                        // `extractProfile` above, only more so: a crawl of
+                        // an external course website can take tens of
+                        // seconds, and nothing about this sync — or the
+                        // student looking at the app right after it — can
+                        // use a discovered site until a later sync downloads
+                        // whatever the crawl produced anyway.
+                        Task { try? await client.discoverWebsites(courseIDs: websitesPending) }
                     }
                 } catch {
                     courseKnowledgeNotice = "synced from canvas; couldn't share updates with lhf's server."

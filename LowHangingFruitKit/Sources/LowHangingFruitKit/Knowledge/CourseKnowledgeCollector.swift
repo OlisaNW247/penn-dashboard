@@ -33,12 +33,20 @@ public struct CourseKnowledgeCollector: Sendable {
         /// backend needs exactly this set for `SyncPlanner.uploads(fullyFetched:)`,
         /// and `syncedCourses` alone (a count) can't reconstruct it.
         public let fullyFetchedCourseIDs: Set<String>
+        /// Outbound links gathered from this run's pages, assignments, and
+        /// module items — the raw material for the server's course-website
+        /// discovery (`backend/PROTOCOL.md`'s `discover-websites`). Not
+        /// persisted to `CourseKnowledgeStore`; a caller uploads them and
+        /// then discards them, the same way `fullyFetchedCourseIDs` is
+        /// consumed by `SyncPlanner.uploads` and never written to disk.
+        public let links: [CourseLink]
 
-        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String], fullyFetchedCourseIDs: Set<String> = []) {
+        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String], fullyFetchedCourseIDs: Set<String> = [], links: [CourseLink] = []) {
             self.knowledge = knowledge
             self.syncedCourses = syncedCourses
             self.errors = errors
             self.fullyFetchedCourseIDs = fullyFetchedCourseIDs
+            self.links = links
         }
     }
 
@@ -80,6 +88,12 @@ public struct CourseKnowledgeCollector: Sendable {
         var documents: [CourseDocument] = []
         var errors: [String] = []
         var synced: Set<String> = []
+        // Outbound links, gathered only from pages, assignments and module
+        // items — never announcements, which are noisy (a link to a due
+        // Gradescope assignment, a Zoom room, a form) compared to the
+        // handful of stable, structural pointers those three surfaces tend
+        // to carry to the course's own external site.
+        var links: [CourseLink] = []
 
         // Announcements come from one call for every course at once.
         let byCourse = Dictionary(uniqueKeysWithValues: courses.map { ($0.courseID, $0) })
@@ -114,6 +128,7 @@ public struct CourseKnowledgeCollector: Sendable {
             do {
                 let assignments = try await content.assignments(courseID: course.courseID)
                 documents.append(contentsOf: assignments.map { CourseDocumentBuilder.assignment(from: $0, course: course, now: now) })
+                links.append(contentsOf: assignments.flatMap { CourseDocumentBuilder.links(from: $0, course: course) })
             } catch CanvasCourseContentClient.Error.sessionExpired {
                 // Stop here: every further request would fail the same way,
                 // and the student needs to reconnect, not wait.
@@ -126,6 +141,7 @@ public struct CourseKnowledgeCollector: Sendable {
             do {
                 let pages = try await content.pages(courseID: course.courseID)
                 documents.append(contentsOf: pages.map { CourseDocumentBuilder.page(from: $0, course: course, now: now) })
+                links.append(contentsOf: pages.flatMap { CourseDocumentBuilder.links(from: $0, course: course) })
             } catch {
                 courseErrors += 1
                 errors.append("\(course.code) pages: \(error.localizedDescription)")
@@ -136,6 +152,9 @@ public struct CourseKnowledgeCollector: Sendable {
                     if let doc = CourseDocumentBuilder.syllabus(from: candidate, course: course, now: now) {
                         documents.append(doc)
                     }
+                    links.append(contentsOf: candidate.links.map {
+                        CourseLink(courseID: course.courseID, href: $0.href, text: $0.text, origin: .syllabus)
+                    })
                 }
             } catch {
                 courseErrors += 1
@@ -145,6 +164,7 @@ public struct CourseKnowledgeCollector: Sendable {
             do {
                 let items = try await modules.fetchModuleItems(courseID: course.courseID)
                 documents.append(contentsOf: CourseDocumentBuilder.modules(from: items, course: course, now: now))
+                links.append(contentsOf: CourseDocumentBuilder.links(from: items, course: course))
             } catch {
                 courseErrors += 1
                 errors.append("\(course.code) modules: \(error.localizedDescription)")
@@ -159,6 +179,23 @@ public struct CourseKnowledgeCollector: Sendable {
         var knowledge = store.load()
         knowledge.merge(courses: courses, documents: documents, resyncedCourseIDs: synced, syncedAt: now)
         try store.save(knowledge)
-        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors, fullyFetchedCourseIDs: synced)
+
+        // De-duplicated by (courseID, href) — the same link commonly
+        // reappears across a course's pages and module items (a syllabus
+        // link repeated in every week's "Readings" module, say), and the
+        // upload doesn't need N copies of it. Capped at 400 total, a
+        // generous ceiling for what should normally be a handful of links
+        // per course, so one course with an unusually link-heavy site can't
+        // balloon the upload body.
+        var seenLinks: Set<String> = []
+        var dedupedLinks: [CourseLink] = []
+        for link in links {
+            let key = "\(link.courseID)|\(link.href)"
+            guard seenLinks.insert(key).inserted else { continue }
+            dedupedLinks.append(link)
+            if dedupedLinks.count == 400 { break }
+        }
+
+        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors, fullyFetchedCourseIDs: synced, links: dedupedLinks)
     }
 }

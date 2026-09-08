@@ -80,4 +80,78 @@ public enum HTMLText {
             options: [.regularExpression, .caseInsensitive]
         )
     }
+
+    /// Every `<a href="…">…</a>` in `html`, with the link text stripped of
+    /// nested tags and entity-decoded. This is the seam
+    /// `CourseDocumentBuilder.links(from:)` uses to find the outbound
+    /// pointers a Canvas page, assignment description, or module item makes
+    /// to an external course website — the server (`discover-websites`,
+    /// `backend/PROTOCOL.md`) decides which of those are worth crawling;
+    /// this function only extracts what's there, uninterpreted.
+    ///
+    /// Deliberately not a raw string (see CLAUDE.md's regex trap): the `#`
+    /// anchor-only check below needs no Unicode escape, but the attribute
+    /// pattern is easiest to read without doubled backslashes, so this uses
+    /// a normal string literal throughout rather than mixing the two forms.
+    public static func links(in html: String) -> [HTMLLink] {
+        // `<a ...href="...".../>` — the href may be single- or double-quoted
+        // and may appear before or after other attributes, so the pattern
+        // captures the opening tag (group 1) and the inner text (group 2)
+        // separately and pulls `href` out of the opening tag alone, rather
+        // than anchoring on attribute order or risking a false match on an
+        // `href=`-looking substring inside the link's own text.
+        let tagPattern = "(<a\\b[^>]*>)(.*?)</a>"
+        guard let tagRegex = try? NSRegularExpression(pattern: tagPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return []
+        }
+        let ns = html as NSString
+        var links: [HTMLLink] = []
+        for match in tagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let openingTagRange = match.range(at: 1)
+            guard openingTagRange.location != NSNotFound else { continue }
+            let opening = ns.substring(with: openingTagRange)
+            guard let href = firstHref(in: opening) else { continue }
+            let trimmedHref = href.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedHref.isEmpty, trimmedHref != "#", !trimmedHref.hasPrefix("#") else { continue }
+
+            let innerRange = match.range(at: 2)
+            let inner = innerRange.location == NSNotFound ? "" : ns.substring(with: innerRange)
+            // `plainText` already strips nested tags, decodes entities and
+            // collapses whitespace — exactly what link text needs, and
+            // reusing it means link text and body text agree on what
+            // "plain" means rather than a second, slightly different
+            // definition living here.
+            let text = plainText(from: inner).replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            links.append(HTMLLink(href: trimmedHref, text: text))
+        }
+        return links
+    }
+
+    /// Pulls the value of the first `href="…"` or `href='…'` attribute out
+    /// of one opening `<a …>` tag's raw text.
+    private static func firstHref(in openingTag: String) -> String? {
+        let pattern = "href\\s*=\\s*\"([^\"]*)\"|href\\s*=\\s*'([^']*)'"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let ns = openingTag as NSString
+        guard let match = regex.firstMatch(in: openingTag, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let doubleQuoted = match.range(at: 1)
+        if doubleQuoted.location != NSNotFound { return ns.substring(with: doubleQuoted) }
+        let singleQuoted = match.range(at: 2)
+        if singleQuoted.location != NSNotFound { return ns.substring(with: singleQuoted) }
+        return nil
+    }
+}
+
+/// One `<a href="…">…</a>` found in a Canvas HTML body. `href` is kept
+/// exactly as written (relative or absolute) — resolving it against the
+/// page's own URL, and deciding whether it points off-Canvas at all, is the
+/// server's job (`discover-websites`), not this client's.
+public struct HTMLLink: Sendable, Hashable {
+    public let href: String
+    public let text: String
+
+    public init(href: String, text: String) {
+        self.href = href
+        self.text = text
+    }
 }

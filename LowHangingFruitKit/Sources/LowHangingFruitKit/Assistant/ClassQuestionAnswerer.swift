@@ -164,7 +164,7 @@ public struct ClassQuestionAnswerer: Sendable {
 
         // Fall back to the syllabus, which often lists exam dates as prose.
         let query = "\(kind.label) date schedule \(parsed.original)"
-        let hits = search(query, parsed: parsed, kinds: [.syllabus, .page, .announcement, .module])
+        let hits = search(query, parsed: parsed, kinds: [.syllabus, .page, .announcement, .module, .website])
         if let best = hits.first {
             let scope = parsed.course.map { " for \($0.code)" } ?? ""
             let text = "I don't see a dated \(kind.label)\(scope) on your calendar yet. Here's what the \(best.document.course) \(best.document.kind.label) says:\n\(excerpt(best.passage.text, query: query))"
