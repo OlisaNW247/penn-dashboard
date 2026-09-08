@@ -93,6 +93,32 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// diagnostics. Cleared everywhere `detectedKnownErrorPage` is cleared.
     @Published private(set) var detectedErrorPageTitle: String?
 
+    /// Host substring the caller considers "signed in" once actually
+    /// rendered on screen (e.g. `"canvas.upenn.edu"`, set by
+    /// `CanvasLoginPane`). Left `nil` by any pane that doesn't need this
+    /// signal — Gradescope's identical action bar never sets it, so
+    /// `reachedSignedInDestination` can never fire there and its Connect
+    /// button keeps its always-visible behaviour untouched. See
+    /// `isSignedInDestination` for the full rule this drives.
+    var signedInHostMarker: String?
+
+    /// True once a page matching `signedInHostMarker` has actually
+    /// committed (rendered), per `isSignedInDestination`. This is the
+    /// signal `CanvasLoginPane` uses to reveal its Connect button — before
+    /// this flips, tapping Connect cannot work (there's no Canvas session
+    /// to read cookies from yet), which is exactly what today's
+    /// always-visible button gets wrong.
+    @Published private(set) var reachedSignedInDestination = false
+
+    /// True once any observed navigation hop has landed on a host that
+    /// does NOT contain `signedInHostMarker`. The Canvas login pane's very
+    /// first load IS `https://canvas.upenn.edu`, which then redirects out
+    /// to Penn's SSO chain (Shibboleth, Duo, ...) before bouncing back —
+    /// so a Canvas hop before any foreign host has been seen is the START
+    /// of that chain, not the end of it, and must not be mistaken for
+    /// arrival.
+    private var sawForeignHost = false
+
     /// Most recent entries first; capped so a long back-and-forth SSO chain
     /// can't grow this unbounded across a long session.
     @Published private(set) var redirectLog: [LoginRedirectLogEntry] = []
@@ -140,6 +166,8 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         lastMainFramePOST = nil
         duplicateCanceledAt = nil
         postProvisionalDiedAt = nil
+        reachedSignedInDestination = false
+        sawForeignHost = false
     }
 
     /// Mirrors every redirect-log entry to the unified system log, so the
@@ -227,6 +255,53 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     private func logHop(_ kind: String, url: URL?) {
         guard let url, let host = url.host else { return }
         appendLogEntry(host: host, path: "\(url.path) [\(kind)]", status: nil)
+
+        // Drives `reachedSignedInDestination` (see that property's and
+        // `isSignedInDestination`'s doc comments). `didStartProvisionalNavigation`,
+        // `didReceiveServerRedirectForProvisionalNavigation` and `didCommit`
+        // all funnel through here, which is what lets a single check see
+        // the whole SSO chain rather than just one callback's slice of it.
+        guard let marker = signedInHostMarker else { return }
+        if !host.localizedCaseInsensitiveContains(marker) {
+            sawForeignHost = true
+        } else if kind == "commit",
+                  Self.isSignedInDestination(host: host, path: url.path, marker: marker, sawForeignHost: sawForeignHost) {
+            // Only `didCommit` counts as "reached" — a page actually
+            // rendering, not merely a redirect in flight that might yet
+            // bounce onward.
+            reachedSignedInDestination = true
+        }
+    }
+
+    /// Pure predicate for "has the login pane actually landed back at the
+    /// signed-in destination", pulled out of `logHop` so it's testable
+    /// without a live `WKWebView` (see `CanvasLoginHardeningTests`). Every
+    /// condition below is load-bearing:
+    /// - `marker` must be set and `host` must contain it (case-insensitive):
+    ///   `nil` disables the whole feature — the Gradescope call site never
+    ///   sets a marker, so this is always false there and its action bar
+    ///   keeps showing Connect immediately, exactly as it does today.
+    /// - `sawForeignHost` must already be true: the Canvas pane's very
+    ///   first load IS `https://canvas.upenn.edu`, which then redirects out
+    ///   to Penn's SSO chain — so a Canvas hop before any foreign host is
+    ///   the START of the login, not the end of it. Without this the button
+    ///   would be visible from the very first frame, which is exactly
+    ///   today's (broken) behaviour.
+    /// - `path` must not contain "/login": Canvas bounces a failed or
+    ///   partial SSO attempt back to its own `/login/...` pages, which are
+    ///   on the Canvas host but are not a signed-in session.
+    ///
+    /// `nonisolated` because this touches only its own value-type
+    /// parameters, not the class's `@MainActor` state — without it, the
+    /// class's actor isolation spreads to this static func too, and the
+    /// synchronous tests calling it directly (no live `WKWebView`, no
+    /// `await`) fail to compile.
+    nonisolated static func isSignedInDestination(host: String, path: String, marker: String?, sawForeignHost: Bool) -> Bool {
+        guard let marker, !marker.isEmpty else { return false }
+        guard host.localizedCaseInsensitiveContains(marker) else { return false }
+        guard sawForeignHost else { return false }
+        guard !path.localizedCaseInsensitiveContains("/login") else { return false }
+        return true
     }
 
     // The ONE deliberate exception to this delegate's observe-only rule,

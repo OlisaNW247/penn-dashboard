@@ -187,3 +187,84 @@ required update", 1,660 insertions across 14 files) as the owner's git identity.
 
 Nothing was lost, but one `mv` restore landed a directory inside itself as a
 result. If you run agents against this checkout, know what else is running.
+
+## 8. Second pass — the indicator moved, and Connect learned to wait
+
+_Appended later the same day (2026-09-08), on top of the walk described above.
+New baseline: **774 tests / 78 suites**, up from 769/78 by the five tests in the
+second change. Same rule as before — do not accept a lower count as success._
+
+### The step indicator is at the bottom on every step now
+
+`topBar` no longer takes a `dots` argument; it is back to just a back chevron
+and an optional skip. The three steps whose screen is a full-bleed pane
+(`canvasStep`, `gradescopeStep`, `classesStep`) carry the dots in a
+`.safeAreaInset(edge: .bottom)` of their own, alongside the top inset they
+already had, through a shared `stepDotsBar(current:)`. `connectedStep` puts
+them above its "continue" button, the way `nameStep` and `remindersFooter`
+always did.
+
+The old `topBar` comment argued the dots *had* to sit up top on those three
+steps because the panes own their bottom action bar and there was "no bottom
+left to put dots in." That premise was wrong: a pane's own action bar and a
+chrome bar beneath it coexist exactly the way its top action bar and the top
+chrome already did. What is **not** wrong, and must not be undone, is the
+reason those steps use `safeAreaInset` rather than a `VStack` sibling — a
+sibling collapses the pane, which is section 4's whole story.
+
+### "Connect Canvas" no longer shows before it can work
+
+The button used to be on screen from the tips card onward, including while the
+student was still typing their PennKey password, where tapping it always failed
+with "Couldn't connect Canvas yet." It now appears only once Penn's SSO chain
+has actually handed the pane back to Canvas.
+
+`LoginNavigationObserver` gained `isSignedInDestination(host:path:marker:sawForeignHost:)`
+— pure and `nonisolated`, so it is testable without a live `WKWebView`. Three
+conditions, each load-bearing:
+
+- the host must contain the caller's marker (`CanvasLoginPane` sets
+  `"canvas.upenn.edu"`; `GradescopeLoginPane` sets nothing, so this can never
+  fire there),
+- a *foreign* host must have been seen first — the pane's own first load **is**
+  `canvas.upenn.edu`, so a Canvas hop before the SSO chain is the start of the
+  login, not the end of it,
+- the path must not contain `/login` — Canvas bounces failed or partial SSO
+  back onto its own login pages, same host, not a session.
+
+Only `didCommit` counts; a redirect in flight may yet bounce onward.
+
+**The 75-second fail-open backstop is not decoration.** Canvas is the only
+required step in the walk, so a heuristic that misdetects and hides the button
+forever locks a student out of the entire app. The timer starts when the
+sign-in page is actually on screen, not while the tips card is up, and its
+worst case is exactly the old always-visible behaviour. Do not remove it in the
+name of tidiness.
+
+Two wrong fixes, recorded because both look reasonable:
+
+1. **Disabling the button instead of hiding it.** A greyed-out primary button
+   invites the tap it is there to prevent, and reads as "the app is broken"
+   rather than "not yet."
+2. **Gating on cookie presence.** `canvas.upenn.edu` sets cookies *before* any
+   login (CSRF, session-log), so the button would appear almost immediately —
+   the bug, with more machinery behind it.
+
+`LoginActionBar.showsConnect` defaults to `true` precisely so the Gradescope
+call site did not have to change; "cancel", "reload" and "start over" are never
+gated on it, because they are the documented escape hatches out of a stuck Penn
+login.
+
+### Seen, and not seen
+
+Walked on an iPhone 17 Pro simulator: step 2 with the dots at the bottom, the
+Connect button absent at the PennKey form, and the WebView still full-height
+under the new bottom inset. **The reveal itself has never fired** — that needs
+a real PennKey login, so it is proven only by the unit tests and by reading.
+Steps 3, 4 and 5 remain unrendered by anyone, so their new bottom dots are
+unseen too. Section 3's warning stands unchanged.
+
+One cosmetic thing left deliberately: while Connect is hidden, "cancel" sits
+alone on its row with empty space to its right. That space is where the button
+arrives, so nothing jumps when it does — but if it reads as an orphan, that row
+is the place to rebalance.

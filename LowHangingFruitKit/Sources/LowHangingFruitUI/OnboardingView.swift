@@ -312,10 +312,19 @@ struct OnboardingView: View {
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
-                    topBar(onBack: { phase = .name }, dots: 2)
+                    topBar(onBack: { phase = .name })
                     canvasEscapeHatches
                 }
                 .background(Color.v2Bg)
+            }
+            // Same `safeAreaInset` mechanism as the top chrome above, and for
+            // the same reason: reserving space at the bottom keeps
+            // `CanvasLoginPane` the one full-size view instead of squeezing
+            // its WebView, exactly as the comment above explains for the top
+            // edge. The pane's own bottom action bar rides above this inset,
+            // not inside it.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                stepDotsBar(current: 2)
             }
             .background(Color.v2Bg.ignoresSafeArea())
             .sheet(isPresented: $showPasteFeedLink) {
@@ -446,10 +455,12 @@ struct OnboardingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 topBar(
                     onBack: { phase = .canvasLogin },
-                    skip: (label: "skip for now", action: { phase = .classPicker }),
-                    dots: 3
+                    skip: (label: "skip for now", action: { phase = .classPicker })
                 )
                 .background(Color.v2Bg)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                stepDotsBar(current: 3)
             }
             .background(Color.v2Bg.ignoresSafeArea())
         }
@@ -468,10 +479,12 @@ struct OnboardingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 topBar(
                     onBack: { phase = .gradescopeLogin },
-                    skip: (label: "skip for now", action: { phase = .reminders }),
-                    dots: 4
+                    skip: (label: "skip for now", action: { phase = .reminders })
                 )
                 .background(Color.v2Bg)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                stepDotsBar(current: 4)
             }
             .background(Color.v2Bg.ignoresSafeArea())
     }
@@ -692,30 +705,31 @@ struct OnboardingView: View {
 
     // MARK: - Shared chrome
 
-    /// Back chevron, an optional "skip" for the steps that allow one, and —
-    /// only for the three steps whose screen is a full-bleed pane this file
-    /// must not edit (`CanvasLoginPane`, `GradescopeLoginPane`,
-    /// `ClassPickerPane` each already own their own bottom action bar) — the
-    /// progress dots too, since there's no bottom left on those screens to
-    /// put dots in. Steps 1 and 5, the two screens this file builds from
-    /// scratch, put the dots in their own footer next to the primary button
-    /// instead, matching `IntroView`'s footer — see `nameStep`/`remindersFooter`.
-    /// Passing `nil` for `dots` (Reminders' case, which has its own footer
-    /// dots) omits them here rather than showing two progress indicators on
-    /// one screen.
+    /// Just the back chevron and an optional "skip". This used to also carry
+    /// the progress dots for the three steps whose screen is a full-bleed
+    /// pane this file must not restructure (`CanvasLoginPane`,
+    /// `GradescopeLoginPane`, `ClassPickerPane` each already own their own
+    /// bottom action bar) — the argument at the time was that there was no
+    /// bottom left on those screens to put dots in, so the top bar was the
+    /// only place they'd fit. That produced two different places for the
+    /// same indicator depending on the step: this top bar for three of them,
+    /// a bottom footer next to the primary button for the other two
+    /// (`nameStep`/`remindersFooter`). The walk now shows its step indicator
+    /// in one place, the bottom, on every step, matching `IntroView`'s
+    /// footer dots — the "no bottom to put them in" premise turned out to be
+    /// wrong, because a pane's own bottom action bar and a chrome bar
+    /// beneath it can coexist the same way its top action bar and this top
+    /// bar already do. The three pane steps reach the bottom with their own
+    /// `.safeAreaInset(edge: .bottom)` carrying `stepDotsBar`, alongside the
+    /// top `.safeAreaInset` this bar already sits in (see `canvasStep`).
     private func topBar(
         onBack: (() -> Void)?,
-        skip: (label: String, action: () -> Void)? = nil,
-        dots step: Int? = nil
+        skip: (label: String, action: () -> Void)? = nil
     ) -> some View {
         HStack {
             backButton(onBack)
                 .frame(width: 44, height: 32, alignment: .leading)
-            Spacer(minLength: 8)
-            if let step {
-                progressDots(current: step)
-            }
-            Spacer(minLength: 8)
+            Spacer()
             skipButton(skip)
                 .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
         }
@@ -780,6 +794,25 @@ struct OnboardingView: View {
         .accessibilityHidden(true)
     }
 
+    /// The bottom strip that gives the three full-bleed pane steps
+    /// (`canvasStep`, `gradescopeStep`, `classesStep`) the same progress
+    /// dots the other two steps show next to their primary button — see
+    /// `topBar`'s doc comment for why they need a bottom `.safeAreaInset` of
+    /// their own rather than a spot in the shared top chrome. Every view
+    /// here is explicitly sized or padded, never a bare `Color.clear`:
+    /// `skipButton` already paid for that lesson once, where an unsized
+    /// placeholder expanded to fill its parent and inflated the whole top
+    /// bar (see the comment there) — the same trap is available in any bar
+    /// like this one if a filler element is ever added without an explicit
+    /// frame.
+    private func stepDotsBar(current: Int) -> some View {
+        progressDots(current: current)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            .background(Color.v2Bg)
+    }
+
     /// Shown instead of the live login pane when a required/optional
     /// connection step is revisited after it already succeeded earlier in
     /// this same walk (via the back chevron on a later step) — see
@@ -792,7 +825,7 @@ struct OnboardingView: View {
         onContinue: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 0) {
-            topBar(onBack: onBack, dots: step)
+            topBar(onBack: onBack)
 
             Spacer()
 
@@ -807,15 +840,19 @@ struct OnboardingView: View {
 
             Spacer()
 
-            Button(action: onContinue) {
-                Text("continue")
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2ToggleActiveTx)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Capsule().fill(Color.v2Ink))
+            VStack(spacing: 14) {
+                progressDots(current: step)
+
+                Button(action: onContinue) {
+                    Text("continue")
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(Color.v2ToggleActiveTx)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Capsule().fill(Color.v2Ink))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
@@ -845,6 +882,15 @@ private struct LoginActionBar: View {
     let onConnect: () -> Void
     let onReload: () -> Void
     let onStartOver: () -> Void
+    /// Hides the Connect button entirely rather than merely disabling it.
+    /// Defaults to `true` so the Gradescope call site, which never sets
+    /// this, is completely unaffected — Gradescope has no equivalent
+    /// "handed back by SSO" signal and keeps its always-visible button.
+    /// Canvas is the only caller that ever passes `false`; see
+    /// `CanvasLoginPane.showsConnect`. "cancel", "reload" and "start over"
+    /// are never gated on this — they're the documented escape hatches out
+    /// of a stuck Penn login and must always be reachable.
+    var showsConnect: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -877,27 +923,30 @@ private struct LoginActionBar: View {
 
                 Spacer()
 
-                Button(action: onConnect) {
-                    Group {
-                        if isBusy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text(connectTitle)
-                                .font(.lhfSans(13, weight: .semibold))
-                                .foregroundStyle(Color.v2ToggleActiveTx)
+                if showsConnect {
+                    Button(action: onConnect) {
+                        Group {
+                            if isBusy {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text(connectTitle)
+                                    .font(.lhfSans(13, weight: .semibold))
+                                    .foregroundStyle(Color.v2ToggleActiveTx)
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(Capsule().fill(Color.v2Ink))
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.v2Ink))
+                    .buttonStyle(.plain)
+                    .disabled(isBusy)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.plain)
-                .disabled(isBusy)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(16)
         .background(Color.v2Bg)
+        .animation(.easeInOut(duration: 0.2), value: showsConnect)
     }
 }
 
@@ -1040,9 +1089,20 @@ private struct CanvasLoginPane: View {
     @State private var reloadTick = 0
     /// Observe-only navigation delegate (docs/CANVAS_LOGIN_DIAGNOSIS.md item
     /// 3a) — surfaces load errors and known IdP error pages; never steers
-    /// navigation itself.
-    @StateObject private var navObserver = LoginNavigationObserver()
+    /// navigation itself. `signedInHostMarker` is set right here, in the
+    /// same expression that creates the `StateObject`, so it is in place
+    /// before this pane's first navigation (the purge-then-load `.task`
+    /// below) ever starts — there is no window where a hop could be missed.
+    @StateObject private var navObserver: LoginNavigationObserver = {
+        let observer = LoginNavigationObserver()
+        observer.signedInHostMarker = "canvas.upenn.edu"
+        return observer
+    }()
     @State private var showPasteFeedLink = false
+    /// Fail-open safety net for `showsConnect` (see that property's doc
+    /// comment) — set true ~75s after the sign-in page is actually on
+    /// screen, regardless of what navigation has or hasn't been observed.
+    @State private var connectFallbackReached = false
     /// Shown once per pane appearance, BEFORE the sign-in page: Penn's IdP
     /// can pause noticeably after the password is submitted, and an
     /// impatient second tap is what mints its "Stale Request" error (the
@@ -1054,6 +1114,19 @@ private struct CanvasLoginPane: View {
 
     private var isBusy: Bool {
         isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading || isPurging
+    }
+
+    /// Gates the Connect button on the login pane actually having been
+    /// handed back to a signed-in Canvas by Penn's SSO chain — see
+    /// `LoginNavigationObserver.isSignedInDestination`. Before this,
+    /// tapping Connect always fails: `connect()` reads Canvas's own cookie
+    /// store, and there is nothing there yet to read. `connectFallbackReached`
+    /// is a fail-open backstop (see its own doc comment) — Canvas is the
+    /// only required step in the walk, so a heuristic that misdetects and
+    /// hides the button forever would strand a student with no way into
+    /// the rest of the app.
+    private var showsConnect: Bool {
+        navObserver.reachedSignedInDestination || connectFallbackReached
     }
 
     var body: some View {
@@ -1114,18 +1187,36 @@ private struct CanvasLoginPane: View {
 
             LoginActionBar(
                 message: message ?? navObserver.loadError,
-                defaultHint: "Log in to Canvas once. We'll capture your calendar feed automatically.",
+                defaultHint: showsConnect
+                    ? "Log in to Canvas once. We'll capture your calendar feed automatically."
+                    : "Sign in with your PennKey. Connect appears once Penn brings you back to Canvas.",
                 connectTitle: "Connect Canvas",
                 isBusy: isBusy,
                 onCancel: onCancel,
                 onConnect: connect,
                 onReload: { reloadTick += 1 },
-                onStartOver: startOver
+                onStartOver: startOver,
+                showsConnect: showsConnect
             )
         }
         .background(Color.v2Bg.ignoresSafeArea())
         .sheet(isPresented: $showPasteFeedLink) {
             PasteFeedLinkSheet(onSaved: onConnected).environmentObject(state)
+        }
+        // Fail-open backstop for `showsConnect`, in the same spirit as the
+        // forced-update gate (LowHangingFruitKit/Sources/LowHangingFruitKit/Update/):
+        // a heuristic must never be the only thing standing between a
+        // student and their own data. If Penn ever moves hosts, or the SSO
+        // detection above misses some case, this reveals Connect anyway
+        // after a generous wait, so the worst case is exactly today's
+        // always-visible behaviour rather than a permanently stuck pane.
+        // The clock starts once the sign-in page is actually on screen
+        // (`showsSignInTips` false), not while the tips card is still up —
+        // that card's dismissal is a user tap with no fixed timing.
+        .task(id: showsSignInTips) {
+            guard !showsSignInTips else { return }
+            try? await Task.sleep(for: .seconds(75))
+            connectFallbackReached = true
         }
         .task(id: purgeGeneration) {
             // Fires exactly once per Connect tap (this view's own appearance,
