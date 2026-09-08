@@ -177,7 +177,7 @@ private struct InlineView: View {
                 Text("\(urgency.emoji) \(item.title)")
             }
         } else {
-            Text("lhf · all clear")
+            Text("locust · all clear")
         }
     }
 }

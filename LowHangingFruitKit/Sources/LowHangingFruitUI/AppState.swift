@@ -622,6 +622,15 @@ final class AppState: ObservableObject {
             hasSeenIntro = true
             userName = "Marco"
         }
+        // Design/iteration seam: show the complete first-run flow without
+        // deleting a developer's real Canvas session, preferences, or ledger.
+        // In-memory only, DEBUG-only, and intentionally takes precedence over
+        // any persisted onboarding/intro flags for this launch.
+        if ProcessInfo.processInfo.arguments.contains("-LHFOnboardingHarness") {
+            hasCompletedOnboarding = false
+            hasSeenIntro = false
+            userName = ""
+        }
         #endif
 
         refreshCanvasSessionExpiredState()

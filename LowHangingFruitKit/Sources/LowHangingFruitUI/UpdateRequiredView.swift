@@ -29,7 +29,7 @@ struct UpdateRequiredView: View {
     /// because a policy can omit it, and the wall still has to say
     /// *something* rather than show blank space above the button.
     private static let fallbackMessage =
-        "This version of LHF is too old to keep working with Canvas. Update to keep your dashboard accurate."
+        "This version of Locust is too old to keep working with Canvas. Update to keep your dashboard accurate."
 
     var body: some View {
         ZStack {

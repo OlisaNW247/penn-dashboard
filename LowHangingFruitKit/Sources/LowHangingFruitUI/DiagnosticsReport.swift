@@ -21,7 +21,7 @@ import UIKit
 enum DiagnosticsReport {
     static func generate(state: AppState) -> String {
         var lines: [String] = []
-        lines.append("LHF diagnostics report")
+        lines.append("Locust diagnostics report")
         lines.append("Generated: \(isoFormatter.string(from: Date()))")
         lines.append("")
         lines.append("App version: \(appVersionString())")

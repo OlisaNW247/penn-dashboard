@@ -442,7 +442,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("LHF")
+                Text("Locust")
                     .font(.lhfSans(11, weight: .semibold))
                     .tracking(2)
                     .foregroundStyle(Color.v2CourseCode)

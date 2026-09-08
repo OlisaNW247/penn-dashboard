@@ -4,20 +4,19 @@ import SwiftUI
 /// checklist (`OnboardingView`). Three skippable screens that make the pitch
 /// before the login ask arrives: the problem (Canvas rewards points as
 /// heavily for a four-minute quiz as for a midterm, and those are exactly the
-/// ones that get missed), what LHF actually does about it (surfaces the
-/// low-hanging fruit before it closes), and — immediately before the
-/// checklist opens on "Connect Canvas" — a plain description of how the app
-/// works and what it does and doesn't touch, so "you log in on Canvas's own
-/// page, there's no LHF server" is the last thing on screen when that ask
-/// shows up.
+/// ones that get missed), what Locust actually does about it (turns scattered
+/// work into a clear class-to-assignment list), and — immediately before the
+/// checklist opens on "Connect Canvas" — a compact overview of the four parts
+/// of the app, using miniatures of the real dashboard, notification, assistant,
+/// and Grade Watcher UI.
 ///
 /// Shown exactly once, gated on `AppState.hasSeenIntro` (never on
 /// `hasCompletedOnboarding`, which the Settings reconnect buttons clear).
 ///
-/// One visual idea carries across all three screens: a set of small
-/// "assignment chip" shapes that start scattered and chaotic, gather into a
-/// hanging column with the easiest few picked out in green, then settle into
-/// a tidy list — literally dramatizing "go get the low hanging fruit." That
+/// One visual idea carries across the first two screens: a set of small
+/// assignment chips starts scattered and chaotic, then resolves into explicit
+/// `CLASS → Assignment` rows. The third screen replaces that illustration with
+/// four slim feature snapshots. The morph between the first two screens
 /// only works if the chips are the *same* nine views throughout, which is why
 /// this file has no `TabView`. `.tabViewStyle(.page(...))` (what the old
 /// three-pane intro used) renders every page as its own independent view
@@ -53,7 +52,17 @@ struct IntroView: View {
     /// until the first layout pass reports a real value.
     @State private var textTopY: CGFloat = .infinity
 
-    @State private var page = 0
+    @State private var page: Int = {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "-LHFIntroPage"),
+           arguments.indices.contains(flag + 1),
+           let requested = Int(arguments[flag + 1]) {
+            return max(0, min(2, requested))
+        }
+        #endif
+        return 0
+    }()
 
     private static let pageCount = 3
     private var isLastPage: Bool { page == Self.pageCount - 1 }
@@ -94,6 +103,7 @@ struct IntroView: View {
             ChipLayer(page: page, namespace: chipSpace, textTopY: textTopY)
                 .padding(.top, Self.chipCanvasTopInset)
                 .ignoresSafeArea(edges: [.horizontal, .bottom])
+                .opacity(page < 2 ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -149,15 +159,6 @@ struct IntroView: View {
 
     // MARK: Text column
 
-    /// All three screens' text lives here at once, cross-fading by opacity
-    /// rather than being swapped structurally, which is what makes the
-    /// transition a crossfade instead of a cut. Because they're stacked in
-    /// one `ZStack`, the tallest of the three sets the stack's own height —
-    /// which in practice pins every screen's text to the same bottom anchor
-    /// rather than letting shorter screens sit lower still, and gives the
-    /// crossfade a steady baseline to happen against instead of the text
-    /// jumping vertically as the page changes.
-    ///
     /// The `GeometryReader` + `ScrollView` + `minHeight` combination is
     /// carried over unchanged from the old file: a paged view won't scroll
     /// its own contents, so this is what keeps the copy reachable instead of
@@ -167,22 +168,10 @@ struct IntroView: View {
     private var textColumn: some View {
         GeometryReader { proxy in
             ScrollView {
-                ZStack(alignment: .bottomLeading) {
-                    ForEach(0..<Self.pageCount, id: \.self) { index in
-                        paneContent(for: index)
-                            .opacity(index == page ? 1 : 0)
-                            .allowsHitTesting(index == page)
-                            .accessibilityHidden(index != page)
-                    }
-                }
+                paneContent(for: page)
+                .id(page)
                 // Reports the top of the text block so the chips can stay
-                // above it. This measures the whole `ZStack`, which is as
-                // tall as the *longest* of the three screens rather than the
-                // one currently visible, so the boundary is the same on every
-                // page. That is deliberate: a boundary that moved as you
-                // paged would make the chips jump on a page change, and being
-                // conservative by the difference between the longest and
-                // shortest copy costs a few points of unused canvas at worst.
+                // above it on the two illustrated pages.
                 .background(
                     GeometryReader { textProxy in
                         Color.clear.preference(
@@ -194,7 +183,10 @@ struct IntroView: View {
                 .frame(maxWidth: .infinity, alignment: .bottomLeading)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
-                .frame(minHeight: proxy.size.height, alignment: .bottom)
+                .frame(
+                    minHeight: proxy.size.height,
+                    alignment: page == 2 ? .center : .bottom
+                )
             }
         }
     }
@@ -209,103 +201,181 @@ struct IntroView: View {
     }
 
     private var screenOne: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("We kept losing points on the easy stuff.")
-                .font(.lhfSerif(34))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("We\u{2019}re two juniors at Penn, so we know what the week before an exam looks like. You study for days, you actually understand the material, and the grade still comes back lower than it should be. Not because of the exam. Because five classes and three clubs meant a reading quiz closed on Sunday night and you never saw it.")
-                .font(.lhfSans(16))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text("We kept losing points on the easy stuff.")
+            .font(.lhfSerif(34))
+            .foregroundStyle(Color.v2Ink)
+            .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var screenTwo: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Go get the low hanging fruit.")
-                .font(.lhfSerif(34))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Locust is a class assistant that watches the assignments worth the least and forgotten the most. Check-ins, reading responses, the four-minute quiz. Those points are free and they add up faster than any midterm does. Grab them and the rest of your time is yours.")
-                .font(.lhfSans(16))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("We built the list we wished we\u{2019}d had.")
-                .font(.lhfSerif(19))
-                .foregroundStyle(Color.v2SpineGreen)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
-        }
+        Text("Go get the low hanging fruit.")
+            .font(.lhfSerif(34))
+            .foregroundStyle(Color.v2Ink)
+            .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var screenThree: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("How it works")
-                .font(.lhfSans(13, weight: .semibold))
-                .foregroundStyle(Color.v2CourseCode)
-
-            VStack(alignment: .leading, spacing: 12) {
-                listRow("Every assignment from Canvas and Gradescope in one list, ordered by what\u{2019}s due")
-                listRow("A nudge when something\u{2019}s close and you haven\u{2019}t submitted")
-                listRow("An assistant that answers questions about your classes")
-                listRow("Your real grade in every class, and what each assignment is actually worth")
-                listRow("You log in on Canvas\u{2019}s own page. No account to make, and there\u{2019}s no Locust server.")
-            }
-
-            Text("That\u{2019}s the whole app. Log in and it fills itself in.")
-                .font(.lhfSans(15))
-                .foregroundStyle(Color.v2Ink.opacity(0.85))
+        VStack(alignment: .leading, spacing: 12) {
+            Text("How Locust keeps you ahead.")
+                .font(.lhfSerif(30))
+                .foregroundStyle(Color.v2Ink)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
 
-            previewLink
-                .padding(.top, 4)
+            VStack(spacing: 9) {
+                compactFeatureRow(label: "Dashboard", symbol: "rectangle.grid.1x2") {
+                    VStack(spacing: 5) {
+                        compactAssignment(course: "CIS 1200", title: "Homework 4", due: "today", color: .v2SpineAmber)
+                        compactAssignment(course: "MATH 1410", title: "Written assignment", due: "Wed", color: .v2SpineBlue)
+                    }
+                }
+
+                compactFeatureRow(label: "Reminders", symbol: "bell.badge") {
+                    compactNotification
+                }
+
+                compactFeatureRow(label: "Ask", symbol: "sparkles") {
+                    compactAskPrompt
+                }
+
+                compactFeatureRow(label: "Grades", symbol: "chart.line.uptrend.xyaxis") {
+                    compactGrade
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func listRow(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            // A baseline-aligned dot instead of a fixed-size icon frame, so
-            // the row grows with the text rather than clipping around it.
-            Circle()
-                .fill(Color.v2SpineGreen)
-                .frame(width: 5, height: 5)
-                .alignmentGuide(.firstTextBaseline) { _ in 4 }
-                .accessibilityHidden(true)
+    private func compactFeatureRow<Content: View>(
+        label: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 11) {
+            VStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(label)
+                    .font(.lhfSans(10, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.v2Ink)
+            .frame(width: 69)
 
-            Text(text)
-                .font(.lhfSans(15))
-                .foregroundStyle(Color.v2Ink.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
+            Rectangle()
+                .fill(Color.v2Ink.opacity(0.09))
+                .frame(width: 1)
+
+            content()
+                .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 78)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .shadow(color: Color.v2CardShadow.opacity(0.07), radius: 5, y: 2)
         .accessibilityElement(children: .combine)
     }
 
-    /// The reviewer's door. It used to live on the first pane, which stranded
-    /// anyone who wanted it the moment they swiped past page one; it now
-    /// lives on the last screen, next to "Get started", so it's still there
-    /// once someone has read the whole pitch and decided they just want to
-    /// look around.
-    private var previewLink: some View {
-        Button {
-            lhfHapticLight()
-            state.enterPreviewMode()
-        } label: {
-            Text("Preview with sample data")
-                .font(.lhfSans(14, weight: .medium))
-                .foregroundStyle(Color.v2DateText)
-                .underline()
+    private func compactAssignment(course: String, title: String, due: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: 3, height: 20)
+            Text(course)
+                .font(.lhfSans(7.5, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.v2CourseCode)
+                .frame(width: 52, alignment: .leading)
+            Text(title)
+                .font(.lhfSans(9.5, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 2)
+            Text(due)
+                .font(.lhfSans(8.5, weight: .medium))
+                .foregroundStyle(color)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("preview the app with sample data")
-        .accessibilityHint("explore a demo dashboard without logging in")
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Color.v2Bg.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var compactNotification: some View {
+        HStack(alignment: .top, spacing: 7) {
+            PersimmonMark(size: 24)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("LOCUST")
+                        .font(.lhfSans(8.5, weight: .semibold))
+                        .tracking(0.6)
+                    Spacer()
+                    Text("now")
+                        .font(.lhfSans(8.5))
+                        .foregroundStyle(Color.v2DateText)
+                }
+                Text("CIS 1200 · Homework 4")
+                    .font(.lhfSans(10.5, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                Text("Unsubmitted · due in 2 hours")
+                    .font(.lhfSans(9.5))
+                    .foregroundStyle(Color.v2DateText)
+            }
+        }
+        .padding(9)
+        .background(Color.v2Bg.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var compactAskPrompt: some View {
+        ZStack {
+            TreeBackdrop(wash: 0.17)
+            HStack(spacing: 6) {
+                PersimmonMark(size: 20)
+                    .frame(width: 20, height: 20)
+                Text("what is the attendance policy for this class?")
+                    .font(.lhfSerif(11.5))
+                    .foregroundStyle(Color.v2Ink)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(Color.v2Card, in: Capsule())
+            .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 4, y: 1)
+        }
+        .frame(height: 62)
+        .clipped()
+    }
+
+    private var compactGrade: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("ECON 0100")
+                .font(.lhfSans(7.5, weight: .medium))
+                .tracking(1)
+                .foregroundStyle(Color.v2CourseCode)
+            HStack(alignment: .center, spacing: 7) {
+                Text("93.4%")
+                    .font(.lhfSerif(22))
+                    .foregroundStyle(Color.v2Ink)
+                Text("▲ 1.8 this week")
+                    .font(.lhfSans(8, weight: .semibold))
+                    .foregroundStyle(Color.v2SpineGreen)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.v2RingTrack)
+                    Capsule().fill(Color.v2SpineBlue)
+                        .frame(width: geo.size.width * 0.72)
+                }
+            }
+            .frame(height: 4)
+            Text("72% decided")
+                .font(.lhfSans(8.5))
+                .foregroundStyle(Color.v2RingSub)
+        }
     }
 
     // MARK: Footer
@@ -431,7 +501,7 @@ private struct AssignmentChip: Identifiable {
 }
 
 /// See the note on `IntroView` for why this exists as one persistent layer
-/// rather than living inside the pager: chip identity across the three
+/// rather than living inside the pager: chip identity across the first two
 /// screens depends on it never being rebuilt.
 private struct ChipLayer: View {
     let page: Int
@@ -453,12 +523,12 @@ private struct ChipLayer: View {
         AssignmentChip(id: 0, code: "PHYS 151", due: "Fri", title: "Problem set 3"),
         AssignmentChip(id: 1, code: "PSYC 1010", due: "Mon", title: "Reading response 4"),
         AssignmentChip(id: 2, code: "CIS 1200", due: "Wed", title: "Lab check-in"),
-        AssignmentChip(id: 3, code: "ECON 001", due: "Tue"),
-        AssignmentChip(id: 4, code: "ENGL 016", due: "Thu"),
-        AssignmentChip(id: 5, code: "MATH 114", due: "Fri"),
-        AssignmentChip(id: 6, code: "HIST 020", due: "Mon"),
-        AssignmentChip(id: 7, code: "STAT 111", due: "Wed"),
-        AssignmentChip(id: 8, code: "SPAN 110", due: "Tue"),
+        AssignmentChip(id: 3, code: "ECON 001", due: "Tue", title: "Weekly quiz"),
+        AssignmentChip(id: 4, code: "ENGL 016", due: "Thu", title: "Discussion post"),
+        AssignmentChip(id: 5, code: "MATH 114", due: "Fri", title: "Problem set 6"),
+        AssignmentChip(id: 6, code: "HIST 020", due: "Mon", title: "Primary source notes"),
+        AssignmentChip(id: 7, code: "STAT 111", due: "Wed", title: "Lab check-in"),
+        AssignmentChip(id: 8, code: "SPAN 110", due: "Tue", title: "Vocabulary quiz"),
     ]
 
     /// How many of the nine read as "reachable" — green in the column,
@@ -481,11 +551,7 @@ private struct ChipLayer: View {
             ZStack {
                 switch page {
                 case 0: scattered(in: proxy.size, maxY: maxY)
-                case 1: column(in: proxy.size, maxY: maxY)
-                // Page 2's list is measured from the top and already ends
-                // well clear of "How it works", so it needs no clamp; adding
-                // one would only risk compressing a layout that is correct.
-                default: list(in: proxy.size)
+                default: organized(in: proxy.size, maxY: maxY)
                 }
             }
             // `.position()` pulls a view out of normal layout flow, so a
@@ -544,97 +610,24 @@ private struct ChipLayer: View {
         8: (0.08, 0.52, 6),
     ]
 
-    // MARK: Screen 2 — the hanging column
+    // MARK: Screen 2 — class to assignment
 
-    /// One vertical column, ordered top-to-bottom from least reachable to
-    /// most. Low-hanging fruit is literally the fruit nearest the ground, so
-    /// the three lowest ids land at the bottom of the column, closest to the
-    /// reader, and are the ones that turn green.
-    /// The column used to step down from a fixed `size.height * 0.08` in
-    /// fixed 34pt increments regardless of device height, which is what left
-    /// a dead band under it on a tall phone: nine chips at 34pt apart run out
-    /// of chips long before a Pro-sized screen runs out of room, and the
-    /// text below is bottom-anchored (see `textColumn`), so the unused space
-    /// landed as a gap between the two rather than at the top or bottom of
-    /// the screen. Spacing the column across a fixed *fraction* of the
-    /// canvas instead — roughly its top 4% down to its bottom 62% — means it
-    /// always ends close to where the text begins, on an SE exactly as much
-    /// as on a Pro Max, so column and text read as one composition instead
-    /// of two unrelated blocks with a hole between them.
-    private func column(in size: CGSize, maxY: CGFloat) -> some View {
-        // Unlike the scatter, the column *is* rescaled to fit rather than
-        // clamped. Clamping here would pile the bottom chips on top of each
-        // other at the boundary, and the column's whole job is to read as an
-        // evenly hanging line. Spreading the nine between a fixed top and
-        // whatever room is actually left keeps the spacing even on any
-        // device, and keeps the bottom of the column near the text instead of
-        // leaving the dead band an earlier fixed 34pt step used to.
+    /// The same nine chips settle into an explicit class-to-assignment list.
+    /// The arrow is the explanation: students can see immediately that Locust
+    /// turns scattered course obligations into named work, without a paragraph
+    /// below the illustration having to narrate it.
+    private func organized(in size: CGSize, maxY: CGFloat) -> some View {
         let top = size.height * 0.04
-        let bottom = min(size.height * 0.62, maxY)
+        let bottom = min(size.height * 0.78, maxY)
         let step = max(0, bottom - top) / CGFloat(Self.chips.count - 1)
         return ForEach(Self.chips) { chip in
-            let depthFromTop = Self.chips.count - 1 - chip.id
             let isAccent = chip.id < Self.reachableCount
-            chipView(chip, isAccent: isAccent, isRow: false)
+            assignmentRow(chip, isAccent: isAccent, width: min(350, size.width - 32))
                 .matchedGeometryEffect(id: chip.id, in: namespace)
                 .position(
                     x: size.width * 0.5,
-                    y: top + CGFloat(depthFromTop) * step
+                    y: top + CGFloat(chip.id) * step
                 )
-        }
-    }
-
-    // MARK: Screen 3 — the tidy list
-
-    /// The three chips that were green at the bottom of the column become the
-    /// top rows here, rendered the way a real assignment row in the dashboard
-    /// looks. The other six stack tighter and smaller underneath them, which
-    /// is meant to read as "the list keeps going" rather than as more of the
-    /// same three.
-    private func list(in size: CGSize) -> some View {
-        // The `y` per chip branches on whether it's a top row or a compact
-        // one below, which is why that math lives in an ordinary function
-        // (`listY`) instead of an `if`/`else` written directly inside this
-        // closure: the closure passed to `ForEach` is `@ViewBuilder`, and a
-        // plain value-computing `if`/`else` inside a result-builder body gets
-        // rewritten as `buildEither` the same as a conditional *view* would,
-        // which is not what an `if` assigning to a `CGFloat` means here. The
-        // symptom was not "wrong `if`" but an unrelated-looking overload
-        // error on `ForEach` itself, because the builder transform broke type
-        // inference for the whole closure — a plain function call sidesteps
-        // the builder entirely.
-        ForEach(Self.chips) { chip in
-            chipView(chip, isAccent: false, isRow: chip.id < Self.reachableCount)
-                .matchedGeometryEffect(id: chip.id, in: namespace)
-                .position(x: size.width * 0.5, y: listY(for: chip, in: size))
-        }
-    }
-
-    /// Row spacing here is deliberately smaller than it once was. On a
-    /// 4.7-inch device (375x667 — an iPhone SE, still a real target) the old
-    /// constants (a 0.07 top fraction, 44pt per top row, 24pt per compact
-    /// row) left too little of the screen for the "How it works" copy below,
-    /// which is inside a `ScrollView` but still needs to be legible above
-    /// the fold rather than fighting the chips for space. The three top rows
-    /// stay at a spacing that clears their own rendered height (unchanged by
-    /// the assignment title added in `chipView` — the title runs inline on
-    /// the same line rather than adding a second line, specifically so this
-    /// spacing didn't have to grow along with it); the six compact rows
-    /// below are allowed to sit close enough to visibly overlap by a couple
-    /// of points, which reads as a stack tailing off rather than as a
-    /// mistake, and is what actually buys back the room.
-    private static let listTopFraction: CGFloat = 0.045
-    private static let listTopRowSpacing: CGFloat = 38
-    private static let listCompactRowSpacing: CGFloat = 20
-
-    private func listY(for chip: AssignmentChip, in size: CGSize) -> CGFloat {
-        if chip.id < Self.reachableCount {
-            return size.height * Self.listTopFraction + CGFloat(chip.id) * Self.listTopRowSpacing
-        } else {
-            let compactIndex = chip.id - Self.reachableCount
-            return size.height * Self.listTopFraction
-                + CGFloat(Self.reachableCount) * Self.listTopRowSpacing
-                + CGFloat(compactIndex) * Self.listCompactRowSpacing
         }
     }
 
@@ -642,20 +635,6 @@ private struct ChipLayer: View {
 
     private func chipView(_ chip: AssignmentChip, isAccent: Bool, isRow: Bool) -> some View {
         HStack(spacing: 5) {
-            // The title only ever shows up in the page-2 list stage's top
-            // three rows (`isRow` is only ever `true` there — see `list`),
-            // and it runs on the very same line as the code and day rather
-            // than stacked above them: that's what makes the difference
-            // between "a real assignment row" and "the same chip, bigger"
-            // without changing the chip's rendered height at all, which
-            // `listY` depends on to keep the three rows from overlapping.
-            if isRow, let title = chip.title {
-                Text(title)
-                    .font(.lhfSans(13, weight: .semibold))
-                Text("\u{00B7}")
-                    .font(.lhfSans(13))
-                    .opacity(0.5)
-            }
             Text(chip.code)
                 .font(.lhfSans(isRow ? 13 : 11, weight: .semibold))
             Text("\u{00B7}")
@@ -678,6 +657,40 @@ private struct ChipLayer: View {
         )
         .shadow(color: Color.v2CardShadow.opacity(isRow ? 0.08 : 0.04), radius: isRow ? 3 : 1, y: 1)
     }
+
+    private func assignmentRow(_ chip: AssignmentChip, isAccent: Bool, width: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            Text(chip.code)
+                .font(.lhfSans(12, weight: .semibold))
+                .foregroundStyle(isAccent ? Color.v2SpineGreen : Color.v2CourseCode)
+                .frame(width: 72, alignment: .trailing)
+
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.v2Ink.opacity(0.35))
+
+            Text(chip.title ?? "Assignment")
+                .font(.lhfSans(13, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .lineLimit(1)
+
+            Spacer(minLength: 6)
+
+            Text(chip.due)
+                .font(.lhfSans(11, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(width: width, alignment: .leading)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(isAccent ? Color.v2SpineGreen.opacity(0.4) : Color.v2Ink.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+
 }
 
 #if DEBUG

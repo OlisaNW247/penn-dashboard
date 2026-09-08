@@ -268,3 +268,46 @@ One cosmetic thing left deliberately: while Connect is hidden, "cancel" sits
 alone on its row with empty space to its right. That space is where the button
 arrives, so nothing jumps when it does — but if it reads as an orphan, that row
 is the place to rebalance.
+
+## 9. Third pass — Locust branding and the interactive intro
+
+_Appended 2026-09-08. This work is still uncommitted on `onboarding-walk`.
+Baseline remains **774 tests / 78 suites** and the iOS simulator build succeeds._
+
+The product is now called **Locust** everywhere user-facing. Internal names
+such as the bundle identifiers, target names, `LowHangingFruitKit`, migration
+keys, and code symbols were intentionally not renamed; changing those would be
+a compatibility/project migration rather than a copy change. The supplied
+persimmon/branch logo was converted to a transparent resource at
+`LowHangingFruitUI/Resources/locust-logo-transparent.png` and appears on the
+first onboarding step.
+
+The intro is now deliberately sparse:
+
+1. The original nine assignments scatter around the first screen; only the
+   title remains.
+2. Those same views organize into explicit `CLASS → Assignment` rows; only the
+   title remains.
+3. The chips disappear and four slim feature strips appear together under
+   “How Locust keeps you ahead.” Dashboard, Reminders, Ask, and Grades each
+   pair a compact label with a miniature of the real UI: a Canvas + Gradescope
+   assignment stack, a Locust notification, the assistant's real
+   tree/persimmon prompt treatment, and a Grade Watcher card. There are no
+   repeated titles or descriptive subheads inside the previews.
+
+There is no fifth Canvas/login feature and no “Preview with sample data” link
+on the intro. The only primary action on the last page is **Get started**.
+
+The complete four-strip page was rendered on an iPhone 17 Pro simulator. Debug
+launch arguments make repeatable visual checks possible:
+
+```text
+-LHFDemoData -LHFOnboardingHarness -LHFIntroPage 2
+```
+
+`-LHFOnboardingHarness` also clears the in-memory onboarding/intro gates for
+that launch. For a normal installed build, deleting the app from the phone and
+installing it again clears those local flags and shows the intro from the
+beginning. The physical iPhone was listed as `unavailable` at the end of this
+pass, so the new build could not be installed there; simulator visual QA is
+complete.

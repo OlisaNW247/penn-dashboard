@@ -142,24 +142,20 @@ struct OnboardingView: View {
 
     // MARK: - Step 1: name
 
-    /// The mission header ("LHF" / "never miss another assignment") and the
-    /// reviewer's door (`previewCard`) both live only here — see that
-    /// property's doc comment for why "just exploring?" has to be reachable
-    /// from the very first screen rather than five steps in.
+    /// The Locust mark and mission line live here at the start of setup.
+    /// Sample-data preview remains in `IntroView`, before setup begins; once
+    /// the student enters this walk, every action advances real onboarding.
     private var nameStep: some View {
         ZStack {
             Color.v2Bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer(minLength: 56)
+                Spacer(minLength: 32)
 
                 header
                     .padding(.bottom, 28)
 
                 nameCard
-
-                previewCard
-                    .padding(.top, 18)
 
                 if let error = state.error {
                     Text(error)
@@ -223,12 +219,16 @@ struct OnboardingView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 6) {
-            Text("LHF")
-                .font(.lhfSerif(44))
-                .foregroundStyle(Color.v2Ink)
-            Text("welcome to low hanging fruit")
-                .font(.lhfSans(16, weight: .semibold))
+        VStack(spacing: 8) {
+            if let logo = bundledImage("locust-logo-transparent", ext: "png") {
+                logo
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
+                    .accessibilityHidden(true)
+            }
+            Text("Locust")
+                .font(.lhfSerif(38))
                 .foregroundStyle(Color.v2Ink)
             Text("never miss another assignment")
                 .font(.lhfSans(12))
@@ -236,35 +236,6 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    /// The same door as `IntroView.previewLink`, on the first screen of this
-    /// walk — the screen a reviewer actually lands on after skipping the
-    /// intro, and now the only screen in this file that doesn't require
-    /// walking forward through anything to reach.
-    private var previewCard: some View {
-        Button {
-            lhfHapticLight()
-            state.enterPreviewMode()
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("just exploring?")
-                    .font(.lhfSans(13))
-                    .foregroundStyle(Color.v2CourseCode)
-                Text("preview with sample data")
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .underline()
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("preview the app with sample data")
-        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     // MARK: - Step 2: Connect Canvas (required, not skippable)
@@ -379,7 +350,7 @@ struct OnboardingView: View {
                 if isResettingLoginData {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("trouble connecting? reset login data")
+                    Text("reset login data")
                         .font(.lhfSans(11, weight: .medium))
                         .foregroundStyle(Color.v2SpineRed)
                         .underline()
@@ -404,7 +375,7 @@ struct OnboardingView: View {
                 }
                 Button("cancel", role: .cancel) {}
             } message: {
-                Text("clears any stuck canvas or gradescope login on this device, including saved session cookies, so you can start fresh. you'll need to log in again.")
+                Text("clears saved Canvas and Gradescope sign-ins on this device.")
             }
 
             if didResetLoginData {
@@ -968,11 +939,11 @@ private struct CanvasSignInTipsCard: View {
             Image(systemName: "hourglass")
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(Color.v2Ink)
-            Text("One thing before you sign in")
+            Text("Sign in with PennKey")
                 .font(.lhfSans(15, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
-            Text("Penn\u{2019}s sign-in can pause for up to half a minute after you enter your password. That\u{2019}s normal \u{2014} the screen isn\u{2019}t stuck. Press the sign-in button once and wait; pressing it again is what causes Penn\u{2019}s \u{201C}Stale Request\u{201D} error.")
+            Text("Tap Sign In once after entering your password. Penn may take up to 30 seconds.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
@@ -980,7 +951,7 @@ private struct CanvasSignInTipsCard: View {
                 .padding(.horizontal, 24)
 
             Button(action: onContinue) {
-                Text("Got it")
+                Text("continue")
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .padding(.horizontal, 20)
@@ -1000,16 +971,11 @@ private struct LoginErrorCard: View {
     let onStartOver: () -> Void
     /// Canvas only — Gradescope has no equivalent feed-link fallback.
     let onUseCalendarLinkInstead: (() -> Void)?
-    /// Canvas only, for now — offered when someone's hit the error card
-    /// repeatedly and just wants to hand off diagnostics rather than keep
-    /// retrying. `nil` hides the action entirely.
-    var onReportProblem: (() -> Void)? = nil
 
     var body: some View {
         // No Spacers and no maxHeight cap here or at the call sites: the
         // card must hug its content. A fixed-height cap already clipped the
-        // last action ("Report a problem") clean off the screen once — an
-        // invisible action is worse than a taller card.
+        // recovery actions clean off the screen once.
         VStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28, weight: .medium))
@@ -1041,14 +1007,6 @@ private struct LoginErrorCard: View {
                         .font(.lhfSans(12, weight: .medium))
                         .foregroundStyle(Color.v2DateText)
                         .underline()
-                }
-                .buttonStyle(.plain)
-            }
-            if let onReportProblem {
-                Button(action: onReportProblem) {
-                    Text("Report a problem")
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText.opacity(0.7))
                 }
                 .buttonStyle(.plain)
             }
@@ -1157,12 +1115,9 @@ private struct CanvasLoginPane: View {
                     if navObserver.detectedKnownErrorPage {
                         LoginErrorCard(
                             title: "Canvas login hit a snag",
-                            message: "Penn's sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over or the calendar link are still available.",
+                            message: "Continue below, start over, or use your Canvas calendar link.",
                             onStartOver: startOver,
-                            onUseCalendarLinkInstead: { showPasteFeedLink = true },
-                            onReportProblem: {
-                                SupportContact.openReportMail(diagnostics: DiagnosticsReport.generate(state: state))
-                            }
+                            onUseCalendarLinkInstead: { showPasteFeedLink = true }
                         )
 
                         Divider().overlay(Color.v2Divider)
@@ -1188,8 +1143,8 @@ private struct CanvasLoginPane: View {
             LoginActionBar(
                 message: message ?? navObserver.loadError,
                 defaultHint: showsConnect
-                    ? "Log in to Canvas once. We'll capture your calendar feed automatically."
-                    : "Sign in with your PennKey. Connect appears once Penn brings you back to Canvas.",
+                    ? "You’re signed in. Connect Canvas to continue."
+                    : "Sign in with PennKey.",
                 connectTitle: "Connect Canvas",
                 isBusy: isBusy,
                 onCancel: onCancel,
@@ -1329,7 +1284,7 @@ private struct GradescopeLoginPane: View {
                     if navObserver.detectedKnownErrorPage {
                         LoginErrorCard(
                             title: "Gradescope login hit a snag",
-                            message: "The sign-in page reported an error partway through, but login may still work — it's worth continuing below. If it doesn't, Start over is still available.",
+                            message: "Continue below or start over.",
                             onStartOver: startOver,
                             onUseCalendarLinkInstead: nil
                         )
@@ -1354,7 +1309,7 @@ private struct GradescopeLoginPane: View {
 
             LoginActionBar(
                 message: message ?? navObserver.loadError,
-                defaultHint: "Log in to Gradescope once. We'll keep it in sync while your session is valid.",
+                defaultHint: "Sign in to Gradescope, then connect.",
                 connectTitle: "Connect Gradescope",
                 isBusy: isBusy,
                 onCancel: onCancel,
