@@ -45,13 +45,13 @@ struct HTMLLinksTests {
 
     @Test("skips a bare # anchor")
     func skipsBareHashAnchor() {
-        let links = HTMLText.links(in: #"<a href="#">Jump</a>"#)
+        let links = HTMLText.links(in: ##"<a href="#">Jump</a>"##)
         #expect(links.isEmpty)
     }
 
     @Test("skips a #fragment-only href")
     func skipsFragmentOnlyHref() {
-        let links = HTMLText.links(in: #"<a href="#section-2">Jump to section 2</a>"#)
+        let links = HTMLText.links(in: ##"<a href="#section-2">Jump to section 2</a>"##)
         #expect(links.isEmpty)
     }
 
