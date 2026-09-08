@@ -286,10 +286,10 @@ public struct ClassQuestionAnswerer: Sendable {
             let scope = parsed.course.map { " for \($0.code)" } ?? ""
             return AssistantAnswer(text: "I couldn't find that in your course materials\(scope). Try different words, or ask about the syllabus, an assignment, or an announcement.", sources: [], question: parsed, isExact: true)
         }
-        var lines = ["From the \(best.document.course) \(best.document.kind.label) \"\(best.document.title)\":", excerpt(best.passage.text, query: query)]
+        var lines = ["From the \(best.document.course) \(best.document.kind.label) \"\(componentLabel(best))\(best.document.title)\":", excerpt(best.passage.text, query: query)]
         if hits.count > 1, hits[1].document.id != best.document.id {
             let second = hits[1]
-            lines.append("Also, the \(second.document.course) \(second.document.kind.label) \"\(second.document.title)\" says: \(excerpt(second.passage.text, query: query, maxSentences: 1))")
+            lines.append("Also, the \(second.document.course) \(second.document.kind.label) \"\(componentLabel(second))\(second.document.title)\" says: \(excerpt(second.passage.text, query: query, maxSentences: 1))")
         }
         return AssistantAnswer(text: lines.joined(separator: "\n"), sources: sources(for: hits), question: parsed, grounding: hits, isExact: false)
     }
@@ -326,7 +326,7 @@ public struct ClassQuestionAnswerer: Sendable {
         let courseID = parsed.course.flatMap { course in
             context.knowledge.courses.first(where: { CourseMatcher.sameCourse($0.code, as: course) })?.courseID
         }
-        var hits = context.search.search(query, courseID: courseID, kinds: kinds, limit: 4)
+        var hits = context.search.search(query, courseID: courseID, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
         if courseID == nil, let course = parsed.course {
             hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
         }
@@ -380,6 +380,15 @@ public struct ClassQuestionAnswerer: Sendable {
             guard let url = item.url else { return nil }
             return SourceReference(title: item.title, course: item.course, kind: item.kind.rawValue, url: url)
         }
+    }
+
+    /// "[lab] " / "[recitation] " / "[lecture] " ahead of a titled excerpt so
+    /// a student (and the model, when this text is echoed back to it) can
+    /// tell a lab syllabus from a lecture syllabus in a multi-component
+    /// course. Empty for `.general`, which is most documents and shouldn't
+    /// look labelled as if it were part of a split.
+    private func componentLabel(_ hit: SearchHit) -> String {
+        hit.component == .general ? "" : "[\(hit.component.label)] "
     }
 
     private func sources(for hits: [SearchHit]) -> [SourceReference] {

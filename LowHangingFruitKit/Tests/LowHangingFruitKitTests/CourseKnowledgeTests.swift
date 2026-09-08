@@ -217,4 +217,38 @@ struct CourseSearchTests {
 
         #expect(search.search("quantum chromodynamics").isEmpty)
     }
+
+    @Test("preferredComponent ranks the matching component's passage first without hiding the other")
+    func preferredComponentBoost() {
+        // PHYS 0151 is one Canvas site holding a lecture and a lab, each with
+        // its own syllabus, both mentioning "late work" — exactly the setup
+        // that used to send a "what's the late policy for the class"
+        // question to the lab passage purely on keyword overlap.
+        let lecture = CourseDocument(courseID: "1", course: "PHYS 0151", kind: .syllabus, sourceID: "lecture-syllabus", title: "PHYS 0151 Lecture Syllabus", url: nil,
+                                     text: "This is the lecture syllabus. Homework and exams are described here. Late work is only accepted with a documented excuse from the instructor.")
+        let lab = CourseDocument(courseID: "1", course: "PHYS 0151", kind: .syllabus, sourceID: "lab-syllabus", title: "PHYS 0151 Lab Syllabus", url: nil,
+                                 text: "This is the lab syllabus. Late work loses ten percent per day, no exceptions.")
+        let search = CourseSearch(knowledge: CourseKnowledgeBase(documents: [lecture, lab]))
+
+        // No preference: identical to calling without the parameter at all —
+        // today's ordering, untouched.
+        let unnamed = search.search("late work policy")
+        let explicitNil = search.search("late work policy", preferredComponent: nil)
+        #expect(unnamed.map(\.document.id) == explicitNil.map(\.document.id))
+
+        let classQuery = "class late policy"
+        let classHits = search.search(classQuery, preferredComponent: DocumentComponent.mentioned(in: classQuery))
+        #expect(classHits.first?.document.id == lecture.id)
+        #expect(classHits.first?.component == .lecture)
+
+        let labQuery = "lab late policy"
+        let labHits = search.search(labQuery, preferredComponent: DocumentComponent.mentioned(in: labQuery))
+        #expect(labHits.first?.document.id == lab.id)
+        #expect(labHits.first?.component == .lab)
+
+        // Neither passage is hidden — the non-preferred one still surfaces,
+        // just outranked and labelled.
+        #expect(classHits.contains { $0.document.id == lab.id })
+        #expect(labHits.contains { $0.document.id == lecture.id })
+    }
 }

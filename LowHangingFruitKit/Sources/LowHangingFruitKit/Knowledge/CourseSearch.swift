@@ -9,11 +9,18 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
     public let passage: Passage
     public let document: CourseDocument
     public let score: Double
+    /// Which component of a multi-component course site (lecture vs. lab
+    /// vs. recitation) `document` belongs to. Defaults to classifying
+    /// `document` when not supplied, so a caller that already computed this
+    /// (as `CourseSearch.search` does, once per document per search) can
+    /// pass it through instead of paying for a second classification.
+    public let component: DocumentComponent
 
-    public init(passage: Passage, document: CourseDocument, score: Double) {
+    public init(passage: Passage, document: CourseDocument, score: Double, component: DocumentComponent? = nil) {
         self.passage = passage
         self.document = document
         self.score = score
+        self.component = component ?? DocumentComponent.classify(title: document.title, text: document.text)
     }
 }
 
@@ -47,21 +54,41 @@ public struct CourseSearch: Sendable {
     /// - Parameters:
     ///   - courseID: restrict to one course when the question names it.
     ///   - kinds: restrict to document kinds (e.g. only announcements).
+    ///   - preferredComponent: when a query names a course component (a "lab
+    ///     late policy" or "class late policy" question), boost passages
+    ///     from that component — or, for `.lecture`, from `.lecture` and
+    ///     `.general` documents — over the others. `nil` leaves scoring
+    ///     exactly as it was before component-awareness existed. Other
+    ///     components are never hidden, only outranked, so the model still
+    ///     sees them labelled as a possible secondary answer.
     public func search(
         _ query: String,
         courseID: String? = nil,
         kinds: Set<CourseDocument.Kind>? = nil,
+        preferredComponent: DocumentComponent? = nil,
         limit: Int = 5
     ) -> [SearchHit] {
         guard !index.isEmpty else { return [] }
         // Over-fetch so filters and the rerank have something to work with.
         let raw = index.search(query, limit: max(limit * 6, 30))
         var hits: [SearchHit] = []
+        // Classify once per document per search, not once per passage: a
+        // syllabus contributing two passages (the `perDocument` cap below)
+        // should not pay for `DocumentComponent.classify` twice.
+        var componentByDocument: [String: DocumentComponent] = [:]
         for hit in raw {
             guard let passage = passages[hit.passageID], let document = documents[passage.documentID] else { continue }
             if let courseID, document.courseID != courseID { continue }
             if let kinds, !kinds.contains(document.kind) { continue }
-            hits.append(SearchHit(passage: passage, document: document, score: hit.score * kindBoost(document.kind, query: query)))
+            let component: DocumentComponent
+            if let cached = componentByDocument[document.id] {
+                component = cached
+            } else {
+                component = DocumentComponent.classify(title: document.title, text: document.text)
+                componentByDocument[document.id] = component
+            }
+            let score = hit.score * kindBoost(document.kind, query: query) * componentBoost(component, preferredComponent: preferredComponent)
+            hits.append(SearchHit(passage: passage, document: document, score: score, component: component))
         }
         hits = rerank(query: query, hits: hits)
         // At most two passages per document so one long syllabus can't crowd
@@ -76,6 +103,31 @@ public struct CourseSearch: Sendable {
             if result.count == limit { break }
         }
         return result
+    }
+
+    /// A preferred component boosts its own documents, treats `.general`
+    /// documents (a document that isn't part of any labelled split, like a
+    /// single-component course's syllabus) as an equally valid answer, and
+    /// only mutes — never zeroes — the other named components. `.lecture`
+    /// preference is gentler (×0.5 rather than ×0.6) than `.lab`/
+    /// `.recitation` preference is on the others, per the brief: a lab
+    /// passage should not be able to outrank a lecture passage for a plain
+    /// "class" question, but must still surface, labelled, as a secondary
+    /// hit — the whole point of this feature is that both syllabi remain
+    /// visible, just correctly ordered.
+    private func componentBoost(_ component: DocumentComponent, preferredComponent: DocumentComponent?) -> Double {
+        guard let preferredComponent else { return 1.0 }
+        switch preferredComponent {
+        case .lab, .recitation:
+            if component == preferredComponent { return 1.5 }
+            if component == .general { return 1.0 }
+            return 0.6
+        case .lecture:
+            if component == .lecture || component == .general { return 1.0 }
+            return 0.5
+        case .general:
+            return 1.0
+        }
     }
 
     private func kindBoost(_ kind: CourseDocument.Kind, query: String) -> Double {
@@ -108,7 +160,11 @@ public struct CourseSearch: Sendable {
             guard let vector = embedding.vector(for: String(hit.passage.text.prefix(600))) else { return hit }
             let similarity = cosine(queryVector, vector)
             let blended = 0.65 * (hit.score / maxScore) + 0.35 * max(0, similarity)
-            return SearchHit(passage: hit.passage, document: hit.document, score: blended)
+            // Carry the already-computed component through rather than
+            // letting the default parameter reclassify — same document,
+            // same answer, but reclassifying here would be exactly the
+            // per-passage recomputation the caller above was written to avoid.
+            return SearchHit(passage: hit.passage, document: hit.document, score: blended, component: hit.component)
         }
         #else
         return hits

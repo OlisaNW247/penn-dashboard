@@ -211,11 +211,17 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         let courseID = parsed.course.flatMap { course in
             courses.first(where: { CourseMatcher.sameCourse($0.code, as: course) })?.courseID
         }
-        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseID: courseID, limit: excerptLimit)
+        let preferredComponent = DocumentComponent.mentioned(in: question)
+        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseID: courseID, preferredComponent: preferredComponent, limit: excerptLimit)
         guard !hits.isEmpty else { return "" }
         let lines = hits.enumerated().map { index, hit -> String in
             let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
-            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \"\(hit.document.title)\": \(body)"
+            // A non-general component is labelled so a multi-component course
+            // (a lecture syllabus and a lab syllabus sharing one Canvas site)
+            // doesn't read as one undifferentiated blob to the model — see
+            // `DocumentComponent`'s doc comment for the bug this fixes.
+            let componentTag = hit.component == .general ? "" : "[\(hit.component.label)] · "
+            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
         }
         return (["RETRIEVED EXCERPTS (from the student's synced course materials):"] + lines).joined(separator: "\n")
     }
