@@ -12,7 +12,13 @@ import type {
   DocumentKind,
   DocumentStub,
 } from "./manifest.ts";
-import { catalogEntryWire, type CatalogComponent, type CatalogCourseRow, type CatalogEntryWire } from "./catalog.ts";
+import {
+  catalogEntryWire,
+  catalogIsStale,
+  type CatalogComponent,
+  type CatalogCourseRow,
+  type CatalogEntryWire,
+} from "./catalog.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -312,7 +318,51 @@ function catalogRowToDBRow(row: CatalogCourseRow): CatalogCourseDBRow {
   };
 }
 
-function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
+/**
+ * Reads `catalog_courses.components` -- a jsonb column, so Postgres hands
+ * it back as whatever shape was last written, not necessarily today's
+ * `CatalogComponent` -- into a fully-populated `CatalogComponent[]`, and
+ * reports whether any component was missing `meetings` entirely. The first
+ * catalog commit (2026-09-07) wrote components shaped
+ * `{ activity, label, sectionCount, credits, sectionIDs }`; 6104d86 added
+ * `meetings: CatalogMeeting[]` to the type but did nothing to the rows
+ * already on disk, so a row written before that commit reads back missing
+ * the field, and `catalogEntryWire`'s `for (const meeting of
+ * component.meetings)` threw a TypeError on it -- the live 500 this
+ * function exists to stop. `sectionIDs` gets the same treatment for the
+ * same reason (an array field the type requires but an old row might lack),
+ * even though every row observed so far has had it; there is no cost to
+ * being defensive about a second field the same bug class could hit.
+ * `activity`/`label`/`sectionCount`/`credits` are read straight through --
+ * every catalog shape that has ever existed carried those, so there is
+ * nothing to default there.
+ */
+function normalizeCatalogComponents(raw: unknown): { components: CatalogComponent[]; lacksMeetings: boolean } {
+  if (!Array.isArray(raw)) return { components: [], lacksMeetings: false };
+  let lacksMeetings = false;
+  const components = raw.map((entry) => {
+    const component = (entry ?? {}) as Partial<CatalogComponent> & Record<string, unknown>;
+    const hasMeetings = Array.isArray(component.meetings);
+    if (!hasMeetings) lacksMeetings = true;
+    return {
+      activity: component.activity ?? "",
+      label: component.label ?? "",
+      sectionCount: component.sectionCount ?? 0,
+      credits: component.credits ?? null,
+      sectionIDs: Array.isArray(component.sectionIDs) ? component.sectionIDs : [],
+      meetings: hasMeetings ? (component.meetings as CatalogComponent["meetings"]) : [],
+    };
+  });
+  return { components, lacksMeetings };
+}
+
+// Exported (unlike most of this file's row<->wire mappers) so
+// `db.test.ts` can exercise the legacy-row normalization directly without
+// a `SupabaseClient` -- it's pure, and the normalization behavior (not
+// just the round-trip) is exactly what the fix in this commit needs a
+// test to pin down.
+export function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
+  const { components, lacksMeetings } = normalizeCatalogComponents(row.components);
   return {
     catalogCode: row.catalog_code,
     semester: row.semester,
@@ -323,17 +373,44 @@ function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
     crosslistings: row.crosslistings,
     gradeModes: row.grade_modes,
     attributes: row.attributes,
-    components: row.components,
+    components,
     source: row.source,
     fetchedAt: row.fetched_at,
     syllabusURL: row.syllabus_url ?? undefined,
+    componentsLackMeetings: lacksMeetings,
   };
+}
+
+/**
+ * Whether `existing` (the current `catalog_courses` row for a code, if any)
+ * needs a fresh Penn Labs fetch this manifest call. Factored out of
+ * `sync/index.ts`'s `refreshCatalog` so the decision is unit-testable
+ * without a `SupabaseClient` -- it is pure, taking the already-normalized
+ * row and the caller's clock.
+ *
+ * A row missing entirely is the ordinary "never fetched" case.
+ * `componentsLackMeetings` is checked *before* `catalogIsStale` and short-
+ * circuits it: a legacy row is worse than a missing one, because it
+ * answers -- `selectCatalogEntriesForCourses` will happily hand the client
+ * a `CatalogEntryWire` with an empty `meetings` array, which reads as "this
+ * course truly has no scheduled meetings" rather than "we don't know yet" --
+ * and the Announcement Watcher's "before class Thursday" resolution and
+ * `ask`'s COURSE STRUCTURE block both depend on that data being either
+ * present or visibly absent (not silently wrong), so a legacy row must be
+ * refetched even when it was fetched five minutes ago and is nowhere near
+ * `catalogIsStale`.
+ */
+export function catalogNeedsFetch(existing: CatalogCourseRow | undefined, now: Date): boolean {
+  if (existing === undefined) return true;
+  if (existing.componentsLackMeetings) return true;
+  return catalogIsStale(existing.fetchedAt, now);
 }
 
 /** The `catalog_courses` rows sync already has for a set of catalog codes,
  *  keyed by code -- used to decide which of a manifest call's courses need
- *  a fresh Penn Labs fetch (missing entirely, or `catalogIsStale`) versus
- *  which can be left alone this run. */
+ *  a fresh Penn Labs fetch (missing entirely, `componentsLackMeetings`, or
+ *  `catalogIsStale` -- see `catalogNeedsFetch`) versus which can be left
+ *  alone this run. */
 export async function selectCatalogCoursesByCodes(
   client: SupabaseClient,
   catalogCodes: string[],

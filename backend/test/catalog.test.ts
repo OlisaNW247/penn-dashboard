@@ -463,6 +463,26 @@ Deno.test("catalogEntryWire: a row with no meetings produces an empty meetings a
   assert.deepEqual(wire.meetings, []);
 });
 
+Deno.test("catalogEntryWire: a legacy-shaped row (component missing meetings entirely) does not throw and yields no meetings for it", () => {
+  // In practice `_shared/db.ts`'s `dbRowToCatalogRow` normalizes this away
+  // before a `CatalogCourseRow` ever reaches `catalogEntryWire` -- this
+  // test is the second line of defense the `meetings ?? []` in
+  // `catalogEntryWire` itself is for, exercised directly so a future
+  // caller that skips that normalization degrades instead of 500ing (the
+  // live bug this whole change fixes: a pre-6104d86 `catalog_courses` row
+  // had components shaped without `meetings` at all, and the old
+  // unconditional `for (const meeting of component.meetings)` threw).
+  const legacyRow = {
+    ...PHYS_ROW,
+    components: [
+      { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"] },
+    ],
+  } as unknown as CatalogCourseRow;
+
+  const wire = catalogEntryWire(legacyRow, "some-canvas-id");
+  assert.deepEqual(wire.meetings, []);
+});
+
 // ---------------------------------------------------------------------
 // activityForSection
 // ---------------------------------------------------------------------

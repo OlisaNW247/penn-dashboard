@@ -9,10 +9,11 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { catalogCode, catalogIsStale, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
+import { catalogCode, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
 import { candidateFromLink, olderThan, SEVEN_DAYS_MS, websitesPendingCourses } from "../_shared/websites.ts";
 import {
   markDocumentsGone,
+  catalogNeedsFetch,
   documentRowToWire,
   selectCatalogCoursesByCodes,
   selectCatalogEntriesForCourses,
@@ -90,7 +91,8 @@ interface UploadResult {
  * Links every course in this manifest call whose Canvas code resolves to a
  * Penn Labs course code, and fetches/upserts a fresh `catalog_courses` row
  * for whichever of those (capped, see `MAX_CATALOG_FETCHES_PER_MANIFEST`)
- * either has none yet or is `catalogIsStale`.
+ * `catalogNeedsFetch` says needs one -- missing entirely, a legacy
+ * (pre-meetings) row, or ordinarily stale.
  *
  * This piggybacks on the manifest step rather than running as its own
  * cron for two reasons that both come down to "a cron would just be
@@ -133,10 +135,7 @@ async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSumm
   const existingByCode = await selectCatalogCoursesByCodes(serviceClient, uniqueCodes);
   const now = new Date();
   const codesToFetch = uniqueCodes
-    .filter((code) => {
-      const existing = existingByCode.get(code);
-      return existing === undefined || catalogIsStale(existing.fetchedAt, now);
-    })
+    .filter((code) => catalogNeedsFetch(existingByCode.get(code), now))
     .slice(0, MAX_CATALOG_FETCHES_PER_MANIFEST);
   if (codesToFetch.length === 0) return;
 
@@ -196,7 +195,22 @@ async function handleManifest(
   // Penn Labs fetch) made by *this* call is already reflected here -- a
   // student's very first sync for a newly-added course shouldn't have to
   // wait for a second manifest call before its meeting times show up.
-  const catalog = await selectCatalogEntriesForCourses(serviceClient, courseIDs);
+  //
+  // The catalog is an enrichment, not part of the manifest exchange the
+  // rest of this function and the upload it gates depend on -- so a
+  // failure here (a bad `catalog_courses` row shaped in a way
+  // `catalogEntryWire` doesn't expect, a transient Postgres error) must
+  // never fail the whole manifest call the way it did before this change
+  // (a live 500 on every sync for a course with a legacy row, see
+  // PROTOCOL.md). Logging only `message`, never the row itself, keeps a
+  // student's own catalog/course data out of the function logs.
+  let catalog: CatalogEntryWire[] = [];
+  try {
+    catalog = await selectCatalogEntriesForCourses(serviceClient, courseIDs);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("sync: catalog entries failed", message);
+  }
 
   return { coursesFresh, serverManifest, download, catalog };
 }

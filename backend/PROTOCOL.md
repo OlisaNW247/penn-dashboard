@@ -214,7 +214,13 @@ every enrolled course already reaches this code path at least once an hour
 (the app's own refresh loop calls `sync` that often), so there is no
 staleness gap a cron would close that this doesn't already close on its
 own. Failures (a 404, a timeout, a network error) are silent to the
-manifest response and only ever logged as a count.
+manifest response and only ever logged as a count. A stored row's
+`components` are normalized on read (`_shared/db.ts`'s `dbRowToCatalogRow`),
+since `components` is jsonb and a row can predate a shape change such as
+6104d86 adding `meetings`; a row that needed that normalization
+(`componentsLackMeetings`) is refetched on the next manifest call even when
+otherwise fresh, so a legacy row gets replaced rather than answering forever
+without a schedule.
 
 Structure block: `ask`'s prompt carries a `COURSE STRUCTURE (from the Penn
 registrar via Penn Labs)` system block, built by `_shared/catalog.ts`'s

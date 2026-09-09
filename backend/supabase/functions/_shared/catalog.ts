@@ -85,6 +85,21 @@ export interface CatalogCourseRow {
    *  Handbook entry, and the guessed `~courseN/current/` convention --
    *  see PROTOCOL.md's course-website section. */
   syllabusURL?: string;
+  /** True when this row was normalized (by `_shared/db.ts`'s
+   *  `dbRowToCatalogRow`) from a `catalog_courses` record written before
+   *  `meetings` existed on `CatalogComponent` (the first catalog commit,
+   *  2026-09-07, predates 6104d86 which added it) -- i.e. `components` in
+   *  Postgres is missing the field entirely on at least one component, not
+   *  merely empty. Derived at read time, never itself persisted (see
+   *  `catalogRowToDBRow`, which has no column for it): a legacy row answers
+   *  `ask`'s COURSE STRUCTURE block and `sync`'s manifest response just
+   *  fine except for the schedule, so it needs to be distinguishable from
+   *  "no Penn Labs data yet" only so `refreshCatalog` can tell the two
+   *  apart and re-fetch the former even when it isn't otherwise stale --
+   *  see the trap this fixes in CLAUDE.md/PROTOCOL.md. Optional and
+   *  defaults to false so every other construction site in this file
+   *  (`parsePennLabsCourse`, fixtures in `catalog.test.ts`) is unaffected. */
+  componentsLackMeetings?: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -605,7 +620,17 @@ export interface CatalogEntryWire {
 export function catalogEntryWire(row: CatalogCourseRow, courseID: string): CatalogEntryWire {
   const meetings: CatalogEntryMeetingWire[] = [];
   for (const component of row.components) {
-    for (const meeting of component.meetings) {
+    // `?? []` rather than trusting the `CatalogComponent` type's own
+    // `meetings: CatalogMeeting[]` field: `db.ts`'s `dbRowToCatalogRow`
+    // already normalizes a legacy (pre-meetings) Postgres row so this
+    // should never actually be missing, but that normalization is the
+    // *second* line of defense, not the only one -- a future shape change
+    // reaching this function some other way (a new caller, a schema
+    // migration that goes out before the normalization code does) should
+    // degrade to "no meetings" rather than a 500 on every manifest call
+    // naming the course, which is exactly the failure this whole change
+    // fixes.
+    for (const meeting of component.meetings ?? []) {
       meetings.push({
         sectionID: meeting.sectionID,
         activity: component.activity,
