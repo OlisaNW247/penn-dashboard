@@ -66,12 +66,15 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-09): **962 tests / 94 suites
+Baseline on `v5`, verified on a Mac (2026-09-09): **976 tests / 95 suites
 green** (plus 4 XCTest scheduler tests), up from 937/92 the day before, after
-module-imported rows learned their Canvas assignment id (so a submission
-turned in for a Modules-page assignment is detected, and the ICS row and the
-module row for one assignment collapse to a single dashboard item — see
-`SubmissionMatcher` and `AssignmentDeduplicator.collapseCanvasDuplicates`).
+the Canvas assignment id learned to come from the ICS URL fragment (see the
+trap below — this is what made a section-override assignment show once and
+read as submitted on a real phone, the first real-device fix of a submission
+bug), module-imported rows learned their id too, and three collapses now
+fold the same assignment's listings into one dashboard item
+(`AssignmentDeduplicator.collapseCanvasOverrides`, `.collapseCanvasDuplicates`,
+and the Gradescope pairing; title fallback in `SubmissionMatcher`).
 The 937 mark covered the course-websites layer, the Announcement Watcher
 rewrite, and multi-site course identity (a code can now be several Canvas
 sites; each site's documents are labelled by the registrar's activity for its
@@ -219,6 +222,18 @@ course is deliberately cosmetic only.
   asking which shape encloses it. There is no PIL, ImageMagick or numpy on the
   dev Mac; `sips` resizes and converts but does none of this. A short
   CoreGraphics script run with `swift file.swift` is the tool.
+- **The Canvas assignment id is in the ICS event's URL *fragment*.** Canvas's
+  `to_ics` (`app/models/calendar_event.rb`) writes every assignment event's
+  URL as `/calendar?include_contexts=course_<id>&month=…&year=…#assignment_<id>`
+  — never `/assignments/<id>` — and its section-override branch rewrites the
+  UID to `event-assignment-override-<overrideID>` and the summary to
+  `"<title> (<section>) [<code>]"` while leaving that URL alone (its own
+  source says `# TODO: event.url`). So the fragment is the only id an
+  override row carries, and the number in an override UID is an *override*
+  id, a different id space: join on it and the wrong work reads as done.
+  `Assignment.canvasAssignmentID` reads the fragment; the diagnostics
+  report's `via=fragment` is the proof it worked. Confirmed on a real phone
+  2026-09-09 after every PHYS 0151 lab row showed `via=none`.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
