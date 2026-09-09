@@ -138,9 +138,12 @@ struct AssignmentCardView: View {
                 // reads as a caveat about this one item rather than crowding
                 // the thing that actually identifies the card. Covers both
                 // Canvas no-submission assignments and readings/events —
-                // see `DashItem.showsNothingToSubmit`.
-                if item.showsNothingToSubmit {
-                    Text("nothing to submit")
+                // see `DashItem.showsNothingToSubmit` — and, since
+                // 2026-09-09, the "from announcements" caveat on tasks the
+                // Announcement Watcher extracted (`DashItem.isFromAnnouncement`),
+                // joined onto the same line by `DashItem.caveatText`.
+                if let caveat = item.caveatText {
+                    Text(caveat)
                         .font(.lhfSans(9, weight: .semibold))
                         .foregroundStyle(Color.v2CourseCode)
                 }

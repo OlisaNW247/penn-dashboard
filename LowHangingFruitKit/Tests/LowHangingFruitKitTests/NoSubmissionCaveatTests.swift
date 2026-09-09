@@ -610,3 +610,37 @@ private extension TimeInterval {
     static let hour: TimeInterval = 3600
     static let day: TimeInterval = 86_400
 }
+
+/// `DashItem.caveatText` — the single line under a card's title that joins
+/// the "nothing to submit" caveat with the "from announcements" one added
+/// 2026-09-09 for tasks the Announcement Watcher extracted.
+@MainActor
+@Suite("Card caveat line")
+struct CardCaveatLineTests {
+    private func item(source: Assignment.Source, kind: Assignment.Kind, requiresNoSubmission: Bool = false) -> DashItem {
+        DashItem(
+            assignment: Assignment(source: source, sourceID: "x-1", kind: kind,
+                                   course: "TEST 1000", title: "Thing", dueAt: nil, url: nil),
+            dueOverride: nil, isCompleted: false, completedAt: nil,
+            requiresNoSubmission: requiresNoSubmission
+        )
+    }
+
+    @Test("an announcement-extracted assignment says so")
+    func announcementCaveat() {
+        let dash = item(source: .canvasAnnouncement, kind: .assignment)
+        #expect(dash.isFromAnnouncement)
+        #expect(dash.caveatText == "from announcements")
+    }
+
+    @Test("a plain Canvas assignment has no caveat line at all")
+    func plainCanvasHasNoCaveat() {
+        #expect(item(source: .canvas, kind: .assignment).caveatText == nil)
+    }
+
+    @Test("both caveats share one line")
+    func bothCaveatsJoin() {
+        let dash = item(source: .canvasAnnouncement, kind: .event)
+        #expect(dash.caveatText == "nothing to submit \u{00B7} from announcements")
+    }
+}
