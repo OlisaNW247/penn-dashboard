@@ -99,3 +99,33 @@ struct SubmissionDiagnosticsTests {
         #expect(GradeWatcherStore.fetchOutcomeLabel(for: Dummy()) == "error")
     }
 }
+
+@Suite("Submission diagnostics: duplicate twins")
+struct DuplicateTwinTests {
+    private func row(_ source: Assignment.Source, _ id: String, title: String, url: String? = nil, course: String = "PHYS 0151") -> Assignment {
+        Assignment(
+            source: source,
+            sourceID: id,
+            kind: source == .canvasModules ? .event : .assignment,
+            course: course,
+            title: title,
+            dueAt: Date(timeIntervalSince1970: 1_800_000_000),
+            url: url.flatMap(URL.init(string:))
+        )
+    }
+
+    @Test("a module row with the same Canvas assignment id is a twin even with a different title")
+    func twinByID() {
+        let canvas = row(.canvas, "event-assignment-1@x", title: "Lab 1", url: "https://canvas.upenn.edu/courses/9/assignments/555")
+        let module = row(.canvasModules, "module-item-7", title: "Submit lab one here", url: "https://canvas.upenn.edu/courses/9/assignments/555")
+        let twins = AppState.duplicateTwins(of: canvas, among: [canvas, module])
+        #expect(twins.map(\.id) == [module.id])
+    }
+
+    @Test("a same-title row in another course is not a twin")
+    func otherCourseIsNotATwin() {
+        let canvas = row(.canvas, "event-assignment-1@x", title: "Lab 1")
+        let other = row(.canvasAnnouncement, "announcement-3-0", title: "Lab 1", course: "CHEM 1012")
+        #expect(AppState.duplicateTwins(of: canvas, among: [canvas, other]).isEmpty)
+    }
+}

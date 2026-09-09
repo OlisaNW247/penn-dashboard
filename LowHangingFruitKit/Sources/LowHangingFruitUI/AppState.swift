@@ -2642,10 +2642,15 @@ final class AppState: ObservableObject {
         }
 
         let now = Date()
+        // Every source, not just `.canvas`: the 2026-09-09 device report of
+        // a lab assignment shown twice and never read as submitted could not
+        // be diagnosed from a `.canvas`-only list, because whichever row was
+        // the second copy (a Modules-page row, an announcement-extracted
+        // row, a section-override ICS twin) was by definition not in it.
         let overdueItems = assignments
             .filter { item in
-                item.source == .canvas
-                    && item.kind == .assignment
+                item.source != .manual
+                    && (item.kind == .assignment || item.kind == .event)
                     && !isCompleted(item)
                     && (item.dueAt.map { $0 < now } ?? false)
             }
@@ -2673,17 +2678,53 @@ final class AppState: ObservableObject {
             let submittedAtText = submissionInfo.map { $0.submittedAt != nil ? "yes" : "no" } ?? "-"
             let missingText = submissionInfo.map { $0.isMissing ? "yes" : "no" } ?? "-"
             let inSubmittedSet = id.map { submittedCanvasAssignmentIDs.contains($0) } ?? false
+            let resolved = resolvedCanvasAssignmentIDs[item.id]
             lines.append(
-                "\(item.course): id=\(id ?? "-") via=\(path) uid=\(prefixClass) "
+                "\(item.course): source=\(item.source.rawValue) kind=\(item.kind.rawValue) "
+                    + "id=\(id ?? "-") resolved=\(resolved ?? "-") via=\(path) uid=\(prefixClass) "
                     + "fetched=\(fetched ? "yes" : "no") observed=\(observed) "
                     + "submittedAt=\(submittedAtText) missing=\(missingText) "
                     + "inSubmittedSet=\(inSubmittedSet ? "yes" : "no")"
             )
+            // The same assignment seen through every other pool the dashboard
+            // is built from — this is the line that names what a "duplicate"
+            // actually is (which source, which kind, whether it resolved an
+            // id, whether the collapse in `rebuildDashboardItems` let it
+            // through) without printing a title.
+            let twinPool = canvasItems + moduleReadingItems + announcementItems + gradescopeItems
+            for twin in Self.duplicateTwins(of: item, among: twinPool) {
+                let onDashboard = assignments.contains { $0.id == twin.id }
+                lines.append(
+                    "  twin: source=\(twin.source.rawValue) kind=\(twin.kind.rawValue) "
+                        + "id=\(twin.canvasAssignmentID ?? "-") "
+                        + "via=\(Self.joinPath(url: twin.url, sourceID: twin.sourceID)) "
+                        + "uid=\(Self.uidPrefixClass(twin.sourceID)) "
+                        + "completed=\(isCompleted(twin) ? "yes" : "no") "
+                        + "onDashboard=\(onDashboard ? "yes" : "no")"
+                )
+            }
         }
         if overdueItems.count > 12 {
             lines.append("  +\(overdueItems.count - 12) more overdue Canvas assignments")
         }
         return lines
+    }
+
+    /// Other rows that look like the same assignment as `item` — same course
+    /// and either the same Canvas assignment id or the deduplicator's own
+    /// title/due-date judgement. Diagnostic only; nothing on the dashboard
+    /// path calls this. Pure and static so a test can pin its behaviour.
+    static func duplicateTwins(of item: Assignment, among pool: [Assignment]) -> [Assignment] {
+        pool.filter { other in
+            guard other.id != item.id, other.course == item.course else { return false }
+            if let mine = item.canvasAssignmentID, let theirs = other.canvasAssignmentID, mine == theirs {
+                return true
+            }
+            return AssignmentDeduplicator.isLikelyDuplicate(
+                titleA: item.title, dueA: item.dueAt,
+                titleB: other.title, dueB: other.dueAt
+            )
+        }
     }
 
     /// Which of the two possible id sources resolved `item.canvasAssignmentID`
