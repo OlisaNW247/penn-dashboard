@@ -6,7 +6,11 @@ next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, als
 builds for macOS from the same source. **The student's own data is on-device by
 default** — grades, completions, submission state, the work list, the student's
 name, and Canvas/Gradescope cookies never leave the phone. There is no analytics,
-tracking, or third-party SDK.
+tracking, or third-party SDK. Since 2026-09-09 the product's user-facing name is
+**Locust** (display names and copy only; bundle ids, module names, app-group
+names and defaults keys keep their LHF names), and on launch the app fetches a
+public update-policy file (`update-manifest` branch) that can require an
+update — identifier-free, fail-open, see `Update/`.
 
 That said, the app is no longer backendless. LHF runs a small Supabase project
 (Postgres + Edge Functions; see `backend/PROTOCOL.md`) that every install talks
@@ -36,8 +40,11 @@ on-device; course material is pooled server-side; ask has an on-device
 fallback" — rather than flatly "everything is on-device" (stopped being true on
 `assistant-ui`) or "no server" (stopped being true adding the backend).
 
-Shipped on the App Store as **2.0.1 (build 6)** from `v3.5`; `v5` carries it,
-now with the backend on top.
+Live on the App Store: **1.2.1** (App Store id `6783911002`, released
+2026-09-04 — Marco confirmed against Apple's public lookup; this line has
+been stale before, re-check rather than trust it). **2.0.1 (build 6)** was
+uploaded from `v3.5`; `v5` carries it, now with the backend, the Locust
+onboarding and the update gate on top.
 
 ## Commands
 
@@ -92,7 +99,9 @@ merge of `v3.5` and the ask knowledge engine).
 Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
 suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
 verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
-work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
+work; `assistant-ui` later reached **769/78** on 2026-09-07 after the update
+gate added 33 tests and 2 suites. Earlier marks for reference: 608/61 on the
+v3.5+v4 merge, 517/55 on final
 `v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
 count has lost work — investigate rather than accept it.
 
@@ -152,6 +161,41 @@ Canvas's descriptor (`PSYC 1010-005 202430 Intro to Psych`). A failed parse fall
 back to the raw descriptor, which is both an ugly label *and* a key nothing else
 agrees with — so parsing bugs are identity bugs, not cosmetic ones. Renaming a
 course is deliberately cosmetic only.
+
+### Update gate
+
+`LowHangingFruitKit/Sources/LowHangingFruitKit/Update/` (`AppVersion`,
+`UpdatePolicy`, `UpdateManifestClient`, `UpdatePolicyCache`) and the
+`LowHangingFruitUI` trio `UpdateGate.swift` / `UpdateRequiredView.swift` /
+`UpdateAvailableBanner.swift` are a forced-update version gate: on launch and
+foreground it fetches one small public static manifest and can show an
+undismissable wall below `minimumVersion` or a dismissible banner below
+`latestVersion`. The contract is **fail open** — any fetch failure, unset
+manifest URL, or unparseable version leaves the last-known verdict untouched
+rather than inventing a block, because a broken version check must never be
+the thing that locks a student out of their own ledger.
+
+**It is live.** The manifest is the `update-manifest` orphan branch of this
+repo, served at
+`raw.githubusercontent.com/OlisaNW247/penn-dashboard/update-manifest/lhf-update.json`.
+An orphan branch because a shipped build has that URL compiled into it and can
+never be told a new one, so the path must not move when feature branches merge;
+and because GitHub's web UI can edit it from a phone, which is the only way to
+lift a bad block.
+
+`minimumVersion` and `latestVersion` are kept **equal** — every release is
+mandatory, so `UpdateAvailableBanner` never fires in practice. Bump both on each
+release, but **only once the new build is actually downloadable**. A floor above
+what the App Store will serve is the one unrecoverable mistake here: the wall's
+button leads to a version that still fails the check, and everyone is stuck. The
+30-day ceiling in `UpdatePolicyCache` only rescues people who are offline.
+
+Two things that surprise people. The gate cannot reach builds that shipped
+without it — 1.2.1 and earlier never fetch the manifest, so no floor retires
+them; only a future release can. And local builds are `2.0.0`, above any floor
+that is safe to publish, so the wall never appears in normal development: to see
+it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
+end to end) or pass `-LHFForceUpdateWall`.
 
 ## Traps that have already bitten
 
@@ -234,6 +278,39 @@ course is deliberately cosmetic only.
   `Assignment.canvasAssignmentID` reads the fragment; the diagnostics
   report's `via=fragment` is the proof it worked. Confirmed on a real phone
   2026-09-09 after every PHYS 0151 lab row showed `via=none`.
+- **`PersimmonMark`'s `size:` argument does not constrain it.** Its body is a
+  `GeometryReader` that ends in `.frame(maxWidth: .infinity, maxHeight:
+  .infinity)`, so the view expands to fill whatever space its parent hands
+  it; `size:` only sizes the image drawn *inside* that already-expanded
+  frame. Passing `size: 64` into an unconstrained `VStack` slot renders a
+  full-screen persimmon, not a 64pt one — a caller must also apply an
+  explicit `.frame(width:height:)`, exactly as the file's own `#Preview`
+  does. The wrong fix would have been either hunting for a magic `size:`
+  value that happens to look right in one place, or editing `PersimmonMark`
+  to drop the `GeometryReader`/fill-to-frame behavior — every existing
+  caller relies on that behavior and already pairs it with its own explicit
+  frame. This is invisible in code review and in Xcode previews, where the
+  surrounding layout happens to be bounded anyway, and only showed up on a
+  device screenshot.
+- **An unsized `Color.clear` expands to fill, and `minHeight:` is a floor, not a
+  ceiling.** `OnboardingView.skipButton` returned a bare `Color.clear` for steps
+  with no skip action, and `topBar` wrapped it in
+  `.frame(minWidth: 44, minHeight: 32)`. `Color.clear` has no intrinsic size, so
+  it took every point of height on offer, inflated the top bar, centred the back
+  chevron a third of the way down the screen and pushed everything below it with
+  it. The symptom pointed elsewhere entirely — the Canvas WebView rendered as a
+  thin band under a screenful of empty background, which reads as "the login
+  pane isn't filling" — so three separate fixes went looking for missing height
+  inside the panes (`.frame(maxHeight: .infinity)` on the pane, a
+  `safeAreaInset` restructure of the chrome, a fill on `OnboardingView.body`)
+  and none of them touched the cause. The height was never missing; an invisible
+  view was eating it. Size the placeholder at the source
+  (`Color.clear.frame(width: 44, height: 32)`). Two tells worth remembering:
+  `backButton` was never affected because it uses fixed `width:height:`, so the
+  asymmetry between the two ends of one bar was the clue; and temporary
+  `.border(Color.red)` on three views found this in one build cycle after three
+  cycles of reasoning had not. When a layout bug survives two fixes, stop
+  reasoning and draw the frames.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
 - **A jsonb column outlives the TypeScript type that wrote it.**
   `catalog_courses.components` rows written on 2026-09-07 had no
@@ -274,8 +351,11 @@ course is deliberately cosmetic only.
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
 | `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
-| `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. |
-| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback. New work goes here. |
+| `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. Later also carries the update gate (769/78). |
+| `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
+| `update-gate` | The update gate alone, independently mergeable. |
+| `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
+| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

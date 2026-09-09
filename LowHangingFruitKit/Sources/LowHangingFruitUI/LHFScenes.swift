@@ -16,7 +16,7 @@ public struct LHFScenes: Scene {
     public init() {}
 
     public var body: some Scene {
-        WindowGroup("Low Hanging Fruit", id: "main") {
+        WindowGroup("Locust", id: "main") {
             RootCore(state: state, scheduler: scheduler)
         }
 #if os(macOS)
@@ -176,7 +176,7 @@ struct MenuBarPanel: View {
             Divider()
 
             HStack {
-                Button("Open Low Hanging Fruit") {
+                Button("Open Locust") {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
                 }

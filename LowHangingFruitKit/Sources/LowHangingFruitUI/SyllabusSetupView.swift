@@ -72,7 +72,7 @@ struct SyllabusSetupView: View {
     private var chooser: some View {
         Form {
             Section {
-                Text("lhf reads only the grading section. the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. it stays on your phone.")
+                Text("locust reads only the grading section. the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. it stays on your phone.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
             }
@@ -219,7 +219,7 @@ struct SyllabusSetupView: View {
 
             if scheme.mentionsCurve {
                 Section {
-                    Text("this syllabus mentions a curve or instructor discretion. lhf can\u{2019}t model that. treat the letter grades as approximate.")
+                    Text("this syllabus mentions a curve or instructor discretion. locust can\u{2019}t model that. treat the letter grades as approximate.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                 }

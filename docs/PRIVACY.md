@@ -50,7 +50,8 @@ on-device alone:
 
   **What is never included:** your grades, completions, submission state, your
   work list, your name, or anything else specific to you. Only the shared,
-  public-to-the-class content described above.
+  public-to-the-class content described above. The only other request the app
+  makes on its own is the anonymous update-policy check described below.
 
 - **Questions you ask "the tree."** When you ask a question, the app sends the
   question, an on-device summary of your dashboard (built without your name,
@@ -73,6 +74,23 @@ on-device alone:
 server is unreachable, ask still works** — it answers from what's already
 synced to your phone, exactly as it did before this backend existed, just
 without the AI model's help on questions that need it.
+
+## Keeping the app up to date
+
+On launch, and whenever you bring LHF back to the foreground, the app makes a
+plain request to a small public file the developer hosts (for example on
+GitHub), to check whether your copy of the app is still supported. That
+request has no query parameters, no headers identifying you or your device,
+and carries nothing about your Canvas or Gradescope data, your grades, or
+your coursework — it is a version check, not a phone-home. Like any request
+to any website, whoever's server answers it can see an IP address, the way it
+could for any page you load, but nothing else about you or your coursework.
+If the check finds your build is too old, LHF can show a full-screen notice
+that stops the app from opening again until you update; if a newer version
+simply exists, it shows a dismissible banner instead. If the check fails for
+any reason — no signal, the file is unreachable, anything — the app opens
+normally and relies on the last successful check, kept for up to 30 days, in
+the meantime.
 
 ## Who we send data to
 

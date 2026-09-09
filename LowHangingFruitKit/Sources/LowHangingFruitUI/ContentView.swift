@@ -295,7 +295,7 @@ struct ContentView: View {
     /// automatic submission tracking and Canvas Scan going stale.
     private var canvasSessionExpiredBanner: some View {
         Button {
-            state.restartOnboarding()
+            state.restartOnboarding(for: .canvas)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -388,7 +388,7 @@ struct ContentView: View {
     private var connectionNoticeBanner: some View {
         HStack(spacing: 10) {
             Button {
-                state.restartOnboarding()
+                state.restartOnboarding(for: connectionNoticeDestination)
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "link.badge.plus")
@@ -426,6 +426,10 @@ struct ContentView: View {
         .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
+    private var connectionNoticeDestination: AppState.OnboardingDestination {
+        state.canvasIsLinkOnly ? .canvas : .gradescope
+    }
+
     // MARK: Header
 
     /// Wordmark, greeting and date on the left; the destinations on the right,
@@ -445,7 +449,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("LHF")
+                Text("Locust")
                     .font(.lhfSans(11, weight: .semibold))
                     .tracking(2)
                     .foregroundStyle(Color.v2CourseCode)

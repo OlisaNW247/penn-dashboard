@@ -5,9 +5,13 @@
 	<!-- LHF's grades, completions, work list, name, and login credentials
 	     stay on-device. A small backend of ours (Supabase) pools shared,
 	     non-personal Canvas course material per course and answers optional
-	     AI questions; this is what the two data types below cover. Neither
-	     is used for tracking, and the app contains no analytics, tracking,
-	     or advertising SDKs. See docs/PRIVACY.md. -->
+	     AI questions; this is what the two data types below cover. The app
+	     also makes a small, identifier-free request for a public
+	     update-policy file the maintainer hosts (see
+	     LowHangingFruitKit/Sources/LowHangingFruitKit/Update/), which
+	     carries nothing about the student. None of this is used for
+	     tracking, and the app contains no analytics, tracking, or
+	     advertising SDKs. See docs/PRIVACY.md. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>

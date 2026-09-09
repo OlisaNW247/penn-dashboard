@@ -258,10 +258,8 @@ struct OnboardingCourseSetupPane: View {
         case scanning
         /// Finished cleanly. May still have found nothing, which is normal.
         case finished
-        /// The scan could not run or did not come back. Carries the plain-language
-        /// reason; never an error dump, and never presented as the student's
-        /// problem to fix right now.
-        case unavailable(String)
+        /// The scan could not run or did not come back.
+        case unavailable
     }
 
     private var course: String { index < courses.count ? courses[index] : "" }
@@ -355,16 +353,10 @@ struct OnboardingCourseSetupPane: View {
     // MARK: The class
 
     private var courseCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(state.courseDisplayName(course))
-                .font(.lhfSerif(26))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("how should this class reach you?")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text(state.courseDisplayName(course))
+            .font(.lhfSerif(26))
+            .foregroundStyle(Color.v2Ink)
+            .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 2)
     }
@@ -382,14 +374,14 @@ struct OnboardingCourseSetupPane: View {
             case .idle, .scanning:
                 scanningRow
 
-            case .unavailable(let reason):
+            case .unavailable:
                 // Deliberately not styled as an error. A scan that could not
                 // run is a missing convenience, not a broken app, and the
                 // student can still set reminders on this screen and add
                 // recurring items later from Settings → Tasks.
                 explanatoryRow(
                     symbol: "text.magnifyingglass",
-                    text: reason
+                    text: "Couldn’t scan this class."
                 )
 
             case .finished:
@@ -401,7 +393,7 @@ struct OnboardingCourseSetupPane: View {
                     // "the app didn't work".
                     explanatoryRow(
                         symbol: "checkmark.circle",
-                        text: "Nothing recurring found in this class's syllabus or announcements yet. If your professor posts a weekly reading later, you can add it any time."
+                        text: "Nothing found."
                     )
                 } else {
                     VStack(spacing: 10) {
@@ -418,7 +410,7 @@ struct OnboardingCourseSetupPane: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Text("reading this class's syllabus and announcements…")
+                Text("Scanning Canvas…")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -430,7 +422,7 @@ struct OnboardingCourseSetupPane: View {
                 // moved on is still theirs — it lands in
                 // `state.canvasRequirementSuggestions` and stays reachable
                 // from Settings → Tasks.
-                Text("canvas is taking its time. you don't have to wait. carry on, and anything it finds will be waiting in settings → tasks.")
+                Text("Still scanning. You can keep going.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2CourseCode)
                     .fixedSize(horizontal: false, vertical: true)
@@ -466,29 +458,15 @@ struct OnboardingCourseSetupPane: View {
         let decision = decisions[suggestion.id]
 
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(suggestion.title)
-                        .font(.lhfSans(14, weight: .semibold))
-                        .foregroundStyle(Color.v2Ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(Self.scheduleLabel(for: suggestion))
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                Spacer(minLength: 8)
-                Text(suggestion.source.rawValue)
-                    .font(.lhfSans(9, weight: .medium))
-                    .tracking(0.6)
-                    .foregroundStyle(Color.v2CourseCode)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.title)
+                    .font(.lhfSans(14, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
+                Text(Self.scheduleLabel(for: suggestion))
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2DateText)
             }
-
-            Text("“\(suggestion.evidence)”")
-                .font(.lhfSans(11))
-                .italic()
-                .foregroundStyle(Color.v2CourseCode)
-                .fixedSize(horizontal: false, vertical: true)
 
             switch decision {
             case .added:
@@ -583,142 +561,41 @@ struct OnboardingCourseSetupPane: View {
                     get: { prefs.notificationsEnabled },
                     set: { state.coursePreferences.setNotificationsEnabled(course, $0) }
                 )) {
-                    settingLabel(
-                        "Remind me about this class",
-                        detail: "Turn this off to keep the class on your dashboard but stop its notifications."
-                    )
+                    settingLabel("Remind me about this class")
                 }
                 .toggleStyle(.switch)
                 .tint(Color.v2SpineGreen)
 
-                if prefs.notificationsEnabled {
-                    Divider().overlay(Color.v2Divider)
-                    leadTimeControl
-                    Divider().overlay(Color.v2Divider)
+                Divider().overlay(Color.v2Divider)
 
-                    // Merged toggle (2026-08-27) — used to be two separate
-                    // switches here ("Readings and check-ins" plus a
-                    // no-submission-only one on the Profile screen), which a
-                    // real device pass showed as one idea split two ways: a
-                    // reading, a lecture, and an attend-only assignment all
-                    // have the same thing in common — nothing to turn in.
-                    // Off HIDES them from this class's dashboard list, not
-                    // just their reminders (see `CoursePreferences
-                    // .nothingToSubmitEnabled`'s doc comment); a recurring
-                    // task the student created by hand stays on the list
-                    // either way, just silenced.
-                    Toggle(isOn: Binding(
-                        get: { prefs.nothingToSubmitEnabled },
-                        set: { state.setNothingToSubmitEnabled(course, $0) }
-                    )) {
-                        settingLabel(
-                            "Items with nothing to submit",
-                            detail: "Readings, classes and attend-only assignments. Off hides them from this class's list; recurring tasks you create yourself stay on the list, just silenced."
-                        )
-                    }
-                    .toggleStyle(.switch)
-                    .tint(Color.v2SpineGreen)
+                Toggle(isOn: Binding(
+                    get: { prefs.nothingToSubmitEnabled },
+                    set: { state.setNothingToSubmitEnabled(course, $0) }
+                )) {
+                    settingLabel(
+                        "Items with nothing to submit",
+                        detail: "For example: readings, classes, and attendance."
+                    )
                 }
+                .toggleStyle(.switch)
+                .tint(Color.v2SpineGreen)
             }
         }
     }
 
-    private func settingLabel(_ title: String, detail: String) -> some View {
+    private func settingLabel(_ title: String, detail: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.lhfSans(14, weight: .medium))
                 .foregroundStyle(Color.v2Ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(detail)
-                .font(.lhfSans(11))
-                .foregroundStyle(Color.v2CourseCode)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// Lead times, with "inherit" as a first-class choice rather than an
-    /// absence.
-    ///
-    /// `CoursePreferences.leadOffsets` is optional, and `nil` (inherit the
-    /// global) is genuinely different from `[]` (this class explicitly gets no
-    /// lead-time reminders). Both round-trip through storage; both are things a
-    /// student might mean. A control that only offered a set of chips could not
-    /// express the first — the moment it wrote anything, the class would stop
-    /// tracking the global setting forever, which is the exact failure that
-    /// property's doc comment warns about. So the choice is made explicitly
-    /// first, and only then are there chips.
-    private var leadTimeControl: some View {
-        let isCustom = prefs.leadOffsets != nil
-
-        return VStack(alignment: .leading, spacing: 10) {
-            settingLabel(
-                "When to remind me",
-                detail: isCustom
-                    ? "Just for this class. Your other classes are unaffected."
-                    : "Following your default, so changing it later changes this class too."
-            )
-
-            HStack(spacing: 8) {
-                choiceChip(title: "Use my default", selected: !isCustom) {
-                    state.coursePreferences.setLeadOffsets(course, nil)
-                }
-                choiceChip(title: "Just for this class", selected: isCustom) {
-                    // Seeded from the global default rather than from nothing,
-                    // so switching to custom starts from what the student
-                    // already had instead of silently turning every reminder
-                    // for this class off.
-                    state.coursePreferences.setLeadOffsets(course, LeadOffset.defaults)
-                }
-            }
-
-            if let offsets = prefs.leadOffsets {
-                FlowLayout {
-                    ForEach(LeadOffset.allCases) { offset in
-                        choiceChip(title: offset.label, selected: offsets.contains(offset)) {
-                            var next = offsets
-                            if next.contains(offset) { next.remove(offset) } else { next.insert(offset) }
-                            // An empty set is kept as an empty set, never folded
-                            // back to `nil`. "No lead-time reminders for this
-                            // class" is a thing a student can mean, and turning
-                            // it into "inherit" would hand them back the
-                            // reminders they just switched off.
-                            state.coursePreferences.setLeadOffsets(course, next)
-                        }
-                    }
-                }
-
-                if offsets.isEmpty {
-                    Text("no advance reminders for this class. you'll still see it on your dashboard.")
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                Text(LeadOffset.defaults.sorted { $0.rawValue < $1.rawValue }.map(\.label)
-                    .joined(separator: ", "))
+            if let detail {
+                Text(detail)
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2CourseCode)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func choiceChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            lhfHapticLight()
-            action()
-        } label: {
-            Text(title)
-                .font(.lhfSans(12, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? Color.v2ToggleActiveTx : Color.v2DateText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(selected ? Color.v2Ink : Color.v2Ink.opacity(0.07)))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     // MARK: Footer
@@ -827,18 +704,12 @@ struct OnboardingCourseSetupPane: View {
             scan = .finished
 
         case .noSession:
-            scan = .unavailable(Self.noSessionMessage)
+            scan = .unavailable
 
         case .scan:
             await runScan(cookies: cookies)
         }
     }
-
-    /// A student who pasted their calendar feed link instead of logging in
-    /// (docs/CANVAS_LOGIN_HARDENING.md item 3b) sees this every time, and has
-    /// done nothing wrong — so it names the limitation and moves on rather than
-    /// asking them to go and fix something.
-    private static let noSessionMessage = "We couldn't check your syllabus for weekly readings or check-ins. that needs a Canvas login. You can still set reminders below, and add recurring work later from Settings → Tasks."
 
     private func runScan(cookies: [HTTPCookie]) async {
         scan = .scanning
@@ -866,7 +737,7 @@ struct OnboardingCourseSetupPane: View {
         // since it returns nothing.
         scan = state.isCanvasDiscoveryConnected
             ? .finished
-            : .unavailable("Canvas didn't answer when we looked for weekly readings and check-ins. Nothing is lost. you can set reminders below, and try again later from Settings → Tasks.")
+            : .unavailable
     }
 
     // MARK: Chrome
@@ -886,74 +757,5 @@ struct OnboardingCourseSetupPane: View {
         .padding(16)
         .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-    }
-}
-
-// MARK: - Wrapping chip row
-
-/// A wrapping row of chips.
-///
-/// `LazyVGrid` with adaptive columns would give every chip the width of the
-/// widest one, which for lead times ("1 hour before" next to "1 week before")
-/// leaves visible gaps and, at the larger Dynamic Type sizes, forces one chip
-/// per row long before it needs to. This measures each chip and wraps when the
-/// next one would not fit, so the row stays dense at every text size.
-///
-/// Written as a `Layout` rather than with the `alignmentGuide` wrapping trick
-/// that circulates for this. That trick mutates captured `var`s from inside
-/// guide closures, which Swift 6 correctly flags as mutation of captured state
-/// in concurrently-executing code — and it is genuinely order-dependent, not
-/// merely noisy: it only works while SwiftUI evaluates guides in subview order,
-/// which is not a documented guarantee. `Layout` asks the same question with an
-/// API built for it.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var widest: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            widest = max(widest, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-
-        return CGSize(width: min(widest, maxWidth), height: y + rowHeight)
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) {
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > bounds.width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(
-                at: CGPoint(x: bounds.minX + x, y: bounds.minY + y),
-                proposal: ProposedViewSize(size)
-            )
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
     }
 }

@@ -106,6 +106,21 @@ struct IntroFlowTests {
         }
     }
 
+    @Test("reconnect remembers the requested service and clears it on completion")
+    func reconnectTargetsOneService() {
+        withFlags(onboarded: true, seenIntro: true) {
+            let state = makeState()
+
+            state.restartOnboarding(for: .gradescope)
+            #expect(state.onboardingDestination == .gradescope)
+            #expect(state.needsOnboarding)
+
+            state.completeOnboarding()
+            #expect(state.onboardingDestination == .full)
+            #expect(!state.needsOnboarding)
+        }
+    }
+
     /// Preview is entered from the intro's first pane, so it counts as having
     /// seen it — including for a reviewer who later switches to real Canvas.
     @Test("entering preview mode counts as having seen the intro")

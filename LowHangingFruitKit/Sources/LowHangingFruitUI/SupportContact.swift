@@ -14,7 +14,7 @@ import AppKit
 enum SupportContact {
     /// Where "Report a problem" sends reports.
     static let reportAddress = "lowhangingfruit.help@gmail.com"
-    static let reportSubject = "LHF — Canvas login problem"
+    static let reportSubject = "Locust — Canvas login problem"
 
     /// Builds a `mailto:` link to `reportAddress` with `reportSubject` and a
     /// body that opens with a short prompt followed by the diagnostics

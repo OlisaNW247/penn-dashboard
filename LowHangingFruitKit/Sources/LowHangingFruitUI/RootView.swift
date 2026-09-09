@@ -15,6 +15,14 @@ struct RootCore: View {
     @ObservedObject var state: AppState
     @ObservedObject var scheduler: NotificationScheduler
 
+    /// Owns the forced-update version gate end to end: the synchronous
+    /// cached-policy check at construction, the fetch-and-recompute in
+    /// `refresh()`, and the per-version banner-dismissal state. See
+    /// `UpdateGate.swift` for the fail-open contract this store guarantees.
+    @StateObject private var updateGate = UpdateGateStore()
+
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Skip the splash in demo/screenshot mode so captures land on the app.
     /// A default expression (rather than a custom `init`) keeps this struct's
     /// memberwise initializer intact for callers that only care about
@@ -30,6 +38,37 @@ struct RootCore: View {
     var body: some View {
         ZStack {
             mainContent
+                // Nested inside `mainContent`'s own layer rather than a
+                // sibling `ZStack` child: `.overlay` respects the safe area
+                // by default (nothing here calls `.ignoresSafeArea()`), so
+                // this floats above the dashboard/onboarding content without
+                // sitting under the status bar or a notch, and it stays
+                // beneath the wall and the splash below simply because it's
+                // painted as part of the first child, not a later one.
+                .overlay(alignment: .top) {
+                    if case .updateAvailable(let latest) = updateGate.verdict,
+                       !updateGate.isAvailableBannerDismissed {
+                        UpdateAvailableBanner(latest: latest) {
+                            updateGate.dismissAvailableBanner()
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+
+            // Above the app, below the splash: a build under the enforced
+            // floor should do nothing at all — including onboarding, which
+            // is why this sits above `mainContent` rather than only inside
+            // the dashboard branch of it — but the splash still gets to play
+            // first (`.zIndex(1)` below), so the wall is what the student is
+            // left looking at once it finishes, not what flashes underneath it.
+            if case .updateRequired(let minimum, let message) = updateGate.verdict {
+                UpdateRequiredView(
+                    minimum: minimum,
+                    message: message,
+                    appStoreURL: updateGate.appStoreURL
+                )
+                .transition(.opacity)
+            }
 
             if showSplash {
                 // isDarkMode is read straight from `state.appearanceMode`
@@ -44,6 +83,14 @@ struct RootCore: View {
                 }
                 .transition(.opacity)
                 .zIndex(1)
+            }
+        }
+        .task {
+            await updateGate.refresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await updateGate.refresh() }
             }
         }
         // Applied at the root so both the dashboard and the splash (which
@@ -61,16 +108,28 @@ struct RootCore: View {
     private var mainContent: some View {
         if state.needsOnboarding {
             // The mission panes come first on a true first run, then the
-            // connect checklist. Nested rather than a sibling `else if` on
-            // purpose: the intro is only ever reachable *inside* onboarding, so
-            // a Settings reconnect (which clears `hasCompletedOnboarding` but
-            // not `hasSeenIntro`) lands on the checklist, not the pitch.
+            // linear connect walk (`OnboardingView`). Nested rather than a
+            // sibling `else if` on purpose: the intro is only ever reachable
+            // *inside* onboarding, so a Settings reconnect (which clears
+            // `hasCompletedOnboarding` but not `hasSeenIntro`) lands on the
+            // walk, not the pitch.
             if state.needsIntro {
                 IntroView()
                     .environmentObject(state)
             } else {
-                OnboardingView()
+                // `.environmentObject(scheduler)` matters here, not just in
+                // the dashboard branch below: the notification step reads
+                // and writes this exact instance, and
+                // it has to be the same one `ContentView` gets a few lines
+                // down, since `NotificationScheduler`'s published properties
+                // are loaded from `UserDefaults.lhf` once at construction and
+                // never re-read — a second, locally-owned scheduler would let
+                // onboarding's choices sit in `UserDefaults` while the
+                // dashboard kept showing whatever was on disk before
+                // onboarding ran.
+                OnboardingView(destination: state.onboardingDestination)
                     .environmentObject(state)
+                    .environmentObject(scheduler)
             }
         } else {
             ContentView()

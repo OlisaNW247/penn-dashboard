@@ -55,7 +55,7 @@ struct SplashView: View {
 
             if reduceMotion {
                 // Respect Reduce Motion: no autoplaying clip — show the wordmark.
-                Text("LHF")
+                Text("Locust")
                     .font(.lhfSerif(56))
                     .foregroundStyle(Color.v2Ink)
             } else {
@@ -68,7 +68,7 @@ struct SplashView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("low hanging fruit")
+        .accessibilityLabel("Locust")
         .task {
             // Reduce Motion shows a brief static beat; otherwise a safety net so
             // a clip that never loads or ends can't strand the user. The cancel
