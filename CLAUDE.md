@@ -235,6 +235,17 @@ course is deliberately cosmetic only.
   report's `via=fragment` is the proof it worked. Confirmed on a real phone
   2026-09-09 after every PHYS 0151 lab row showed `via=none`.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
+- **A jsonb column outlives the TypeScript type that wrote it.**
+  `catalog_courses.components` rows written on 2026-09-07 had no
+  `meetings`; the next day's code iterated `component.meetings`, the stored
+  rows were read back untouched, and every manifest naming that course
+  returned 500 for a day — silently, from the app's side, because the
+  upload is gated on the manifest and the only symptom was
+  `last_full_sync_at` never filling. Normalize jsonb at the read boundary
+  (`dbRowToCatalogRow`), let a legacy row force a refetch
+  (`catalogNeedsFetch`), and never let an enrichment step fail the exchange
+  it decorates (`handleManifest` catches the catalog step). Deno tests
+  cannot catch this: they only ever see rows the current code wrote.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
