@@ -111,6 +111,24 @@ final class AppState: ObservableObject {
     /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
 
+    /// Row id (`Assignment.id`) → Canvas assignment id, for rows whose own
+    /// `Assignment.canvasAssignmentID` can't be derived structurally (a
+    /// `.canvasModules` row whose module item carried no `/assignments/<id>`
+    /// url) but that `SubmissionMatcher.fallbackCanvasAssignmentIDs` could
+    /// still resolve by title/due-date against Grade Watcher's own listing of
+    /// the course's assignments. In-memory only — there is nowhere durable
+    /// for it to live that would outlast a relaunch usefully, since a
+    /// relaunch re-fetches grades anyway — and **merged, not replaced**, on
+    /// every `updateSubmissionState()`, into whatever the previous refresh
+    /// resolved: `SubmissionMatcher` only ever answers
+    /// for courses THIS refresh actually fetched grades for
+    /// (`gradeItemsByCourse`), so a course a partial or deselected refresh
+    /// didn't reach would otherwise have its last-known resolution wiped out
+    /// from under `isCompleted`, bouncing an already-recognized module
+    /// reading back onto the dashboard as unsubmitted. `isCompleted` reads
+    /// this after `Assignment.canvasAssignmentID` finds nothing of its own.
+    private(set) var resolvedCanvasAssignmentIDs: [String: String] = [:]
+
     /// Canvas assignment ids Grade Watcher has told us require no online
     /// submission (`GradeItem.requiresNoSubmission` — `submission_types` of
     /// on_paper/none/not_graded), cached across refreshes and **persisted
@@ -429,6 +447,21 @@ final class AppState: ObservableObject {
     /// storage-shape migration.
     private static let announcementExtractionVersionKey = "announcementExtractionVersionV1"
     private static let announcementExtractionVersion = 2
+    /// Version-gates `repairModuleReadingURLsIfNeeded()` — the one-time sweep
+    /// that re-imports a course's Modules readings so already-persisted
+    /// `.canvasModules` rows pick up the `/assignments/<id>` url
+    /// `moduleReadingAssignment` started setting. A "silent" course (no feed
+    /// presence) self-heals for free on the very next launch — its probe gate
+    /// (`courseProbes`) is an in-memory dict that starts empty every launch,
+    /// so it gets re-probed, and so re-imported, automatically — but a course
+    /// that already has Canvas feed items is never probed at all
+    /// (`refreshCourseIntel`'s `toProbe` filter excludes anything
+    /// `feedCourseKeys` already covers), so its module rows can ONLY have
+    /// gotten here through the one-off Settings toggle path
+    /// (`importReadingsIfNeeded`) and would sit with a nil url forever
+    /// without this. Same shape as `announcementExtractionVersionKey` above.
+    private static let moduleReadingURLVersionKey = "moduleReadingURLVersionV1"
+    private static let moduleReadingURLVersion = 1
     /// The term code of the most recent rollover the student waved away. A
     /// preference by every test in `docs/persistence-explained.md` §3 — losing
     /// it costs one re-offered card, nothing more — so it stays in defaults
@@ -604,6 +637,11 @@ final class AppState: ObservableObject {
             // overwrite `announcementItems` with the purge's own result
             // rather than racing whichever assignment happened to run last.
             repairAnnouncementExtractionIfNeeded(store: store)
+            // Same one-time-repair shape as just above, for the `.canvasModules`
+            // url fix — see `repairModuleReadingURLsIfNeeded`'s doc comment.
+            // Reads `moduleReadingItems` as just seeded above, so it has to
+            // run after that assignment, same as the announcement repair.
+            repairModuleReadingURLsIfNeeded()
             // Submission state used to be blank until the first successful grade
             // refresh landed — so auto-filed work sat back on the active list on
             // every cold launch, and stayed there forever if the Canvas session
@@ -806,6 +844,40 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: Self.processedAnnouncementIDsKey)
 
         defaults.set(Self.announcementExtractionVersion, forKey: Self.announcementExtractionVersionKey)
+    }
+
+    /// One-time repair for the `.canvasModules` url fix: every row upserted
+    /// before `moduleReadingAssignment` started setting `url` has `url: nil`
+    /// on the ledger forever unless something re-fetches that course's
+    /// Modules page. `moduleReadingURLVersionKey`'s own doc comment lays out
+    /// why that isn't automatic for every course — briefly, a course with
+    /// Canvas feed presence is never re-probed, so this fires the same
+    /// fire-and-forget re-import `importReadingsIfNeeded` already uses for
+    /// the Settings-toggle path, once, for every course with at least one
+    /// url-less `.canvasModules` row.
+    ///
+    /// Deliberately not gated on the re-fetch actually succeeding — unlike
+    /// `repairAnnouncementExtractionIfNeeded`'s synchronous ledger purge,
+    /// `importReadingsIfNeeded` is fire-and-forget (no cookies, an
+    /// unresolvable course id, or a lapsed session all no-op silently), and
+    /// there is no synchronous result here to gate the version bump on. A
+    /// launch where the re-fetch didn't actually happen is not worse off
+    /// than before this repair existed: `SubmissionMatcher`'s title/due-date
+    /// fallback still joins the row to its submission either way (see
+    /// `resolvedCanvasAssignmentIDs`), so this is a nice-to-have — a more
+    /// exact, structural join instead of a heuristic one — not a
+    /// correctness fix that must land before the version is claimed.
+    private func repairModuleReadingURLsIfNeeded() {
+        let defaults = UserDefaults.lhf
+        let storedVersion = defaults.integer(forKey: Self.moduleReadingURLVersionKey)
+        guard storedVersion < Self.moduleReadingURLVersion else { return }
+
+        let coursesNeedingRefetch = Set(moduleReadingItems.filter { $0.url == nil }.map(\.course))
+        for courseKey in coursesNeedingRefetch {
+            importReadingsIfNeeded(for: courseKey)
+        }
+
+        defaults.set(Self.moduleReadingURLVersion, forKey: Self.moduleReadingURLVersionKey)
     }
 
     /// First-run onboarding is required until both core data sources are connected.
@@ -1963,15 +2035,7 @@ final class AppState: ObservableObject {
         }
 
         let readings = overlaidItems.map { item in
-            Assignment(
-                source: .canvasModules,
-                sourceID: "module-item-\(item.id)",
-                kind: .event,
-                course: courseKey,
-                title: item.title,
-                dueAt: item.dueAt,
-                url: nil
-            )
+            Self.moduleReadingAssignment(item: item, courseKey: courseKey, courseID: courseID)
         }
         if let store = assignmentStore {
             store.upsert(readings)
@@ -1981,6 +2045,55 @@ final class AppState: ObservableObject {
         }
         recordModuleImport("\(courseKey): holding \(moduleReadingItems.count) rows after upsert")
         return true
+    }
+
+    /// Builds the `.canvasModules` row for one Modules-page item. Pulled out
+    /// of `importModuleReadings` as a pure, static helper so it's directly
+    /// testable without a live Canvas session.
+    ///
+    /// `url` is set only for `typeRaw == "Assignment"` with a non-nil
+    /// `contentID` — Canvas's Modules JSON gives the *module item's* id in
+    /// `item.id` (a wrapper object, one layer removed from the thing it
+    /// points at) and the *underlying content's* id in `contentID`, and only
+    /// the second one lands in the id space `/courses/<courseID>/assignments/
+    /// <contentID>` actually resolves. A quiz or discussion module item also
+    /// carries a `contentID`, but quizzes and discussions live in Canvas's
+    /// quiz/discussion id spaces, not the assignment one, so building an
+    /// `/assignments/<contentID>` url for those would point at a DIFFERENT
+    /// object that happens to share a number — silently mis-joining this row
+    /// to the wrong submission the next time Grade Watcher's side-channel
+    /// reads `Assignment.canvasAssignmentID` off of it. Restricting this to
+    /// `"Assignment"` is what keeps that join exact instead of a coincidence.
+    /// A Page/File/ExternalUrl has no assignment id at all, so those simply
+    /// get `url: nil`, same as before this existed — they fall back to
+    /// `SubmissionMatcher`'s title/due-date heuristic (or don't join at all)
+    /// exactly as they always have.
+    ///
+    /// The host, `canvas.upenn.edu`, is the same one hard-coded at
+    /// `CanvasModulesClient`'s own default `baseURL` and at
+    /// `canvasCourseSummaries()`'s own course-url construction — LHF has only
+    /// ever supported Penn's own Canvas instance, so this isn't a new
+    /// assumption, just this call site's share of an existing one.
+    static func moduleReadingAssignment(
+        item: CanvasModulesClient.ModuleItem,
+        courseKey: String,
+        courseID: String
+    ) -> Assignment {
+        let url: URL?
+        if item.typeRaw == "Assignment", let contentID = item.contentID {
+            url = URL(string: "https://canvas.upenn.edu/courses/\(courseID)/assignments/\(contentID)")
+        } else {
+            url = nil
+        }
+        return Assignment(
+            source: .canvasModules,
+            sourceID: "module-item-\(item.id)",
+            kind: .event,
+            course: courseKey,
+            title: item.title,
+            dueAt: item.dueAt,
+            url: url
+        )
     }
 
     /// Imports a just-re-included course's readings right away, instead of
@@ -3276,7 +3389,50 @@ final class AppState: ObservableObject {
         // opt-in calendar content like a reading), so `isAssignment` already
         // admits them below without needing the opt-in gate `.event` items
         // go through.
-        let canvasPool = canvasItems + moduleReadingItems + announcementItems
+        //
+        // Before any of that, though: a professor's Canvas item can itself be
+        // described TWICE by Canvas — once on the ICS calendar feed as a
+        // `.canvas` row, once on the Modules JSON page as a `.canvasModules`
+        // row imported for a readings-opted-in course. Unlike the Canvas ↔
+        // Gradescope pairing below, which merges two *different platforms'*
+        // independent postings (each carrying information the other lacks),
+        // this is one platform describing one assignment through two APIs —
+        // nothing to merge, just a second copy that needs to stop being
+        // shown. `AssignmentDeduplicator.collapseCanvasDuplicates` hides the
+        // module-side row (id match first, title/due-date heuristic as a
+        // fallback for module items whose url — and so
+        // `canvasAssignmentID` — a professor's module structure never gave
+        // them), leaving `canvasItems` itself untouched and `moduleItems`
+        // trimmed to its survivors. Running this BEFORE `canvasRelevant`'s
+        // filter matters: a collapsed-away module row must never also reach
+        // `AssignmentDeduplicator.matchPairs`/`merge` and get paired against
+        // a Gradescope item under its own, now-hidden id.
+        let collapse = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: canvasItems,
+            moduleItems: moduleReadingItems
+        )
+        // A collapsed module row's own completion must not silently vanish
+        // out from under the student: if the module-side id was already
+        // marked done (ticked before the two copies ever collapsed, or
+        // auto-filed) and the surviving Canvas-side id hasn't separately
+        // been marked, carry the completion over onto the id that's about to
+        // be the only one shown. Writes the ledger and the in-memory sets
+        // directly rather than going through `markCompleted` — `markCompleted`
+        // ends by calling `rebuildDashboardItems()` itself, and this function
+        // IS `rebuildDashboardItems`, so routing through it here would
+        // recurse.
+        for pair in collapse.collapses {
+            guard completedAssignmentIDs.contains(pair.moduleID),
+                  !completedAssignmentIDs.contains(pair.canvasID)
+            else { continue }
+            let completedAt = completionDates[pair.moduleID]
+            assignmentStore?.setCompleted(ids: [pair.canvasID], at: completedAt)
+            completedAssignmentIDs.insert(pair.canvasID)
+            if let completedAt {
+                completionDates[pair.canvasID] = completedAt
+            }
+        }
+        let canvasPool = collapse.canvasItems + collapse.moduleItems + announcementItems
         let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
@@ -3504,12 +3660,20 @@ final class AppState: ObservableObject {
     /// (`autoSubmittedNoSubmissionIDs`, applied in `updateSubmissionState`)
     /// eventually does on refresh — it does not silently vanish from the
     /// dashboard, which would read as data loss rather than as "nothing was
-    /// ever expected here."
+    /// ever expected here." A trailing clause covers a `.canvasModules` row
+    /// whose own `canvasAssignmentID` is nil (no `/assignments/<id>` url to
+    /// derive it from) but that `resolvedCanvasAssignmentIDs` — built each
+    /// refresh by `SubmissionMatcher`'s title/due-date match against Grade
+    /// Watcher's listing — resolved anyway.
     func isCompleted(_ assignment: Assignment) -> Bool {
         if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
         if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
         if let canvasID = assignment.canvasAssignmentID,
            submittedCanvasAssignmentIDs.contains(canvasID) {
+            return true
+        }
+        if let resolved = resolvedCanvasAssignmentIDs[assignment.id],
+           submittedCanvasAssignmentIDs.contains(resolved) {
             return true
         }
         if isAutoFiledNoSubmission(assignment) { return true }
@@ -3577,6 +3741,34 @@ final class AppState: ObservableObject {
                 ids.insert(submission.assignmentID)
             }
         }
+
+        // A `.canvasModules` row can't always derive its own Canvas
+        // assignment id structurally (`Assignment.canvasAssignmentID` needs a
+        // `/assignments/<id>` url, and a module can list an assignment by a
+        // bare content id Canvas never resolved into one). Grade Watcher's
+        // per-course category listing names every real assignment in the
+        // course regardless, so `SubmissionMatcher` gets a shot at matching
+        // such a row by title/due date before falling back to "not
+        // submitted." Keyed by course code — `gradeWatcher.snapshots` is
+        // keyed by Canvas course id, and `canvasCourseIDs()` (not the
+        // one-id-per-code `canvasCourseIDsByCode`) is what covers a code with
+        // more than one Canvas site, so a submission sitting on the second
+        // site is still found.
+        let courseIDsToKeys = canvasCourseIDs()
+        var gradeItemsByCourse: [String: [GradeItem]] = [:]
+        for (courseID, snapshot) in gradeWatcher.snapshots {
+            guard let courseKey = courseIDsToKeys[courseID] else { continue }
+            gradeItemsByCourse[courseKey, default: []].append(contentsOf: snapshot.categories.flatMap(\.items))
+        }
+        let fallback = SubmissionMatcher.fallbackCanvasAssignmentIDs(
+            rows: canvasItems + moduleReadingItems,
+            gradeItemsByCourse: gradeItemsByCourse
+        )
+        // Merged, not replaced — see `resolvedCanvasAssignmentIDs`'s own doc
+        // comment for why a course this refresh didn't reach must keep its
+        // last resolution rather than lose it.
+        resolvedCanvasAssignmentIDs.merge(fallback) { _, new in new }
+
         // What THIS refresh actually saw Canvas report as submitted — captured
         // before the auto-submitted and ledger merges below, because it is the
         // only set "Turned in ✓" may ever notify from. Ids that enter the
@@ -3687,7 +3879,14 @@ final class AppState: ObservableObject {
                 // That is the precise lie `hasFreshSubmissionState` exists to
                 // catch, so the store is told which ids Canvas genuinely spoke
                 // for and dates only those.
-                observedCanvasAssignmentIDs: refreshedCanvasAssignmentIDs()
+                observedCanvasAssignmentIDs: refreshedCanvasAssignmentIDs(),
+                // Lets the ledger flag a `.canvasModules` row `canvasSubmitted`
+                // too, via the id `SubmissionMatcher` resolved above for it —
+                // without this, only rows whose own `canvasAssignmentID`
+                // resolves structurally ever get written, and the module row
+                // would keep reading as outstanding on the very next cold
+                // launch even though `isCompleted` shows it done this session.
+                fallbackCanvasAssignmentIDs: resolvedCanvasAssignmentIDs
             ) ?? []
             pendingGradeChanges = notifiableGradeChanges(changes)
         }
@@ -3933,7 +4132,15 @@ final class AppState: ObservableObject {
     /// (The one visible consequence, left alone here: the hidden Grade
     /// Watcher UI, which is keyed by id not code, shows one card per site for
     /// such a course.) See `AppState.courseIDsByID` for the merge rule.
-    private func canvasCourseIDs() -> [String: String] {
+    ///
+    /// Internal, not private: `AssistantContextAssembly.swift`'s
+    /// `gradeCategoryFacts` also needs every site behind a code (the same
+    /// cross-listed-course gap this function exists to close for Grade
+    /// Watcher — a course's second Canvas site would otherwise contribute no
+    /// grading breakdown to the assistant's context document at all), and
+    /// `private` in Swift is file-scoped even across an extension on the
+    /// same type in a different file.
+    func canvasCourseIDs() -> [String: String] {
         // Preview mode's sample assignments carry no Canvas URLs, so nothing
         // ever resolved a course id and Grade Watcher showed "Can't reach
         // Canvas for your classes" — the demo's most visible dead end. Serve

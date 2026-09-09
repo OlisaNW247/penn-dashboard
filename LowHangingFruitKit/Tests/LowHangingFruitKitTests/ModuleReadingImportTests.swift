@@ -211,4 +211,90 @@ struct ModuleReadingImportTests {
             #expect(!state.assessments.contains { $0.title == "No-date reading" })
         }
     }
+
+    // MARK: - Item 6: same assignment on both the ICS feed and Modules import shows once
+
+    /// Field evidence this covers: a lab session Canvas describes both on the
+    /// ICS calendar feed (`.canvas`) and on the Modules JSON page
+    /// (`.canvasModules`, imported for a readings-opted-in course) used to
+    /// show as two separate dashboard cards for the same assignment.
+    /// `AssignmentDeduplicator.collapseCanvasDuplicates` (wired into
+    /// `rebuildDashboardItems`'s `canvasPool`) hides the module-side copy —
+    /// exercised here through the identical-title/identical-due-date tier of
+    /// `isLikelyDuplicate` since this seeded module row, like the others in
+    /// this file, carries no url for the id-match tier to use.
+    @Test("a .canvas row and a .canvasModules row for the same assignment appear once on the dashboard")
+    func canvasAndModuleDuplicateCollapseToOneDashboardRow() {
+        withCleanDecision {
+            let store = try! AssignmentStore(inMemory: true)
+            let sharedDueDate = Date().addingTimeInterval(3600)
+
+            let canvasRow = Assignment(
+                source: .canvas, sourceID: "assignment-777", kind: .assignment,
+                course: Self.course, title: "Week 6 lab", dueAt: sharedDueDate, url: nil
+            )
+            _ = store.reconcile([canvasRow], source: .canvas)
+
+            let moduleRow = reading(id: "20", title: "Week 6 lab", dueAt: sharedDueDate)
+            _ = store.reconcile([moduleRow], source: .canvasModules)
+
+            let state = AppState(assignmentStore: store)
+            setIncluded(state)
+
+            #expect(allDashboardItems(state).filter { $0.title == "Week 6 lab" }.count == 1)
+        }
+    }
+
+    // MARK: - Item 7: moduleReadingAssignment's url derivation
+
+    /// `AppState.moduleReadingAssignment` is the pure helper `importModuleReadings`
+    /// builds each row through. These three cover the type/contentID
+    /// combinations that decide whether it sets a `/assignments/<id>` url —
+    /// see the helper's own doc comment for why only this exact combination
+    /// is trusted.
+    @Test("moduleReadingAssignment sets an /assignments/<contentID> url for an Assignment-type item")
+    func moduleReadingAssignmentSetsURLForAssignmentType() {
+        let item = CanvasModulesClient.ModuleItem(
+            id: "9001",
+            title: "HW 3",
+            dueAt: Date(),
+            typeRaw: "Assignment",
+            contentID: "12345"
+        )
+        let assignment = AppState.moduleReadingAssignment(item: item, courseKey: Self.course, courseID: "555")
+
+        #expect(assignment.url == URL(string: "https://canvas.upenn.edu/courses/555/assignments/12345"))
+        // The same URL is what `Assignment.canvasAssignmentID` parses back
+        // out — this is the whole point of setting it: the join key to
+        // Grade Watcher's submission side-channel.
+        #expect(assignment.canvasAssignmentID == "12345")
+    }
+
+    @Test("moduleReadingAssignment leaves url nil for a Page-type item")
+    func moduleReadingAssignmentLeavesURLNilForPageType() {
+        let item = CanvasModulesClient.ModuleItem(
+            id: "9002",
+            title: "Week 3 reading",
+            dueAt: Date(),
+            typeRaw: "Page",
+            contentID: "12346"
+        )
+        let assignment = AppState.moduleReadingAssignment(item: item, courseKey: Self.course, courseID: "555")
+
+        #expect(assignment.url == nil)
+    }
+
+    @Test("moduleReadingAssignment leaves url nil for an Assignment-type item with no contentID")
+    func moduleReadingAssignmentLeavesURLNilWithoutContentID() {
+        let item = CanvasModulesClient.ModuleItem(
+            id: "9003",
+            title: "Untitled assignment link",
+            dueAt: nil,
+            typeRaw: "Assignment",
+            contentID: nil
+        )
+        let assignment = AppState.moduleReadingAssignment(item: item, courseKey: Self.course, courseID: "555")
+
+        #expect(assignment.url == nil)
+    }
 }

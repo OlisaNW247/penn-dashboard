@@ -249,6 +249,145 @@ public enum AssignmentDeduplicator {
         )
     }
 
+    // MARK: - Canvas ICS ↔ Canvas Modules collapse
+
+    /// One `.canvasModules` row hidden because a `.canvas` (ICS) row already
+    /// covers the same assignment.
+    public struct CanvasCollapse: Sendable, Hashable {
+        /// The surviving `.canvas` row's `Assignment.id`.
+        public let canvasID: String
+        /// The `.canvasModules` row's `Assignment.id` that is hidden.
+        public let moduleID: String
+
+        public init(canvasID: String, moduleID: String) {
+            self.canvasID = canvasID
+            self.moduleID = moduleID
+        }
+    }
+
+    /// Hides every `.canvasModules` row that is the same assignment as a
+    /// `.canvas` row in the same course, returning the canvas items unchanged,
+    /// the module rows that survived (order preserved), and the pairs
+    /// collapsed.
+    ///
+    /// This is intentionally its own function rather than a case fed into
+    /// `matchPairs`/`merge` above, because it is solving a different problem.
+    /// `matchPairs` reconciles two *different platforms'* independent
+    /// postings of one assignment, where each side can carry information the
+    /// other doesn't (a Gradescope score, a Canvas due-date correction) — so
+    /// merging builds a new combined item. A `.canvas` row and a
+    /// `.canvasModules` row, by contrast, are the SAME platform describing the
+    /// SAME assignment through two different Canvas APIs (the ICS calendar
+    /// feed and the Modules JSON listing); there is nothing on one side that
+    /// isn't equally available on the other, so there is nothing to merge —
+    /// one copy simply needs to stop being shown. And unlike a Gradescope
+    /// item, a module row is `Assignment.Kind.event` (readings/modules content
+    /// isn't itself gradework) and only exists at all when the course has
+    /// opted in to Canvas content sync (`docs/READINGS_COURSES_PLAN.md`), so
+    /// this collapse is a narrow, additive step that only ever fires for
+    /// students who have that turned on — it changes nothing for anyone who
+    /// hasn't.
+    ///
+    /// **Deliberately many-to-one, not 1:1 like `matchPairs`.** A Gradescope
+    /// posting is a single distinct listing of an assignment, so it makes
+    /// sense for `matchPairs` to claim it at most once — a second Canvas item
+    /// claiming the same Gradescope row would be a genuine double-count. A
+    /// Canvas assignment, though, routinely appears in more than one Module —
+    /// the same "HW 3" listed under both "Week 3" and a standing "Labs"
+    /// module — which produces multiple `.canvasModules` rows that all carry
+    /// the identical `canvasAssignmentID` (or the identical title/due date).
+    /// Those are not distinct assignments competing for one canvas row; they
+    /// are the same assignment mentioned twice, and every one of them needs
+    /// to disappear, not just the first. So the only per-row constraint here
+    /// is on the MODULE side (`collapsedModuleIDs` — each module row
+    /// collapses at most once, since it's exactly one dashboard entry to
+    /// hide); a `.canvas` row may absorb any number of module rows, and there
+    /// is deliberately no canvas-side claim set at all.
+    public static func collapseCanvasDuplicates(
+        canvasItems: [Assignment],
+        moduleItems: [Assignment]
+    ) -> (canvasItems: [Assignment], moduleItems: [Assignment], collapses: [CanvasCollapse]) {
+        guard !canvasItems.isEmpty, !moduleItems.isEmpty else {
+            return (canvasItems, moduleItems, [])
+        }
+
+        var canvasByCourse: [String: [Assignment]] = [:]
+        for item in canvasItems { canvasByCourse[item.course, default: []].append(item) }
+
+        var collapsedModuleIDs: Set<String> = []
+        var collapsesByModuleID: [String: CanvasCollapse] = [:]
+
+        // Pass 1: exact Canvas-assignment-id matches. This is the strongest
+        // signal available and is resolved for every module row, over the
+        // WHOLE input, before any fuzzy title matching runs — so a looser
+        // title match in pass 2 can never steal a module row an id match
+        // legitimately wants, regardless of which order the two arrays
+        // happened to be handed in. Note there is no canvas-side claim check:
+        // several module rows sharing one `canvasAssignmentID` (the same
+        // assignment listed in two Modules) all collapse onto that one canvas
+        // row here.
+        var canvasByIDInCourse: [String: [String: Assignment]] = [:]
+        for item in canvasItems {
+            guard let id = item.canvasAssignmentID else { continue }
+            canvasByIDInCourse[item.course, default: [:]][id] = item
+        }
+        for moduleItem in moduleItems {
+            guard let moduleAssignmentID = moduleItem.canvasAssignmentID,
+                  let canvasMatch = canvasByIDInCourse[moduleItem.course]?[moduleAssignmentID]
+            else { continue }
+            collapsedModuleIDs.insert(moduleItem.id)
+            collapsesByModuleID[moduleItem.id] = CanvasCollapse(canvasID: canvasMatch.id, moduleID: moduleItem.id)
+        }
+
+        // Pass 2: the same title/due-date heuristic every other dedup path in
+        // this type uses, for whatever pass 1 left unresolved. Candidates are
+        // scored by due-date gap (closer wins) and ordered smallest-gap-first
+        // with a stable id comparison to break exact ties, so the result
+        // never depends on input ordering — but assignment here only enforces
+        // the module side of the constraint: a module row takes the first
+        // (best) candidate in that order and is done, while the canvas row it
+        // picked stays open for any other module row still looking, for the
+        // same many-to-one reason pass 1 has no canvas-side claim set.
+        struct Candidate {
+            let moduleItem: Assignment
+            let canvasItem: Assignment
+            let gap: TimeInterval
+        }
+        var candidates: [Candidate] = []
+        for moduleItem in moduleItems where !collapsedModuleIDs.contains(moduleItem.id) {
+            for canvasItem in canvasByCourse[moduleItem.course] ?? [] {
+                guard isLikelyDuplicate(
+                    titleA: moduleItem.title, dueA: moduleItem.dueAt,
+                    titleB: canvasItem.title, dueB: canvasItem.dueAt
+                ) else { continue }
+                candidates.append(Candidate(
+                    moduleItem: moduleItem,
+                    canvasItem: canvasItem,
+                    gap: dueDateGap(moduleItem.dueAt, canvasItem.dueAt)
+                ))
+            }
+        }
+        let ordered = candidates.sorted { a, b in
+            if a.gap != b.gap { return a.gap < b.gap }
+            if a.moduleItem.id != b.moduleItem.id { return a.moduleItem.id < b.moduleItem.id }
+            return a.canvasItem.id < b.canvasItem.id
+        }
+        for candidate in ordered {
+            guard !collapsedModuleIDs.contains(candidate.moduleItem.id) else { continue }
+            collapsedModuleIDs.insert(candidate.moduleItem.id)
+            collapsesByModuleID[candidate.moduleItem.id] = CanvasCollapse(
+                canvasID: candidate.canvasItem.id,
+                moduleID: candidate.moduleItem.id
+            )
+        }
+
+        let survivors = moduleItems.filter { !collapsedModuleIDs.contains($0.id) }
+        // Collapses reported in the order their module rows appeared in the
+        // input, matching the survivor ordering guarantee above.
+        let collapses = moduleItems.compactMap { collapsesByModuleID[$0.id] }
+        return (canvasItems, survivors, collapses)
+    }
+
     // MARK: - Title normalization
 
     /// Reduces a title to a token sequence for comparison: lowercase,

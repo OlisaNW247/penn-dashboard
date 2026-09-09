@@ -94,11 +94,28 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     /// we prefer the URL and fall back to the UID. Nil for non-Canvas items and
     /// for quizzes/discussions/events (their URLs use a different id space), so
     /// auto-detection is scoped to true assignments and never mis-joins.
+    ///
+    /// `.canvasModules` rows are included too — a module-imported Assignment
+    /// item is the same Canvas assignment as the one the ICS feed would have
+    /// described, just reached through the Modules JSON API instead
+    /// (`CanvasModulesClient`), and it deserves the same join to Grade
+    /// Watcher's submission side-channel so it can read as submitted. But only
+    /// the URL is trusted for that source, never the sourceID fallback: a
+    /// modules row's sourceID is `module-item-<id>`, where `<id>` is Canvas's
+    /// *module item* id — a wrapper object one layer removed from the
+    /// assignment itself, drawn from a completely different id space. Running
+    /// the `assignment-(\d+)` sourceID pattern against it (or against any
+    /// numeric suffix it happens to contain) would coincidentally "match" a
+    /// digit that names the wrong assignment, and a mis-join here is not a
+    /// cosmetic bug — it silently reports someone else's submission status as
+    /// this student's own. The URL, when present, actually points at
+    /// `/assignments/<id>` and is safe to trust the same way the ICS case is.
     public var canvasAssignmentID: String? {
-        guard source == .canvas else { return nil }
+        guard source == .canvas || source == .canvasModules else { return nil }
         if let url, let id = Self.firstMatch(#"/assignments/(\d+)"#, in: url.absoluteString) {
             return id
         }
+        guard source == .canvas else { return nil }
         return Self.firstMatch(#"assignment-(\d+)"#, in: sourceID)
     }
 

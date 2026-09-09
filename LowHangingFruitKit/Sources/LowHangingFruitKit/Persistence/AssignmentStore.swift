@@ -795,16 +795,30 @@ public final class AssignmentStore {
     ///
     /// Nil means "everything on the ledger was covered" — the whole-refresh
     /// case, and the behaviour before partial refreshes were handled.
+    ///
+    /// `fallbackCanvasAssignmentIDs` (ledger row id → Canvas assignment id)
+    /// covers `.canvasModules` rows whose own `canvasAssignmentID` is nil
+    /// because the module item carried no `/assignments/<id>` URL —
+    /// `SubmissionMatcher` fills the gap by title/due-date against Canvas's
+    /// own grade snapshot. It's a fallback in the literal sense: a row's own
+    /// derived id, when it has one, always wins.
+    ///
+    /// Both `.canvas` (ICS) and `.canvasModules` rows are joined here — a
+    /// module-imported assignment is exactly as real a Canvas assignment as
+    /// one the ICS feed described, and deserves the same submission truth
+    /// rather than reading as permanently outstanding just because it arrived
+    /// through the other API.
     @discardableResult
     public func applySubmissionState(
         submittedCanvasAssignmentIDs: Set<String>,
         scores: [String: (earned: Double?, max: Double?)],
         observedCanvasAssignmentIDs: Set<String>? = nil,
+        fallbackCanvasAssignmentIDs: [String: String] = [:],
         now: Date = Date()
     ) -> [ScoreChange] {
         var changes: [ScoreChange] = []
-        for row in rows(source: .canvas) {
-            guard let canvasID = row.canvasAssignmentID else { continue }
+        for row in rows(source: .canvas) + rows(source: .canvasModules) {
+            guard let canvasID = row.canvasAssignmentID ?? fallbackCanvasAssignmentIDs[row.id] else { continue }
             row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
             // Canvas answered for this item — either way. Absence of a
             // submission is a real observation too, and it is the one most worth
@@ -879,10 +893,16 @@ public final class AssignmentStore {
     }
 
     /// The persisted Canvas submission set, for seeding `AppState` at launch
-    /// before (or without) any grade refresh.
+    /// before (or without) any grade refresh. Covers `.canvasModules` rows
+    /// too, for the same reason `applySubmissionState` does — a module-listed
+    /// assignment is the same Canvas assignment the ICS feed would otherwise
+    /// have described. This reads back only `canvasAssignmentID` (a row's own
+    /// URL-derived id), never `fallbackCanvasAssignmentIDs` — that map isn't
+    /// persisted, it's recomputed each refresh from a live grade snapshot, so
+    /// there's nothing to read back here for a row that needed one.
     public func submittedCanvasAssignmentIDs() -> Set<String> {
         var ids: Set<String> = []
-        for row in rows(source: .canvas) where row.canvasSubmitted {
+        for row in rows(source: .canvas) + rows(source: .canvasModules) where row.canvasSubmitted {
             if let canvasID = row.canvasAssignmentID { ids.insert(canvasID) }
         }
         return ids

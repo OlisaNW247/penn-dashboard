@@ -134,4 +134,41 @@ struct SubmissionDetectionTests {
         )
         #expect(a.canvasAssignmentID == nil)
     }
+
+    // MARK: - Assignment.canvasAssignmentID for .canvasModules rows
+
+    private func moduleAssignment(url: URL?, sourceID: String) -> Assignment {
+        Assignment(
+            source: .canvasModules,
+            sourceID: sourceID,
+            kind: .assignment,
+            course: "TEST 1000",
+            title: "Test item",
+            dueAt: nil,
+            url: url
+        )
+    }
+
+    @Test(".canvasModules row with an /assignments/N url extracts the numeric id")
+    func canvasModulesIDFromURL() {
+        let a = moduleAssignment(
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/54321"),
+            sourceID: "module-item-99"
+        )
+        #expect(a.canvasAssignmentID == "54321")
+    }
+
+    @Test(".canvasModules row with no url yields nil even when the sourceID looks assignment-shaped")
+    func canvasModulesWithNoURLNeverFallsBackToSourceID() {
+        // A module item's sourceID id-space is `module-item-<id>` — a wrapper
+        // object id in a different id space from the assignment itself, even
+        // on the rare module item literally named to look like the
+        // `assignment-N` pattern the ICS `.canvas` fallback uses. Trusting it
+        // here would risk joining Grade Watcher's submission truth to the
+        // wrong assignment, which is a worse failure than just not joining at
+        // all — so `.canvasModules` never gets the sourceID fallback, only
+        // `.canvas` does.
+        let a = moduleAssignment(url: nil, sourceID: "module-item-assignment-5")
+        #expect(a.canvasAssignmentID == nil)
+    }
 }
