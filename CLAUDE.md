@@ -66,13 +66,18 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-08): **937 tests / 92 suites
-green** (plus 4 XCTest scheduler tests), up from 853/90 the day before, after
-the course-websites layer, the Announcement Watcher rewrite, and multi-site
-course identity (a code can now be several Canvas sites; each site's
-documents are labelled by the registrar's activity for its section). Both were
-written without a compiler; the one first-run compile error was a raw string
-closed early by a `"#` inside `href="#"` (double the delimiter). The backend
+Baseline on `v5`, verified on a Mac (2026-09-09): **962 tests / 94 suites
+green** (plus 4 XCTest scheduler tests), up from 937/92 the day before, after
+module-imported rows learned their Canvas assignment id (so a submission
+turned in for a Modules-page assignment is detected, and the ICS row and the
+module row for one assignment collapse to a single dashboard item — see
+`SubmissionMatcher` and `AssignmentDeduplicator.collapseCanvasDuplicates`).
+The 937 mark covered the course-websites layer, the Announcement Watcher
+rewrite, and multi-site course identity (a code can now be several Canvas
+sites; each site's documents are labelled by the registrar's activity for its
+section). All of it was written without a compiler; the one first-run compile
+error so far was a raw string closed early by a `"#` inside `href="#"`
+(double the delimiter). The backend
 is deployed to the live Supabase project with all six functions; the live
 path is still exercised only by hand on a device, never by `swift test`
 (`BackendServices.client` is nil under tests).
