@@ -70,6 +70,22 @@ struct SubmissionDiagnosticsTests {
         #expect(AppState.joinPath(url: nil, sourceID: "event-assignment-77@x") == "uid")
     }
 
+    @Test("a calendar-context URL's #assignment_<id> fragment resolves via the fragment path")
+    func joinPathResolvesViaFragment() {
+        let url = URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#assignment_77")!
+        #expect(AppState.joinPath(url: url, sourceID: "event-assignment-override-99@x") == "fragment")
+    }
+
+    @Test("a #sub_assignment_<id> fragment on a section-override row resolves via neither path")
+    func joinPathSubAssignmentFragmentResolvesToNone() {
+        // "#sub_assignment_77" contains "assignment_77" but is NOT preceded by
+        // a literal "#" (it's preceded by "sub_"), so it must not match the
+        // fragment pattern — a sub-assignment/checkpoint uses a different id
+        // space from a plain assignment.
+        let url = URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#sub_assignment_77")!
+        #expect(AppState.joinPath(url: url, sourceID: "event-assignment-override-99@x") == "none")
+    }
+
     // MARK: - GradeWatcherStore.fetchOutcomeLabel
 
     @Test("http failure reports only the status code, never the URL")

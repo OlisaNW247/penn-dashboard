@@ -137,6 +137,32 @@ struct CanvasICSTests {
         #expect(assignments[0].course == "(unknown course)")
     }
 
+    @Test("a section-override VEVENT resolves its assignment id from the URL fragment, not the UID")
+    func overrideVEVENTResolvesIDFromURLFragment() throws {
+        // Ground truth: Canvas's `to_ics` override branch sets
+        // `UID: event-assignment-override-<overrideID>@…` (an unrelated,
+        // per-override id space) and leaves `URL` unchanged from the normal
+        // branch — `# TODO: event.url` in Canvas's own source — so the
+        // fragment is the only carrier of the real assignment id.
+        // `URL(string:)` (used by `ICSParser.makeEvent`) keeps the fragment,
+        // so it survives parsing unstripped.
+        let ics = """
+        BEGIN:VCALENDAR
+        BEGIN:VEVENT
+        UID:event-assignment-override-99@canvas.upenn.edu
+        SUMMARY:Lab 3 (Section 202) [PHYS 0151-202]
+        DTSTART:20260601T120000Z
+        URL:https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#assignment_4242
+        END:VEVENT
+        END:VCALENDAR
+        """
+        let assignments = CanvasICSClient.calendarItems(from: ics.data(using: .utf8)!)
+        #expect(assignments.count == 1)
+        let item = try #require(assignments.first)
+        #expect(item.url?.fragment == "assignment_4242")
+        #expect(item.canvasAssignmentID == "4242")
+    }
+
     @Test("folded continuation lines are unfolded")
     func unfolding() {
         // SUMMARY split across two lines per RFC 5545 §3.1.

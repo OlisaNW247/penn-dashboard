@@ -388,6 +388,116 @@ public enum AssignmentDeduplicator {
         return (canvasItems, survivors, collapses)
     }
 
+    // MARK: - Canvas ICS section-override collapse
+
+    /// One `.canvas` row hidden because another `.canvas` row already covers
+    /// the same underlying Canvas assignment id.
+    public struct OverrideCollapse: Sendable, Hashable {
+        /// The `Assignment.id` kept — the row shown on the dashboard.
+        public let survivorID: String
+        /// The `Assignment.id` hidden — a duplicate section-override listing
+        /// of the same assignment.
+        public let hiddenID: String
+
+        public init(survivorID: String, hiddenID: String) {
+            self.survivorID = survivorID
+            self.hiddenID = hiddenID
+        }
+    }
+
+    /// Collapses `.canvas` rows that are the same Canvas assignment (same
+    /// `course`, same non-nil `canvasAssignmentID`) into one. `preferredDueDates`
+    /// is keyed by Canvas assignment id and carries the student's own effective
+    /// due date from Grade Watcher (the assignments API, which resolves
+    /// section overrides for the logged-in student server-side) when known.
+    ///
+    /// This is a THIRD collapse, distinct from both `matchPairs`/`merge` above
+    /// and `collapseCanvasDuplicates`. `matchPairs` reconciles two different
+    /// platforms' independent postings of one assignment; `collapseCanvasDuplicates`
+    /// reconciles two different Canvas APIs (ICS feed vs. Modules JSON)
+    /// describing one assignment. This one is neither: it is the SAME
+    /// platform, the SAME Canvas API (the ICS calendar feed), describing the
+    /// SAME assignment more than once, because Canvas's `to_ics` emits one
+    /// VEVENT per *section due-date override* that applies to the student
+    /// rather than one VEVENT per assignment (see `Assignment.canvasAssignmentID`
+    /// for the full mechanism). A lab with three section overrides shows up as
+    /// three separate calendar rows sharing one `#assignment_<id>` fragment,
+    /// each with a different `dueAt` (whichever section's date Canvas chose to
+    /// stamp on that particular VEVENT) — and only the grades API, which
+    /// resolves the override the STUDENT is actually bound by, knows which one
+    /// is real. So unlike the other two collapses, which have nothing left to
+    /// decide once a match is found, this one has to pick a survivor.
+    ///
+    /// Survivor selection, per assignment id group of 2+ rows:
+    /// - If `preferredDueDates[id]` is known (Grade Watcher has fetched this
+    ///   course), keep whichever row's `dueAt` is nearest it — a nil `dueAt`
+    ///   counts as infinitely far, so it never wins over a dated row once a
+    ///   preferred date exists.
+    /// - Otherwise keep the row with the EARLIEST `dueAt` (nil last, so an
+    ///   undated row is the last resort). Earliest, deliberately, because a
+    ///   wrongly-early deadline is visible and merely annoying — the student
+    ///   sees it, checks Canvas, and moves on — while a wrongly-late deadline
+    ///   HIDES a missed one behind a due date that hasn't arrived yet, and
+    ///   silently hiding owed work is the one failure mode this app must never
+    ///   have.
+    /// - Ties (equal gap, or equal due date) break on `id` ascending, so the
+    ///   result never depends on input ordering.
+    ///
+    /// Only `.canvas` rows with a resolvable `canvasAssignmentID` participate;
+    /// everything else (Gradescope, Canvas Modules, quizzes/discussions/events,
+    /// an unresolvable Canvas row) passes through untouched, in input order.
+    /// Survivors keep their original input position.
+    public static func collapseCanvasOverrides(
+        canvasItems: [Assignment],
+        preferredDueDates: [String: Date]
+    ) -> (canvasItems: [Assignment], collapses: [OverrideCollapse]) {
+        guard !canvasItems.isEmpty else { return (canvasItems, []) }
+
+        struct GroupKey: Hashable {
+            let course: String
+            let assignmentID: String
+        }
+
+        var groups: [GroupKey: [Assignment]] = [:]
+        var groupOrder: [GroupKey] = []
+        for item in canvasItems {
+            guard item.source == .canvas, let id = item.canvasAssignmentID else { continue }
+            let key = GroupKey(course: item.course, assignmentID: id)
+            if groups[key] == nil { groupOrder.append(key) }
+            groups[key, default: []].append(item)
+        }
+
+        var hiddenIDs: Set<String> = []
+        var collapsesByHiddenID: [String: OverrideCollapse] = [:]
+        for key in groupOrder {
+            guard let rows = groups[key], rows.count >= 2 else { continue }
+            let preferred = preferredDueDates[key.assignmentID]
+            guard let survivor = rows.min(by: { a, b in
+                if let preferred {
+                    let gapA = a.dueAt.map { abs($0.timeIntervalSince(preferred)) } ?? .greatestFiniteMagnitude
+                    let gapB = b.dueAt.map { abs($0.timeIntervalSince(preferred)) } ?? .greatestFiniteMagnitude
+                    if gapA != gapB { return gapA < gapB }
+                } else {
+                    let dateA = a.dueAt ?? .distantFuture
+                    let dateB = b.dueAt ?? .distantFuture
+                    if dateA != dateB { return dateA < dateB }
+                }
+                return a.id < b.id
+            }) else { continue }
+
+            for row in rows where row.id != survivor.id {
+                hiddenIDs.insert(row.id)
+                collapsesByHiddenID[row.id] = OverrideCollapse(survivorID: survivor.id, hiddenID: row.id)
+            }
+        }
+
+        let survivors = canvasItems.filter { !hiddenIDs.contains($0.id) }
+        // Collapses reported in the order their hidden rows appeared in the
+        // input, matching every other collapse function's convention here.
+        let collapses = canvasItems.compactMap { collapsesByHiddenID[$0.id] }
+        return (survivors, collapses)
+    }
+
     // MARK: - Title normalization
 
     /// Reduces a title to a token sequence for comparison: lowercase,

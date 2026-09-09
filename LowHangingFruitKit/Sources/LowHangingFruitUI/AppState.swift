@@ -2727,18 +2727,24 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Which of the two possible id sources resolved `item.canvasAssignmentID`
-    /// — "url" for a direct `/assignments/<id>` link, "uid" for the
-    /// `assignment-<id>@…` ICS UID fallback, or "none" when neither matched
-    /// (the hypothesis-(b) case: a section-override UID like
-    /// `event-assignment-override-<id>@…`, which contains "assignment-" but
-    /// not immediately followed by digits, so the fallback regex never
-    /// matches it either). Mirrors the exact precedence and patterns
-    /// `Assignment.canvasAssignmentID` uses, without exposing its private
-    /// `firstMatch` helper.
+    /// Which of the id sources resolved `item.canvasAssignmentID` — "url" for
+    /// a direct `/assignments/<id>` link, "fragment" for a calendar-context
+    /// URL's `#assignment_<id>` fragment (the ONLY id a section-override ICS
+    /// row carries — see `Assignment.canvasAssignmentID`), "uid" for the
+    /// `assignment-<id>@…` ICS UID fallback, or "none" when nothing matched
+    /// (e.g. a `#sub_assignment_<id>` or `#quiz_<id>` fragment, which use
+    /// different id spaces and must not match the fragment pattern, or a
+    /// section-override UID like `event-assignment-override-<id>@…`, which
+    /// contains "assignment-" but not immediately followed by digits, so the
+    /// UID fallback regex never matches it either). Mirrors the exact
+    /// precedence and patterns `Assignment.canvasAssignmentID` uses, without
+    /// exposing its private `firstMatch` helper.
     static func joinPath(url: URL?, sourceID: String) -> String {
         if let url, Self.regexMatches(#"/assignments/(\d+)"#, in: url.absoluteString) {
             return "url"
+        }
+        if let url, Self.regexMatches(#"#assignment_(\d+)"#, in: url.absoluteString) {
+            return "fragment"
         }
         if Self.regexMatches(#"assignment-(\d+)"#, in: sourceID) {
             return "uid"
@@ -3408,6 +3414,31 @@ final class AppState: ObservableObject {
             && courseContentDecisions[assignment.course]?.choice != .exclude
     }
 
+    /// Carries a manual completion from a row a dedup/collapse pass is about
+    /// to hide onto the row that survives to represent it on the dashboard —
+    /// used by both the section-override collapse and the Canvas-ICS/Modules
+    /// collapse in `rebuildDashboardItems`, since a hidden row's own
+    /// completion would otherwise silently disappear along with the row
+    /// itself the moment a resync collapses it, which is exactly the "the
+    /// student's own data is lost" failure the ledger exists to prevent. A
+    /// no-op if the hidden id was never marked complete, or if the survivor
+    /// is already marked complete on its own. Writes the ledger and the
+    /// in-memory sets directly rather than going through `markCompleted` —
+    /// `markCompleted` ends by calling `rebuildDashboardItems()` itself, and
+    /// this helper is only ever called FROM `rebuildDashboardItems`, so
+    /// routing through it here would recurse.
+    private func carryCompletion(from hiddenID: String, to survivorID: String) {
+        guard completedAssignmentIDs.contains(hiddenID),
+              !completedAssignmentIDs.contains(survivorID)
+        else { return }
+        let completedAt = completionDates[hiddenID]
+        assignmentStore?.setCompleted(ids: [survivorID], at: completedAt)
+        completedAssignmentIDs.insert(survivorID)
+        if let completedAt {
+            completionDates[survivorID] = completedAt
+        }
+    }
+
     private func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
         refreshArchiveState(now: now)
@@ -3431,25 +3462,66 @@ final class AppState: ObservableObject {
         // admits them below without needing the opt-in gate `.event` items
         // go through.
         //
-        // Before any of that, though: a professor's Canvas item can itself be
-        // described TWICE by Canvas — once on the ICS calendar feed as a
-        // `.canvas` row, once on the Modules JSON page as a `.canvasModules`
-        // row imported for a readings-opted-in course. Unlike the Canvas ↔
-        // Gradescope pairing below, which merges two *different platforms'*
-        // independent postings (each carrying information the other lacks),
-        // this is one platform describing one assignment through two APIs —
-        // nothing to merge, just a second copy that needs to stop being
-        // shown. `AssignmentDeduplicator.collapseCanvasDuplicates` hides the
+        // Even before that: one professor's Canvas assignment can itself be
+        // described more than once on the ICS feed alone, as several
+        // `.canvas` rows, when a section due-date override applies to the
+        // student — Canvas's `to_ics` emits one VEVENT per applicable
+        // section override rather than one per assignment (see
+        // `Assignment.canvasAssignmentID` for the full mechanism). Each of
+        // those rows shares the same `canvasAssignmentID` (only recoverable
+        // from the URL's `#assignment_<id>` fragment on an override row, since
+        // the UID instead carries an unrelated per-override id) but can carry
+        // a different `dueAt` — whichever section's date Canvas happened to
+        // stamp on that VEVENT — so a PHYS-151-style multi-section lab would
+        // otherwise show up as several near-duplicate dashboard rows with
+        // different deadlines. `preferredDueDates`, gathered from every
+        // Grade Watcher snapshot's `GradeItem.dueAt` (Canvas's assignments
+        // API resolves the override that actually applies to THIS student),
+        // lets `collapseCanvasOverrides` pick the row matching the real
+        // deadline when it's known, or the earliest row otherwise — see that
+        // function's doc comment for why earliest, never latest, is the safe
+        // default with no grades data yet.
+        var preferredDueDates: [String: Date] = [:]
+        for snapshot in gradeWatcher.snapshots.values {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if let dueAt = item.dueAt {
+                        preferredDueDates[item.id] = dueAt
+                    }
+                }
+            }
+        }
+        let overrideCollapse = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: canvasItems,
+            preferredDueDates: preferredDueDates
+        )
+        for pair in overrideCollapse.collapses {
+            carryCompletion(from: pair.hiddenID, to: pair.survivorID)
+        }
+
+        // Next: a professor's Canvas item can itself be described TWICE by
+        // Canvas — once on the ICS calendar feed as a `.canvas` row, once on
+        // the Modules JSON page as a `.canvasModules` row imported for a
+        // readings-opted-in course. Unlike the Canvas ↔ Gradescope pairing
+        // below, which merges two *different platforms'* independent
+        // postings (each carrying information the other lacks), this is one
+        // platform describing one assignment through two APIs — nothing to
+        // merge, just a second copy that needs to stop being shown.
+        // `AssignmentDeduplicator.collapseCanvasDuplicates` hides the
         // module-side row (id match first, title/due-date heuristic as a
         // fallback for module items whose url — and so
         // `canvasAssignmentID` — a professor's module structure never gave
-        // them), leaving `canvasItems` itself untouched and `moduleItems`
-        // trimmed to its survivors. Running this BEFORE `canvasRelevant`'s
-        // filter matters: a collapsed-away module row must never also reach
+        // them), leaving the canvas items themselves untouched and
+        // `moduleItems` trimmed to its survivors. It runs on
+        // `overrideCollapse.canvasItems`, not the raw `canvasItems`, so a
+        // section-override row already hidden above can never separately
+        // absorb a module row under its own, now-retired id. Running this
+        // BEFORE `canvasRelevant`'s filter matters too: a collapsed-away
+        // module row must never also reach
         // `AssignmentDeduplicator.matchPairs`/`merge` and get paired against
         // a Gradescope item under its own, now-hidden id.
         let collapse = AssignmentDeduplicator.collapseCanvasDuplicates(
-            canvasItems: canvasItems,
+            canvasItems: overrideCollapse.canvasItems,
             moduleItems: moduleReadingItems
         )
         // A collapsed module row's own completion must not silently vanish
@@ -3457,21 +3529,9 @@ final class AppState: ObservableObject {
         // marked done (ticked before the two copies ever collapsed, or
         // auto-filed) and the surviving Canvas-side id hasn't separately
         // been marked, carry the completion over onto the id that's about to
-        // be the only one shown. Writes the ledger and the in-memory sets
-        // directly rather than going through `markCompleted` — `markCompleted`
-        // ends by calling `rebuildDashboardItems()` itself, and this function
-        // IS `rebuildDashboardItems`, so routing through it here would
-        // recurse.
+        // be the only one shown.
         for pair in collapse.collapses {
-            guard completedAssignmentIDs.contains(pair.moduleID),
-                  !completedAssignmentIDs.contains(pair.canvasID)
-            else { continue }
-            let completedAt = completionDates[pair.moduleID]
-            assignmentStore?.setCompleted(ids: [pair.canvasID], at: completedAt)
-            completedAssignmentIDs.insert(pair.canvasID)
-            if let completedAt {
-                completionDates[pair.canvasID] = completedAt
-            }
+            carryCompletion(from: pair.moduleID, to: pair.canvasID)
         }
         let canvasPool = collapse.canvasItems + collapse.moduleItems + announcementItems
         let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
