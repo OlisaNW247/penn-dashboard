@@ -15,7 +15,9 @@ account, and a student who never enters a key is still fully on-device. Say it
 this way rather than flatly "everything is on-device", which stopped being true
 on the `assistant-ui` line.
 
-Shipped on the App Store as **1.1.2 (build 4)**.
+Shipped on the App Store as **1.2.1** (App Store id `6783911002`, released
+2026-09-04 — confirmed against Apple's public lookup, not from memory; this
+line has been stale before, so re-check it rather than trusting it).
 
 ## Commands
 
@@ -116,6 +118,28 @@ undismissable wall below `minimumVersion` or a dismissible banner below
 manifest URL, or unparseable version leaves the last-known verdict untouched
 rather than inventing a block, because a broken version check must never be
 the thing that locks a student out of their own ledger.
+
+**It is live.** The manifest is the `update-manifest` orphan branch of this
+repo, served at
+`raw.githubusercontent.com/OlisaNW247/penn-dashboard/update-manifest/lhf-update.json`.
+An orphan branch because a shipped build has that URL compiled into it and can
+never be told a new one, so the path must not move when feature branches merge;
+and because GitHub's web UI can edit it from a phone, which is the only way to
+lift a bad block.
+
+`minimumVersion` and `latestVersion` are kept **equal** — every release is
+mandatory, so `UpdateAvailableBanner` never fires in practice. Bump both on each
+release, but **only once the new build is actually downloadable**. A floor above
+what the App Store will serve is the one unrecoverable mistake here: the wall's
+button leads to a version that still fails the check, and everyone is stuck. The
+30-day ceiling in `UpdatePolicyCache` only rescues people who are offline.
+
+Two things that surprise people. The gate cannot reach builds that shipped
+without it — 1.2.1 and earlier never fetch the manifest, so no floor retires
+them; only a future release can. And local builds are `2.0.0`, above any floor
+that is safe to publish, so the wall never appears in normal development: to see
+it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
+end to end) or pass `-LHFForceUpdateWall`.
 
 ## Traps that have already bitten
 

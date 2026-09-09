@@ -3,26 +3,40 @@ import LowHangingFruitKit
 
 /// Where the hosted update manifest lives.
 ///
-/// **This ships `nil` on purpose.** Nobody has hosted the manifest file yet,
-/// and `nil` is the one value that keeps the whole feature inert until
-/// someone does: `UpdateGateStore` never fetches when `manifestURL` is `nil`,
-/// so every launch simply resolves to `.ok` (or, offline, to whatever the
-/// cache already remembers). That is exactly the "fail open" behavior this
-/// gate is built around, so shipping the constant unset is safe — it is not
-/// a TODO left half-wired, it is the deliberate off position of a switch that
-/// only a maintainer who has actually stood up hosting should flip.
+/// A small, publicly-readable static JSON file decoding to the four fields
+/// `UpdatePolicy` knows how to sanitize. The request `UpdateManifestClient`
+/// makes against it carries no query parameters, no custom headers and no
+/// device identifier of any kind — this is a version check, not a
+/// phone-home, and it must keep sending nothing that identifies the student
+/// or the device.
 ///
-/// When that day comes, the expected shape is a small, publicly-readable
-/// static JSON file — e.g. a raw file served off `raw.githubusercontent.com`
-/// (`https://raw.githubusercontent.com/<owner>/<repo>/main/update-manifest.json`)
-/// decoding to the four fields `UpdatePolicy` knows how to sanitize. The
-/// request `UpdateManifestClient` makes carries no query parameters, no
-/// custom headers and no device identifier of any kind — the whole point of
-/// this feature is a version check, not a phone-home, and the app must keep
-/// sending nothing that identifies the student or the device even once this
-/// is turned on.
+/// **Why an orphan branch and not `main`.** The URL a shipped build fetches
+/// can never change — an installed app has the string compiled into it — so
+/// the file has to live somewhere that will not move underneath it. A path
+/// on a feature branch would break the moment that branch merged or was
+/// deleted; a path on `main` would be one careless reorganisation away from
+/// a 404. `update-manifest` is an orphan branch holding exactly this one
+/// file and nothing else, so no ordinary development can disturb it, and it
+/// can be edited straight from the GitHub web UI — which matters more than
+/// it sounds, because editing this file is the *only* way to lift a bad
+/// block, and you may need to do it from a phone.
+///
+/// **Operating it.** `minimumVersion` and `latestVersion` are kept equal:
+/// every release is mandatory (the Clash Royale model), so there is no
+/// optional update and `UpdateAvailableBanner` never fires in practice. On
+/// each release, bump both — but only once the new build is actually
+/// downloadable from the App Store. A floor above what the store will serve
+/// is the one genuinely unrecoverable mistake available here: the wall's
+/// "update now" button would lead to a version that still fails the check,
+/// and every user would be stuck behind it. The 30-day cache ceiling in
+/// `UpdatePolicyCache` only rescues people who happen to be offline.
+///
+/// A `nil` here disables the gate entirely and is a safe value — see the
+/// fail-open contract on `UpdateGateStore`.
 enum UpdateManifestSource {
-    static let url: URL? = nil
+    static let url: URL? = URL(
+        string: "https://raw.githubusercontent.com/OlisaNW247/penn-dashboard/update-manifest/lhf-update.json"
+    )
 }
 
 /// Decides, once per launch and again on every foreground, whether the
