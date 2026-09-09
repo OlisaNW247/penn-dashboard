@@ -19,15 +19,16 @@ import os
 /// along you were, and "Connect Gradescope" sat at the same visual weight as
 /// the one connection that actually matters, so an optional step could look
 /// exactly as urgent as the required one. It is now a straight line — one
-/// step, one screen, one ask — with a back chevron and a five-dot progress
-/// indicator instead of a checklist a student re-reads after every pane. If
+/// step, one screen, one ask instead of a checklist a student re-reads after
+/// every pane. The first setup screen now goes directly from the intro to
+/// Penn's Canvas sign-in. If
 /// a future change needs the old "see everything, do it in any order" shape
 /// back, that is a deliberate reversion, not a bug fix — write down why,
 /// the way this comment does.
 struct OnboardingView: View {
     @EnvironmentObject var state: AppState
-    /// Reminders (step 5) reads and writes the exact same global lead-time/
-    /// digest settings Settings → Reminders and Profile → Notifications do,
+    /// The notification step reads and writes the exact same global lead-time
+    /// settings Settings → Reminders and Profile → Notifications do,
     /// which means it has to be the *same instance* those screens will later
     /// see — `NotificationScheduler`'s published properties are loaded from
     /// `UserDefaults.lhf` once, at `init`, and never re-read afterward,
@@ -39,26 +40,23 @@ struct OnboardingView: View {
     /// `RootCore` that owns the one scheduler for the rest of the app's
     /// lifetime (see `RootView.swift`), not a locally-owned `@StateObject`.
     @EnvironmentObject var scheduler: NotificationScheduler
-    @State private var phase: Phase = .name
-    @State private var name: String = ""
-    @State private var isResettingLoginData = false
-    @State private var showResetConfirmation = false
-    @State private var didResetLoginData = false
-    /// "Paste your Canvas calendar link" fallback (docs/CANVAS_LOGIN_HARDENING.md
-    /// item 3b) — reachable without ever touching the in-app login WebView.
-    @State private var showPasteFeedLink = false
+    @State private var phase: Phase = .canvasLogin
 
     /// One case per screen in the linear walk, plus the per-course walk that
     /// can follow it. Order here is the order a student walks them in; there
     /// is no case for "the hub" any more; see this type's doc comment for
     /// what used to live there.
     private enum Phase {
-        case name
         case canvasLogin
         case gradescopeLogin
         case classPicker
         case reminders
         case courseSetup
+    }
+
+    init(destination: AppState.OnboardingDestination = .full) {
+        let initialPhase: Phase = destination == .gradescope ? .gradescopeLogin : .canvasLogin
+        _phase = State(initialValue: initialPhase)
     }
 
     /// Whether the primary action should route through the per-course walk
@@ -104,8 +102,6 @@ struct OnboardingView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch phase {
-        case .name:
-            nameStep
         case .canvasLogin:
             canvasStep
         case .gradescopeLogin:
@@ -140,105 +136,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 1: name
-
-    /// The Locust mark and mission line live here at the start of setup.
-    /// Sample-data preview remains in `IntroView`, before setup begins; once
-    /// the student enters this walk, every action advances real onboarding.
-    private var nameStep: some View {
-        ZStack {
-            Color.v2Bg.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 32)
-
-                header
-                    .padding(.bottom, 28)
-
-                nameCard
-
-                if let error = state.error {
-                    Text(error)
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.v2SpineRed)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 16)
-                }
-
-                Spacer(minLength: 24)
-
-                VStack(spacing: 14) {
-                    progressDots(current: 1)
-
-                    Button {
-                        lhfHapticLight()
-                        phase = .canvasLogin
-                    } label: {
-                        Text("continue")
-                            .font(.lhfSans(15, weight: .semibold))
-                            .foregroundStyle(Color.v2ToggleActiveTx)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Capsule().fill(Color.v2Ink))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.bottom, 24)
-            }
-            .padding(.horizontal, 24)
-            .frame(maxWidth: 480)
-        }
-        .onAppear {
-            name = state.userName
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-LHFCourseSetupHarness") {
-                state.canvasItems = SampleData.items().map(\.assignment)
-                state.updateCanvasICSURL("https://example.com/harness.ics")
-            }
-            #endif
-        }
-    }
-
-    private var nameCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("your name")
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
-            TextField("first name", text: $name)
-                .textFieldStyle(.plain)
-                .font(.lhfSans(15))
-                .foregroundStyle(Color.v2Ink)
-                .onChange(of: name) { _, newValue in state.updateName(newValue) }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-    }
-
-    private var header: some View {
-        VStack(spacing: 8) {
-            if let logo = bundledImage("locust-logo-transparent", ext: "png") {
-                logo
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 220, height: 220)
-                    .accessibilityHidden(true)
-            }
-            Text("Locust")
-                .font(.lhfSerif(38))
-                .foregroundStyle(Color.v2Ink)
-            Text("never miss another assignment")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    // MARK: - Step 2: Connect Canvas (required, not skippable)
+    // MARK: - Connect Canvas (required, not skippable)
 
     /// Canvas is the only required step. If it's already connected — the
     /// student stepped forward once and then used the back chevron on a
@@ -250,194 +148,74 @@ struct OnboardingView: View {
     /// "log in again?" prompt for a login that isn't being redone.
     @ViewBuilder
     private var canvasStep: some View {
-        if state.isCanvasConnected {
+        if state.isCanvasConnected && state.onboardingDestination != .canvas {
             connectedStep(
-                step: 2,
+                step: 1,
                 message: "canvas is connected.",
-                onBack: { phase = .name },
+                onBack: nil,
                 onContinue: { phase = .gradescopeLogin }
             )
         } else {
-            // Chrome is a `.safeAreaInset(edge: .top)` over the pane, not a
-            // `VStack` sibling beside it. `CanvasLoginPane` was written as the
-            // root view of this phase: it lays itself out top-to-bottom with
-            // its own `Spacer()`s and its own bottom action bar, sized against
-            // the *whole* screen. Stack `topBar`/`canvasEscapeHatches` above it
-            // as ordinary siblings and the pane no longer gets the whole
-            // screen — it gets whatever's left under two fixed-height views in
-            // the same `VStack`, which is a fraction of the height its
-            // internal `Spacer()`s were written against. On device that
-            // measured out to the WebView getting squeezed into roughly the
-            // bottom quarter of the screen while the top ~55% sat empty,
-            // because the top bar and escape hatches, having no `Spacer` of
-            // their own, hugged the pane instead of pinning to the actual top
-            // of the screen. `safeAreaInset` keeps the pane as the one full-
-            // size view — it lays out exactly as it did as a standalone
-            // phase — and reserves screen space at the top for the chrome
-            // without the chrome and the pane ever competing for height in
-            // the same stack.
-            CanvasLoginPane(
-                onConnected: { phase = .gradescopeLogin },
-                onCancel: { phase = .name }
-            )
+            CanvasLoginPane(onConnected: canvasConnected)
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    topBar(onBack: { phase = .name })
-                    canvasEscapeHatches
-                }
-                .background(Color.v2Bg)
-            }
-            // Same `safeAreaInset` mechanism as the top chrome above, and for
-            // the same reason: reserving space at the bottom keeps
-            // `CanvasLoginPane` the one full-size view instead of squeezing
-            // its WebView, exactly as the comment above explains for the top
-            // edge. The pane's own bottom action bar rides above this inset,
-            // not inside it.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                stepDotsBar(current: 2)
+                loginHeader(title: "Connect Canvas")
             }
             .background(Color.v2Bg.ignoresSafeArea())
-            .sheet(isPresented: $showPasteFeedLink) {
-                // Advances the walk on a successful save, unlike the old
-                // hub's no-op `onSaved` — the hub could afford to do nothing
-                // because the checklist stayed on screen and the "Connect
-                // Canvas" card just flipped to "connected" underneath the
-                // closed sheet. There is no checklist to fall back on now:
-                // without this, a student who pastes a working link would
-                // close the sheet and land right back on the Canvas
-                // WebView/tips card with no forward control in sight, since
-                // `CanvasLoginPane.onConnected` only ever fires from an
-                // actual WebView login.
-                PasteFeedLinkSheet(onSaved: { phase = .gradescopeLogin })
-                    .environmentObject(state)
-            }
         }
     }
 
-    /// Fallback path for anyone stuck on the in-app login (docs/CANVAS_LOGIN_HARDENING.md
-    /// item 3b) — connects the dashboard without touching the WKWebView login
-    /// at all. Kept as a plain-language, low-emphasis link (not a button next
-    /// to "Connect Canvas") since the login flow is still the primary,
-    /// richer path — this is explicitly the fallback.
-    private var pasteFeedLinkLink: some View {
-        Button {
-            showPasteFeedLink = true
-        } label: {
-            Text("or paste your canvas calendar link instead")
-                .font(.lhfSans(11, weight: .medium))
-                .foregroundStyle(Color.v2DateText)
-                .underline()
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("paste your canvas calendar link instead of logging in")
-    }
-
-    /// Escape hatch for a stuck login (docs/CANVAS_LOGIN_DIAGNOSIS.md): clears
-    /// every stored trace of a Canvas/Gradescope login attempt from this
-    /// device — the live WebView cookie/cache jar, the Keychain-persisted
-    /// cookie copy, and the connected-service flags — so a user who's stuck
-    /// (e.g. Canvas SSO's "Stale Request" screen) always has a way to force a
-    /// genuinely clean slate without needing to delete and reinstall the app,
-    /// which doesn't fully clear this state anyway (see
-    /// `AppState.resetAllLoginData`'s doc comment) and isn't reachable from
-    /// this screen in the first place.
-    private var troubleConnectingLink: some View {
-        VStack(spacing: 4) {
-            Button {
-                showResetConfirmation = true
-            } label: {
-                if isResettingLoginData {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("reset login data")
-                        .font(.lhfSans(11, weight: .medium))
-                        .foregroundStyle(Color.v2SpineRed)
-                        .underline()
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(isResettingLoginData)
-            .accessibilityLabel("reset stored canvas and gradescope login data")
-            .confirmationDialog(
-                "Reset login data?",
-                isPresented: $showResetConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("reset and start over", role: .destructive) {
-                    didResetLoginData = false
-                    isResettingLoginData = true
-                    Task {
-                        await state.resetAllLoginData()
-                        isResettingLoginData = false
-                        didResetLoginData = true
-                    }
-                }
-                Button("cancel", role: .cancel) {}
-            } message: {
-                Text("clears saved Canvas and Gradescope sign-ins on this device.")
-            }
-
-            if didResetLoginData {
-                Text("login data cleared. try connect canvas again.")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2SpineGreen)
-            }
+    private func canvasConnected() {
+        if state.onboardingDestination == .canvas {
+            state.completeOnboarding()
+        } else {
+            phase = .gradescopeLogin
         }
     }
 
-    /// Both Canvas escape hatches, stacked above the WebView so neither
-    /// competes with the pane's own bottom action bar for the literal bottom
-    /// of the screen.
-    private var canvasEscapeHatches: some View {
-        VStack(spacing: 8) {
-            troubleConnectingLink
-            pasteFeedLinkLink
-        }
-        .padding(.top, 4)
-        .padding(.bottom, 6)
-        .padding(.horizontal, 24)
-    }
-
-    // MARK: - Step 3: Connect Gradescope (optional, skippable)
+    // MARK: - Step 2: Connect Gradescope (optional, skippable)
 
     @ViewBuilder
     private var gradescopeStep: some View {
         if state.isGradescopeConnected {
             connectedStep(
-                step: 3,
+                step: 2,
                 message: "gradescope is connected.",
                 onBack: { phase = .canvasLogin },
-                onContinue: { phase = .classPicker }
+                onContinue: gradescopeConnected
             )
         } else {
-            // Same `safeAreaInset` treatment as `.canvasLogin` above, and for
-            // the identical reason: `GradescopeLoginPane` is its own root
-            // view with its own `Spacer()`s and bottom action bar, so a
-            // `VStack` sibling on top of it collapses the WebView into a thin
-            // band and leaves the top bar floating over empty background
-            // instead of pinned to the top of the screen. See the comment at
-            // `.canvasLogin` for the on-device symptom.
             GradescopeLoginPane(
-                onConnected: { phase = .classPicker },
-                onCancel: { phase = .canvasLogin }
+                onConnected: gradescopeConnected
             )
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
-                topBar(
-                    onBack: { phase = .canvasLogin },
-                    skip: (label: "skip for now", action: { phase = .classPicker })
+                loginHeader(
+                    title: "Connect Gradescope",
+                    skip: (label: "Skip", action: gradescopeSkipped)
                 )
-                .background(Color.v2Bg)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                stepDotsBar(current: 3)
             }
             .background(Color.v2Bg.ignoresSafeArea())
         }
     }
 
-    // MARK: - Step 4: choose classes (optional, skippable)
+    private func gradescopeConnected() {
+        if state.onboardingDestination == .gradescope {
+            state.completeOnboarding()
+        } else {
+            phase = .classPicker
+        }
+    }
+
+    private func gradescopeSkipped() {
+        if state.onboardingDestination == .gradescope {
+            state.completeOnboarding()
+        } else {
+            phase = .classPicker
+        }
+    }
+
+    // MARK: - Step 3: choose classes (optional, skippable)
 
     private var classesStep: some View {
         // Same `safeAreaInset` treatment as `.canvasLogin`/`.gradescopeLogin`
@@ -455,42 +233,15 @@ struct OnboardingView: View {
                 .background(Color.v2Bg)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                stepDotsBar(current: 4)
+                stepDotsBar(current: 3)
             }
             .background(Color.v2Bg.ignoresSafeArea())
     }
 
-    // MARK: - Step 5: set reminders (optional content, always reachable forward)
+    // MARK: - Step 4: pick notifications (optional, always reachable forward)
 
-    /// The main reason this step exists at all: asking for notification
-    /// permission here, after the student has already seen four screens'
-    /// worth of "here's what this app is going to do for you," converts far
-    /// better than the cold, first-launch ask most apps lead with — by the
-    /// time this screen shows up there's something concrete to say yes to.
-    ///
-    /// Writes into `scheduler` exactly the way Settings → Reminders
-    /// (`SettingsPage.remindersSection`) and Profile → Notifications
-    /// (`ProfileNotificationsSection.leadTimeControls`) already do — the
-    /// global `leadOffsets` set and the `digestEnabled`/`digestTime` pair —
-    /// so nothing set here can ever disagree with what those two screens
-    /// show later. There is no separate "onboarding reminder preference";
-    /// there is only the one the rest of the app already reads.
-    ///
-    /// `LeadOffset` has no case for "the morning of," which briefs for this
-    /// screen sometimes reach for as a third example alongside "the day
-    /// before" and "two days before": every lead-time reminder fires at a
-    /// fixed offset *before the due timestamp itself*
-    /// (`NotificationScheduler.plannedRequests`), so it can land at any hour
-    /// depending on when the assignment is actually due — there is no
-    /// "always in the morning" variant to offer honestly. The one thing in
-    /// this app that *does* have a fixed clock time is the daily digest
-    /// (`digestSection` below), which is the real mechanism behind a
-    /// "morning of" reminder — a single daily notification arriving at
-    /// whatever hour the student picks. Rather than mislabel `.h1` as
-    /// "morning of" to hit three example strings, this screen offers the
-    /// real five `LeadOffset` cases as they're spelled everywhere else in
-    /// the app, plus the digest's own time picker for the part of the ask
-    /// that's genuinely about a time of day.
+    /// Writes directly into the shared scheduler used by Settings and
+    /// Profile, so onboarding never creates a second notification preference.
     private var remindersStep: some View {
         VStack(spacing: 0) {
             topBar(onBack: { phase = .classPicker })
@@ -499,7 +250,6 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     remindersHeadline
                     leadTimeSection
-                    digestSection
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -512,16 +262,10 @@ struct OnboardingView: View {
     }
 
     private var remindersHeadline: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("One heads-up before it\u{2019}s due.")
-                .font(.lhfSerif(28))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("We\u{2019}ll remind you before things are due. Turn on notifications so it can actually reach you, then pick when you want the first nudge.")
-                .font(.lhfSans(14))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text("Pick your notifications")
+            .font(.lhfSerif(34))
+            .foregroundStyle(Color.v2Ink)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var leadTimeSection: some View {
@@ -562,38 +306,6 @@ struct OnboardingView: View {
         .accessibilityAddTraits(isOn ? [.isSelected] : [])
     }
 
-    private var digestSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("and when")
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
-
-            Toggle("also send a daily heads-up", isOn: Binding(
-                get: { scheduler.digestEnabled },
-                set: { scheduler.setDigestEnabled($0) }
-            ))
-            .font(.lhfSans(14, weight: .medium))
-            .tint(Color.v2SpineGreen)
-
-            if scheduler.digestEnabled {
-                DatePicker("what time", selection: digestTimeBinding, displayedComponents: .hourAndMinute)
-                    .font(.lhfSans(13))
-            }
-        }
-    }
-
-    /// Same shape as `SettingsPage.digestTimeBinding` — a `DateComponents`
-    /// can't back a `DatePicker` directly, so this round-trips through
-    /// today's date purely to get a `Date` the picker can bind to; only the
-    /// hour/minute ever survive back into `scheduler`.
-    private var digestTimeBinding: Binding<Date> {
-        Binding(
-            get: { Calendar.current.date(from: scheduler.digestTime) ?? Date() },
-            set: { scheduler.setDigestTime(Calendar.current.dateComponents([.hour, .minute], from: $0)) }
-        )
-    }
-
     /// Three ways off this screen, and each means something different:
     /// "turn on reminders" requests authorization (a no-op if already
     /// granted or denied — see below) and proceeds; "skip reminders for now"
@@ -611,7 +323,7 @@ struct OnboardingView: View {
     /// entitled to refuse would be the actual bug.
     private var remindersFooter: some View {
         VStack(spacing: 10) {
-            progressDots(current: 5)
+            progressDots(current: 4)
 
             Button {
                 lhfHapticLight()
@@ -676,23 +388,31 @@ struct OnboardingView: View {
 
     // MARK: - Shared chrome
 
-    /// Just the back chevron and an optional "skip". This used to also carry
-    /// the progress dots for the three steps whose screen is a full-bleed
-    /// pane this file must not restructure (`CanvasLoginPane`,
-    /// `GradescopeLoginPane`, `ClassPickerPane` each already own their own
-    /// bottom action bar) — the argument at the time was that there was no
-    /// bottom left on those screens to put dots in, so the top bar was the
-    /// only place they'd fit. That produced two different places for the
-    /// same indicator depending on the step: this top bar for three of them,
-    /// a bottom footer next to the primary button for the other two
-    /// (`nameStep`/`remindersFooter`). The walk now shows its step indicator
-    /// in one place, the bottom, on every step, matching `IntroView`'s
-    /// footer dots — the "no bottom to put them in" premise turned out to be
-    /// wrong, because a pane's own bottom action bar and a chrome bar
-    /// beneath it can coexist the same way its top action bar and this top
-    /// bar already do. The three pane steps reach the bottom with their own
-    /// `.safeAreaInset(edge: .bottom)` carrying `stepDotsBar`, alongside the
-    /// top `.safeAreaInset` this bar already sits in (see `canvasStep`).
+    private func loginHeader(
+        title: String,
+        skip: (label: String, action: () -> Void)? = nil
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(title)
+                .font(.lhfSerif(34))
+                .foregroundStyle(Color.v2Ink)
+
+            Spacer(minLength: 0)
+
+            if let skip {
+                Button(skip.label, action: skip.action)
+                    .buttonStyle(.plain)
+                    .font(.lhfSans(14, weight: .medium))
+                    .foregroundStyle(Color.v2DateText)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 16)
+        .background(Color.v2Bg)
+    }
+
+    /// Shared back/skip chrome for the non-login steps.
     private func topBar(
         onBack: (() -> Void)?,
         skip: (label: String, action: () -> Void)? = nil
@@ -749,14 +469,14 @@ struct OnboardingView: View {
         }
     }
 
-    /// Five dots, filled in green up to the current step — the same
+    /// Four dots, with the current step filled in green — the same
     /// vocabulary `IntroView.dots` uses, just re-tinted: `IntroView` marks
     /// its current page in ink, this walk marks it in `v2SpineGreen`, the
     /// app's one accent color, to read as progress made rather than merely
     /// "which page."
     private func progressDots(current: Int) -> some View {
         HStack(spacing: 7) {
-            ForEach(1...5, id: \.self) { index in
+            ForEach(1...4, id: \.self) { index in
                 Circle()
                     .fill(index == current ? Color.v2SpineGreen : Color.v2Ink.opacity(0.15))
                     .frame(width: 6, height: 6)
@@ -792,7 +512,7 @@ struct OnboardingView: View {
     private func connectedStep(
         step: Int,
         message: String,
-        onBack: @escaping () -> Void,
+        onBack: (() -> Void)?,
         onContinue: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 0) {
@@ -832,190 +552,6 @@ struct OnboardingView: View {
     }
 }
 
-// MARK: - Login chrome (shared)
-
-/// The bottom action bar under the login WebView. Stacks the hint above the
-/// buttons so it never crowds on a narrow phone screen.
-///
-/// Carries explicit "Reload" and "Start over" controls (docs/CANVAS_LOGIN_DIAGNOSIS.md
-/// item 1a): the login WebView disables swipe back/forward navigation, since
-/// swiping back onto an already-consumed login form and resubmitting it is
-/// exactly what produces Shibboleth's "Stale Request" — with no chrome and no
-/// way forward. These two buttons are the replacement escape hatch: Reload
-/// re-requests the current page; Start over purges this login's cookies/cache
-/// again and reloads the login page from scratch, without leaving the pane.
-private struct LoginActionBar: View {
-    let message: String?
-    let defaultHint: String
-    let connectTitle: String
-    let isBusy: Bool
-    let onCancel: () -> Void
-    let onConnect: () -> Void
-    let onReload: () -> Void
-    let onStartOver: () -> Void
-    /// Hides the Connect button entirely rather than merely disabling it.
-    /// Defaults to `true` so the Gradescope call site, which never sets
-    /// this, is completely unaffected — Gradescope has no equivalent
-    /// "handed back by SSO" signal and keeps its always-visible button.
-    /// Canvas is the only caller that ever passes `false`; see
-    /// `CanvasLoginPane.showsConnect`. "cancel", "reload" and "start over"
-    /// are never gated on this — they're the documented escape hatches out
-    /// of a stuck Penn login and must always be reachable.
-    var showsConnect: Bool = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(message ?? defaultHint)
-                .font(.lhfSans(12))
-                .foregroundStyle(message == nil ? Color.v2DateText : Color.v2SpineRed)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 14) {
-                Button("reload", action: onReload)
-                    .buttonStyle(.plain)
-                    .font(.lhfSans(12, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
-                    .disabled(isBusy)
-                    .accessibilityHint("reloads the current login page")
-
-                Button("start over", action: onStartOver)
-                    .buttonStyle(.plain)
-                    .font(.lhfSans(12, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
-                    .disabled(isBusy)
-                    .accessibilityHint("clears this login's cookies and loads a fresh sign-in page")
-            }
-
-            HStack(spacing: 12) {
-                Button("cancel", action: onCancel)
-                    .buttonStyle(.plain)
-                    .font(.lhfSans(13, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
-
-                Spacer()
-
-                if showsConnect {
-                    Button(action: onConnect) {
-                        Group {
-                            if isBusy {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text(connectTitle)
-                                    .font(.lhfSans(13, weight: .semibold))
-                                    .foregroundStyle(Color.v2ToggleActiveTx)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(Capsule().fill(Color.v2Ink))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isBusy)
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.v2Bg)
-        .animation(.easeInOut(duration: 0.2), value: showsConnect)
-    }
-}
-
-/// Plain-language card shown in place of the WebView when
-/// `LoginNavigationObserver` detects a known IdP/Shibboleth error page
-/// (docs/CANVAS_LOGIN_DIAGNOSIS.md item 3a). User-initiated recovery only —
-/// this never appears as a result of automatic retry logic, and tapping a
-/// button here is the only way it goes away.
-/// Full-pane notice shown before the Canvas sign-in page loads (see
-/// `CanvasLoginPane.showsSignInTips` for why it exists). Same visual family
-/// as `LoginErrorCard`, but it fills the pane rather than banner-ing above a
-/// WebView — there's nothing behind it yet worth showing.
-private struct CanvasSignInTipsCard: View {
-    let onContinue: () -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Spacer()
-            Image(systemName: "hourglass")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(Color.v2Ink)
-            Text("Sign in with PennKey")
-                .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-                .multilineTextAlignment(.center)
-            Text("Tap Sign In once after entering your password. Penn may take up to 30 seconds.")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 24)
-
-            Button(action: onContinue) {
-                Text("continue")
-                    .font(.lhfSans(13, weight: .semibold))
-                    .foregroundStyle(Color.v2ToggleActiveTx)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.v2Ink))
-            }
-            .buttonStyle(.plain)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct LoginErrorCard: View {
-    let title: String
-    let message: String
-    let onStartOver: () -> Void
-    /// Canvas only — Gradescope has no equivalent feed-link fallback.
-    let onUseCalendarLinkInstead: (() -> Void)?
-
-    var body: some View {
-        // No Spacers and no maxHeight cap here or at the call sites: the
-        // card must hug its content. A fixed-height cap already clipped the
-        // recovery actions clean off the screen once.
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(Color.v2SpineRed)
-            Text(title)
-                .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 24)
-
-            Button(action: onStartOver) {
-                Text("start over")
-                    .font(.lhfSans(13, weight: .semibold))
-                    .foregroundStyle(Color.v2ToggleActiveTx)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.v2Ink))
-            }
-            .buttonStyle(.plain)
-
-            if let onUseCalendarLinkInstead {
-                Button(action: onUseCalendarLinkInstead) {
-                    Text("use calendar link instead")
-                        .font(.lhfSans(12, weight: .medium))
-                        .foregroundStyle(Color.v2DateText)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
-    }
-}
-
 // MARK: - Canvas login pane
 
 /// Canvas login WebView whose "Connect" action captures the ICS feed URL,
@@ -1023,171 +559,44 @@ private struct LoginErrorCard: View {
 private struct CanvasLoginPane: View {
     @EnvironmentObject private var state: AppState
     let onConnected: () -> Void
-    let onCancel: () -> Void
 
     @State private var isReadingCookies = false
-    @State private var message: String?
-    /// True while the pre-login purge (docs/CANVAS_LOGIN_DIAGNOSIS.md item 1c)
-    /// is running. The WebView isn't created until this clears, so the purge
-    /// always finishes before the first request goes out — never mid-navigation.
     @State private var isPurging = true
-    /// Bumping this re-runs the purge-and-load `.task` below ("Start over").
-    @State private var purgeGeneration = UUID()
-    /// True only for this pane appearance's FIRST attempt. Measured on
-    /// device (2026-08-22): during a Penn IdP bad spell the app went 0/8
-    /// while Private Safari went 3/4 in the same minutes — Safari fails its
-    /// first genuinely-cold handshake too, but recovers on retry because
-    /// the failed attempt's IdP cookies survive into the next one. Purging
-    /// on every "Start over" forced this app to be permanently
-    /// first-contact. So: purge once per pane appearance (a fresh Connect
-    /// still starts clean), and let retries keep the cookies exactly like
-    /// Safari's retry does.
-    @State private var purgeOnNextAttempt = true
-    /// Bumping this tells the live WebView to call `.reload()` ("Reload").
-    @State private var reloadTick = 0
-    /// Observe-only navigation delegate (docs/CANVAS_LOGIN_DIAGNOSIS.md item
-    /// 3a) — surfaces load errors and known IdP error pages; never steers
-    /// navigation itself. `signedInHostMarker` is set right here, in the
-    /// same expression that creates the `StateObject`, so it is in place
-    /// before this pane's first navigation (the purge-then-load `.task`
-    /// below) ever starts — there is no window where a hop could be missed.
     @StateObject private var navObserver: LoginNavigationObserver = {
         let observer = LoginNavigationObserver()
         observer.signedInHostMarker = "canvas.upenn.edu"
         return observer
     }()
-    @State private var showPasteFeedLink = false
-    /// Fail-open safety net for `showsConnect` (see that property's doc
-    /// comment) — set true ~75s after the sign-in page is actually on
-    /// screen, regardless of what navigation has or hasn't been observed.
-    @State private var connectFallbackReached = false
-    /// Shown once per pane appearance, BEFORE the sign-in page: Penn's IdP
-    /// can pause noticeably after the password is submitted, and an
-    /// impatient second tap is what mints its "Stale Request" error (the
-    /// duplicate-POST guard in `LoginNavigationObserver` catches the
-    /// machine-made repeats; this card heads off the human-made one). The
-    /// purge keeps running behind this card, so dismissing it is usually
-    /// instant.
-    @State private var showsSignInTips = true
-
-    private var isBusy: Bool {
-        isReadingCookies || state.isCanvasDiscoveryLoading || state.isLoading || isPurging
-    }
-
-    /// Gates the Connect button on the login pane actually having been
-    /// handed back to a signed-in Canvas by Penn's SSO chain — see
-    /// `LoginNavigationObserver.isSignedInDestination`. Before this,
-    /// tapping Connect always fails: `connect()` reads Canvas's own cookie
-    /// store, and there is nothing there yet to read. `connectFallbackReached`
-    /// is a fail-open backstop (see its own doc comment) — Canvas is the
-    /// only required step in the walk, so a heuristic that misdetects and
-    /// hides the button forever would strand a student with no way into
-    /// the rest of the app.
-    private var showsConnect: Bool {
-        navObserver.reachedSignedInDestination || connectFallbackReached
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if showsSignInTips {
-                // Told to fill, not left at its intrinsic height. Without
-                // this the whole pane collapses to card + divider + action
-                // bar, SwiftUI centres that stack vertically, and the result
-                // on device is a tips card floating in the middle of an empty
-                // screen with the step's back chevron and progress dots
-                // stranded a third of the way down beside it. Layout only —
-                // nothing here touches the login, cookie or navigation
-                // handling.
-                CanvasSignInTipsCard(onContinue: { showsSignInTips = false })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isPurging {
-                Spacer()
-                ProgressView("Preparing a clean sign-in…")
-                    .font(.lhfSans(12))
-                Spacer()
-            } else {
-                // The WebView stays mounted even when a known error page has
-                // been detected — a single detection (or a stale one from an
-                // intermediate SSO hop) must never be the thing that makes
-                // login impossible. The card becomes a non-blocking banner
-                // above the still-live WebView instead of replacing it.
-                VStack(spacing: 0) {
-                    if navObserver.detectedKnownErrorPage {
-                        LoginErrorCard(
-                            title: "Canvas login hit a snag",
-                            message: "Continue below, start over, or use your Canvas calendar link.",
-                            onStartOver: startOver,
-                            onUseCalendarLinkInstead: { showPasteFeedLink = true }
-                        )
-
-                        Divider().overlay(Color.v2Divider)
-                    }
-
-                    LoginWebView(
-                        url: URL(string: "https://canvas.upenn.edu")!,
-                        store: LoginDataStores.canvas,
-                        reloadTick: reloadTick,
-                        navigationObserver: navObserver
-                    )
+        Group {
+            if isPurging || isReadingCookies || navObserver.reachedSignedInDestination {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .accessibilityLabel(isPurging ? "Preparing Canvas sign-in" : "Connecting Canvas")
+                    Spacer()
                 }
-                // `LoginWebView` is a UIViewRepresentable and reports no
-                // intrinsic size, so in a VStack that isn't told to fill it
-                // is handed almost no height and renders as a thin band with
-                // empty background above it. This is what gives the WebView
-                // the whole area between the step chrome and the action bar.
+            } else {
+                LoginWebView(
+                    url: URL(string: "https://canvas.upenn.edu/login/saml")!,
+                    store: LoginDataStores.canvas,
+                    navigationObserver: navObserver
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            Divider().overlay(Color.v2Divider)
-
-            LoginActionBar(
-                message: message ?? navObserver.loadError,
-                defaultHint: showsConnect
-                    ? "You’re signed in. Connect Canvas to continue."
-                    : "Sign in with PennKey.",
-                connectTitle: "Connect Canvas",
-                isBusy: isBusy,
-                onCancel: onCancel,
-                onConnect: connect,
-                onReload: { reloadTick += 1 },
-                onStartOver: startOver,
-                showsConnect: showsConnect
-            )
         }
         .background(Color.v2Bg.ignoresSafeArea())
-        .sheet(isPresented: $showPasteFeedLink) {
-            PasteFeedLinkSheet(onSaved: onConnected).environmentObject(state)
-        }
-        // Fail-open backstop for `showsConnect`, in the same spirit as the
-        // forced-update gate (LowHangingFruitKit/Sources/LowHangingFruitKit/Update/):
-        // a heuristic must never be the only thing standing between a
-        // student and their own data. If Penn ever moves hosts, or the SSO
-        // detection above misses some case, this reveals Connect anyway
-        // after a generous wait, so the worst case is exactly today's
-        // always-visible behaviour rather than a permanently stuck pane.
-        // The clock starts once the sign-in page is actually on screen
-        // (`showsSignInTips` false), not while the tips card is still up —
-        // that card's dismissal is a user tap with no fixed timing.
-        .task(id: showsSignInTips) {
-            guard !showsSignInTips else { return }
-            try? await Task.sleep(for: .seconds(75))
-            connectFallbackReached = true
-        }
-        .task(id: purgeGeneration) {
-            // Fires exactly once per Connect tap (this view's own appearance,
-            // or a "Start over" tap), before the WebView is ever created —
-            // never re-entrant with an in-flight login navigation. Targets
-            // Canvas's own isolated store (docs/CANVAS_LOGIN_DIAGNOSIS.md
-            // item 2a), not the shared `.default()` store. Purges only on
-            // the first attempt of this pane appearance — see
-            // `purgeOnNextAttempt` for the on-device evidence.
-            if purgeOnNextAttempt {
-                await WebsiteDataReset.purgeWebsiteData(
-                    matchingDomainContains: AppState.canvasLoginDomainHints,
-                    in: LoginDataStores.canvas
-                )
-                purgeOnNextAttempt = false
+        .onChange(of: navObserver.reachedSignedInDestination) { _, reachedDestination in
+            if reachedDestination {
+                connect()
             }
+        }
+        .task {
+            await WebsiteDataReset.purgeWebsiteData(
+                matchingDomainContains: AppState.canvasLoginDomainHints,
+                in: LoginDataStores.canvas
+            )
             isPurging = false
         }
         // Session-longevity Layer 2 guard (`CanvasSessionRenewer`): this pane
@@ -1205,22 +614,9 @@ private struct CanvasLoginPane: View {
 #endif
     }
 
-    /// Tears down the WebView and loads a fresh sign-in page from the top of
-    /// the chain, without leaving the pane — the recovery path now that the
-    /// WebView no longer allows a back-swipe onto a consumed login form.
-    /// Deliberately does NOT purge cookies anymore (`purgeOnNextAttempt`
-    /// stays false): a retry that keeps the failed attempt's IdP cookies is
-    /// exactly how Safari recovers from the same "Stale Request" page.
-    private func startOver() {
-        message = nil
-        navObserver.reset()
-        isPurging = true
-        purgeGeneration = UUID()
-    }
-
     private func connect() {
+        guard !isReadingCookies else { return }
         isReadingCookies = true
-        message = nil
         // Must read from the SAME store instance the WebView above was
         // configured with (`LoginDataStores.canvas`), not `.default()` — see
         // that type's doc comment. Reading the wrong store returns an empty
@@ -1237,8 +633,6 @@ private struct CanvasLoginPane: View {
                 let connected = await state.connectCanvas(cookies: canvasCookies)
                 if connected {
                     onConnected()
-                } else {
-                    message = state.error ?? "Couldn't connect Canvas yet. Finish logging in, then try again."
                 }
             }
         }
@@ -1252,74 +646,43 @@ private struct CanvasLoginPane: View {
 private struct GradescopeLoginPane: View {
     @EnvironmentObject private var state: AppState
     let onConnected: () -> Void
-    let onCancel: () -> Void
 
     @State private var isReadingCookies = false
-    @State private var message: String?
-    /// See `CanvasLoginPane`'s matching properties for why these exist —
-    /// same pre-login purge / reload / start-over treatment, item-for-item.
     @State private var isPurging = true
-    @State private var purgeGeneration = UUID()
-    @State private var reloadTick = 0
-    @StateObject private var navObserver = LoginNavigationObserver()
-
-    private var isBusy: Bool { isReadingCookies || state.isGradescopeLoading || isPurging }
+    @StateObject private var navObserver: LoginNavigationObserver = {
+        let observer = LoginNavigationObserver()
+        observer.signedInHostMarker = "gradescope.com"
+        observer.signedInRequiresForeignHost = false
+        return observer
+    }()
 
     private static let gradescopeLoginDomainHints = ["gradescope"]
 
     var body: some View {
-        VStack(spacing: 0) {
-            if isPurging {
-                Spacer()
-                ProgressView("Preparing a clean sign-in…")
-                    .font(.lhfSans(12))
-                Spacer()
-            } else {
-                // The WebView stays mounted even when a known error page has
-                // been detected — a single detection (or a stale one from an
-                // intermediate SSO hop) must never be the thing that makes
-                // login impossible. The card becomes a non-blocking banner
-                // above the still-live WebView instead of replacing it.
-                VStack(spacing: 0) {
-                    if navObserver.detectedKnownErrorPage {
-                        LoginErrorCard(
-                            title: "Gradescope login hit a snag",
-                            message: "Continue below or start over.",
-                            onStartOver: startOver,
-                            onUseCalendarLinkInstead: nil
-                        )
-
-                        Divider().overlay(Color.v2Divider)
-                    }
-
-                    LoginWebView(
-                        url: URL(string: "https://www.gradescope.com/login")!,
-                        store: LoginDataStores.gradescope,
-                        reloadTick: reloadTick,
-                        navigationObserver: navObserver
-                    )
+        Group {
+            if isPurging || isReadingCookies || navObserver.reachedSignedInDestination {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .accessibilityLabel(isPurging ? "Preparing Gradescope sign-in" : "Connecting Gradescope")
+                    Spacer()
                 }
-                // Same reason as the Canvas pane: `LoginWebView` has no
-                // intrinsic size, so without an explicit fill it collapses to
-                // a thin band under a screenful of empty background.
+            } else {
+                LoginWebView(
+                    url: URL(string: "https://www.gradescope.com/login")!,
+                    store: LoginDataStores.gradescope,
+                    navigationObserver: navObserver
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            Divider().overlay(Color.v2Divider)
-
-            LoginActionBar(
-                message: message ?? navObserver.loadError,
-                defaultHint: "Sign in to Gradescope, then connect.",
-                connectTitle: "Connect Gradescope",
-                isBusy: isBusy,
-                onCancel: onCancel,
-                onConnect: connect,
-                onReload: { reloadTick += 1 },
-                onStartOver: startOver
-            )
         }
         .background(Color.v2Bg.ignoresSafeArea())
-        .task(id: purgeGeneration) {
+        .onChange(of: navObserver.reachedSignedInDestination) { _, reachedDestination in
+            if reachedDestination {
+                connect()
+            }
+        }
+        .task {
             await WebsiteDataReset.purgeWebsiteData(
                 matchingDomainContains: Self.gradescopeLoginDomainHints,
                 in: LoginDataStores.gradescope
@@ -1331,31 +694,19 @@ private struct GradescopeLoginPane: View {
 #endif
     }
 
-    private func startOver() {
-        message = nil
-        navObserver.reset()
-        isPurging = true
-        purgeGeneration = UUID()
-    }
-
     private func connect() {
+        guard !isReadingCookies else { return }
         isReadingCookies = true
-        message = nil
         // Same store the WebView above uses — see `LoginDataStores`' doc comment.
         LoginDataStores.gradescope.httpCookieStore.getAllCookies { cookies in
             let gradescopeCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("gradescope") }
             SessionCookieStore.save(gradescopeCookies, service: .gradescope)
             Task { @MainActor in
                 isReadingCookies = false
-                guard !gradescopeCookies.isEmpty else {
-                    message = "No Gradescope session was found yet. Finish logging in, then try again."
-                    return
-                }
+                guard !gradescopeCookies.isEmpty else { return }
                 await state.syncGradescope(cookies: gradescopeCookies)
                 if state.isGradescopeConnected {
                     onConnected()
-                } else {
-                    message = state.error ?? "Couldn't connect Gradescope yet. Finish logging in, then try again."
                 }
             }
         }
@@ -1435,67 +786,41 @@ private struct ClassPickerPane: View {
 
 // MARK: - Shared WebView (cross-platform)
 
-/// Tracks the last `reloadTick` this representable acted on, so
-/// `update{UI,NS}View` can tell "the pane's Reload button was tapped again"
-/// apart from an unrelated SwiftUI re-render.
-private final class LoginWebViewCoordinator {
-    var lastReloadTick = 0
-}
-
 #if os(macOS)
 private struct LoginWebView: NSViewRepresentable {
     let url: URL
     let store: WKWebsiteDataStore
-    let reloadTick: Int
     let navigationObserver: LoginNavigationObserver
 
-    func makeCoordinator() -> LoginWebViewCoordinator { LoginWebViewCoordinator() }
     func makeNSView(context: Context) -> WKWebView {
-        context.coordinator.lastReloadTick = reloadTick
-        return makeWebView(url: url, store: store, navigationObserver: navigationObserver)
+        makeWebView(url: url, store: store, navigationObserver: navigationObserver)
     }
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        guard reloadTick != context.coordinator.lastReloadTick else { return }
-        context.coordinator.lastReloadTick = reloadTick
-        nsView.reload()
-    }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 #else
 private struct LoginWebView: UIViewRepresentable {
     let url: URL
     let store: WKWebsiteDataStore
-    let reloadTick: Int
     let navigationObserver: LoginNavigationObserver
 
-    func makeCoordinator() -> LoginWebViewCoordinator { LoginWebViewCoordinator() }
     func makeUIView(context: Context) -> WKWebView {
-        context.coordinator.lastReloadTick = reloadTick
-        return makeWebView(url: url, store: store, navigationObserver: navigationObserver)
+        makeWebView(url: url, store: store, navigationObserver: navigationObserver)
     }
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        guard reloadTick != context.coordinator.lastReloadTick else { return }
-        context.coordinator.lastReloadTick = reloadTick
-        uiView.reload()
-    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 #endif
 
 /// Shared WKWebView setup used by both platform representables. WKWebView and
 /// its default cookie store exist on iOS and macOS alike.
 ///
-/// The pre-login cookie/cache purge (docs/CANVAS_LOGIN_DIAGNOSIS.md item 1c)
-/// happens BEFORE this function is ever called — in the owning pane's
-/// `.task(id: purgeGeneration)`, which gates whether the WebView is created
-/// at all (`isPurging`). That guarantees it runs exactly once per Connect tap
-/// (or "Start over" tap) and can never race an in-flight navigation the way a
-/// purge-then-load `Task` fired from inside `makeWebView` itself could.
+/// The owning pane purges its pre-login cookie/cache state before creating
+/// this view, so cleanup cannot race an in-flight navigation.
 ///
 /// Two further hardening pieces (docs/CANVAS_LOGIN_DIAGNOSIS.md items 1a/1d):
-/// - `allowsBackForwardNavigationGestures = false` — a full-bleed login pane
-///   has no chrome, so swiping back onto an already-consumed login form and
-///   resubmitting it is indistinguishable from a real tap, and produces
-///   exactly Shibboleth's "Stale Request" with no way forward. The pane's
-///   explicit Reload/"Start over" controls are the replacement.
+/// - `allowsBackForwardNavigationGestures = false` prevents revisiting and
+///   resubmitting an already-consumed sign-in form. Navigation stays linear;
+///   Gradescope's optional exit remains the native Skip button above the web
+///   view.
 /// - `customUserAgent` — a genuine Mobile Safari UA for this device/iOS
 ///   version (`LoginUserAgent.mobileSafari`), since Safari itself logs into
 ///   Canvas fine on the same device but `WKWebView`'s default UA is missing

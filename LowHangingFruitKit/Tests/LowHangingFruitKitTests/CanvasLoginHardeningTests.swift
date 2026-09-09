@@ -96,9 +96,8 @@ struct CanvasLoginHardeningTests {
     func firstLoadBeforeAnyForeignHostIsNotSignedIn() {
         // The Canvas login pane's very first request IS canvas.upenn.edu;
         // it only redirects out to Penn SSO after that. If this returned
-        // true here, the Connect button would be visible on the very first
-        // frame, which is exactly today's (broken, always-visible)
-        // behaviour that this whole feature exists to fix.
+        // true here, the pane would try to connect before authentication had
+        // created a usable Canvas session.
         let isSignedIn = LoginNavigationObserver.isSignedInDestination(
             host: "canvas.upenn.edu",
             path: "/",
@@ -152,12 +151,8 @@ struct CanvasLoginHardeningTests {
         #expect(!isSignedIn)
     }
 
-    @Test("a nil marker — the Gradescope case — is never 'signed in'")
+    @Test("a nil marker is never 'signed in'")
     func nilMarkerIsNeverSignedIn() {
-        // GradescopeLoginPane never sets `signedInHostMarker`, so this
-        // predicate must be unconditionally false for it regardless of host,
-        // path, or `sawForeignHost` — that's what keeps Gradescope's action
-        // bar on its current always-visible Connect button.
         let isSignedIn = LoginNavigationObserver.isSignedInDestination(
             host: "www.gradescope.com",
             path: "/",
@@ -165,5 +160,26 @@ struct CanvasLoginHardeningTests {
             sawForeignHost: true
         )
         #expect(!isSignedIn)
+    }
+
+    @Test("Gradescope becomes signed in after leaving its login path on the same host")
+    func gradescopeNonLoginPathIsSignedIn() {
+        let login = LoginNavigationObserver.isSignedInDestination(
+            host: "www.gradescope.com",
+            path: "/login",
+            marker: "gradescope.com",
+            sawForeignHost: false,
+            requiresForeignHost: false
+        )
+        let account = LoginNavigationObserver.isSignedInDestination(
+            host: "www.gradescope.com",
+            path: "/account",
+            marker: "gradescope.com",
+            sawForeignHost: false,
+            requiresForeignHost: false
+        )
+
+        #expect(!login)
+        #expect(account)
     }
 }

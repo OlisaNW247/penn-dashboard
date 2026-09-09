@@ -118,8 +118,8 @@ struct RootCore: View {
                     .environmentObject(state)
             } else {
                 // `.environmentObject(scheduler)` matters here, not just in
-                // the dashboard branch below: step 5 of `OnboardingView`
-                // ("set reminders") reads and writes this exact instance, and
+                // the dashboard branch below: the notification step reads
+                // and writes this exact instance, and
                 // it has to be the same one `ContentView` gets a few lines
                 // down, since `NotificationScheduler`'s published properties
                 // are loaded from `UserDefaults.lhf` once at construction and
@@ -127,7 +127,7 @@ struct RootCore: View {
                 // onboarding's choices sit in `UserDefaults` while the
                 // dashboard kept showing whatever was on disk before
                 // onboarding ran.
-                OnboardingView()
+                OnboardingView(destination: state.onboardingDestination)
                     .environmentObject(state)
                     .environmentObject(scheduler)
             }

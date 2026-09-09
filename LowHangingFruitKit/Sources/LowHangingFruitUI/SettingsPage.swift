@@ -120,7 +120,7 @@ struct SettingsPage: View {
                     if state.isCanvasConnected && !state.canUseGradeWatcher {
                         Button {
                             dismiss()
-                            state.restartOnboarding()
+                            state.restartOnboarding(for: .canvas)
                         } label: {
                             Label("sign in to canvas", systemImage: "link")
                         }
@@ -566,7 +566,7 @@ struct SettingsPage: View {
             } else {
                 Button("connect") {
                     dismiss()
-                    state.restartOnboarding()
+                    state.restartOnboarding(for: target == .canvas ? .canvas : .gradescope)
                 }
                 .buttonStyle(.borderless)
             }

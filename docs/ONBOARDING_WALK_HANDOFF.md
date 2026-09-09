@@ -311,3 +311,47 @@ installing it again clears those local flags and shows the intro from the
 beginning. The physical iPhone was listed as `unavailable` at the end of this
 pass, so the new build could not be installed there; simulator visual QA is
 complete.
+
+## 10. Final cleanup — direct service sign-in and simpler choices
+
+_Appended 2026-09-09 on `onboarding-walk`. This section supersedes the older
+login-action-bar and five-step descriptions above._
+
+The setup walk now begins directly on Penn's Canvas sign-in. The native header
+keeps the intro's large serif styling, but the reset-login, calendar-link,
+reload, start-over, cancel, instructional copy, and manual Connect controls
+have all been removed. Once Canvas returns from Penn SSO to a signed-in Canvas
+page, the app saves the session and continues automatically.
+
+Gradescope follows the same stripped-back pattern: a native **Connect
+Gradescope** title, **Skip** in the top-right, and the Gradescope login page.
+There are no bottom controls. Gradescope authenticates on its own host, so the
+navigation observer treats the first committed non-`/login` Gradescope page as
+the return destination, saves its cookies, syncs, and advances automatically.
+Canvas retains the stricter requirement that its flow must first leave for a
+foreign Penn SSO host before a return can count as authenticated.
+
+Reconnect entry points are service-specific. Canvas reconnect buttons open
+only Canvas setup, while Gradescope reconnect buttons open only Gradescope
+setup; neither replays the complete onboarding walk. A focused DEBUG harness
+opens the Gradescope page directly for review:
+
+```text
+-LHFGradescopeOnboardingHarness -LHFDemoData
+```
+
+The remainder of the walk was reduced to four steps. Notifications is titled
+**Pick your notifications** and contains only lead-time choices. The
+per-course screen uses short scan states, one reminder toggle, and one
+"Items with nothing to submit" toggle with examples. Long evidence,
+explanatory, and per-setting copy was removed.
+
+Verification for this pass:
+
+- `CanvasLoginHardeningTests`: 12 tests passed, including the same-host
+  Gradescope return case.
+- `IntroFlowTests`: 7 tests passed, including service-specific reconnect
+  routing.
+- Debug build for the iPhone 17 Pro simulator succeeded.
+- The focused Gradescope page was rendered in the simulator with its title,
+  top-right Skip button, and live Gradescope form visible.

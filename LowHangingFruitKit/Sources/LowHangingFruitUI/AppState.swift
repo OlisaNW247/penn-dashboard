@@ -45,6 +45,12 @@ private struct CourseFeedKindTally {
 
 @MainActor
 final class AppState: ObservableObject {
+    enum OnboardingDestination: Equatable {
+        case full
+        case canvas
+        case gradescope
+    }
+
     @Published var canvasItems: [Assignment] = []
     @Published var gradescopeItems: [Assignment] = []
     /// Readings imported from a probed (silent) course's Modules page via
@@ -240,6 +246,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
+    @Published private(set) var onboardingDestination: OnboardingDestination = .full
     /// Whether the first-run mission panes (`IntroView`) have been shown.
     /// Deliberately *separate* from `hasCompletedOnboarding`: the Settings
     /// reconnect buttons call `restartOnboarding()`, which clears that flag to
@@ -631,6 +638,15 @@ final class AppState: ObservableObject {
             hasSeenIntro = false
             userName = ""
         }
+        // Focused Gradescope review seam: opens that connection page directly
+        // without replaying the intro or Canvas setup. State is in-memory for
+        // this launch; the pane clears its isolated web session before loading.
+        if ProcessInfo.processInfo.arguments.contains("-LHFGradescopeOnboardingHarness") {
+            hasCompletedOnboarding = false
+            hasSeenIntro = true
+            onboardingDestination = .gradescope
+            isGradescopeConnected = false
+        }
         #endif
 
         refreshCanvasSessionExpiredState()
@@ -883,6 +899,7 @@ final class AppState: ObservableObject {
     }
 
     func completeOnboarding() {
+        onboardingDestination = .full
         hasCompletedOnboarding = true
         UserDefaults.lhf.set(true, forKey: Self.onboardingCompletedKey)
     }
@@ -951,7 +968,8 @@ final class AppState: ObservableObject {
     ///
     /// Deliberately leaves `hasSeenIntro` alone: this lands the user on the
     /// connect checklist, not back at the first-run pitch.
-    func restartOnboarding() {
+    func restartOnboarding(for destination: OnboardingDestination = .full) {
+        onboardingDestination = destination
         hasCompletedOnboarding = false
         UserDefaults.lhf.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real

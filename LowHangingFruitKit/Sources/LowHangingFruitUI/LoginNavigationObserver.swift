@@ -51,14 +51,10 @@ final class LoginDiagnosticsLog: ObservableObject {
 /// Observe-only `WKNavigationDelegate` for the Canvas/Gradescope login panes
 /// (docs/CANVAS_LOGIN_HARDENING.md item 3a).
 ///
-/// Deliberately does (almost) nothing to steer navigation. No URL
-/// rewriting, no auto-purge-and-retry — a false-positive "known error page"
-/// detection that silently purged and reloaded would burn a second
-/// `SAMLRequest` mid-flow and could easily make the exact bug this file
-/// exists to diagnose *worse*. Recovery from a detected error is always a
-/// user-initiated tap ("Start over" / "Use calendar link instead"), never
-/// automatic. The single exception to "always allow": a repeat main-frame
-/// POST to the same URL while the previous POST's response has not yet
+/// Deliberately does (almost) nothing to steer navigation. No URL rewriting
+/// or automatic restart: a false-positive recovery could burn a second
+/// `SAMLRequest` mid-flow. The single exception to "always allow" is a repeat
+/// main-frame POST to the same URL while the previous POST's response has not yet
 /// committed (20s cap) is cancelled, because a double-submitted credential
 /// form is what consumed Shibboleth's one-shot login conversation and
 /// produced every deterministic "Stale Request" — see
@@ -80,10 +76,8 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     @Published private(set) var loadError: String?
 
     /// True once a known IdP/Shibboleth error page's title has been observed
-    /// on the currently-loaded page. Reset by the pane's "Start over"/"Reload"
-    /// actions (which recreate this observer or explicitly clear it), and
-    /// also cleared automatically as soon as a new main-frame navigation
-    /// starts (see `didStartProvisionalNavigation`) — a multi-hop SSO chain
+    /// on the currently-loaded page. Cleared automatically as soon as a new
+    /// main-frame navigation starts (see `didStartProvisionalNavigation`) — a multi-hop SSO chain
     /// (Canvas → Shibboleth → Duo → back) can pass through a transient
     /// error-titled intermediate page without permanently latching this flag
     /// for the rest of the flow.
@@ -93,21 +87,16 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// diagnostics. Cleared everywhere `detectedKnownErrorPage` is cleared.
     @Published private(set) var detectedErrorPageTitle: String?
 
-    /// Host substring the caller considers "signed in" once actually
-    /// rendered on screen (e.g. `"canvas.upenn.edu"`, set by
-    /// `CanvasLoginPane`). Left `nil` by any pane that doesn't need this
-    /// signal — Gradescope's identical action bar never sets it, so
-    /// `reachedSignedInDestination` can never fire there and its Connect
-    /// button keeps its always-visible behaviour untouched. See
-    /// `isSignedInDestination` for the full rule this drives.
+    /// Host substring the caller considers signed in once a non-login page
+    /// actually renders (for example Canvas or Gradescope's own host).
     var signedInHostMarker: String?
+    /// Canvas must leave its host for Penn SSO before returning. Gradescope's
+    /// own login stays on gradescope.com, so its pane disables this requirement
+    /// and relies on the transition away from a `/login` path instead.
+    var signedInRequiresForeignHost = true
 
-    /// True once a page matching `signedInHostMarker` has actually
-    /// committed (rendered), per `isSignedInDestination`. This is the
-    /// signal `CanvasLoginPane` uses to reveal its Connect button — before
-    /// this flips, tapping Connect cannot work (there's no Canvas session
-    /// to read cookies from yet), which is exactly what today's
-    /// always-visible button gets wrong.
+    /// True once a page matching `signedInHostMarker` has committed. Both
+    /// login panes use this to connect automatically after authentication.
     @Published private(set) var reachedSignedInDestination = false
 
     /// True once any observed navigation hop has landed on a host that
@@ -198,13 +187,13 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         }
         switch nsError.code {
         case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
-            return "You're offline. Check your connection and try Reload."
+            return "You're offline. Check your connection and try again."
         case NSURLErrorTimedOut:
-            return "That took too long to load. Try Reload."
+            return "That took too long to load. Try again."
         case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
-            return "Couldn't reach Canvas. Check your connection and try Reload."
+            return "Couldn't reach the sign-in service. Check your connection and try again."
         default:
-            return "Couldn't load the sign-in page. Try Reload or Start over."
+            return "Couldn't load the sign-in page. Try again."
         }
     }
 }
@@ -265,7 +254,13 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         if !host.localizedCaseInsensitiveContains(marker) {
             sawForeignHost = true
         } else if kind == "commit",
-                  Self.isSignedInDestination(host: host, path: url.path, marker: marker, sawForeignHost: sawForeignHost) {
+                  Self.isSignedInDestination(
+                    host: host,
+                    path: url.path,
+                    marker: marker,
+                    sawForeignHost: sawForeignHost,
+                    requiresForeignHost: signedInRequiresForeignHost
+                  ) {
             // Only `didCommit` counts as "reached" — a page actually
             // rendering, not merely a redirect in flight that might yet
             // bounce onward.
@@ -277,16 +272,11 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     /// signed-in destination", pulled out of `logHop` so it's testable
     /// without a live `WKWebView` (see `CanvasLoginHardeningTests`). Every
     /// condition below is load-bearing:
-    /// - `marker` must be set and `host` must contain it (case-insensitive):
-    ///   `nil` disables the whole feature — the Gradescope call site never
-    ///   sets a marker, so this is always false there and its action bar
-    ///   keeps showing Connect immediately, exactly as it does today.
-    /// - `sawForeignHost` must already be true: the Canvas pane's very
-    ///   first load IS `https://canvas.upenn.edu`, which then redirects out
-    ///   to Penn's SSO chain — so a Canvas hop before any foreign host is
-    ///   the START of the login, not the end of it. Without this the button
-    ///   would be visible from the very first frame, which is exactly
-    ///   today's (broken) behaviour.
+    /// - `marker` must be set and `host` must contain it (case-insensitive).
+    /// - When `requiresForeignHost` is true, a foreign host must have been
+    ///   observed first. Canvas starts on its destination host before leaving
+    ///   for Penn SSO, while Gradescope signs in entirely on one host and
+    ///   disables this requirement.
     /// - `path` must not contain "/login": Canvas bounces a failed or
     ///   partial SSO attempt back to its own `/login/...` pages, which are
     ///   on the Canvas host but are not a signed-in session.
@@ -296,10 +286,16 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     /// class's actor isolation spreads to this static func too, and the
     /// synchronous tests calling it directly (no live `WKWebView`, no
     /// `await`) fail to compile.
-    nonisolated static func isSignedInDestination(host: String, path: String, marker: String?, sawForeignHost: Bool) -> Bool {
+    nonisolated static func isSignedInDestination(
+        host: String,
+        path: String,
+        marker: String?,
+        sawForeignHost: Bool,
+        requiresForeignHost: Bool = true
+    ) -> Bool {
         guard let marker, !marker.isEmpty else { return false }
         guard host.localizedCaseInsensitiveContains(marker) else { return false }
-        guard sawForeignHost else { return false }
+        guard sawForeignHost || !requiresForeignHost else { return false }
         guard !path.localizedCaseInsensitiveContains("/login") else { return false }
         return true
     }

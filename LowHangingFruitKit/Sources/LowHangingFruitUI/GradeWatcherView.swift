@@ -210,7 +210,7 @@ struct GradeWatcherView: View {
             // login they cannot pass — the opposite of what this button is for.
             if !state.isPreviewMode {
                 Button {
-                    state.restartOnboarding()
+                    state.restartOnboarding(for: .canvas)
                 } label: {
                     Text("reconnect canvas")
                         .font(.lhfSans(12, weight: .semibold))
