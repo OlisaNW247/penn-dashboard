@@ -19,6 +19,12 @@ import UIKit
 ///   whether its Canvas assignment id resolved, by which path, a
 ///   non-identifying UID shape class, and what Grade Watcher last observed
 ///   for it — see `AppState.submissionDiagnosticLines`.
+/// - Course materials sync: the stored vs. current sync-version marker, the
+///   on-device knowledge base's size, one line per known Canvas course site
+///   with its document-kind counts, and the most recent
+///   `refreshCourseKnowledge()` run's trace (manifest outcome, which courses
+///   were fetched vs. already fresh, collector errors, upload counts) — see
+///   `AppState.courseKnowledgeSyncDiagnosticLines`.
 ///
 /// Never includes: credentials, cookie values/names, the ICS feed URL/token,
 /// query strings of any kind, or any assignment/reading title or URL. This
@@ -63,6 +69,11 @@ enum DiagnosticsReport {
         lines.append("")
         lines.append("Submission detection (codes/ids/states only — no titles or URLs):")
         for line in state.submissionDiagnosticLines {
+            lines.append("  \(line)")
+        }
+        lines.append("")
+        lines.append("Course materials sync (site ids/codes/counts only — no titles or URLs):")
+        for line in state.courseKnowledgeSyncDiagnosticLines {
             lines.append("  \(line)")
         }
         return lines.joined(separator: "\n")

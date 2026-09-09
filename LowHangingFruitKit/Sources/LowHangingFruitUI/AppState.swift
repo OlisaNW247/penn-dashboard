@@ -286,6 +286,26 @@ final class AppState: ObservableObject {
     @Published var courseKnowledge: CourseKnowledgeBase
     @Published var isCourseKnowledgeSyncing = false
     @Published var courseKnowledgeNotice: String?
+    /// The most recent `refreshCourseKnowledge()` run's diagnostic trace,
+    /// this launch only (never persisted) — see `CourseKnowledgeSyncTrace`
+    /// and `AppState.courseKnowledgeSyncDiagnosticLines` in
+    /// `AppState+CourseKnowledge.swift`. Not `@Published`: nothing renders
+    /// live off it, it's only read on demand when Settings → Diagnostics
+    /// builds its report. Deliberately not `private(set)` like the flags
+    /// above it — unlike those, this is written from
+    /// `AppState+CourseKnowledge.swift`, a different file, and `private`
+    /// access control in Swift is scoped per file, not per type, so
+    /// `private(set)` here would make `refreshCourseKnowledge()` unable to
+    /// record anything.
+    var lastCourseKnowledgeSyncTrace: CourseKnowledgeSyncTrace?
+    /// The most recent run a guard turned away ("not stale", "no cookies",
+    /// "already syncing"), kept apart from `lastCourseKnowledgeSyncTrace` on
+    /// purpose: the refresh loop calls `refreshCourseKnowledge` every few
+    /// minutes and nearly every call is a "not stale" skip, so recording
+    /// skips into the same slot would overwrite the one real run's trace
+    /// within minutes of it finishing — the exact run a diagnostics report
+    /// is asked for.
+    var lastCourseKnowledgeSyncSkip: CourseKnowledgeSyncTrace?
     /// Light/Dark appearance, applied app-wide via `.preferredColorScheme` at
     /// the root. Persisted like every other user preference here.
     @Published private(set) var appearanceMode: AppearanceMode
