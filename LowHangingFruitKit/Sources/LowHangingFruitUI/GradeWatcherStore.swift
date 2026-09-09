@@ -128,6 +128,37 @@ final class GradeWatcherStore: ObservableObject {
     /// its own (docs/grades.md §4/§9). If Gradescope isn't connected
     /// (`SessionCookieStore` has no Gradescope cookies), the overlay is
     /// skipped entirely and courses fall back to Canvas-only scores.
+    ///
+    /// Courses are fetched with **at most 3 in flight at once**, not fully
+    /// sequential and not fully parallel. On a real phone with eight Canvas
+    /// sites, fetching them one at a time — each paginating its own
+    /// assignment-group requests — took minutes on first launch, and for
+    /// every one of those minutes the dashboard kept showing the ICS feed's
+    /// view of what's due, which reads as overdue work the student may
+    /// already have turned in: the submission signal that rides along with a
+    /// grades fetch (`CourseGradeSnapshot.submissions`) simply hadn't landed
+    /// yet for whichever course was still waiting its turn. Unbounded
+    /// concurrency was rejected too: Canvas rate-limits per session, and
+    /// firing eight requests at once from one login is exactly the traffic
+    /// shape that trips it, which would turn a slow-but-correct sync into a
+    /// pile of `sessionExpired`/`http 4xx` failures that have nothing to do
+    /// with whether the session is actually still good. 3 is a bound chosen
+    /// to buy most of the wall-clock win without looking like abuse to
+    /// Canvas's rate limiter.
+    ///
+    /// Concurrency only changes *when* each course's network I/O runs, never
+    /// how its result is folded into state: every fetch still runs to
+    /// completion (a `sessionExpired` on one course does not stop the others,
+    /// same as before), and every observable outcome — `snapshots`,
+    /// `gradescopeItemsByCourse`, recorded history, `lastRefreshOutcomes`,
+    /// the success/failure tally, and the final `error`/`isSessionExpired`
+    /// banner — is applied afterward in ascending `courseID` order, exactly
+    /// as the old one-at-a-time loop would have produced them. That matters
+    /// for two reasons: outcomes have to be deterministic regardless of which
+    /// course's network reply happens to land first on a given run, and
+    /// `lastRefreshOutcomes` (the diagnostics report) reads as a stable,
+    /// sorted list rather than one that reshuffles every refresh for reasons
+    /// a student could never explain.
     func refresh(
         courseIDs: [String: String],
         cookies: [HTTPCookie],
@@ -159,6 +190,12 @@ final class GradeWatcherStore: ObservableObject {
         // `AppState`) even though its Keychain calls are thread-safe on
         // their own, so match that discipline here rather than call it
         // straight from whatever background executor this handler runs on.
+        //
+        // `CanvasGradesClient` is itself `Sendable` — every stored property is
+        // (`URL`, `[HTTPCookie]`, `URLSession`, and a `@Sendable` closure) —
+        // so one instance is built here and captured by every child task
+        // below instead of constructing one per course; there's nothing
+        // course-specific in it that would require isolating separately.
         let client = CanvasGradesClient(cookies: cookies) { rotated in
             Task { @MainActor in
                 SessionCookieStore.merge(rotated, service: .canvas)
@@ -174,9 +211,51 @@ final class GradeWatcherStore: ObservableObject {
         // both correct and cheaper than filtering every service's by domain.
         let gradescopeConnected = !SessionCookieStore.load(service: .gradescope).isEmpty
 
-        for courseID in courseIDs.keys.sorted() {
-            do {
-                let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+        let sortedCourseIDs = courseIDs.keys.sorted()
+
+        // Bounded-concurrency fan-out: start up to 3 fetches, then start one
+        // more each time one finishes, until every course has been asked
+        // for. Each child task only computes and returns a value — it never
+        // touches `self` or any `@Published` property. That's required for
+        // correctness (child tasks run off the main actor, so mutating
+        // `@Published` state from inside one would be a data race) and it's
+        // also what makes the sorted-order application below possible: the
+        // network's actual completion order is discarded entirely, kept only
+        // long enough to know a course is done and another slot is free.
+        var resultsByCourse: [String: Result<CourseGradeSnapshot, Swift.Error>] = [:]
+        resultsByCourse.reserveCapacity(sortedCourseIDs.count)
+        await withTaskGroup(of: (courseID: String, result: Result<CourseGradeSnapshot, Swift.Error>).self) { group in
+            var nextIndex = 0
+            func addNext() {
+                guard nextIndex < sortedCourseIDs.count else { return }
+                let courseID = sortedCourseIDs[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    do {
+                        let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+                        return (courseID, .success(snapshot))
+                    } catch {
+                        return (courseID, .failure(error))
+                    }
+                }
+            }
+
+            let initialBatch = min(3, sortedCourseIDs.count)
+            for _ in 0..<initialBatch { addNext() }
+
+            while let finished = await group.next() {
+                resultsByCourse[finished.courseID] = finished.result
+                addNext()
+            }
+        }
+
+        // Apply every result in ascending-courseID order — see the doc
+        // comment above for why this has to be a second pass over
+        // `sortedCourseIDs` rather than folded into the fetch loop itself.
+        for courseID in sortedCourseIDs {
+            guard let result = resultsByCourse[courseID] else { continue }
+            switch result {
+            case let .success(snapshot):
                 snapshots[courseID] = snapshot
 
                 // Store the Canvas-only snapshot alongside its raw (course-
@@ -193,12 +272,14 @@ final class GradeWatcherStore: ObservableObject {
                 succeeded += 1
                 recordHistory(courseID: courseID, now: now)
                 lastRefreshOutcomes[courseID] = "ok"
-            } catch CanvasGradesClient.Error.sessionExpired {
-                sawSessionExpired = true
-                lastRefreshOutcomes[courseID] = "sessionExpired"
-            } catch {
-                lastFailure = error
-                lastRefreshOutcomes[courseID] = Self.fetchOutcomeLabel(for: error)
+            case let .failure(fetchError):
+                if case CanvasGradesClient.Error.sessionExpired = fetchError {
+                    sawSessionExpired = true
+                    lastRefreshOutcomes[courseID] = "sessionExpired"
+                } else {
+                    lastFailure = fetchError
+                    lastRefreshOutcomes[courseID] = Self.fetchOutcomeLabel(for: fetchError)
+                }
             }
         }
 

@@ -908,6 +908,21 @@ public final class AssignmentStore {
         return ids
     }
 
+    /// The course keys the ledger has *ever*, on this device, gotten a real
+    /// Canvas submission answer for — i.e. at least one `.canvas` row whose
+    /// `canvasSubmissionObservedAt` is non-nil (see that property's doc comment
+    /// for why "observed" and "submitted" are different questions). This is
+    /// the durable half of the first-launch hold in `AppState`: a fresh
+    /// install has an empty set here (nothing has ever been checked), so the
+    /// dashboard knows not to trust "overdue" for a course until either this
+    /// device's history or this launch's live grade fetch has actually looked.
+    /// A relapse to memory-only storage (see `isPersistent`) makes this set
+    /// empty every launch, which is the correct, conservative answer — an
+    /// in-memory ledger has no history to report.
+    public func coursesWithCanvasSubmissionObservation() -> Set<String> {
+        Set(rows(source: .canvas).compactMap { $0.canvasSubmissionObservedAt != nil ? $0.course : nil })
+    }
+
     // MARK: Test/diagnostic access
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.

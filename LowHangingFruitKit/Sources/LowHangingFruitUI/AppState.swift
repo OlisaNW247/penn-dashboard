@@ -82,6 +82,14 @@ final class AppState: ObservableObject {
     @Published private(set) var mergedCoursework: [Assignment] = []
     @Published var assignments: [Assignment] = []
     @Published var laterAssignments: [Assignment] = []
+    /// Overdue Canvas items `rebuildDashboardItems` is deliberately withholding
+    /// from `assignments`/`laterAssignments`/`assessments` because their
+    /// course has never — not this launch, not on this device, ever — had a
+    /// submission answer from Canvas. See `isCanvasSubmissionVerified` for the
+    /// full rule and `docs/persistence-explained.md`-adjacent reasoning on
+    /// `rebuildDashboardItems` for why a first-launch dashboard would
+    /// otherwise be a page of guessed debts.
+    @Published private(set) var awaitingCanvasCheck: [Assignment] = []
     @Published var assessments: [Assignment] = []
     @Published var recurringTasks: [RecurringTask] = []
     @Published private(set) var manualAssignments: [ManualAssignment] = []
@@ -257,6 +265,19 @@ final class AppState: ObservableObject {
     /// fetch can establish a baseline silently instead of announcing a whole
     /// term of existing scores. See `notifiableGradeChanges`.
     private var gradeBaselinedCourses: Set<String> = []
+
+    /// When this `AppState` came up, for the first-launch submission hold's
+    /// safety valve (`isCanvasSubmissionVerified`'s `holdWindow`). Captured
+    /// once at `init` time rather than read live from `Date()` each rebuild —
+    /// the hold is a window from launch, not a recurring one, so this must
+    /// not move.
+    private let launchedAt = Date()
+    /// Guards the one-shot delayed rebuild that releases the first-launch
+    /// hold if no grade refresh ever finishes (an expired session, a course
+    /// nobody selected, Grade Watcher failing outright). Without this, every
+    /// `rebuildDashboardItems` call while items are held would schedule its
+    /// own five-minute timer, and they'd all fire.
+    private var holdReleaseScheduled = false
     /// Everything the student has decided about each of their classes: which
     /// are shown, which are deleted, custom names, resolved Canvas ids, and —
     /// from v4 on — per-course notification settings, recurring-item opt-in and
@@ -3426,6 +3447,67 @@ final class AppState: ObservableObject {
         return due < cutoff
     }
 
+    /// The first-launch submission hold's whole rule, kept pure (no store, no
+    /// network) so it can be exercised directly from a test. The problem it
+    /// solves: on a fresh install, the first dashboard frame is built from the
+    /// Canvas ICS feed — which knows nothing about submission state — while
+    /// "is this actually turned in" comes from Grade Watcher's per-course
+    /// grade fetch, which starts afterwards and runs one course at a time.
+    /// Until a course's fetch has completed at least once, *nothing on this
+    /// device* has ever asked Canvas whether that course's overdue items were
+    /// turned in, so treating "overdue" at face value would show a brand-new
+    /// student a page of work they may have already submitted — the worst
+    /// possible first impression, and one that corrects itself minutes later
+    /// only by accident of timing.
+    ///
+    /// A course counts as verified — safe to trust "overdue" for — the moment
+    /// any of these is true:
+    ///  - `!gradeWatcherUsable`: nothing on this device could *ever* check
+    ///    this course (a link-only Canvas connection carries no cookies, or
+    ///    Grade Watcher is otherwise unusable). Holding forever in that case
+    ///    would hide real overdue work permanently rather than briefly, which
+    ///    is a worse failure than the guess this hold exists to avoid — so a
+    ///    course that can never be verified is never held in the first place.
+    ///  - the safety valve: `holdWindow` has elapsed since launch. A failing
+    ///    or endlessly-retrying grade fetch must not hide overdue work
+    ///    forever; five minutes is long enough for a normal per-course fetch
+    ///    loop to reach every selected class, short enough that a genuinely
+    ///    broken refresh doesn't read as "nothing is due".
+    ///  - one of the course's Canvas *site* ids appears in `checkedSiteIDs` —
+    ///    this launch's grade refresh has produced an outcome (`ok` or an
+    ///    error string) or a snapshot for that site. An *error* still counts:
+    ///    Grade Watcher answered the question "did we check", just not the
+    ///    question "what did Canvas say", and a failing fetch must not hold
+    ///    an item hostage indefinitely (that is what the time-based valve
+    ///    above is for; a course with a real answer doesn't need it).
+    ///  - `observedCourses` (from
+    ///    `AssignmentStore.coursesWithCanvasSubmissionObservation()`)
+    ///    contains the course — a *previous* launch already got a submission
+    ///    answer for it and the ledger remembers, so this launch doesn't need
+    ///    to re-earn that trust before showing the item.
+    static func isCanvasSubmissionVerified(
+        course: String,
+        siteIDs: [String],
+        checkedSiteIDs: Set<String>,
+        observedCourses: Set<String>,
+        gradeWatcherUsable: Bool,
+        launchedAt: Date,
+        now: Date,
+        holdWindow: TimeInterval = AppState.submissionHoldWindow
+    ) -> Bool {
+        if !gradeWatcherUsable { return true }
+        if now.timeIntervalSince(launchedAt) > holdWindow { return true }
+        if siteIDs.contains(where: checkedSiteIDs.contains) { return true }
+        if observedCourses.contains(course) { return true }
+        return false
+    }
+
+    /// The safety-valve duration `isCanvasSubmissionVerified`'s default
+    /// parameter and `rebuildDashboardItems`'s release timer both use — a
+    /// single named constant so the two can never quietly drift out of step
+    /// with each other.
+    static let submissionHoldWindow: TimeInterval = 5 * 60
+
     static let unknownCourse = "(unknown course)"
 
     /// Quizzes, midterms, and exams live on their own Assessments page rather than
@@ -3641,18 +3723,104 @@ final class AppState: ObservableObject {
                     archivedCourseTerms: archivedCourseTerms
                 )
         }
+
+        // First-launch submission hold. An overdue `.canvas`/`.canvasModules`
+        // item is a *guess* — "still owed" — until something has actually
+        // asked Canvas whether it was turned in, and on a fresh install
+        // nothing has: the dashboard's first frame comes from the ICS feed
+        // alone, while Grade Watcher's per-course fetch (the thing that
+        // actually knows submission state) runs afterwards, one course at a
+        // time. Held items are pulled out into `awaitingCanvasCheck` instead
+        // of reaching `assessments`/`assignments`/`laterAssignments` below,
+        // so a brand-new student's first impression is "checking Canvas",
+        // not a page of debts they may have already cleared.
+        //
+        // Deliberately does not touch `mergedCoursework` (assigned above,
+        // before this filter runs) or anything upstream of `incomplete` —
+        // the Done tab, completion bookkeeping and archiving all already
+        // ran, and a held item is simply absent from the dashboard rather
+        // than miscategorized within it. See `isCanvasSubmissionVerified`
+        // for the full per-course rule and its escape hatches.
+        //
+        // Skipped outright under fixture data: preview/demo mode has no live
+        // grade fetch behind it (`canUseGradeWatcher` is unconditionally
+        // `true` there for that exact reason), and there is no real "first
+        // launch" moment to protect a reviewer from.
+        let verifiedIncomplete: [Assignment]
+        if isUsingFixtureData {
+            awaitingCanvasCheck = []
+            verifiedIncomplete = incomplete
+        } else {
+            let courseIDs = canvasCourseIDs()
+            let siteIDsByCode = Dictionary(grouping: courseIDs.keys) { courseIDs[$0]! }
+            let checkedSites = Set(gradeWatcher.lastRefreshOutcomes.keys)
+                .union(gradeWatcher.snapshots.keys)
+            let observedCourses = assignmentStore?.coursesWithCanvasSubmissionObservation() ?? []
+            let gradeWatcherUsable = canUseGradeWatcher
+            var held: [Assignment] = []
+            var visible: [Assignment] = []
+            for item in incomplete {
+                let isOverdueCanvasItem = (item.source == .canvas || item.source == .canvasModules)
+                    && (item.dueAt.map { $0 < now } ?? false)
+                guard isOverdueCanvasItem else {
+                    visible.append(item)
+                    continue
+                }
+                if Self.isCanvasSubmissionVerified(
+                    course: item.course,
+                    siteIDs: siteIDsByCode[item.course] ?? [],
+                    checkedSiteIDs: checkedSites,
+                    observedCourses: observedCourses,
+                    gradeWatcherUsable: gradeWatcherUsable,
+                    launchedAt: launchedAt,
+                    now: now
+                ) {
+                    visible.append(item)
+                } else {
+                    held.append(item)
+                }
+            }
+            awaitingCanvasCheck = held
+            verifiedIncomplete = visible
+
+            // Safety valve: `updateSubmissionState()` already calls
+            // `rebuildDashboardItems()` again at the end of every grade
+            // refresh, success or failure, which is what releases the hold
+            // in the normal case as each course's fetch completes. This
+            // timer only matters when that never happens at all — an
+            // expired session nobody has reconnected yet, or Grade Watcher
+            // failing before producing a single outcome — so held items
+            // don't sit there past `submissionHoldWindow` regardless.
+            // `holdReleaseScheduled` caps this at one pending timer per
+            // launch; without it, every rebuild while anything is held would
+            // schedule its own five-minute timer.
+            if !held.isEmpty, !holdReleaseScheduled {
+                holdReleaseScheduled = true
+                let deadline = launchedAt.addingTimeInterval(Self.submissionHoldWindow)
+                Task { @MainActor [weak self] in
+                    let remaining = deadline.timeIntervalSinceNow
+                    if remaining > 0 {
+                        try? await Task.sleep(for: .seconds(remaining))
+                    }
+                    guard let self else { return }
+                    self.holdReleaseScheduled = false
+                    self.rebuildDashboardItems()
+                }
+            }
+        }
+
         // `.event` items never land in Assessments even when their title
         // matches the exam/quiz regex (`isAssessment` is title-based, and a
         // readings-course opt-in can surface something titled e.g. "Reading
         // quiz prep") — they're opted-in content, always coursework.
-        assessments = incomplete.filter { $0.kind != .event && Self.isAssessment($0) }
+        assessments = verifiedIncomplete.filter { $0.kind != .event && Self.isAssessment($0) }
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped. An `.event` (reading,
         // lecture, exam date) has nothing to submit, so once its due time has
         // passed it isn't "overdue" — it's just gone from the dashboard (see
         // `isExpiredEvent`).
-        let coursework = incomplete
+        let coursework = verifiedIncomplete
             .filter { $0.kind == .event || !Self.isAssessment($0) }
             .filter { !Self.isExpiredEvent($0, now: now) }
             // The per-class "items with nothing to submit" toggle
