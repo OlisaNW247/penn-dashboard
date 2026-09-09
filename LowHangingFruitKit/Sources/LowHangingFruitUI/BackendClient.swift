@@ -203,10 +203,43 @@ struct BackendClient: Sendable {
         guard (200..<300).contains(http.statusCode) else {
             throw BackendError.http(http.statusCode)
         }
-        guard let decoded = try? BackendJSON.decoder().decode(T.self, from: data) else {
+        do {
+            return try BackendJSON.decoder().decode(T.self, from: data)
+        } catch {
+            // `BackendError.decoding` carries no detail by design (callers
+            // only ever branch on the case), but a decode failure on a
+            // response the server considered valid is exactly the bug a
+            // device diagnostics report needs to name: the coding path and
+            // debug description say WHICH field of WHICH type disagreed
+            // with the wire, and never contain a value from the body. Kept
+            // on the main actor as a plain slot rather than threaded
+            // through the error so the wire contract stays untouched.
+            let detail = "\(function): \(Self.describe(error)) (\(data.count) bytes)"
+            await MainActor.run { BackendDiagnostics.lastDecodingFailure = detail }
             throw BackendError.decoding
         }
-        return decoded
+    }
+
+    /// A one-line, value-free rendering of a `DecodingError`: the case, the
+    /// coding path, and the decoder's own debug description (which names
+    /// types and keys, not data). Anything else falls back to its type name.
+    private static func describe(_ error: Error) -> String {
+        guard let decodingError = error as? DecodingError else { return String(describing: type(of: error)) }
+        func path(_ context: DecodingError.Context) -> String {
+            context.codingPath.map(\.stringValue).joined(separator: ".")
+        }
+        switch decodingError {
+        case .keyNotFound(let key, let context):
+            return "keyNotFound \(key.stringValue) at [\(path(context))]"
+        case .typeMismatch(let type, let context):
+            return "typeMismatch \(type) at [\(path(context))]: \(context.debugDescription)"
+        case .valueNotFound(let type, let context):
+            return "valueNotFound \(type) at [\(path(context))]"
+        case .dataCorrupted(let context):
+            return "dataCorrupted at [\(path(context))]: \(context.debugDescription)"
+        @unknown default:
+            return "decodingError"
+        }
     }
 
     /// Parses `{ "error": "quota_exceeded", "resetAt": ISO8601 }`
@@ -255,4 +288,16 @@ enum BackendServices {
         guard let configuration = BackendConfiguration.current else { return nil }
         return BackendClient(configuration: configuration, session: BackendSession(configuration: configuration))
     }()
+}
+
+
+/// Diagnostic-only slots the backend client fills for the diagnostics
+/// report. Main-actor isolated so `BackendClient` (a `Sendable` struct that
+/// runs off the main actor) can write them without a lock; read only by
+/// `AppState`'s diagnostics lines.
+@MainActor
+enum BackendDiagnostics {
+    /// The most recent response the client could not decode — function
+    /// name, coding path, decoder message, byte count. Never body content.
+    static var lastDecodingFailure: String?
 }

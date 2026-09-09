@@ -99,6 +99,11 @@ struct CourseKnowledgeSyncTrace: Sendable {
     /// that looks stuck can be told apart from one that ran and failed.
     var skippedReason: String?
     var finishedAt: Date?
+    /// Why the manifest step failed, when it did: the `BackendError` case
+    /// (`http(500)`, `unauthorized`, `transport`, `decoding`), and for a
+    /// decode failure the client's coding-path detail as well. Defaulted
+    /// so the memberwise initializer's existing callers keep compiling.
+    var manifestError: String? = nil
 }
 
 extension AppState {
@@ -273,6 +278,11 @@ extension AppState {
             manifestSucceeded = true
         } catch {
             courseKnowledgeNotice = "couldn't reach lhf's server; syncing from canvas only."
+            var detail = String(describing: error)
+            if case BackendError.decoding = error, let decodeDetail = BackendDiagnostics.lastDecodingFailure {
+                detail += " — " + decodeDetail
+            }
+            trace.manifestError = detail
         }
         trace.manifestSucceeded = manifestSucceeded
         trace.coursesFresh = manifest.coursesFresh.sorted()
@@ -495,7 +505,7 @@ extension AppState {
 
         lines.append("last run:")
         lines.append("  started=\(iso.string(from: trace.startedAt)) forced=\(trace.forced) skipped=\(trace.skippedReason ?? "-")")
-        lines.append("  manifest=\(trace.manifestSucceeded ? "ok" : "failed") fresh=\(Self.bracketedList(trace.coursesFresh)) toFetch=\(Self.bracketedList(trace.coursesToFetch)) fullyFetched=\(Self.bracketedList(trace.fullyFetched))")
+        lines.append("  manifest=\(trace.manifestSucceeded ? "ok" : "failed") error=\(trace.manifestError ?? "-") fresh=\(Self.bracketedList(trace.coursesFresh)) toFetch=\(Self.bracketedList(trace.coursesToFetch)) fullyFetched=\(Self.bracketedList(trace.fullyFetched))")
         lines.append("  collector errors=\(trace.collectorErrors.count)")
         for error in trace.collectorErrors.prefix(12) {
             lines.append("    \(error)")
