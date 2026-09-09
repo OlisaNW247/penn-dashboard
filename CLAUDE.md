@@ -73,8 +73,11 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-09): **976 tests / 95 suites
-green** (plus 4 XCTest scheduler tests), up from 937/92 the day before, after
+Baseline on `v5`, verified on a Mac (2026-09-09): **1020 tests / 98 suites
+green** (plus 4 XCTest scheduler tests), after merging Marco's
+`onboarding-walk` (the Locust intro and walk, the update gate and its 33
+tests) onto the 976/95 mark of earlier the same day. That 976/95 was up from
+937/92 the day before, after
 the Canvas assignment id learned to come from the ICS URL fragment (see the
 trap below — this is what made a section-override assignment show once and
 read as submitted on a real phone, the first real-device fix of a submission
