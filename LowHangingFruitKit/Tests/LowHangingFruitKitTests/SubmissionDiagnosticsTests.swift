@@ -100,6 +100,7 @@ struct SubmissionDiagnosticsTests {
     }
 }
 
+@MainActor
 @Suite("Submission diagnostics: duplicate twins")
 struct DuplicateTwinTests {
     private func row(_ source: Assignment.Source, _ id: String, title: String, url: String? = nil, course: String = "PHYS 0151") -> Assignment {
