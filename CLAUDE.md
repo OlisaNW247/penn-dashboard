@@ -73,10 +73,15 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-09): **1020 tests / 98 suites
-green** (plus 4 XCTest scheduler tests), after merging Marco's
-`onboarding-walk` (the Locust intro and walk, the update gate and its 33
-tests) onto the 976/95 mark of earlier the same day. That 976/95 was up from
+Baseline on `v5`, verified on a Mac (2026-09-10): **1032 tests / 101 suites
+green** (plus 4 XCTest scheduler tests), after the first-launch hold
+(`AppState.isCanvasSubmissionVerified` — overdue Canvas work in a course
+never yet checked against Canvas waits in `awaitingCanvasCheck` behind a
+"checking canvas" notice instead of reading as owed), Grade Watcher fetching
+three courses at a time, and the "from announcements" card caveat. That sat
+on the 1020/98 mark of 2026-09-09, after merging Marco's `onboarding-walk`
+(the Locust intro and walk, the update gate and its 33 tests) onto the
+976/95 mark of earlier that day. That 976/95 was up from
 937/92 the day before, after
 the Canvas assignment id learned to come from the ICS URL fragment (see the
 trap below — this is what made a section-override assignment show once and
