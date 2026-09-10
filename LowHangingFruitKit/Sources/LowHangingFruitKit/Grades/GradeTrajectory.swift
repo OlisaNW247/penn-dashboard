@@ -99,7 +99,8 @@ extension GradeEngine {
             now: input.now,
             expectedCounts: input.expectedCounts,
             itemOverrides: input.itemOverrides,
-            modeOverride: input.modeOverride
+            modeOverride: input.modeOverride,
+            categoryMap: input.categoryMap
         )
     }
 }

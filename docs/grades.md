@@ -564,3 +564,71 @@ A course code with several Canvas sites labels each card by registrar activity o
 the site's section (lecture / lab / recitation), falling back to the site name.
 Ask reads the engine's effective weights (student edit > syllabus > Canvas), not
 Canvas's raw group weights, so the two features never disagree.
+
+---
+
+## 15. Categories come from the syllabus, not from Canvas's groups (addendum, 2026-09-10)
+
+### 15.1 The observed failure
+
+A lecture site with group weights off, seven syllabus categories and seven Canvas
+groups. The only graded item was Canvas's attendance tool's "Roll Call Attendance"
+(100/100) sitting in the Problem Sets group. Points mode read 100% and 62% decided.
+The syllabus matcher had 4 of 7 categories matched and refused to apply anything
+until all 7 matched. Canvas's own "based on graded assignments" said 100% too;
+agreeing with Canvas is not the bar.
+
+### 15.2 The category map
+
+`GradeCategoryMap` (Models/GradeCategoryMap.swift): per course, `categories`
+(id `map:<slug>`, name, weight, expectedCount, dropLowest, `canvasGroupIDs`
+many-to-one, provenance canvas/syllabus/sharedProfile/student), `itemAssignments`
+(item → category, exceptions), `excludedItemIDs` + `exclusionReasons`.
+`GradeRegrouper.apply` folds Canvas's groups into map categories, emits an empty
+category for a syllabus category with no Canvas group (its weight counts toward
+the semester as undecided), and keeps every unmapped Canvas group visible at
+weight 0 ("needs a home"). Precedence when the store builds the effective map:
+student edits (`CategoryMapEdits`, a diff persisted in `UserDefaults.lhf`) >
+attached syllabus scheme via `SyllabusMatcher` > Canvas's groups mirrored
+(`GradeCategoryMapBuilder.mirroringCanvas`). Why a diff: the suggestion improves
+as the server re-extracts; a snapshot would freeze it.
+
+### 15.3 Matching
+
+`SyllabusMatcher` is many-to-one and knows synonym families (homework/hw/problem
+set/pset/worksheet/assignment; exam/midterm/test; quiz; lab; project;
+attendance/participation; final). Numbered exams match by number only. Partial
+coverage applies: `Result.appliedWeights` is used regardless of
+`isCompleteCoverage`, which remains only for the old review copy.
+
+### 15.4 Item rules (`GradeItemClassifier`)
+
+Attendance-tool items (name attendance/roll call/participation, or an "attendance"
+submission type) go to the map's attendance/participation category, else are
+excluded with a stated reason. Zero-point unscored items are placeholders:
+excluded from posted counts everywhere. Every automatic exclusion is reversible
+by the student (`includedItemIDs`), and shown under "not counted" with its reason.
+
+### 15.5 Math with a map
+
+Weighted mode whenever the map has any weight > 0; map weights and counts are
+defaults under the student's manual weights/counts. Semester decided per §14.2,
+with one refinement: a category with a known expected count and nothing posted is
+0 decided, not unknown; unknown only when the count is unknown, and
+`GradeBreakdown.categoriesMissingExpectedCount` names those so the UI can ask for
+them.
+
+### 15.6 The attendance-only headline
+
+`attendanceOnlyPercent`: when every scored item is in an attendance/participation
+category, `currentPercent` is nil and the card reads "no graded work yet · attendance
+N%". A grade made only of attendance is not a grade.
+
+### 15.7 Honesty rules added
+
+- Every regrouping is visible: each category line names the Canvas groups folded
+  into it; moved items carry a badge.
+- Nothing suggested by the server or the matcher changes the math until the
+  syllabus scheme is applied by the student; edits on top are always per-student,
+  on-device.
+- Unmapped groups are never silently dropped: they count 0% and say so.

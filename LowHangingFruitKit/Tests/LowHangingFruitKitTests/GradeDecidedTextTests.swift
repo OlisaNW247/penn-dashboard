@@ -24,17 +24,25 @@ import Testing
 @Suite("Grade decided text")
 struct GradeDecidedTextTests {
 
-    private func breakdown(decidedFraction: Double, semesterDecidedFraction: Double?) -> GradeBreakdown {
+    private func breakdown(
+        decidedFraction: Double,
+        semesterDecidedFraction: Double?,
+        categoriesMissingExpectedCount: [String] = [],
+        currentPercent: Double? = 91.4,
+        attendanceOnlyPercent: Double? = nil
+    ) -> GradeBreakdown {
         GradeBreakdown(
             mode: .points,
-            currentPercent: 91.4,
+            currentPercent: currentPercent,
             decidedFraction: decidedFraction,
             pendingGradingCount: 0,
             categories: [],
             semesterDecidedFraction: semesterDecidedFraction,
             modeSource: .canvas,
             leftOutCategoryIDs: [],
-            participatingWeightSum: nil
+            participatingWeightSum: nil,
+            attendanceOnlyPercent: attendanceOnlyPercent,
+            categoriesMissingExpectedCount: categoriesMissingExpectedCount
         )
     }
 
@@ -62,6 +70,50 @@ struct GradeDecidedTextTests {
 
         let under = breakdown(decidedFraction: -0.1, semesterDecidedFraction: nil)
         #expect(GradeCourseCardView.decidedText(for: under).hasPrefix("0%"))
+    }
+
+    @Test("semester fraction unknown, and the engine can name which categories are missing an expected count: names them")
+    func decidedTextNamesCategoriesMissingExpectedCount() {
+        let result = breakdown(
+            decidedFraction: 0.63,
+            semesterDecidedFraction: nil,
+            categoriesMissingExpectedCount: ["Quizzes", "HomeWorks"]
+        )
+        #expect(GradeCourseCardView.decidedText(for: result)
+                == "63% of what\u{2019}s posted is graded \u{00b7} semester share unknown \u{00b7} add expected counts for quizzes, homeworks")
+    }
+
+    @Test("semester fraction unknown, no named categories: falls back to the plain caveat")
+    func decidedTextWithNoMissingCategoriesNamed() {
+        let result = breakdown(decidedFraction: 0.63, semesterDecidedFraction: nil, categoriesMissingExpectedCount: [])
+        #expect(GradeCourseCardView.decidedText(for: result)
+                == "63% of what\u{2019}s posted is graded \u{00b7} semester share unknown")
+    }
+
+    // MARK: - headlineText
+
+    @Test("headline: a computed percent is the primary line, with no secondary line")
+    func headlineTextPercentCase() {
+        let result = breakdown(decidedFraction: 0.5, semesterDecidedFraction: nil, currentPercent: 91.4)
+        let headline = GradeCourseCardView.headlineText(for: result)
+        #expect(headline.primary == "91.4%")
+        #expect(headline.secondary == nil)
+    }
+
+    @Test("headline: nothing scored at all reads as plain 'no scores yet'")
+    func headlineTextNoScoresCase() {
+        let result = breakdown(decidedFraction: 0, semesterDecidedFraction: nil, currentPercent: nil, attendanceOnlyPercent: nil)
+        let headline = GradeCourseCardView.headlineText(for: result)
+        #expect(headline.primary == "no scores yet")
+        #expect(headline.secondary == nil)
+    }
+
+    @Test("headline: every scored item is attendance-only -- 'no graded work yet' plus the attendance percent")
+    func headlineTextAttendanceOnlyCase() {
+        let result = breakdown(decidedFraction: 0, semesterDecidedFraction: nil, currentPercent: nil, attendanceOnlyPercent: 100)
+        let headline = GradeCourseCardView.headlineText(for: result)
+        #expect(headline.primary == "no graded work yet")
+        #expect(headline.secondary == "attendance 100%")
     }
 
     // MARK: - headerText

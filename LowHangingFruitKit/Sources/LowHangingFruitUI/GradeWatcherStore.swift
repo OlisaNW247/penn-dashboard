@@ -102,6 +102,7 @@ final class GradeWatcherStore: ObservableObject {
         self.watchedCourseIDs = Set(UserDefaults.lhf.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
+        self.categoryMapEdits = Self.loadCategoryMapEdits()
         self.expectedCounts = Self.loadExpectedCounts()
         self.itemOverrides = Self.loadItemOverrides()
         self.modeOverrides = Self.loadModeOverrides()
@@ -475,6 +476,7 @@ final class GradeWatcherStore: ObservableObject {
         expectedCounts: [String: Int] = [:],
         itemOverrides: [String: GradeItemOverride] = [:],
         modeOverride: GradingMode? = nil,
+        categoryMap: GradeCategoryMap? = nil,
         now: Date = Date()
     ) -> GradeBreakdown? {
         guard let snapshot = snapshots[courseID] else { return nil }
@@ -487,16 +489,18 @@ final class GradeWatcherStore: ObservableObject {
             now: now,
             expectedCounts: expectedCounts,
             itemOverrides: itemOverrides,
-            modeOverride: modeOverride
+            modeOverride: modeOverride,
+            categoryMap: categoryMap
         ))
     }
 
-    /// Convenience overload the UI uses: folds in this course's syllabus
-    /// weights, expected counts, and every hand-typed override automatically,
-    /// so views don't have to thread resolution through by hand — and so
-    /// every number the UI shows (this, `trajectory`, `projection`,
-    /// `weekDelta`, all of which read through this or `breakdown` directly)
-    /// is computed from the same overrides.
+    /// Convenience overload the UI uses: folds in this course's category map
+    /// (docs above `CategoryMapEdits`), syllabus weights, expected counts,
+    /// and every hand-typed override automatically, so views don't have to
+    /// thread resolution through by hand — and so every number the UI shows
+    /// (this, `trajectory`, `projection`, `weekDelta`, all of which read
+    /// through this or `breakdown` directly) is computed from the same
+    /// overrides.
     func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
         breakdown(
             courseID: courseID,
@@ -505,6 +509,7 @@ final class GradeWatcherStore: ObservableObject {
             expectedCounts: effectiveExpectedCounts(courseID: courseID),
             itemOverrides: itemOverrides(courseID: courseID),
             modeOverride: modeOverride(courseID: courseID),
+            categoryMap: effectiveCategoryMap(courseID: courseID),
             now: now
         )
     }
@@ -809,7 +814,11 @@ final class GradeWatcherStore: ObservableObject {
     /// can never disagree with the headline it's explaining.
     func explanation(courseID: String, now: Date = Date()) -> GradeExplanation? {
         guard let breakdown = breakdown(courseID: courseID, now: now) else { return nil }
-        return GradeExplanation.make(from: breakdown, canvasScore: canvasComputedScore(courseID: courseID))
+        return GradeExplanation.make(
+            from: breakdown,
+            canvasScore: canvasComputedScore(courseID: courseID),
+            categoryMapProvenance: effectiveCategoryMap(courseID: courseID).provenance
+        )
     }
 
     /// This course's overlay-applied items in one category — Canvas's (and
@@ -1021,6 +1030,384 @@ final class GradeWatcherStore: ObservableObject {
         return dict
     }
 
+    // MARK: - Category map (docs/grades.md §14 addendum, round 2/3)
+    //
+    // Every course now goes through a `GradeCategoryMap` (`effectiveCategoryMap`
+    // below), whether or not it has a syllabus: a course with nothing attached
+    // gets a map that mirrors Canvas's own groups one-to-one
+    // (`GradeCategoryMapBuilder.mirroringCanvas`), and a course with a syllabus
+    // gets one built from the matcher's result
+    // (`GradeCategoryMapBuilder.suggested`). That single code path is the
+    // point — `GradeRegrouper`/`GradeEngine` only ever have to understand ONE
+    // shape of category list, not "categories, or maybe categories-plus-a-map
+    // if a syllabus happens to be attached."
+    //
+    // Layered on top of that suggestion is `CategoryMapEdits`: the student's
+    // own corrections, persisted as a DIFF over the suggestion rather than as
+    // a saved copy of the resulting map. That distinction is deliberate and
+    // not just tidiness — the suggestion underneath a course's map can change
+    // out from under the student at any time: the backend re-extracts a
+    // syllabus and pools a better version, Canvas creates a new assignment
+    // group mid-semester, or a shared grading profile syncs for the first
+    // time on a course that had nothing before. A saved SNAPSHOT of the old
+    // map would silently stop reflecting any of that the moment the
+    // suggestion improves. A diff phrased in terms of ids — "move Canvas
+    // group X into map category Y," "exclude item Z" — survives a
+    // re-suggestion, because those ids (Canvas group/item ids, and the
+    // student's own added-category ids) are stable across it in a way "the
+    // whole shape of the map" is not.
+
+    /// The student's edits to a course's category map, persisted; layered
+    /// over whatever `suggestedCategoryMap`/`GradeCategoryMapBuilder
+    /// .mirroringCanvas` currently proposes by `effectiveCategoryMap`. See
+    /// this section's doc comment above for why a diff, not a snapshot.
+    struct CategoryMapEdits: Codable, Sendable, Hashable, Equatable {
+        /// Canvas assignment-group id → map category id the student moved it
+        /// to. `""` means "the student explicitly wants this group
+        /// unmapped" — distinct from the group's absence from this
+        /// dictionary at all, which means "no edit; let the suggested map's
+        /// own fold decide."
+        var groupAssignments: [String: String] = [:]
+        /// Canvas item id → map category id the student moved it to. An item
+        /// removed from this dictionary (rather than set to `""`) goes back
+        /// to whatever its Canvas group's fold, or the automatic classifier,
+        /// would otherwise say — there's no "explicitly homeless" state for
+        /// a single item the way there is for a whole group, since an item
+        /// always has a Canvas group to fall back on.
+        var itemAssignments: [String: String] = [:]
+        /// Items the student excluded by hand, on top of whatever
+        /// `GradeItemClassifier` already excludes automatically.
+        var excludedItemIDs: Set<String> = []
+        /// Items the student pulled back IN after an automatic exclusion.
+        /// Kept as its own set rather than expressed as "the absence of an
+        /// exclusion," because an automatic exclusion is recomputed fresh on
+        /// every `effectiveCategoryMap` call — Canvas's own data changes
+        /// (today's zero-point placeholder can get a real score tomorrow,
+        /// an attendance item can move once a course gains an
+        /// Attendance/Participation category) — so if "back in" were only
+        /// ever the absence of an exclusion, the very next automatic pass
+        /// would have nothing recorded to override and would silently
+        /// re-exclude the item, forcing the student to notice and re-decide
+        /// every single refresh. This set is what makes "put it back" a
+        /// durable, one-time choice instead of a fight with the classifier.
+        var includedItemIDs: Set<String> = []
+        /// Category id → the student's own display name for it. Cosmetic
+        /// only — a rename never touches weight, membership, or math.
+        var renamedCategories: [String: String] = [:]
+        /// Categories the student created by hand, entirely outside
+        /// anything the syllabus or Canvas suggested. Always carry
+        /// `provenance: .student` (see `addCategory`).
+        var addedCategories: [GradeCategoryMap.Category] = []
+        /// Ids of suggested categories the student removed. A removed
+        /// category's own `groupAssignments`/`itemAssignments` entries are
+        /// dropped at the same time (see `removeCategory`), so its former
+        /// groups/items fall back through the normal unmapped/auto-assigned
+        /// path rather than pointing at a category that no longer exists.
+        var removedCategoryIDs: Set<String> = []
+
+        var isEmpty: Bool {
+            groupAssignments.isEmpty
+                && itemAssignments.isEmpty
+                && excludedItemIDs.isEmpty
+                && includedItemIDs.isEmpty
+                && renamedCategories.isEmpty
+                && addedCategories.isEmpty
+                && removedCategoryIDs.isEmpty
+        }
+    }
+
+    /// Every course's edits, keyed by course id. Empty for a course the
+    /// student has never touched the map for.
+    @Published private(set) var categoryMapEdits: [String: CategoryMapEdits] = [:]
+    private static let categoryMapEditsKey = "gradeWatcherCategoryMapEdits"
+
+    /// Applies `edits` over `map`, producing the map `GradeRegrouper` and
+    /// `GradeEngine` actually see. Pure and `static` — like `outcome(...)`
+    /// and `fetchOutcomeLabel(...)` above, this is unit-testable without a
+    /// live store — so this is where every edit KIND's semantics live in one
+    /// place, rather than scattered across the setters that build a
+    /// `CategoryMapEdits` value in the first place.
+    static func apply(_ edits: CategoryMapEdits, to map: GradeCategoryMap) -> GradeCategoryMap {
+        var result = map
+
+        // Category structure first — additions, removals, then renames —
+        // since group/item reassignment below needs to resolve target
+        // category ids against the FINAL category list, including anything
+        // the student added this pass.
+        for category in edits.addedCategories where !result.categories.contains(where: { $0.id == category.id }) {
+            result.categories.append(category)
+        }
+        if !edits.removedCategoryIDs.isEmpty {
+            result.categories.removeAll { edits.removedCategoryIDs.contains($0.id) }
+        }
+        for (categoryID, name) in edits.renamedCategories {
+            if let index = result.categories.firstIndex(where: { $0.id == categoryID }) {
+                result.categories[index].name = name
+            }
+        }
+
+        // Group reassignment: a group can only ever belong to one category,
+        // so pull it out of every category's fold first, then add it back to
+        // its target — "" (or a target that no longer exists, e.g. one the
+        // student just removed) leaves it pulled out, i.e. unmapped.
+        for (groupID, categoryID) in edits.groupAssignments {
+            for index in result.categories.indices {
+                result.categories[index].canvasGroupIDs.removeAll { $0 == groupID }
+            }
+            if !categoryID.isEmpty,
+               let index = result.categories.firstIndex(where: { $0.id == categoryID }),
+               !result.categories[index].canvasGroupIDs.contains(groupID) {
+                result.categories[index].canvasGroupIDs.append(groupID)
+            }
+        }
+
+        // Item reassignment overrides whatever the group fold or the
+        // automatic classifier would otherwise say for that one item.
+        for (itemID, categoryID) in edits.itemAssignments {
+            result.itemAssignments[itemID] = categoryID
+        }
+
+        // Exclusions: manual excludes are added, then manual re-includes
+        // clear both the exclusion and its reason — reversing an automatic
+        // exclusion has to look exactly like the item was never excluded at
+        // all, never like a "hidden" exclusion still lurking underneath.
+        result.excludedItemIDs.formUnion(edits.excludedItemIDs)
+        for itemID in edits.includedItemIDs {
+            result.excludedItemIDs.remove(itemID)
+            result.exclusionReasons.removeValue(forKey: itemID)
+        }
+
+        return result
+    }
+
+    /// A map built from this course's attached syllabus and its Canvas
+    /// match, or `nil` when no syllabus is attached — the "suggestion" half
+    /// of `effectiveCategoryMap`'s precedence chain. Deliberately not gated
+    /// on `SyllabusMatcher.Result.isCompleteCoverage`: `GradeCategoryMapBuilder
+    /// .suggested` already only folds APPLIED per-category matches, so a
+    /// partially-matched syllabus still produces a map — the unmatched
+    /// Canvas groups simply come out of `GradeRegrouper` as visible,
+    /// zero-weight "needs a home" entries instead of silently blocking the
+    /// whole course from getting a map at all, which is what the OLD
+    /// all-or-nothing `syllabusWeights`/`isCompleteCoverage` gate did to the
+    /// plain-weights path this doesn't replace.
+    func suggestedCategoryMap(courseID: String) -> GradeCategoryMap? {
+        guard let syllabus = syllabusSchemes[courseID] else { return nil }
+        let provenance: GradeCategoryMap.Provenance = syllabus.source == .sharedProfile ? .sharedProfile : .syllabus
+        return GradeCategoryMapBuilder.suggested(
+            scheme: syllabus.scheme,
+            match: syllabusMatch(courseID: courseID),
+            canvasCategories: gradeCategories(courseID: courseID),
+            provenance: provenance
+        )
+    }
+
+    /// The map actually in effect for this course: the syllabus-derived
+    /// suggestion (or, absent a syllabus, a plain mirror of Canvas's own
+    /// groups) with the student's own edits layered on top, and the
+    /// automatic classifier re-applied for anything the edits didn't touch.
+    /// Never `nil` — see this section's opening doc comment for why every
+    /// course goes through one map, syllabus or not.
+    ///
+    /// The classifier runs a SECOND time here (the suggestion/mirror already
+    /// ran it once while it was built) because the student's edits can
+    /// change the very structure the classifier reasons about — moving a
+    /// group, renaming a category to "Attendance," or adding/removing a
+    /// category can change which category is "the" attendance category, or
+    /// which Canvas group an item's fold now resolves through. Items the
+    /// edits themselves mention are left alone: `GradeItemClassifier
+    /// .autoAssignments` already only ever adds entries for items neither
+    /// `itemAssignments` nor `excludedItemIDs` already cover, but that
+    /// alone isn't enough for `includedItemIDs` — an item the student pulled
+    /// back in has, by definition, just had its exclusion REMOVED, so
+    /// without excluding it from this second pass too it would read as
+    /// "not yet covered" and the classifier would immediately re-exclude it,
+    /// silently defeating the whole reason `includedItemIDs` exists.
+    func effectiveCategoryMap(courseID: String) -> GradeCategoryMap {
+        let base = suggestedCategoryMap(courseID: courseID) ?? GradeCategoryMapBuilder.mirroringCanvas(
+            gradeCategories(courseID: courseID),
+            courseUsesWeights: snapshots[courseID]?.courseUsesWeights ?? false
+        )
+        let edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        var map = Self.apply(edits, to: base)
+
+        let editsMention = Set(edits.itemAssignments.keys)
+            .union(edits.excludedItemIDs)
+            .union(edits.includedItemIDs)
+        let auto = GradeItemClassifier.autoAssignments(canvasCategories: gradeCategories(courseID: courseID), map: map)
+        for (itemID, categoryID) in auto.itemAssignments where !editsMention.contains(itemID) {
+            map.itemAssignments[itemID] = categoryID
+        }
+        for itemID in auto.excludedItemIDs where !editsMention.contains(itemID) {
+            map.excludedItemIDs.insert(itemID)
+        }
+        for (itemID, reason) in auto.reasons where !editsMention.contains(itemID) {
+            map.exclusionReasons[itemID] = reason
+        }
+
+        // Belt-and-suspenders: `apply(edits:to:)` already cleared these, and
+        // the loop above already skips anything an include mentions, so this
+        // is only ever a no-op in practice — but it's what actually
+        // guarantees "included always wins," rather than that guarantee
+        // living implicitly in two other pieces of code agreeing with each
+        // other.
+        for itemID in edits.includedItemIDs {
+            map.excludedItemIDs.remove(itemID)
+        }
+
+        return map
+    }
+
+    func hasCategoryMapEdits(courseID: String) -> Bool {
+        !(categoryMapEdits[courseID]?.isEmpty ?? true)
+    }
+
+    /// Moves a Canvas assignment group to a different map category, or
+    /// (`toCategory: nil`) marks it explicitly unmapped.
+    func assignGroup(courseID: String, groupID: String, toCategory categoryID: String?) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        edits.groupAssignments[groupID] = categoryID ?? ""
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Moves a single Canvas item to a different map category, or
+    /// (`toCategory: nil`) clears the override so the item goes back to
+    /// following its Canvas group (or the automatic classifier).
+    func assignItem(courseID: String, itemID: String, toCategory categoryID: String?) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if let categoryID {
+            edits.itemAssignments[itemID] = categoryID
+        } else {
+            edits.itemAssignments.removeValue(forKey: itemID)
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Excludes or re-includes one item, on top of the automatic classifier
+    /// (docs above `includedItemIDs`).
+    func setItemExcluded(courseID: String, itemID: String, _ excluded: Bool) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if excluded {
+            edits.excludedItemIDs.insert(itemID)
+            edits.includedItemIDs.remove(itemID)
+        } else {
+            edits.excludedItemIDs.remove(itemID)
+            edits.includedItemIDs.insert(itemID)
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Adds a student-authored category (provenance `.student`) with no
+    /// Canvas groups or items yet — those come from subsequent
+    /// `assignGroup`/`assignItem` calls. Returns the new category's id so a
+    /// caller can immediately route something into it. Calling this again
+    /// with the same name replaces the earlier addition rather than
+    /// duplicating it, since the id (`"map:" + slug(name)`) is derived from
+    /// the name alone.
+    @discardableResult
+    func addCategory(courseID: String, name: String, weightPercent: Double) -> String {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        // The id is derived from the name, and the suggested map may already
+        // own that id (a student adding "Homework" beside the syllabus's
+        // "HomeWorks" lands on "map:homeworks"). `apply` refuses to append a
+        // duplicate id, which would leave this edit recorded but invisible —
+        // so pick the first free suffix instead, and the new category shows
+        // up beside the existing one as the student expects.
+        let base = "map:" + GradeCategoryMap.slug(name)
+        let taken = Set(effectiveCategoryMap(courseID: courseID).categories.map(\.id))
+            .subtracting(edits.addedCategories.map(\.id))
+        var id = base
+        var suffix = 2
+        while taken.contains(id) {
+            id = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        edits.addedCategories.removeAll { $0.id == id }
+        edits.removedCategoryIDs.remove(id)
+        edits.addedCategories.append(
+            GradeCategoryMap.Category(id: id, name: name, weightPercent: weightPercent, provenance: .student)
+        )
+        setCategoryMapEdits(edits, courseID: courseID)
+        return id
+    }
+
+    /// Removes a category — one the student added, or one the suggested map
+    /// proposed. Its groups/items are released back to the normal
+    /// unmapped/auto-assigned path (see `removedCategoryIDs`'s doc comment).
+    func removeCategory(courseID: String, categoryID: String) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        edits.addedCategories.removeAll { $0.id == categoryID }
+        edits.removedCategoryIDs.insert(categoryID)
+        edits.groupAssignments = edits.groupAssignments.filter { $0.value != categoryID }
+        edits.itemAssignments = edits.itemAssignments.filter { $0.value != categoryID }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Cosmetic rename — never touches weight, membership, or math.
+    func renameCategory(courseID: String, categoryID: String, name: String) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if let index = edits.addedCategories.firstIndex(where: { $0.id == categoryID }) {
+            edits.addedCategories[index].name = name
+        } else {
+            edits.renamedCategories[categoryID] = name
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Discards every edit for a course, reverting it to whatever
+    /// `suggestedCategoryMap`/Canvas-mirroring would produce on its own.
+    func resetCategoryMapEdits(courseID: String) {
+        categoryMapEdits.removeValue(forKey: courseID)
+        persistCategoryMapEdits()
+    }
+
+    private func setCategoryMapEdits(_ edits: CategoryMapEdits, courseID: String) {
+        if edits.isEmpty {
+            categoryMapEdits.removeValue(forKey: courseID)
+        } else {
+            categoryMapEdits[courseID] = edits
+        }
+        persistCategoryMapEdits()
+    }
+
+    /// Canvas groups the effective map doesn't claim — a course-report
+    /// "needs a home" list, via the same `GradeRegrouper` pass `GradeEngine`
+    /// itself runs, so this can never disagree with what the math actually
+    /// did with an unmapped group (weight 0, passthrough category).
+    func unmappedGroups(courseID: String) -> [GradeCategory] {
+        let map = effectiveCategoryMap(courseID: courseID)
+        let output = GradeRegrouper.apply(map, to: gradeCategories(courseID: courseID))
+        let unmappedIDs = Set(output.unmappedGroupIDs)
+        return output.categories.filter { unmappedIDs.contains($0.id) }
+    }
+
+    /// Every item the effective map removes from the math, with its reason —
+    /// an automatic classification (a placeholder, an attendance item with
+    /// nowhere to go) or the student's own manual exclusion.
+    func excludedItems(courseID: String) -> [(item: GradeItem, reason: String)] {
+        let map = effectiveCategoryMap(courseID: courseID)
+        guard !map.excludedItemIDs.isEmpty else { return [] }
+        var result: [(item: GradeItem, reason: String)] = []
+        for category in gradeCategories(courseID: courseID) {
+            for item in category.items where map.excludedItemIDs.contains(item.id) {
+                result.append((item, map.exclusionReasons[item.id] ?? "excluded"))
+            }
+        }
+        return result
+    }
+
+    private func persistCategoryMapEdits() {
+        guard let data = try? JSONEncoder().encode(categoryMapEdits) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.categoryMapEditsKey)
+    }
+
+    private static func loadCategoryMapEdits() -> [String: CategoryMapEdits] {
+        guard let data = UserDefaults.lhf.data(forKey: categoryMapEditsKey),
+              let dict = try? JSONDecoder().decode([String: CategoryMapEdits].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
     // MARK: - Trajectory, history & week delta (docs/grades.md §11)
 
     /// The course's reconstructed grade-over-time line, overlay-applied and
@@ -1035,7 +1422,8 @@ final class GradeWatcherStore: ObservableObject {
             now: now,
             expectedCounts: effectiveExpectedCounts(courseID: courseID),
             itemOverrides: itemOverrides(courseID: courseID),
-            modeOverride: modeOverride(courseID: courseID)
+            modeOverride: modeOverride(courseID: courseID),
+            categoryMap: effectiveCategoryMap(courseID: courseID)
         ))
     }
 

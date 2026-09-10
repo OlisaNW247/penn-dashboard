@@ -17,6 +17,20 @@ struct GradeExplanationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // "no graded work yet · attendance 100%" -- only ever present
+            // when every scored item in the course is attendance-only
+            // (`GradeBreakdown.attendanceOnlyPercent`), and only shown in
+            // full mode: the compact card panel already has its own
+            // attendance-only headline (`GradeCourseCardView.headlineText`),
+            // and repeating the note there would just be saying the same
+            // thing twice in the same card.
+            if !compact, let headlineNote = explanation.headlineNote {
+                Text(headlineNote)
+                    .font(.lhfSans(12, weight: .medium))
+                    .foregroundStyle(Color.v2SpineAmber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Text(explanation.modeLine)
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2RingSub)
@@ -83,6 +97,22 @@ struct GradeExplanationView: View {
                     .font(.lhfSans(9.5))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
+                // "from canvas groups: problem sets, worksheets" -- the fold
+                // a `GradeCategoryMap` performed to make this one category.
+                if let groupsText = line.groupsText {
+                    Text(groupsText)
+                        .font(.lhfSans(9.5))
+                        .foregroundStyle(Color.v2RingSub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // A Canvas group the map never claimed, surfaced as its own
+                // zero-weight passthrough category (`GradeRegrouper`) rather
+                // than silently dropped -- the chip is the loud version of
+                // "why doesn't this add up," matching `GradeCategoryMapEditor`'s
+                // "needs a home" block for the same groups.
+                if line.isUnmapped {
+                    Chip(text: "needs a home", color: .v2SpineAmber)
+                }
             }
 
             Spacer(minLength: 6)

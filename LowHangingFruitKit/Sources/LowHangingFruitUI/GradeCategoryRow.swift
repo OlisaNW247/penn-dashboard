@@ -38,6 +38,19 @@ struct GradeCategoryRow: View {
                         .font(.lhfSans(10.5))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
+                    // Present once a `GradeCategoryMap` folded more than one
+                    // Canvas assignment group into this category (docs/
+                    // grades.md — "HomeWorks" ← "Problem Sets" +
+                    // "Worksheets"). The card stays read-mostly for the fold
+                    // itself (see `GradeCategoryMapEditor` for the editing
+                    // affordances); this is just enough context that the
+                    // card's own numbers don't read as unexplained.
+                    if let groupsText {
+                        Text(groupsText)
+                            .font(.lhfSans(9.5))
+                            .foregroundStyle(Color.v2RingSub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if hasGradescopeEarlyScore {
                         GradeSourceBadge(source: .gradescopeEarly)
                     }
@@ -63,6 +76,19 @@ struct GradeCategoryRow: View {
 
     private var weightText: String {
         category.effectiveWeight.map { "\(formatPoints($0))%" } ?? "\u{2014}"
+    }
+
+    /// "from canvas groups: problem sets, worksheets" -- nil when there's no
+    /// map, or the map category maps one-to-one onto a single Canvas group.
+    /// Built the same way `GradeExplanation.CategoryLine.groupsText` is, kept
+    /// as a separate copy since the Kit doesn't hand the UI a pre-worded
+    /// string for `GradeBreakdown.CategoryResult` (only `GradeExplanation`
+    /// gets one, and this row is shown with or without the explanation panel
+    /// open).
+    private var groupsText: String? {
+        category.canvasGroupNames.isEmpty
+            ? nil
+            : "from canvas groups: " + category.canvasGroupNames.map { $0.lowercased() }.joined(separator: ", ")
     }
 
     /// "2 of 3 posted graded" — mirrors `GradeExplanation.CategoryLine`'s

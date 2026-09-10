@@ -31,6 +31,14 @@ public struct GradeExplanation: Sendable, Hashable {
         /// Count of items a `GradeItemOverride` touched (overridden +
         /// excluded), so the UI can flag a category the student has edited.
         public let editedItemCount: Int
+        /// "from canvas groups: problem sets, worksheets" — the Canvas
+        /// assignment groups a `GradeCategoryMap` folded into this category.
+        /// nil when there's no fold to report (no map, or a map category
+        /// that maps one-to-one onto a single Canvas group).
+        public let groupsText: String?
+        /// True for a passthrough category representing a Canvas group a
+        /// `GradeCategoryMap` never claimed — always false without a map.
+        public let isUnmapped: Bool
     }
 
     /// e.g. "weighted by category (from canvas)" / "points, no categories
@@ -52,11 +60,18 @@ public struct GradeExplanation: Sendable, Hashable {
     /// number" / nil when Canvas reported no score to compare against (or
     /// there's no computed grade yet to compare with).
     public let canvasLine: String?
+    /// "no graded work yet · attendance 100%" — present exactly when
+    /// `breakdown.attendanceOnlyPercent` is non-nil, i.e. every scored item
+    /// in the course belongs to an attendance/participation category. nil
+    /// otherwise; the ordinary `formulaLine`/`categoryLines` already explain
+    /// a plain "no scores yet" course without needing a headline note.
+    public let headlineNote: String?
 
     public static func make(
         from breakdown: GradeBreakdown,
         canvasScore: Double?,
-        differsThreshold: Double = 1.0
+        differsThreshold: Double = 1.0,
+        categoryMapProvenance: GradeCategoryMap.Provenance? = nil
     ) -> GradeExplanation {
         let modeSourceText: String
         switch breakdown.modeSource {
@@ -69,7 +84,18 @@ public struct GradeExplanation: Sendable, Hashable {
         let formulaLine: String
         switch breakdown.mode {
         case .weighted:
-            modeLine = "weighted by category (\(modeSourceText))"
+            // A category MAP (many-to-one Canvas folds, moved items,
+            // excluded placeholders) is a stronger statement than a bare
+            // syllabus weight on top of Canvas's own groups, so it gets its
+            // own phrasing rather than reusing "weighted by category (from
+            // your syllabus)" — that older copy still describes the
+            // map-free `syllabusWeightedCategoryIDs` path untouched by this
+            // addendum.
+            if categoryMapProvenance == .syllabus || categoryMapProvenance == .sharedProfile {
+                modeLine = "weighted by your syllabus's categories"
+            } else {
+                modeLine = "weighted by category (\(modeSourceText))"
+            }
             let weightSumText = compactPercentText(breakdown.participatingWeightSum ?? 0)
             formulaLine = "each graded category's percent is multiplied by its weight, "
                 + "added together, then divided by the combined weight of categories "
@@ -103,10 +129,20 @@ public struct GradeExplanation: Sendable, Hashable {
                 gradedText += " \u{00b7} \(expectedCount) expected"
             }
 
-            let percentText = category.percent.map(compactPercentText) ?? "no scores yet"
+            // An unmapped category's percent is meaningless -- it's a Canvas
+            // group nobody has told the map where to put yet, so it always
+            // says so instead of reporting whatever raw ratio its items
+            // happen to have (which is misleading precisely because its
+            // weight is forced to 0 regardless of that ratio).
+            let percentText = category.isUnmapped
+                ? "needs a home \u{00b7} 0% until you place it"
+                : category.percent.map(compactPercentText) ?? "no scores yet"
             let contributionText = category.contributionPercent.map {
                 "+\(compactNumberText($0)) of your grade"
             }
+            let groupsText = category.canvasGroupNames.isEmpty
+                ? nil
+                : "from canvas groups: " + category.canvasGroupNames.map { $0.lowercased() }.joined(separator: ", ")
 
             return CategoryLine(
                 id: category.id,
@@ -117,7 +153,9 @@ public struct GradeExplanation: Sendable, Hashable {
                 percentText: percentText,
                 contributionText: contributionText,
                 participates: category.participates,
-                editedItemCount: category.overriddenItemIDs.count + category.excludedItemIDs.count
+                editedItemCount: category.overriddenItemIDs.count + category.excludedItemIDs.count,
+                groupsText: groupsText,
+                isUnmapped: category.isUnmapped
             )
         }
 
@@ -137,8 +175,18 @@ public struct GradeExplanation: Sendable, Hashable {
         if let semesterFraction = breakdown.semesterDecidedFraction {
             decidedLine = "\(compactPercentText(semesterFraction * 100)) of the semester decided"
         } else {
-            decidedLine = "\(compactPercentText(breakdown.decidedFraction * 100)) of what's posted is graded "
-                + "\u{2014} semester share unknown until every category has an expected count"
+            let postedText = "\(compactPercentText(breakdown.decidedFraction * 100)) of what's posted is graded"
+            if breakdown.categoriesMissingExpectedCount.isEmpty {
+                // Either points mode (no weight concept to name a culprit
+                // by) or, in weighted mode, every non-zero-weight category
+                // DOES have an expected count and the nil came from
+                // somewhere else (e.g. no weighted category at all) -- the
+                // old, generic wording still applies.
+                decidedLine = postedText + " \u{2014} semester share unknown until every category has an expected count"
+            } else {
+                let names = breakdown.categoriesMissingExpectedCount.map { $0.lowercased() }.joined(separator: ", ")
+                decidedLine = postedText + " \u{2014} semester share unknown until \(names) have expected counts"
+            }
         }
 
         let canvasLine: String?
@@ -153,13 +201,18 @@ public struct GradeExplanation: Sendable, Hashable {
             canvasLine = nil
         }
 
+        let headlineNote = breakdown.attendanceOnlyPercent.map {
+            "no graded work yet \u{00b7} attendance \(compactPercentText($0))"
+        }
+
         return GradeExplanation(
             modeLine: modeLine,
             formulaLine: formulaLine,
             categoryLines: categoryLines,
             leftOutLine: leftOutLine,
             decidedLine: decidedLine,
-            canvasLine: canvasLine
+            canvasLine: canvasLine,
+            headlineNote: headlineNote
         )
     }
 }

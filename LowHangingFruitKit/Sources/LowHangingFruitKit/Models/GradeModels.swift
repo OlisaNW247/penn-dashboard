@@ -241,6 +241,23 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         /// so the UI can explain why a number looks smaller than the raw
         /// item list rather than leaving it unexplained.
         public let excludedItemIDs: Set<String>
+        /// Display names of the Canvas assignment groups a `GradeCategoryMap`
+        /// folded into this category (e.g. `["Problem Sets", "Worksheets"]`
+        /// folded into "HomeWorks") -- empty when there's no map, or when
+        /// this category came straight off one Canvas group with no folding.
+        /// Feeds `GradeExplanation.CategoryLine.groupsText`.
+        public let canvasGroupNames: [String] = []
+        /// True when this category is a Canvas assignment group a
+        /// `GradeCategoryMap` left unclaimed -- surfaced as its own
+        /// zero-weight category (`GradeRegrouper`) rather than silently
+        /// dropped, so "why doesn't this add up to what I expect" always has
+        /// an answer on screen. Always false without a map.
+        public let isUnmapped: Bool = false
+        /// Items placed in this category by `GradeCategoryMap
+        /// .itemAssignments` rather than by their Canvas group's ordinary
+        /// fold -- e.g. an attendance item pulled out of "Problem Sets" into
+        /// "Attendance/Participation". Always empty without a map.
+        public let movedItemIDs: Set<String> = []
 
         /// The category's own grade in percent, or nil when nothing scored
         /// carries possible points (extra-credit-only guards divide-by-zero).
@@ -295,4 +312,24 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
     /// contributions without recomputing this filter themselves. nil in
     /// points mode, which has no weights to sum.
     public let participatingWeightSum: Double?
+    /// Set — and `currentPercent` forced to nil alongside it — when every
+    /// scored, point-bearing item in the course belongs to a category whose
+    /// name reads as attendance/participation
+    /// (`GradeItemClassifier.isAttendanceCategoryName`). A grade made only of
+    /// a 100/100 attendance item is not a grade: the honest statement is "no
+    /// graded work yet, attendance is 100% of its own (usually small)
+    /// category," not "100%" on the headline. nil the instant anything
+    /// outside an attendance-named category has been scored, at which point
+    /// `currentPercent` resumes reporting normally.
+    public let attendanceOnlyPercent: Double? = nil
+    /// Non-zero-weight categories (weighted mode only; input order) whose
+    /// own `semesterDecidedFraction` is nil because `expectedCount` itself
+    /// is unknown -- the reason the top-level `semesterDecidedFraction` is
+    /// nil, named so `GradeExplanation.decidedLine` can say "until quizzes,
+    /// homeworks have expected counts" instead of a generic "every
+    /// category." A category with a KNOWN expected count but nothing posted
+    /// yet contributes 0, not nil, to the top-level estimate (docs/grades.md
+    /// §14.2) and so never appears here even while it's silently sitting at
+    /// 0% decided. Always empty in points mode.
+    public let categoriesMissingExpectedCount: [String] = []
 }

@@ -63,6 +63,18 @@ public enum GradeEngine {
         /// `courseUsesWeights` and the manual-weights-cover-every-category
         /// rule. nil defers to today's rule.
         public let modeOverride: GradingMode?
+        /// A student-facing restatement of the course's categories
+        /// (docs/grades.md §14 addendum, 2026-09-10) — folds Canvas groups
+        /// many-to-one, moves individual items, and excludes placeholders /
+        /// homeless attendance items, all BEFORE any of the math above runs
+        /// (`GradeRegrouper.apply`, called first thing in `compute`). When
+        /// non-nil, the course is treated as weighted regardless of
+        /// `courseUsesWeights` (a map always carries per-category weights;
+        /// the whole point is to stop trusting Canvas's points-mode default
+        /// once a syllabus says otherwise) unless `modeOverride` explicitly
+        /// forces `.points`. nil preserves every rule above exactly as it
+        /// was before this field existed.
+        public let categoryMap: GradeCategoryMap?
 
         public init(
             courseUsesWeights: Bool,
@@ -73,7 +85,8 @@ public enum GradeEngine {
             now: Date = Date(),
             expectedCounts: [String: Int] = [:],
             itemOverrides: [String: GradeItemOverride] = [:],
-            modeOverride: GradingMode? = nil
+            modeOverride: GradingMode? = nil,
+            categoryMap: GradeCategoryMap? = nil
         ) {
             self.courseUsesWeights = courseUsesWeights
             self.categories = categories
@@ -84,6 +97,7 @@ public enum GradeEngine {
             self.expectedCounts = expectedCounts
             self.itemOverrides = itemOverrides
             self.modeOverride = modeOverride
+            self.categoryMap = categoryMap
         }
     }
 
@@ -100,27 +114,101 @@ public enum GradeEngine {
     }
 
     public static func compute(_ input: Input) -> GradeBreakdown {
+        // A category map, if present, is applied FIRST -- before overrides,
+        // before mode selection, before anything -- because it changes what
+        // "a category" even IS (folding several Canvas groups into one,
+        // moving individual items, dropping placeholders). Everything below
+        // this point operates on the regrouped category list exactly as it
+        // always operated on Canvas's own groups; the map is invisible to
+        // the arithmetic itself, only to which bucket each item lands in.
+        let regrouped = input.categoryMap.map { GradeRegrouper.apply($0, to: input.categories) }
+        let categoriesForMath = regrouped?.categories ?? input.categories
+
         // Overrides are the student's own correction and must be layered onto
         // Canvas's numbers before anything else runs, so every downstream
         // calculation -- mode selection, weights, drops, both flavors of
         // % decided -- sees the corrected item exactly as if Canvas had
         // reported it that way.
-        let adjusted = input.categories.map { applyOverrides(to: $0, overrides: input.itemOverrides) }
+        let adjusted = categoriesForMath.map { applyOverrides(to: $0, overrides: input.itemOverrides) }
 
+        // A category map forces weighted mode ONLY when it actually carries a
+        // real weight somewhere. The first version of this rule made ANY
+        // map's mere presence force weighted mode, which is right for a
+        // syllabus-derived map (that's the whole point: stop trusting a
+        // points-mode Canvas course once a syllabus has spoken, docs/grades
+        // .md §14, the PHYS 0151 report) but wrong for
+        // `GradeCategoryMapBuilder.mirroringCanvas(courseUsesWeights: false)`
+        // -- a map built purely so a points-mode course has the same data
+        // shape as a weighted one for the UI's sake. Every one of that map's
+        // categories carries `weightPercent == 0` on purpose (mirroring
+        // Canvas's own "no weights" flag), so forcing weighted mode over it
+        // would make every category's `effectiveWeight` 0, nothing could
+        // ever participate, and the course's grade would go permanently nil
+        // -- exactly the silent-blanking failure this whole feature exists
+        // to prevent, just relocated to a new cause. So: a map with at least
+        // one nonzero weight still forces weighted mode; a map with none
+        // falls through to the SAME rule used when there's no map at all,
+        // which is what "points mode as if no map" means below. An explicit
+        // `modeOverride` still wins outright either way, same as before.
+        let mapHasRealWeight = input.categoryMap?.categories.contains { $0.weightPercent > 0 } ?? false
         let weighted: Bool
         if let modeOverride = input.modeOverride {
             weighted = modeOverride == .weighted
+        } else if mapHasRealWeight {
+            weighted = true
         } else {
             weighted = input.courseUsesWeights || manualWeightsCoverEveryCategory(input)
         }
 
-        let tallies = adjusted.map { entry in
-            tally(
+        // A map category's weight/expected-count are DEFAULTS, not the final
+        // word -- `input.manualWeights`/`dropLowestOverrides`/
+        // `expectedCounts` (a student's own, more specific edits) still win,
+        // exactly the same "student edit > syllabus > Canvas" precedence
+        // docs/grades.md §14.4 already states. Looked up by map category id,
+        // which `GradeRegrouper` preserves as the regrouped `GradeCategory`'s
+        // own id.
+        let mapExpectedCounts: [String: Int] = Dictionary(
+            uniqueKeysWithValues: (input.categoryMap?.categories ?? []).compactMap { category in
+                category.expectedCount.map { (category.id, $0) }
+            }
+        )
+        let mapWeightSourceByCategoryID: [String: ScoreSource] = Dictionary(
+            uniqueKeysWithValues: (input.categoryMap?.categories ?? []).map { category in
+                let source: ScoreSource
+                switch category.provenance {
+                case .syllabus, .sharedProfile: source = .syllabus
+                case .student:                  source = .manual
+                case .canvas:                   source = .canvas
+                }
+                return (category.id, source)
+            }
+        )
+
+        let tallies = adjusted.map { entry -> CategoryTally in
+            // Per-category context the regrouper knows and the tally itself
+            // has no other way to reconstruct: which of THIS category's
+            // items arrived via an item-level move rather than an ordinary
+            // group fold, which Canvas group names folded into it, and
+            // whether it's a passthrough entry for a Canvas group the map
+            // never claimed.
+            let categoryMovedItemIDs = regrouped.map { output in
+                Set(entry.category.items.map(\.id)).intersection(output.movedItemIDs)
+            } ?? []
+            let canvasGroupNames = regrouped?.groupNamesByCategoryID[entry.category.id] ?? []
+            let isUnmapped = regrouped?.unmappedGroupIDs.contains(entry.category.id) ?? false
+
+            return tally(
                 entry.category,
                 overriddenItemIDs: entry.overriddenIDs,
                 excludedItemIDs: entry.excludedIDs,
                 input: input,
-                weighted: weighted
+                weighted: weighted,
+                hasCategoryMap: input.categoryMap != nil,
+                mapExpectedCounts: mapExpectedCounts,
+                mapWeightSourceByCategoryID: mapWeightSourceByCategoryID,
+                canvasGroupNames: canvasGroupNames,
+                isUnmapped: isUnmapped,
+                movedItemIDs: categoryMovedItemIDs
             )
         }
 
@@ -167,26 +255,73 @@ public enum GradeEngine {
                 participates: r.participates,
                 contributionPercent: contribution,
                 overriddenItemIDs: r.overriddenItemIDs,
-                excludedItemIDs: r.excludedItemIDs
+                excludedItemIDs: r.excludedItemIDs,
+                canvasGroupNames: r.canvasGroupNames,
+                isUnmapped: r.isUnmapped,
+                movedItemIDs: r.movedItemIDs
             )
         }
 
         let rawCurrentPercent = weighted ? weightedCurrentPercent(tallies) : pointsCurrentPercent(tallies)
         let decided = weighted ? weightedDecidedFraction(tallies) : pointsDecidedFraction(tallies)
 
-        // Defense-in-depth: nothing with points possible has been scored means
-        // there is no honest percent to show, full stop -- no matter which
-        // path produced `rawCurrentPercent`. This is the fix for a real phone
-        // that showed "100%" beside "0% decided" from a scored zero-point
-        // item: every per-mode helper above already guards its own division,
-        // but a single top-level rule is what makes the invariant impossible
-        // to reintroduce by accident through some future combination of
-        // overrides, manual weights, or a mode override.
-        let currentPercent = (decided == 0) ? nil : rawCurrentPercent
+        // A grade made only of attendance is not a grade (docs/grades.md
+        // §14 addendum, the PHYS 0151 report): a 100/100 Roll Call item with
+        // nothing else scored used to read as "100%" -- arithmetically
+        // correct, substantively dishonest, since attendance is usually a
+        // small slice of the syllabus and says nothing about the other 90%.
+        // Detected purely by category NAME
+        // (`GradeItemClassifier.isAttendanceCategoryName`), so this applies
+        // with or without a category map -- a plain Canvas course with a
+        // category literally named "Attendance" hits the same rule.
+        let attendanceTallies = tallies.filter { GradeItemClassifier.isAttendanceCategoryName($0.result.name) }
+        let hasAttendanceScoring = attendanceTallies.contains { $0.result.scoredCount > 0 }
+        let hasNonAttendanceScoring = tallies.contains {
+            $0.result.scoredCount > 0 && !GradeItemClassifier.isAttendanceCategoryName($0.result.name)
+        }
+        let isAttendanceOnly = hasAttendanceScoring && !hasNonAttendanceScoring
 
+        let currentPercent: Double?
+        let attendanceOnlyPercent: Double?
+        if isAttendanceOnly {
+            currentPercent = nil
+            attendanceOnlyPercent = weighted
+                ? weightedCurrentPercent(attendanceTallies)
+                : pointsCurrentPercent(attendanceTallies)
+        } else {
+            // Defense-in-depth: nothing with points possible has been scored
+            // means there is no honest percent to show, full stop -- no
+            // matter which path produced `rawCurrentPercent`. This is the
+            // fix for a real phone that showed "100%" beside "0% decided"
+            // from a scored zero-point item: every per-mode helper above
+            // already guards its own division, but a single top-level rule
+            // is what makes the invariant impossible to reintroduce by
+            // accident through some future combination of overrides, manual
+            // weights, or a mode override.
+            currentPercent = (decided == 0) ? nil : rawCurrentPercent
+            attendanceOnlyPercent = nil
+        }
+
+        // Gated on `mapHasRealWeight` (not just `input.categoryMap != nil`)
+        // for the same reason `weighted` is above: a zero-weight
+        // `mirroringCanvas` map didn't drive the mode decision, so it
+        // shouldn't get credit for it either -- attributing "from your
+        // syllabus" to a course that's actually in plain points-mode-as-if-
+        // no-map would be its own small dishonesty.
         let modeSource: GradingModeSource
         if input.modeOverride != nil {
             modeSource = .manual
+        } else if mapHasRealWeight, let categoryMap = input.categoryMap {
+            // The map's own provenance, not "anything but the student is the
+            // syllabus": the store always supplies a map now, and for a course
+            // with no syllabus that map is a mirror of Canvas's groups, which
+            // must read as "from canvas" or the explanation lies about where
+            // the structure came from.
+            switch categoryMap.provenance {
+            case .student: modeSource = .manual
+            case .canvas: modeSource = .canvas
+            case .syllabus, .sharedProfile: modeSource = .syllabus
+            }
         } else if weighted && syllabusWeightsCoverEveryCategory(input) {
             modeSource = .syllabus
         } else {
@@ -204,6 +339,17 @@ public enum GradeEngine {
             .filter { !weighted || ($0.result.effectiveWeight ?? 0) > 0 }
             .reduce(0) { $0 + $1.pendingCount }
 
+        // Named so `GradeExplanation.decidedLine` can say exactly what's
+        // missing instead of a generic "every category" -- weighted-mode
+        // only (points mode has no weight concept to gate this on, and its
+        // own combiner below has a different, already-nil-safe rule for
+        // what blocks the estimate), input order, real weight only (a
+        // zero-weight category was never going to move the estimate either
+        // way, so naming it would just be noise).
+        let categoriesMissingExpectedCount: [String] = weighted
+            ? results.filter { ($0.effectiveWeight ?? 0) > 0 && $0.semesterDecidedFraction == nil }.map(\.name)
+            : []
+
         return GradeBreakdown(
             mode: weighted ? .weighted : .points,
             currentPercent: currentPercent,
@@ -213,7 +359,9 @@ public enum GradeEngine {
             semesterDecidedFraction: semesterDecidedFraction(results, weighted: weighted),
             modeSource: modeSource,
             leftOutCategoryIDs: leftOutCategoryIDs,
-            participatingWeightSum: participatingWeightSum
+            participatingWeightSum: participatingWeightSum,
+            attendanceOnlyPercent: attendanceOnlyPercent,
+            categoriesMissingExpectedCount: categoriesMissingExpectedCount
         )
     }
 
@@ -321,12 +469,25 @@ public enum GradeEngine {
         overriddenItemIDs: Set<String>,
         excludedItemIDs: Set<String>,
         input: Input,
-        weighted: Bool
+        weighted: Bool,
+        hasCategoryMap: Bool = false,
+        mapExpectedCounts: [String: Int] = [:],
+        mapWeightSourceByCategoryID: [String: ScoreSource] = [:],
+        canvasGroupNames: [String] = [],
+        isUnmapped: Bool = false,
+        movedItemIDs: Set<String> = []
     ) -> CategoryTally {
-        // Excused and omit_from_final_grade items leave the math entirely.
-        // (Items an override excluded are already gone from `category.items`
-        // by the time this runs — see `applyOverrides`.)
-        let gradeable = category.items.filter { !$0.isExcused && !$0.omitFromFinalGrade }
+        // Excused and omit_from_final_grade items leave the math entirely, as
+        // does a Canvas placeholder — a shell item with no points and no
+        // score, e.g. a quiz created for a future date that never got points
+        // assigned. `pointsPossible == 0 && score == nil` is NOT "posted
+        // work" in any sense that should count toward `totalCount`/
+        // `possibleTotal`, with or without a category map: a real PHYS 0151
+        // site had exactly this (a zero-point "Quiz 2" row) inflating the
+        // "N of M posted" denominator for nothing.
+        let gradeable = category.items.filter {
+            !$0.isExcused && !$0.omitFromFinalGrade && !GradeItemClassifier.isPlaceholder($0)
+        }
         let scored = gradeable.filter { $0.score != nil }
 
         let dropped = droppedItemIDs(
@@ -342,10 +503,19 @@ public enum GradeEngine {
         if !weighted {
             (effectiveWeight, weightSource) = (nil, nil)
         } else if let manual = input.manualWeights[category.id] {
+            // A student's own per-category weight edit always wins, map or
+            // no map — "student edit > syllabus > Canvas" (docs/grades.md
+            // §14.4) doesn't change just because the syllabus half of that
+            // chain is now a whole category map instead of a bare weight.
             (effectiveWeight, weightSource) = (
                 manual,
                 input.syllabusWeightedCategoryIDs.contains(category.id) ? .syllabus : .manual
             )
+        } else if hasCategoryMap {
+            // The regrouper already baked the map's own weight into
+            // `category.weight` (0 for a passthrough "unmapped" group) —
+            // this branch only needs to say WHERE that weight came from.
+            (effectiveWeight, weightSource) = (category.weight ?? 0, mapWeightSourceByCategoryID[category.id] ?? .canvas)
         } else {
             (effectiveWeight, weightSource) = (input.courseUsesWeights ? (category.weight ?? 0) : 0, .canvas)
         }
@@ -356,12 +526,30 @@ public enum GradeEngine {
         let possibleScoredRaw = scored.reduce(0.0) { $0 + $1.pointsPossible }
         let totalCount = gradeable.count
 
-        let expectedCount = input.expectedCounts[category.id]
+        // The map's own expected count is a DEFAULT — an explicit
+        // `input.expectedCounts` entry (a more specific, more recent student
+        // or syllabus statement) still wins, same precedence as the weight
+        // above.
+        let expectedCount = input.expectedCounts[category.id] ?? mapExpectedCounts[category.id]
+        // nil means "we don't know how much of the semester this category
+        // is" -- true exactly when `expectedCount` itself is unknown. Once
+        // `expectedCount` IS known, a category with nothing posted yet
+        // (`totalCount == 0`) is 0% decided, not "unknown": we know how many
+        // items the semester holds and that none of them exist yet, which is
+        // itself an answer. `expectedPossible`'s own nil (guarded by
+        // `totalCount > 0`) exists only to protect ITS average-per-item
+        // division for the POINTS estimate -- it was never meant to mean
+        // "the fraction is unknowable," and treating it that way here used
+        // to make three untouched exam categories poison an otherwise-
+        // knowable semester estimate to nil.
         let semesterDecidedFraction: Double?
-        if let expectedCount,
-           let expected = expectedPossible(possibleTotal: possibleTotal, totalCount: totalCount, expectedCount: expectedCount),
-           expected > 0 {
-            semesterDecidedFraction = possibleScoredRaw / expected
+        if let expectedCount {
+            if let expected = expectedPossible(possibleTotal: possibleTotal, totalCount: totalCount, expectedCount: expectedCount),
+               expected > 0 {
+                semesterDecidedFraction = possibleScoredRaw / expected
+            } else {
+                semesterDecidedFraction = 0
+            }
         } else {
             semesterDecidedFraction = nil
         }
@@ -387,7 +575,10 @@ public enum GradeEngine {
             participates: participates,
             contributionPercent: nil, // filled in by `compute` once cross-category sums are known
             overriddenItemIDs: overriddenItemIDs,
-            excludedItemIDs: excludedItemIDs
+            excludedItemIDs: excludedItemIDs,
+            canvasGroupNames: canvasGroupNames,
+            isUnmapped: isUnmapped,
+            movedItemIDs: movedItemIDs
         )
 
         let pending = gradeable.filter { item in

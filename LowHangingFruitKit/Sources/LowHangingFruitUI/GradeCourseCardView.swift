@@ -286,16 +286,34 @@ struct GradeCourseCardView: View {
 
     @ViewBuilder
     private func currentGradeLine(_ breakdown: GradeBreakdown) -> some View {
+        let headline = Self.headlineText(for: breakdown)
         if let percent = breakdown.currentPercent {
-            Text(formatPercent(percent))
+            Text(headline.primary)
                 .font(.lhfSerif(34))
                 .foregroundStyle(Color.v2Ink)
                 .accessibilityLabel("current grade \(Int(percent.rounded())) percent in \(courseName)")
         } else {
-            Text("no scores yet")
-                .font(.lhfSerif(22))
-                .foregroundStyle(Color.v2DateText)
-                .accessibilityLabel("no grades yet in \(courseName)")
+            // A real-phone report: PHYS lecture's only scored item was a
+            // 100/100 Roll Call Attendance entry, so the plain "no scores
+            // yet" line and the honest attendance-only number
+            // (`GradeBreakdown.attendanceOnlyPercent`) both need to be on
+            // screen at once, not one swapped for the other -- a student who
+            // sees ONLY "attendance 100%" could read the course as decided,
+            // and one who sees ONLY "no scores yet" loses the one real
+            // number that does exist.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline.primary)
+                    .font(.lhfSerif(22))
+                    .foregroundStyle(Color.v2DateText)
+                if let secondary = headline.secondary {
+                    Text(secondary)
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(headline.secondary.map { "\(headline.primary), \($0), in \(courseName)" }
+                                 ?? "no grades yet in \(courseName)")
         }
     }
 
@@ -414,13 +432,38 @@ struct GradeCourseCardView: View {
     /// "N% of the semester is decided" once `semesterDecidedFraction` is
     /// known; otherwise "N% of what's posted is graded · semester share
     /// unknown," which is the honest fallback when the syllabus hasn't given
-    /// every relevant category an expected item count yet.
+    /// every relevant category an expected item count yet. When the engine
+    /// can name exactly which categories are missing a count
+    /// (`categoriesMissingExpectedCount`), the fallback names them too --
+    /// "semester share unknown" alone tells a student something is missing
+    /// but not what to go do about it; naming the categories turns the
+    /// caveat into an instruction.
     static func decidedText(for breakdown: GradeBreakdown) -> String {
         let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
         if breakdown.semesterDecidedFraction != nil {
             return "\(percent)% of the semester is decided"
         }
-        return "\(percent)% of what\u{2019}s posted is graded \u{00b7} semester share unknown"
+        let base = "\(percent)% of what\u{2019}s posted is graded \u{00b7} semester share unknown"
+        let missing = breakdown.categoriesMissingExpectedCount
+        guard !missing.isEmpty else { return base }
+        let names = missing.map { $0.lowercased() }.joined(separator: ", ")
+        return "\(base) \u{00b7} add expected counts for \(names)"
+    }
+
+    /// The card's/report's headline pair: the big number, and -- only in the
+    /// attendance-only case -- a second line underneath it. Pulled out as a
+    /// pure function (rather than inlined in `currentGradeLine`/
+    /// `GradeReportView.headline`) so the three cases (percent, no scores at
+    /// all, attendance-only) are each independently testable without
+    /// instantiating SwiftUI (see `GradeDecidedTextTests`).
+    static func headlineText(for breakdown: GradeBreakdown) -> (primary: String, secondary: String?) {
+        if let percent = breakdown.currentPercent {
+            return (formatPercent(percent), nil)
+        }
+        if let attendance = breakdown.attendanceOnlyPercent {
+            return ("no graded work yet", "attendance \(formatPercent(attendance))")
+        }
+        return ("no scores yet", nil)
     }
 
     /// "COURSE NAME" alone, or "COURSE NAME · LAB" when a course code has
