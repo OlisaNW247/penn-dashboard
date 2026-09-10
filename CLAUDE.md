@@ -73,8 +73,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-10): **1032 tests / 101 suites
-green** (plus 4 XCTest scheduler tests), after the first-launch hold
+Baseline on `v5`, verified on a Mac (2026-09-10): **1068 tests / 105 suites
+green** (plus 4 XCTest scheduler tests), after Grade Watcher round 1
+(docs/grades.md §14: semester-aware "decided", per-item/category/course
+overrides with provenance, the "how this is calculated" panel, site labels;
+1,400 blind lines that compiled first time). Before that, 1032/101 the same
+day after the first-launch hold
 (`AppState.isCanvasSubmissionVerified` — overdue Canvas work in a course
 never yet checked against Canvas waits in `awaitingCanvasCheck` behind a
 "checking canvas" notice instead of reading as owed), Grade Watcher fetching
