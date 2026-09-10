@@ -594,12 +594,30 @@ export interface CatalogEntryMeetingWire {
   endMinutes: number;
 }
 
+/** One registrar component (lecture, lab, ...) as the *app* needs it for
+ *  Grade Watcher -- distinct from `CatalogComponent` above (which also
+ *  carries the human `label`, `sectionCount` and `meetings`, none of which
+ *  Grade Watcher needs) and from `structureBlock`'s prose. The problem this
+ *  solves: a zero-credit component (PHYS 0151's lab) is a *separate* Canvas
+ *  course site, and Grade Watcher must not read that site's assignments as
+ *  belonging to "the class" the student thinks of when they see the
+ *  lecture's credit total -- the app decides that by looking up its own
+ *  site's `section` against `sectionIDs` here (the same join
+ *  `activityForSection` already does server-side for `ask`) and reading
+ *  that component's `credits`. */
+export interface CatalogEntryComponentWire {
+  activity: string;
+  credits: number | null;
+  sectionIDs: string[];
+}
+
 export interface CatalogEntryWire {
   courseID: string;
   catalogCode: string;
   title: string;
   credits: number | null;
   meetings: CatalogEntryMeetingWire[];
+  components: CatalogEntryComponentWire[];
 }
 
 /**
@@ -616,6 +634,14 @@ export interface CatalogEntryWire {
  * activity order, and each component's `meetings` is already in
  * section-then-original-meeting order, so the result is already
  * deterministic for identical input.
+ *
+ * `components` on the returned wire is a straight `activity`/`credits`/
+ * `sectionIDs` passthrough of `row.components` -- the app-facing fact
+ * Grade Watcher needs (see `CatalogEntryComponentWire`'s doc comment), not
+ * derived from the flattened `meetings` loop above. It relies on the same
+ * legacy-row normalization `db.ts`'s `dbRowToCatalogRow` already performs
+ * on `row.components` before this function ever sees it (defaulting a
+ * missing `sectionIDs` to `[]`), so there is nothing further to guard here.
  */
 export function catalogEntryWire(row: CatalogCourseRow, courseID: string): CatalogEntryWire {
   const meetings: CatalogEntryMeetingWire[] = [];
@@ -640,12 +666,19 @@ export function catalogEntryWire(row: CatalogCourseRow, courseID: string): Catal
       });
     }
   }
+  const components: CatalogEntryComponentWire[] = row.components.map((component) => ({
+    activity: component.activity,
+    credits: component.credits,
+    sectionIDs: component.sectionIDs,
+  }));
+
   return {
     courseID,
     catalogCode: row.catalogCode,
     title: row.title,
     credits: row.credits,
     meetings,
+    components,
   };
 }
 

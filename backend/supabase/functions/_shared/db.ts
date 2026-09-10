@@ -19,6 +19,7 @@ import {
   type CatalogCourseRow,
   type CatalogEntryWire,
 } from "./catalog.ts";
+import { sanitizeProfile, type CourseProfileWire, type ProfileComponent } from "./profile.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -534,6 +535,108 @@ export async function selectCatalogEntriesForCourses(
   // test assertion meaningful without also asserting on Postgres's
   // unspecified row order.
   return entries.sort((a, b) => a.courseID.localeCompare(b.courseID));
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The columns `selectProfileWiresForCourses` reads from `course_profiles`
+ *  -- `profile` deliberately typed `unknown` rather than `CourseProfile`,
+ *  since Postgres hands this jsonb column back exactly as last written,
+ *  not as whatever shape today's code expects (see `profileRowToWire`'s
+ *  doc comment). */
+export interface CourseProfileDBRow {
+  course_id: string;
+  profile: unknown;
+  updated_at: string;
+}
+
+/** A `ProfileComponent`'s `gradingBasis`/`creditUnits` dropped straight
+ *  onto the wire only when actually present, rather than as an explicit
+ *  `undefined` value -- the same "omit the key, don't set it to undefined"
+ *  discipline `sanitizeProfile` itself already follows for every other
+ *  optional field, and required here because a plain `{ gradingBasis:
+ *  component.gradingBasis }` spread would instead produce an *own*
+ *  property holding `undefined`, which survives a `JSON.stringify` round
+ *  trip differently than a genuinely absent key and would make
+ *  `assert.deepEqual` in tests see two different-looking objects for what
+ *  should be the same wire shape. */
+function toWireComponent(component: ProfileComponent): CourseProfileWire["components"][number] {
+  const wire: CourseProfileWire["components"][number] = { name: component.name };
+  if (component.gradingBasis !== undefined) wire.gradingBasis = component.gradingBasis;
+  if (component.creditUnits !== undefined) wire.creditUnits = component.creditUnits;
+  return wire;
+}
+
+/**
+ * Maps one `course_profiles` row into the `CourseProfileWire` `sync`'s
+ * manifest response hands the client -- Grade Watcher's suggested grading
+ * scheme (see PROTOCOL.md's "sync" section and `_shared/profile.ts`'s
+ * `CourseProfileWire` doc comment). Exported (unlike most of this file's
+ * row<->wire mappers) so `db.test.ts` can exercise the normalization
+ * directly without a `SupabaseClient` -- the same reason `dbRowToCatalogRow`
+ * above is exported.
+ *
+ * `profile` is read as `unknown` and pushed through `sanitizeProfile` --
+ * the same normalize-on-read discipline `dbRowToCatalogRow` applies to
+ * `catalog_courses.components` and for the identical reason: this column is
+ * jsonb, so a row can predate a shape change (the `expectedCount`/
+ * `dropLowest` fields added alongside this function, or any future one) and
+ * Postgres hands it back exactly as last written, not as today's
+ * `CourseProfile`. `sanitizeProfile` was written to validate a *model's*
+ * JSON response, but "arbitrary untrusted-shaped JSON in, a safely-typed
+ * `CourseProfile` out" is exactly the problem a stored jsonb value poses
+ * too, so reusing it here means there is only one place that knows what a
+ * valid `gradingWeights`/`components` entry looks like, not two
+ * definitions to keep in sync -- including a malformed value (e.g.
+ * `gradingWeights` stored as something other than an array), which
+ * `sanitizeArray`'s `Array.isArray` guard inside `sanitizeProfile` already
+ * turns into "omit the field" rather than a thrown error. A `profile`
+ * value that isn't even a JSON object (defensive only -- the column is
+ * `not null` and every writer today only ever stores an object) degrades
+ * to an empty profile the same way, so this function never fails the way
+ * an unguarded read of `catalog_courses.components` once did (see
+ * CLAUDE.md's jsonb trap) -- the caller (`sync/index.ts`'s
+ * `handleManifest`) still wraps the call in try/catch as a second line of
+ * defense, matching how it already treats `selectCatalogEntriesForCourses`.
+ */
+export function profileRowToWire(row: CourseProfileDBRow): CourseProfileWire {
+  const profile = isJsonRecord(row.profile) ? sanitizeProfile(row.profile) : {};
+  return {
+    courseID: row.course_id,
+    gradingWeights: profile.gradingWeights ?? [],
+    components: (profile.components ?? []).map(toWireComponent),
+    extractedAt: row.updated_at,
+  };
+}
+
+/**
+ * The per-course `CourseProfileWire` list `sync`'s manifest response hands
+ * the client. One entry per `courseIDs` member that has a `course_profiles`
+ * row at all; a course that has never had `extract-profile` build one
+ * simply contributes nothing, the same "missing is not an error" posture
+ * `selectCatalogEntriesForCourses` takes toward an unresolved catalog code.
+ * All normalization lives in `profileRowToWire` above -- this is only the
+ * Supabase read and the same by-`courseID` sort every other manifest-
+ * response list in this codebase gets.
+ */
+export async function selectProfileWiresForCourses(
+  client: SupabaseClient,
+  courseIDs: string[],
+): Promise<CourseProfileWire[]> {
+  if (courseIDs.length === 0) return [];
+
+  const { data, error } = await client
+    .from("course_profiles")
+    .select("course_id, profile, updated_at")
+    .in("course_id", courseIDs);
+  if (error) throw error;
+
+  const rows = (data ?? []) as CourseProfileDBRow[];
+  return rows
+    .map(profileRowToWire)
+    .sort((a, b) => a.courseID.localeCompare(b.courseID));
 }
 
 // ---------------------------------------------------------------------

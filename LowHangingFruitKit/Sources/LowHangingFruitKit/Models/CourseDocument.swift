@@ -156,21 +156,34 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
     /// custom `init(from:)` is what stands between adding this field and
     /// that data loss.
     public var catalog: [CourseCatalogEntry]
+    /// The server's syllabus-derived grading extraction, one per course,
+    /// synced down alongside `catalog` so Grade Watcher can offer a
+    /// suggested scheme without the device re-parsing a syllabus it already
+    /// holds. Decoded with `decodeIfPresent` in this type's custom
+    /// `init(from:)`, for exactly the reason `catalog`'s doc comment gives:
+    /// this field is newer than `documents`/`courses`, so every
+    /// knowledge-base file already on a student's disk predates it, and a
+    /// key that's simply never existed until now must not fail the decode
+    /// and fall back to `.empty` — that would silently discard every
+    /// document and course the student already had, not just the new field.
+    public var gradingProfiles: [CourseGradingProfile]
 
     public init(
         courses: [CourseSummary] = [],
         documents: [CourseDocument] = [],
         lastSyncedAt: Date? = nil,
-        catalog: [CourseCatalogEntry] = []
+        catalog: [CourseCatalogEntry] = [],
+        gradingProfiles: [CourseGradingProfile] = []
     ) {
         self.courses = courses
         self.documents = documents
         self.lastSyncedAt = lastSyncedAt
         self.catalog = catalog
+        self.gradingProfiles = gradingProfiles
     }
 
     private enum CodingKeys: String, CodingKey {
-        case courses, documents, lastSyncedAt, catalog
+        case courses, documents, lastSyncedAt, catalog, gradingProfiles
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,6 +192,7 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
         documents = try container.decode([CourseDocument].self, forKey: .documents)
         lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
         catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
+        gradingProfiles = try container.decodeIfPresent([CourseGradingProfile].self, forKey: .gradingProfiles) ?? []
     }
 
     public static let empty = CourseKnowledgeBase()
@@ -278,6 +292,31 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
 
     private static func normalizedCourseCode(_ code: String) -> String {
         code.lowercased().filter { !$0.isWhitespace && $0 != "-" }
+    }
+
+    /// Upserts grading profiles by `courseID`, mirroring `mergeCatalog`'s
+    /// "add or update, never wholesale replace" rule — a profile sync
+    /// scoped to one course (or a handful) must never be read as "every
+    /// other course's suggested scheme is now gone."
+    public mutating func mergeGradingProfiles(_ profiles: [CourseGradingProfile]) {
+        guard !profiles.isEmpty else { return }
+        var byCourseID = Dictionary(gradingProfiles.map { ($0.courseID, $0) }, uniquingKeysWith: { _, last in last })
+        for profile in profiles { byCourseID[profile.courseID] = profile }
+        gradingProfiles = byCourseID.values.sorted { $0.courseID < $1.courseID }
+    }
+
+    /// The server's suggested grading scheme for one course, if it's synced
+    /// one yet.
+    public func gradingProfile(forCourseID courseID: String) -> CourseGradingProfile? {
+        gradingProfiles.first { $0.courseID == courseID }
+    }
+
+    /// The text of this course's synced syllabus document, if it has one —
+    /// used so `SyllabusGradingScheme.from(profile:)`'s caller and
+    /// `GradeSiteExclusion` can work from the syllabus text the app already
+    /// holds rather than refetching it.
+    public func syllabusText(forCourseID courseID: String) -> String? {
+        documents.first { $0.courseID == courseID && $0.kind == .syllabus }?.text
     }
 }
 

@@ -10,6 +10,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { catalogCode, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
+import type { CourseProfileWire } from "../_shared/profile.ts";
 import { candidateFromLink, olderThan, SEVEN_DAYS_MS, websitesPendingCourses } from "../_shared/websites.ts";
 import {
   markDocumentsGone,
@@ -23,6 +24,7 @@ import {
   selectEnrolledCourseIDs,
   selectLiveDocumentIDsForCourse,
   selectLiveDocumentsForCourses,
+  selectProfileWiresForCourses,
   setCourseCatalogCode,
   setLastFullSyncNow,
   setProfileStale,
@@ -79,6 +81,7 @@ interface ManifestResult {
   serverManifest: DocumentStub[];
   download: CourseDocumentWire[];
   catalog: CatalogEntryWire[];
+  profiles: CourseProfileWire[];
 }
 
 interface UploadResult {
@@ -212,7 +215,22 @@ async function handleManifest(
     console.error("sync: catalog entries failed", message);
   }
 
-  return { coursesFresh, serverManifest, download, catalog };
+  // Same enrichment-not-exchange posture as the catalog read just above,
+  // and for the same reason: a course's extracted profile (or a failure to
+  // read it) must never turn an otherwise-successful manifest call into a
+  // 500. `courseIDs` is already the caller's own enrolled-this-call list
+  // (see `upsertEnrollments` above), so no further enrollment check is
+  // needed here -- this mirrors `selectCatalogEntriesForCourses`'s own
+  // trust of `courseIDs` for the identical reason.
+  let profiles: CourseProfileWire[] = [];
+  try {
+    profiles = await selectProfileWiresForCourses(serviceClient, courseIDs);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("sync: profile wires failed", message);
+  }
+
+  return { coursesFresh, serverManifest, download, catalog, profiles };
 }
 
 async function handleUpload(

@@ -21,6 +21,15 @@ struct GradeReportView: View {
     /// `GradeCourseCardView`'s call site passes its own `siteLabel` through.
     let siteLabel: String?
 
+    /// Read only for `state.courseKnowledge.syllabusText(forCourseID:)`, so
+    /// `SyllabusSetupView` can offer the syllabus text this phone already
+    /// synced as a candidate before it ever hits Canvas live. Both of this
+    /// view's call sites (`ContentView`'s `.report` case and
+    /// `GradeCourseCardView`'s `NavigationLink`) already sit under an
+    /// ancestor `.environmentObject(state)`, so this resolves without
+    /// widening either init.
+    @EnvironmentObject private var state: AppState
+
     @State private var targetPercent: Double?
     @State private var showSyllabusSetup = false
     @State private var expandedCategoryIDs: Set<String> = []
@@ -78,7 +87,12 @@ struct GradeReportView: View {
             Text("this clears every score you corrected, expected item count, grading mode choice, and manual weight for this class. canvas\u{2019}s own numbers are unaffected.")
         }
         .sheet(isPresented: $showSyllabusSetup) {
-            SyllabusSetupView(store: store, courseID: courseID, courseName: courseName)
+            SyllabusSetupView(
+                store: store,
+                courseID: courseID,
+                courseName: courseName,
+                syncedSyllabusText: state.courseKnowledge.syllabusText(forCourseID: courseID)
+            )
         }
         .sheet(item: $editingItem) { item in
             GradeItemEditorSheet(
@@ -508,6 +522,8 @@ struct GradeReportView: View {
         ReportSection(title: "Syllabus") {
             if let attached = store.syllabus(courseID: courseID) {
                 attachedSyllabusBody(attached)
+            } else if let suggestion = store.suggestedScheme(courseID: courseID) {
+                suggestedSchemeBody(suggestion.scheme)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("canvas knows what\u{2019}s graded, not what it\u{2019}s worth. add your syllabus and this report can use the real weights, cutoffs and assignment counts.")
@@ -520,6 +536,70 @@ struct GradeReportView: View {
                 }
             }
         }
+    }
+
+    /// A course with no syllabus of its own yet, but whose weights another
+    /// student's device already read off theirs and the backend pooled
+    /// server-side (`GradeWatcherStore.suggestedScheme`). Shown instead of
+    /// the plain "add your syllabus" prompt, never instead of an actually
+    /// attached one — `syllabusSection` above only reaches this branch when
+    /// `store.syllabus(courseID:)` is nil. Honesty rule: this never applies
+    /// itself; "use these weights" is the only path to
+    /// `applySuggestedScheme`, exactly like the parsed-syllabus review
+    /// screen's own "use these weights" button.
+    @ViewBuilder
+    private func suggestedSchemeBody(_ scheme: SyllabusGradingScheme) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("suggested from the syllabus, as read by locust\u{2019}s server.")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(scheme.normalizedCategories) { category in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(category.name)
+                                .font(.lhfSans(12, weight: .medium))
+                            Spacer()
+                            Text(formatPercent(category.weightPercent))
+                                .font(.lhfSans(12))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                        if category.dropLowest > 0 || category.expectedItemCount != nil {
+                            Text(suggestedExtras(for: category))
+                                .font(.lhfSans(10))
+                                .foregroundStyle(Color.v2SpinePurple)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 16) {
+                Button("use these weights") {
+                    store.applySuggestedScheme(courseID: courseID)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Button("review the syllabus instead") { showSyllabusSetup = true }
+                    .font(.lhfSans(12))
+            }
+        }
+    }
+
+    /// "12 expected" / "drops lowest 2" / both, joined — same shape as
+    /// `SyllabusSetupView.extras(for:)`, kept as a separate copy rather than
+    /// shared because that one is `private` to its own file and this row is
+    /// cosmetic enough not to be worth a shared helper over.
+    private func suggestedExtras(for category: SyllabusCategory) -> String {
+        var parts: [String] = []
+        if category.dropLowest > 0 {
+            parts.append("drops \(category.dropLowest) lowest")
+        }
+        if let count = category.expectedItemCount {
+            parts.append("\(count) expected")
+        }
+        return parts.joined(separator: " \u{00b7} ")
     }
 
     @ViewBuilder

@@ -89,6 +89,27 @@ struct SyncPlannerTests {
         #expect(knowledge.catalog.map(\.courseID).sorted() == ["1", "2"])
     }
 
+    // MARK: - applyProfiles
+
+    @Test("applyProfiles folds new grading profiles into an empty knowledge base")
+    func applyProfilesAddsEntries() {
+        var knowledge = CourseKnowledgeBase.empty
+        let profile = CourseGradingProfile(courseID: "1", weights: [], components: [], extractedAt: Date(timeIntervalSince1970: 0))
+        SyncPlanner.applyProfiles([profile], to: &knowledge)
+        #expect(knowledge.gradingProfiles == [profile])
+    }
+
+    @Test("applyProfiles never removes an existing profile not mentioned in the batch")
+    func applyProfilesNeverRemovesExistingEntries() {
+        var knowledge = CourseKnowledgeBase(gradingProfiles: [
+            CourseGradingProfile(courseID: "1", weights: [], components: [], extractedAt: Date(timeIntervalSince1970: 0)),
+        ])
+        SyncPlanner.applyProfiles([
+            CourseGradingProfile(courseID: "2", weights: [], components: [], extractedAt: Date(timeIntervalSince1970: 0)),
+        ], to: &knowledge)
+        #expect(knowledge.gradingProfiles.map(\.courseID).sorted() == ["1", "2"])
+    }
+
     // MARK: - uploads
 
     @Test("uploads excludes documents the server already has with a matching hash")

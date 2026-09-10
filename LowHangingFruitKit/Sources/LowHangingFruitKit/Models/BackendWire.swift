@@ -249,21 +249,35 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
     /// a server with no catalog data yet for a brand-new course is normal,
     /// not malformed.
     public let catalog: [CourseCatalogEntry]
+    /// The server's syllabus-derived grading extraction for this student's
+    /// courses (`CourseProfileWire.profile()`), folded into
+    /// `CourseKnowledgeBase.gradingProfiles` by `SyncPlanner.applyProfiles`
+    /// so Grade Watcher can suggest a scheme without the device re-parsing a
+    /// syllabus it already synced. Defaults to empty for the same "a server
+    /// with nothing new to say is normal" reason as every other field here.
+    /// A `CourseProfileWire` whose `extractedAt` fails to parse is dropped
+    /// individually (`compactMap`) rather than failing the whole manifest
+    /// decode — the wire type's `extractedAt` stays a plain `String` for
+    /// exactly this reason, so one bad timestamp from the server can't take
+    /// down `catalog` and `download` in the same response.
+    public let profiles: [CourseGradingProfile]
 
     public init(
         coursesFresh: [String] = [],
         serverManifest: [DocumentStub] = [],
         download: [CourseDocumentWire] = [],
-        catalog: [CourseCatalogEntry] = []
+        catalog: [CourseCatalogEntry] = [],
+        profiles: [CourseGradingProfile] = []
     ) {
         self.coursesFresh = coursesFresh
         self.serverManifest = serverManifest
         self.download = download
         self.catalog = catalog
+        self.profiles = profiles
     }
 
     private enum CodingKeys: String, CodingKey {
-        case coursesFresh, serverManifest, download, catalog
+        case coursesFresh, serverManifest, download, catalog, profiles
     }
 
     public init(from decoder: Decoder) throws {
@@ -272,6 +286,61 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
         serverManifest = try container.decodeIfPresent([DocumentStub].self, forKey: .serverManifest) ?? []
         download = try container.decodeIfPresent([CourseDocumentWire].self, forKey: .download) ?? []
         catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
+        let wireProfiles = try container.decodeIfPresent([CourseProfileWire].self, forKey: .profiles) ?? []
+        profiles = wireProfiles.compactMap { $0.profile() }
+    }
+}
+
+/// The wire form of `CourseGradingProfile`, as the `sync` manifest's
+/// `profiles` array carries it. `extractedAt` is kept as a plain `String`
+/// rather than decoded straight to `Date`: unlike every other date on this
+/// wire (which goes through `BackendJSON.decoder()`'s custom
+/// `dateDecodingStrategy` and so throws for the *whole* decode on one bad
+/// timestamp), a malformed `extractedAt` here should cost the app exactly
+/// one course's suggested grading scheme, not the entire manifest response
+/// — `SyncManifestResponse.init(from:)` calls `profile()` per element and
+/// drops the ones that fail, via `compactMap`, instead of letting a single
+/// corrupt profile fail `[CourseProfileWire].self` outright.
+public struct CourseProfileWire: Decodable, Sendable, Equatable {
+    public let courseID: String
+    public let gradingWeights: [CourseGradingProfile.Weight]
+    public let components: [CourseGradingProfile.Component]
+    public let extractedAt: String
+
+    public init(courseID: String, gradingWeights: [CourseGradingProfile.Weight], components: [CourseGradingProfile.Component], extractedAt: String) {
+        self.courseID = courseID
+        self.gradingWeights = gradingWeights
+        self.components = components
+        self.extractedAt = extractedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case courseID, gradingWeights, components, extractedAt
+    }
+
+    /// Hand-written so a profile row missing either array — a legacy
+    /// extraction from before a field existed, or a server-side sanitiser
+    /// that dropped a malformed value — decodes as "no weights" rather than
+    /// sinking the whole `[CourseProfileWire]` and with it the entire
+    /// manifest. The catalog jsonb drift of 2026-09-09 (CLAUDE.md, "A jsonb
+    /// column outlives the TypeScript type that wrote it") is the same
+    /// failure one hop later; the client must be as tolerant as the server
+    /// now is.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        courseID = try container.decode(String.self, forKey: .courseID)
+        gradingWeights = try container.decodeIfPresent([CourseGradingProfile.Weight].self, forKey: .gradingWeights) ?? []
+        components = try container.decodeIfPresent([CourseGradingProfile.Component].self, forKey: .components) ?? []
+        extractedAt = try container.decodeIfPresent(String.self, forKey: .extractedAt) ?? ""
+    }
+
+    /// Converts to the on-device model, or `nil` when `extractedAt` isn't a
+    /// timestamp this client recognizes — the same fractional-or-not ISO
+    /// 8601 acceptance `BackendJSON.decoder()` uses for every other date on
+    /// this wire, via the same underlying `BackendJSON.parseDate`.
+    public func profile() -> CourseGradingProfile? {
+        guard let extractedAt = BackendJSON.parseDate(extractedAt) else { return nil }
+        return CourseGradingProfile(courseID: courseID, weights: gradingWeights, components: components, extractedAt: extractedAt)
     }
 }
 
@@ -537,14 +606,26 @@ public enum BackendJSON {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
-            let withFraction = ISO8601DateFormatter()
-            withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = withFraction.date(from: raw) { return date }
-            let plain = ISO8601DateFormatter()
-            plain.formatOptions = [.withInternetDateTime]
-            if let date = plain.date(from: raw) { return date }
+            if let date = parseDate(raw) { return date }
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unrecognized backend date \(raw)")
         }
         return decoder
+    }
+
+    /// Accepts the backend's ISO 8601 timestamps with or without fractional
+    /// seconds. Factored out of `decoder()`'s date strategy so
+    /// `CourseProfileWire.profile()` can reuse the exact same acceptance
+    /// rule on a field that (unlike every other date on this wire) is kept
+    /// as a plain `String` and parsed by hand — see that type's header for
+    /// why. Built per call, like every `ISO8601DateFormatter` in this Kit:
+    /// the type isn't `Sendable`, and one instance per call is cheap enough
+    /// that sharing isn't worth the concurrency question.
+    public static func parseDate(_ raw: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: raw) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: raw)
     }
 }

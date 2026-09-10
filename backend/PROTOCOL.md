@@ -50,7 +50,12 @@ CourseDocumentWire  { id, courseID, course, kind, sourceID, title, url?,
 FullySyncedCourse   { courseID, documentIDs: [string] }
 CatalogEntryWire    { courseID, catalogCode, title, credits,
                       meetings: [{ sectionID, activity, weekday,
-                                   startMinutes, endMinutes }] }
+                                   startMinutes, endMinutes }],
+                      components: [{ activity, credits, sectionIDs }] }
+CourseProfileWire   { courseID,
+                      gradingWeights: [{ name, percent, expectedCount?, dropLowest? }],
+                      components: [{ name, gradingBasis?, creditUnits? }],
+                      extractedAt }
 ```
 
 `CatalogEntryWire.meetings[].weekday` is 1 (Sunday) through 7 (Saturday) --
@@ -61,6 +66,16 @@ from Penn Labs' decimal `HH.MM` encoding of a clock time (the digits after
 the point are literally minutes, not a fraction of an hour -- `15.3` is
 15:30, not 15:18): hours = floor, minutes = round of the fractional part
 times 100. See `_shared/catalog.ts`'s `CatalogMeeting`/`catalogEntryWire`.
+
+`CatalogEntryWire.components` is one entry per registrar component
+(lecture, lab, ...) carrying just what Grade Watcher needs to tell "the
+class" apart from a same-code, separately-graded, zero-credit component --
+PHYS 0151's lab is a *different Canvas course site* from its lecture. The
+app resolves its own site's `section` against a component's `sectionIDs`
+(the same join `_shared/catalog.ts`'s `activityForSection` does
+server-side for `ask`) and reads that component's `credits` to decide
+whether the site it's looking at is the credit-bearing "class" or an
+attached zero-credit component.
 
 `kind` is one of `home | syllabus | assignment | announcement | module | page | website`.
 `id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client for
@@ -90,9 +105,20 @@ course listed (this is the enrollment proof; see Limitations), then answers
 { "coursesFresh":   [courseID],           -- server has a full sync newer than FRESH_WINDOW
   "serverManifest": [DocumentStub],       -- every live (gone_at IS NULL) doc for these courses
   "download":       [CourseDocumentWire], -- live docs whose (id, contentHash) the client didn't list
-  "catalog":        [CatalogEntryWire] }  -- one entry per manifest course with a resolved,
+  "catalog":        [CatalogEntryWire],   -- one entry per manifest course with a resolved,
                                            -- fetched catalog_courses row (see "Catalog" below)
+  "profiles":       [CourseProfileWire] } -- one entry per manifest course with an extracted
+                                           -- course_profiles row (see "extract-profile" below)
 ```
+
+`profiles` is one per manifest course that has had `extract-profile` build
+it a `course_profiles` row; a course that hasn't been extracted yet (or
+whose syllabus/pages produced nothing extractable) simply contributes
+nothing this call, the same "missing is not an error" posture `catalog`
+already takes. The app offers a course's `gradingWeights` to Grade Watcher
+as a suggested grading scheme -- never auto-applied, since the ledger's
+"nothing the student did is ever lost" invariant extends to not silently
+overwriting a scheme the student already set up themselves.
 
 Client: applies `download` to local knowledge first, then fetches Canvas
 for every course NOT in `coursesFresh` (announcements are fetched for all
@@ -375,7 +401,7 @@ Profile JSON (every field optional, strings are verbatim quotes or close
 paraphrases of the source, never inferred):
 
 ```
-{ "gradingWeights": [ { "name", "percent" } ],
+{ "gradingWeights": [ { "name", "percent", "expectedCount"?, "dropLowest"? } ],
   "latePolicy": string, "attendancePolicy": string,
   "examDates": [ { "name", "date"?, "text" } ],
   "officeHours": [ { "who", "when", "where"? } ],
@@ -393,6 +419,16 @@ because the registrar's section list says there is a lab (that's
 source). "name" is the component as the syllabus names it; "gradingBasis",
 "creditUnits" and "notes" are each omitted unless the syllabus states that
 component's own value.
+
+A `gradingWeights` entry's "expectedCount" is the number of items the
+syllabus states that category has ("12 labs", "three midterms" -> 3);
+"dropLowest" is how many of that category's lowest scores the syllabus
+says are dropped ("the lowest two homework grades are dropped" -> 2). Both
+are plain non-negative integers, never inferred, omitted whenever the
+syllabus doesn't state one. Grade Watcher uses these to tell a student
+they're missing an expected item and to apply the syllabus's own drop rule
+when averaging a category, rather than the app guessing either from the
+grades it has actually seen post.
 
 ## `extract-announcement`
 

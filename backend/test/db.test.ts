@@ -15,7 +15,13 @@
 // row, and `catalogNeedsFetch` uses that flag to force a refetch even when
 // the row is otherwise fresh.
 import { strict as assert } from "node:assert";
-import { catalogNeedsFetch, dbRowToCatalogRow, type CatalogCourseDBRow } from "../supabase/functions/_shared/db.ts";
+import {
+  catalogNeedsFetch,
+  dbRowToCatalogRow,
+  profileRowToWire,
+  type CatalogCourseDBRow,
+  type CourseProfileDBRow,
+} from "../supabase/functions/_shared/db.ts";
 
 function baseDBRow(overrides: Partial<CatalogCourseDBRow> = {}): CatalogCourseDBRow {
   return {
@@ -137,4 +143,71 @@ Deno.test("catalogNeedsFetch: true for an ordinarily-stale current-shaped row", 
     }),
   );
   assert.equal(catalogNeedsFetch(row, NOW), true);
+});
+
+// ---------------------------------------------------------------------
+// profileRowToWire: normalizing a course_profiles row into a
+// CourseProfileWire. `course_profiles.profile` is jsonb -- same trap as
+// `catalog_courses.components` above -- so these pin down that a legacy or
+// malformed stored value degrades to empty rather than throwing.
+// ---------------------------------------------------------------------
+
+function baseProfileDBRow(overrides: Partial<CourseProfileDBRow> = {}): CourseProfileDBRow {
+  return {
+    course_id: "canvas-course-123",
+    profile: {},
+    updated_at: "2026-09-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+Deno.test("profileRowToWire: maps a full row's gradingWeights and components, dropping components' notes", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: {
+      gradingWeights: [
+        { name: "Labs", percent: 20, expectedCount: 12, dropLowest: 2 },
+        { name: "Final", percent: 40 },
+      ],
+      components: [
+        { name: "Lab", gradingBasis: "Pass/Fail", creditUnits: 0.5, notes: "meets weekly in DRLB" },
+      ],
+    },
+  }));
+
+  assert.equal(wire.courseID, "canvas-course-123");
+  assert.equal(wire.extractedAt, "2026-09-10T12:00:00Z");
+  assert.deepEqual(wire.gradingWeights, [
+    { name: "Labs", percent: 20, expectedCount: 12, dropLowest: 2 },
+    { name: "Final", percent: 40 },
+  ]);
+  assert.deepEqual(wire.components, [{ name: "Lab", gradingBasis: "Pass/Fail", creditUnits: 0.5 }]);
+  assert.ok(!("notes" in wire.components[0]));
+});
+
+Deno.test("profileRowToWire: a legacy row lacking gradingWeights entirely yields []", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: { latePolicy: "24 hours" },
+  }));
+  assert.deepEqual(wire.gradingWeights, []);
+  assert.deepEqual(wire.components, []);
+});
+
+Deno.test("profileRowToWire: a malformed gradingWeights value (not an array) yields [], no throw", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: { gradingWeights: "not an array" },
+  }));
+  assert.deepEqual(wire.gradingWeights, []);
+});
+
+Deno.test("profileRowToWire: a malformed components value (not an array) yields [], no throw", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: { components: { name: "Lab" } },
+  }));
+  assert.deepEqual(wire.components, []);
+});
+
+Deno.test("profileRowToWire: a profile value that isn't a JSON object at all degrades to empty, no throw", () => {
+  const wire = profileRowToWire(baseProfileDBRow({ profile: "not an object" }));
+  assert.deepEqual(wire.gradingWeights, []);
+  assert.deepEqual(wire.components, []);
 });

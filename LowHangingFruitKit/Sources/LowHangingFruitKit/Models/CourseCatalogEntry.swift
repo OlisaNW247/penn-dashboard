@@ -38,6 +38,40 @@ public struct ClassMeeting: Codable, Sendable, Hashable {
     }
 }
 
+/// One registrar component of a course's Canvas footprint — a lecture, lab,
+/// or recitation section — as the server resolves it from the catalog and
+/// the course's own section list. This is a different, coarser thing than
+/// `ClassMeeting`: a `ClassMeeting` is one weekly time slot, while a
+/// `CatalogComponent` is the section-level unit Grade Watcher's exclusion
+/// rule (`GradeSiteExclusion`) cares about — "is *this whole Canvas site* a
+/// zero-credit or pass/fail piece of the course" — so it carries `credits`
+/// and the section ids it covers rather than a schedule.
+public struct CatalogComponent: Sendable, Hashable, Codable {
+    /// Penn's short label for the component type — "LEC", "LAB", "REC" —
+    /// the same vocabulary `ClassMeeting.activity` uses, and for the same
+    /// reason kept as a raw string rather than a closed `enum`: an
+    /// unrecognized future registrar code should still decode.
+    public let activity: String
+    /// Course units this component is worth, when the registrar publishes
+    /// it separately from the course's overall credits — PHYS 0151's lab is
+    /// 0 CU even though the course as a whole is 1.5. `nil`, not `0`, means
+    /// "the server doesn't know," so `GradeSiteExclusion` never mistakes an
+    /// absent value for an actual zero-credit component.
+    public let credits: Double?
+    /// Registrar section identifiers this component covers, shaped like
+    /// `ClassMeeting.sectionID` ("PHYS-0151-151") so `component(forSectionID:)`
+    /// can be looked up with the exact string
+    /// `DocumentComponent.siteIdentityComponent(for:in:)` already builds from
+    /// `catalogCode` + "-" + `CourseSummary.section`.
+    public let sectionIDs: [String]
+
+    public init(activity: String, credits: Double? = nil, sectionIDs: [String] = []) {
+        self.activity = activity
+        self.credits = credits
+        self.sectionIDs = sectionIDs
+    }
+}
+
 /// One course from Penn's course catalog, synced down from the backend
 /// (`backend/PROTOCOL.md`'s sync manifest) so the on-device announcement
 /// extractor can resolve "before class" phrasing without ever talking to
@@ -68,23 +102,33 @@ public struct CourseCatalogEntry: Codable, Sendable, Hashable, Identifiable {
     public let title: String
     public let credits: Double?
     public let meetings: [ClassMeeting]
+    /// This course's Canvas-site-relevant components — one per lecture/lab/
+    /// recitation section the registrar lists — synced so
+    /// `GradeSiteExclusion` can tell a zero-credit or pass/fail Canvas site
+    /// apart from the site that actually carries the grade. Decodes with
+    /// `decodeIfPresent` for the same reason `meetings` and `credits` do:
+    /// this field is newer than either of them, and a knowledge-base file a
+    /// student's device already has on disk predates it.
+    public let components: [CatalogComponent]
 
     public init(
         courseID: String,
         catalogCode: String,
         title: String,
         credits: Double? = nil,
-        meetings: [ClassMeeting] = []
+        meetings: [ClassMeeting] = [],
+        components: [CatalogComponent] = []
     ) {
         self.courseID = courseID
         self.catalogCode = catalogCode
         self.title = title
         self.credits = credits
         self.meetings = meetings
+        self.components = components
     }
 
     private enum CodingKeys: String, CodingKey {
-        case courseID, catalogCode, title, credits, meetings
+        case courseID, catalogCode, title, credits, meetings, components
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,5 +138,17 @@ public struct CourseCatalogEntry: Codable, Sendable, Hashable, Identifiable {
         title = try container.decode(String.self, forKey: .title)
         credits = try container.decodeIfPresent(Double.self, forKey: .credits)
         meetings = try container.decodeIfPresent([ClassMeeting].self, forKey: .meetings) ?? []
+        components = try container.decodeIfPresent([CatalogComponent].self, forKey: .components) ?? []
+    }
+
+    /// The component whose `sectionIDs` names this section, or `nil` when
+    /// the server hasn't resolved one (an older catalog sync, or a section
+    /// the registrar's own component list doesn't cover). Exact match, not
+    /// a suffix match like `DocumentComponent.siteIdentityComponent`'s
+    /// `ClassMeeting` lookup — `sectionIDs` is expected to hold the full
+    /// registrar id, not a bare section token, so callers build the same
+    /// full string (`catalogCode` + "-" + section) before calling this.
+    public func component(forSectionID sectionID: String) -> CatalogComponent? {
+        components.first { $0.sectionIDs.contains(sectionID) }
     }
 }

@@ -35,6 +35,7 @@ struct GradeWatcherStoreOverridesTests {
         "gradeWatcherItemOverrides",
         "gradeWatcherModeOverrides",
         "gradeWatcherExcludedCourses",
+        "gradeWatcherCourseCountsChoice",
         "gradeWatcherManualWeights",
         "gradeWatcherSyllabusSchemes",
         "gradeWatcherWatchedCourses",

@@ -247,6 +247,7 @@ extension AppState {
             do {
                 let report = try await collector.run(courses: courses, fetchFully: nil)
                 courseKnowledge = report.knowledge
+                pushGradeWatcherFacts()
                 markCourseKnowledgeSyncVersion()
                 trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
                 trace.collectorErrors = report.errors
@@ -299,15 +300,25 @@ extension AppState {
         // `syncAnnouncements()`'s `CourseKnowledgeBase.catalogEntry(
         // forCourseCode:)` lookup on the very next announcement sync.
         SyncPlanner.applyCatalog(manifest.catalog, to: &withDownloads)
+        // The per-course grading profile (weights, category list, credit
+        // units) another student's device already extracted from this
+        // course's syllabus rides the same manifest — folded in right after
+        // the catalog it's read alongside (`GradeSiteExclusion` and
+        // `GradeWatcherStore.suggestedScheme` both want catalog and profile
+        // together) so a fresh install's Grade Watcher can offer a synced
+        // weighting before it has ever fetched a syllabus itself.
+        SyncPlanner.applyProfiles(manifest.profiles, to: &withDownloads)
         // Saved before the collector runs so its own `store.load()` merge
         // starts from what the manifest just handed down, not from what was
         // on disk before this sync began.
         try? store.save(withDownloads)
         courseKnowledge = withDownloads
+        pushGradeWatcherFacts()
 
         do {
             let report = try await collector.run(courses: courses, fetchFully: Set(plan.coursesToFetch.map(\.courseID)))
             courseKnowledge = report.knowledge
+            pushGradeWatcherFacts()
             markCourseKnowledgeSyncVersion()
             trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
             trace.collectorErrors = report.errors
@@ -401,6 +412,54 @@ extension AppState {
         CourseKnowledgeStore.default().clear()
         courseKnowledge = .empty
         courseKnowledgeNotice = nil
+        pushGradeWatcherFacts()
+    }
+
+    /// Recomputes the two facts Grade Watcher borrows from synced course
+    /// knowledge and hands them to `gradeWatcher`, so its exclusion default
+    /// and syllabus suggestion stay in step with `courseKnowledge` instead of
+    /// trailing it by a refresh cycle:
+    ///
+    ///  - **Automatic exclusions** — course ids the registrar's own catalog
+    ///    data says are not part of "the" grade (a pass/fail lab, a
+    ///    zero-credit recitation riding along on the same code) via
+    ///    `GradeSiteExclusion.isAutomaticallyExcluded`. `GradeWatcherStore`
+    ///    layers the student's own manual choice on top of this — see its
+    ///    doc comment — so recomputing this set here never overwrites a
+    ///    choice the student already made.
+    ///  - **Grading profiles** — the shared weights/category list another
+    ///    student's device already extracted from a course's syllabus and
+    ///    the backend pooled, feeding `GradeWatcherStore.suggestedScheme`.
+    ///
+    /// Called at the end of every `refreshCourseKnowledge` branch that
+    /// assigns `courseKnowledge` (including the one that clears it, just
+    /// above), and once from `init` after `courseKnowledge` is loaded from
+    /// disk, so these facts are present from the very first frame rather
+    /// than waiting on this launch's own sync. Cheap — a scan of this
+    /// launch's Canvas sites, no network or disk I/O of its own — so calling
+    /// it more than the strict minimum within one refresh costs nothing
+    /// worth guarding against.
+    func pushGradeWatcherFacts() {
+        let summaries = canvasCourseSummaries()
+        let idsByCode = canvasCourseIDs()
+        var excluded: Set<String> = []
+        for summary in summaries {
+            let knowledgeSiteIDs = courseKnowledge.courseIDs(forCode: summary.code)
+            let feedSiteIDs = Set(idsByCode.filter { $0.value == summary.code }.keys)
+            let siblingSiteCount = knowledgeSiteIDs.union(feedSiteIDs).count
+            let catalog = courseKnowledge.catalogEntry(forCourseCode: summary.code)
+            let profile = courseKnowledge.gradingProfile(forCourseID: summary.courseID)
+            if GradeSiteExclusion.isAutomaticallyExcluded(
+                summary: summary,
+                siblingSiteCount: siblingSiteCount,
+                catalog: catalog,
+                profile: profile
+            ) {
+                excluded.insert(summary.courseID)
+            }
+        }
+        gradeWatcher.setAutomaticExclusions(excluded)
+        gradeWatcher.setGradingProfiles(courseKnowledge.gradingProfiles)
     }
 
     /// Settings → "delete my class data from lhf's server". Erases this

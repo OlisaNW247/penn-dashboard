@@ -105,7 +105,34 @@ final class GradeWatcherStore: ObservableObject {
         self.expectedCounts = Self.loadExpectedCounts()
         self.itemOverrides = Self.loadItemOverrides()
         self.modeOverrides = Self.loadModeOverrides()
-        self.excludedCourseIDs = Self.loadExcludedCourseIDs()
+
+        // Round-2 migration: round 1 only ever recorded "excluded" as a flat
+        // set (`gradeWatcherExcludedCourses`). Every id in it becomes an
+        // explicit `false` (excluded) choice here — the student had already
+        // said this course doesn't count, and the storage shape changing
+        // underneath them must not silently forget that — and the old key is
+        // then removed so this block is a no-op on every later launch.
+        // Direct property assignments only (no instance-method calls): a
+        // class initializer can't call `self`'s methods until every stored
+        // property has a value, and `excludedCourseIDs` below is one of them.
+        var choice = Self.loadCourseCountsChoice()
+        if let legacy = UserDefaults.lhf.stringArray(forKey: Self.legacyExcludedCourseIDsKey) {
+            for id in legacy where choice[id] == nil {
+                choice[id] = false
+            }
+            UserDefaults.lhf.removeObject(forKey: Self.legacyExcludedCourseIDsKey)
+            if let data = try? JSONEncoder().encode(choice) {
+                UserDefaults.lhf.set(data, forKey: Self.courseCountsChoiceKey)
+            }
+        }
+        self.courseCountsChoice = choice
+        // Populated after construction by `AppState.pushGradeWatcherFacts`
+        // from synced course-catalog data — never persisted, since it's a
+        // pure function of that data and would just go stale sitting in
+        // UserDefaults between syncs.
+        self.automaticExclusions = []
+        self.gradingProfiles = [:]
+        self.excludedCourseIDs = Set(choice.compactMap { $0.value ? nil : $0.key })
     }
 
     func isWatching(_ courseID: String) -> Bool {
@@ -580,17 +607,57 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var modeOverrides: [String: GradingMode] = [:]
     private static let modeOverridesKey = "gradeWatcherModeOverrides"
 
-    /// Courses the student has said do NOT count toward "the" grade or the
-    /// GPA estimate. A pass/fail lab or a zero-credit recitation riding along
-    /// on the same course code is its OWN Canvas gradebook, graded on its own
+    /// The student's own per-course choice about whether a course counts
+    /// toward "the" grade and the GPA estimate — `true` = counts, `false` =
+    /// excluded. Absence of a course's id here means "no manual choice,"
+    /// which is what leaves room for `automaticExclusions` to apply a
+    /// default. A manual choice always wins over the automatic one, in
+    /// either direction: a student can choose to count a component the
+    /// registrar's catalog data excluded, or exclude one it left in.
+    /// Persisted the same way `manualWeights` is (JSON into UserDefaults) —
+    /// small, non-secret UI preference, not a session credential.
+    @Published private(set) var courseCountsChoice: [String: Bool] = [:]
+    private static let courseCountsChoiceKey = "gradeWatcherCourseCountsChoice"
+
+    /// Round 1's flat exclude set — kept only as the migration source read
+    /// once at init (see `init`'s doc comment there) and then removed.
+    private static let legacyExcludedCourseIDsKey = "gradeWatcherExcludedCourses"
+
+    /// Course ids the registrar's own catalog data says are NOT part of "the"
+    /// grade — a pass/fail lab or a zero-credit recitation riding along on
+    /// the same course code is its OWN Canvas gradebook, graded on its own
     /// scale (often literally pass/fail, which has no percent to average in
     /// at all), and folding its number into the lecture's would misrepresent
-    /// both — a 100% lab shouldn't nudge a 91% lecture up, and a lab with one
-    /// missed check-in shouldn't read as the class tanking. Stored as a
-    /// sorted array purely so the JSON is deterministic; every caller wants
-    /// the `Set` this property publishes.
+    /// both. Computed by `AppState.pushGradeWatcherFacts` from
+    /// `GradeSiteExclusion.isAutomaticallyExcluded` and handed in via
+    /// `setAutomaticExclusions` every sync; never persisted here, since it's
+    /// a pure function of synced data `AppState` already durably caches.
+    /// Applies only where `courseCountsChoice` has no entry for the course —
+    /// see `isCourseExcluded`.
+    @Published private(set) var automaticExclusions: Set<String> = []
+
+    /// This course's shared grading profile — the weights and category list
+    /// another student's device already extracted from a syllabus and the
+    /// backend pooled per Canvas course. Feeds `suggestedScheme(courseID:)`.
+    /// Handed in via `setGradingProfiles` every sync; never persisted for the
+    /// same reason as `automaticExclusions`.
+    @Published private(set) var gradingProfiles: [String: CourseGradingProfile] = [:]
+
+    /// Courses currently excluded from "the" grade and the GPA estimate —
+    /// the manual `false` choices, unioned with the automatic exclusions
+    /// that no manual choice has overridden either way. A `@Published`
+    /// mirror (not a plain computed property) so a course card observing
+    /// only this property, rather than calling `isCourseExcluded` in its
+    /// body, still redraws when either input changes; kept in step by
+    /// `recomputeExcludedCourseIDs`, called from every setter below and,
+    /// during `init`, computed inline instead (see that comment).
     @Published private(set) var excludedCourseIDs: Set<String> = []
-    private static let excludedCourseIDsKey = "gradeWatcherExcludedCourses"
+
+    private func recomputeExcludedCourseIDs() {
+        let manuallyIncluded = Set(courseCountsChoice.compactMap { $0.value ? $0.key : nil })
+        let manuallyExcluded = Set(courseCountsChoice.compactMap { $0.value ? nil : $0.key })
+        excludedCourseIDs = manuallyExcluded.union(automaticExclusions.subtracting(manuallyIncluded))
+    }
 
     /// Sets (or, with `count: nil` or `count < 1`, clears) a hand-typed
     /// expected-item-count override for one category.
@@ -637,15 +704,28 @@ final class GradeWatcherStore: ObservableObject {
         persistModeOverrides()
     }
 
-    /// Marks (or unmarks) one course as excluded from "the" grade and the
-    /// GPA estimate.
+    /// Records the student's own choice about whether one course counts
+    /// toward "the" grade and the GPA estimate. This always wins over
+    /// `automaticExclusions`, in either direction.
     func setCourseExcluded(courseID: String, _ excluded: Bool) {
-        if excluded {
-            excludedCourseIDs.insert(courseID)
-        } else {
-            excludedCourseIDs.remove(courseID)
-        }
-        UserDefaults.lhf.set(excludedCourseIDs.sorted(), forKey: Self.excludedCourseIDsKey)
+        courseCountsChoice[courseID] = !excluded
+        persistCourseCountsChoice()
+        recomputeExcludedCourseIDs()
+    }
+
+    /// Replaces the registrar-derived automatic-exclusion set — called once
+    /// per `AppState.pushGradeWatcherFacts` run, never merged incrementally,
+    /// since the incoming set is already every course's current answer, not
+    /// a delta.
+    func setAutomaticExclusions(_ courseIDs: Set<String>) {
+        automaticExclusions = courseIDs
+        recomputeExcludedCourseIDs()
+    }
+
+    /// Replaces the pooled grading-profile cache. Same "whole set, not a
+    /// delta" shape as `setAutomaticExclusions`, and for the same reason.
+    func setGradingProfiles(_ profiles: [CourseGradingProfile]) {
+        gradingProfiles = Dictionary(profiles.map { ($0.courseID, $0) }, uniquingKeysWith: { _, newest in newest })
     }
 
     func manualExpectedCounts(courseID: String) -> [String: Int] {
@@ -697,8 +777,30 @@ final class GradeWatcherStore: ObservableObject {
         modeOverrides[courseID]
     }
 
+    /// Manual choice wins where one exists; otherwise the registrar-derived
+    /// automatic exclusion applies. Computed directly from the two inputs
+    /// (not read off the `excludedCourseIDs` mirror) so this stays correct
+    /// even if a future edit adds a code path that forgets to call
+    /// `recomputeExcludedCourseIDs`.
     func isCourseExcluded(courseID: String) -> Bool {
-        excludedCourseIDs.contains(courseID)
+        courseCountsChoice[courseID].map { !$0 } ?? automaticExclusions.contains(courseID)
+    }
+
+    /// Why this course currently reads as excluded, for the excluded card's
+    /// copy — `nil` when it isn't excluded at all. "you chose" whenever a
+    /// manual choice exists (even one that happens to match what the
+    /// automatic default would have said), since the honest label is what
+    /// the student actually did, not what the registrar's data would have
+    /// produced on its own.
+    func courseExclusionSource(courseID: String) -> String? {
+        guard isCourseExcluded(courseID: courseID) else { return nil }
+        if courseCountsChoice[courseID] != nil {
+            return "you chose"
+        }
+        if automaticExclusions.contains(courseID) {
+            return "from the registrar"
+        }
+        return nil
     }
 
     /// The "how this is calculated" model behind Grade Watcher's explanation
@@ -754,8 +856,16 @@ final class GradeWatcherStore: ObservableObject {
         return dict
     }
 
-    private static func loadExcludedCourseIDs() -> Set<String> {
-        Set(UserDefaults.lhf.stringArray(forKey: excludedCourseIDsKey) ?? [])
+    private func persistCourseCountsChoice() {
+        guard let data = try? JSONEncoder().encode(courseCountsChoice) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.courseCountsChoiceKey)
+    }
+
+    private static func loadCourseCountsChoice() -> [String: Bool] {
+        guard let data = UserDefaults.lhf.data(forKey: courseCountsChoiceKey),
+              let dict = try? JSONDecoder().decode([String: Bool].self, from: data)
+        else { return [:] }
+        return dict
     }
 
     // MARK: - Syllabus (docs/grades.md §13)
@@ -789,6 +899,37 @@ final class GradeWatcherStore: ObservableObject {
         confirmedCategoryMappings.removeValue(forKey: courseID)
         persistSyllabusSchemes()
         persistConfirmedCategoryMappings()
+    }
+
+    /// A scheme built from this course's pooled `CourseGradingProfile` —
+    /// another student's device already read a syllabus and shared the
+    /// extracted weights server-side — offered as a starting point for a
+    /// course that hasn't had its own syllabus attached yet. `nil` once a
+    /// syllabus IS attached (attached, not merely suggested, always wins:
+    /// this is a suggestion, not a silent override) or when no profile has
+    /// synced for this course. Never applied on its own — see
+    /// `applySuggestedScheme`.
+    func suggestedScheme(courseID: String) -> (scheme: SyllabusGradingScheme, source: SyllabusSource)? {
+        guard syllabusSchemes[courseID] == nil else { return nil }
+        guard let profile = gradingProfiles[courseID],
+              let scheme = SyllabusGradingScheme.from(profile: profile)
+        else { return nil }
+        return (scheme, .sharedProfile)
+    }
+
+    /// Accepts `suggestedScheme(courseID:)` exactly as `attachSyllabus`
+    /// accepts a scheme parsed from a real document — same call, same
+    /// side effects (persists, starts watching) — because from the ledger's
+    /// point of view a synced profile and a freshly parsed syllabus are the
+    /// same kind of fact, just from a different origin. A no-op when there
+    /// is nothing to suggest (already attached, or no synced profile), so a
+    /// stale button tap can never invent a scheme from nothing.
+    func applySuggestedScheme(courseID: String) {
+        guard let suggestion = suggestedScheme(courseID: courseID) else { return }
+        attachSyllabus(
+            AttachedSyllabus(scheme: suggestion.scheme, source: suggestion.source, documentName: nil, attachedAt: Date()),
+            courseID: courseID
+        )
     }
 
     /// This course's syllabus categories matched against its Canvas assignment

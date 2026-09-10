@@ -78,6 +78,16 @@ public enum SyncPlanner {
         knowledge.mergeCatalog(entries)
     }
 
+    /// Applies `SyncManifestResponse.profiles` to the local knowledge base.
+    /// Mirrors `applyCatalog` exactly, and exists for the same reason: the
+    /// manifest response carries `download`, `catalog`, and `profiles` all
+    /// at once, each with its own independent merge key and rule, and
+    /// giving each its own thin wrapper keeps every existing call site of
+    /// the others untouched.
+    public static func applyProfiles(_ profiles: [CourseGradingProfile], to knowledge: inout CourseKnowledgeBase) {
+        knowledge.mergeGradingProfiles(profiles)
+    }
+
     /// Builds the upload half of the manifest exchange: only documents the
     /// server doesn't already have byte-for-byte (matched by id *and*
     /// `contentHash`, so an edited document re-uploads even though its id

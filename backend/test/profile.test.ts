@@ -182,3 +182,45 @@ Deno.test("profileSourceHash is a 64-character hex sha-256 digest", async () => 
   const hash = await profileSourceHash([{ id: "1", content_hash: "h1" }]);
   assert.match(hash, /^[0-9a-f]{64}$/);
 });
+
+// ---------------------------------------------------------------------
+// gradingWeights: expectedCount / dropLowest
+// ---------------------------------------------------------------------
+
+Deno.test("parseProfile accepts expectedCount and dropLowest as non-negative integers", () => {
+  const profile = parseProfile(JSON.stringify({
+    gradingWeights: [{ name: "Labs", percent: 20, expectedCount: 12, dropLowest: 2 }],
+  }));
+  assert.deepEqual(profile.gradingWeights, [{ name: "Labs", percent: 20, expectedCount: 12, dropLowest: 2 }]);
+});
+
+Deno.test("parseProfile drops expectedCount/dropLowest when omitted, keeping the rest of the entry", () => {
+  const profile = parseProfile(JSON.stringify({
+    gradingWeights: [{ name: "Final", percent: 40 }],
+  }));
+  assert.deepEqual(profile.gradingWeights, [{ name: "Final", percent: 40 }]);
+  assert.ok(profile.gradingWeights);
+  assert.ok(!("expectedCount" in profile.gradingWeights[0]));
+  assert.ok(!("dropLowest" in profile.gradingWeights[0]));
+});
+
+Deno.test("parseProfile drops a negative expectedCount, keeping the rest of the entry", () => {
+  const profile = parseProfile(JSON.stringify({
+    gradingWeights: [{ name: "Labs", percent: 20, expectedCount: -1 }],
+  }));
+  assert.deepEqual(profile.gradingWeights, [{ name: "Labs", percent: 20 }]);
+});
+
+Deno.test("parseProfile drops a fractional dropLowest, keeping the rest of the entry", () => {
+  const profile = parseProfile(JSON.stringify({
+    gradingWeights: [{ name: "Homework", percent: 15, dropLowest: 1.5 }],
+  }));
+  assert.deepEqual(profile.gradingWeights, [{ name: "Homework", percent: 15 }]);
+});
+
+Deno.test("parseProfile drops a string expectedCount, keeping the rest of the entry", () => {
+  const profile = parseProfile(JSON.stringify({
+    gradingWeights: [{ name: "Quizzes", percent: 10, expectedCount: "twelve" }],
+  }));
+  assert.deepEqual(profile.gradingWeights, [{ name: "Quizzes", percent: 10 }]);
+});

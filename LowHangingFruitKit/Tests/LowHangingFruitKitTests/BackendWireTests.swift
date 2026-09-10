@@ -278,6 +278,43 @@ struct BackendWireTests {
         #expect(entry.id == "1234")
     }
 
+    @Test("CourseCatalogEntry decodes without a components key, defaulting to empty (old server or old on-disk JSON)")
+    func catalogEntryDecodesWithoutComponents() throws {
+        let json = #"{"courseID":"1234","catalogCode":"PHYS-0151","title":"Intro to Physics"}"#
+        let entry = try BackendJSON.decoder().decode(CourseCatalogEntry.self, from: Data(json.utf8))
+        #expect(entry.components.isEmpty)
+    }
+
+    @Test("CourseCatalogEntry decodes present components, including a zero-credit lab")
+    func catalogEntryDecodesComponents() throws {
+        let json = """
+        {"courseID":"1234","catalogCode":"PHYS-0151","title":"Intro to Physics",
+         "components":[
+           {"activity":"LEC","credits":1.0,"sectionIDs":["PHYS-0151-151"]},
+           {"activity":"LAB","credits":0,"sectionIDs":["PHYS-0151-401"]}
+         ]}
+        """
+        let entry = try BackendJSON.decoder().decode(CourseCatalogEntry.self, from: Data(json.utf8))
+        #expect(entry.components.count == 2)
+        #expect(entry.components.first { $0.activity == "LAB" }?.credits == 0)
+    }
+
+    @Test("CourseCatalogEntry.component(forSectionID:) finds the component naming that section")
+    func componentForSectionID() {
+        let entry = CourseCatalogEntry(
+            courseID: "1234",
+            catalogCode: "PHYS-0151",
+            title: "Intro to Physics",
+            components: [
+                CatalogComponent(activity: "LEC", credits: 1.0, sectionIDs: ["PHYS-0151-151"]),
+                CatalogComponent(activity: "LAB", credits: 0, sectionIDs: ["PHYS-0151-401"]),
+            ]
+        )
+        #expect(entry.component(forSectionID: "PHYS-0151-401")?.activity == "LAB")
+        #expect(entry.component(forSectionID: "PHYS-0151-151")?.credits == 1.0)
+        #expect(entry.component(forSectionID: "PHYS-0151-999") == nil)
+    }
+
     // MARK: - ExtractedAssignmentWire.kind / taskKind
 
     @Test("ExtractedAssignmentWire.taskKind defaults to .submission when kind is absent")

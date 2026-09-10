@@ -237,6 +237,57 @@ struct CourseKnowledgeBaseTests {
         #expect(base.catalogEntry(forCourseCode: "PHYS 151") == nil)
     }
 
+    // MARK: - gradingProfiles
+
+    @Test("decoding legacy JSON with no gradingProfiles key still loads, with gradingProfiles empty")
+    func decodesLegacyJSONWithoutGradingProfiles() throws {
+        let json = """
+        {"courses":[{"courseID":"1","code":"CIS 1","name":"CIS 1","url":null}],"documents":[]}
+        """
+        let base = try JSONDecoder().decode(CourseKnowledgeBase.self, from: Data(json.utf8))
+        #expect(base.gradingProfiles.isEmpty)
+        #expect(base.courses.count == 1)
+    }
+
+    @Test("CourseKnowledgeBase.gradingProfiles round-trips through JSON")
+    func gradingProfilesRoundTrip() throws {
+        let profile = CourseGradingProfile(
+            courseID: "1234",
+            weights: [CourseGradingProfile.Weight(name: "Final", percent: 100)],
+            components: [CourseGradingProfile.Component(name: "Lecture")],
+            extractedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let base = CourseKnowledgeBase(gradingProfiles: [profile])
+        let data = try JSONEncoder().encode(base)
+        let decoded = try JSONDecoder().decode(CourseKnowledgeBase.self, from: data)
+        #expect(decoded.gradingProfiles == [profile])
+    }
+
+    @Test("mergeGradingProfiles upserts by courseID and never removes an existing entry")
+    func mergeGradingProfilesUpserts() {
+        let old = CourseGradingProfile(courseID: "1", weights: [], components: [], extractedAt: Date(timeIntervalSince1970: 0))
+        let new = CourseGradingProfile(courseID: "1", weights: [CourseGradingProfile.Weight(name: "Final", percent: 100)], components: [], extractedAt: Date(timeIntervalSince1970: 1))
+        let other = CourseGradingProfile(courseID: "2", weights: [], components: [], extractedAt: Date(timeIntervalSince1970: 0))
+        var base = CourseKnowledgeBase(gradingProfiles: [old, other])
+        base.mergeGradingProfiles([new])
+        #expect(base.gradingProfiles.count == 2)
+        #expect(base.gradingProfile(forCourseID: "1")?.weights.first?.name == "Final")
+        #expect(base.gradingProfile(forCourseID: "2") == other)
+
+        // An empty merge is a no-op, not a wipe.
+        base.mergeGradingProfiles([])
+        #expect(base.gradingProfiles.count == 2)
+    }
+
+    @Test("syllabusText(forCourseID:) returns the text of that course's syllabus document")
+    func syllabusTextForCourseID() {
+        let syllabus = CourseDocument(courseID: "1", course: "CIS 1", kind: .syllabus, sourceID: "syllabus", title: "Syllabus", url: nil, text: "Grading: Final 100%.")
+        let page = CourseDocument(courseID: "1", course: "CIS 1", kind: .page, sourceID: "p", title: "Page", url: nil, text: "Not the syllabus.")
+        let base = CourseKnowledgeBase(documents: [syllabus, page])
+        #expect(base.syllabusText(forCourseID: "1") == "Grading: Final 100%.")
+        #expect(base.syllabusText(forCourseID: "unknown") == nil)
+    }
+
     // MARK: - Split courses spanning several Canvas sites
 
     /// PHYS 0151's lecture and lab are two separate Canvas sites that both

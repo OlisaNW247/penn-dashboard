@@ -15,6 +15,7 @@ import {
   structureBlock,
   type CatalogCourseRow,
 } from "../supabase/functions/_shared/catalog.ts";
+import { dbRowToCatalogRow, type CatalogCourseDBRow } from "../supabase/functions/_shared/db.ts";
 
 const FIXTURE_PATH = new URL("./fixtures/penn-labs-phys-0151.json", import.meta.url);
 
@@ -481,6 +482,56 @@ Deno.test("catalogEntryWire: a legacy-shaped row (component missing meetings ent
 
   const wire = catalogEntryWire(legacyRow, "some-canvas-id");
   assert.deepEqual(wire.meetings, []);
+});
+
+Deno.test("catalogEntryWire: components carries activity/credits/sectionIDs straight from the row's own components", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const wire = catalogEntryWire(row, "canvas-course-123");
+  assert.equal(wire.components.length, 2);
+
+  const [lecture, lab] = wire.components;
+  assert.equal(lecture.activity, "LEC");
+  assert.equal(lecture.credits, 1.5);
+  assert.deepEqual(lecture.sectionIDs, ["PHYS-0151-401", "PHYS-0151-402"]);
+
+  assert.equal(lab.activity, "LAB");
+  // Fixture: every LAB section states 0.0 credits -- a real, stated zero,
+  // not an absence -- see the equivalent parsePennLabsCourse test above.
+  assert.equal(lab.credits, 0);
+  assert.deepEqual(lab.sectionIDs, ["PHYS-0151-151", "PHYS-0151-152", "PHYS-0151-153"]);
+});
+
+Deno.test("catalogEntryWire: a legacy row (component missing credits entirely) normalizes via dbRowToCatalogRow to credits: null", () => {
+  // Shaped like a Postgres row whose component never had a credits value
+  // recorded -- distinct from a component that explicitly states 0 -- so
+  // `wire.components[].credits` must come back `null`, not `0` or
+  // `undefined`.
+  const legacyComponents = [
+    { activity: "LAB", label: "Lab", sectionCount: 1, sectionIDs: ["PHYS-0151-151"] },
+  ] as unknown as CatalogCourseDBRow["components"];
+
+  const dbRow: CatalogCourseDBRow = {
+    catalog_code: "PHYS-0151",
+    semester: "2026C",
+    title: "Principles II",
+    description: "",
+    credits: 1.5,
+    prerequisites: "",
+    crosslistings: [],
+    grade_modes: [],
+    attributes: [],
+    components: legacyComponents,
+    source: "penn-labs",
+    fetched_at: "2026-09-07T12:00:00Z",
+    syllabus_url: null,
+  };
+
+  const row = dbRowToCatalogRow(dbRow);
+  const wire = catalogEntryWire(row, "canvas-course-123");
+  assert.equal(wire.components.length, 1);
+  assert.equal(wire.components[0].credits, null);
+  assert.deepEqual(wire.components[0].sectionIDs, ["PHYS-0151-151"]);
 });
 
 // ---------------------------------------------------------------------

@@ -93,6 +93,19 @@ struct GradeCourseCardView: View {
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }
 
+    /// "not counted toward your grade", plus a short honesty suffix saying
+    /// whether the registrar's own catalog data made that call or the
+    /// student did (`GradeWatcherStore.courseExclusionSource`) — a course
+    /// hidden for its own reason (pass/fail lab) should not read identically
+    /// to one the student excluded by hand, since the second is reversible
+    /// in a way the first usually isn't.
+    private var excludedCaption: String {
+        guard let source = store.courseExclusionSource(courseID: courseID) else {
+            return "not counted toward your grade"
+        }
+        return "not counted toward your grade \u{00b7} \(source)"
+    }
+
     /// Compact card body for a course excluded from the grade math (docs/
     /// grades.md — the pass/fail lab site must not read as the lecture).
     private var excludedHeader: some View {
@@ -101,7 +114,7 @@ struct GradeCourseCardView: View {
                 .font(.lhfSans(9, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(Color.v2CourseCode)
-            Text("not counted toward your grade")
+            Text(excludedCaption)
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2DateText)
             Button {

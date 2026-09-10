@@ -790,6 +790,17 @@ final class AppState: ObservableObject {
         #endif
 
         refreshCanvasSessionExpiredState()
+
+        // Seeds Grade Watcher's automatic-exclusion set and shared-syllabus
+        // profiles from whatever `courseKnowledge` survived from the
+        // previous session (loaded above, before `gradeWatcher` even
+        // existed), so a pass/fail lab reads as excluded and a pooled
+        // syllabus weighting is offered from the very first frame — before
+        // this launch's own `refreshCourseKnowledge()` has had a chance to
+        // run. Placed at the very end of `init`: it reads `canvasItems`,
+        // `enrolledCanvasCourses`, and `coursePreferences`, all of which are
+        // only fully seeded by the blocks above.
+        pushGradeWatcherFacts()
     }
 
     /// One-time-per-launch (but idempotent, and safe to re-run every launch)

@@ -38,7 +38,7 @@ export const PROFILE_INSTRUCTIONS: string = [
   + `typical value for a Penn course; every string you emit must be a `
   + `verbatim quote or a close paraphrase of text that actually appears in `
   + `the source:\n`
-  + `{ "gradingWeights": [ { "name", "percent" } ],\n`
+  + `{ "gradingWeights": [ { "name", "percent", "expectedCount"?, "dropLowest"? } ],\n`
   + `  "latePolicy": string, "attendancePolicy": string,\n`
   + `  "examDates": [ { "name", "date"?, "text" } ],\n`
   + `  "officeHours": [ { "who", "when", "where"? } ],\n`
@@ -51,6 +51,15 @@ export const PROFILE_INSTRUCTIONS: string = [
   `"percent" is a plain number (12.5, not "12.5%"). "date" fields are ISO `
   + `8601 dates when the source gives an exact date, omitted otherwise --`
   + ` never guess a date from a vague reference like "midterm week".`,
+
+  `"expectedCount" on a "gradingWeights" entry is the number of items the `
+  + `syllabus says that category has -- "12 labs" or "three midterms" -> 3 `
+  + `-- omitted whenever the syllabus doesn't state a count; never infer `
+  + `one from a schedule or a guess at how many weeks are left in the `
+  + `semester. "dropLowest" is how many of that category's lowest scores `
+  + `the syllabus says are dropped -- "the lowest two homework grades are `
+  + `dropped" -> 2 -- omitted whenever the syllabus states no drop rule for `
+  + `that category. Both are plain integers, never a fraction or a string.`,
 
   `"components" is for a course that is more than one thing under one `
   + `syllabus -- a lecture with a separate lab or recitation graded on its `
@@ -154,6 +163,20 @@ export function selectProfileInput(
 export interface GradingWeight {
   name: string;
   percent: number;
+  /** The number of items in this category the syllabus states -- "12
+   *  labs", "three midterms" -> 3 -- so Grade Watcher can tell a student
+   *  they're missing a grade rather than only reacting once every item has
+   *  already posted. Omitted, never guessed, when the syllabus doesn't
+   *  give a count (see `PROFILE_INSTRUCTIONS`); only accepted from the
+   *  model as a finite non-negative integer (`sanitizeProfile`), since a
+   *  fractional or negative "count" is not a fact a syllabus can actually
+   *  state. */
+  expectedCount?: number;
+  /** How many of this category's lowest scores the syllabus says are
+   *  dropped -- "the lowest two homework grades are dropped" -> 2. Same
+   *  "omit rather than guess" and finite-non-negative-integer posture as
+   *  `expectedCount`. */
+  dropLowest?: number;
 }
 export interface ExamDate {
   name: string;
@@ -205,6 +228,44 @@ export interface CourseProfile {
   sourceDocumentIDs?: string[];
 }
 
+/** The subset of a component `sync`'s manifest response hands the app --
+ *  `notes` is left off on purpose, matching `CourseProfileWire`'s own
+ *  narrower purpose (offering Grade Watcher a suggested scheme, not
+ *  reproducing the whole extracted profile); the full `ProfileComponent`
+ *  (with `notes`) is still what `ask`'s prompt reads server-side. */
+export interface CourseProfileWireComponent {
+  name: string;
+  gradingBasis?: string;
+  creditUnits?: number;
+}
+
+/**
+ * One course's extracted profile as `sync`'s manifest response hands it to
+ * the app (see PROTOCOL.md's "sync" section) -- distinct from
+ * `CourseProfile` above, which is the full shape `extract-profile` stores
+ * (also carrying `latePolicy`, `examDates`, `officeHours`, `contacts`,
+ * `textbooks`, `keyPolicies`, `sourceDocumentIDs`, none of which Grade
+ * Watcher's "offer this scheme" use needs or should have to parse). Built
+ * by `_shared/db.ts`'s `selectProfileWiresForCourses`, one per manifest
+ * course that has a `course_profiles` row -- a course with none simply
+ * contributes nothing, the same "missing is not an error" posture
+ * `CatalogEntryWire` takes. `gradingWeights`/`components` default to `[]`
+ * (never omitted, unlike the optional fields on `CourseProfile` itself)
+ * so the app never has to null-check them, and a legacy or malformed
+ * stored `profile` jsonb value normalizes to those same empty defaults
+ * rather than throwing -- see `selectProfileWiresForCourses`'s doc comment
+ * for why reusing `sanitizeProfile` at read time is what makes that true
+ * for free. The app treats every field here as a *suggestion*: it offers
+ * `gradingWeights` to Grade Watcher as a starting scheme, never auto-
+ * applies it.
+ */
+export interface CourseProfileWire {
+  courseID: string;
+  gradingWeights: GradingWeight[];
+  components: CourseProfileWireComponent[];
+  extractedAt: string;
+}
+
 /**
  * Parses the model's response text into a `CourseProfile`. Tolerant of a
  * ```json fenced block despite `PROFILE_INSTRUCTIONS` asking for bare JSON
@@ -250,6 +311,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** `expectedCount`/`dropLowest` are each a *count* -- a syllabus can state
+ *  "12 labs" or "drop the lowest 2", never "12.5 labs" or "drop the lowest
+ *  -1" -- so, unlike `percent` (`isFiniteNumber`, any finite number), these
+ *  are accepted only as a finite, non-negative, whole number; anything else
+ *  (a fraction, a negative, a string, `NaN`) is dropped by the caller
+ *  rather than coerced, per this file's usual "drop the field, not the
+ *  whole object" discipline. */
+function isFiniteNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+}
+
 /** Maps every element of `value` that is a plain object through `mapItem`,
  *  drops elements `mapItem` rejects (returns `undefined` for) or that
  *  aren't objects to begin with, and returns `undefined` -- not an empty
@@ -267,13 +339,29 @@ function sanitizeArray<T>(
   return items.length > 0 ? items : undefined;
 }
 
-function sanitizeProfile(raw: Record<string, unknown>): CourseProfile {
+// Exported (unlike most of this file's internal helpers) so `db.ts`'s
+// `selectProfileWiresForCourses` can reuse it directly as the normalizer
+// for a `course_profiles.profile` value read back from Postgres -- the
+// same jsonb-outlives-the-type-that-wrote-it trap `dbRowToCatalogRow`
+// exists to close for `catalog_courses.components` (see CLAUDE.md).
+// `sanitizeProfile` already tolerates every shape of "this isn't what we'd
+// write today" a stored `profile` jsonb value could contain: a field of
+// the wrong type is dropped, a field whose array value isn't actually an
+// array comes back `undefined` (`sanitizeArray`'s `Array.isArray` guard),
+// and there is nothing here that reads a model response specifically --
+// it is a pure "raw JSON in, validated `CourseProfile` out" function, so
+// reading with it is exactly as safe as parsing a fresh model response,
+// with no separate normalizer to keep in sync as this file's schema grows.
+export function sanitizeProfile(raw: Record<string, unknown>): CourseProfile {
   const out: CourseProfile = {};
 
-  const gradingWeights = sanitizeArray(raw.gradingWeights, (item) =>
-    isString(item.name) && isFiniteNumber(item.percent)
-      ? { name: item.name, percent: item.percent }
-      : undefined);
+  const gradingWeights = sanitizeArray(raw.gradingWeights, (item) => {
+    if (!isString(item.name) || !isFiniteNumber(item.percent)) return undefined;
+    const weight: GradingWeight = { name: item.name, percent: item.percent };
+    if (isFiniteNonNegativeInteger(item.expectedCount)) weight.expectedCount = item.expectedCount;
+    if (isFiniteNonNegativeInteger(item.dropLowest)) weight.dropLowest = item.dropLowest;
+    return weight;
+  });
   if (gradingWeights) out.gradingWeights = gradingWeights;
 
   if (isString(raw.latePolicy)) out.latePolicy = raw.latePolicy;
