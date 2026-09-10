@@ -91,6 +91,10 @@ struct AssistantView: View {
     /// 0 at rest, 1 fully detached — the picked chip's `PersimmonMark` reads
     /// this the same way the send button's does.
     @State private var pickedDetach: Double = 0
+    /// The keyboard shortens the safe content area while the composer is
+    /// focused. Keep the tree on the resting canvas captured before that
+    /// happens so the artwork does not visibly shrink as a question is typed.
+    @State private var restingTreeSize: CGSize?
     @FocusState private var composerFocused: Bool
 
     private let tree = TreeGeometry()
@@ -142,18 +146,36 @@ struct AssistantView: View {
                     .padding(.horizontal, 22)
 
                 GeometryReader { geo in
+                    let treeSize = restingTreeSize ?? geo.size
+
                     ZStack(alignment: .topLeading) {
                         TreeBackdrop(geometry: tree, wash: wash)
-                            .frame(width: geo.size.width, height: geo.size.height)
+                            .frame(width: treeSize.width, height: treeSize.height)
                             .animation(.easeInOut(duration: 0.55), value: conversation.isFresh)
 
-                        if conversation.isFresh {
+                        if conversation.isFresh && !composerFocused {
                             hangingSuggestions(in: geo.size)
                                 .transition(.opacity.combined(with: .offset(y: -14)))
-                        } else {
+                        } else if !conversation.isFresh {
                             transcript
                                 .transition(.opacity)
                         }
+                    }
+                    // The tree deliberately keeps its pre-keyboard size, but
+                    // its layout container still has to contract so the
+                    // bottom safe-area inset can lift the composer above the
+                    // keyboard. Crop the overflow instead of letting the
+                    // oversized backdrop displace or cover the input field.
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                    .clipped()
+                    .onAppear {
+                        restingTreeSize = geo.size
+                    }
+                    .onChange(of: geo.size) { _, newSize in
+                        // Adapt to genuine layout changes such as rotation,
+                        // but ignore the temporary contraction from typing.
+                        guard !composerFocused else { return }
+                        restingTreeSize = newSize
                     }
                 }
             }
@@ -185,26 +207,13 @@ struct AssistantView: View {
 
     // MARK: Title
 
-    /// Present only on the empty state. Once there is a transcript the screen
-    /// needs every point of height it can get, and the back button in the nav
-    /// bar already says where you are.
-    @ViewBuilder
     private var titleBlock: some View {
-        if conversation.isFresh {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("the tree")
-                    .font(.lhfSerif(38))
-                    .foregroundStyle(Color.v2Ink)
-                Text("your syllabi, deadlines and announcements — in one place, in plain language.")
-                    .font(.lhfSans(14))
-                    .foregroundStyle(Color.v2DateText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.trailing, 40)
-            }
+        Text("the tree")
+            .font(.lhfSerif(38))
+            .foregroundStyle(Color.v2Ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
             .padding(.bottom, 8)
-        }
     }
 
     // MARK: The fruit on the tree
@@ -601,7 +610,7 @@ struct AssistantView: View {
         return [
             Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
             Suggestion(prompt: "when's my next exam?"),
-            Suggestion(prompt: "what am i actually missing right now?"),
+            Suggestion(prompt: "where is my physics class?"),
             Suggestion(prompt: "how much is the \(code(1)) final worth?"),
         ]
     }
