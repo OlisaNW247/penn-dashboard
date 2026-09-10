@@ -246,18 +246,24 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         /// folded into "HomeWorks") -- empty when there's no map, or when
         /// this category came straight off one Canvas group with no folding.
         /// Feeds `GradeExplanation.CategoryLine.groupsText`.
-        public let canvasGroupNames: [String] = []
+        // `var`, not `let`, on every defaulted field below: Swift leaves a
+        // `let` with an initial value OUT of the synthesized memberwise
+        // initializer entirely, so the engine's construction sites that pass
+        // it fail with "extra arguments at positions …" — the one compile
+        // error of the round-3 blind build. A defaulted `var` becomes an
+        // optional parameter, which is what every caller and test assumes.
+        public var canvasGroupNames: [String] = []
         /// True when this category is a Canvas assignment group a
         /// `GradeCategoryMap` left unclaimed -- surfaced as its own
         /// zero-weight category (`GradeRegrouper`) rather than silently
         /// dropped, so "why doesn't this add up to what I expect" always has
         /// an answer on screen. Always false without a map.
-        public let isUnmapped: Bool = false
+        public var isUnmapped: Bool = false
         /// Items placed in this category by `GradeCategoryMap
         /// .itemAssignments` rather than by their Canvas group's ordinary
         /// fold -- e.g. an attendance item pulled out of "Problem Sets" into
         /// "Attendance/Participation". Always empty without a map.
-        public let movedItemIDs: Set<String> = []
+        public var movedItemIDs: Set<String> = []
 
         /// The category's own grade in percent, or nil when nothing scored
         /// carries possible points (extra-credit-only guards divide-by-zero).
@@ -321,7 +327,7 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
     /// category," not "100%" on the headline. nil the instant anything
     /// outside an attendance-named category has been scored, at which point
     /// `currentPercent` resumes reporting normally.
-    public let attendanceOnlyPercent: Double? = nil
+    public var attendanceOnlyPercent: Double? = nil
     /// Non-zero-weight categories (weighted mode only; input order) whose
     /// own `semesterDecidedFraction` is nil because `expectedCount` itself
     /// is unknown -- the reason the top-level `semesterDecidedFraction` is
@@ -331,5 +337,5 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
     /// yet contributes 0, not nil, to the top-level estimate (docs/grades.md
     /// §14.2) and so never appears here even while it's silently sitting at
     /// 0% decided. Always empty in points mode.
-    public let categoriesMissingExpectedCount: [String] = []
+    public var categoriesMissingExpectedCount: [String] = []
 }
