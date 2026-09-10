@@ -1124,6 +1124,26 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(value, forKey: Self.canvasSessionConfirmedDeadKey)
     }
 
+    /// Test seam: flips the in-memory `canvasSessionConfirmedDead` WITHOUT
+    /// the persisted copy, so a test can make `canvasSessionExpired` (and
+    /// with it `canUseGradeWatcher`) read true for one `AppState` instance
+    /// only. `FirstLaunchHoldDashboardTests` used to seed the persisted flag
+    /// through `UserDefaults.lhf` instead, which looked hermetic -- it backed
+    /// the key up and restored it -- and was not: `UserDefaults.lhf` is
+    /// process-wide under `swift test`, suites run in parallel, and every
+    /// `AppState.init` in any other suite that landed inside that window
+    /// read a confirmed-dead Canvas session, engaged the first-launch hold,
+    /// and hid its fixtures' overdue items. Ten assertions in four unrelated
+    /// suites (dedup, Done tab, ledger scenarios, the cookie store) failed
+    /// at once on 2026-09-10 with no grade code in their stacks; two green
+    /// runs before that were scheduling luck. A memory-only seam cannot leak
+    /// across suites. Deliberately not a parameter on `init`: production
+    /// callers have no business choosing this, and the one write path above
+    /// stays the only one that persists.
+    func forceCanvasSessionConfirmedDeadForTesting() {
+        canvasSessionConfirmedDead = true
+    }
+
     /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
     /// on its appear, cleared on its disappear. Not `@Published`: nothing
     /// renders off this, it exists purely as a guard `CanvasSessionRenewer`

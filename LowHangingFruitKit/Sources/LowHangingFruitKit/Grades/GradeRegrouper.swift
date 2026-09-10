@@ -54,8 +54,23 @@ public enum GradeRegrouper {
         var itemsByCategoryID: [String: [GradeItem]] = [:]
         for category in map.categories { itemsByCategoryID[category.id] = [] }
 
+        // Every Canvas group the map never claimed is registered up front,
+        // items or not. Registering a group only when one of its items
+        // reached the passthrough branch below looked equivalent and was
+        // not: "Imported Assignments" on the real PHYS 0151 site is an
+        // empty group early in the term, and an empty unclaimed group then
+        // vanished from the output entirely -- no zero-weight entry, no
+        // `unmappedGroupIDs` mention, nothing for the editor's "needs a
+        // home" list to show. The contract above is that the map's
+        // silence about a group is always visible; a group with nothing
+        // in it yet is exactly the one a student has had no chance to
+        // notice, so it is the one that most needs to be listed.
         var unmappedGroupItems: [String: [GradeItem]] = [:]
         var unmappedGroupOrder: [String] = []
+        for canvasCategory in canvasCategories where groupIDToCategoryID[canvasCategory.id] == nil {
+            unmappedGroupItems[canvasCategory.id] = []
+            unmappedGroupOrder.append(canvasCategory.id)
+        }
 
         var movedItemIDs: Set<String> = []
         var excludedItemIDs: Set<String> = []
@@ -80,12 +95,9 @@ public enum GradeRegrouper {
                 }
 
                 // Neither the map's group fold nor an item-level exception
-                // claims this item's group — it stays in a passthrough
-                // category named for its original Canvas group.
-                if unmappedGroupItems[canvasCategory.id] == nil {
-                    unmappedGroupItems[canvasCategory.id] = []
-                    unmappedGroupOrder.append(canvasCategory.id)
-                }
+                // claims this item's group — it stays in the passthrough
+                // category (registered above) named for its original Canvas
+                // group.
                 unmappedGroupItems[canvasCategory.id, default: []].append(item)
             }
         }
