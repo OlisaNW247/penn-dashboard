@@ -73,8 +73,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-10): **1068 tests / 105 suites
-green** (plus 4 XCTest scheduler tests), after Grade Watcher round 1
+Baseline on `v5`, verified on a Mac (2026-09-10): **1104 tests / 109 suites
+green** (plus 4 XCTest scheduler tests), after Grade Watcher round 2 (the
+server's syllabus extraction and the registrar's components reach Grade
+Watcher: suggested schemes, automatic exclusion of a zero-credit or
+pass/fail site via `GradeSiteExclusion`, syllabus reuse from the synced
+materials; Deno 278). Before that, 1068/105 after Grade Watcher round 1
 (docs/grades.md §14: semester-aware "decided", per-item/category/course
 overrides with provenance, the "how this is calculated" panel, site labels;
 1,400 blind lines that compiled first time). Before that, 1032/101 the same
