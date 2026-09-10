@@ -419,13 +419,29 @@ struct GradeCourseCardView: View {
 
     // MARK: - Decided-fraction / header text rules (pure, tested — see
     // GradeDecidedTextTests.swift)
+    //
+    // These are `nonisolated` on purpose. A SwiftUI `View`'s members are
+    // main-actor isolated, and under Swift 6 that isolation is enforced at
+    // run time as well as compile time: a closure formed inside an isolated
+    // static (even `{ $0.lowercased() }` inside a `map`) carries the
+    // isolation and traps with `dispatch_assert_queue_fail` when it runs
+    // off the main actor. `GradeDecidedTextTests` runs its cases on the
+    // testing library's own executor, so the first test to reach such a
+    // closure killed the whole `swift test` process with SIGTRAP and no
+    // "Fatal error" line -- the earlier cases in the same suite passed only
+    // because they returned before the closure. The wrong fix is to mark the
+    // test suite `@MainActor`: that hides the trap but leaves pure string
+    // rules pretending they need the UI thread, and the next caller from a
+    // background context (a widget, a notification body) trips it again.
+    // These functions read nothing from the view, so they have no business
+    // being isolated.
 
     /// The fraction the decided bar/caption actually reports: the
     /// syllabus-informed whole-semester share when the engine could compute
     /// one, otherwise the old posted-only share. Shared by
     /// `GradeReportView`'s headline so the card and the full report never
     /// say two different "decided" numbers for the same course.
-    static func decidedFraction(for breakdown: GradeBreakdown) -> Double {
+    nonisolated static func decidedFraction(for breakdown: GradeBreakdown) -> Double {
         breakdown.semesterDecidedFraction ?? breakdown.decidedFraction
     }
 
@@ -438,7 +454,7 @@ struct GradeCourseCardView: View {
     /// "semester share unknown" alone tells a student something is missing
     /// but not what to go do about it; naming the categories turns the
     /// caveat into an instruction.
-    static func decidedText(for breakdown: GradeBreakdown) -> String {
+    nonisolated static func decidedText(for breakdown: GradeBreakdown) -> String {
         let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
         if breakdown.semesterDecidedFraction != nil {
             return "\(percent)% of the semester is decided"
@@ -456,7 +472,7 @@ struct GradeCourseCardView: View {
     /// `GradeReportView.headline`) so the three cases (percent, no scores at
     /// all, attendance-only) are each independently testable without
     /// instantiating SwiftUI (see `GradeDecidedTextTests`).
-    static func headlineText(for breakdown: GradeBreakdown) -> (primary: String, secondary: String?) {
+    nonisolated static func headlineText(for breakdown: GradeBreakdown) -> (primary: String, secondary: String?) {
         if let percent = breakdown.currentPercent {
             return (formatPercent(percent), nil)
         }
@@ -469,7 +485,7 @@ struct GradeCourseCardView: View {
     /// "COURSE NAME" alone, or "COURSE NAME · LAB" when a course code has
     /// several Canvas sites (`AppState.gradeSiteLabel`) and this card needs
     /// to say which one it is.
-    static func headerText(courseName: String, siteLabel: String?) -> String {
+    nonisolated static func headerText(courseName: String, siteLabel: String?) -> String {
         let base = courseName.uppercased()
         guard let siteLabel, !siteLabel.isEmpty else { return base }
         return "\(base) \u{00b7} \(siteLabel.uppercased())"
