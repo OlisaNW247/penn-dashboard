@@ -130,8 +130,9 @@ struct GradeEngineMapTests {
     func semesterDecidedFractionResolvesOnceCountsAreKnown() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas),
-            expectedCounts: ["map:quizzes": 3, "map:homeworks": 8]
+            courseUsesWeights: false, categories: canvas,
+            expectedCounts: ["map:quizzes": 3, "map:homeworks": 8],
+            categoryMap: map(canvas: canvas)
         ))
         #expect(breakdown.categoriesMissingExpectedCount.isEmpty)
         #expect(breakdown.semesterDecidedFraction.map { approx($0, 0.10) } ?? false)
