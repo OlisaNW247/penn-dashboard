@@ -74,8 +74,13 @@ struct FirstLaunchHoldDashboardTests {
 
     /// An overdue `.canvas` item with no URL — this suite's release path is
     /// the ledger's observation history, not a resolved Canvas site id, so
-    /// nothing here needs one.
-    private func overdueItem(id: String = "hold-1") -> Assignment {
+    /// nothing here needs one. The UID is shaped like a real plain Canvas
+    /// assignment UID on purpose: `applySubmissionState` only stamps rows
+    /// whose Canvas assignment id resolves, and with no URL that id can
+    /// only come from the `event-assignment-<id>@…` UID fallback. A bare
+    /// "hold-1" resolves nothing, is skipped by the stamp, and the release
+    /// assertion below can never pass — which is how this test first failed.
+    private func overdueItem(id: String = "event-assignment-777@canvas.upenn.edu") -> Assignment {
         Assignment(
             source: .canvas, sourceID: id, kind: .assignment,
             course: Self.course, title: "PSet 1",
