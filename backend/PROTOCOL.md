@@ -468,6 +468,88 @@ is informational and yields no task, even when it names course material by
 title -- this is the fix for the real failure that turned "The slides
 discussed today have been posted." into an overdue assignment.
 
+## `map-categories`
+
+The problem this solves: Grade Watcher's grading scheme needs to know
+which Canvas assignment *groups* feed which of the syllabus's grading
+categories ("Problem Sets" is 20% -- but which Canvas group, or groups, is
+that?), and a student shouldn't have to build that mapping by hand every
+semester when a classmate's client could just as well have solved the same
+mapping already.
+
+Request `{ "courseID": string, "groups": [ { "id", "name", "items": [
+{ "id", "name", "pointsPossible"?, "submissionTypes"? } ] } ] }` -- Canvas
+assignment-*group* names and their items' names, points possible, and
+submission types **only**. Never a score, a submission, or anything else
+about one student's own work; `pointsPossible` and `submissionTypes` exist
+purely to help the model tell a real graded item from a zero-point
+placeholder or an attendance tool entry. `map-categories/index.ts`'s
+`parseMapCategoriesBody` (`_shared/categoryMap.ts`) rebuilds every
+group/item as a new object naming exactly these fields, so any other key a
+client's JSON happens to carry (a `score`, a `submitted` flag) is never
+read, not merely ignored-but-present -- the same defense-in-depth
+`course_documents` having no `submitted` column already gives principle 2.
+
+Limits, enforced by rejecting the whole request with 400 rather than
+silently truncating it: at most 40 groups, at most 400 items total across
+every group, every group/item name at most 200 characters.
+
+The caller must be enrolled in `courseID` (`is_enrolled`, the same gate
+`discover-websites` uses). When the course has no `course_profiles` row
+yet, or one whose `profile.gradingWeights` is empty -- no syllabus
+extraction has produced grading categories to map onto -- the response is
+`{ "mapping": null }` immediately, with no model call and no quota spent.
+
+Response `{ "mapping": null }` (see above) or:
+
+```
+{ "mapping": {
+    "categories": [ { "name", "canvasGroupIDs": [string], "itemIDs": [string], "expectedCount"? } ],
+    "excludedItemIDs": [string],
+    "reasons": { "<id>": string },
+    "extractedAt": ISO8601,
+    "structureHash": string } }
+```
+
+`categories[].name` is always one of the course's `gradingWeights[].name`
+values verbatim -- a name the model invents is dropped, category and all.
+Every id anywhere in the response (`canvasGroupIDs`, `itemIDs`,
+`excludedItemIDs`, `reasons` keys) is an id the request actually listed;
+an unknown id is dropped silently. An id may appear in at most one
+category -- group ids and item ids each have their own "first category to
+claim it wins" rule, evaluated in `categories`' own array order.
+`expectedCount` survives only as a non-negative integer, omitted
+otherwise. `_shared/categoryMap.ts`'s `sanitizeCategoryMapping` is a pure,
+independently-tested function enforcing all of this; the app treats the
+whole response as a suggestion the student confirms, the same posture it
+already takes toward `sync`'s `profiles.gradingWeights`.
+
+**Cache, per course, shared across every enrolled classmate.** A course's
+assignment-group *structure* (names, points, submission types) is the same
+fact for every student in it, exactly like `course_profiles.profile`
+already is -- so the mapping is cached on that same row, not per student.
+`structureHash` is the first 16 hex characters of a sha-256 digest over the
+request's groups/items sorted by id (order-independent -- the same
+discipline `profileSourceHash` and `buildMessages` already hold their own
+hashes/prompts to), computed by `_shared/categoryMap.ts`'s `structureHash`.
+When a request's own `structureHash` matches `course_profiles.
+category_map_hash`, the stored `category_map` is re-validated against the
+live request's own valid-id/name sets (the same normalize-jsonb-on-read
+discipline `dbRowToCatalogRow`/`profileRowToWire` already apply, per
+CLAUDE.md's jsonb trap) and returned with **no model call and no quota
+spent** -- otherwise the model is called, the sanitized result is stored
+on `course_profiles.category_map`/`category_map_hash`/`category_map_at`
+(`20260910120000_category_map.sql`), and quota is spent exactly once for
+that call.
+
+Quota: `MAP_DAILY_LIMIT` requests per user per UTC day (default 20),
+recorded through the same shared `ask_usage` counters (and the same
+`ASK_MONTHLY_GLOBAL_LIMIT`) `ask`/`extract-profile`/`extract-announcement`
+already write to -- one pool of per-user daily and global monthly figures
+across every model-calling function, not a separate counter per function.
+A cache hit, or a `mapping: null` response, never calls
+`checkAndConsumeQuota` at all.
+
 ## `delete-account`
 
 Request `{}`. Deletes the caller's `enrollments` and `ask_usage` rows and the

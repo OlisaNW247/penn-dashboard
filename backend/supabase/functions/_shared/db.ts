@@ -19,7 +19,7 @@ import {
   type CatalogCourseRow,
   type CatalogEntryWire,
 } from "./catalog.ts";
-import { sanitizeProfile, type CourseProfileWire, type ProfileComponent } from "./profile.ts";
+import { sanitizeProfile, type CourseProfileWire, type GradingWeight, type ProfileComponent } from "./profile.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -637,6 +637,99 @@ export async function selectProfileWiresForCourses(
   return rows
     .map(profileRowToWire)
     .sort((a, b) => a.courseID.localeCompare(b.courseID));
+}
+
+// ---------------------------------------------------------------------
+// Category map cache (supabase/migrations/20260910120000_category_map.sql).
+// See PROTOCOL.md's "map-categories" section and `_shared/categoryMap.ts`
+// for the pure validation/hashing/sanitizing logic this wraps.
+// ---------------------------------------------------------------------
+
+/** What `map-categories/index.ts` needs from one course's `course_profiles`
+ *  row: the syllabus-derived grading weights (to know the category names
+ *  a mapping is even allowed to use, and to build the model prompt), plus
+ *  whatever cached mapping already exists. `profile`/`categoryMap` are
+ *  read as `unknown`, the same "jsonb hands back exactly what was last
+ *  written, not today's type" posture `CourseProfileDBRow.profile` already
+ *  takes -- see `dbRowToCatalogRow`'s and `profileRowToWire`'s doc
+ *  comments for why that discipline matters (CLAUDE.md's jsonb trap). */
+export interface CategoryMapCourseRow {
+  gradingWeights: GradingWeight[];
+  categoryMap: unknown;
+  categoryMapHash: string | null;
+  /** When the cached `categoryMap` was actually computed by the model --
+   *  distinct from "now", which is what a cache-hit response would
+   *  otherwise (wrongly) report as `extractedAt` if this weren't carried
+   *  through from storage. `null` whenever `categoryMap`/`categoryMapHash`
+   *  are also null (no mapping has ever been cached for this course). */
+  categoryMapAt: string | null;
+}
+
+interface CategoryMapCourseDBRow {
+  profile: unknown;
+  category_map: unknown;
+  category_map_hash: string | null;
+  category_map_at: string | null;
+}
+
+/**
+ * Loads the one `course_profiles` row for `courseID`, or `undefined` when
+ * the course has no profile yet -- the same "no syllabus extraction has
+ * ever run for this course" case `map-categories/index.ts` answers with
+ * `{ "mapping": null }` per PROTOCOL.md, without ever reaching the model.
+ * `sanitizeProfile` normalizes `profile` on read for the reason
+ * `profileRowToWire` already documents; `categoryMap`/`categoryMapHash`
+ * are handed back unsanitized here on purpose -- validating a *cached*
+ * mapping needs the current request's own valid-id sets, which this
+ * function has no access to, so that normalization happens in
+ * `map-categories/index.ts` via `sanitizeCategoryMapping`, re-run against
+ * the live request every time a cache hit is served.
+ */
+export async function selectCourseProfileForCategoryMap(
+  client: SupabaseClient,
+  courseID: string,
+): Promise<CategoryMapCourseRow | undefined> {
+  const { data, error } = await client
+    .from("course_profiles")
+    .select("profile, category_map, category_map_hash, category_map_at")
+    .eq("course_id", courseID)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return undefined;
+
+  const row = data as CategoryMapCourseDBRow;
+  const profile = isJsonRecord(row.profile) ? sanitizeProfile(row.profile) : {};
+  return {
+    gradingWeights: profile.gradingWeights ?? [],
+    categoryMap: row.category_map,
+    categoryMapHash: row.category_map_hash,
+    categoryMapAt: row.category_map_at,
+  };
+}
+
+/**
+ * Stores a freshly-computed mapping and the structure hash it answers, on
+ * the course's existing `course_profiles` row. Always an `update`, never
+ * an `upsert`: a call only reaches here once
+ * `selectCourseProfileForCategoryMap` has already found a row for this
+ * course (that's what supplied the `gradingWeights` a mapping needs to
+ * exist at all), so there is always a row to update.
+ */
+export async function storeCategoryMap(
+  client: SupabaseClient,
+  courseID: string,
+  categoryMap: unknown,
+  categoryMapHash: string,
+): Promise<void> {
+  const { error } = await client
+    .from("course_profiles")
+    .update({
+      category_map: categoryMap,
+      category_map_hash: categoryMapHash,
+      category_map_at: new Date().toISOString(),
+    })
+    .eq("course_id", courseID);
+  if (error) throw error;
 }
 
 // ---------------------------------------------------------------------
