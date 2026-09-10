@@ -4525,6 +4525,69 @@ final class AppState: ObservableObject {
             }
     }
 
+    /// "lecture" / "lab" / "recitation" for a Canvas site when its course
+    /// code has more than one site, else `nil`. A course that was never
+    /// split (a single-site "CIS 2400") has nothing to disambiguate, so
+    /// labelling its one card would just be noise — Grade Watcher already
+    /// shows the course name; this exists only for the PHYS-0151-shaped case
+    /// where two cards share a code and a reader needs to tell them apart.
+    ///
+    /// Resolution order, cheapest and most authoritative first:
+    /// 1. The registrar-catalog / site-name identity `DocumentComponent`
+    ///    already computes for exactly this problem (`ask`'s component
+    ///    labelling) — reused here rather than re-implemented so the two
+    ///    features never disagree about which site is the lab.
+    /// 2. A literal scan of this site's own Canvas name for "lab"/
+    ///    "laboratory" or "recitation", for a site identity (1) couldn't
+    ///    place — a course not yet synced into `courseKnowledge` (so no
+    ///    catalog meetings to check) but still visibly named "PHYS 0151 Lab"
+    ///    on Canvas shouldn't go unlabelled just because materials sync
+    ///    hasn't run yet.
+    /// 3. "lecture" by elimination, only when this site's own name says
+    ///    nothing but ANOTHER site sharing the code resolved to lab or
+    ///    recitation by (1) — the common shape where the lecture site's own
+    ///    Canvas name never says "lecture" at all, it's just "PHYS 0151".
+    func gradeSiteLabel(courseID: String) -> String? {
+        let summary: CourseSummary
+        if let known = courseKnowledge.summary(forCourseID: courseID) {
+            summary = known
+        } else if let built = canvasCourseSummaries().first(where: { $0.courseID == courseID }) {
+            summary = built
+        } else {
+            return nil
+        }
+
+        // A code with only one known site anywhere (synced course materials
+        // or this launch's own Canvas feed) has nothing to disambiguate.
+        let knowledgeSiteCount = courseKnowledge.courseIDs(forCode: summary.code).count
+        let feedSiteCount = canvasCourseIDs().values.filter { $0 == summary.code }.count
+        guard knowledgeSiteCount >= 2 || feedSiteCount >= 2 else { return nil }
+
+        if let identity = DocumentComponent.siteIdentityComponent(for: summary, in: courseKnowledge),
+           identity != .general {
+            return identity.label
+        }
+
+        let nameTokens = summary.name.lowercased()
+        if nameTokens.contains("laboratory") || nameTokens.contains("lab") {
+            return "lab"
+        }
+        if nameTokens.contains("recitation") {
+            return "recitation"
+        }
+
+        let otherSiteIDs = courseKnowledge.courseIDs(forCode: summary.code).subtracting([courseID])
+        for otherID in otherSiteIDs {
+            guard let otherSummary = courseKnowledge.summary(forCourseID: otherID),
+                  let otherIdentity = DocumentComponent.siteIdentityComponent(for: otherSummary, in: courseKnowledge)
+            else { continue }
+            if otherIdentity == .lab || otherIdentity == .recitation {
+                return "lecture"
+            }
+        }
+        return nil
+    }
+
     /// Pure merge behind `canvasCourseIDs()` — see that function's doc
     /// comment for why this exists (two Canvas *sites* parsing to one course
     /// *code*) rather than widening the persisted `[code: id]` cache to hold

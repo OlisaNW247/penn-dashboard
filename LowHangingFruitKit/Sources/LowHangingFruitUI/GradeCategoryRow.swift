@@ -22,6 +22,10 @@ struct GradeCategoryRow: View {
     @State private var editText = ""
     @FocusState private var isFieldFocused: Bool
 
+    @State private var isEditingExpectedCount = false
+    @State private var expectedCountText = ""
+    @FocusState private var isExpectedCountFieldFocused: Bool
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
@@ -30,7 +34,7 @@ struct GradeCategoryRow: View {
                         .font(.lhfSans(13, weight: .medium))
                         .foregroundStyle(Color.v2Ink)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("\(formatPoints(category.earned))/\(formatPoints(category.possibleScored)) pts scored \u{00b7} \(category.scoredCount)/\(category.totalCount) items")
+                    Text(gradedText)
                         .font(.lhfSans(10.5))
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
@@ -52,12 +56,22 @@ struct GradeCategoryRow: View {
             }
 
             editingControls
+            expectedCountControls
         }
         .accessibilityElement(children: .combine)
     }
 
     private var weightText: String {
-        category.effectiveWeight.map { "\(formatPoints($0))%" } ?? "-"
+        category.effectiveWeight.map { "\(formatPoints($0))%" } ?? "\u{2014}"
+    }
+
+    /// "2 of 3 posted graded" — mirrors `GradeExplanation.CategoryLine`'s
+    /// wording (the report's explanation panel says the same thing about the
+    /// same category) rather than the old "X/Y pts scored · A/B items" phrasing,
+    /// so a student reading the card and the report isn't asked to reconcile
+    /// two different vocabularies for one number.
+    private var gradedText: String {
+        "\(category.scoredCount) of \(category.totalCount) posted graded"
     }
 
     @ViewBuilder
@@ -121,5 +135,109 @@ struct GradeCategoryRow: View {
         defer { isEditing = false }
         guard let value = Double(editText), value >= 0 else { return }
         store.setManualWeight(courseID: courseID, categoryID: category.id, weight: value)
+    }
+
+    // MARK: - Expected item count this semester (docs/grades.md — the
+    // syllabus-informed "N% of the semester decided" fix). `totalCount` only
+    // ever counts what Canvas has already posted, so a syllabus (or a hand-
+    // typed guess) is the only source for "how many will there eventually
+    // be" -- the number `GradeBreakdown.CategoryResult.semesterDecidedFraction`
+    // is extrapolated against.
+
+    @ViewBuilder
+    private var expectedCountControls: some View {
+        HStack(spacing: 8) {
+            Text("expected this semester")
+                .font(.lhfSans(10.5))
+                .foregroundStyle(Color.v2RingSub)
+
+            if isEditingExpectedCount {
+                // `.numberPad` has no return key (same reason the weight
+                // editor above it uses an explicit save button rather than
+                // `.onSubmit`), so committing needs its own tap target.
+                TextField("count", text: $expectedCountText)
+#if os(iOS)
+                    .keyboardType(.numberPad)
+#endif
+                    .font(.lhfSans(12))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 50)
+                    .focused($isExpectedCountFieldFocused)
+                    .accessibilityLabel("expected item count this semester for \(category.name)")
+
+                Button(action: saveExpectedCount) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.v2SpineGreen)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("save expected count")
+
+                Button {
+                    isEditingExpectedCount = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.v2RingSub)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("cancel editing expected count")
+            } else {
+                Button {
+                    expectedCountText = store.effectiveExpectedCounts(courseID: courseID)[category.id].map(String.init) ?? ""
+                    isEditingExpectedCount = true
+                    isExpectedCountFieldFocused = true
+                } label: {
+                    Label(expectedCountValueText, systemImage: "pencil")
+                        .font(.lhfSans(11, weight: .medium))
+                        .foregroundStyle(Color.v2SpineBlue)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("edit expected item count this semester for \(category.name)")
+
+                if let badge = expectedCountSourceBadge {
+                    Text(badge)
+                        .font(.lhfSans(9, weight: .semibold))
+                        .foregroundStyle(Color.v2CourseCode)
+                }
+
+                // Only a manually-entered count can be "reset" -- a syllabus-
+                // sourced count already came from the source of truth, so
+                // there's nothing above it to fall back to; detaching the
+                // syllabus itself (not this row) is how that goes away.
+                if isManualExpectedCount {
+                    Button {
+                        store.setExpectedCount(courseID: courseID, categoryID: category.id, count: nil)
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.v2RingSub)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("reset expected item count for \(category.name)")
+                }
+            }
+        }
+    }
+
+    private var isManualExpectedCount: Bool {
+        store.manualExpectedCounts(courseID: courseID)[category.id] != nil
+    }
+
+    /// "syllabus" only applies when nothing manual has overridden it -- a
+    /// manual edit always wins display-wise, same as `effectiveExpectedCounts`
+    /// itself prefers the manual value.
+    private var expectedCountSourceBadge: String? {
+        if isManualExpectedCount { return "you edited" }
+        if store.syllabusExpectedCounts(courseID: courseID)[category.id] != nil { return "syllabus" }
+        return nil
+    }
+
+    private var expectedCountValueText: String {
+        store.effectiveExpectedCounts(courseID: courseID)[category.id].map(String.init) ?? "\u{2014}"
+    }
+
+    private func saveExpectedCount() {
+        defer { isEditingExpectedCount = false }
+        guard let value = Int(expectedCountText), value >= 0 else { return }
+        store.setExpectedCount(courseID: courseID, categoryID: category.id, count: value)
     }
 }

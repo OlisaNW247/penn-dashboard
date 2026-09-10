@@ -496,3 +496,71 @@ Tests: `GradeProjectionTests` (14), `SyllabusParserTests` (20),
 `SyllabusMatcherTests` + `SyllabusReconcilerTests` (14). All syllabus fixtures
 are **synthetic** — the rule against committing real Canvas/Gradescope data
 covers course documents too.
+
+---
+
+## 14. Semester-aware "decided", explanations, and edits (addendum, 2026-09-10)
+
+### 14.1 The posted-items trap
+
+A lab site read "63% of your grade is decided" two weeks into term because
+`decidedFraction` (§2, §3, §13.2) divides by `possibleTotal` — the points of
+items Canvas has already posted. Posts roll out over the semester, so the ratio
+climbs artificially. `decidedFraction` keeps its meaning and **is now labelled
+"of what's posted"**; a second figure, `semesterDecidedFraction`, is the honest
+one: how much of the *semester's* graded weight is locked.
+
+### 14.2 Math
+
+Per category `c` with expected count `n_c` (from syllabus or student), posted
+count `p_c`, posted possible `P_c`, scored-raw possible `S_c`:
+```
+expectedPossible_c = (P_c / p_c) · max(n_c, p_c)       (nil when p_c == 0 or n_c unknown)
+semesterDecided_c  = S_c / expectedPossible_c
+```
+Weighted:
+```
+semesterDecided = Σ_c (w_c / Σ w) · semesterDecided_c    (nil if ANY category is nil)
+```
+Points:
+```
+semesterDecided = Σ_c S_c / Σ_c expectedPossible_c        (nil if any category lacks n_c)
+```
+**`max(n_c, p_c)` reasoning:** a syllabus stating 10 labs when 12 are posted is
+stale, not evidence two labs don't count. **Why nil beats a guess:** unknown
+`n_c` means the denominator is guesswork, violating honesty; `decidedFraction`
+already handles partial-knowledge partial-credit contexts (§3).
+
+### 14.3 No grade without something decided
+
+`currentPercent` is nil when `decidedFraction == 0`. A phone report showing
+"100%" beside "0% decided" was rounding of a tiny decided share; the new "1 of
+74 posted graded" wording is the fix, and the nil guard stands.
+
+### 14.4 Overrides (all on-device, UserDefaults.lhf, per course)
+
+| Key | What |
+|---|---|
+| `manualWeights` | Existing. |
+| `expectedCounts` | categoryID → `n_c`. |
+| `itemOverrides` | itemID → `{score?, pointsPossible?, isExcluded}`. Excluded item behaves like `omit_from_final_grade`. Manual score sets `scoreSource == .manual`. |
+| `modeOverrides` | courseID → `"points"` or `"weighted"`. `GradeBreakdown.modeSource` records source. |
+| `excludedCourseIDs` | Canvas sites that don't count (pass/fail, zero-credit lab) stay off GPA; shown as compact cards. |
+
+**Precedence:** student edit > syllabus > Canvas. Edits never change Canvas, never
+leave the phone.
+
+### 14.5 The explanation panel
+
+`GradeExplanation.make(from:canvasScore:)` renders, from breakdown alone: mode +
+source, the formula used, per-category (weight + source badge, "graded/posted ·
+expected", percent, contribution), categories left out until something scores,
+the decided line in one of its two forms, and Canvas's number with delta. **Rule:**
+every figure on a card must trace to a line in this panel.
+
+### 14.6 Site labels
+
+A course code with several Canvas sites labels each card by registrar activity of
+the site's section (lecture / lab / recitation), falling back to the site name.
+Ask reads the engine's effective weights (student edit > syllabus > Canvas), not
+Canvas's raw group weights, so the two features never disagree.

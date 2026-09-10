@@ -82,12 +82,24 @@ extension GradeEngine {
                 }
             )
         }
+        // Every field of the caller's input except `categories` rides along
+        // unchanged. This used to forward only four of them, which was
+        // harmless while `Input` had five; once syllabus weights, expected
+        // counts, item overrides and a forced grading mode existed, a masked
+        // point silently dropped all of them, so a student who switched a
+        // course to points mode saw every earlier sparkline point in weighted
+        // mode and a jump at "today". The line must be computed the way the
+        // headline is, or it explains nothing.
         return Input(
             courseUsesWeights: input.courseUsesWeights,
             categories: maskedCategories,
             manualWeights: input.manualWeights,
             dropLowestOverrides: input.dropLowestOverrides,
-            now: input.now
+            syllabusWeightedCategoryIDs: input.syllabusWeightedCategoryIDs,
+            now: input.now,
+            expectedCounts: input.expectedCounts,
+            itemOverrides: input.itemOverrides,
+            modeOverride: input.modeOverride
         )
     }
 }

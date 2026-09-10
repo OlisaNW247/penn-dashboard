@@ -14,19 +14,41 @@ struct GradeReportView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let courseName: String
+    /// "lecture" / "lab" / "recitation" when this course code has several
+    /// Canvas sites (`AppState.gradeSiteLabel`), else nil. Defaults to nil so
+    /// `ContentView`'s existing call site -- which doesn't know about site
+    /// labels and is out of this change's scope -- keeps compiling unchanged;
+    /// `GradeCourseCardView`'s call site passes its own `siteLabel` through.
+    let siteLabel: String?
 
     @State private var targetPercent: Double?
     @State private var showSyllabusSetup = false
+    @State private var expandedCategoryIDs: Set<String> = []
+    @State private var editingItem: GradeItem?
+    @State private var showResetConfirmation = false
+
+    init(store: GradeWatcherStore, courseID: String, courseName: String, siteLabel: String? = nil) {
+        self.store = store
+        self.courseID = courseID
+        self.courseName = courseName
+        self.siteLabel = siteLabel
+    }
 
     private var breakdown: GradeBreakdown? { store.breakdown(courseID: courseID) }
     private var projection: GradeProjection? { store.projection(courseID: courseID) }
     private var cutoffs: GradeCutoffs { store.cutoffs(courseID: courseID) }
+
+    private var titleText: String {
+        guard let siteLabel, !siteLabel.isEmpty else { return courseName }
+        return "\(courseName) \u{00b7} \(siteLabel)"
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let breakdown, let projection {
                     headline(breakdown)
+                    explanationSection
                     landingSection(projection)
                     targetSection(projection)
                     remainingSection(breakdown, projection)
@@ -40,12 +62,89 @@ struct GradeReportView: View {
             .padding(16)
         }
         .background(Color.v2Bg)
-        .navigationTitle(courseName)
+        .navigationTitle(titleText)
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+        .toolbar { reportMenu }
+        .confirmationDialog(
+            "reset all edits for this class?",
+            isPresented: $showResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("reset all edits", role: .destructive) { resetAllEdits() }
+            Button("cancel", role: .cancel) {}
+        } message: {
+            Text("this clears every score you corrected, expected item count, grading mode choice, and manual weight for this class. canvas\u{2019}s own numbers are unaffected.")
+        }
         .sheet(isPresented: $showSyllabusSetup) {
             SyllabusSetupView(store: store, courseID: courseID, courseName: courseName)
+        }
+        .sheet(item: $editingItem) { item in
+            GradeItemEditorSheet(
+                store: store,
+                courseID: courseID,
+                item: item,
+                currentOverride: store.itemOverrides(courseID: courseID)[item.id]
+            )
+        }
+    }
+
+    // MARK: - Toolbar
+
+    /// Same grade-options menu as the card (`GradeCourseCardView.cardMenu`),
+    /// plus a class-wide "reset all edits" the card doesn't have room for.
+    /// Kept as its own copy rather than factored out: the card's version is
+    /// a plain `Menu` view, this one is a `ToolbarContent` builder, and the
+    /// two SwiftUI result-builder contexts don't share a body type.
+    @ToolbarContentBuilder
+    private var reportMenu: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Toggle("counts toward my grade", isOn: Binding(
+                    get: { !store.isCourseExcluded(courseID: courseID) },
+                    set: { countsNow in store.setCourseExcluded(courseID: courseID, !countsNow) }
+                ))
+
+                Picker("grading", selection: Binding(
+                    get: { store.modeOverride(courseID: courseID) },
+                    set: { store.setModeOverride(courseID: courseID, mode: $0) }
+                )) {
+                    Text("as canvas says").tag(GradingMode?.none)
+                    Text("weighted by category").tag(GradingMode?.some(.weighted))
+                    Text("points").tag(GradingMode?.some(.points))
+                }
+
+                Button(role: .destructive) {
+                    showResetConfirmation = true
+                } label: {
+                    Text("reset all edits for this class")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("grade options for \(courseName)")
+        }
+    }
+
+    /// Clears every student-authored edit for this course, using only the
+    /// existing per-item/per-category setters (`nil` clears each one) --
+    /// there's no bulk-clear entry point on the store, so this iterates the
+    /// override/expected-count/weight dictionaries it already exposes rather
+    /// than needing a new one. Syllabus attachment and Gradescope match
+    /// confirmations are untouched: those aren't corrections to a Canvas
+    /// number, they're the student's own source documents, and "reset my
+    /// edits" shouldn't be read as "forget my syllabus."
+    private func resetAllEdits() {
+        for itemID in store.itemOverrides(courseID: courseID).keys {
+            store.setItemOverride(courseID: courseID, itemID: itemID, override: nil)
+        }
+        for categoryID in store.manualExpectedCounts(courseID: courseID).keys {
+            store.setExpectedCount(courseID: courseID, categoryID: categoryID, count: nil)
+        }
+        store.setModeOverride(courseID: courseID, mode: nil)
+        for categoryID in store.manualWeights(courseID: courseID).keys {
+            store.setManualWeight(courseID: courseID, categoryID: categoryID, weight: nil)
         }
     }
 
@@ -82,8 +181,13 @@ struct GradeReportView: View {
         }
     }
 
+    /// Same "decided" rule as the card (`GradeCourseCardView.decidedFraction`/
+    /// `.decidedText`) -- reused rather than reimplemented so this headline
+    /// and the card can never end up saying two different things about the
+    /// same course's "how much is decided."
     private func decidedBar(_ breakdown: GradeBreakdown) -> some View {
-        let fraction = min(max(breakdown.decidedFraction, 0), 1)
+        let fraction = min(max(GradeCourseCardView.decidedFraction(for: breakdown), 0), 1)
+        let isSemesterKnown = breakdown.semesterDecidedFraction != nil
         return VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -91,17 +195,29 @@ struct GradeReportView: View {
                         .fill(Color.v2RingTrack)
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.v2SpineBlue)
+                        .opacity(isSemesterKnown ? 1 : 0.5)
                         .frame(width: geo.size.width * fraction)
                 }
             }
             .frame(height: 6)
-            Text("\(Int((fraction * 100).rounded()))% of your grade is decided")
+            Text(GradeCourseCardView.decidedText(for: breakdown))
                 .font(.lhfSans(10.5))
                 .foregroundStyle(Color.v2RingSub)
         }
         .padding(.top, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Int((fraction * 100).rounded())) percent of the grade is decided")
+        .accessibilityLabel(GradeCourseCardView.decidedText(for: breakdown))
+    }
+
+    // MARK: - How this is calculated
+
+    @ViewBuilder
+    private var explanationSection: some View {
+        if let explanation = store.explanation(courseID: courseID) {
+            ReportSection(title: "How this is calculated") {
+                GradeExplanationView(explanation: explanation)
+            }
+        }
     }
 
     // MARK: - Where you land
@@ -261,12 +377,15 @@ struct GradeReportView: View {
         ReportSection(title: breakdown.mode == .weighted ? "Categories" : "Points") {
             VStack(spacing: 8) {
                 ForEach(breakdown.categories) { category in
-                    GradeCategoryRow(
-                        store: store,
-                        courseID: courseID,
-                        category: category,
-                        hasGradescopeEarlyScore: hasGradescopeEarlyScore(for: category)
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        GradeCategoryRow(
+                            store: store,
+                            courseID: courseID,
+                            category: category,
+                            hasGradescopeEarlyScore: hasGradescopeEarlyScore(for: category)
+                        )
+                        itemsDisclosure(for: category)
+                    }
                 }
             }
         }
@@ -284,6 +403,102 @@ struct GradeReportView: View {
                 && item.scoreSource == .gradescopeEarly
                 && !category.droppedItemIDs.contains(item.id)
         }
+    }
+
+    // MARK: - Category items (tap to correct one score)
+
+    @ViewBuilder
+    private func itemsDisclosure(for category: GradeBreakdown.CategoryResult) -> some View {
+        let items = store.items(courseID: courseID, categoryID: category.id)
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        toggleCategoryExpanded(category.id)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: expandedCategoryIDs.contains(category.id) ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("\(items.count) \(items.count == 1 ? "item" : "items")")
+                            .font(.lhfSans(10.5, weight: .medium))
+                    }
+                    .foregroundStyle(Color.v2SpineBlue)
+                }
+                .buttonStyle(.plain)
+
+                if expandedCategoryIDs.contains(category.id) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(items) { item in
+                            itemRow(item)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    private func toggleCategoryExpanded(_ categoryID: String) {
+        if expandedCategoryIDs.contains(categoryID) {
+            expandedCategoryIDs.remove(categoryID)
+        } else {
+            expandedCategoryIDs.insert(categoryID)
+        }
+    }
+
+    /// One item row: name, "score / possible" (canvas's own numbers, or the
+    /// override's when the student corrected one), and whatever badges apply.
+    /// Tapping opens `GradeItemEditorSheet` to correct or clear the override.
+    private func itemRow(_ item: GradeItem) -> some View {
+        let override = store.itemOverrides(courseID: courseID)[item.id]
+        return Button {
+            editingItem = item
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.lhfSans(11.5))
+                        .foregroundStyle(Color.v2Ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 4) {
+                        if item.isExcused {
+                            itemBadge("excused")
+                        }
+                        if override?.isExcluded == true {
+                            itemBadge("excluded")
+                        }
+                        if override?.score != nil || override?.pointsPossible != nil {
+                            itemBadge("you edited")
+                        }
+                        if item.scoreSource == .gradescopeEarly {
+                            GradeSourceBadge(source: .gradescopeEarly)
+                        }
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(itemScoreText(item, override: override))
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2RingSub)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(item.name), \(itemScoreText(item, override: override))")
+    }
+
+    private func itemScoreText(_ item: GradeItem, override: GradeItemOverride?) -> String {
+        let score = override?.score ?? item.score
+        let possible = override?.pointsPossible ?? item.pointsPossible
+        guard let score else { return "\u{2014}" }
+        return "\(formatPoints(score)) / \(formatPoints(possible))"
+    }
+
+    /// Matches the dashboard's "nothing to submit" caveat register, same as
+    /// `GradeExplanationView`'s category badges.
+    private func itemBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.lhfSans(9, weight: .semibold))
+            .foregroundStyle(Color.v2CourseCode)
     }
 
     // MARK: - Syllabus

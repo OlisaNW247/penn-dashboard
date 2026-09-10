@@ -191,7 +191,7 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
     /// the quiet part out loud ("PHYS 0151-401 Lab", "PHYS 0151-151
     /// Recitation"), so before giving up and guessing from one document's
     /// text, check the one piece of text that describes the whole site.
-    private static func siteIdentityComponent(for summary: CourseSummary, in knowledge: CourseKnowledgeBase) -> DocumentComponent? {
+    public static func siteIdentityComponent(for summary: CourseSummary, in knowledge: CourseKnowledgeBase) -> DocumentComponent? {
         if let section = summary.section, let catalogEntry = knowledge.catalogEntry(forCourseCode: summary.code) {
             for meeting in catalogEntry.meetings where meeting.sectionID.hasSuffix("-\(section)") {
                 switch meeting.activity {

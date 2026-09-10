@@ -145,18 +145,39 @@ extension AppState {
         var seenNames: Set<String> = []
         var facts: [AssistantContextDocument.GradeCategoryFacts] = []
         for courseID in courseIDs {
-            for category in gradeWatcher.gradeCategories(courseID: courseID) {
+            // An excluded course (a pass/fail lab, a zero-credit recitation)
+            // is not the class as far as "how is this graded" is concerned —
+            // Grade Watcher's own report leaves it out of the number it
+            // shows, and the assistant must describe the same course the
+            // student sees, not a category set nobody is looking at.
+            guard !gradeWatcher.isCourseExcluded(courseID: courseID) else { continue }
+
+            // Read the engine's own resolved breakdown — the same weights,
+            // drop rules, and overrides Grade Watcher's card shows — rather
+            // than Canvas's raw, un-overridden `GradeCategory` values, so
+            // `ask` and Grade Watcher never disagree about how a course is
+            // graded.
+            guard let breakdown = gradeWatcher.breakdown(courseID: courseID) else { continue }
+            let rawByID = Dictionary(
+                uniqueKeysWithValues: gradeWatcher.gradeCategories(courseID: courseID).map { ($0.id, $0) }
+            )
+            for category in breakdown.categories {
                 guard !seenNames.contains(category.name) else { continue }
                 seenNames.insert(category.name)
+                // A category can be marked "drops lowest" either because the
+                // configured rule is still in force (`rawByID`'s
+                // `dropLowest`, Canvas's or a manual override's count) or
+                // because this snapshot actually dropped an item under it
+                // (`droppedItemIDs`) — either is worth telling the model.
+                let rawDropLowest = rawByID[category.id]?.dropLowest ?? 0
                 facts.append(
                     AssistantContextDocument.GradeCategoryFacts(
                         name: category.name,
-                        // Canvas reports weights as percentages already; `nil`
-                        // means the course is graded on raw points, not
-                        // weighted categories, and the document distinguishes
-                        // the two.
-                        weightPercent: category.weight,
-                        dropsLowest: category.dropLowest > 0
+                        // `effectiveWeight` is nil in points mode — the
+                        // course has no weight concept — same meaning `nil`
+                        // carried before this change.
+                        weightPercent: category.effectiveWeight,
+                        dropsLowest: !category.droppedItemIDs.isEmpty || rawDropLowest > 0
                     )
                 )
             }

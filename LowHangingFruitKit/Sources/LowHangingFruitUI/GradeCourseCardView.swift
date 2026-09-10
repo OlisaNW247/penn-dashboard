@@ -10,6 +10,12 @@ struct GradeCourseCardView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let courseName: String
+    /// "lecture" / "lab" / "recitation" when this course code has several
+    /// Canvas sites (`AppState.gradeSiteLabel`), else nil. Distinguishes two
+    /// cards that would otherwise both just say "PHYS 0151" — the real-phone
+    /// report this fixes had a pass/fail lab site reading as if it were the
+    /// letter-graded lecture.
+    let siteLabel: String?
 
     @State private var isExpanded = false
     @State private var isUnmatchedExpanded = false
@@ -48,27 +54,66 @@ struct GradeCourseCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(14)
-                .contentShape(Rectangle())
-                .onTapGesture { toggleExpanded() }
-
-            if breakdown != nil {
-                Divider().padding(.horizontal, 14)
-                reportLink
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-            }
-
-            if isExpanded, let breakdown {
-                Divider().padding(.horizontal, 14)
-                breakdownList(breakdown)
+            if store.isCourseExcluded(courseID: courseID) {
+                // A course the student has said doesn't count toward their
+                // grade (the lab-site fix) gets a compact card: no percent,
+                // no decided bar, no report link -- there is nothing to
+                // compute or drill into for a class whose grade isn't being
+                // tracked, and showing those affordances anyway would imply
+                // otherwise.
+                excludedHeader
                     .padding(14)
+            } else {
+                header
+                    .padding(14)
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleExpanded() }
+
+                if breakdown != nil {
+                    Divider().padding(.horizontal, 14)
+                    reportLink
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                }
+
+                if isExpanded, let breakdown {
+                    Divider().padding(.horizontal, 14)
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let explanation = store.explanation(courseID: courseID) {
+                            GradeExplanationView(explanation: explanation, compact: true)
+                        }
+                        breakdownList(breakdown)
+                    }
+                    .padding(14)
+                }
             }
         }
         .background(Color.v2Card)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+    }
+
+    /// Compact card body for a course excluded from the grade math (docs/
+    /// grades.md — the pass/fail lab site must not read as the lecture).
+    private var excludedHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Self.headerText(courseName: courseName, siteLabel: siteLabel))
+                .font(.lhfSans(9, weight: .medium))
+                .tracking(1.2)
+                .foregroundStyle(Color.v2CourseCode)
+            Text("not counted toward your grade")
+                .font(.lhfSans(13))
+                .foregroundStyle(Color.v2DateText)
+            Button {
+                store.setCourseExcluded(courseID: courseID, false)
+            } label: {
+                Text("count it")
+                    .font(.lhfSans(11, weight: .semibold))
+                    .foregroundStyle(Color.v2SpineBlue)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("count \(courseName) toward your grade")
+        }
     }
 
     /// Route into the full report, plus the watch toggle.
@@ -79,7 +124,7 @@ struct GradeCourseCardView: View {
     private var reportLink: some View {
         HStack(spacing: 10) {
             NavigationLink {
-                GradeReportView(store: store, courseID: courseID, courseName: courseName)
+                GradeReportView(store: store, courseID: courseID, courseName: courseName, siteLabel: siteLabel)
             } label: {
                 HStack(spacing: 4) {
                     Text("full report")
@@ -129,11 +174,12 @@ struct GradeCourseCardView: View {
     private func loadedHeader(_ breakdown: GradeBreakdown) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(courseName.uppercased())
+                Text(Self.headerText(courseName: courseName, siteLabel: siteLabel))
                     .font(.lhfSans(9, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(Color.v2CourseCode)
                 Spacer()
+                cardMenu
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.v2CourseCode)
@@ -147,6 +193,36 @@ struct GradeCourseCardView: View {
                 chipsRow(breakdown)
             }
         }
+    }
+
+    /// The "…" menu: whether this course counts toward the GPA/term summary
+    /// at all, and which grading mode (canvas / weighted / points) the
+    /// engine should use for it. Both are per-course overrides the student
+    /// controls directly, rather than only being reachable by tapping into
+    /// the full report.
+    private var cardMenu: some View {
+        Menu {
+            Toggle("counts toward my grade", isOn: Binding(
+                get: { !store.isCourseExcluded(courseID: courseID) },
+                set: { countsNow in store.setCourseExcluded(courseID: courseID, !countsNow) }
+            ))
+
+            Picker("grading", selection: Binding(
+                get: { store.modeOverride(courseID: courseID) },
+                set: { store.setModeOverride(courseID: courseID, mode: $0) }
+            )) {
+                Text("as canvas says").tag(GradingMode?.none)
+                Text("weighted by category").tag(GradingMode?.some(.weighted))
+                Text("points").tag(GradingMode?.some(.points))
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.v2CourseCode)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("grade options for \(courseName)")
+        .buttonStyle(.plain)
     }
 
     /// Big number + "this week" delta chip + trajectory sparkline
@@ -211,7 +287,17 @@ struct GradeCourseCardView: View {
     }
 
     private func decidedBar(_ breakdown: GradeBreakdown) -> some View {
-        let fraction = min(max(breakdown.decidedFraction, 0), 1)
+        let fraction = min(max(Self.decidedFraction(for: breakdown), 0), 1)
+        // A real-phone report: a pass/fail lab site two weeks into term read
+        // "63% of your grade is decided," because that number was only ever
+        // measured against what Canvas had posted so far (2 of a semester's
+        // 12 labs, both graded). `Self.decidedFraction`/`decidedText` prefer
+        // `semesterDecidedFraction` — the syllabus-informed whole-semester
+        // share — the moment it's known, and fall back to the old
+        // posted-only reading with a caveat when it isn't. The fill is
+        // dimmed in the fallback case so the bar itself hints "this isn't
+        // the honest number yet" even before the caption is read.
+        let isSemesterKnown = breakdown.semesterDecidedFraction != nil
         return VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -219,17 +305,18 @@ struct GradeCourseCardView: View {
                         .fill(Color.v2RingTrack)
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.v2SpineBlue)
+                        .opacity(isSemesterKnown ? 1 : 0.5)
                         .frame(width: geo.size.width * fraction)
                 }
             }
             .frame(height: 6)
 
-            Text("\(Int((fraction * 100).rounded()))% of your grade is decided")
+            Text(Self.decidedText(for: breakdown))
                 .font(.lhfSans(10.5))
                 .foregroundStyle(Color.v2RingSub)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Int((fraction * 100).rounded())) percent of the grade is decided")
+        .accessibilityLabel(Self.decidedText(for: breakdown))
     }
 
     private func chipsRow(_ breakdown: GradeBreakdown) -> some View {
@@ -297,6 +384,39 @@ struct GradeCourseCardView: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: - Decided-fraction / header text rules (pure, tested — see
+    // GradeDecidedTextTests.swift)
+
+    /// The fraction the decided bar/caption actually reports: the
+    /// syllabus-informed whole-semester share when the engine could compute
+    /// one, otherwise the old posted-only share. Shared by
+    /// `GradeReportView`'s headline so the card and the full report never
+    /// say two different "decided" numbers for the same course.
+    static func decidedFraction(for breakdown: GradeBreakdown) -> Double {
+        breakdown.semesterDecidedFraction ?? breakdown.decidedFraction
+    }
+
+    /// "N% of the semester is decided" once `semesterDecidedFraction` is
+    /// known; otherwise "N% of what's posted is graded · semester share
+    /// unknown," which is the honest fallback when the syllabus hasn't given
+    /// every relevant category an expected item count yet.
+    static func decidedText(for breakdown: GradeBreakdown) -> String {
+        let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
+        if breakdown.semesterDecidedFraction != nil {
+            return "\(percent)% of the semester is decided"
+        }
+        return "\(percent)% of what\u{2019}s posted is graded \u{00b7} semester share unknown"
+    }
+
+    /// "COURSE NAME" alone, or "COURSE NAME · LAB" when a course code has
+    /// several Canvas sites (`AppState.gradeSiteLabel`) and this card needs
+    /// to say which one it is.
+    static func headerText(courseName: String, siteLabel: String?) -> String {
+        let base = courseName.uppercased()
+        guard let siteLabel, !siteLabel.isEmpty else { return base }
+        return "\(base) \u{00b7} \(siteLabel.uppercased())"
     }
 
     private func toggleExpanded() {

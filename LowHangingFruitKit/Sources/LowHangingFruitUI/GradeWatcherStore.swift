@@ -102,6 +102,10 @@ final class GradeWatcherStore: ObservableObject {
         self.watchedCourseIDs = Set(UserDefaults.lhf.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
+        self.expectedCounts = Self.loadExpectedCounts()
+        self.itemOverrides = Self.loadItemOverrides()
+        self.modeOverrides = Self.loadModeOverrides()
+        self.excludedCourseIDs = Self.loadExcludedCourseIDs()
     }
 
     func isWatching(_ courseID: String) -> Bool {
@@ -441,6 +445,9 @@ final class GradeWatcherStore: ObservableObject {
         manualWeights: [String: Double] = [:],
         dropLowestOverrides: [String: Int] = [:],
         syllabusWeightedCategoryIDs: Set<String> = [],
+        expectedCounts: [String: Int] = [:],
+        itemOverrides: [String: GradeItemOverride] = [:],
+        modeOverride: GradingMode? = nil,
         now: Date = Date()
     ) -> GradeBreakdown? {
         guard let snapshot = snapshots[courseID] else { return nil }
@@ -450,18 +457,27 @@ final class GradeWatcherStore: ObservableObject {
             manualWeights: manualWeights,
             dropLowestOverrides: dropLowestOverrides,
             syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs,
-            now: now
+            now: now,
+            expectedCounts: expectedCounts,
+            itemOverrides: itemOverrides,
+            modeOverride: modeOverride
         ))
     }
 
     /// Convenience overload the UI uses: folds in this course's syllabus
-    /// weights and hand-typed overrides automatically, so views don't have to
-    /// thread weight resolution through by hand.
+    /// weights, expected counts, and every hand-typed override automatically,
+    /// so views don't have to thread resolution through by hand — and so
+    /// every number the UI shows (this, `trajectory`, `projection`,
+    /// `weekDelta`, all of which read through this or `breakdown` directly)
+    /// is computed from the same overrides.
     func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
         breakdown(
             courseID: courseID,
             manualWeights: effectiveWeights(courseID: courseID),
             syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs(courseID: courseID),
+            expectedCounts: effectiveExpectedCounts(courseID: courseID),
+            itemOverrides: itemOverrides(courseID: courseID),
+            modeOverride: modeOverride(courseID: courseID),
             now: now
         )
     }
@@ -529,6 +545,217 @@ final class GradeWatcherStore: ObservableObject {
               let dict = try? JSONDecoder().decode([String: [String: Double]].self, from: data)
         else { return [:] }
         return dict
+    }
+
+    // MARK: - Item overrides, expected counts, mode & course exclusion
+    //
+    // Everything below is a student-entered correction, not a fetched fact,
+    // so it is persisted the same way `manualWeights` above is: small,
+    // non-secret, JSON-encoded UserDefaults, not the SwiftData ledger and not
+    // the Keychain. It is cheap to lose (worst case, the student re-types a
+    // fixed typo or re-excludes a pass/fail lab next launch) and meaningless
+    // off this device, exactly the profile `docs/persistence-explained.md`
+    // describes for tier 2.
+
+    /// Category id → the whole-semester expected item count the student
+    /// typed by hand, courseID -> categoryID -> count. Distinct from
+    /// `syllabusExpectedCounts`, which reads the same number off a confirmed
+    /// syllabus instead — `effectiveExpectedCounts` merges the two with the
+    /// hand-typed value winning, same precedence as `effectiveWeights`.
+    @Published private(set) var expectedCounts: [String: [String: Int]] = [:]
+    private static let expectedCountsKey = "gradeWatcherExpectedCounts"
+
+    /// A student's own correction to one Canvas grade item — a wrong score, a
+    /// wrong points-possible, or an item they want removed from the math
+    /// entirely. `GradeEngine.compute` applies these before any other math,
+    /// so a correction flows through weights, drops, and both flavors of %
+    /// decided exactly as if Canvas had reported the item that way. courseID
+    /// -> itemID -> override.
+    @Published private(set) var itemOverrides: [String: [String: GradeItemOverride]] = [:]
+    private static let itemOverridesKey = "gradeWatcherItemOverrides"
+
+    /// Forces one course into weighted or points mode, overriding both
+    /// Canvas's `apply_assignment_group_weights` flag and the
+    /// manual-weights-cover-every-category rule. courseID -> mode.
+    @Published private(set) var modeOverrides: [String: GradingMode] = [:]
+    private static let modeOverridesKey = "gradeWatcherModeOverrides"
+
+    /// Courses the student has said do NOT count toward "the" grade or the
+    /// GPA estimate. A pass/fail lab or a zero-credit recitation riding along
+    /// on the same course code is its OWN Canvas gradebook, graded on its own
+    /// scale (often literally pass/fail, which has no percent to average in
+    /// at all), and folding its number into the lecture's would misrepresent
+    /// both — a 100% lab shouldn't nudge a 91% lecture up, and a lab with one
+    /// missed check-in shouldn't read as the class tanking. Stored as a
+    /// sorted array purely so the JSON is deterministic; every caller wants
+    /// the `Set` this property publishes.
+    @Published private(set) var excludedCourseIDs: Set<String> = []
+    private static let excludedCourseIDsKey = "gradeWatcherExcludedCourses"
+
+    /// Sets (or, with `count: nil` or `count < 1`, clears) a hand-typed
+    /// expected-item-count override for one category.
+    func setExpectedCount(courseID: String, categoryID: String, count: Int?) {
+        var courseCounts = expectedCounts[courseID] ?? [:]
+        if let count, count >= 1 {
+            courseCounts[categoryID] = count
+        } else {
+            courseCounts.removeValue(forKey: categoryID)
+        }
+        if courseCounts.isEmpty {
+            expectedCounts.removeValue(forKey: courseID)
+        } else {
+            expectedCounts[courseID] = courseCounts
+        }
+        persistExpectedCounts()
+    }
+
+    /// Sets (or, with `override: nil` or an empty override, clears) a
+    /// correction for one Canvas grade item.
+    func setItemOverride(courseID: String, itemID: String, override: GradeItemOverride?) {
+        var courseOverrides = itemOverrides[courseID] ?? [:]
+        if let override, !override.isEmpty {
+            courseOverrides[itemID] = override
+        } else {
+            courseOverrides.removeValue(forKey: itemID)
+        }
+        if courseOverrides.isEmpty {
+            itemOverrides.removeValue(forKey: courseID)
+        } else {
+            itemOverrides[courseID] = courseOverrides
+        }
+        persistItemOverrides()
+    }
+
+    /// Sets (or, with `mode: nil`, clears) a forced grading mode for one
+    /// course.
+    func setModeOverride(courseID: String, mode: GradingMode?) {
+        if let mode {
+            modeOverrides[courseID] = mode
+        } else {
+            modeOverrides.removeValue(forKey: courseID)
+        }
+        persistModeOverrides()
+    }
+
+    /// Marks (or unmarks) one course as excluded from "the" grade and the
+    /// GPA estimate.
+    func setCourseExcluded(courseID: String, _ excluded: Bool) {
+        if excluded {
+            excludedCourseIDs.insert(courseID)
+        } else {
+            excludedCourseIDs.remove(courseID)
+        }
+        UserDefaults.lhf.set(excludedCourseIDs.sorted(), forKey: Self.excludedCourseIDsKey)
+    }
+
+    func manualExpectedCounts(courseID: String) -> [String: Int] {
+        expectedCounts[courseID] ?? [:]
+    }
+
+    /// Canvas category id → whole-semester expected item count, read off the
+    /// attached syllabus's categories through the same confirmed match
+    /// `syllabusWeights` uses. Empty when no syllabus is attached, the course
+    /// hasn't been fetched, or coverage is incomplete — same gate as
+    /// `syllabusWeights`, and for the same reason: a partial mapping can't
+    /// say which category an unmatched count belongs to, so a half-covered
+    /// syllabus must not reach the engine at all.
+    func syllabusExpectedCounts(courseID: String) -> [String: Int] {
+        guard let syllabus = syllabusSchemes[courseID],
+              let match = syllabusMatch(courseID: courseID),
+              match.isCompleteCoverage
+        else { return [:] }
+        // `normalizedCategories` (not `scheme.categories`) because that's the
+        // list `SyllabusMatcher.match` actually walked to build `matches` —
+        // same ids either way, but matching the matcher's own input avoids
+        // ever having to reason about whether the two lists could diverge.
+        let expectedBySyllabusID = Dictionary(
+            uniqueKeysWithValues: syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) }
+        )
+        return match.matches.reduce(into: [:]) { result, m in
+            guard m.isApplied,
+                  let canvasID = m.canvasCategoryID,
+                  let expected = expectedBySyllabusID[m.syllabusCategoryID] ?? nil
+            else { return }
+            result[canvasID] = expected
+        }
+    }
+
+    /// The expected counts actually used for this course: syllabus first,
+    /// with any hand-typed override winning — same precedence rule as
+    /// `effectiveWeights`, and for the same reason: an edit typed after
+    /// importing a syllabus is the more recent, more deliberate statement of
+    /// intent.
+    func effectiveExpectedCounts(courseID: String) -> [String: Int] {
+        syllabusExpectedCounts(courseID: courseID).merging(manualExpectedCounts(courseID: courseID)) { _, manual in manual }
+    }
+
+    func itemOverrides(courseID: String) -> [String: GradeItemOverride] {
+        itemOverrides[courseID] ?? [:]
+    }
+
+    func modeOverride(courseID: String) -> GradingMode? {
+        modeOverrides[courseID]
+    }
+
+    func isCourseExcluded(courseID: String) -> Bool {
+        excludedCourseIDs.contains(courseID)
+    }
+
+    /// The "how this is calculated" model behind Grade Watcher's explanation
+    /// panel, built from the same overlay-applied, overrides-and-all
+    /// breakdown every other number on the card reads — so the explanation
+    /// can never disagree with the headline it's explaining.
+    func explanation(courseID: String, now: Date = Date()) -> GradeExplanation? {
+        guard let breakdown = breakdown(courseID: courseID, now: now) else { return nil }
+        return GradeExplanation.make(from: breakdown, canvasScore: canvasComputedScore(courseID: courseID))
+    }
+
+    /// This course's overlay-applied items in one category — Canvas's (and
+    /// Gradescope's) own values, unaffected by `itemOverrides`, so an item
+    /// override editor can show "Canvas says X" right beside whatever
+    /// correction the student has typed.
+    func items(courseID: String, categoryID: String) -> [GradeItem] {
+        gradeCategories(courseID: courseID).first { $0.id == categoryID }?.items ?? []
+    }
+
+    private func persistExpectedCounts() {
+        guard let data = try? JSONEncoder().encode(expectedCounts) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.expectedCountsKey)
+    }
+
+    private static func loadExpectedCounts() -> [String: [String: Int]] {
+        guard let data = UserDefaults.lhf.data(forKey: expectedCountsKey),
+              let dict = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistItemOverrides() {
+        guard let data = try? JSONEncoder().encode(itemOverrides) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.itemOverridesKey)
+    }
+
+    private static func loadItemOverrides() -> [String: [String: GradeItemOverride]] {
+        guard let data = UserDefaults.lhf.data(forKey: itemOverridesKey),
+              let dict = try? JSONDecoder().decode([String: [String: GradeItemOverride]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistModeOverrides() {
+        guard let data = try? JSONEncoder().encode(modeOverrides) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.modeOverridesKey)
+    }
+
+    private static func loadModeOverrides() -> [String: GradingMode] {
+        guard let data = UserDefaults.lhf.data(forKey: modeOverridesKey),
+              let dict = try? JSONDecoder().decode([String: GradingMode].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private static func loadExcludedCourseIDs() -> Set<String> {
+        Set(UserDefaults.lhf.stringArray(forKey: excludedCourseIDsKey) ?? [])
     }
 
     // MARK: - Syllabus (docs/grades.md §13)
@@ -664,7 +891,10 @@ final class GradeWatcherStore: ObservableObject {
             courseUsesWeights: snapshot.courseUsesWeights,
             categories: gradeCategories(courseID: courseID),
             manualWeights: manualWeights(courseID: courseID),
-            now: now
+            now: now,
+            expectedCounts: effectiveExpectedCounts(courseID: courseID),
+            itemOverrides: itemOverrides(courseID: courseID),
+            modeOverride: modeOverride(courseID: courseID)
         ))
     }
 
