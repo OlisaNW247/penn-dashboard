@@ -196,11 +196,11 @@ struct GradeWatcherView: View {
                 Text(String(format: "%.2f", gpa))
                     .font(.lhfSerif(34))
                     .foregroundStyle(Color.v2Ink)
-                Text("estimated gpa across your \(percents.count) classes \u{00b7} standard cutoffs")
+                Text("est. gpa \u{00b7} \(percents.count) classes")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
                 if !excludedCourses.isEmpty {
-                    Text("not counting: \(excludedCoursesSummary)")
+                    Text("excluding: \(excludedCoursesSummary)")
                         .font(.lhfSans(10.5))
                         .foregroundStyle(Color.v2RingSub)
                 }

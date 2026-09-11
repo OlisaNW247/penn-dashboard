@@ -1,22 +1,20 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The "Categories" section body inside `GradeReportView` -- renders and
-/// edits `store.effectiveCategoryMap(courseID:)`, the layer that says "these
-/// Canvas assignment groups are really one syllabus category," "this item
-/// doesn't belong to any category," and "ignore this placeholder" (see
-/// `GradeCategoryMap`'s doc comment for the PHYS 0151 case this exists to
-/// fix: attendance's 100 points sitting inside "Problem Sets," "HomeWorks"
+/// The "edit categories" sheet `GradeReportView`'s toolbar menu presents --
+/// renders and edits `store.effectiveCategoryMap(courseID:)`, the layer that
+/// says "these Canvas assignment groups are really one syllabus category,"
+/// "this item doesn't belong to any category," and "ignore this placeholder"
+/// (see `GradeCategoryMap`'s doc comment for the PHYS 0151 case this exists
+/// to fix: attendance's 100 points sitting inside "Problem Sets," "HomeWorks"
 /// really being "Problem Sets" + "Worksheets," "Midterm 3" having no Canvas
 /// group at all, and "Imported Assignments" being junk nobody asked for).
 ///
 /// This view owns its own item-editor sheet and its own rename/add/reset
-/// alerts -- it's meant to be dropped into `ReportSection { GradeCategoryMapEditor(...) }`
-/// as a self-contained block, not wired up piece by piece by its caller.
-/// `GradeCourseCardView`'s expanded breakdown deliberately does NOT use this
-/// view: the card stays read-mostly and keeps rendering `GradeCategoryRow`
-/// straight off `breakdown.categories`, because a card glanced at from a
-/// list is not where a student should be restructuring a class's grading
+/// alerts -- it's meant to be dropped into that sheet as a self-contained
+/// block, not wired up piece by piece by its caller. `GradeCourseCardView`
+/// deliberately does NOT use this view: the card is a single tap-through
+/// link to the report, not a place to restructure a class's grading
 /// categories.
 struct GradeCategoryMapEditor: View {
     @ObservedObject var store: GradeWatcherStore

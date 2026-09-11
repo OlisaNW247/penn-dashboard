@@ -1,11 +1,34 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// One class's Grade Watcher card: big current-grade number, a "decided vs
-/// still open" bar, status chips, and an expandable category breakdown with
-/// manual weight editing. Visual idiom matches `AssignmentCardView` /
-/// `DoneCardView` (white v2Card surface, 13pt continuous corners, soft
-/// shadow) so this reads as native to the rest of the app.
+/// One class's Grade Watcher card, rebuilt minimal (docs/grades.md — Grade
+/// Watcher's card and report used to carry full sentences and an expandable
+/// category list; the whole card is now a single `NavigationLink` into
+/// `GradeReportView` showing only a course code, the current number, a 3pt
+/// decided bar and a six-word status line). Every action this card used to
+/// offer inline now lives one tap away, in the report:
+///
+/// - the expand toggle and its `breakdownList` (category rows, manual weight
+///   editing, expected-count editing) → the report's categories table, whose
+///   rows expand to items and whose items open `GradeItemEditorSheet`; bulk
+///   category restructuring moved to the report toolbar's "edit categories"
+///   sheet (`GradeCategoryMapEditor`).
+/// - the "full report" link and the Watch/Unwatch button → the whole card is
+///   now the link, and Watch/Unwatch moved into the report's toolbar menu.
+/// - `cardMenu` (counts-toward-grade toggle, grading-mode picker) → the same
+///   toggle and picker, now in the report's toolbar menu only.
+/// - the pending-grading / "differs from canvas" chips and the week-delta
+///   chip + trajectory sparkline → the "differs from canvas" line moved into
+///   the report's collapsed "how" section; the pending-grading count and the
+///   sparkline are dropped rather than relocated (informational only, not on
+///   the kept-capability list this rebuild was scoped against).
+/// - the inline "count it" button on an excluded course's card → the
+///   counts-toward-grade toggle in the report's toolbar menu (the excluded
+///   card still navigates there).
+/// - the suggested-Gradescope-match and unmatched-Gradescope-score
+///   disclosures → the report's `suggestionsSection` (one use/skip nudge row
+///   per fuzzy match, via `store.confirmSuggestedMatch`) and a one-line
+///   unmatched count in its `howSection`.
 struct GradeCourseCardView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
@@ -17,28 +40,10 @@ struct GradeCourseCardView: View {
     /// letter-graded lecture.
     let siteLabel: String?
 
-    @State private var isExpanded = false
-    @State private var isUnmatchedExpanded = false
-    @State private var isSuggestedExpanded = false
-
     private let corner: CGFloat = 13
 
     private var breakdown: GradeBreakdown? {
         store.breakdown(courseID: courseID)
-    }
-
-    /// Gradescope scores that named an assignment but never made it into this
-    /// course's math (docs/grades.md §4) — no candidate, ambiguous, or a
-    /// duplicate of an already-filled item. Never counted; shown so the user
-    /// can see what Gradescope has that Grade Watcher didn't apply.
-    private var unmatchedScores: [GradescopeOverlay.UnmatchedItem] {
-        store.unmatchedGradescopeScores(courseID: courseID)
-    }
-
-    /// Lower-confidence fuzzy name matches (docs/grades.md §5 item 4) — never
-    /// counted until the user explicitly confirms one via `suggestedMatchRow`.
-    private var suggestedMatches: [GradescopeOverlay.SuggestedMatch] {
-        store.suggestedGradescopeMatches(courseID: courseID)
     }
 
     private var hasSnapshot: Bool {
@@ -53,372 +58,111 @@ struct GradeCourseCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if store.isCourseExcluded(courseID: courseID) {
-                // A course the student has said doesn't count toward their
-                // grade (the lab-site fix) gets a compact card: no percent,
-                // no decided bar, no report link -- there is nothing to
-                // compute or drill into for a class whose grade isn't being
-                // tracked, and showing those affordances anyway would imply
-                // otherwise.
-                excludedHeader
-                    .padding(14)
-            } else {
-                header
-                    .padding(14)
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleExpanded() }
-
-                if breakdown != nil {
-                    Divider().padding(.horizontal, 14)
-                    reportLink
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                }
-
-                if isExpanded, let breakdown {
-                    Divider().padding(.horizontal, 14)
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let explanation = store.explanation(courseID: courseID) {
-                            GradeExplanationView(explanation: explanation, compact: true)
-                        }
-                        breakdownList(breakdown)
-                    }
-                    .padding(14)
-                }
-            }
+        NavigationLink {
+            GradeReportView(store: store, courseID: courseID, courseName: courseName, siteLabel: siteLabel)
+        } label: {
+            content
+                .padding(14)
         }
+        .buttonStyle(.plain)
         .background(Color.v2Card)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }
 
-    /// "not counted toward your grade", plus a short honesty suffix saying
-    /// whether the registrar's own catalog data made that call or the
-    /// student did (`GradeWatcherStore.courseExclusionSource`) — a course
-    /// hidden for its own reason (pass/fail lab) should not read identically
-    /// to one the student excluded by hand, since the second is reversible
-    /// in a way the first usually isn't.
-    private var excludedCaption: String {
-        guard let source = store.courseExclusionSource(courseID: courseID) else {
-            return "not counted toward your grade"
-        }
-        return "not counted toward your grade \u{00b7} \(source)"
-    }
-
-    /// Compact card body for a course excluded from the grade math (docs/
-    /// grades.md — the pass/fail lab site must not read as the lecture).
-    private var excludedHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(Self.headerText(courseName: courseName, siteLabel: siteLabel))
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
-            Text(excludedCaption)
-                .font(.lhfSans(13))
-                .foregroundStyle(Color.v2DateText)
-            Button {
-                store.setCourseExcluded(courseID: courseID, false)
-            } label: {
-                Text("count it")
-                    .font(.lhfSans(11, weight: .semibold))
-                    .foregroundStyle(Color.v2SpineBlue)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("count \(courseName) toward your grade")
-        }
-    }
-
-    /// Route into the full report, plus the watch toggle.
-    ///
-    /// Watching is opt-in per class because attaching a syllabus is per-course
-    /// setup work; the report itself is always reachable, since everything in
-    /// it except the syllabus parts is computed from data already fetched.
-    private var reportLink: some View {
-        HStack(spacing: 10) {
-            NavigationLink {
-                GradeReportView(store: store, courseID: courseID, courseName: courseName, siteLabel: siteLabel)
-            } label: {
-                HStack(spacing: 4) {
-                    Text("full report")
-                        .font(.lhfSans(12, weight: .semibold))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .foregroundStyle(Color.v2SpineBlue)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button {
-                store.setWatching(!store.isWatching(courseID), courseID: courseID)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: store.isWatching(courseID) ? "eye.fill" : "eye")
-                        .font(.system(size: 11))
-                    Text(store.isWatching(courseID) ? "Watching" : "Watch")
-                        .font(.lhfSans(11, weight: .medium))
-                }
-                .foregroundStyle(store.isWatching(courseID) ? Color.v2SpinePurple : Color.v2CourseCode)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.isWatching(courseID)
-                                ? "Stop watching \(courseName)"
-                                : "Watch \(courseName)")
-        }
-    }
-
-    // MARK: - Header (collapsed content)
-
     @ViewBuilder
-    private var header: some View {
-        if let breakdown {
-            loadedHeader(breakdown)
+    private var content: some View {
+        if store.isCourseExcluded(courseID: courseID) {
+            // A course the student has said doesn't count toward their grade
+            // (the lab-site fix) still opens the report -- "not counted" is a
+            // state to review and reverse, not a dead end.
+            excludedContent
+        } else if let breakdown {
+            loadedContent(breakdown)
         } else if !hasSnapshot && hasAttemptedRefresh && !store.isRefreshing && !store.isSessionExpired {
-            cardErrorState
+            oneWordState("offline")
         } else if store.isSessionExpired && !hasSnapshot {
-            cardLoginNeededState
+            oneWordState("log in")
         } else {
-            cardLoadingState
+            oneWordState("\u{2026}")
         }
     }
 
-    private func loadedHeader(_ breakdown: GradeBreakdown) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(Self.headerText(courseName: courseName, siteLabel: siteLabel))
-                    .font(.lhfSans(9, weight: .medium))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
-                Spacer()
-                cardMenu
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.v2CourseCode)
-                    .accessibilityHidden(true)
-            }
-
-            gradeRow(breakdown)
-            decidedBar(breakdown)
-
-            if breakdown.pendingGradingCount > 0 || differsFromCanvas(breakdown) {
-                chipsRow(breakdown)
-            }
+    private var excludedContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            headerLine
+            Text("not counted")
+                .font(.lhfSans(11))
+                .foregroundStyle(Color.v2DateText)
         }
     }
 
-    /// The "…" menu: whether this course counts toward the GPA/term summary
-    /// at all, and which grading mode (canvas / weighted / points) the
-    /// engine should use for it. Both are per-course overrides the student
-    /// controls directly, rather than only being reachable by tapping into
-    /// the full report.
-    private var cardMenu: some View {
-        Menu {
-            Toggle("counts toward my grade", isOn: Binding(
-                get: { !store.isCourseExcluded(courseID: courseID) },
-                set: { countsNow in store.setCourseExcluded(courseID: courseID, !countsNow) }
-            ))
-
-            Picker("grading", selection: Binding(
-                get: { store.modeOverride(courseID: courseID) },
-                set: { store.setModeOverride(courseID: courseID, mode: $0) }
-            )) {
-                Text("as canvas says").tag(GradingMode?.none)
-                Text("weighted by category").tag(GradingMode?.some(.weighted))
-                Text("points").tag(GradingMode?.some(.points))
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.v2CourseCode)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("grade options for \(courseName)")
-        .buttonStyle(.plain)
-    }
-
-    /// Big number + "this week" delta chip + trajectory sparkline
-    /// (docs/grades.md §11). Chip and sparkline appear only once their data
-    /// exists, so a fresh course degrades to just the number.
-    private func gradeRow(_ breakdown: GradeBreakdown) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            currentGradeLine(breakdown)
-
-            if let delta = displayedWeekDelta {
-                Chip(
-                    text: String(format: "%@ %.1f this week", delta > 0 ? "\u{25B2}" : "\u{25BC}", abs(delta)),
-                    color: delta > 0 ? .v2SpineGreen : .v2SpineRed
-                )
-                .accessibilityLabel(String(format: "%@ %.1f points since last week", delta > 0 ? "Up" : "Down", abs(delta)))
-            }
-
-            Spacer(minLength: 8)
-
-            if trajectory.count >= 2 {
-                GradeSparkline(points: trajectory, endpointColor: sparklineEndpointColor)
-                    .frame(width: 64, height: 26)
-            }
+    private func oneWordState(_ word: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            headerLine
+            Text(word)
+                .font(.lhfSans(11))
+                .foregroundStyle(Color.v2DateText)
         }
     }
 
-    /// Hidden while |Δ| < 0.1 — rounding noise isn't a trend.
-    private var displayedWeekDelta: Double? {
-        guard let delta = store.weekDelta(courseID: courseID), abs(delta) >= 0.1 else { return nil }
-        return delta
+    private var headerLine: some View {
+        Text(Self.headerText(courseName: courseName, siteLabel: siteLabel))
+            .font(.lhfSans(9, weight: .medium))
+            .tracking(1.2)
+            .foregroundStyle(Color.v2CourseCode)
     }
 
-    private var trajectory: [GradeEngine.TrajectoryPoint] {
-        store.trajectory(courseID: courseID)
-    }
+    // MARK: - Loaded content
 
-    /// Direction tint: the observed week delta when there is one, otherwise
-    /// the trajectory's own overall slope; neutral course-code grey when flat.
-    private var sparklineEndpointColor: Color {
-        if let delta = displayedWeekDelta {
-            return delta > 0 ? .v2SpineGreen : .v2SpineRed
-        }
-        guard let first = trajectory.first, let last = trajectory.last else { return .v2CourseCode }
-        if last.percent - first.percent > 0.05 { return .v2SpineGreen }
-        if first.percent - last.percent > 0.05 { return .v2SpineRed }
-        return .v2CourseCode
-    }
-
-    @ViewBuilder
-    private func currentGradeLine(_ breakdown: GradeBreakdown) -> some View {
+    private func loadedContent(_ breakdown: GradeBreakdown) -> some View {
         let headline = Self.headlineText(for: breakdown)
-        if let percent = breakdown.currentPercent {
-            Text(headline.primary)
-                .font(.lhfSerif(34))
-                .foregroundStyle(Color.v2Ink)
-                .accessibilityLabel("current grade \(Int(percent.rounded())) percent in \(courseName)")
-        } else {
-            // A real-phone report: PHYS lecture's only scored item was a
-            // 100/100 Roll Call Attendance entry, so the plain "no scores
-            // yet" line and the honest attendance-only number
-            // (`GradeBreakdown.attendanceOnlyPercent`) both need to be on
-            // screen at once, not one swapped for the other -- a student who
-            // sees ONLY "attendance 100%" could read the course as decided,
-            // and one who sees ONLY "no scores yet" loses the one real
-            // number that does exist.
-            VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 8) {
+            headerLine
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(headline.primary)
-                    .font(.lhfSerif(22))
-                    .foregroundStyle(Color.v2DateText)
+                    .font(.lhfSerif(34))
+                    .foregroundStyle(Color.v2Ink)
                 if let secondary = headline.secondary {
                     Text(secondary)
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(headline.secondary.map { "\(headline.primary), \($0), in \(courseName)" }
-                                 ?? "no grades yet in \(courseName)")
+
+            decidedBar(breakdown)
+
+            Text(Self.statusText(for: breakdown))
+                .font(.lhfSans(11))
+                .foregroundStyle(Color.v2DateText)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(courseName): \(headline.secondary.map { "\(headline.primary), \($0)" } ?? headline.primary), \(Self.statusText(for: breakdown))")
     }
 
+    /// Unlabeled 3pt fill — same fraction/dimming rule as before
+    /// (`Self.decidedFraction`, dimmed while only the posted-only share is
+    /// known), just without the caption underneath; the caption is now the
+    /// card's one status line (`statusText`), not a second line under the bar.
     private func decidedBar(_ breakdown: GradeBreakdown) -> some View {
         let fraction = min(max(Self.decidedFraction(for: breakdown), 0), 1)
-        // A real-phone report: a pass/fail lab site two weeks into term read
-        // "63% of your grade is decided," because that number was only ever
-        // measured against what Canvas had posted so far (2 of a semester's
-        // 12 labs, both graded). `Self.decidedFraction`/`decidedText` prefer
-        // `semesterDecidedFraction` — the syllabus-informed whole-semester
-        // share — the moment it's known, and fall back to the old
-        // posted-only reading with a caveat when it isn't. The fill is
-        // dimmed in the fallback case so the bar itself hints "this isn't
-        // the honest number yet" even before the caption is read.
         let isSemesterKnown = breakdown.semesterDecidedFraction != nil
-        return VStack(alignment: .leading, spacing: 4) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.v2RingTrack)
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.v2SpineBlue)
-                        .opacity(isSemesterKnown ? 1 : 0.5)
-                        .frame(width: geo.size.width * fraction)
-                }
-            }
-            .frame(height: 6)
-
-            Text(Self.decidedText(for: breakdown))
-                .font(.lhfSans(10.5))
-                .foregroundStyle(Color.v2RingSub)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.decidedText(for: breakdown))
-    }
-
-    private func chipsRow(_ breakdown: GradeBreakdown) -> some View {
-        HStack(spacing: 6) {
-            if breakdown.pendingGradingCount > 0 {
-                Chip(
-                    text: "\(breakdown.pendingGradingCount) pending grading",
-                    color: .v2SpineAmber
-                )
-            }
-            if differsFromCanvas(breakdown) {
-                Text("differs from canvas\(canvasScoreSuffix(breakdown))")
-                    .font(.lhfSans(9.5))
-                    .foregroundStyle(Color.v2RingSub)
-                    .lineLimit(1)
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(Color.v2RingTrack)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(Color.v2SpineBlue)
+                    .opacity(isSemesterKnown ? 1 : 0.5)
+                    .frame(width: geo.size.width * fraction)
             }
         }
-    }
-
-    private func canvasScoreSuffix(_ breakdown: GradeBreakdown) -> String {
-        guard let canvasScore = store.canvasComputedScore(courseID: courseID) else { return "" }
-        return " (Canvas: \(formatPercent(canvasScore)))"
-    }
-
-    private func differsFromCanvas(_ breakdown: GradeBreakdown) -> Bool {
-        store.differsFromCanvas(courseID: courseID, currentPercent: breakdown.currentPercent)
-    }
-
-    // MARK: - Header (per-card non-happy-path states)
-
-    private var cardLoadingState: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("loading \(courseName)\u{2026}")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2RingSub)
-        }
-    }
-
-    private var cardErrorState: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(courseName.uppercased())
-                    .font(.lhfSans(9, weight: .medium))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
-                Text("couldn\u{2019}t load this class\u{2019}s grades.")
-                    .font(.lhfSans(12, weight: .medium))
-                    .foregroundStyle(Color.v2DueRed)
-            }
-            Spacer()
-        }
-    }
-
-    private var cardLoginNeededState: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(courseName.uppercased())
-                    .font(.lhfSans(9, weight: .medium))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
-                Text("log in to canvas to load this class\u{2019}s grades.")
-                    .font(.lhfSans(12, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
-            }
-            Spacer()
-        }
+        .frame(height: 3)
     }
 
     // MARK: - Decided-fraction / header text rules (pure, tested — see
-    // GradeDecidedTextTests.swift)
+    // GradeDecidedTextTests.swift, GradeMinimalCopyTests.swift)
     //
     // These are `nonisolated` on purpose. A SwiftUI `View`'s members are
     // main-actor isolated, and under Swift 6 that isolation is enforced at
@@ -445,15 +189,9 @@ struct GradeCourseCardView: View {
         breakdown.semesterDecidedFraction ?? breakdown.decidedFraction
     }
 
-    /// "N% of the semester is decided" once `semesterDecidedFraction` is
-    /// known; otherwise "N% of what's posted is graded · semester share
-    /// unknown," which is the honest fallback when the syllabus hasn't given
-    /// every relevant category an expected item count yet. When the engine
-    /// can name exactly which categories are missing a count
-    /// (`categoriesMissingExpectedCount`), the fallback names them too --
-    /// "semester share unknown" alone tells a student something is missing
-    /// but not what to go do about it; naming the categories turns the
-    /// caveat into an instruction.
+    /// Kept for compatibility and `GradeDecidedTextTests`, which still call
+    /// it directly; the card itself now shows `statusText` instead of this
+    /// sentence-length caption.
     nonisolated static func decidedText(for breakdown: GradeBreakdown) -> String {
         let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
         if breakdown.semesterDecidedFraction != nil {
@@ -466,12 +204,28 @@ struct GradeCourseCardView: View {
         return "\(base) \u{00b7} add expected counts for \(names)"
     }
 
+    /// The card's and report's one status line: "N% decided", with
+    /// " · week W of T" appended once the engine knows the term's length
+    /// (`GradeBreakdown.term`). W is the elapsed week, rounded up and floored
+    /// at 1 -- a course three days into week 1 should read "week 1", not
+    /// "week 0". At most six words, no sentence, matching the copy budget
+    /// `GradeMinimalCopyTests` enforces.
+    nonisolated static func statusText(for breakdown: GradeBreakdown) -> String {
+        let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
+        var text = "\(percent)% decided"
+        if let term = breakdown.term {
+            let elapsed = max(1, Int(term.elapsedWeeks(at: Date()).rounded(.up)))
+            let total = Int(term.weeks.rounded())
+            text += " \u{00b7} week \(elapsed) of \(total)"
+        }
+        return text
+    }
+
     /// The card's/report's headline pair: the big number, and -- only in the
     /// attendance-only case -- a second line underneath it. Pulled out as a
-    /// pure function (rather than inlined in `currentGradeLine`/
-    /// `GradeReportView.headline`) so the three cases (percent, no scores at
-    /// all, attendance-only) are each independently testable without
-    /// instantiating SwiftUI (see `GradeDecidedTextTests`).
+    /// pure function (rather than inlined) so the three cases (percent, no
+    /// scores at all, attendance-only) are each independently testable
+    /// without instantiating SwiftUI (see `GradeDecidedTextTests`).
     nonisolated static func headlineText(for breakdown: GradeBreakdown) -> (primary: String, secondary: String?) {
         if let percent = breakdown.currentPercent {
             return (formatPercent(percent), nil)
@@ -490,169 +244,13 @@ struct GradeCourseCardView: View {
         guard let siteLabel, !siteLabel.isEmpty else { return base }
         return "\(base) \u{00b7} \(siteLabel.uppercased())"
     }
-
-    private func toggleExpanded() {
-        guard breakdown != nil else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            isExpanded.toggle()
-        }
-    }
-
-    // MARK: - Expanded breakdown
-
-    private func breakdownList(_ breakdown: GradeBreakdown) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(breakdown.categories) { category in
-                GradeCategoryRow(
-                    store: store,
-                    courseID: courseID,
-                    category: category,
-                    hasGradescopeEarlyScore: hasGradescopeEarlyScore(for: category)
-                )
-            }
-
-            if breakdown.mode == .points {
-                Text("this class uses points, not weights. manual weights only apply once every category above has one. a partial set is ignored, so this class stays points-based until then.")
-                    .font(.lhfSans(10.5))
-                    .foregroundStyle(Color.v2RingSub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if !suggestedMatches.isEmpty {
-                suggestedMatchesDisclosure
-            }
-
-            if !unmatchedScores.isEmpty {
-                unmatchedDisclosure
-            }
-        }
-    }
-
-    /// Whether any scored, kept (post-drop) item in this category came from
-    /// the Gradescope early overlay (docs/grades.md §6 "Per-number source
-    /// badges"). `GradeBreakdown.CategoryResult` only carries aggregates, so
-    /// this looks the category back up in the overlay-applied `GradeCategory`
-    /// list (which does carry per-item `scoreSource`) via `store.gradeCategories`.
-    private func hasGradescopeEarlyScore(for category: GradeBreakdown.CategoryResult) -> Bool {
-        guard let liveCategory = store.gradeCategories(courseID: courseID).first(where: { $0.id == category.id }) else {
-            return false
-        }
-        return liveCategory.items.contains { item in
-            !item.isExcused && !item.omitFromFinalGrade
-                && item.score != nil
-                && item.scoreSource == .gradescopeEarly
-                && !category.droppedItemIDs.contains(item.id)
-        }
-    }
-
-    // MARK: - Suggested Gradescope matches (docs/grades.md §5 item 4 — fuzzy tier, user-confirmable)
-
-    private var suggestedMatchesDisclosure: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isSuggestedExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: isSuggestedExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text("\(suggestedMatches.count) suggested gradescope \(suggestedMatches.count == 1 ? "match" : "matches")")
-                        .font(.lhfSans(10.5, weight: .medium))
-                }
-                .foregroundStyle(Color.v2SpineAmber)
-            }
-            .buttonStyle(.plain)
-
-            if isSuggestedExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(suggestedMatches.enumerated()), id: \.offset) { _, match in
-                        suggestedMatchRow(match)
-                    }
-                    Text("not counted yet. confirm a match to apply its score.")
-                        .font(.lhfSans(9.5))
-                        .foregroundStyle(Color.v2RingSub)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 2)
-            }
-        }
-    }
-
-    private func suggestedMatchRow(_ match: GradescopeOverlay.SuggestedMatch) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\u{201c}\(match.gradescopeTitle)\u{201d} \u{2192} \(match.itemName)")
-                    .font(.lhfSans(10.5))
-                    .foregroundStyle(Color.v2Ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(formatPoints(match.scoreEarned))/\(formatPoints(match.scoreMax))")
-                    .font(.lhfSans(9.5))
-                    .foregroundStyle(Color.v2RingSub)
-            }
-            Spacer(minLength: 8)
-            Button {
-                store.confirmSuggestedMatch(courseID: courseID, match: match)
-            } label: {
-                Label("confirm", systemImage: "checkmark.circle.fill")
-                    .font(.lhfSans(10.5, weight: .medium))
-                    .foregroundStyle(Color.v2SpineGreen)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("confirm \(match.gradescopeTitle) matches \(match.itemName)")
-        }
-    }
-
-    // MARK: - Unmatched Gradescope scores
-
-    private var unmatchedDisclosure: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isUnmatchedExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: isUnmatchedExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text("\(unmatchedScores.count) unmatched gradescope \(unmatchedScores.count == 1 ? "score" : "scores")")
-                        .font(.lhfSans(10.5, weight: .medium))
-                }
-                .foregroundStyle(Color.v2RingSub)
-            }
-            .buttonStyle(.plain)
-
-            if isUnmatchedExpanded {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(Array(unmatchedScores.enumerated()), id: \.offset) { _, item in
-                        HStack(alignment: .top) {
-                            Text(item.title)
-                                .font(.lhfSans(10.5))
-                                .foregroundStyle(Color.v2Ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 8)
-                            Text("\(formatPoints(item.scoreEarned))/\(formatPoints(item.scoreMax))")
-                                .font(.lhfSans(10.5))
-                                .foregroundStyle(Color.v2RingSub)
-                        }
-                    }
-                    Text("not counted. no matching canvas assignment.")
-                        .font(.lhfSans(9.5))
-                        .foregroundStyle(Color.v2RingSub)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 2)
-            }
-        }
-    }
 }
 
 // MARK: - Shared small views
 
-/// A pill-shaped status chip. This is the app's first reusable chip/badge
-/// component — `AssignmentCardView`/`DoneCardView` inline their labels, but
-/// Grade Watcher needs the same look in several places (pending count, source
-/// badges), so it's factored out here instead of copy-pasted a third time.
+/// A pill-shaped status chip. Still used by `GradeCategoryMapEditor` and
+/// `GradeExplanationView`'s "needs a home" flag even though the card and
+/// report no longer use it directly.
 struct Chip: View {
     let text: String
     let color: Color
@@ -668,10 +266,8 @@ struct Chip: View {
 }
 
 /// Per-number provenance badge. `ScoreSource` has all three cases (`canvas` /
-/// `gradescopeEarly` / `manual`) from CP2; used both for a category's weight
-/// source (`GradeCategoryRow`'s weight column) and, since the CP5 fuzzy-tier
-/// fix, for the category's scored-numbers line whenever a Gradescope-early
-/// score contributes to it (docs/grades.md §6 "Per-number source badges").
+/// `gradescopeEarly` / `manual`) from CP2; still used by `GradeCategoryRow`
+/// and `GradeCategoryMapEditor`.
 struct GradeSourceBadge: View {
     let source: ScoreSource
 
