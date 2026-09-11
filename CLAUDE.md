@@ -73,8 +73,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-10): **1170 tests / 117 suites
-green** (plus 4 XCTest scheduler tests), after Grade Watcher round 3
+Baseline on `v5`, verified on a Mac (2026-09-11): **1193 tests / 119 suites
+green** (plus 4 XCTest scheduler tests), after the app learned to ask the
+deployed `map-categories` function for a suggested category mapping and
+offer it in the categories editor as "use it / not now" (docs/grades.md
+§15.8; 1,500 blind lines, compiled first time). Before that, 1170/117 on
+2026-09-10 after Grade Watcher round 3
 (docs/grades.md §15: the category map -- every course's Canvas groups and
 items are regrouped into syllabus categories by `GradeCategoryMap` /
 `GradeRegrouper`, attendance items and zero-point placeholders are
