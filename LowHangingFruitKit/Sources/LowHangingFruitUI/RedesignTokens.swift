@@ -320,10 +320,10 @@ enum DueState {
     }
 }
 
-/// The saturated card fill is always derived from the effective due date.
-/// Green is intentionally absent from Smooth: weekend and early-week work use
+/// The card accent is always derived from the effective due date. Green is
+/// intentionally absent from Smooth: weekend and early-week work use
 /// turquoise, then the ramp walks through cobalt and grape.
-func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
+func smoothTaskAccent(_ due: Date?, now: Date = Date()) -> Color {
     guard let due else { return .smoothGrape }
     let seconds = due.timeIntervalSince(now)
     if seconds < 0 { return .smoothTomato }
@@ -332,6 +332,12 @@ func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
     if seconds < 4 * 86_400 { return .smoothTeal }
     if seconds < 6 * 86_400 { return .smoothCobalt }
     return .smoothGrape
+}
+
+/// Assignment cards use the same quiet color wash as Settings sections. The
+/// saturated accent remains on the edge, so urgency is still scannable.
+func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
+    smoothTaskAccent(due, now: now).opacity(0.15)
 }
 
 struct SmoothDueValue {

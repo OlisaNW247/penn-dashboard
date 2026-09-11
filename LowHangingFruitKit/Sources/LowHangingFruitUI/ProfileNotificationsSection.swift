@@ -94,7 +94,7 @@ struct ProfileNotificationsSection: View {
     /// anything owes the student an explanation at the top.
     private var remindersOffNotice: some View {
         Label("reminders are off", systemImage: "bell.slash")
-            .font(.lhfSans(14, weight: .semibold))
+            .font(.lhfSecondary(14, weight: .semibold))
             .foregroundStyle(Color.v2SpineAmber)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -105,7 +105,7 @@ struct ProfileNotificationsSection: View {
     /// state rather than a fault.
     private var emptyState: some View {
         Text("no classes")
-            .font(.lhfSans(13))
+            .font(.lhfSecondary(13))
             .foregroundStyle(.secondary)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -118,11 +118,11 @@ struct ProfileNotificationsSection: View {
     private func switchedOffRow(_ course: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(state.courseDisplayName(course))
-                .font(.lhfSans(15))
+                .font(.lhfSecondary(15))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             Text("class is off")
-                .font(.lhfSans(12))
+                .font(.lhfSecondary(12))
                 .foregroundStyle(Color.v2CourseCode)
         }
         .accessibilityElement(children: .combine)
@@ -144,7 +144,7 @@ struct ProfileNotificationsSection: View {
     private func courseSummary(_ course: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(state.courseDisplayName(course))
-                .font(.lhfSans(15, weight: .semibold))
+                .font(.lhfSecondary(15, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
             Spacer(minLength: 0)
             badge(for: course)
@@ -163,7 +163,7 @@ struct ProfileNotificationsSection: View {
                 scheduler.rescheduleAfterPreferenceChange()
             }
         ))
-        .font(.lhfSans(14))
+        .font(.lhfSecondary(14))
 
         if preferences.notificationsEnabled(course) {
             leadTimeControls(course)
@@ -196,7 +196,7 @@ struct ProfileNotificationsSection: View {
                     scheduler.rescheduleAfterPreferenceChange()
                 }
             ))
-            .font(.lhfSans(14))
+            .font(.lhfSecondary(14))
 
         }
     }
@@ -222,7 +222,7 @@ struct ProfileNotificationsSection: View {
                 scheduler.rescheduleAfterPreferenceChange()
             }
         ))
-        .font(.lhfSans(14))
+        .font(.lhfSecondary(14))
 
         if isInheriting {
             inheritedLeadTimes
@@ -244,7 +244,7 @@ struct ProfileNotificationsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .font(.lhfSans(13))
+                .font(.lhfSecondary(13))
                 .foregroundStyle(.secondary)
             }
 
@@ -273,7 +273,7 @@ struct ProfileNotificationsSection: View {
                     scheduler.rescheduleAfterPreferenceChange()
                 }
             ))
-            .font(.lhfSans(13))
+            .font(.lhfSecondary(13))
         }
 
         // An empty set is allowed and is not an error, but it is invisible in a
@@ -282,7 +282,7 @@ struct ProfileNotificationsSection: View {
         if chosen.isEmpty {
             Label("no reminder times. this class won\u{2019}t warn you.",
                   systemImage: "exclamationmark.triangle")
-                .font(.lhfSans(12))
+                .font(.lhfSecondary(12))
                 .foregroundStyle(Color.v2SpineAmber)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -306,7 +306,7 @@ struct ProfileNotificationsSection: View {
         let tint: Color = muted ? .v2SpineAmber : (overridden ? .v2SpineBlue : .v2CourseCode)
 
         Text(badgeText(for: course).uppercased())
-            .font(.lhfSans(10, weight: .semibold))
+            .font(.lhfSecondary(10, weight: .semibold))
             .tracking(0.8)
             .foregroundStyle(tint)
             .padding(.horizontal, 7)

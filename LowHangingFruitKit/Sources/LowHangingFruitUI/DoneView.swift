@@ -107,7 +107,7 @@ struct DoneCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .stroke(Color.smoothInk, lineWidth: 2)
+                    .stroke(smoothTaskAccent(item.due).opacity(0.58), lineWidth: 1.5)
             }
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .opacity(0.55)

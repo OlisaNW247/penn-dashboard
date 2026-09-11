@@ -102,7 +102,7 @@ struct AssignmentCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .stroke(Color.smoothInk, lineWidth: 2)
+                .stroke(smoothTaskAccent(item.due, now: now).opacity(0.72), lineWidth: 1.5)
         }
     }
 

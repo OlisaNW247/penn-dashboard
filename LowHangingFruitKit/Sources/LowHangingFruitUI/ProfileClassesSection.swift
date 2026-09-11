@@ -96,7 +96,7 @@ struct ProfileClassesSection: View {
     /// report and a shrug.
     private var emptyState: some View {
         Text("no classes")
-            .font(.lhfSans(13))
+            .font(.lhfSecondary(13))
             .foregroundStyle(.secondary)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -155,18 +155,18 @@ struct ProfileClassesSection: View {
             ForEach(deletedCourses, id: \.self) { course in
                 HStack {
                     Text(state.courseDisplayName(course))
-                        .font(.lhfSans(14))
+                        .font(.lhfSecondary(14))
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("restore") {
                         state.restoreCourse(course)
                     }
-                    .font(.lhfSans(13))
+                    .font(.lhfSecondary(13))
                 }
             }
         } label: {
             Label("deleted (\(deletedCourses.count))", systemImage: "trash")
-                .font(.lhfSans(13))
+                .font(.lhfSecondary(13))
                 .foregroundStyle(.secondary)
         }
     }

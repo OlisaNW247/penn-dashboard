@@ -76,7 +76,7 @@ struct ProfileSemesterSection: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("new semester?", systemImage: "calendar.badge.clock")
-                        .font(.lhfSans(15, weight: .semibold))
+                        .font(.lhfSecondary(15, weight: .semibold))
                         .foregroundStyle(Color.v2Ink)
 
                     // The concrete count is the whole point of showing a card
@@ -86,21 +86,21 @@ struct ProfileSemesterSection: View {
                     Text("\(offer.currentTerm.displayName) has started, and " +
                          "\(offer.summary) \(offer.totalItemCount == 1 ? "is" : "are") still " +
                          "on your dashboard.")
-                        .font(.lhfSans(13))
+                        .font(.lhfSecondary(13))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !offer.courseKeys.isEmpty {
                         Text(offer.courseKeys.map { state.courseDisplayName($0) }
                             .joined(separator: " \u{00B7} "))
-                            .font(.lhfSans(12))
+                            .font(.lhfSecondary(12))
                             .foregroundStyle(Color.v2SectionMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text("nothing is deleted. it stays in done, just off the " +
                          "dashboard and out of reminders. you can undo it below.")
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -111,13 +111,13 @@ struct ProfileSemesterSection: View {
                     state.archiveTerms(Set(offer.terms))
                 } label: {
                     Label("archive \(offer.summary)", systemImage: "archivebox")
-                        .font(.lhfSans(14, weight: .semibold))
+                        .font(.lhfSecondary(14, weight: .semibold))
                 }
 
                 Button("not now") {
                     state.dismissRolloverOffer()
                 }
-                .font(.lhfSans(14))
+                .font(.lhfSecondary(14))
                 .foregroundStyle(.secondary)
             } header: {
                 SmoothSectionHeader("semester", accent: .smoothTeal)
@@ -139,14 +139,14 @@ struct ProfileSemesterSection: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(term.displayName)
-                                .font(.lhfSans(14))
+                                .font(.lhfSecondary(14))
                                 .foregroundStyle(Color.v2Ink)
                         }
                         Spacer()
                         Button("restore") {
                             state.unarchiveTerms([term])
                         }
-                        .font(.lhfSans(13))
+                        .font(.lhfSecondary(13))
                     }
                 }
             } header: {
@@ -173,20 +173,20 @@ struct ProfileSemesterSection: View {
                 // `prompt:` renders identically.
                 TextField("", text: $newCourse, prompt: Text("class code, e.g. cis 1200"))
                     .labelsHidden()
-                    .font(.lhfSans(14))
+                    .font(.lhfSecondary(14))
 #if os(iOS)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
 #endif
                     .onSubmit(submitCourse)
                 Button("add", action: submitCourse)
-                    .font(.lhfSans(14, weight: .semibold))
+                    .font(.lhfSecondary(14, weight: .semibold))
                     .disabled(AppState.normalizedCourseKey(newCourse) == nil)
             }
 
             if let addError {
                 Text(addError)
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2SpineRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -225,7 +225,7 @@ struct ProfileSemesterSection: View {
     private func addedClassRow(_ course: String) -> some View {
         HStack {
             Text(state.courseDisplayName(course))
-                .font(.lhfSans(14))
+                .font(.lhfSecondary(14))
                 .foregroundStyle(Color.v2Ink)
             Spacer()
             Button {

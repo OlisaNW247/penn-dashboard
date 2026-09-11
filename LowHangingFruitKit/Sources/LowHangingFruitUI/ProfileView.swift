@@ -60,7 +60,7 @@ struct ProfileView: View {
             ProfileSemesterSection(placement: .previousSemesters)
         }
         .formStyle(.grouped)
-        .font(.lhfSans(15))
+        .font(.lhfSecondary(15))
         .foregroundStyle(Color.smoothInk)
         .smoothFormChrome(accent: .smoothTeal)
         .navigationTitle("")

@@ -55,8 +55,8 @@ struct SmoothSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.lhfSans(12, weight: .semibold))
-            .tracking(0.65)
+            .font(.lhfMono(11, weight: .semibold))
+            .tracking(0.45)
             .foregroundStyle(accent)
             .textCase(nil)
     }

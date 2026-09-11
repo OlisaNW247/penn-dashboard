@@ -167,14 +167,14 @@ struct SettingsPage: View {
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(.orange)
                 }
                 .smoothSectionBackground(.smoothMarigold)
             }
         }
         .formStyle(.grouped)
-        .font(.lhfSans(15))
+        .font(.lhfSecondary(15))
         .foregroundStyle(Color.smoothInk)
         .smoothFormChrome(accent: .smoothCobalt)
         .navigationTitle("")
@@ -235,7 +235,7 @@ struct SettingsPage: View {
                 LabeledContent("Duplicate entries", value: "\(stats.duplicateIDs)")
                 if stats.duplicateIDs > 0 {
                     Text("The ledger is holding more than one copy of the same assignment. It will self-heal on the next sync, but this appearing at all is a bug worth reporting.")
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(Color.orange)
                 }
                 // Three states, not two. A store can be perfectly on-disk and
@@ -250,7 +250,7 @@ struct SettingsPage: View {
                         : "not saving. assignments will be lost when the app quits.",
                     systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
-                .font(.lhfSans(12))
+                .font(.lhfSecondary(12))
                 .foregroundStyle(stats.isHealthy ? Color.secondary : Color.orange)
 
                 // The specifics, when there are any. "Not saving" on its own
@@ -260,12 +260,12 @@ struct SettingsPage: View {
                 // difference between an actionable warning and a shrug.
                 if let reason = stats.storageFailureReason {
                     Text(reason)
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(Color.orange)
                 }
                 if stats.failedSaveCount > 0 {
                     Text("\(stats.failedSaveCount) change\(stats.failedSaveCount == 1 ? "" : "s") couldn't be written to storage. Check that your device isn't out of space.")
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(Color.orange)
                 }
             } header: {
@@ -340,13 +340,13 @@ struct SettingsPage: View {
                 Text("course materials")
                 Spacer()
                 Text(courseKnowledgeSummary)
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(.secondary)
             }
 
             if let notice = state.courseKnowledgeNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(.orange)
             }
 
@@ -401,7 +401,7 @@ struct SettingsPage: View {
             if scheduler.isEnabled {
                 if scheduler.authStatus == .denied {
                     Label("notifications are off in system settings.", systemImage: "bell.slash")
-                        .font(.lhfSans(12))
+                        .font(.lhfSecondary(12))
                         .foregroundStyle(.secondary)
                     Button("open settings") { openSystemNotificationSettings() }
                 } else {
@@ -456,15 +456,15 @@ struct SettingsPage: View {
             // on" immediately, which isn't true until they relaunch.
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
                 Text("Takes effect after you quit and reopen Smooth.")
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(.secondary)
             } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
                 Text(reason)
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(Color.orange)
             } else if state.cloudSyncEnabled {
                 Text("Sync is on. Changes appear on your other devices within a minute or two.")
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(.secondary)
             }
         } header: {
