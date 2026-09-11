@@ -81,7 +81,7 @@ struct ProfileNotificationsSection: View {
                 }
             }
         } header: {
-            Text("notifications")
+            SmoothSectionHeader("notifications", accent: .smoothTeal)
         }
     }
 

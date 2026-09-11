@@ -99,6 +99,7 @@ private enum SmoothFontRegistry {
     static let registration: Void = {
         for (name, ext) in [
             ("Satoshi-Variable", "ttf"),
+            ("Satoshi-VariableItalic", "ttf"),
             ("Inter", "ttf"),
             ("SpaceMono-Regular", "ttf"),
             ("SpaceMono-Bold", "ttf"),
@@ -180,6 +181,14 @@ extension Font {
         return fontIsAvailable("SatoshiVariable-Bold")
             ? .custom("SatoshiVariable-Bold", size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: .bold, design: .default)
+    }
+
+    /// The italic cut is reserved for the Smooth wordmark.
+    static func lhfWordmark(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("SatoshiVariable-BoldItalic")
+            ? .custom("SatoshiVariable-BoldItalic", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSerif(size).italic()
     }
 
     /// Satoshi is the primary interface face, with Inter as a safe fallback.

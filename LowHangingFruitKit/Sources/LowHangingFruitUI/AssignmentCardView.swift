@@ -35,6 +35,10 @@ struct AssignmentCardView: View {
     @State private var exitOffset: CGFloat = 0
     @State private var dragX: CGFloat = 0
     @State private var isExpanded = false
+    @State private var isCompleting = false
+    @State private var completionBurst = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let corner: CGFloat = 18
 
@@ -59,6 +63,13 @@ struct AssignmentCardView: View {
         }
         .opacity(exitOpacity)
         .offset(y: exitOffset)
+        .overlay(alignment: .trailing) {
+            if isCompleting && !reduceMotion {
+                completionBurstView
+                    .padding(.trailing, 22)
+                    .allowsHitTesting(false)
+            }
+        }
         .gesture(completeDrag(state: state))
         // Swipe is invisible to VoiceOver, so completing needs a spoken action
         // of its own. Without this the feature would simply not exist for
@@ -266,19 +277,66 @@ struct AssignmentCardView: View {
     }
 
     private func triggerComplete(state: DueState) {
+        guard !isCompleting else { return }
+        isCompleting = true
         lhfHaptic(for: state)
-        withAnimation(.easeIn(duration: 0.28)) {
-            // Finish the direction the finger was already going, rather than
-            // snapping back and then leaving upward, which reads as a rejected
-            // gesture followed by an unrelated deletion.
-            dragX = maxDrag + 40
-            exitOpacity = 0
+
+        if reduceMotion {
+            withAnimation(.easeOut(duration: 0.18)) {
+                dragX = maxDrag + 40
+                exitOpacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onComplete() }
+            return
         }
-        // Defer the data mutation until the exit animation finishes.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-            onComplete()
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.64)) {
+            completionBurst = true
+            dragX = maxDrag
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            withAnimation(.easeIn(duration: 0.24)) {
+                dragX = maxDrag + 56
+                exitOffset = -5
+                exitOpacity = 0
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onComplete() }
     }
+
+    private var completionBurstView: some View {
+        ZStack {
+            Circle()
+                .fill(Color.smoothPaper)
+                .frame(width: 46, height: 46)
+                .overlay(Circle().stroke(Color.smoothInk, lineWidth: 2))
+
+            Image(systemName: "checkmark")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color.smoothTeal)
+
+            ForEach(Array(Self.burstOffsets.enumerated()), id: \.offset) { index, offset in
+                Circle()
+                    .fill(Self.burstColors[index])
+                    .frame(width: 6, height: 6)
+                    .offset(completionBurst ? offset : .zero)
+                    .opacity(completionBurst ? 0 : 1)
+            }
+        }
+        .scaleEffect(completionBurst ? 1 : 0.62)
+        .opacity(completionBurst ? 1 : 0)
+    }
+
+    private static let burstOffsets: [CGSize] = [
+        CGSize(width: -34, height: -24), CGSize(width: 0, height: -38),
+        CGSize(width: 34, height: -22), CGSize(width: 38, height: 18),
+        CGSize(width: 0, height: 38), CGSize(width: -36, height: 20),
+    ]
+
+    private static let burstColors: [Color] = [
+        .smoothTomato, .smoothMarigold, .smoothLemon,
+        .smoothTeal, .smoothCobalt, .smoothGrape,
+    ]
 }
 
 #if DEBUG

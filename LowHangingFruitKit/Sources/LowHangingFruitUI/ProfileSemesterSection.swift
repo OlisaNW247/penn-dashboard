@@ -120,7 +120,7 @@ struct ProfileSemesterSection: View {
                 .font(.lhfSans(14))
                 .foregroundStyle(.secondary)
             } header: {
-                Text("semester")
+                SmoothSectionHeader("semester", accent: .smoothTeal)
             }
         }
     }
@@ -149,7 +149,7 @@ struct ProfileSemesterSection: View {
                     }
                 }
             } header: {
-                Text("prev semesters")
+                SmoothSectionHeader("prev semesters", accent: .smoothTeal)
             }
         }
     }
@@ -192,6 +192,8 @@ struct ProfileSemesterSection: View {
             ForEach(state.manuallyAddedCourseCodes(), id: \.self) { course in
                 addedClassRow(course)
             }
+        } header: {
+            SmoothSectionHeader("add a class", accent: .smoothTeal)
         }
         // A sheet of its own rather than `AddAssignmentSheet`, for one reason:
         // that sheet asks for the course as free text, and the entire point of

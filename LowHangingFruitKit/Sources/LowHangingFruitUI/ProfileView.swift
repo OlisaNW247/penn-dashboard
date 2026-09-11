@@ -30,6 +30,18 @@ struct ProfileView: View {
 
     var body: some View {
         Form {
+            Section {
+                SmoothFormHeader(
+                    title: "Profile",
+                    symbol: "person.crop.circle.fill",
+                    accent: .smoothTeal,
+                    spark: .smoothGrape
+                )
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .listRowSeparator(.hidden)
+
             // The one action students need before Canvas has fully populated
             // their profile belongs at the top, where it remains easy to find.
             ProfileSemesterSection(placement: .addClass)
@@ -51,15 +63,8 @@ struct ProfileView: View {
         .formStyle(.grouped)
         .font(.lhfSans(15))
         .foregroundStyle(Color.smoothInk)
-        .tint(Color.smoothTeal)
+        .smoothFormChrome(accent: .smoothTeal)
         .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Profile")
-                    .font(.lhfSerif(24))
-                    .foregroundStyle(Color.smoothInk)
-            }
-        }
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif

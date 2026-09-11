@@ -285,10 +285,15 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Smooth \(Self.weekdayText(Date()))")
-                    .font(.lhfSerif(27))
+                HStack(spacing: 0) {
+                    Text("Smooth")
+                        .font(.lhfWordmark(27))
+                    Text(" \(Self.weekdayText(Date()))")
+                        .font(.lhfSerif(27))
+                }
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
+                    .accessibilityElement(children: .combine)
 
                 Text(Self.dateText(Date()))
                     .font(.lhfSecondary(15, weight: .medium))
@@ -497,25 +502,7 @@ struct ContentView: View {
     }
 
     private var todoEmptyState: some View {
-        ZStack {
-            if let img = bundledImage("chill", ext: "jpg") {
-                img
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 320)
-                    .blendMode(.multiply)
-                    .opacity(0.35)
-                    .accessibilityHidden(true)
-            }
-            Text("go enjoy life")
-                .font(.lhfSerif(46))
-                .foregroundStyle(Color.v2Ink)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("go enjoy life")
+        SmoothTodoEmptyState()
     }
 
     /// Shown in place of the "all caught up" art while the first sync is still in
@@ -610,6 +597,54 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "EEEE MMM d"
         return f.string(from: date)
+    }
+}
+
+private struct SmoothTodoEmptyState: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.smoothLemon.opacity(0.16))
+                .frame(width: 250, height: 250)
+                .scaleEffect(appeared ? 1 : 0.72)
+                .opacity(appeared ? 1 : 0)
+
+            if let img = bundledImage("chill", ext: "jpg") {
+                img
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 320)
+                    .blendMode(.multiply)
+                    .opacity(appeared ? 0.35 : 0)
+                    .scaleEffect(appeared ? 1 : 0.9)
+                    .offset(y: appeared ? -4 : 12)
+                    .accessibilityHidden(true)
+            }
+
+            Text("go enjoy life")
+                .font(.lhfSerif(46))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("go enjoy life")
+        .onAppear {
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.82)) {
+                    appeared = true
+                }
+            }
+        }
+        .onDisappear { appeared = false }
     }
 }
 

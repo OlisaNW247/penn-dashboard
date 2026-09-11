@@ -63,15 +63,29 @@ struct SettingsPage: View {
 
     var body: some View {
         Form {
+            Section {
+                SmoothFormHeader(
+                    title: "Settings",
+                    symbol: "gearshape.fill",
+                    accent: .smoothCobalt,
+                    spark: .smoothTomato
+                )
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .listRowSeparator(.hidden)
+
             // Header deliberately isn't "Profile" any more: that word now names
             // a tab, and a Settings section wearing the same label would read
             // as a shortcut to it. The field itself hasn't moved — a name is a
             // preference, and Profile is about classes.
-            Section("your name") {
+            Section {
                 TextField("your name", text: Binding(
                     get: { state.userName },
                     set: { state.updateName($0) }
                 ))
+            } header: {
+                SmoothSectionHeader("your name", accent: .smoothCobalt)
             }
 
             // One row per source, connect or disconnect on the right. The
@@ -125,14 +139,14 @@ struct SettingsPage: View {
                                disconnect: .gradescope)
                 }
             } header: {
-                Text("accounts")
+                SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }
 
             announcementWatcherSection
 
             askSection
 
-            Section("appearance") {
+            Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
                     set: { state.setAppearanceMode($0) }
@@ -143,6 +157,8 @@ struct SettingsPage: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            } header: {
+                SmoothSectionHeader("appearance", accent: .smoothCobalt)
             }
 
             if FeatureFlags.gradeWatcher {
@@ -158,16 +174,18 @@ struct SettingsPage: View {
                             .foregroundStyle(Color.secondary)
                     }
                 } header: {
-                    Text("grades")
+                    SmoothSectionHeader("grades", accent: .smoothCobalt)
                 }
             }
 
-            Section("tasks") {
+            Section {
                 Button {
                     showRecurring = true
                 } label: {
                     Label("add recurring task", systemImage: "calendar.badge.plus")
                 }
+            } header: {
+                SmoothSectionHeader("tasks", accent: .smoothCobalt)
             }
 
             remindersSection
@@ -193,15 +211,8 @@ struct SettingsPage: View {
         .formStyle(.grouped)
         .font(.lhfSans(15))
         .foregroundStyle(Color.smoothInk)
-        .tint(Color.smoothTeal)
+        .smoothFormChrome(accent: .smoothCobalt)
         .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Settings")
-                    .font(.lhfSerif(24))
-                    .foregroundStyle(Color.smoothInk)
-            }
-        }
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -237,7 +248,7 @@ struct SettingsPage: View {
     @ViewBuilder
     private var storageSection: some View {
         if let stats = state.assignmentStore?.stats() {
-            Section("storage") {
+            Section {
                 LabeledContent("saved", value: "\(stats.total)")
                 LabeledContent("canvas / gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
                 LabeledContent("finished", value: "\(stats.finished)")
@@ -292,6 +303,8 @@ struct SettingsPage: View {
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.orange)
                 }
+            } header: {
+                SmoothSectionHeader("storage", accent: .smoothCobalt)
             }
         }
     }
@@ -333,7 +346,7 @@ struct SettingsPage: View {
                 ))
             }
         } header: {
-            Text("announcement watcher")
+            SmoothSectionHeader("announcement watcher", accent: .smoothCobalt)
         }
     }
 
@@ -377,7 +390,7 @@ struct SettingsPage: View {
                 }
             }
         } header: {
-            Text("ask")
+            SmoothSectionHeader("ask", accent: .smoothCobalt)
         }
         .confirmationDialog(
             "delete my class data from lhf's server?",
@@ -412,7 +425,7 @@ struct SettingsPage: View {
     /// student sets once, not the per-course tuning they revisit.
     @ViewBuilder
     private var remindersSection: some View {
-        Section("reminders") {
+        Section {
             Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
                 set: { newValue in Task { await scheduler.setEnabled(newValue) } }
@@ -447,6 +460,8 @@ struct SettingsPage: View {
                     }
                 }
             }
+        } header: {
+            SmoothSectionHeader("reminders", accent: .smoothCobalt)
         }
     }
 
@@ -485,7 +500,7 @@ struct SettingsPage: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("icloud sync")
+            SmoothSectionHeader("icloud sync", accent: .smoothCobalt)
         }
     }
 
@@ -515,7 +530,7 @@ struct SettingsPage: View {
                 }
             ))
         } header: {
-            Text("on this mac")
+            SmoothSectionHeader("on this mac", accent: .smoothCobalt)
         }
     }
     #endif
@@ -537,7 +552,7 @@ struct SettingsPage: View {
                 Label("report a problem", systemImage: "envelope")
             }
         } header: {
-            Text("troubleshooting")
+            SmoothSectionHeader("troubleshooting", accent: .smoothCobalt)
         }
     }
 
