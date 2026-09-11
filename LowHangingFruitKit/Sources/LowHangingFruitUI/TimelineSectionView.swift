@@ -12,7 +12,6 @@ struct SectionHeader: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Color.smoothPaper, in: Capsule())
-            .overlay { Capsule().stroke(Color.smoothInk, lineWidth: 2) }
     }
 }
 

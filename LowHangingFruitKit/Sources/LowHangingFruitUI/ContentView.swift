@@ -229,8 +229,7 @@ struct ContentView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothLemon))
-                .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
+                .background(Circle().fill(Color.smoothLemon.opacity(0.26)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -285,14 +284,16 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 0) {
+                (
                     Text("Smooth")
-                        .font(.lhfWordmark(27))
-                    Text(" \(Self.weekdayText(Date()))")
-                        .font(.lhfSerif(27))
-                }
+                        .font(.lhfWordmark(32))
+                    + Text(" \(Self.weekdayText(Date()))")
+                        .font(.lhfSerif(32))
+                )
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .layoutPriority(1)
                     .accessibilityElement(children: .combine)
 
                 Text(Self.dateText(Date()))
@@ -321,7 +322,6 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 48, height: 48)
                 .background(Circle().fill(color.opacity(0.18)))
-                .overlay { Circle().stroke(color.opacity(0.72), lineWidth: 1.5) }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
