@@ -98,12 +98,7 @@ extension Color {
 private enum SmoothFontRegistry {
     static let registration: Void = {
         for (name, ext) in [
-            // Roobert is a commercial face. These entries activate
-            // automatically when licensed app-font files are added here.
-            ("Roobert-Regular", "ttf"),
-            ("Roobert-Medium", "ttf"),
-            ("Roobert-SemiBold", "ttf"),
-            ("Roobert-Bold", "ttf"),
+            ("Satoshi-Variable", "ttf"),
             ("Inter", "ttf"),
             ("SpaceMono-Regular", "ttf"),
             ("SpaceMono-Bold", "ttf"),
@@ -187,27 +182,26 @@ extension Font {
             : .system(size: lhfScaled(size), weight: .bold, design: .default)
     }
 
-    /// Roobert is the primary interface face. Inter is the metrically similar,
-    /// bundled fallback used until licensed Roobert app-font files are present.
+    /// Satoshi is the primary interface face, with Inter as a safe fallback.
     static func lhfSans(_ size: CGFloat, weight: Weight = .regular) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        let roobert: String
+        let satoshi: String
         let inter: String
         switch weight {
         case .bold, .heavy, .black:
-            roobert = "Roobert-Bold"
+            satoshi = "SatoshiVariable-Bold"
             inter = "Inter-Bold"
         case .semibold:
-            roobert = "Roobert-SemiBold"
+            satoshi = "SatoshiVariable-Medium"
             inter = "Inter-SemiBold"
         case .medium:
-            roobert = "Roobert-Medium"
+            satoshi = "SatoshiVariable-Medium"
             inter = "Inter-Medium"
         default:
-            roobert = "Roobert-Regular"
+            satoshi = "SatoshiVariable-Regular"
             inter = "Inter-Regular"
         }
-        let custom = fontIsAvailable(roobert) ? roobert : inter
+        let custom = fontIsAvailable(satoshi) ? satoshi : inter
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: weight, design: .default)
