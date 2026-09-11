@@ -41,8 +41,10 @@ struct SplashView: View {
                     .foregroundStyle(Color.v2Ink)
             } else {
                 SplashPlayer(onFinished: onFinished, isDarkMode: isDarkMode)
-                    .aspectRatio(864.0 / 1060.0, contentMode: .fit)
-                    .padding(.horizontal, 24)
+                    .aspectRatio(864.0 / 1060.0, contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .ignoresSafeArea()
             }
         }
         .accessibilityElement(children: .ignore)

@@ -208,14 +208,15 @@ struct ContentView: View {
         NavigationLink(value: DashRoute.assistant) {
             ZStack {
                 Circle()
-                    .fill(Color.smoothGrape.opacity(0.18))
-                    .overlay { Circle().stroke(Color.smoothGrape.opacity(0.48), lineWidth: 1.25) }
-                Image(systemName: "diamond.fill")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(Color.smoothGrapeInk)
-                Image(systemName: "diamond.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.smoothPaper)
+                    .fill(Color.smoothPaper.opacity(0.88))
+                    .overlay { Circle().stroke(Color.smoothGrape.opacity(0.28), lineWidth: 1) }
+                if let orb = bundledImage("assistant_orb", ext: "png") {
+                    orb
+                        .resizable()
+                        .scaledToFit()
+                        .opacity(0.88)
+                        .padding(4)
+                }
             }
             .frame(width: 60, height: 60)
         }
@@ -287,7 +288,7 @@ struct ContentView: View {
 
     /// The original v5 hierarchy, with Smooth's visual identity layered on top.
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 (
                     Text("Smooth")
@@ -300,11 +301,11 @@ struct ContentView: View {
                     .minimumScaleFactor(0.78)
                     .layoutPriority(1)
                     .accessibilityElement(children: .combine)
+                    .frame(height: 48, alignment: .center)
 
                 Text(Self.dateText(Date()))
                     .font(.lhfSecondary(15, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
-                    .padding(.top, 2)
             }
 
             Spacer(minLength: 12)
