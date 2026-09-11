@@ -207,13 +207,7 @@ struct ContentView: View {
     private var assistantButton: some View {
         NavigationLink(value: DashRoute.assistant) {
             ZStack {
-                if let orb = bundledImage("assistant_orb", ext: "png") {
-                    orb
-                        .resizable()
-                        .scaledToFit()
-                        .opacity(0.88)
-                        .padding(1)
-                }
+                SmoothStarMark(size: 58)
             }
             .frame(width: 60, height: 60)
         }

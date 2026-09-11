@@ -326,10 +326,13 @@ struct IntroView: View {
 
     private var compactAskPrompt: some View {
         ZStack {
-            TreeBackdrop(wash: 0.17)
+            LinearGradient(
+                colors: [Color.smoothGrape.opacity(0.12), Color.smoothTeal.opacity(0.08)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
             HStack(spacing: 6) {
-                PersimmonMark(size: 25)
-                    .frame(width: 25, height: 25)
+                SmoothStarMark(size: 25)
                 Text("what is the attendance policy for this class?")
                     .font(.lhfSerif(13))
                     .foregroundStyle(Color.v2Ink)

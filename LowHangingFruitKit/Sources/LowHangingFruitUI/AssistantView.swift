@@ -541,15 +541,12 @@ struct AssistantView: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.v2Ink)
                         .frame(width: 13, height: 13)
-                } else if let orb = bundledImage("assistant_orb", ext: "png") {
-                    orb
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 34, height: 34)
+                } else {
+                    SmoothStarMark(size: 34)
                         .overlay {
                             Image(systemName: "arrow.up")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color.smoothPaper)
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundStyle(Color.smoothInk)
                         }
                         .scaleEffect(sendPulse > 0 ? 0.72 : 1)
                         .rotationEffect(.degrees(sendPulse * 12))
