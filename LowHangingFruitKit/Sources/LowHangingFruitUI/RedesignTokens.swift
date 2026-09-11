@@ -10,27 +10,25 @@ import AppKit
 // MARK: – Smooth palette
 //
 // The dashboard's color is semantic: every assignment is filled from a
-// warm-to-cool deadline ramp. Neutral app chrome stays on warm paper so color
-// never competes with urgency. The v2 aliases keep the rest of the app on the
+// warm-to-cool deadline ramp. Neutral app chrome stays on white so color never
+// competes with urgency. The v2 aliases keep the rest of the app on the
 // same family without changing any feature wiring.
 
 extension Color {
-    static let smoothPaper    = Color(hex: 0xFBF2DF)
+    static let smoothPaper    = Color(hex: 0xFFFFFF)
     static let smoothSurface  = Color(hex: 0xF2E5C9)
     static let smoothRule     = Color(hex: 0xD9C9A6)
     static let smoothInk      = Color(hex: 0x1B1714)
     static let smoothMuted    = Color(hex: 0x7C7060)
-    // Washed with the paper tone: still easy to scan by urgency, but calmer
-    // and less toy-like than the original fully saturated swatches.
-    static let smoothTomato   = Color(hex: 0xF2947C)
-    static let smoothMarigold = Color(hex: 0xF4BC78)
-    static let smoothLemon    = Color(hex: 0xECD77F)
-    static let smoothTeal     = Color(hex: 0x74BDB2)
-    static let smoothCobalt   = Color(hex: 0x8EADE0)
-    static let smoothGrape    = Color(hex: 0xBDA3DF)
+    static let smoothTomato   = Color(hex: 0xF07256)
+    static let smoothMarigold = Color(hex: 0xF7A844)
+    static let smoothLemon    = Color(hex: 0xF5D353)
+    static let smoothTeal     = Color(hex: 0x40B3A5)
+    static let smoothCobalt   = Color(hex: 0x699AE7)
+    static let smoothGrape    = Color(hex: 0xAF85F0)
 
-    static let v2Bg          = Color.dynamic(light: 0xFBF2DF, dark: 0x1C1A17)
-    static let v2Card        = Color.dynamic(light: 0xFBF2DF, dark: 0x26241F)
+    static let v2Bg          = Color.dynamic(light: 0xFFFFFF, dark: 0x1C1A17)
+    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)
     static let v2CardShadow  = Color.dynamic(light: 0x1B1714, dark: 0x000000)
     static let v2Ink         = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
     static let v2DateText    = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
@@ -59,7 +57,7 @@ extension Color {
     // Segmented toggle
     static let v2ToggleBg       = Color.dynamic(light: 0xF2E5C9, dark: 0x2E2B25)
     static let v2ToggleActive   = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
-    static let v2ToggleActiveTx = Color.dynamic(light: 0xFBF2DF, dark: 0x1B1714)
+    static let v2ToggleActiveTx = Color.dynamic(light: 0xFFFFFF, dark: 0x1B1714)
     static let v2ToggleInactive = Color.dynamic(light: 0x1B1714, dark: 0xD9C9A6)
 
     // Section headers
