@@ -60,7 +60,7 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     header
                         .padding(.horizontal, 20)
-                        .padding(.top, 8)
+                        .padding(.top, 18)
 
                     syncErrorBanner
                         .padding(.horizontal, 20)
@@ -292,12 +292,6 @@ struct ContentView: View {
                     .layoutPriority(1)
                     .accessibilityElement(children: .combine)
                     .frame(height: 48, alignment: .center)
-                    .overlay(alignment: .bottomLeading) {
-                        Capsule(style: .continuous)
-                            .fill(todoUnderlineColor.opacity(0.72))
-                            .frame(width: 106, height: 3)
-                            .offset(x: 1, y: -1)
-                    }
 
                 Text(Self.dateText(Date()))
                     .font(.lhfMono(14, weight: .medium))
@@ -313,16 +307,6 @@ struct ContentView: View {
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
                 navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
-        }
-    }
-
-    /// A tiny workload signal under the wordmark: cool when the next 48 hours
-    /// are light, warming only as the list becomes genuinely busy.
-    private var todoUnderlineColor: Color {
-        switch vm.todoSections().reduce(0, { $0 + $1.items.count }) {
-        case 0...2: return .smoothTeal
-        case 3...5: return .smoothMarigold
-        default:    return .smoothTomato
         }
     }
 

@@ -191,11 +191,11 @@ struct AssignmentCardView: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("due")
-                        .font(.lhfMono(9, weight: .semibold))
-                        .tracking(1.1)
+                        .font(.lhfAssignmentTitle(9))
+                        .tracking(0.5)
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                     Text(fullDueText(item.due))
-                        .font(.lhfSecondary(12.5, weight: .medium))
+                        .font(.lhfAssignmentTitle(12.5))
                         .foregroundStyle(Color.smoothInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -207,7 +207,7 @@ struct AssignmentCardView: View {
                         Image(systemName: "calendar")
                             .font(.system(size: 12, weight: .medium))
                         Text("edit date")
-                            .font(.lhfSecondary(12, weight: .medium))
+                            .font(.lhfAssignmentTitle(12))
                     }
                     .foregroundStyle(Color.smoothInk)
                     .contentShape(Rectangle())
@@ -222,7 +222,7 @@ struct AssignmentCardView: View {
             // `DashItem.showsNothingToSubmit`.
             if item.showsNothingToSubmit {
                 Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
-                    .font(.lhfSecondary(11.5))
+                    .font(.lhfAssignmentTitle(11.5))
                     .foregroundStyle(Color.smoothInk.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
