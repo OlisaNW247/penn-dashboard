@@ -39,6 +39,19 @@ public struct GradeExplanation: Sendable, Hashable {
         /// True for a passthrough category representing a Canvas group a
         /// `GradeCategoryMap` never claimed — always false without a map.
         public let isUnmapped: Bool
+        /// Where this category's whole-semester expected count came from, in
+        /// words a student could check for themselves: "8 from syllabus", "8
+        /// (yours)", "1 implied by name", "4 listed", "6 projected from
+        /// pace". An attendance category instead reads "by time" (plus
+        /// "· week N of M" once the breakdown's `term` is known) — attendance
+        /// is decided by the calendar, not by how many Roll Call rows are
+        /// posted, so the ordinary count-based wording would be actively
+        /// misleading here. nil only for a category with no `countPrediction`
+        /// at all, which shouldn't happen for anything `GradeEngine.compute`
+        /// produced (every category gets a prediction now) but can for a
+        /// `CategoryLine` built from a hand-constructed `GradeBreakdown` in a
+        /// test.
+        public var expectedCountText: String? = nil
     }
 
     /// e.g. "weighted by category (from canvas)" / "points, no categories
@@ -144,6 +157,38 @@ public struct GradeExplanation: Sendable, Hashable {
                 ? nil
                 : "from canvas groups: " + category.canvasGroupNames.map { $0.lowercased() }.joined(separator: ", ")
 
+            // Attendance is decided by the calendar, not by a count, so it
+            // gets its own wording entirely rather than one of
+            // `Prediction.Source`'s. The week number is read back out of
+            // the category's own `semesterDecidedFraction` (which, for an
+            // attendance category, IS `term.elapsedFraction(at: now)`)
+            // rather than by re-deriving "now" here -- `GradeExplanation`
+            // has no `now` of its own to compute a fresh elapsed time from,
+            // and using anything but the exact fraction the engine already
+            // computed could disagree with the headline percent it sits
+            // beside.
+            let expectedCountText: String?
+            if category.isAttendance {
+                if let term = breakdown.term {
+                    let elapsedWeeks = (category.semesterDecidedFraction ?? 0) * term.weeks
+                    let weekNumber = max(Int(elapsedWeeks.rounded(.up)), 1)
+                    let totalWeeks = Int(term.weeks.rounded())
+                    expectedCountText = "by time \u{00b7} week \(weekNumber) of \(totalWeeks)"
+                } else {
+                    expectedCountText = "by time"
+                }
+            } else if let prediction = category.countPrediction {
+                switch prediction.source {
+                case .stated:        expectedCountText = "\(prediction.count) from syllabus"
+                case .override:      expectedCountText = "\(prediction.count) (yours)"
+                case .impliedByName: expectedCountText = "\(prediction.count) implied by name"
+                case .listed:        expectedCountText = "\(prediction.count) listed"
+                case .projected:     expectedCountText = "\(prediction.count) projected from pace"
+                }
+            } else {
+                expectedCountText = nil
+            }
+
             return CategoryLine(
                 id: category.id,
                 name: category.name,
@@ -155,7 +200,8 @@ public struct GradeExplanation: Sendable, Hashable {
                 participates: category.participates,
                 editedItemCount: category.overriddenItemIDs.count + category.excludedItemIDs.count,
                 groupsText: groupsText,
-                isUnmapped: category.isUnmapped
+                isUnmapped: category.isUnmapped,
+                expectedCountText: expectedCountText
             )
         }
 

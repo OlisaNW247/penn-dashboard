@@ -97,15 +97,67 @@ struct GradeEngineSemesterTests {
         #expect(hwResult.semesterDecidedFraction.map { approx($0, hwResult.possibleScoredRaw / hwResult.possibleTotal) } ?? false)
     }
 
-    @Test("missing expected count: top-level semester fraction is nil, but decidedFraction (posted-only) still works")
-    func missingExpectedCountTopLevelNil() {
-        let exam = category("exam", weight: 100, items: [
-            item("e1", points: 100, score: 90),
+    // `GradeCountPredictor` means a category with no stated/override count and
+    // no due-date term to project from no longer reads as "unknown" -- it
+    // falls back to exactly the LISTED count (what's already posted), which
+    // makes its `semesterDecidedFraction` collapse to precisely the
+    // posted-only ratio. This replaces the old test of this name, whose
+    // premise ("missing count -> nil") the predictor exists specifically to
+    // retire; see also `GradeCountPredictorTests` for the predictor's own
+    // unit coverage of exactly this fallback rule.
+    @Test("no term and no stated/override count: semesterDecidedFraction falls back to exactly the posted-only ratio, never nil")
+    func noTermFallsBackToPostedOnlyRatio() {
+        let hw = category("hw", weight: 100, items: [
+            item("h1", points: 10, score: 10),
+            item("h2", points: 10, score: 10),
+            item("h3", points: 10, score: nil),
+            item("h4", points: 10, score: nil),
+            item("h5", points: 10, score: nil),
         ])
-        let result = GradeEngine.compute(.init(courseUsesWeights: true, categories: [exam], now: now))
-        #expect(result.semesterDecidedFraction == nil)
-        #expect(result.categories.first?.semesterDecidedFraction == nil)
-        #expect(approx(result.decidedFraction, 1.0)) // posted-only figure is unaffected
+        // No item carries a `dueAt`, so `GradeCountPredictor.term(for:)` has
+        // nothing to anchor a term to -- this exercises the nil-term branch
+        // specifically, not just "no stated count."
+        let result = GradeEngine.compute(.init(courseUsesWeights: true, categories: [hw], now: now))
+        #expect(result.term == nil)
+        #expect(result.semesterDecidedFraction != nil)
+        #expect(result.semesterDecidedFraction.map { approx($0, 20.0 / 50.0) } ?? false)
+        #expect(approx(result.decidedFraction, 20.0 / 50.0)) // the two now agree exactly, with no term to diverge from
+        #expect(result.categoriesMissingExpectedCount.isEmpty)
+    }
+
+    @Test("an attendance category's semesterDecidedFraction is decided by elapsed time, not by how many items are posted")
+    func attendanceCategoryDecidedByTime() {
+        let start = Date(timeIntervalSince1970: 1_000_000_000)
+        let laterNow = start.addingTimeInterval(7 * 24 * 60 * 60) // one week into a 14-week term
+        // A due date on some OTHER category anchors the term; the attendance
+        // category itself carries a single scored Roll Call item with no due
+        // date of its own, which is the ordinary case (Canvas's attendance
+        // tool doesn't stamp a due date on every row it creates).
+        let lecture = category("lecture", weight: 80, items: [
+            item("l1", points: 100, score: nil, dueAt: start),
+        ])
+        let attendance = category("attendance", name: "Attendance", weight: 20, items: [
+            item("a1", points: 10, score: 10),
+        ])
+        let result = GradeEngine.compute(.init(
+            courseUsesWeights: true, categories: [lecture, attendance], now: laterNow
+        ))
+        let attendanceResult = result.categories.first { $0.name == "Attendance" }
+        #expect(attendanceResult?.isAttendance == true)
+        // One week of a 14-week term has elapsed.
+        #expect(attendanceResult?.semesterDecidedFraction.map { approx($0, 1.0 / 14.0, tolerance: 0.01) } ?? false)
+    }
+
+    @Test("GradeBreakdown.term is populated once any item carries a due date, and nil when none do")
+    func termPopulatedFromDueDates() {
+        let start = Date(timeIntervalSince1970: 1_000_000_000)
+        let dated = category("dated", items: [item("d1", points: 10, score: nil, dueAt: start)])
+        let withTerm = GradeEngine.compute(.init(courseUsesWeights: false, categories: [dated], now: now))
+        #expect(withTerm.term?.start == start)
+
+        let undated = category("undated", items: [item("u1", points: 10, score: nil)])
+        let withoutTerm = GradeEngine.compute(.init(courseUsesWeights: false, categories: [undated], now: now))
+        #expect(withoutTerm.term == nil)
     }
 
     // MARK: - Semester decided fraction (points)

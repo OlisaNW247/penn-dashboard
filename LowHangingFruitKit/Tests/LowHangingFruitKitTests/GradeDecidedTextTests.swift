@@ -72,15 +72,25 @@ struct GradeDecidedTextTests {
         #expect(GradeCourseCardView.decidedText(for: under).hasPrefix("0%"))
     }
 
-    @Test("semester fraction unknown, and the engine can name which categories are missing an expected count: names them")
-    func decidedTextNamesCategoriesMissingExpectedCount() {
-        let result = breakdown(
+    // `GradeCountPredictor` means every category the engine builds now
+    // predicts SOME expected count -- a stated syllabus count, its own name,
+    // or a pace projection -- so `GradeEngine.compute` can no longer produce
+    // a non-empty `categoriesMissingExpectedCount` alongside a known
+    // `semesterDecidedFraction`; that combination belongs to history, not to
+    // anything a real `GradeBreakdown` can carry today (the always-empty-list
+    // case below, `decidedTextWithNoMissingCategoriesNamed`, is the only
+    // shape the engine emits now). The view function itself is untouched
+    // (it's in `LowHangingFruitUI`, out of this change's scope) and still
+    // honors a hand-fed list, so this documents that a known semester
+    // fraction wins outright regardless.
+    @Test("semester fraction known wins outright, even if a hand-built breakdown also carries a (now-impossible) missing-categories list")
+    func decidedTextKnownFractionWinsOverMissingCategoriesList() {
+        let known = breakdown(
             decidedFraction: 0.63,
-            semesterDecidedFraction: nil,
-            categoriesMissingExpectedCount: ["Quizzes", "HomeWorks"]
+            semesterDecidedFraction: 0.17,
+            categoriesMissingExpectedCount: ["Quizzes", "HomeWorks"] // fed by hand; a real breakdown never carries this alongside a known fraction
         )
-        #expect(GradeCourseCardView.decidedText(for: result)
-                == "63% of what\u{2019}s posted is graded \u{00b7} semester share unknown \u{00b7} add expected counts for quizzes, homeworks")
+        #expect(GradeCourseCardView.decidedText(for: known) == "17% of the semester is decided")
     }
 
     @Test("semester fraction unknown, no named categories: falls back to the plain caveat")

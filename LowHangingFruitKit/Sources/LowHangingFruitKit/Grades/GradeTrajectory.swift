@@ -100,7 +100,8 @@ extension GradeEngine {
             expectedCounts: input.expectedCounts,
             itemOverrides: input.itemOverrides,
             modeOverride: input.modeOverride,
-            categoryMap: input.categoryMap
+            categoryMap: input.categoryMap,
+            termWeeks: input.termWeeks
         )
     }
 }

@@ -204,20 +204,25 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         public let totalCount: Int
         /// Items removed by drop-lowest / drop-highest rules.
         public let droppedItemIDs: Set<String>
-        /// This category's expected item count for the WHOLE semester, read
-        /// from the syllabus via `GradeEngine.Input.expectedCounts`. nil when
-        /// nothing is known beyond what Canvas has posted so far -- Canvas
-        /// only ever tells us about work that already exists.
+        /// This category's expected item count for the WHOLE semester --
+        /// `GradeCountPredictor.Prediction.count` (see `countPrediction`
+        /// below for its source). Used to read "nil beyond what Canvas has
+        /// posted"; now always populated, since the predictor always
+        /// produces SOME count (a pace projection at worst) rather than
+        /// leaving the category unable to answer.
         public let expectedCount: Int?
         /// This category's share of decided work against the WHOLE SEMESTER,
         /// as opposed to `possibleScoredRaw ÷ possibleTotal` (what the
         /// top-level `decidedFraction` is built from), which only ever sees
         /// items Canvas has posted. This is the fix for the real-phone report
         /// that motivated it: 2 of 3 POSTED labs reading as two-thirds of the
-        /// semester when a syllabus says there will be 12. nil when
-        /// `expectedCount` is unknown, or when `totalCount == 0` (nothing
-        /// posted yet -- there's no average points-per-item to extrapolate
-        /// an estimate from).
+        /// semester when a syllabus says there will be 12. Always non-nil now
+        /// that `expectedCount` always has a value: an attendance category
+        /// (`isAttendance`) reads this off elapsed time in the term instead
+        /// of posted items; any other category with `totalCount == 0` is
+        /// exactly 0 (a known-or-predicted count with nothing posted yet is
+        /// itself an answer, not "unknown"); otherwise it's
+        /// `possibleScoredRaw` over the predicted count's implied points.
         public let semesterDecidedFraction: Double?
         /// Whether this category actually counts toward `currentPercent`
         /// right now: weighted mode needs a positive `effectiveWeight` AND
@@ -264,6 +269,28 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         /// fold -- e.g. an attendance item pulled out of "Problem Sets" into
         /// "Attendance/Participation". Always empty without a map.
         public var movedItemIDs: Set<String> = []
+        /// How `expectedCount` above was arrived at -- a student override, a
+        /// syllabus statement, the category's own name ("Final" implies
+        /// one), Canvas's own posted count, or a pace-based projection
+        /// across the whole term (`GradeCountPredictor`). nil only for a
+        /// `CategoryResult` built by hand outside `GradeEngine.compute`
+        /// (tests, or the UI's own fixtures) rather than computed by it --
+        /// every real result the engine produces sets this, since
+        /// `GradeCountPredictor.predict` always returns a `Prediction`.
+        public var countPrediction: GradeCountPredictor.Prediction? = nil
+        /// True when this category is attendance/participation by name
+        /// (`GradeItemClassifier.isAttendanceCategoryName`) or every one of
+        /// its gradeable items individually reads as an attendance-tool
+        /// entry (`GradeItemClassifier.isAttendanceItem`). Attendance is
+        /// decided by TIME rather than by how many Roll Call rows Canvas
+        /// happens to have posted -- a professor who takes attendance every
+        /// class doesn't post all of them up front, so "items posted so
+        /// far" says nothing about how much of the semester has actually
+        /// gone by, and "items decided" is exactly what
+        /// `semesterDecidedFraction` is supposed to mean. Always false
+        /// without any gradeable items to classify, and always false for a
+        /// `CategoryResult` built by hand outside `GradeEngine.compute`.
+        public var isAttendance: Bool = false
 
         /// The category's own grade in percent, or nil when nothing scored
         /// carries possible points (extra-credit-only guards divide-by-zero).
@@ -293,16 +320,26 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
     /// number never looks silently rosy.
     public let pendingGradingCount: Int
     public let categories: [CategoryResult]
-    /// Share of the WHOLE SEMESTER already decided, extrapolated from
-    /// `expectedCounts` rather than only what Canvas has posted. Weighted
-    /// mode sums normalized-weight × per-category `semesterDecidedFraction`
-    /// and goes nil the instant any non-zero-weight category can't answer;
-    /// points mode instead sums the raw scored/expected points across every
-    /// category first and divides once, so a category with nothing posted
-    /// yet contributes zero to both sums rather than blocking the estimate.
-    /// See `GradeEngine`'s `semesterDecidedFraction(_:weighted:)` for the
-    /// exact rule in each mode.
+    /// Share of the WHOLE SEMESTER already decided, extrapolated from a
+    /// `GradeCountPredictor.Prediction` for every category rather than only
+    /// from what Canvas has posted or what a syllabus happened to state.
+    /// Every category now gets SOME predicted count (a student override, a
+    /// syllabus statement, its own name, or a pace projection), so this is
+    /// nil only in the narrow cases each mode's combiner documents --
+    /// weighted mode when the total weight in play is 0, points mode when
+    /// the expected-points sum is 0 -- never simply because one category
+    /// couldn't answer, since none can't anymore. See `GradeEngine`'s
+    /// `semesterDecidedFraction(_:weighted:)` for the exact rule in each
+    /// mode.
     public let semesterDecidedFraction: Double?
+    /// The academic term `GradeCountPredictor.term(for:)` derived from this
+    /// course's own items -- start = the earliest due date across every
+    /// category, length in `weeks` (14 by default). nil when nothing in the
+    /// course carries a due date yet, in which case every category's
+    /// prediction fell back to whatever Canvas already lists rather than a
+    /// pace projection. Exposed so the UI can say "week 3 of 14" instead of
+    /// just a bare percentage.
+    public var term: GradeCountPredictor.Term? = nil
     /// Where the weighted-vs-points decision (and the weights themselves, in
     /// weighted mode) came from.
     public let modeSource: GradingModeSource
@@ -328,14 +365,12 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
     /// outside an attendance-named category has been scored, at which point
     /// `currentPercent` resumes reporting normally.
     public var attendanceOnlyPercent: Double? = nil
-    /// Non-zero-weight categories (weighted mode only; input order) whose
-    /// own `semesterDecidedFraction` is nil because `expectedCount` itself
-    /// is unknown -- the reason the top-level `semesterDecidedFraction` is
-    /// nil, named so `GradeExplanation.decidedLine` can say "until quizzes,
-    /// homeworks have expected counts" instead of a generic "every
-    /// category." A category with a KNOWN expected count but nothing posted
-    /// yet contributes 0, not nil, to the top-level estimate (docs/grades.md
-    /// §14.2) and so never appears here even while it's silently sitting at
-    /// 0% decided. Always empty in points mode.
+    /// Retained for source compatibility with callers written against the
+    /// era when a category could have no expected count at all and the
+    /// top-level `semesterDecidedFraction` went nil because of it. Since
+    /// `GradeCountPredictor` gives every category SOME predicted count (a
+    /// pace projection when nothing more specific is known), that case can
+    /// no longer occur -- this is always `[]` now, from every path that
+    /// builds a `GradeBreakdown` via `GradeEngine.compute`.
     public var categoriesMissingExpectedCount: [String] = []
 }

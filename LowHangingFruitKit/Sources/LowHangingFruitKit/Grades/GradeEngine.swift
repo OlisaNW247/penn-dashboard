@@ -75,6 +75,15 @@ public enum GradeEngine {
         /// forces `.points`. nil preserves every rule above exactly as it
         /// was before this field existed.
         public let categoryMap: GradeCategoryMap?
+        /// Length, in weeks, of the term `GradeCountPredictor.term(for:)`
+        /// derives from this course's own earliest due date -- 14 by
+        /// default (a Penn semester's ordinary run of instruction before
+        /// finals). Exists as an `Input` field, rather than a hardcoded
+        /// constant inside the predictor, purely so `GradeTrajectory` (and
+        /// any future caller reasoning about a non-standard term) can pass a
+        /// different length without the predictor itself needing to know
+        /// who's asking.
+        public let termWeeks: Double
 
         public init(
             courseUsesWeights: Bool,
@@ -86,7 +95,8 @@ public enum GradeEngine {
             expectedCounts: [String: Int] = [:],
             itemOverrides: [String: GradeItemOverride] = [:],
             modeOverride: GradingMode? = nil,
-            categoryMap: GradeCategoryMap? = nil
+            categoryMap: GradeCategoryMap? = nil,
+            termWeeks: Double = 14
         ) {
             self.courseUsesWeights = courseUsesWeights
             self.categories = categories
@@ -98,6 +108,7 @@ public enum GradeEngine {
             self.itemOverrides = itemOverrides
             self.modeOverride = modeOverride
             self.categoryMap = categoryMap
+            self.termWeeks = termWeeks
         }
     }
 
@@ -184,6 +195,15 @@ public enum GradeEngine {
             }
         )
 
+        // Computed ONCE per course, off the override-adjusted items (so an
+        // item a student excluded via override doesn't get to anchor or pad
+        // the term any more than it gets to count toward the rest of the
+        // math) -- every category's prediction shares the same notion of
+        // "how far into the semester are we," which is what makes an
+        // attendance category's time-based fraction and a projected
+        // category's pace-based one comparable to each other at all.
+        let term = GradeCountPredictor.term(for: adjusted.map { $0.category }, weeks: input.termWeeks)
+
         let tallies = adjusted.map { entry -> CategoryTally in
             // Per-category context the regrouper knows and the tally itself
             // has no other way to reconstruct: which of THIS category's
@@ -208,7 +228,8 @@ public enum GradeEngine {
                 mapWeightSourceByCategoryID: mapWeightSourceByCategoryID,
                 canvasGroupNames: canvasGroupNames,
                 isUnmapped: isUnmapped,
-                movedItemIDs: categoryMovedItemIDs
+                movedItemIDs: categoryMovedItemIDs,
+                term: term
             )
         }
 
@@ -258,7 +279,9 @@ public enum GradeEngine {
                 excludedItemIDs: r.excludedItemIDs,
                 canvasGroupNames: r.canvasGroupNames,
                 isUnmapped: r.isUnmapped,
-                movedItemIDs: r.movedItemIDs
+                movedItemIDs: r.movedItemIDs,
+                countPrediction: r.countPrediction,
+                isAttendance: r.isAttendance
             )
         }
 
@@ -339,16 +362,11 @@ public enum GradeEngine {
             .filter { !weighted || ($0.result.effectiveWeight ?? 0) > 0 }
             .reduce(0) { $0 + $1.pendingCount }
 
-        // Named so `GradeExplanation.decidedLine` can say exactly what's
-        // missing instead of a generic "every category" -- weighted-mode
-        // only (points mode has no weight concept to gate this on, and its
-        // own combiner below has a different, already-nil-safe rule for
-        // what blocks the estimate), input order, real weight only (a
-        // zero-weight category was never going to move the estimate either
-        // way, so naming it would just be noise).
-        let categoriesMissingExpectedCount: [String] = weighted
-            ? results.filter { ($0.effectiveWeight ?? 0) > 0 && $0.semesterDecidedFraction == nil }.map(\.name)
-            : []
+        // `GradeCountPredictor` gives every category SOME predicted count, so
+        // no category's `semesterDecidedFraction` is ever nil anymore --
+        // this always empty now (`GradeBreakdown.categoriesMissingExpectedCount`'s
+        // own doc explains why the field is kept rather than removed).
+        let categoriesMissingExpectedCount: [String] = []
 
         return GradeBreakdown(
             mode: weighted ? .weighted : .points,
@@ -357,6 +375,7 @@ public enum GradeEngine {
             pendingGradingCount: pending,
             categories: results,
             semesterDecidedFraction: semesterDecidedFraction(results, weighted: weighted),
+            term: term,
             modeSource: modeSource,
             leftOutCategoryIDs: leftOutCategoryIDs,
             participatingWeightSum: participatingWeightSum,
@@ -475,7 +494,8 @@ public enum GradeEngine {
         mapWeightSourceByCategoryID: [String: ScoreSource] = [:],
         canvasGroupNames: [String] = [],
         isUnmapped: Bool = false,
-        movedItemIDs: Set<String> = []
+        movedItemIDs: Set<String> = [],
+        term: GradeCountPredictor.Term? = nil
     ) -> CategoryTally {
         // Excused and omit_from_final_grade items leave the math entirely, as
         // does a Canvas placeholder — a shell item with no points and no
@@ -529,29 +549,45 @@ public enum GradeEngine {
         // The map's own expected count is a DEFAULT — an explicit
         // `input.expectedCounts` entry (a more specific, more recent student
         // or syllabus statement) still wins, same precedence as the weight
-        // above.
-        let expectedCount = input.expectedCounts[category.id] ?? mapExpectedCounts[category.id]
-        // nil means "we don't know how much of the semester this category
-        // is" -- true exactly when `expectedCount` itself is unknown. Once
-        // `expectedCount` IS known, a category with nothing posted yet
-        // (`totalCount == 0`) is 0% decided, not "unknown": we know how many
-        // items the semester holds and that none of them exist yet, which is
-        // itself an answer. `expectedPossible`'s own nil (guarded by
-        // `totalCount > 0`) exists only to protect ITS average-per-item
-        // division for the POINTS estimate -- it was never meant to mean
-        // "the fraction is unknowable," and treating it that way here used
-        // to make three untouched exam categories poison an otherwise-
-        // knowable semester estimate to nil.
-        let semesterDecidedFraction: Double?
-        if let expectedCount {
-            if let expected = expectedPossible(possibleTotal: possibleTotal, totalCount: totalCount, expectedCount: expectedCount),
-               expected > 0 {
-                semesterDecidedFraction = possibleScoredRaw / expected
-            } else {
-                semesterDecidedFraction = 0
-            }
+        // above. Both feed `GradeCountPredictor.predict` as `overrideCount`/
+        // `statedCount` rather than being used directly, so a category with
+        // NEITHER still gets a real prediction (its name, or a pace
+        // projection) instead of falling back to "unknown."
+        let isAttendance = GradeItemClassifier.isAttendanceCategoryName(category.name)
+            || (!gradeable.isEmpty && gradeable.allSatisfy(GradeItemClassifier.isAttendanceItem))
+
+        let prediction = GradeCountPredictor.predict(
+            categoryName: category.name,
+            items: gradeable,
+            overrideCount: input.expectedCounts[category.id],
+            statedCount: mapExpectedCounts[category.id],
+            term: term,
+            now: input.now
+        )
+
+        // Every category now answers `semesterDecidedFraction` -- the
+        // three-way split below replaces the old "nil when nothing is
+        // known" rule now that `GradeCountPredictor` guarantees SOME
+        // count. Attendance is decided by TIME, not by how many Roll Call
+        // rows Canvas has posted (see `CategoryResult.isAttendance`'s own
+        // doc for why); an empty category with a known-or-predicted count
+        // is 0% decided, not "unknown" -- we know how many items the
+        // semester holds and that none of them exist yet, which is itself
+        // an answer; everything else divides what's been scored so far by
+        // the predicted count's implied points, clamped to 0...1 since a
+        // prediction that undershoots a burst of extra-credit scoring
+        // could otherwise read as "more than fully decided."
+        let semesterDecidedFraction: Double
+        if isAttendance {
+            semesterDecidedFraction = term?.elapsedFraction(at: input.now) ?? 0
+        } else if totalCount == 0 {
+            semesterDecidedFraction = 0
         } else {
-            semesterDecidedFraction = nil
+            let averagePerItem = possibleTotal / Double(totalCount)
+            let expectedPoints = averagePerItem * Double(max(prediction.count, totalCount))
+            semesterDecidedFraction = expectedPoints > 0
+                ? min(max(possibleScoredRaw / expectedPoints, 0), 1)
+                : 0
         }
 
         let participates = weighted
@@ -570,7 +606,7 @@ public enum GradeEngine {
             scoredCount: scored.count,
             totalCount: totalCount,
             droppedItemIDs: dropped,
-            expectedCount: expectedCount,
+            expectedCount: prediction.count,
             semesterDecidedFraction: semesterDecidedFraction,
             participates: participates,
             contributionPercent: nil, // filled in by `compute` once cross-category sums are known
@@ -578,7 +614,9 @@ public enum GradeEngine {
             excludedItemIDs: excludedItemIDs,
             canvasGroupNames: canvasGroupNames,
             isUnmapped: isUnmapped,
-            movedItemIDs: movedItemIDs
+            movedItemIDs: movedItemIDs,
+            countPrediction: prediction,
+            isAttendance: isAttendance
         )
 
         let pending = gradeable.filter { item in
@@ -618,29 +656,26 @@ public enum GradeEngine {
 
     // MARK: - Semester expected count
 
-    /// Average posted points per item times the expected count for the whole
-    /// semester — never less than what's already posted, because a syllabus
-    /// that says "10 labs" when 12 are already posted is a stale syllabus,
-    /// not evidence that two labs don't count. nil when nothing is posted
-    /// yet (`totalCount == 0`): there's no average to extrapolate from.
-    private static func expectedPossible(possibleTotal: Double, totalCount: Int, expectedCount: Int) -> Double? {
-        guard totalCount > 0 else { return nil }
-        let averagePerItem = possibleTotal / Double(totalCount)
-        return averagePerItem * Double(max(expectedCount, totalCount))
-    }
-
-    /// The course-wide "share of the semester decided" figure. Weighted mode
-    /// sums normalized-weight × per-category `semesterDecidedFraction` and
-    /// goes nil the moment any non-zero-weight category can't answer (it has
-    /// no expected count, or nothing posted yet to average from — a category
-    /// with real weight and total silence is exactly the case where "we don't
-    /// know" is the honest answer). Points mode instead sums the raw
-    /// scored/expected points across every category FIRST and divides once,
-    /// so a category with nothing posted yet (`totalCount == 0`) simply
-    /// contributes zero to both sums rather than blocking the whole estimate
-    /// — there's no weight for it to disproportionately hide behind, so
-    /// letting empty categories fall out of the sum is safe in a way it isn't
-    /// in weighted mode.
+    /// The course-wide "share of the semester decided" figure, now that
+    /// every category carries a `GradeCountPredictor` prediction rather than
+    /// sometimes having no answer at all. Weighted mode is now a plain
+    /// normalized-weight-times-fraction sum with no early exit: it goes nil
+    /// ONLY when there is no weight left to divide by (every weighted
+    /// category's own `semesterDecidedFraction` is always populated, so
+    /// there's nothing left that could poison it category-by-category the
+    /// way a nil fraction used to). Points mode keeps its original shape —
+    /// sum raw scored/expected points across every category first and
+    /// divide once — but a category with NOTHING posted (`totalCount == 0`)
+    /// no longer drops out of the sum silently: it still contributes its
+    /// predicted count's worth of expected points (borrowing the course's
+    /// own average points-per-item, since it has none of its own to
+    /// extrapolate from), just zero toward the numerator — exactly the
+    /// "we know the semester holds this and none of it has happened yet"
+    /// reasoning `CategoryResult.semesterDecidedFraction` already applies
+    /// per-category. An attendance category is the one exception on the
+    /// numerator side: its contribution is time-elapsed × its own expected
+    /// points, matching its per-category fraction, whether or not anything
+    /// has actually been posted for it yet.
     private static func semesterDecidedFraction(
         _ results: [GradeBreakdown.CategoryResult],
         weighted: Bool
@@ -650,27 +685,40 @@ public enum GradeEngine {
             let totalWeight = weightedCats.reduce(0.0) { $0 + ($1.effectiveWeight ?? 0) }
             guard totalWeight > 0 else { return nil }
 
-            var sum = 0.0
-            for cat in weightedCats {
-                guard let fraction = cat.semesterDecidedFraction else { return nil }
-                sum += (cat.effectiveWeight ?? 0) / totalWeight * fraction
+            return weightedCats.reduce(0.0) { acc, cat in
+                acc + (cat.effectiveWeight ?? 0) / totalWeight * (cat.semesterDecidedFraction ?? 0)
             }
-            return sum
         }
+
+        let postedCats = results.filter { $0.totalCount > 0 }
+        let totalPostedPoints = postedCats.reduce(0.0) { $0 + $1.possibleTotal }
+        let totalPostedCount = postedCats.reduce(0) { $0 + $1.totalCount }
+        let courseWideAveragePerItem = totalPostedCount > 0 ? totalPostedPoints / Double(totalPostedCount) : 0
 
         var scoredSum = 0.0
         var expectedSum = 0.0
         for cat in results {
-            guard cat.totalCount > 0 else { continue }
-            guard let expectedCount = cat.expectedCount,
-                  let expected = expectedPossible(
-                    possibleTotal: cat.possibleTotal,
-                    totalCount: cat.totalCount,
-                    expectedCount: expectedCount
-                  )
-            else { return nil }
-            scoredSum += cat.possibleScoredRaw
-            expectedSum += expected
+            // `expectedCount` is always populated by the predictor now; the
+            // `?? 1` is defensive only, for a `CategoryResult` some other
+            // caller built by hand (a test, a UI fixture) rather than
+            // through `GradeEngine.compute`.
+            let expectedCount = cat.expectedCount ?? 1
+            let expectedPoints: Double
+            if cat.totalCount > 0 {
+                let averagePerItem = cat.possibleTotal / Double(cat.totalCount)
+                expectedPoints = averagePerItem * Double(max(expectedCount, cat.totalCount))
+            } else {
+                expectedPoints = courseWideAveragePerItem * Double(expectedCount)
+            }
+            expectedSum += expectedPoints
+
+            if cat.isAttendance {
+                scoredSum += (cat.semesterDecidedFraction ?? 0) * expectedPoints
+            } else if cat.totalCount > 0 {
+                scoredSum += cat.possibleScoredRaw
+            }
+            // else: nothing posted and not attendance -- contributes 0,
+            // exactly the "known count, nothing exists yet" answer.
         }
         guard expectedSum > 0 else { return nil }
         return scoredSum / expectedSum

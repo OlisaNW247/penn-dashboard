@@ -12,23 +12,46 @@ import Testing
 /// 100 points by 160 posted points and reported "100%, 62% decided" — an
 /// arithmetically correct, substantively dishonest answer, since the only
 /// thing actually graded was attendance.
+///
+/// Quiz 1/3 and Problem Set 1/2 also carry due dates now (earliest 2 weeks
+/// before `now`), so this fixture doubles as end-to-end coverage for
+/// `GradeCountPredictor`: a 14-week term anchored on that earliest date, an
+/// attendance category decided by elapsed time rather than by how many Roll
+/// Call rows are posted, and a Quizzes category with no stated count
+/// projecting from its own posting pace.
 @Suite("Grade engine — category map (PHYS 0151 fixture)")
 struct GradeEngineMapTests {
 
-    private func item(_ id: String, points: Double, score: Double? = nil, name: String? = nil) -> GradeItem {
-        GradeItem(id: id, name: name ?? id, pointsPossible: points, score: score)
+    private let week: TimeInterval = 7 * 24 * 60 * 60
+    private let now = Date(timeIntervalSince1970: 2_000_000_000)
+    private var twoWeeksBeforeNow: Date { now.addingTimeInterval(-2 * week) }
+    private var oneWeekBeforeNow: Date { now.addingTimeInterval(-1 * week) }
+
+    private func item(
+        _ id: String,
+        points: Double,
+        score: Double? = nil,
+        name: String? = nil,
+        dueAt: Date? = nil
+    ) -> GradeItem {
+        GradeItem(id: id, name: name ?? id, pointsPossible: points, score: score, dueAt: dueAt)
     }
 
-    private func canvasCategories(problemSet1Score: Double? = nil) -> [GradeCategory] {
-        [
+    /// `quizzesGraded` scores Quiz 1 and Quiz 3 (both otherwise unscored, as
+    /// in the original attendance-only fixture) — a separate knob from due
+    /// dates, since a projection's pace comes from WHEN items are due, not
+    /// from whether they've been graded yet.
+    private func canvasCategories(problemSet1Score: Double? = nil, quizzesGraded: Bool = false) -> [GradeCategory] {
+        let quizScore: Double? = quizzesGraded ? 8 : nil
+        return [
             GradeCategory(id: "g-quiz", name: "Quizzes", items: [
-                item("quiz1", points: 10, name: "Quiz 1"),
-                item("quiz3", points: 10, name: "Quiz 3"),
+                item("quiz1", points: 10, score: quizScore, name: "Quiz 1", dueAt: twoWeeksBeforeNow),
+                item("quiz3", points: 10, score: quizScore, name: "Quiz 3", dueAt: oneWeekBeforeNow),
                 item("quiz2", points: 0, name: "Quiz 2"),
             ]),
             GradeCategory(id: "g-pset", name: "Problem Sets", items: [
-                item("ps1", points: 10, score: problemSet1Score, name: "Problem Set 1"),
-                item("ps2", points: 10, name: "Problem Set 2"),
+                item("ps1", points: 10, score: problemSet1Score, name: "Problem Set 1", dueAt: twoWeeksBeforeNow),
+                item("ps2", points: 10, name: "Problem Set 2", dueAt: oneWeekBeforeNow),
                 item("rollcall", points: 100, score: 100, name: "Roll Call Attendance"),
             ]),
             GradeCategory(id: "g-work", name: "Worksheets", items: [
@@ -44,19 +67,28 @@ struct GradeEngineMapTests {
         ]
     }
 
-    private func syllabusScheme() -> SyllabusGradingScheme {
+    /// `quizzesExpectedCount` lets a couple of tests give the syllabus an
+    /// explicit "there will be N quizzes" statement — nil (the default)
+    /// reproduces the original fixture exactly, where the syllabus never
+    /// says how many quizzes there will be.
+    private func syllabusScheme(quizzesExpectedCount: Int? = nil) -> SyllabusGradingScheme {
         let pairs: [(String, Double)] = [
             ("Quizzes", 15), ("Midterm 1", 15), ("Midterm 2", 15), ("Midterm 3", 15),
             ("Final", 20), ("HomeWorks", 10), ("Attendance/Participation", 10),
         ]
         let categories = pairs.map { name, weight in
-            SyllabusCategory(id: TitleNormalizer.categoryKey(name), name: name, weightPercent: weight)
+            SyllabusCategory(
+                id: TitleNormalizer.categoryKey(name),
+                name: name,
+                weightPercent: weight,
+                expectedItemCount: name == "Quizzes" ? quizzesExpectedCount : nil
+            )
         }
         return SyllabusGradingScheme(categories: categories, confidence: .high, rawWeightSum: 100)
     }
 
-    private func map(canvas: [GradeCategory]) -> GradeCategoryMap {
-        let scheme = syllabusScheme()
+    private func map(canvas: [GradeCategory], quizzesExpectedCount: Int? = nil) -> GradeCategoryMap {
+        let scheme = syllabusScheme(quizzesExpectedCount: quizzesExpectedCount)
         let match = SyllabusMatcher.match(scheme: scheme, canvasCategories: canvas)
         return GradeCategoryMapBuilder.suggested(
             scheme: scheme, match: match, canvasCategories: canvas, provenance: .syllabus
@@ -73,6 +105,7 @@ struct GradeEngineMapTests {
         let breakdown = GradeEngine.compute(.init(
             courseUsesWeights: false, // Canvas has no group weights turned on -- the map overrides this
             categories: canvas,
+            now: now,
             categoryMap: map(canvas: canvas)
         ))
 
@@ -85,57 +118,99 @@ struct GradeEngineMapTests {
     func decidedFractionIsAttendanceWeightAlone() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
         #expect(approx(breakdown.decidedFraction, 0.10))
     }
 
-    /// `semesterDecidedFraction` is DELIBERATELY nil here, not ~10% — this is
-    /// worth spelling out because it's easy to expect otherwise. Midterm 1,
-    /// Midterm 2, Midterm 3 and Final each carry a real, nonzero weight AND
-    /// a known expected count (1, from the singular-exam-name default), but
-    /// NOTHING has been posted for any of them yet (`totalCount == 0`). A
-    /// KNOWN expected count with nothing posted is 0% decided, not
-    /// "unknown" — we know the semester holds one midterm and that it
-    /// doesn't exist in Canvas yet, which is itself an answer — so each of
-    /// those four categories' own `semesterDecidedFraction` is exactly 0.
-    /// Quizzes and HomeWorks are the ones that are ACTUALLY unknown here:
-    /// the syllabus never said how many quizzes or homeworks there will be,
-    /// so their `expectedCount` (and therefore `semesterDecidedFraction`) is
-    /// nil, and THAT is what poisons the top-level weighted combiner to nil
-    /// — `categoriesMissingExpectedCount` names exactly those two, in the
-    /// order they appear in the map (Quizzes before HomeWorks), so
-    /// `GradeExplanation.decidedLine` can say so instead of a generic
-    /// "every category."
-    @Test("semesterDecidedFraction is nil only because Quizzes/HomeWorks have no expected count -- not because exams haven't posted")
-    func semesterDecidedFractionNilNamesQuizzesAndHomeworks() {
+    /// Replaces the old "semesterDecidedFraction is nil only because
+    /// Quizzes/HomeWorks have no expected count" test — `GradeCountPredictor`
+    /// means that case can no longer occur. Attendance/Participation now
+    /// reads off elapsed TIME (2 of the term's 14 weeks), not off how many
+    /// Roll Call rows are posted, which is why its fraction no longer matches
+    /// its being fully scored; an exam with nothing posted still contributes
+    /// exactly 0 (a known count -- 1, from the singular-exam-name default --
+    /// with none of it in Canvas yet is itself an answer, not "unknown").
+    @Test("attendance is decided by elapsed time (2 of a 14-week term), and an exam with nothing posted is exactly 0")
+    func attendanceIsTimeBasedAndEmptyExamIsZero() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
-        #expect(breakdown.semesterDecidedFraction == nil)
-        #expect(breakdown.categoriesMissingExpectedCount == ["Quizzes", "HomeWorks"])
+        #expect(breakdown.term?.start == twoWeeksBeforeNow)
+
+        let attendance = breakdown.categories.first { $0.name == "Attendance/Participation" }
+        #expect(attendance?.isAttendance == true)
+        #expect(attendance?.semesterDecidedFraction.map { approx($0, 2.0 / 14.0) } ?? false)
 
         let midterm1 = breakdown.categories.first { $0.name == "Midterm 1" }
-        #expect(midterm1?.semesterDecidedFraction == 0) // known count, nothing posted -> 0, not nil
+        #expect(midterm1?.semesterDecidedFraction == 0)
+        #expect(midterm1?.isAttendance == false)
     }
 
-    /// Once the syllabus (or the student) supplies the two missing counts,
-    /// nothing else changes: attendance is the only scored work (1 of its 1
-    /// expected item, fully decided), every exam still contributes 0 (known
-    /// count, nothing posted), and quizzes/homeworks now ALSO contribute 0
-    /// (known count, nothing scored) instead of blocking the estimate.
-    /// 10% attendance weight × 1.0 decided = the whole answer.
-    @Test("supplying Quizzes/HomeWorks expected counts resolves the estimate to ~10% -- exactly attendance's weight")
-    func semesterDecidedFractionResolvesOnceCountsAreKnown() {
+    /// Quizzes has no stated count anywhere (the syllabus never said how
+    /// many), so it falls to `GradeCountPredictor`'s pace projection: both
+    /// posted quizzes are due in the term's first 2 (of 14) weeks, so the
+    /// projected whole-semester count is 14 regardless of whether they're
+    /// graded yet -- the projection is driven by WHEN work is due, not by
+    /// whether it's been scored. Once both are actually graded, the
+    /// category's own fraction lands at exactly 2/14, the same number
+    /// attendance lands on, since both stories are ultimately "2 of 14 weeks
+    /// in."
+    @Test("Quizzes has no stated count and projects from its own posting pace to 14, landing at 2/14 decided once graded")
+    func quizzesProjectsFromPace() {
+        let canvas = canvasCategories(quizzesGraded: true)
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
+        ))
+        let quizzes = breakdown.categories.first { $0.name == "Quizzes" }
+        #expect(quizzes?.countPrediction?.source == .projected)
+        #expect(quizzes?.countPrediction?.count == 14)
+        #expect(quizzes?.semesterDecidedFraction.map { approx($0, 2.0 / 14.0) } ?? false)
+    }
+
+    /// Replaces the old "supplying Quizzes/HomeWorks expected counts resolves
+    /// the estimate to ~10%" test, whose premise (attendance alone, fully
+    /// counted at its 10% weight) no longer holds now that attendance is
+    /// time-based. The course-wide estimate is simply never nil anymore, and
+    /// -- two weeks into a 14-week term with only attendance actually
+    /// scored -- it lands well under the 20% mark a naive "62% decided"
+    /// posted-only reading would have suggested.
+    @Test("course-wide semesterDecidedFraction is never nil, lands well under 0.2 two weeks into term, and categoriesMissingExpectedCount is retired to empty")
+    func courseWideSemesterFractionNeverNilAndReflectsHowLittleHasHappened() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas,
-            expectedCounts: ["map:quizzes": 3, "map:homeworks": 8],
-            categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
+        #expect(breakdown.term != nil)
         #expect(breakdown.categoriesMissingExpectedCount.isEmpty)
-        #expect(breakdown.semesterDecidedFraction.map { approx($0, 0.10) } ?? false)
+        #expect(breakdown.semesterDecidedFraction != nil)
+        #expect((breakdown.semesterDecidedFraction ?? 1) < 0.2)
+    }
+
+    @Test("a syllabus-stated Quizzes count beats the pace projection")
+    func statedCountBeatsProjection() {
+        let canvas = canvasCategories()
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: canvas, now: now,
+            categoryMap: map(canvas: canvas, quizzesExpectedCount: 5)
+        ))
+        let quizzes = breakdown.categories.first { $0.name == "Quizzes" }
+        #expect(quizzes?.countPrediction?.source == .stated)
+        #expect(quizzes?.countPrediction?.count == 5)
+    }
+
+    @Test("a student's own override count beats a syllabus-stated one")
+    func overrideBeatsStatedCount() {
+        let canvas = canvasCategories()
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: canvas, now: now,
+            expectedCounts: ["map:quizzes": 20],
+            categoryMap: map(canvas: canvas, quizzesExpectedCount: 5)
+        ))
+        let quizzes = breakdown.categories.first { $0.name == "Quizzes" }
+        #expect(quizzes?.countPrediction?.source == .override)
+        #expect(quizzes?.countPrediction?.count == 20)
     }
 
     @Test("mirroringCanvas over a points-mode course stays points mode and grades normally once something is scored")
@@ -143,7 +218,7 @@ struct GradeEngineMapTests {
         let canvas = canvasCategories(problemSet1Score: 9)
         let mirrored = GradeCategoryMapBuilder.mirroringCanvas(canvas, courseUsesWeights: false)
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: mirrored
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: mirrored
         ))
 
         // Every category in a `courseUsesWeights: false` mirror carries
@@ -160,7 +235,7 @@ struct GradeEngineMapTests {
     func realGradeOnceSomethingElseIsGraded() {
         let canvas = canvasCategories(problemSet1Score: 9)
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
 
         #expect(breakdown.currentPercent != nil)
@@ -171,7 +246,7 @@ struct GradeEngineMapTests {
     func placeholderNeverCountsTowardTotals() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
         let quizzes = breakdown.categories.first { $0.name == "Quizzes" }
         // Quiz 1 and Quiz 3 only -- Quiz 2 (0 points, unscored) is gone.
@@ -183,7 +258,7 @@ struct GradeEngineMapTests {
     func importedAssignmentsIsUnmappedZeroWeight() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
         let imported = breakdown.categories.first { $0.name == "Imported Assignments" }
         #expect(imported?.isUnmapped == true)
@@ -194,7 +269,7 @@ struct GradeEngineMapTests {
     func rollCallTrackedAsMoved() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
         let attendance = breakdown.categories.first { $0.name == "Attendance/Participation" }
         #expect(attendance?.movedItemIDs == ["rollcall"])
@@ -205,7 +280,7 @@ struct GradeEngineMapTests {
     func homeworksReportsFoldedGroupNames() {
         let canvas = canvasCategories()
         let breakdown = GradeEngine.compute(.init(
-            courseUsesWeights: false, categories: canvas, categoryMap: map(canvas: canvas)
+            courseUsesWeights: false, categories: canvas, now: now, categoryMap: map(canvas: canvas)
         ))
         let hw = breakdown.categories.first { $0.name == "HomeWorks" }
         #expect(Set(hw?.canvasGroupNames ?? []) == ["Problem Sets", "Worksheets"])

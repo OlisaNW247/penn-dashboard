@@ -36,9 +36,10 @@ struct GradeTrajectoryTests {
 
     private func input(
         weighted: Bool = false,
-        categories: [GradeCategory]
+        categories: [GradeCategory],
+        termWeeks: Double = 14
     ) -> GradeEngine.Input {
-        GradeEngine.Input(courseUsesWeights: weighted, categories: categories, now: now)
+        GradeEngine.Input(courseUsesWeights: weighted, categories: categories, now: now, termWeeks: termWeeks)
     }
 
     // MARK: - Shape
@@ -156,5 +157,45 @@ struct GradeTrajectoryTests {
         // Both scored: 0.4·90 + 0.6·70 = 78.
         #expect(abs(points[1].percent - 78) < 0.0001)
         #expect(abs(points[2].percent - 78) < 0.0001)
+    }
+
+    // MARK: - termWeeks forwarding
+
+    /// `TrajectoryPoint` only ever carries `date`/`percent` — deliberately
+    /// untouched by this change — and `percent` never depends on
+    /// `GradeCountPredictor`/`term` at all, so a dropped `termWeeks` in
+    /// `masking(_:after:)` couldn't be caught by asserting on a masked
+    /// point's `percent` the way earlier fields (categoryMap, modeOverride,
+    /// itemOverrides, manualWeights) can be — those all move `percent`
+    /// itself. What CAN be verified end to end is the single field
+    /// `masking` forwards unchanged for every field but `categories`: this
+    /// checks `Input.termWeeks` reaches `GradeBreakdown.term`/
+    /// `semesterDecidedFraction` through the exact same `Input` value
+    /// `GradeTrajectory` threads through, at a due date picked so 10 weeks
+    /// and 14 weeks give visibly different answers (10 of 10 elapsed = 1.0
+    /// exactly; 10 of a wrongly-defaulted 14 would be 10/14) — then confirms
+    /// `trajectory()` itself still runs cleanly (final point equal to
+    /// `compute`'s) with a non-default `termWeeks` set.
+    @Test("Input.termWeeks reaches the engine's term/semesterDecidedFraction, and trajectory still runs cleanly with it set")
+    func termWeeksReachesEngineAndTrajectoryStillRuns() {
+        let cats = [
+            GradeCategory(id: "lecture", name: "Lecture", weight: 0, items: [
+                item("l1", points: 100, score: 80, dueAt: day(70)), // exactly 10 weeks before `now`
+            ]),
+            GradeCategory(id: "att", name: "Attendance", weight: 100, items: [
+                item("a1", points: 10, score: 10),
+            ]),
+        ]
+        let engineInput = input(weighted: true, categories: cats, termWeeks: 10)
+        let breakdown = GradeEngine.compute(engineInput)
+
+        #expect(breakdown.term?.weeks == 10)
+        // 10 of a 10-week term is fully elapsed -- exactly 1.0, not the
+        // ~0.714 (10/14) a silently-dropped `termWeeks` would produce.
+        #expect(breakdown.semesterDecidedFraction.map { abs($0 - 1.0) < 0.0001 } ?? false)
+
+        let points = GradeEngine.trajectory(engineInput)
+        #expect(points.last?.date == now)
+        #expect(points.last?.percent == breakdown.currentPercent)
     }
 }

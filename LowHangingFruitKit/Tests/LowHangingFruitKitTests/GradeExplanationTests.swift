@@ -15,8 +15,8 @@ struct GradeExplanationTests {
 
     // MARK: - Helpers
 
-    private func item(_ id: String, points: Double, score: Double? = nil) -> GradeItem {
-        GradeItem(id: id, name: id, pointsPossible: points, score: score, scoreSource: score == nil ? nil : .canvas)
+    private func item(_ id: String, points: Double, score: Double? = nil, dueAt: Date? = nil) -> GradeItem {
+        GradeItem(id: id, name: id, pointsPossible: points, score: score, scoreSource: score == nil ? nil : .canvas, dueAt: dueAt)
     }
 
     private func category(_ id: String, name: String, weight: Double? = nil, items: [GradeItem]) -> GradeCategory {
@@ -190,5 +190,90 @@ struct GradeExplanationTests {
     func pointsCanvasLineNil() {
         let explanation = GradeExplanation.make(from: pointsFixture(), canvasScore: nil)
         #expect(explanation.canvasLine == nil)
+    }
+
+    // MARK: - expectedCountText (GradeCountPredictor wording)
+
+    private let week: TimeInterval = 7 * 24 * 60 * 60
+
+    @Test("expectedCountText: a student override reads '<count> (yours)'")
+    func expectedCountTextOverride() {
+        let hw = category("hw", name: "Papers", items: [item("h1", points: 10)])
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: true, categories: [hw], now: now, expectedCounts: ["hw": 8]
+        ))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        #expect(explanation.categoryLines[0].expectedCountText == "8 (yours)")
+    }
+
+    @Test("expectedCountText: a syllabus-stated category map count reads '<count> from syllabus'")
+    func expectedCountTextStated() {
+        let canvas = category("c-quiz", name: "Quizzes", items: [item("q1", points: 10)])
+        let map = GradeCategoryMap(categories: [
+            GradeCategoryMap.Category(
+                id: "map:quizzes", name: "Quizzes", weightPercent: 100,
+                expectedCount: 8, canvasGroupIDs: ["c-quiz"], provenance: .syllabus
+            ),
+        ], provenance: .syllabus)
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: [canvas], now: now, categoryMap: map
+        ))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        #expect(explanation.categoryLines[0].expectedCountText == "8 from syllabus")
+    }
+
+    @Test("expectedCountText: a singular exam-like name reads '1 implied by name'")
+    func expectedCountTextImpliedByName() {
+        let final = category("final", name: "Final", items: [item("f1", points: 100, score: 90)])
+        let breakdown = GradeEngine.compute(.init(courseUsesWeights: true, categories: [final], now: now))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        #expect(explanation.categoryLines[0].expectedCountText == "1 implied by name")
+    }
+
+    @Test("expectedCountText: no statement, no term to project from -- reads '<posted count> listed'")
+    func expectedCountTextListed() {
+        let papers = category("papers", name: "Papers", items: [
+            item("p1", points: 10), item("p2", points: 10), item("p3", points: 10), item("p4", points: 10),
+        ])
+        let breakdown = GradeEngine.compute(.init(courseUsesWeights: true, categories: [papers], now: now))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        #expect(explanation.categoryLines[0].expectedCountText == "4 listed")
+    }
+
+    @Test("expectedCountText: a pace ahead of what's listed reads '<projected count> projected from pace'")
+    func expectedCountTextProjected() {
+        let start = Date(timeIntervalSince1970: 1_000_000_000)
+        let sevenWeeksIn = start.addingTimeInterval(7 * week)
+        let papers = category("papers", name: "Papers", items: [
+            item("p1", points: 10, dueAt: start),
+            item("p2", points: 10, dueAt: start),
+            item("p3", points: 10, dueAt: start),
+        ])
+        let breakdown = GradeEngine.compute(.init(courseUsesWeights: true, categories: [papers], now: sevenWeeksIn))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        // dueSoFar 3 / elapsed 7 weeks * 14-week term = 6, ahead of the 3 listed.
+        #expect(explanation.categoryLines[0].expectedCountText == "6 projected from pace")
+    }
+
+    @Test("expectedCountText: an attendance category with no term reads plain 'by time'")
+    func expectedCountTextAttendanceNoTerm() {
+        let attendance = category("att", name: "Attendance", items: [item("a1", points: 10, score: 10)])
+        let breakdown = GradeEngine.compute(.init(courseUsesWeights: true, categories: [attendance], now: now))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        #expect(explanation.categoryLines[0].expectedCountText == "by time")
+    }
+
+    @Test("expectedCountText: an attendance category with a known term reads 'by time · week N of M'")
+    func expectedCountTextAttendanceWithTerm() {
+        let start = Date(timeIntervalSince1970: 1_000_000_000)
+        let twoAndAHalfWeeksIn = start.addingTimeInterval(2.5 * week)
+        let lecture = category("lecture", name: "Lecture", items: [item("l1", points: 100, dueAt: start)])
+        let attendance = category("att", name: "Attendance", items: [item("a1", points: 10, score: 10)])
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: true, categories: [lecture, attendance], now: twoAndAHalfWeeksIn
+        ))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+        let attendanceLine = explanation.categoryLines.first { $0.id == "att" }
+        #expect(attendanceLine?.expectedCountText == "by time \u{00b7} week 3 of 14")
     }
 }
