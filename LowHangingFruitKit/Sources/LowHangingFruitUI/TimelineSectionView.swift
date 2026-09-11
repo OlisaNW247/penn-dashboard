@@ -1,28 +1,18 @@
 import SwiftUI
 
-/// Header row shared by every timeline/done section: an uppercase label, a thin
-/// rule filling the remaining width, and the item count on the far right.
+/// Neutral section chip. Deadline color belongs to assignment cards only.
 struct SectionHeader: View {
     let label: String
-    let labelColor: Color
-    let count: Int
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.lhfSans(10, weight: .semibold))
-                .tracking(1.5)
-                .foregroundStyle(labelColor)
-
-            Rectangle()
-                .fill(Color.v2Divider)
-                .frame(height: 0.5)
-
-            Text("\(count)")
-                .font(.lhfSans(10, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(Color.v2SectionCount)
-        }
+        Text(label.uppercased())
+            .font(.lhfSans(11, weight: .semibold))
+            .tracking(1.5)
+            .foregroundStyle(Color.smoothInk)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.smoothPaper, in: Capsule())
+            .overlay { Capsule().stroke(Color.smoothInk, lineWidth: 2) }
     }
 }
 
@@ -34,9 +24,7 @@ struct TimelineSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(label: section.label,
-                          labelColor: section.labelColor,
-                          count: section.items.count)
+            SectionHeader(label: section.label)
 
             ForEach(section.items) { item in
                 AssignmentCardView(

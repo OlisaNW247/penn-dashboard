@@ -67,48 +67,41 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack(alignment: .bottomTrailing) {
-                VStack(spacing: 0) {
-                    header
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-
-                    syncErrorBanner
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
-
-                    if state.canvasSessionExpired {
-                        canvasSessionExpiredBanner
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                    }
-
-                    if showsConnectionNotice {
-                        connectionNoticeBanner
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                    }
-
-                    HStack(spacing: 10) {
-                        SegmentedToggle(selection: $filter)
-                        addInlineButton
-                    }
+            VStack(spacing: 0) {
+                header
                     .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .padding(.bottom, 4)
+                    .padding(.top, 10)
 
-                    ScrollView {
-                        listContent
-                            .padding(.horizontal, 20)
-                            .padding(.top, 18)
-                            .padding(.bottom, 40)
-                            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
-                    }
+                syncErrorBanner
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+
+                if state.canvasSessionExpired {
+                    canvasSessionExpiredBanner
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
                 }
 
-                assistantButton
+                if showsConnectionNotice {
+                    connectionNoticeBanner
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                }
+
+                SegmentedToggle(selection: $filter)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 4)
+
+                ScrollView {
+                    listContent
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                        .padding(.bottom, 40)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
+                }
             }
-            .background(Color.v2Bg.ignoresSafeArea())
+            .background(Color.smoothPaper.ignoresSafeArea())
             .navigationDestination(for: DashRoute.self) { route in
                 switch route {
                 case .settings:
@@ -219,65 +212,6 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
-    }
-
-    /// The floating action is the persimmon, and it opens `ask`.
-    ///
-    /// This corner used to hold a "+" that created a manual assignment. The
-    /// swap is a real trade and worth being honest about: creating work is a
-    /// thing every student does, and it has been demoted to the filter row
-    /// (see `addInlineButton`). What it buys is that the app's single most
-    /// prominent control is now its most distinctive feature rather than its
-    /// most ordinary one — every to-do app on the phone has a "+" bottom
-    /// right, and none of them has this.
-    ///
-    /// The mark is deliberately not sitting on an ink-filled circle like the
-    /// old "+" did. A persimmon reversed out on near-black loses the one
-    /// thing that makes it recognisable, which is that it is orange. It gets
-    /// a raised paper disc instead, so it reads as fruit against the greige.
-    private var assistantButton: some View {
-        NavigationLink(value: DashRoute.assistant) {
-            ZStack {
-                Circle()
-                    .fill(Color.v2Card)
-                    .shadow(color: Color.v2CardShadow.opacity(0.26), radius: 8, y: 3)
-                PersimmonMark(size: 34)
-                    .frame(width: 34, height: 34)
-            }
-            .frame(width: 60, height: 60)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("ask about your classes")
-        .padding(.trailing, 22)
-        .padding(.bottom, 24)
-    }
-
-    /// The new home for "add assignment": trailing the filter row.
-    ///
-    /// Of the places it could have gone this is the only one that keeps every
-    /// property the floating button had. It is always on screen and never
-    /// scrolls away; it is one tap, from anywhere in the list; and it now sits
-    /// directly above the list it adds to, which the bottom-right corner never
-    /// did. The alternatives both lost something — a fourth icon in the header
-    /// crowds the greeting off narrow phones and puts "create" in with
-    /// navigation, and a ghost row at the end of the list is only reachable
-    /// after scrolling past everything, which is precisely backwards for the
-    /// student who has just realised something is missing.
-    ///
-    /// The cost is reach: this is no longer in the thumb zone. That is the
-    /// price of giving the corner to `ask`, and it lands on the rarer action.
-    private var addInlineButton: some View {
-        Button { showAddSheet = true } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.v2DateText)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("add assignment")
-        .help("add assignment")
     }
 
     /// Reschedule due-date reminders from the current (override-aware) items.
@@ -433,75 +367,62 @@ struct ContentView: View {
 
     // MARK: Header
 
-    /// Wordmark, greeting and date on the left; the destinations on the right,
-    /// where the weekly ring used to sit. There's no manual reload button:
-    /// opening the app auto-refreshes, so these are the only header controls.
-    ///
-    /// v4 briefly made profile and settings tabs. They are pushed routes again,
-    /// off one stack, which is what the gear had always been. The tab bar cost
-    /// a permanent strip of screen on a list that wants the height, and put two
-    /// screens a student visits at the start of a semester next to the one they
-    /// open every day.
-    ///
-    /// One stack also means one Settings. When the gear pushed while a Settings
-    /// tab existed, the app could hold two live independent copies, each with
-    /// its own scroll position and half-typed rename, which is the "back button
-    /// went to the wrong screen" bug pre-built.
+    /// Smooth's compact header keeps creation visible and moves every existing
+    /// destination into one menu, without removing any route.
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Locust")
-                    .font(.lhfSans(11, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(Color.v2CourseCode)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Smooth \(Self.weekdayText(Date()))")
+                    .font(.lhfSerif(36))
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
 
-                Text(greeting)
-                    .font(.lhfSerif(27))
-                    .foregroundStyle(Color.v2Ink)
-
-                Text(Self.dateText(Date()))
-                    .font(.lhfSerif(15))
-                    .foregroundStyle(Color.v2DateText)
-                    .padding(.top, 2)
+                Text("\(Self.shortDateText(Date())) · \(weekLeftCount) left this week")
+                    .font(.lhfSans(15, weight: .medium))
+                    .foregroundStyle(Color.smoothMuted)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 6)
 
-            HStack(spacing: 10) {
-                if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades")
+            HStack(spacing: 8) {
+                Button { showAddSheet = true } label: {
+                    Text("+")
+                        .font(.lhfSans(24, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk)
+                        .frame(width: 38, height: 38)
+                        .background(Color.smoothLemon, in: Circle())
+                        .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
+                        .shadow(color: Color.smoothInk, radius: 0, x: 2, y: 2)
                 }
-                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile")
-                navButton(to: .settings, icon: "gearshape.fill", title: "settings")
+                .buttonStyle(.plain)
+                .accessibilityLabel("add assignment")
+
+                Menu {
+                    Button("ask") { path.append(.assistant) }
+                    if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
+                        Button("grades") { path.append(.grades) }
+                    }
+                    Button("profile") { path.append(.profile) }
+                    Button("settings") { path.append(.settings) }
+                } label: {
+                    Text("≡")
+                        .font(.lhfSans(23, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk)
+                        .frame(width: 38, height: 38)
+                        .background(Color.smoothPaper, in: Circle())
+                        .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("open menu")
             }
-            .padding(.top, 2)
+            .padding(.top, 1)
         }
     }
 
-    /// Matching circular icons in the top right. Every one is a push onto the
-    /// dashboard's own stack, so profile and settings are full screens with a
-    /// back button. Labels live in the accessibility layer only.
-    private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
-        NavigationLink(value: route) {
-            headerIcon(icon)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .help(title)
-    }
-
-
-    private func headerIcon(_ icon: String) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Color.v2DateText)
-            .frame(width: 48, height: 48)
-            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-            .contentShape(Circle())
-    }
-
-    private var greeting: String {
-        state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
+    private var weekLeftCount: Int {
+        let progress = vm.weeklyProgress()
+        return max(0, progress.total - progress.done)
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
@@ -607,7 +528,7 @@ struct ContentView: View {
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 14) {
                 // Some items can be visible while others from a different,
                 // not-yet-checked course are still held — the one-line notice
                 // sits above the real sections rather than replacing them.
@@ -754,9 +675,15 @@ struct ContentView: View {
 
     // MARK: Date
 
-    private static func dateText(_ date: Date) -> String {
+    private static func weekdayText(_ date: Date) -> String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"   // "Tuesday, May 26"
+        f.dateFormat = "EEEE"
+        return f.string(from: date)
+    }
+
+    private static func shortDateText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d"
         return f.string(from: date)
     }
 }

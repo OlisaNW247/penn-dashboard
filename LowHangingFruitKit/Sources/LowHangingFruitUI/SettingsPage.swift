@@ -476,7 +476,7 @@ struct SettingsPage: View {
             // otherwise a student who just turned sync on would see "Sync is
             // on" immediately, which isn't true until they relaunch.
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
-                Text("Takes effect after you quit and reopen Locust.")
+                Text("Takes effect after you quit and reopen Smooth.")
                     .font(.lhfSans(12))
                     .foregroundStyle(.secondary)
             } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
@@ -491,7 +491,7 @@ struct SettingsPage: View {
         } header: {
             Text("icloud sync")
         } footer: {
-            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to Locust\u{2019}s developer. Takes effect the next time you quit and reopen Locust. Both devices need to be signed into the same iCloud account.")
+            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to Smooth\u{2019}s developer. Takes effect the next time you quit and reopen Smooth. Both devices need to be signed into the same iCloud account.")
         }
     }
 
@@ -523,7 +523,7 @@ struct SettingsPage: View {
         } header: {
             Text("on this mac")
         } footer: {
-            Text("Keeps Locust in your menu bar so assignments stay fresh all day.")
+            Text("Keeps Smooth in your menu bar so assignments stay fresh all day.")
         }
     }
     #endif

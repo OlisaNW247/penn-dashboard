@@ -4,7 +4,7 @@ import SwiftUI
 /// checklist (`OnboardingView`). Three skippable screens that make the pitch
 /// before the login ask arrives: the problem (Canvas rewards points as
 /// heavily for a four-minute quiz as for a midterm, and those are exactly the
-/// ones that get missed), what Locust actually does about it (turns scattered
+/// ones that get missed), what Smooth actually does about it (turns scattered
 /// work into a clear class-to-assignment list), and — immediately before the
 /// checklist opens on "Connect Canvas" — a compact overview of the four parts
 /// of the app, using miniatures of the real dashboard, notification, assistant,
@@ -218,7 +218,7 @@ struct IntroView: View {
 
     private var screenThree: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("How Locust keeps you ahead.")
+            Text("How Smooth keeps you ahead.")
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -618,7 +618,7 @@ private struct ChipLayer: View {
     // MARK: Screen 2 — class to assignment
 
     /// The same nine chips settle into an explicit class-to-assignment list.
-    /// The arrow is the explanation: students can see immediately that Locust
+    /// The arrow is the explanation: students can see immediately that Smooth
     /// turns scattered course obligations into named work, without a paragraph
     /// below the illustration having to narrate it.
     private func organized(in size: CGSize, maxY: CGFloat) -> some View {

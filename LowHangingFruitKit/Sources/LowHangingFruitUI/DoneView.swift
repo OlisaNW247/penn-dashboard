@@ -17,9 +17,7 @@ struct DoneView: View {
             VStack(alignment: .leading, spacing: 22) {
                 ForEach(sections) { section in
                     VStack(alignment: .leading, spacing: 10) {
-                        SectionHeader(label: section.label,
-                                      labelColor: section.labelColor,
-                                      count: section.items.count)
+                        SectionHeader(label: section.label)
                         ForEach(section.items) { item in
                             DoneCardView(
                                 item: item,
@@ -66,7 +64,7 @@ struct DoneView: View {
     }
 }
 
-/// A single completed (archived) card.
+/// A completed card keeps its original deadline fill at reduced opacity.
 struct DoneCardView: View {
     let item: DashItem
     let dayLabel: String?
@@ -74,32 +72,23 @@ struct DoneCardView: View {
 
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
-    private let corner: CGFloat = 13
+    private let corner: CGFloat = 18
 
     var body: some View {
         Button {
             lhfHapticLight()
             onTap()
         } label: {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(Color.v2DoneSpine)
-                .frame(width: 6)
-
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.v2SpineGreen)
-
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfSans(9.5, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.v2DoneCourse)
+                        .font(.lhfMono(9.5, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                     Text(item.assignment.title)
-                        .font(.lhfSans(14, weight: .medium))
-                        .foregroundStyle(Color.v2DoneTitle)
-                        .strikethrough(true, color: Color.v2DoneTitle.opacity(0.7))
+                        .font(.lhfSerif(20))
+                        .foregroundStyle(Color.smoothInk)
+                        .strikethrough(true, color: Color.smoothInk)
                         .lineLimit(2)
                 }
 
@@ -107,16 +96,21 @@ struct DoneCardView: View {
 
                 if let dayLabel {
                     Text(dayLabel)
-                        .font(.lhfSans(11, weight: .medium))
-                        .foregroundStyle(Color.v2DoneCourse)
+                        .font(.lhfMono(15, weight: .medium))
+                        .foregroundStyle(Color.smoothInk)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .background(Color.v2DoneCard)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(smoothTaskFill(item.due))
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .stroke(Color.smoothInk, lineWidth: 2)
+            }
+            .shadow(color: Color.smoothInk, radius: 0, x: 3, y: 3)
+            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .opacity(0.55)
         }
         .buttonStyle(.plain)
     }

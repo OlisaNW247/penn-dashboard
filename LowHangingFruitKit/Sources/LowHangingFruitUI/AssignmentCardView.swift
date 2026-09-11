@@ -1,8 +1,8 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// An active (incomplete) assignment card: white surface, 13pt corners, soft
-/// shadow, and a 6pt urgency-colored spine on the left edge.
+/// An active assignment rendered as a saturated Smooth ticket. The fill, the
+/// section label, and the compact value all describe when it is due.
 ///
 /// **Completing is a swipe right, not a tap.** Tapping the body used to
 /// complete the assignment, which put the app's only destructive-feeling action
@@ -36,7 +36,7 @@ struct AssignmentCardView: View {
     @State private var dragX: CGFloat = 0
     @State private var isExpanded = false
 
-    private let corner: CGFloat = 13
+    private let corner: CGFloat = 18
 
     /// How far right the card has to travel to count as "done". Roughly a
     /// thumb's width: far enough that a stray horizontal nudge while scrolling
@@ -54,7 +54,7 @@ struct AssignmentCardView: View {
 
         return ZStack(alignment: .leading) {
             completeReveal
-            card(state: state, now: now)
+            card(now: now)
                 .offset(x: dragX)
         }
         .opacity(exitOpacity)
@@ -68,44 +68,37 @@ struct AssignmentCardView: View {
 
     // MARK: The card
 
-    private func card(state: DueState, now: Date) -> some View {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(state.spineColor)
-                .frame(width: 6)
-
-            // Deliberately a tap gesture, not a Button. A Button consumes the
-            // touch sequence, so the swipe below never reached the card: a
-            // horizontal drag registered as a tap and merely expanded it. Tap
-            // gestures don't claim drags, which leaves the horizontal one to
-            // this card and the vertical one to the ScrollView.
-            VStack(alignment: .leading, spacing: 0) {
-                content(state: state, now: now)
-                if isExpanded { expandedDetail(now: now) }
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 14)
-            .padding(.vertical, 13)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                    isExpanded.toggle()
-                }
-                lhfHapticLight()
-            }
-            // Losing the Button also loses what it told VoiceOver, so the trait
-            // and the actions are restored by hand.
-            .accessibilityElement(children: .contain)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
+    private func card(now: Date) -> some View {
+        // Deliberately a tap gesture, not a Button. A Button consumes the
+        // touch sequence, so the swipe below never reached the card.
+        VStack(alignment: .leading, spacing: 0) {
+            content(now: now)
+            if isExpanded { expandedDetail(now: now) }
         }
-        .background(Color.v2Card)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                isExpanded.toggle()
+            }
+            lhfHapticLight()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
+        .background(smoothTaskFill(item.due, now: now))
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
+        .overlay {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(Color.smoothInk, lineWidth: 2)
+        }
+        .shadow(color: Color.smoothInk, radius: 0, x: 3, y: 3)
     }
 
-    private func content(state: DueState, now: Date) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    private func content(now: Date) -> some View {
+        let value = smoothDueValue(item.due, now: now)
+        return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 // Bold: the course is how you find your way around this list.
                 // Scanning for "the CIS one" is the actual reading pattern, and
@@ -119,13 +112,13 @@ struct AssignmentCardView: View {
                 // is now the single marker (see `DashItem.showsNothingToSubmit`);
                 // this row is back to being plain course-code text.
                 Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                    .font(.lhfSans(9.5, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
+                    .font(.lhfMono(9.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.smoothInk.opacity(0.68))
 
                 Text(item.assignment.title)
-                    .font(.lhfSans(14, weight: .medium))
-                    .foregroundStyle(Color.v2Ink)
+                    .font(.lhfSerif(20))
+                    .foregroundStyle(Color.smoothInk)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -145,7 +138,7 @@ struct AssignmentCardView: View {
                 if let caveat = item.caveatText {
                     Text(caveat)
                         .font(.lhfSans(9, weight: .semibold))
-                        .foregroundStyle(Color.v2CourseCode)
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
 
@@ -154,16 +147,21 @@ struct AssignmentCardView: View {
             // The due date is the one thing this card exists to tell you, and
             // it used to be 11pt beside a calendar glyph of equal weight. With
             // the glyph gone it takes the corner outright.
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(dueText(item.due, now: now))
-                    .font(.lhfSans(13.5, weight: .semibold))
-                    .foregroundStyle(state.dueTextColor)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(value.primary)
+                    .font(.lhfMono(18, weight: .medium))
+                    .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                if let secondary = value.secondary {
+                    Text(secondary)
+                        .font(.lhfMono(8.5, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                }
                 if item.dueOverride != nil {
                     Text("adjusted")
-                        .font(.lhfSans(8.5))
-                        .foregroundStyle(Color.v2CourseCode)
+                        .font(.lhfMono(8.5))
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
         }
@@ -178,19 +176,19 @@ struct AssignmentCardView: View {
     private func expandedDetail(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle()
-                .fill(Color.v2Divider)
-                .frame(height: 0.5)
+                .fill(Color.smoothInk.opacity(0.22))
+                .frame(height: 1)
                 .padding(.top, 12)
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("due")
-                        .font(.lhfSans(9, weight: .semibold))
+                        .font(.lhfMono(9, weight: .semibold))
                         .tracking(1.1)
-                        .foregroundStyle(Color.v2CourseCode)
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                     Text(fullDueText(item.due))
                         .font(.lhfSans(12.5, weight: .medium))
-                        .foregroundStyle(Color.v2Ink)
+                        .foregroundStyle(Color.smoothInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -203,7 +201,7 @@ struct AssignmentCardView: View {
                         Text("edit date")
                             .font(.lhfSans(12, weight: .medium))
                     }
-                    .foregroundStyle(Color.v2SpineBlue)
+                    .foregroundStyle(Color.smoothInk)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -217,7 +215,7 @@ struct AssignmentCardView: View {
             if item.showsNothingToSubmit {
                 Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
                     .font(.lhfSans(11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.smoothInk.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
@@ -238,11 +236,11 @@ struct AssignmentCardView: View {
     /// take.
     private var completeReveal: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(Color.v2SpineGreen)
+            .fill(Color.smoothTeal)
             .overlay(alignment: .leading) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.smoothInk)
                     .padding(.leading, 20)
                     .opacity(dragX >= completeThreshold ? 1 : 0.45)
                     .scaleEffect(dragX >= completeThreshold ? 1.15 : 1)
