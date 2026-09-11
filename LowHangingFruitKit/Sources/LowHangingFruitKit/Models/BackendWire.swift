@@ -578,6 +578,124 @@ public struct DiscoverWebsitesRequest: Encodable, Sendable, Equatable {
     }
 }
 
+/// Request body for `map-categories`: Canvas's own assignment-*group* names
+/// and their items' names, points possible and submission types, and nothing
+/// else. This exists purely so the server's shared model can tell a real
+/// graded item from a zero-point placeholder or an attendance-tool entry
+/// (`backend/PROTOCOL.md`'s `map-categories` section); a score, a submission
+/// state, or anything else describing this student's own work is never a
+/// field on `Item` at all, so — like `CourseDocumentWire` omitting
+/// `submitted` — there is no key to forget to strip on the way out, only one
+/// that was never added.
+///
+/// `localStructureHash` is a fingerprint the CLIENT computes over its own
+/// request, used only to decide whether a previously-fetched
+/// `SharedCategoryMapping` still describes the current shape of this
+/// course's Canvas groups. It is named "local" on purpose: the server
+/// computes its own `structureHash` the same order-independent way
+/// (`_shared/categoryMap.ts`, a sha-256 prefix) and carries it back verbatim
+/// on `SharedCategoryMapping.structureHash`, but the two hashes are never
+/// compared against EACH OTHER — the app compares its own current
+/// `localStructureHash` against the `localStructureHash` it computed the
+/// last time it fetched a mapping, and the server compares its own
+/// `structureHash` against its own stored `category_map_hash`. Two different
+/// hash functions computed by two different parties for the same cache-
+/// validity question, kept namespaced apart so nobody is tempted to wire one
+/// into the other and get a cache invalidation bug when the algorithms
+/// inevitably drift (the Kit has no CryptoKit, so it could never reproduce
+/// the server's sha-256 exactly anyway — `ContentHash.fnv1a` is what's
+/// already used everywhere else on-device for this kind of fingerprint).
+public struct MapCategoriesRequest: Encodable, Sendable, Equatable {
+    public struct Item: Encodable, Sendable, Equatable {
+        public let id: String
+        public let name: String
+        public let pointsPossible: Double?
+        public let submissionTypes: [String]?
+
+        public init(id: String, name: String, pointsPossible: Double?, submissionTypes: [String]?) {
+            self.id = id
+            self.name = name
+            self.pointsPossible = pointsPossible
+            self.submissionTypes = submissionTypes
+        }
+    }
+
+    public struct Group: Encodable, Sendable, Equatable {
+        public let id: String
+        public let name: String
+        public let items: [Item]
+
+        public init(id: String, name: String, items: [Item]) {
+            self.id = id
+            self.name = name
+            self.items = items
+        }
+    }
+
+    public let courseID: String
+    public let groups: [Group]
+
+    /// Builds the request straight off Canvas's own assignment groups,
+    /// reading `id`, `name`, `pointsPossible` and `submissionTypes` off each
+    /// `GradeItem` and nothing more — in particular never `GradeItem.score`,
+    /// the one field there that describes this student's own work rather
+    /// than the shape of the course.
+    public init(courseID: String, canvasCategories: [GradeCategory]) {
+        self.courseID = courseID
+        self.groups = canvasCategories.map { category in
+            Group(
+                id: category.id,
+                name: category.name,
+                items: category.items.map { item in
+                    Item(
+                        id: item.id,
+                        name: item.name,
+                        pointsPossible: item.pointsPossible,
+                        submissionTypes: item.submissionTypes
+                    )
+                }
+            )
+        }
+    }
+
+    /// An order-independent fingerprint of the structure this request
+    /// describes — see the type's header for what it is and isn't compared
+    /// against. Built from a canonical string over the SAME data the request
+    /// itself carries (never a score): groups sorted by id, and within each
+    /// group items sorted by id, one line per group
+    /// (`"g\t<id>\t<name>"`) and one per item
+    /// (`"i\t<id>\t<name>\t<points or ->\t<types joined by , or ->"`), fed
+    /// through `ContentHash.fnv1a`. Sorting both levels is what makes it
+    /// order-independent — Canvas's own group/item ordering is an
+    /// implementation detail of how the professor built the site, not part
+    /// of the structure this hash is meant to describe.
+    public var localStructureHash: String {
+        var lines: [String] = []
+        for group in groups.sorted(by: { $0.id < $1.id }) {
+            lines.append("g\t\(group.id)\t\(group.name)")
+            for item in group.items.sorted(by: { $0.id < $1.id }) {
+                let points = item.pointsPossible.map { String($0) } ?? "-"
+                let types = item.submissionTypes.flatMap { $0.isEmpty ? nil : $0.joined(separator: ",") } ?? "-"
+                lines.append("i\t\(item.id)\t\(item.name)\t\(points)\t\(types)")
+            }
+        }
+        return ContentHash.fnv1a(lines.joined(separator: "\n"))
+    }
+}
+
+/// The server's answer to `map-categories`. `mapping` is `nil` when the
+/// course has no syllabus-derived grading categories yet to map onto — a
+/// normal, common response (a brand-new course, or one whose syllabus
+/// hasn't been extracted yet), never an error — otherwise the pooled,
+/// sanitized mapping every classmate enrolled in the course shares.
+public struct MapCategoriesResponse: Decodable, Sendable, Equatable {
+    public let mapping: SharedCategoryMapping?
+
+    public init(mapping: SharedCategoryMapping?) {
+        self.mapping = mapping
+    }
+}
+
 /// Shared JSON encoding/decoding for every backend wire type, mirroring
 /// `CourseContentAPI.decoder()`/`parseDate` in `CanvasCourseContentClient.swift`:
 /// dates are ISO 8601, accepted with or without fractional seconds on the

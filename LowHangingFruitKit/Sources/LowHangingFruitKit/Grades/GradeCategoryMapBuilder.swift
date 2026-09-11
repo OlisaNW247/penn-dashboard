@@ -87,6 +87,149 @@ public enum GradeCategoryMapBuilder {
         return map
     }
 
+    /// A map built from the server's pooled `map-categories` mapping for a
+    /// course whose syllabus grading scheme is `scheme` — the shared-backend
+    /// twin of `suggested`, which builds the same shape from a syllabus
+    /// matched locally. Pure reshaping, same as `suggested`'s own contract:
+    /// the SERVER's answer is a suggestion the student confirms in the UI,
+    /// never a second opinion this function itself renders. Every id and
+    /// name the mapping carries is re-validated against this device's own
+    /// `scheme`/`canvasCategories` rather than trusted outright — the
+    /// server's own sanitizer (`_shared/categoryMap.ts`) already enforces
+    /// "every id is one the request listed" and "an invented name is
+    /// dropped," but trusting a value that traveled through a jsonb column
+    /// to still mean what it meant when it was written is exactly the
+    /// mistake CLAUDE.md's jsonb-drift trap describes, one hop later.
+    ///
+    /// - A `GradeCategoryMap.Category` is emitted for every one of
+    ///   `scheme.normalizedCategories`, in scheme order, with the same id
+    ///   (`"map:" + slug(name)`), name, weight and drop-lowest `suggested`
+    ///   would use, and `.sharedProfile` provenance throughout. A category
+    ///   `mapping` never mentions is still emitted, with empty
+    ///   `canvasGroupIDs`.
+    /// - A `mapping` category is matched to a scheme category by
+    ///   `TitleNormalizer.categoryKey` equality; one that matches nothing is
+    ///   dropped whole, so its ids claim nothing.
+    /// - Group and item ids are otherwise "first mapping category (in
+    ///   `mapping.categories`' own order) to claim it wins," and only ids
+    ///   this device's own `canvasCategories` actually has — an id the
+    ///   pooled mapping names that no longer exists on Canvas is silently
+    ///   dropped rather than resurrected.
+    /// - `excludedItemIDs` is `mapping.excludedItemIDs` filtered to known
+    ///   item ids, minus any id a category also claimed via its own
+    ///   `itemIDs` — that tie goes to the category, since being assigned
+    ///   somewhere is a stronger, more specific fact than "excluded," and an
+    ///   item can't sensibly be both. `exclusionReasons` carries
+    ///   `mapping.reasons[id]` only for ids that stay excluded.
+    /// - `expectedCount` precedence per category: the syllabus's own
+    ///   `expectedItemCount`, then the matched mapping category's
+    ///   `expectedCount`, then `defaultExpectedCount(forCategoryName:)`,
+    ///   then 1 for an attendance/participation name — the exact same chain
+    ///   `suggested` uses, just with the pooled mapping's count slotted in
+    ///   as the middle fallback.
+    public static func fromSharedMapping(
+        _ mapping: SharedCategoryMapping,
+        scheme: SyllabusGradingScheme,
+        canvasCategories: [GradeCategory]
+    ) -> GradeCategoryMap {
+        let normalized = scheme.normalizedCategories
+        let knownGroupIDs = Set(canvasCategories.map(\.id))
+        let knownItemIDs = Set(canvasCategories.flatMap { $0.items.map(\.id) })
+
+        var schemeByKey: [String: SyllabusCategory] = [:]
+        for syllabusCategory in normalized {
+            schemeByKey[TitleNormalizer.categoryKey(syllabusCategory.name)] = syllabusCategory
+        }
+
+        func categoryID(for syllabusCategory: SyllabusCategory) -> String {
+            "map:" + GradeCategoryMap.slug(syllabusCategory.name)
+        }
+
+        // Only a mapping category that names a real scheme category gets to
+        // claim anything — one that matches nothing is dropped whole, the
+        // same "an invented name is dropped, category and all" rule the
+        // server's own sanitizer already applies one hop earlier.
+        // A duplicate name (two mapping entries both called "Quizzes") keeps
+        // only the first: letting the second claim ids it can never emit
+        // would reserve those ids away from a later category for nothing.
+        var seenKeys: Set<String> = []
+        let matched: [(scheme: SyllabusCategory, mapping: SharedCategoryMapping.Category)] = mapping.categories.compactMap { candidate in
+            let key = TitleNormalizer.categoryKey(candidate.name)
+            guard let syllabusCategory = schemeByKey[key], seenKeys.insert(key).inserted else { return nil }
+            return (syllabusCategory, candidate)
+        }
+
+        // First-claim-wins for group and item ids, evaluated in `mapping`'s
+        // own array order, and only ever against ids this device's Canvas
+        // actually has.
+        var groupClaims: [String: String] = [:]
+        var itemClaims: [String: String] = [:]
+        for (syllabusCategory, mappingCategory) in matched {
+            let id = categoryID(for: syllabusCategory)
+            for groupID in mappingCategory.canvasGroupIDs where knownGroupIDs.contains(groupID) {
+                if groupClaims[groupID] == nil { groupClaims[groupID] = id }
+            }
+            for itemID in mappingCategory.itemIDs where knownItemIDs.contains(itemID) {
+                if itemClaims[itemID] == nil { itemClaims[itemID] = id }
+            }
+        }
+
+        // The first mapping category matched to each scheme category, kept
+        // only for `expectedCount` — group/item CLAIMS above already used
+        // every matched entry, not just the first, but `expectedCount` isn't
+        // a claimed id, so "first match wins" is the simplest well-defined
+        // answer for the (expected to be rare) case of a duplicate name.
+        var firstMatchByKey: [String: SharedCategoryMapping.Category] = [:]
+        for (syllabusCategory, mappingCategory) in matched {
+            let key = TitleNormalizer.categoryKey(syllabusCategory.name)
+            if firstMatchByKey[key] == nil { firstMatchByKey[key] = mappingCategory }
+        }
+
+        let categories: [GradeCategoryMap.Category] = normalized.map { syllabusCategory in
+            let id = categoryID(for: syllabusCategory)
+            let key = TitleNormalizer.categoryKey(syllabusCategory.name)
+            let mappingCategory = firstMatchByKey[key]
+
+            let groupIDs = (mappingCategory?.canvasGroupIDs ?? []).filter {
+                knownGroupIDs.contains($0) && groupClaims[$0] == id
+            }
+
+            let expected = syllabusCategory.expectedItemCount
+                ?? mappingCategory?.expectedCount
+                ?? defaultExpectedCount(forCategoryName: syllabusCategory.name)
+                ?? (GradeItemClassifier.isAttendanceCategoryName(syllabusCategory.name) ? 1 : nil)
+
+            return GradeCategoryMap.Category(
+                id: id,
+                name: syllabusCategory.name,
+                weightPercent: syllabusCategory.weightPercent,
+                expectedCount: expected,
+                dropLowest: syllabusCategory.dropLowest,
+                canvasGroupIDs: groupIDs,
+                provenance: .sharedProfile
+            )
+        }
+
+        var map = GradeCategoryMap(categories: categories, provenance: .sharedProfile)
+        map.itemAssignments = itemClaims
+
+        // The excluded/assigned tie goes to the category: an id a category
+        // also claimed via `itemIDs` is not excluded even if `mapping` also
+        // listed it in `excludedItemIDs` — being assigned somewhere is a
+        // more specific, stronger fact than "excluded," and an item can't
+        // sensibly be both at once.
+        let excluded = mapping.excludedItemIDs.filter { knownItemIDs.contains($0) && itemClaims[$0] == nil }
+        map.excludedItemIDs = Set(excluded)
+        for id in excluded {
+            if let reason = mapping.reasons[id] {
+                map.exclusionReasons[id] = reason
+            }
+        }
+
+        applyAutoAssignments(to: &map, canvasCategories: canvasCategories)
+        return map
+    }
+
     /// 1 for a singular exam-like name ("Midterm", "Midterm 1", "Final",
     /// "Exam 2", "Test") — a syllabus rarely bothers to say "there will be
     /// one final," but the name itself already promises exactly one. `nil`
