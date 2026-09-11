@@ -137,7 +137,7 @@ struct SettingsPage: View {
                         }
                     } else {
                         Label("grade watcher", systemImage: "chart.bar.fill")
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Color.v2DateText)
                     }
                 } header: {
                     SmoothSectionHeader("grades", accent: .smoothCobalt)
@@ -168,7 +168,7 @@ struct SettingsPage: View {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.smoothMarigoldInk)
                 }
                 .smoothSectionBackground(.smoothMarigold)
             }
@@ -236,7 +236,7 @@ struct SettingsPage: View {
                 if stats.duplicateIDs > 0 {
                     Text("The ledger is holding more than one copy of the same assignment. It will self-heal on the next sync, but this appearing at all is a bug worth reporting.")
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
                 // Three states, not two. A store can be perfectly on-disk and
                 // still be failing every write, and telling that user their
@@ -251,7 +251,7 @@ struct SettingsPage: View {
                     systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
                 .font(.lhfSecondary(12))
-                .foregroundStyle(stats.isHealthy ? Color.secondary : Color.orange)
+                .foregroundStyle(stats.isHealthy ? Color.v2DateText : Color.smoothTomatoInk)
 
                 // The specifics, when there are any. "Not saving" on its own
                 // tells the user something is wrong but nothing about what —
@@ -261,12 +261,12 @@ struct SettingsPage: View {
                 if let reason = stats.storageFailureReason {
                     Text(reason)
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
                 if stats.failedSaveCount > 0 {
                     Text("\(stats.failedSaveCount) change\(stats.failedSaveCount == 1 ? "" : "s") couldn't be written to storage. Check that your device isn't out of space.")
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
             } header: {
                 SmoothSectionHeader("storage", accent: .smoothCobalt)
@@ -335,19 +335,19 @@ struct SettingsPage: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
-                        .foregroundStyle(state.courseKnowledge.isEmpty ? .secondary : Color.v2SpineGreen)
+                        .foregroundStyle(state.courseKnowledge.isEmpty ? Color.v2DateText : Color.v2SpineGreen)
                 }
                 Text("course materials")
                 Spacer()
                 Text(courseKnowledgeSummary)
                     .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.v2DateText)
             }
 
             if let notice = state.courseKnowledgeNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.lhfSecondary(12))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.smoothMarigoldInk)
             }
 
             if BackendServices.client != nil {
@@ -402,7 +402,7 @@ struct SettingsPage: View {
                 if scheduler.authStatus == .denied {
                     Label("notifications are off in system settings.", systemImage: "bell.slash")
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.v2DateText)
                     Button("open settings") { openSystemNotificationSettings() }
                 } else {
                     ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
@@ -457,15 +457,15 @@ struct SettingsPage: View {
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
                 Text("Takes effect after you quit and reopen Smooth.")
                     .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.v2DateText)
             } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
                 Text(reason)
                     .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Color.smoothTomatoInk)
             } else if state.cloudSyncEnabled {
                 Text("Sync is on. Changes appear on your other devices within a minute or two.")
                     .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.v2DateText)
             }
         } header: {
             SmoothSectionHeader("icloud sync", accent: .smoothCobalt)

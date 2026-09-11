@@ -87,7 +87,7 @@ struct ProfileSemesterSection: View {
                          "\(offer.summary) \(offer.totalItemCount == 1 ? "is" : "are") still " +
                          "on your dashboard.")
                         .font(.lhfSecondary(13))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !offer.courseKeys.isEmpty {
@@ -101,7 +101,7 @@ struct ProfileSemesterSection: View {
                     Text("nothing is deleted. it stays in done, just off the " +
                          "dashboard and out of reminders. you can undo it below.")
                         .font(.lhfSecondary(12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 4)
@@ -118,7 +118,7 @@ struct ProfileSemesterSection: View {
                     state.dismissRolloverOffer()
                 }
                 .font(.lhfSecondary(14))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.v2DateText)
             } header: {
                 SmoothSectionHeader("semester", accent: .smoothTeal)
             }

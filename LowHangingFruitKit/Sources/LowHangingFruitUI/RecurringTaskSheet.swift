@@ -25,13 +25,34 @@ struct RecurringTaskSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("recurring assignment")
-                .font(.title3.weight(.semibold))
+                .font(.lhfSerif(20))
+                .foregroundStyle(Color.smoothInk)
 
             TextField("title", text: $title)
-                .textFieldStyle(.roundedBorder)
+                .font(.lhfSans(14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.v2Card)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.v2Divider, lineWidth: 1)
+                        )
+                )
 
             TextField("course", text: $course)
-                .textFieldStyle(.roundedBorder)
+                .font(.lhfSans(14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.v2Card)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.v2Divider, lineWidth: 1)
+                        )
+                )
 
             Picker("due day", selection: $weekday) {
                 ForEach(weekdays, id: \.0) { day in
@@ -53,11 +74,15 @@ struct RecurringTaskSheet: View {
                     addTask()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || course.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(18)
         .frame(width: 420)
+        .font(.lhfSecondary(14))
+        .foregroundStyle(Color.smoothInk)
+        .tint(.smoothCobalt)
         .lhfSheetTheme()
     }
 

@@ -45,7 +45,7 @@ struct SyllabusSetupView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("syllabus")
+                .navigationTitle("")
 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -82,12 +82,20 @@ struct SyllabusSetupView: View {
     private var chooser: some View {
         Form {
             Section {
+                SmoothFormHeader(title: "Syllabus", accent: .smoothGrape, spark: .smoothLemon)
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .listRowSeparator(.hidden)
+
+            Section {
                 Text("locust reads only the grading section. the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. it stays on your phone.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
             }
+            .smoothSectionBackground(.smoothLemon)
 
-            Section("find it automatically") {
+            Section {
                 Button {
                     Task { await searchCanvas() }
                 } label: {
@@ -97,9 +105,12 @@ struct SyllabusSetupView: View {
                 Text("checks this course\u{2019}s syllabus page, its pages, and any file named like a syllabus.")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
+            } header: {
+                SmoothSectionHeader("find it automatically", accent: .smoothGrape)
             }
+            .smoothSectionBackground(.smoothTeal)
 
-            Section("or add it yourself") {
+            Section {
                 Button {
                     showPaste = true
                 } label: {
@@ -112,15 +123,23 @@ struct SyllabusSetupView: View {
                     Label("choose a pdf", systemImage: "doc")
                 }
 #endif
+            } header: {
+                SmoothSectionHeader("or add it yourself", accent: .smoothGrape)
             }
+            .smoothSectionBackground(.smoothCobalt)
         }
         .formStyle(.grouped)
+        .font(.lhfSecondary(15))
+        .foregroundStyle(Color.smoothInk)
+        .smoothFormChrome(accent: .smoothGrape)
         .sheet(isPresented: $showPaste) { pasteSheet }
     }
 
     private var pasteSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 8) {
+                SmoothFormHeader(title: "Paste syllabus", accent: .smoothGrape, spark: .smoothLemon)
+                    .padding(.horizontal)
                 Text("paste the part of your syllabus that lists what each thing is worth.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
@@ -135,7 +154,7 @@ struct SyllabusSetupView: View {
             }
             .padding(.top, 12)
             .background(Color.v2Bg)
-            .navigationTitle("paste syllabus")
+            .navigationTitle("")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -157,6 +176,7 @@ struct SyllabusSetupView: View {
                 }
             }
         }
+        .lhfSheetTheme()
     }
 
     private var searching: some View {
@@ -175,6 +195,13 @@ struct SyllabusSetupView: View {
     private func review(_ candidate: SyllabusCandidate, _ scheme: SyllabusGradingScheme) -> some View {
         Form {
             Section {
+                SmoothFormHeader(title: "Syllabus", accent: .smoothGrape, spark: .smoothLemon)
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .listRowSeparator(.hidden)
+
+            Section {
                 Text("found in \(candidate.name).")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
@@ -184,10 +211,11 @@ struct SyllabusSetupView: View {
                         .foregroundStyle(Color.v2DueAmber)
                 }
             } header: {
-                Text("what we read")
+                SmoothSectionHeader("what we read", accent: .smoothGrape)
             }
+            .smoothSectionBackground(.smoothLemon)
 
-            Section("weights") {
+            Section {
                 ForEach(scheme.normalizedCategories) { category in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -211,10 +239,13 @@ struct SyllabusSetupView: View {
                         }
                     }
                 }
+            } header: {
+                SmoothSectionHeader("weights", accent: .smoothGrape)
             }
+            .smoothSectionBackground(.smoothGrape)
 
             if let cutoffs = scheme.cutoffs {
-                Section("letter cutoffs") {
+                Section {
                     ForEach(cutoffs.bands) { band in
                         HStack {
                             Text(band.letter).font(.lhfSans(13, weight: .medium))
@@ -224,7 +255,10 @@ struct SyllabusSetupView: View {
                                 .foregroundStyle(Color.v2DateText)
                         }
                     }
+                } header: {
+                    SmoothSectionHeader("letter cutoffs", accent: .smoothGrape)
                 }
+                .smoothSectionBackground(.smoothTeal)
             }
 
             if scheme.mentionsCurve {
@@ -233,6 +267,7 @@ struct SyllabusSetupView: View {
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                 }
+                .smoothSectionBackground(.smoothMarigold)
             }
 
             Section {
@@ -247,8 +282,12 @@ struct SyllabusSetupView: View {
                     stage = .choosing
                 }
             }
+            .smoothSectionBackground(.smoothCobalt)
         }
         .formStyle(.grouped)
+        .font(.lhfSecondary(15))
+        .foregroundStyle(Color.smoothInk)
+        .smoothFormChrome(accent: .smoothGrape)
     }
 
     private func extras(for category: SyllabusCategory) -> String {
@@ -269,6 +308,13 @@ struct SyllabusSetupView: View {
         if let match = store.syllabusMatch(courseID: courseID) {
             Form {
                 Section {
+                    SmoothFormHeader(title: "Syllabus", accent: .smoothGrape, spark: .smoothLemon)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+                .listRowSeparator(.hidden)
+
+                Section {
                     if match.isCompleteCoverage {
                         Label("every category is matched. your syllabus\u{2019}s weights are in use.", systemImage: "checkmark.circle.fill")
                             .font(.lhfSans(12))
@@ -279,21 +325,28 @@ struct SyllabusSetupView: View {
                             .foregroundStyle(Color.v2DateText)
                     }
                 }
+                .smoothSectionBackground(.smoothLemon)
 
-                Section("your syllabus \u{2192} canvas") {
+                Section {
                     ForEach(match.matches) { row in
                         matchRow(row)
                     }
+                } header: {
+                    SmoothSectionHeader("your syllabus \u{2192} canvas", accent: .smoothGrape)
                 }
+                .smoothSectionBackground(.smoothGrape)
 
                 if !match.unmatchedCanvasCategories.isEmpty {
-                    Section("canvas groups with no syllabus weight") {
+                    Section {
                         ForEach(match.unmatchedCanvasCategories) { category in
                             Text(category.name)
                                 .font(.lhfSans(13))
                                 .foregroundStyle(Color.v2DateText)
                         }
+                    } header: {
+                        SmoothSectionHeader("canvas groups with no syllabus weight", accent: .smoothGrape)
                     }
+                    .smoothSectionBackground(.smoothTeal)
                 }
 
                 Section {
@@ -302,8 +355,12 @@ struct SyllabusSetupView: View {
                         stage = .choosing
                     }
                 }
+                .smoothSectionBackground(.smoothTomato)
             }
             .formStyle(.grouped)
+            .font(.lhfSecondary(15))
+            .foregroundStyle(Color.smoothInk)
+            .smoothFormChrome(accent: .smoothGrape)
         } else {
             Text("add a syllabus to match its categories.")
                 .font(.lhfSans(12))

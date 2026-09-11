@@ -97,7 +97,7 @@ struct ProfileClassesSection: View {
     private var emptyState: some View {
         Text("no classes")
             .font(.lhfSecondary(13))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.v2DateText)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -156,7 +156,7 @@ struct ProfileClassesSection: View {
                 HStack {
                     Text(state.courseDisplayName(course))
                         .font(.lhfSecondary(14))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.v2DateText)
                     Spacer()
                     Button("restore") {
                         state.restoreCourse(course)
@@ -167,7 +167,7 @@ struct ProfileClassesSection: View {
         } label: {
             Label("deleted (\(deletedCourses.count))", systemImage: "trash")
                 .font(.lhfSecondary(13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.v2DateText)
         }
     }
 }
