@@ -292,6 +292,19 @@ struct ContentView: View {
                     .layoutPriority(1)
                     .accessibilityElement(children: .combine)
                     .frame(height: 48, alignment: .center)
+                    .overlay(alignment: .bottomLeading) {
+                        SmoothSquiggle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                            )
+                            .frame(width: 104, height: 6)
+                            .offset(x: 2, y: -1)
+                    }
 
                 Text(Self.dateText(Date()))
                     .font(.lhfMono(14, weight: .medium))
@@ -593,6 +606,25 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         return f.string(from: date)
+    }
+}
+
+/// A compact three-wave underline with a hand-drawn rhythm. Its fixed width is
+/// tuned to the Roobert "Smooth" wordmark and deliberately stops before the
+/// weekday begins.
+private struct SmoothSquiggle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let amplitude = rect.height * 0.32
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+
+        for step in 1...48 {
+            let progress = CGFloat(step) / 48
+            let x = rect.minX + rect.width * progress
+            let y = rect.midY + sin(progress * .pi * 6) * amplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+        }
+        return path
     }
 }
 
