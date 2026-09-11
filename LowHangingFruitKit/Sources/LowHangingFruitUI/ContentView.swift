@@ -320,8 +320,8 @@ struct ContentView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 48, height: 48)
-                .background(Circle().fill(color))
-                .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
+                .background(Circle().fill(color.opacity(0.18)))
+                .overlay { Circle().stroke(color.opacity(0.72), lineWidth: 1.5) }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
