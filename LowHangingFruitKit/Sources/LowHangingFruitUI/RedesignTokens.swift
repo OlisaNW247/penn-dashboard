@@ -346,7 +346,8 @@ struct SmoothDueValue {
 }
 
 /// Compact two-line deadline value used on Smooth cards: `4d / late`, `5h`,
-/// or the abbreviated weekday. Full dates remain available in expanded detail.
+/// the weekday for the next five days, or a short date beyond that window.
+/// Full dates remain available in expanded detail.
 func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
     guard let due else { return SmoothDueValue(primary: "—", secondary: "no date") }
     let seconds = due.timeIntervalSince(now)
@@ -365,8 +366,14 @@ func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
     if seconds < 86_400 {
         return SmoothDueValue(primary: "\(max(1, Int(seconds / 3_600)))h", secondary: nil)
     }
+    if seconds <= 5 * 86_400 {
+        return SmoothDueValue(
+            primary: due.formatted(.dateTime.weekday(.abbreviated)),
+            secondary: nil
+        )
+    }
     return SmoothDueValue(
-        primary: due.formatted(.dateTime.weekday(.abbreviated)),
+        primary: due.formatted(.dateTime.month(.abbreviated).day()),
         secondary: nil
     )
 }
