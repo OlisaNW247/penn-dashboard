@@ -284,7 +284,7 @@ struct ContentView: View {
                     Text("Smooth")
                         .font(.lhfWordmark(32))
                     + Text(" \(Self.weekdayText(Date()))")
-                        .font(.lhfSerif(32))
+                        .font(.lhfHeaderTitle(32))
                 )
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)

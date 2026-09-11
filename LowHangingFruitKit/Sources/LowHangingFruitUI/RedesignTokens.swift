@@ -108,6 +108,8 @@ private enum SmoothFontRegistry {
         for (name, ext) in [
             ("Satoshi-Variable", "ttf"),
             ("Satoshi-VariableItalic", "ttf"),
+            ("Roobert-SemiBold", "otf"),
+            ("Roobert-SemiBoldItalic", "otf"),
             ("Inter", "ttf"),
             ("FamiljenGrotesk-Variable", "ttf"),
             ("SpaceMono-Regular", "ttf"),
@@ -192,12 +194,20 @@ extension Font {
             : .system(size: lhfScaled(size), weight: .bold, design: .default)
     }
 
-    /// The italic cut is reserved for the Smooth wordmark.
+    /// Roobert's italic display cut is reserved for the Smooth wordmark.
     static func lhfWordmark(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("SatoshiVariable-BoldItalic")
-            ? .custom("SatoshiVariable-BoldItalic", size: size, relativeTo: lhfTextStyle(for: size))
+        return fontIsAvailable("RoobertTRIAL-SemiBoldItalic")
+            ? .custom("RoobertTRIAL-SemiBoldItalic", size: size, relativeTo: lhfTextStyle(for: size))
             : lhfSerif(size).italic()
+    }
+
+    /// Upright Roobert for the weekday paired with the Smooth wordmark.
+    static func lhfHeaderTitle(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("RoobertTRIAL-SemiBold")
+            ? .custom("RoobertTRIAL-SemiBold", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSerif(size)
     }
 
     /// Satoshi is the primary interface face, with Inter as a safe fallback.
