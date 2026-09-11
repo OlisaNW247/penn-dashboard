@@ -20,12 +20,14 @@ extension Color {
     static let smoothRule     = Color(hex: 0xD9C9A6)
     static let smoothInk      = Color(hex: 0x1B1714)
     static let smoothMuted    = Color(hex: 0x7C7060)
-    static let smoothTomato   = Color(hex: 0xF07256)
-    static let smoothMarigold = Color(hex: 0xF7A844)
-    static let smoothLemon    = Color(hex: 0xF5D353)
-    static let smoothTeal     = Color(hex: 0x40B3A5)
-    static let smoothCobalt   = Color(hex: 0x699AE7)
-    static let smoothGrape    = Color(hex: 0xAF85F0)
+    // Washed with the paper tone: still easy to scan by urgency, but calmer
+    // and less toy-like than the original fully saturated swatches.
+    static let smoothTomato   = Color(hex: 0xF2947C)
+    static let smoothMarigold = Color(hex: 0xF4BC78)
+    static let smoothLemon    = Color(hex: 0xECD77F)
+    static let smoothTeal     = Color(hex: 0x74BDB2)
+    static let smoothCobalt   = Color(hex: 0x8EADE0)
+    static let smoothGrape    = Color(hex: 0xBDA3DF)
 
     static let v2Bg          = Color.dynamic(light: 0xFBF2DF, dark: 0x1C1A17)
     static let v2Card        = Color.dynamic(light: 0xFBF2DF, dark: 0x26241F)
@@ -98,7 +100,7 @@ extension Color {
 private enum SmoothFontRegistry {
     static let registration: Void = {
         for (name, ext) in [
-            ("BagelFatOne-Regular", "ttf"),
+            ("Tanker-Regular", "ttf"),
             ("InstrumentSans", "ttf"),
             ("MartianMono", "ttf"),
         ] {
@@ -172,12 +174,12 @@ private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
 #endif
 
 extension Font {
-    /// Bagel Fat One display face. Kept under the existing name so every title across
+    /// Tanker display face. Kept under the existing name so every title across
     /// the app adopts the Smooth identity without changing screen behavior.
     static func lhfSerif(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("BagelFatOne-Regular")
-            ? .custom("BagelFatOne-Regular", size: size, relativeTo: lhfTextStyle(for: size))
+        return fontIsAvailable("Tanker-Regular")
+            ? .custom("Tanker-Regular", size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: .heavy, design: .rounded)
     }
 
