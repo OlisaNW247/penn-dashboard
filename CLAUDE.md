@@ -73,8 +73,19 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-10): **1104 tests / 109 suites
-green** (plus 4 XCTest scheduler tests), after Grade Watcher round 2 (the
+Baseline on `v5`, verified on a Mac (2026-09-10): **1170 tests / 117 suites
+green** (plus 4 XCTest scheduler tests), after Grade Watcher round 3
+(docs/grades.md §15: the category map -- every course's Canvas groups and
+items are regrouped into syllabus categories by `GradeCategoryMap` /
+`GradeRegrouper`, attendance items and zero-point placeholders are
+classified out by `GradeItemClassifier`, the student edits the map in
+`GradeCategoryMapEditor`, and the deployed `map-categories` function can
+propose one; Deno 308). Round 3 was 3,400 blind lines and needed four
+fix commits to go green: two memberwise-init/argument-order compile
+errors, a main-actor trap in a View static called from a test (trap
+below), and one real logic bug plus one test-pollution bug (trap below)
+that the first full run exposed together. Before that, 1104/109 the same
+day after Grade Watcher round 2 (the
 server's syllabus extraction and the registrar's components reach Grade
 Watcher: suggested schemes, automatic exclusion of a zero-credit or
 pass/fail site via `GradeSiteExclusion`, syllabus reuse from the synced
@@ -328,6 +339,31 @@ end to end) or pass `-LHFForceUpdateWall`.
   cycles of reasoning had not. When a layout bug survives two fixes, stop
   reasoning and draw the frames.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
+- **A `static func` on a SwiftUI `View` is main-actor isolated, and Swift 6
+  enforces it at run time.** `GradeCourseCardView.decidedText` is a pure
+  string rule that tests call directly; the `{ $0.lowercased() }` closure
+  inside its `map` inherited the View's isolation and, on swift-testing's
+  executor, died in `_dispatch_assert_queue_fail` -- `swift test` exits
+  with "signal code 5" and no "Fatal error" line, and the crash report's
+  main thread shows only an idle run loop (read the `triggered` thread from
+  the `.ips`). Three earlier tests in the same suite passed because they
+  returned before the closure was formed. Mark such helpers `nonisolated`;
+  do not mark the test suite `@MainActor`, which hides the trap and leaves
+  the next background caller (a widget, a notification body) to find it.
+- **Seeding a persisted flag through `UserDefaults.lhf` in a test is not
+  hermetic even with backup-and-restore.** `FirstLaunchHoldDashboardTests`
+  wrote `canvasSessionConfirmedDeadV1 = true` for the duration of each test
+  and restored it after; that looked like the sanctioned pattern. But every
+  `AppState.init` in every concurrently running suite that landed inside
+  that window read a dead Canvas session, engaged the first-launch hold,
+  and hid its own overdue fixtures -- ten assertions in four unrelated
+  suites (dedup, Done tab, ledger scenarios, cookie store) failed at once
+  with no grade code in their stacks, after two green runs of pure
+  scheduling luck. The tell was the timing: every failure at 1.3-1.8s, the
+  window that suite ran in. A flag another suite's `init` reads needs a
+  per-instance seam (`forceCanvasSessionConfirmedDeadForTesting()`), not a
+  shared-domain write. Restore-on-exit protects the *next* suite, never the
+  ones running *alongside*.
 - **A jsonb column outlives the TypeScript type that wrote it.**
   `catalog_courses.components` rows written on 2026-09-07 had no
   `meetings`; the next day's code iterated `component.meetings`, the stored
