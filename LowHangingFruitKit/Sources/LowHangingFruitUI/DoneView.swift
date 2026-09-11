@@ -84,7 +84,7 @@ struct DoneCardView: View {
                     Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
                         .font(.lhfMono(9.5, weight: .semibold))
                         .tracking(1.1)
-                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                        .foregroundStyle(smoothTaskTextAccent(item.due))
                     Text(item.assignment.title)
                         .font(.lhfSerif(20))
                         .foregroundStyle(Color.smoothInk)
@@ -105,10 +105,6 @@ struct DoneCardView: View {
             .padding(.vertical, 10)
             .background(smoothTaskFill(item.due))
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .stroke(smoothTaskAccent(item.due).opacity(0.58), lineWidth: 1.5)
-            }
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .opacity(0.55)
         }

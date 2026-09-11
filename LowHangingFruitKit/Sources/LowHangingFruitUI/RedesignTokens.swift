@@ -27,6 +27,14 @@ extension Color {
     static let smoothCobalt   = Color(hex: 0x699AE7)
     static let smoothGrape    = Color(hex: 0xAF85F0)
 
+    // Dark companions for text placed on each pastel urgency field.
+    static let smoothTomatoInk   = Color.dynamic(light: 0xB63B23, dark: 0xF59A85)
+    static let smoothMarigoldInk = Color.dynamic(light: 0x985700, dark: 0xFBCB75)
+    static let smoothLemonInk    = Color.dynamic(light: 0x746400, dark: 0xF9E889)
+    static let smoothTealInk     = Color.dynamic(light: 0x176D65, dark: 0x76D4C9)
+    static let smoothCobaltInk   = Color.dynamic(light: 0x345EA8, dark: 0xA8C4F5)
+    static let smoothGrapeInk    = Color.dynamic(light: 0x7044A6, dark: 0xD0B2F7)
+
     static let v2Bg          = Color.dynamic(light: 0xFFFFFF, dark: 0x1C1A17)
     static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)
     static let v2CardShadow  = Color.dynamic(light: 0x1B1714, dark: 0x000000)
@@ -334,10 +342,22 @@ func smoothTaskAccent(_ due: Date?, now: Date = Date()) -> Color {
     return .smoothGrape
 }
 
-/// Assignment cards use the same quiet color wash as Settings sections. The
-/// saturated accent remains on the edge, so urgency is still scannable.
+/// The darker partner used for course codes on the matching pastel field.
+func smoothTaskTextAccent(_ due: Date?, now: Date = Date()) -> Color {
+    guard let due else { return .smoothGrapeInk }
+    let seconds = due.timeIntervalSince(now)
+    if seconds < 0 { return .smoothTomatoInk }
+    if seconds <= 7 * 3_600 { return .smoothMarigoldInk }
+    if seconds < 86_400 { return .smoothLemonInk }
+    if seconds < 4 * 86_400 { return .smoothTealInk }
+    if seconds < 6 * 86_400 { return .smoothCobaltInk }
+    return .smoothGrapeInk
+}
+
+/// A middle ground between the original solid cards and the first very pale
+/// pass: still airy, but with enough hue to group deadlines at a glance.
 func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
-    smoothTaskAccent(due, now: now).opacity(0.15)
+    smoothTaskAccent(due, now: now).opacity(0.26)
 }
 
 struct SmoothDueValue {
