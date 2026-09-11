@@ -98,9 +98,15 @@ extension Color {
 private enum SmoothFontRegistry {
     static let registration: Void = {
         for (name, ext) in [
-            ("Tanker-Regular", "ttf"),
-            ("InstrumentSans", "ttf"),
-            ("MartianMono", "ttf"),
+            // Roobert is a commercial face. These entries activate
+            // automatically when licensed app-font files are added here.
+            ("Roobert-Regular", "ttf"),
+            ("Roobert-Medium", "ttf"),
+            ("Roobert-SemiBold", "ttf"),
+            ("Roobert-Bold", "ttf"),
+            ("Inter", "ttf"),
+            ("SpaceMono-Regular", "ttf"),
+            ("SpaceMono-Bold", "ttf"),
         ] {
             guard let url = Bundle.module.url(forResource: name, withExtension: ext) else { continue }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
@@ -172,39 +178,48 @@ private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
 #endif
 
 extension Font {
-    /// Tanker display face. Kept under the existing name so every title across
-    /// the app adopts the Smooth identity without changing screen behavior.
+    /// Inter gives titles and high-emphasis labels a crisp supporting voice.
+    /// Kept under the existing name so screen behavior stays unchanged.
     static func lhfSerif(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("Tanker-Regular")
-            ? .custom("Tanker-Regular", size: size, relativeTo: lhfTextStyle(for: size))
-            : .system(size: lhfScaled(size), weight: .heavy, design: .rounded)
+        return fontIsAvailable("Inter-Bold")
+            ? .custom("Inter-Bold", size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: .bold, design: .default)
     }
 
-    /// Instrument Sans for controls and body copy.
+    /// Roobert is the primary interface face. Inter is the metrically similar,
+    /// bundled fallback used until licensed Roobert app-font files are present.
     static func lhfSans(_ size: CGFloat, weight: Weight = .regular) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        let custom: String
+        let roobert: String
+        let inter: String
         switch weight {
-        case .bold, .heavy, .black: custom = "InstrumentSans-Bold"
-        case .semibold:            custom = "InstrumentSans-SemiBold"
-        case .medium:              custom = "InstrumentSans-Medium"
-        default:                   custom = "InstrumentSans-Regular"
+        case .bold, .heavy, .black:
+            roobert = "Roobert-Bold"
+            inter = "Inter-Bold"
+        case .semibold:
+            roobert = "Roobert-SemiBold"
+            inter = "Inter-SemiBold"
+        case .medium:
+            roobert = "Roobert-Medium"
+            inter = "Inter-Medium"
+        default:
+            roobert = "Roobert-Regular"
+            inter = "Inter-Regular"
         }
+        let custom = fontIsAvailable(roobert) ? roobert : inter
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: weight, design: .default)
     }
 
-    /// Martian Mono for course codes, deadlines, and other compact data.
+    /// Space Mono for course codes, deadlines, and other compact data.
     static func lhfMono(_ size: CGFloat, weight: Weight = .regular) -> Font {
         SmoothFontRegistry.ensureRegistered()
         let custom: String
         switch weight {
-        case .bold, .heavy, .black: custom = "MartianMono-Bold"
-        case .semibold:            custom = "MartianMono-SemiBold"
-        case .medium:              custom = "MartianMono-Medium"
-        default:                   custom = "MartianMono-Regular"
+        case .semibold, .bold, .heavy, .black: custom = "SpaceMono-Bold"
+        default:                              custom = "SpaceMono-Regular"
         }
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
