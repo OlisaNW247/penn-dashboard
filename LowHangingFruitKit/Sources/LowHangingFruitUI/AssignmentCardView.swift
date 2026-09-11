@@ -136,7 +136,7 @@ struct AssignmentCardView: View {
                 // joined onto the same line by `DashItem.caveatText`.
                 if let caveat = item.caveatText {
                     Text(caveat)
-                        .font(.lhfSans(9, weight: .semibold))
+                        .font(.lhfSecondary(9, weight: .semibold))
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }

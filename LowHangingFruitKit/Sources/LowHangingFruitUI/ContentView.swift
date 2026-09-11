@@ -291,7 +291,7 @@ struct ContentView: View {
                     .lineLimit(1)
 
                 Text(Self.dateText(Date()))
-                    .font(.lhfSans(15, weight: .medium))
+                    .font(.lhfSecondary(15, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
                     .padding(.top, 2)
             }
@@ -488,7 +488,7 @@ struct ContentView: View {
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
                 Text("you're all caught up")
-                    .font(.lhfSans(15))
+                    .font(.lhfSecondary(15))
                     .foregroundStyle(Color.v2DateText.opacity(0.85))
             }
         }
@@ -524,7 +524,7 @@ struct ContentView: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("loading your assignments…")
-                .font(.lhfSans(15))
+                .font(.lhfSecondary(15))
                 .foregroundStyle(Color.v2DateText)
         }
         .frame(maxWidth: .infinity)
@@ -545,7 +545,7 @@ struct ContentView: View {
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
             Text(message)
-                .font(.lhfSans(14))
+                .font(.lhfSecondary(14))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

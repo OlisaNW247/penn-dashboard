@@ -173,12 +173,12 @@ private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
 #endif
 
 extension Font {
-    /// Inter gives titles and high-emphasis labels a crisp supporting voice.
+    /// Satoshi for every primary title, including assignment and screen titles.
     /// Kept under the existing name so screen behavior stays unchanged.
     static func lhfSerif(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("Inter-Bold")
-            ? .custom("Inter-Bold", size: size, relativeTo: lhfTextStyle(for: size))
+        return fontIsAvailable("SatoshiVariable-Bold")
+            ? .custom("SatoshiVariable-Bold", size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: .bold, design: .default)
     }
 
@@ -202,6 +202,21 @@ extension Font {
             inter = "Inter-Regular"
         }
         let custom = fontIsAvailable(satoshi) ? satoshi : inter
+        return fontIsAvailable(custom)
+            ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: weight, design: .default)
+    }
+
+    /// Inter is reserved for supporting copy beneath the primary hierarchy.
+    static func lhfSecondary(_ size: CGFloat, weight: Weight = .regular) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        let custom: String
+        switch weight {
+        case .bold, .heavy, .black: custom = "Inter-Bold"
+        case .semibold:            custom = "Inter-SemiBold"
+        case .medium:              custom = "Inter-Medium"
+        default:                   custom = "Inter-Regular"
+        }
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: weight, design: .default)
