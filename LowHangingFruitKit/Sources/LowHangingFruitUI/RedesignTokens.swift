@@ -109,7 +109,7 @@ private enum SmoothFontRegistry {
             ("Satoshi-Variable", "ttf"),
             ("Satoshi-VariableItalic", "ttf"),
             ("Inter", "ttf"),
-            ("Questrial-Regular", "ttf"),
+            ("FamiljenGrotesk-Variable", "ttf"),
             ("SpaceMono-Regular", "ttf"),
             ("SpaceMono-Bold", "ttf"),
         ] {
@@ -240,13 +240,13 @@ extension Font {
             : .system(size: lhfScaled(size), weight: weight, design: .default)
     }
 
-    /// Questrial is reserved for assignment names, giving the task list its
-    /// own softer, highly readable voice without changing the rest of Smooth's
+    /// Familjen Grotesk is reserved for assignment names, giving the task list
+    /// a sturdy, contemporary voice without changing the rest of Smooth's
     /// Satoshi / Inter / Space Mono hierarchy.
     static func lhfAssignmentTitle(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("Questrial-Regular")
-            ? .custom("Questrial-Regular", size: size, relativeTo: lhfTextStyle(for: size))
+        return fontIsAvailable("FamiljenGroteskRoman-Medium")
+            ? .custom("FamiljenGroteskRoman-Medium", size: size, relativeTo: lhfTextStyle(for: size))
             : lhfSans(size, weight: .medium)
     }
 
