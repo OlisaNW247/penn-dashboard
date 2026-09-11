@@ -632,3 +632,47 @@ N%". A grade made only of attendance is not a grade.
   syllabus scheme is applied by the student; edits on top are always per-student,
   on-device.
 - Unmapped groups are never silently dropped: they count 0% and say so.
+
+### 15.8 The server's suggested mapping (`map-categories`)
+
+The local matcher (§15.3) is deterministic and cheap, and it is wrong in
+exactly the ways a name-matcher is wrong: "Worksheets" is homework on this
+syllabus and nothing in its name says so; "Roll Call Attendance" sits inside
+"Problem Sets." The backend's `map-categories` function
+(`backend/PROTOCOL.md`) asks a model the same question with the whole
+structure in front of it, and caches the answer per course so every
+classmate gets it for one model call.
+
+What travels is the structure only: group names, item names, points
+possible, submission types. `MapCategoriesRequest` is built from the
+snapshot's categories and reads nothing else; a test encodes a fixture with
+scores present and asserts the JSON has none. The answer
+(`SharedCategoryMapping`) is re-validated on the device against the current
+Canvas structure (`GradeCategoryMapBuilder.fromSharedMapping` drops any name
+or id the device does not have) even though the server already sanitized
+it.
+
+When the app asks: after a grade refresh, for a watched course that has a
+syllabus scheme attached, no student edits to its map, and no answer yet for
+its current structure. The structure is fingerprinted on the device
+(`localStructureHash`, an FNV-1a over sorted groups and items; not the
+server's hash) so a cached answer is reused until Canvas's groups change,
+and a `null` answer is remembered too. Errors are swallowed: the backend
+being down never changes the report.
+
+What the student sees: in the categories editor, "suggested mapping, as
+read by locust's server" with one line per category naming the groups and
+items it would fold, and two buttons, "use it" and "not now." Nothing is
+applied until "use it." Acceptance is recorded against the structure hash;
+when the structure changes the acceptance lapses and the local suggestion
+is back until the server is asked again. The suggestion is not shown at
+all when it reproduces what the local matcher already produced.
+
+The rejected design was writing the server's mapping into the student's
+`categoryMapEdits`. It would have worked, and it would have made the
+server's opinion read as the student's own edits, with student provenance
+in the explanation panel and no way to tell the two apart when a later
+structure change made the mapping stale. Accepted mappings instead take
+the `suggested` slot in `effectiveCategoryMap`'s precedence chain, with
+`.sharedProfile` provenance, and the student's own edits still layer on
+top.

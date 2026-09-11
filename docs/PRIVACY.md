@@ -65,6 +65,16 @@ on-device alone:
   announcement's text works the same way — the announcement
   text goes to the same server and model, and the result isn't stored either.
 
+  Grade Watcher can also ask the server how a class's Canvas assignment
+  groups line up with its syllabus categories. That request carries the
+  *names* of the groups and assignments, their points possible and
+  submission types — never a score, never whether you submitted anything.
+  The answer is a suggestion the report shows you; nothing changes until
+  you tap "use it." Because the structure of a class's assignment groups is
+  the same for everyone in it, the answer is cached per class and shared
+  with classmates, so the model is asked about each class once, not once
+  per student.
+
 - **An anonymous account id.** The first time you launch the app, it creates an
   anonymous account with our backend — no email, no password, no name — so the
   server can tell your enrollment and quota apart from every other student's
