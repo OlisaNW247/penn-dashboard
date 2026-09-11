@@ -8,9 +8,9 @@ import UIKit
 import AppKit
 #endif
 
-/// First-launch splash: plays the bundled intro clip once on a field that
-/// matches the clip's own background, so the square clip sits seamlessly, then
-/// hands off to the app. A timeout guards against a clip that never loads.
+/// First-launch splash: plays the first 1.5 seconds of the bundled polar-bear
+/// clip on white, then hands off to the app. A timeout guards against a clip
+/// that never loads.
 struct SplashView: View {
     /// Resolved by the caller (`RootView`) from `AppState.appearanceMode`
     /// directly — NOT from `@Environment(\.colorScheme)`. The splash is the
@@ -26,28 +26,9 @@ struct SplashView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Light mode plays the original clip, whose decoded background measures
-    /// ~#FDF8EF (±2 of compression noise); the previous #FCF5EC was a few
-    /// levels darker, which showed the square clip as a faint box on screen.
-    /// Dark mode plays a separate pre-rendered asset (`splash_dark.mp4`,
-    /// generated offline by flood-filling the clip's cream background to
-    /// `v2Bg` while leaving the artwork's own colors untouched — see
-    /// `SplashPlayer`), so this field matches `v2Bg` too and there's no
-    /// visible seam around the clip.
-    private var background: Color {
-        isDarkMode ? .v2Bg : Color(hex: 0xFDF8EF)
-    }
-
-    /// The clip's background isn't perfectly uniform (compression noise, a
-    /// slight vignette), so no constant can match it everywhere. Fading the
-    /// outer ~5% of the clip into the field hides any residual step — and
-    /// softens the hard crop line when artwork crosses the clip's edge.
-    private static let featherStops: [Gradient.Stop] = [
-        .init(color: .clear, location: 0),
-        .init(color: .black, location: 0.05),
-        .init(color: .black, location: 0.95),
-        .init(color: .clear, location: 1),
-    ]
+    /// The polar-bear artwork is drawn on white, so the splash remains white in
+    /// either appearance mode and hands off to the user's chosen app theme.
+    private var background: Color { .smoothPaper }
 
     var body: some View {
         ZStack {
@@ -60,10 +41,7 @@ struct SplashView: View {
                     .foregroundStyle(Color.v2Ink)
             } else {
                 SplashPlayer(onFinished: onFinished, isDarkMode: isDarkMode)
-                    .aspectRatio(1, contentMode: .fit)   // the clip is 1:1
-                    // Two axis masks multiply into a four-edge feather.
-                    .mask(LinearGradient(stops: Self.featherStops, startPoint: .leading, endPoint: .trailing))
-                    .mask(LinearGradient(stops: Self.featherStops, startPoint: .top, endPoint: .bottom))
+                    .aspectRatio(864.0 / 1060.0, contentMode: .fit)
                     .padding(.horizontal, 24)
             }
         }
@@ -85,27 +63,14 @@ struct SplashView: View {
 // MARK: - AVPlayer host (no transport controls)
 
 private struct SplashPlayer {
-    /// Playback speed for the intro clip. 1.4 = 40% faster than recorded; the
-    /// asset itself is untouched, so this is reversible by changing one number.
-    /// `SplashView`'s safety-net timeout divides by this, keeping the two in step.
-    static let playbackRate: Float = 1.4
+    /// The source is trimmed to exactly 1.5 seconds, so natural speed preserves
+    /// the requested timing.
+    static let playbackRate: Float = 1
 
     let onFinished: () -> Void
-    /// Selects which bundled clip to play. Dark mode plays a distinct
-    /// pre-rendered asset (`splash_dark.mp4`) rather than recoloring the
-    /// light clip at runtime — an earlier CIFalseColor video composition
-    /// attempt didn't reliably apply on-device and, worse, desaturated the
-    /// artwork itself (killing the persimmon's orange). The dark asset is
-    /// generated offline by flood-filling only the clip's cream *background*
-    /// to `v2Bg`, leaving the hand/fruit/leaves at their original colors.
-    /// When `false` playback is byte-identical to the original implementation.
-    /// Resolved once by `SplashView` from `AppState.appearanceMode` (not the
-    /// SwiftUI environment's `colorScheme`) — see that file's `isDarkMode` doc
-    /// for why. `Coordinator.start` runs once, at `makeUIView`/`makeNSView`
-    /// time, and the appearance setting isn't reachable from Settings while
-    /// the splash is covering the screen, so there's no in-flight value for
-    /// this run to go stale against — a runtime swap-the-item path would be
-    /// dead code.
+    /// Retained in the interface because the root already resolves appearance
+    /// before presenting the splash. The polar-bear asset itself stays white in
+    /// both modes, so playback now selects the same clip either way.
     var isDarkMode: Bool = false
 
     @MainActor
@@ -126,7 +91,7 @@ private struct SplashPlayer {
             // If the clip is somehow missing (a packaging regression), do nothing
             // here — calling back synchronously would mutate parent state mid
             // view-update. SplashView's safety-net timeout dismisses instead.
-            let name = isDarkMode ? "splash_dark" : "splash"
+            let name = "splash"
             let url = Bundle.module.url(forResource: name, withExtension: "mp4")
             Self.logger.log("splash asset selection: isDarkMode=\(isDarkMode, privacy: .public) resource=\(name, privacy: .public) bundleURLFound=\(url != nil, privacy: .public) url=\(url?.absoluteString ?? "nil", privacy: .public)")
             guard let url else { return }
@@ -159,11 +124,11 @@ private struct SplashPlayer {
         /// Makes the intro clip a guest in whatever audio is already playing,
         /// instead of the owner of the device's audio.
         ///
-        /// **The clip has no sound, and never did.** This lands as a bug report
+        /// **The clip has no sound.** This lands as a bug report
         /// that reads "remove the sound from the intro video — it stops my
         /// Spotify," and the obvious fix is the wrong one. Both `splash.mp4`
-        /// and `splash_dark.mp4` are video-only: `ffprobe` reports exactly one
-        /// h264 stream and no audio track on each. `start(isDarkMode:)` also
+        /// `splash.mp4` is video-only: `ffprobe` reports one h264 stream and no
+        /// audio track. `start(isDarkMode:)` also
         /// sets `player.isMuted = true` on top of that. There is no sound to
         /// remove, and muting harder — or re-encoding the assets to strip an
         /// audio track that isn't there — accomplishes nothing. If the symptom

@@ -77,7 +77,7 @@ struct ContentView: View {
                         addInlineButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                    .padding(.top, 24)
                     .padding(.bottom, 4)
 
                     ScrollView {
@@ -208,10 +208,14 @@ struct ContentView: View {
         NavigationLink(value: DashRoute.assistant) {
             ZStack {
                 Circle()
-                    .fill(Color.smoothPaper)
-                    .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
-                PersimmonMark(size: 34)
-                    .frame(width: 34, height: 34)
+                    .fill(Color.smoothGrape.opacity(0.18))
+                    .overlay { Circle().stroke(Color.smoothGrape.opacity(0.48), lineWidth: 1.25) }
+                Image(systemName: "diamond.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(Color.smoothGrapeInk)
+                Image(systemName: "diamond.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.smoothPaper)
             }
             .frame(width: 60, height: 60)
         }
@@ -230,6 +234,7 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothLemon.opacity(0.26)))
+                .overlay { Circle().stroke(Color.smoothLemonInk.opacity(0.38), lineWidth: 1.25) }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -282,7 +287,7 @@ struct ContentView: View {
 
     /// The original v5 hierarchy, with Smooth's visual identity layered on top.
     private var header: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 3) {
                 (
                     Text("Smooth")
@@ -311,7 +316,6 @@ struct ContentView: View {
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
                 navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
-            .padding(.top, 2)
         }
     }
 
@@ -322,6 +326,7 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 48, height: 48)
                 .background(Circle().fill(color.opacity(0.18)))
+                .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -595,7 +600,7 @@ struct ContentView: View {
 
     private static func dateText(_ date: Date) -> String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE MMM d"
+        f.dateFormat = "MMM d"
         return f.string(from: date)
     }
 }

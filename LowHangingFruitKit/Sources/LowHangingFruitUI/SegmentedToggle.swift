@@ -13,21 +13,21 @@ struct SegmentedToggle: View {
             }
         }
         .padding(3)
-        .background(Color.smoothSurface, in: Capsule())
-        .overlay { Capsule().stroke(Color.smoothInk, lineWidth: 2) }
+        .background(Color.smoothTeal.opacity(0.12), in: Capsule())
+        .overlay { Capsule().stroke(Color.smoothTealInk.opacity(0.52), lineWidth: 1.25) }
     }
 
     private func segment(_ filter: DashFilter) -> some View {
         let isActive = selection == filter
         return Text(filter.rawValue)
             .font(.lhfSans(14, weight: .medium))
-            .foregroundStyle(isActive ? Color.smoothPaper : Color.smoothInk)
+            .foregroundStyle(isActive ? Color.smoothPaper : Color.smoothTealInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background {
                 if isActive {
                     Capsule()
-                        .fill(Color.smoothInk)
+                        .fill(Color.smoothTealInk)
                         .matchedGeometryEffect(id: "active", in: indicator)
                 }
             }
