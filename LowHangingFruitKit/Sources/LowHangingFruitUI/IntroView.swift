@@ -226,8 +226,8 @@ struct IntroView: View {
             VStack(spacing: 10) {
                 compactFeatureRow(label: "Dashboard", symbol: "rectangle.grid.1x2") {
                     VStack(spacing: 5) {
-                        compactAssignment(course: "CIS 1200", title: "Homework 4", due: "today", color: .v2SpineAmber)
-                        compactAssignment(course: "MATH 1410", title: "Written assignment", due: "Wed", color: .v2SpineBlue)
+                        compactAssignment(course: "CIS 1200", title: "Homework 4", due: Date().addingTimeInterval(3 * 3_600))
+                        compactAssignment(course: "MATH 1410", title: "Written assignment", due: Date().addingTimeInterval(3 * 86_400))
                     }
                 }
 
@@ -273,38 +273,47 @@ struct IntroView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func compactAssignment(course: String, title: String, due: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(color)
-                .frame(width: 4, height: 25)
-            Text(course)
-                .font(.lhfSans(9, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(Color.v2CourseCode)
-                .frame(width: 61, alignment: .leading)
-            Text(title)
-                .font(.lhfSans(11, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Spacer(minLength: 2)
-            Text(due)
-                .font(.lhfSans(10, weight: .medium))
-                .foregroundStyle(color)
+    /// A miniature of `AssignmentCardView`'s own recipe — pastel fill keyed
+    /// off the due date, mono course code in that date's ink partner, the
+    /// assignment title in `lhfAssignmentTitle`, compact due value at the
+    /// trailing edge — rather than a bespoke illustration style. The point of
+    /// this feature preview is "this is what your dashboard actually looks
+    /// like," so it draws from the same due-date functions the real card
+    /// does (`smoothTaskFill`, `smoothTaskTextAccent`, `smoothDueValue`)
+    /// instead of a caller-chosen flat color and a hand-typed due string,
+    /// which is also why there is no colored spine here any more — the real
+    /// card doesn't have one either.
+    private func compactAssignment(course: String, title: String, due: Date?) -> some View {
+        let now = Date()
+        let value = smoothDueValue(due, now: now)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(course.uppercased())
+                    .font(.lhfMono(8.5, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(smoothTaskTextAccent(due, now: now))
+                Text(title)
+                    .font(.lhfAssignmentTitle(13))
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 4)
+            Text(value.primary)
+                .font(.lhfMono(11, weight: .medium))
+                .foregroundStyle(Color.smoothInk)
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(Color.v2Bg.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.vertical, 7)
+        .background(smoothTaskFill(due, now: now), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var compactNotification: some View {
         HStack(alignment: .top, spacing: 7) {
-            PersimmonMark(size: 29)
-                .frame(width: 29, height: 29)
+            SmoothAppMark(size: 29)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text("LOCUST")
+                    Text("SMOOTH")
                         .font(.lhfSans(9.5, weight: .semibold))
                         .tracking(0.6)
                     Spacer()
@@ -360,12 +369,12 @@ struct IntroView: View {
                     .foregroundStyle(Color.v2Ink)
                 Text("▲ 1.8 this week")
                     .font(.lhfSans(9.5, weight: .semibold))
-                    .foregroundStyle(Color.v2SpineGreen)
+                    .foregroundStyle(Color.smoothTeal)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.v2RingTrack)
-                    Capsule().fill(Color.v2SpineBlue)
+                    Capsule().fill(Color.smoothCobalt)
                         .frame(width: geo.size.width * 0.72)
                 }
             }
@@ -403,7 +412,7 @@ struct IntroView: View {
         HStack(spacing: 7) {
             ForEach(0..<Self.pageCount, id: \.self) { index in
                 Circle()
-                    .fill(index == page ? Color.v2Ink : Color.v2Ink.opacity(0.18))
+                    .fill(index == page ? Color.v2Ink : Color.v2DateText.opacity(0.45))
                     .frame(width: 6, height: 6)
             }
         }
@@ -484,10 +493,16 @@ private struct TextTopKey: PreferenceKey {
 /// `id` doubles as a fixed "how reachable is this one" rank: 0 is the most
 /// reachable of the nine, 8 the least. That ordering is what lets the three
 /// layouts agree with each other without any extra bookkeeping — the three
-/// lowest ids are the ones the hanging column turns green (screen two), and
-/// they're the same three ids promoted to the top rows of the tidy list
-/// (screen three). The metaphor is literal: the fruit nearest the ground is
-/// both what you'd reach for first and, once picked, the top of your list.
+/// lowest ids are the ones the hanging column marks "reachable" (screen two,
+/// `ChipLayer.reachableCount`), and they're the same three ids that land at
+/// the top of the tidy list, since it's laid out in id order. Post-Smooth,
+/// "reachable" isn't one fixed color any more — every chip keeps the ramp
+/// tone it's cycled onto by id (`ChipLayer.tone(for:)`), the same tone on
+/// both screens it appears on, and the reachable three are marked by
+/// wearing their own tone harder (deeper fill, firmer border) rather than by
+/// switching to a color borrowed from outside the ramp. The metaphor is
+/// literal: the fruit nearest the ground is both what you'd reach for first
+/// and, once picked, the top of your list.
 private struct AssignmentChip: Identifiable {
     let id: Int
     let code: String
@@ -539,11 +554,31 @@ private struct ChipLayer: View {
         AssignmentChip(id: 8, code: "SPAN 110", due: "Tue", title: "Vocabulary quiz"),
     ]
 
-    /// How many of the nine read as "reachable" — green in the column,
+    /// How many of the nine read as "reachable" — highlighted in the column,
     /// promoted to real assignment rows in the final list. Kept as one
     /// constant so the two screens can't quietly disagree about which three
     /// that is.
     private static let reachableCount = 3
+
+    /// The Smooth due-date ramp, cycled by chip id rather than by due state —
+    /// these nine chips are illustration, not real deadlines, so there is no
+    /// `Date` to derive `smoothTaskAccent` from. Cycling by id instead of
+    /// picking one flat color keeps every chip visually distinct, which is
+    /// the whole point of a "scattered work" illustration, and keeps the
+    /// same chip roughly the same hue across screens 1 and 2 — the two
+    /// stages a `matchedGeometryEffect` id actually carries across.
+    private static let ramp: [(fill: Color, ink: Color)] = [
+        (.smoothTomato, .smoothTomatoInk),
+        (.smoothMarigold, .smoothMarigoldInk),
+        (.smoothLemon, .smoothLemonInk),
+        (.smoothTeal, .smoothTealInk),
+        (.smoothCobalt, .smoothCobaltInk),
+        (.smoothGrape, .smoothGrapeInk),
+    ]
+
+    private static func tone(for chip: AssignmentChip) -> (fill: Color, ink: Color) {
+        ramp[chip.id % ramp.count]
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -642,35 +677,49 @@ private struct ChipLayer: View {
     // MARK: Chip presentation
 
     private func chipView(_ chip: AssignmentChip, isAccent: Bool, isRow: Bool) -> some View {
-        HStack(spacing: 5) {
+        let tone = Self.tone(for: chip)
+        return HStack(spacing: 5) {
             Text(chip.code)
-                .font(.lhfSans(isRow ? 13 : 11, weight: .semibold))
+                .font(.lhfMono(isRow ? 13 : 11, weight: .semibold))
             Text("\u{00B7}")
                 .font(.lhfSans(isRow ? 13 : 11))
                 .opacity(0.5)
             Text(chip.due)
                 .font(.lhfSans(isRow ? 13 : 11, weight: .medium))
         }
-        .foregroundStyle(isAccent ? Color.v2SpineGreen : Color.v2Ink.opacity(isRow ? 1 : 0.75))
+        .foregroundStyle(tone.ink)
         .padding(.horizontal, isRow ? 12 : 9)
         .padding(.vertical, isRow ? 9 : 5)
         .fixedSize()
         .background(
             RoundedRectangle(cornerRadius: isRow ? 11 : 8, style: .continuous)
-                .fill(isAccent ? Color.v2SpineGreen.opacity(0.12) : Color.v2Card)
+                // The same opacity `smoothTaskFill` draws real dashboard
+                // cards at, so a scattered chip reads as the same visual
+                // family as the assignment cards it is foreshadowing.
+                .fill(tone.fill.opacity(0.26))
         )
         .overlay(
             RoundedRectangle(cornerRadius: isRow ? 11 : 8, style: .continuous)
-                .strokeBorder(isAccent ? Color.v2SpineGreen.opacity(0.45) : Color.v2Ink.opacity(0.08), lineWidth: 1)
+                .strokeBorder(tone.fill.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.v2CardShadow.opacity(isRow ? 0.08 : 0.04), radius: isRow ? 3 : 1, y: 1)
     }
 
+    /// `isAccent` (the three "reachable" chips) used to be the only source of
+    /// color here — a plain grey row for six chips, a green one for three.
+    /// Every row now carries its own ramp tone (see `Self.tone`), the same
+    /// one it wore as a scattered chip on screen one, so the "reachable"
+    /// three no longer need to borrow the one spare accent color to stand
+    /// out — instead they keep their own hue but wear it harder (deeper
+    /// fill, firmer border) than the rest of the list, which is what
+    /// actually reads as "these are the ones," in the same palette the rest
+    /// of the row is drawn from rather than a color borrowed from outside it.
     private func assignmentRow(_ chip: AssignmentChip, isAccent: Bool, width: CGFloat) -> some View {
-        HStack(spacing: 10) {
+        let tone = Self.tone(for: chip)
+        return HStack(spacing: 10) {
             Text(chip.code)
-                .font(.lhfSans(12, weight: .semibold))
-                .foregroundStyle(isAccent ? Color.v2SpineGreen : Color.v2CourseCode)
+                .font(.lhfMono(12, weight: .semibold))
+                .foregroundStyle(tone.ink)
                 .frame(width: 72, alignment: .trailing)
 
             Image(systemName: "arrow.right")
@@ -678,7 +727,7 @@ private struct ChipLayer: View {
                 .foregroundStyle(Color.v2Ink.opacity(0.35))
 
             Text(chip.title ?? "Assignment")
-                .font(.lhfSans(13, weight: .semibold))
+                .font(.lhfAssignmentTitle(14))
                 .foregroundStyle(Color.v2Ink)
                 .lineLimit(1)
 
@@ -691,10 +740,10 @@ private struct ChipLayer: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(width: width, alignment: .leading)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(tone.fill.opacity(isAccent ? 0.30 : 0.16), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(isAccent ? Color.v2SpineGreen.opacity(0.4) : Color.v2Ink.opacity(0.08), lineWidth: 1)
+                .strokeBorder(tone.fill.opacity(isAccent ? 0.55 : 0.22), lineWidth: isAccent ? 1.5 : 1)
         )
         .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }

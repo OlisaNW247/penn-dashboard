@@ -36,10 +36,10 @@ struct UpdateAvailableBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("an update is available")
-                    .font(.geist(14, weight: .semibold))
+                    .font(.lhfSans(14, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
                 Text("version \(latest.description) is out. Update whenever you'd like from the App Store.")
-                    .font(.geist(12))
+                    .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .fixedSize(horizontal: false, vertical: true)
             }

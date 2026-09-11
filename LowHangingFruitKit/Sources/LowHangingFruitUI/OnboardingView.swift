@@ -227,11 +227,17 @@ struct OnboardingView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// A soft, borderless pastel field — the same flat `opacity(0.13)` treatment
+    /// `smoothSectionBackground` gives every Settings group, rather than the
+    /// filled-pill-with-a-stroke look this used before the redesign. Teal
+    /// because that's the color Settings already uses for "connected, in
+    /// progress" states (the account rows' checkmarks), not a color picked
+    /// fresh for this one banner.
     private var syncNotice: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.v2SpineGreen)
+                .foregroundStyle(Color.smoothTealInk)
                 .padding(.top, 1)
 
             Text("Your classes and assignments may take a few minutes to appear.")
@@ -243,21 +249,14 @@ struct OnboardingView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.v2SpineGreen.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.v2SpineGreen.opacity(0.20), lineWidth: 1)
-                )
+                .fill(Color.smoothTeal.opacity(0.13))
         )
         .accessibilityElement(children: .combine)
     }
 
     private var leadTimeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("remind me")
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
+            SmoothSectionHeader("remind me", accent: .smoothCobalt)
 
             LazyVGrid(
                 columns: [
@@ -275,6 +274,15 @@ struct OnboardingView: View {
         }
     }
 
+    /// Tomato is the same accent Settings' own "reminders" section is tinted
+    /// with (`SettingsPage.remindersSection`'s `.smoothSectionBackground(.smoothTomato)`)
+    /// — picked to match that section rather than to taste, so this screen's
+    /// lead-time picker and Settings' later read as the same feature. The
+    /// unselected border is a faint wash of that same tomato, never
+    /// `Color.v2Divider`/`smoothRule` — that tan is a different, unrelated
+    /// token that happens to be visually close enough to pass a glance, which
+    /// is exactly the trap CLAUDE.md's "no tan smoothRule borders" line
+    /// exists to head off.
     private func leadTimePill(_ offset: NotificationScheduler.LeadOffset) -> some View {
         let isOn = scheduler.leadOffsets.contains(offset)
         return Button {
@@ -283,15 +291,15 @@ struct OnboardingView: View {
         } label: {
             Text(offset.label)
                 .font(.lhfSans(14, weight: .semibold))
-                .foregroundStyle(isOn ? Color.v2ToggleActiveTx : Color.v2Ink)
+                .foregroundStyle(isOn ? Color.smoothTomatoInk : Color.v2Ink)
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .fill(isOn ? Color.v2Ink : Color.v2Card)
+                        .fill(isOn ? Color.smoothTomato.opacity(0.26) : Color.v2Card)
                         .overlay(
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .strokeBorder(Color.v2Divider, lineWidth: isOn ? 0 : 1)
+                                .strokeBorder(Color.smoothTomato.opacity(isOn ? 0.55 : 0.18), lineWidth: 1)
                         )
                 )
         }
@@ -340,7 +348,10 @@ struct OnboardingView: View {
             }
         }
         .toggleStyle(.switch)
-        .tint(Color.v2SpineGreen)
+        // Cobalt: the same `.tint` `SettingsPage.smoothFormChrome` applies to
+        // every toggle in the app, reminders included, regardless of which
+        // pastel a given section's background happens to be tinted.
+        .tint(Color.smoothCobalt)
         .padding(.horizontal, 15)
         .frame(minHeight: 64)
         .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))

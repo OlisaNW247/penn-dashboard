@@ -14,10 +14,10 @@ import AppKit
 /// updates.
 ///
 /// Built from the app's own visual language (`RedesignTokens.swift`'s `v2*`
-/// dynamic colors, `DesignSystem.swift`'s `geist`/`instrumentSerif` fonts,
-/// and `PersimmonMark`, the app's logo) rather than a system `Alert` or
-/// `ContentUnavailableView`, so it reads as the app itself telling the
-/// student something, not as an OS-level interruption.
+/// dynamic colors, its `lhfSans`/`lhfSerif` fonts, and `SmoothAppMark`, the
+/// app's icon) rather than a system `Alert` or `ContentUnavailableView`, so
+/// it reads as the app itself telling the student something, not as an
+/// OS-level interruption.
 struct UpdateRequiredView: View {
     let minimum: AppVersion
     let message: String?
@@ -38,22 +38,18 @@ struct UpdateRequiredView: View {
             VStack(spacing: 18) {
                 Spacer(minLength: 0)
 
-                // The explicit `.frame` is required, not decorative:
-                // `PersimmonMark`'s body is a `GeometryReader` that ends in
-                // `.frame(maxWidth: .infinity, maxHeight: .infinity)`, so
-                // its `size:` argument alone does NOT constrain it — handed
-                // an unconstrained `VStack` slot it expands to fill the
-                // whole screen, and the wall renders as a giant persimmon
-                // with the copy squeezed underneath. That reads as a splash
-                // screen rather than a blocking notice, and it is invisible
-                // in code review: the call site looks like it asked for
-                // 64pt. `PersimmonMark`'s own `#Preview` shows the intended
-                // pairing (`PersimmonMark(size: s).frame(width: s, height: s)`).
-                PersimmonMark(size: 64)
-                    .frame(width: 64, height: 64)
+                // `SmoothAppMark` applies its own `.frame(width:height:)`
+                // from `size` — see that file's doc comment for why it was
+                // deliberately built that way, unlike the app's older
+                // `GeometryReader`-expands-to-fill mark, whose `size:`
+                // argument didn't actually constrain it and made this exact
+                // wall render as a giant logo with the copy squeezed
+                // underneath the first time this screen was built. No extra
+                // `.frame` needed here as a result.
+                SmoothAppMark(size: 64)
 
                 Text("time for an update")
-                    .font(.instrumentSerif(32))
+                    .font(.lhfSerif(32))
                     .foregroundStyle(Color.v2Ink)
                     .multilineTextAlignment(.center)
 
@@ -66,7 +62,7 @@ struct UpdateRequiredView: View {
                 // input, which is what a string arriving over the network
                 // and landing on an undismissable screen needs.
                 Text(verbatim: message ?? Self.fallbackMessage)
-                    .font(.geist(16))
+                    .font(.lhfSans(16))
                     .foregroundStyle(Color.v2DateText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -85,7 +81,7 @@ struct UpdateRequiredView: View {
                         openAppStore(appStoreURL)
                     } label: {
                         Text("update now")
-                            .font(.geist(16, weight: .semibold))
+                            .font(.lhfSans(16, weight: .semibold))
                             .foregroundStyle(Color.v2ToggleActiveTx)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
