@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The shared root content: splash, onboarding/intro, or the dashboard,
-/// depending on `state`. Extracted out of `RootView` so `LHFScenes` (the
+/// The shared root content: onboarding/intro or the dashboard, depending on
+/// `state`. Extracted out of `RootView` so `LHFScenes` (the
 /// macOS-aware `@main` entry, see `LHFScenes.swift`) can hand it an
 /// `AppState`/`NotificationScheduler` pair that lives at the *Scene* level —
 /// above any individual `WindowGroup` — rather than one scoped to a single
@@ -22,18 +22,6 @@ struct RootCore: View {
     @StateObject private var updateGate = UpdateGateStore()
 
     @Environment(\.scenePhase) private var scenePhase
-
-    /// Skip the splash in demo/screenshot mode so captures land on the app.
-    /// A default expression (rather than a custom `init`) keeps this struct's
-    /// memberwise initializer intact for callers that only care about
-    /// `state`/`scheduler`.
-    @State private var showSplash: Bool = {
-        var skip = false
-        #if DEBUG
-        skip = ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
-        #endif
-        return !skip
-    }()
 
     var body: some View {
         ZStack {
@@ -70,20 +58,6 @@ struct RootCore: View {
                 .transition(.opacity)
             }
 
-            if showSplash {
-                // isDarkMode is read straight from `state.appearanceMode`
-                // (already loaded from UserDefaults in `AppState.init()`),
-                // not from `@Environment(\.colorScheme)` — see
-                // `SplashView.isDarkMode`'s doc comment for why: this
-                // environment key isn't safely readable at the splash's own
-                // first render.
-                SplashView(isDarkMode: state.appearanceMode == .dark) {
-                    // Handoff fade, sped up to match the clip (0.45 / 1.4).
-                    withAnimation(.easeOut(duration: 0.32)) { showSplash = false }
-                }
-                .transition(.opacity)
-                .zIndex(1)
-            }
         }
         .task {
             await updateGate.refresh()
