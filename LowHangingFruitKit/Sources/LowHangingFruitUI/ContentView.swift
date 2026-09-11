@@ -372,7 +372,7 @@ struct ContentView: View {
     @ViewBuilder
     private var listContent: some View {
         switch filter {
-        case .thisWeek: timeline(sections: vm.thisWeekSections())
+        case .thisWeek: timeline(sections: vm.todoSections(), showsTodoEmptyState: true)
         case .all:      timeline(sections: vm.allSections())
         case .done:
             DoneView(
@@ -415,7 +415,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func timeline(sections: [DashSection]) -> some View {
+    private func timeline(sections: [DashSection], showsTodoEmptyState: Bool = false) -> some View {
         if sections.isEmpty {
             switch emptyStateStatus {
             case .loading:            loadingState
@@ -429,7 +429,11 @@ struct ContentView: View {
                 // the false celebration this whole feature exists to
                 // prevent, so this case takes priority over it here.
                 if state.awaitingCanvasCheck.isEmpty {
-                    allDoneState
+                    if showsTodoEmptyState {
+                        todoEmptyState
+                    } else {
+                        allDoneState
+                    }
                 } else {
                     awaitingCanvasCheckNotice
                 }
@@ -498,6 +502,28 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+    }
+
+    private var todoEmptyState: some View {
+        ZStack {
+            if let img = bundledImage("chill", ext: "jpg") {
+                img
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 320)
+                    .blendMode(.multiply)
+                    .opacity(0.35)
+                    .accessibilityHidden(true)
+            }
+            Text("go touch grass")
+                .font(.lhfSerif(46))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("go touch grass")
     }
 
     /// Shown in place of the "all caught up" art while the first sync is still in
