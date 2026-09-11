@@ -300,10 +300,10 @@ struct OnboardingCourseSetupPane: View {
     private var header: some View {
         VStack(spacing: 10) {
             HStack {
-                Text(courses.isEmpty ? "Set up your classes" : "Class \(index + 1) of \(courses.count)")
-                    .font(.lhfSans(11, weight: .medium))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.v2CourseCode)
+                SmoothSectionHeader(
+                    courses.isEmpty ? "set up your classes" : "class \(index + 1) of \(courses.count)",
+                    accent: .smoothCobalt
+                )
 
                 Spacer(minLength: 10)
 
@@ -369,7 +369,7 @@ struct OnboardingCourseSetupPane: View {
 
     @ViewBuilder
     private var suggestionsSection: some View {
-        sectionCard(title: "RECURRING WORK") {
+        sectionCard(title: "recurring work") {
             switch scan {
             case .idle, .scanning:
                 scanningRow
@@ -555,7 +555,7 @@ struct OnboardingCourseSetupPane: View {
     }
 
     private var remindersSection: some View {
-        sectionCard(title: "REMINDERS") {
+        sectionCard(title: "reminders") {
             VStack(spacing: 14) {
                 Toggle(isOn: Binding(
                     get: { prefs.notificationsEnabled },
@@ -564,7 +564,8 @@ struct OnboardingCourseSetupPane: View {
                     settingLabel("Remind me about this class")
                 }
                 .toggleStyle(.switch)
-                .tint(Color.v2SpineGreen)
+                // Same `.tint` `SettingsPage.smoothFormChrome` applies app-wide.
+                .tint(Color.smoothCobalt)
 
                 Divider().overlay(Color.v2Divider)
 
@@ -578,7 +579,8 @@ struct OnboardingCourseSetupPane: View {
                     )
                 }
                 .toggleStyle(.switch)
-                .tint(Color.v2SpineGreen)
+                // Same `.tint` `SettingsPage.smoothFormChrome` applies app-wide.
+                .tint(Color.smoothCobalt)
             }
         }
     }
@@ -747,10 +749,7 @@ struct OnboardingCourseSetupPane: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.v2CourseCode)
+            SmoothSectionHeader(title, accent: .smoothCobalt)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
