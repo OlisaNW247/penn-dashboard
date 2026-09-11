@@ -143,7 +143,7 @@ struct IntroView: View {
             Spacer()
             Button {
                 lhfHapticLight()
-                state.completeIntro()
+                finishIntro()
             } label: {
                 Text("Skip")
                     .font(.lhfSans(14, weight: .medium))
@@ -223,7 +223,7 @@ struct IntroView: View {
                 .foregroundStyle(Color.v2Ink)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 9) {
+            VStack(spacing: 10) {
                 compactFeatureRow(label: "Dashboard", symbol: "rectangle.grid.1x2") {
                     VStack(spacing: 5) {
                         compactAssignment(course: "CIS 1200", title: "Homework 4", due: "today", color: .v2SpineAmber)
@@ -252,27 +252,22 @@ struct IntroView: View {
         symbol: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        HStack(spacing: 11) {
-            VStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 24, height: 24)
                 Text(label)
-                    .font(.lhfSans(10, weight: .semibold))
+                    .font(.lhfSans(14, weight: .semibold))
                     .lineLimit(1)
             }
             .foregroundStyle(Color.v2Ink)
-            .frame(width: 69)
-
-            Rectangle()
-                .fill(Color.v2Ink.opacity(0.09))
-                .frame(width: 1)
 
             content()
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: 78)
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .shadow(color: Color.v2CardShadow.opacity(0.07), radius: 5, y: 2)
         .accessibilityElement(children: .combine)
@@ -282,50 +277,50 @@ struct IntroView: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(color)
-                .frame(width: 3, height: 20)
+                .frame(width: 4, height: 25)
             Text(course)
-                .font(.lhfSans(7.5, weight: .semibold))
+                .font(.lhfSans(9, weight: .semibold))
                 .tracking(0.5)
                 .foregroundStyle(Color.v2CourseCode)
-                .frame(width: 52, alignment: .leading)
+                .frame(width: 61, alignment: .leading)
             Text(title)
-                .font(.lhfSans(9.5, weight: .semibold))
+                .font(.lhfSans(11, weight: .semibold))
                 .foregroundStyle(Color.v2Ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 2)
             Text(due)
-                .font(.lhfSans(8.5, weight: .medium))
+                .font(.lhfSans(10, weight: .medium))
                 .foregroundStyle(color)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
         .background(Color.v2Bg.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var compactNotification: some View {
         HStack(alignment: .top, spacing: 7) {
-            PersimmonMark(size: 24)
-                .frame(width: 24, height: 24)
+            PersimmonMark(size: 29)
+                .frame(width: 29, height: 29)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("LOCUST")
-                        .font(.lhfSans(8.5, weight: .semibold))
+                        .font(.lhfSans(9.5, weight: .semibold))
                         .tracking(0.6)
                     Spacer()
                     Text("now")
-                        .font(.lhfSans(8.5))
+                        .font(.lhfSans(9.5))
                         .foregroundStyle(Color.v2DateText)
                 }
                 Text("CIS 1200 · Homework 4")
-                    .font(.lhfSans(10.5, weight: .semibold))
+                    .font(.lhfSans(12, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
                 Text("Unsubmitted · due in 2 hours")
-                    .font(.lhfSans(9.5))
+                    .font(.lhfSans(10.5))
                     .foregroundStyle(Color.v2DateText)
             }
         }
-        .padding(9)
+        .padding(10)
         .background(Color.v2Bg.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
@@ -333,35 +328,35 @@ struct IntroView: View {
         ZStack {
             TreeBackdrop(wash: 0.17)
             HStack(spacing: 6) {
-                PersimmonMark(size: 20)
-                    .frame(width: 20, height: 20)
+                PersimmonMark(size: 25)
+                    .frame(width: 25, height: 25)
                 Text("what is the attendance policy for this class?")
-                    .font(.lhfSerif(11.5))
+                    .font(.lhfSerif(13))
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(2)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
             .background(Color.v2Card, in: Capsule())
             .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 4, y: 1)
         }
-        .frame(height: 62)
+        .frame(height: 70)
         .clipped()
     }
 
     private var compactGrade: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("ECON 0100")
-                .font(.lhfSans(7.5, weight: .medium))
+                .font(.lhfSans(9, weight: .medium))
                 .tracking(1)
                 .foregroundStyle(Color.v2CourseCode)
             HStack(alignment: .center, spacing: 7) {
                 Text("93.4%")
-                    .font(.lhfSerif(22))
+                    .font(.lhfSerif(26))
                     .foregroundStyle(Color.v2Ink)
                 Text("▲ 1.8 this week")
-                    .font(.lhfSans(8, weight: .semibold))
+                    .font(.lhfSans(9.5, weight: .semibold))
                     .foregroundStyle(Color.v2SpineGreen)
             }
             GeometryReader { geo in
@@ -371,9 +366,9 @@ struct IntroView: View {
                         .frame(width: geo.size.width * 0.72)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 5)
             Text("72% decided")
-                .font(.lhfSans(8.5))
+                .font(.lhfSans(9.5))
                 .foregroundStyle(Color.v2RingSub)
         }
     }
@@ -417,10 +412,20 @@ struct IntroView: View {
     private func advance() {
         lhfHapticLight()
         guard !isLastPage else {
-            state.completeIntro()
+            finishIntro()
             return
         }
         setPage(page + 1)
+    }
+
+    private func finishIntro() {
+        if reduceMotion {
+            state.completeIntro()
+        } else {
+            withAnimation(.easeInOut(duration: 0.24)) {
+                state.completeIntro()
+            }
+        }
     }
 
     private func setPage(_ target: Int) {

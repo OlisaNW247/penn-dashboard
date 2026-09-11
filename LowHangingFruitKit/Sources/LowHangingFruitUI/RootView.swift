@@ -116,6 +116,7 @@ struct RootCore: View {
             if state.needsIntro {
                 IntroView()
                     .environmentObject(state)
+                    .transition(.opacity)
             } else {
                 // `.environmentObject(scheduler)` matters here, not just in
                 // the dashboard branch below: the notification step reads
@@ -130,11 +131,13 @@ struct RootCore: View {
                 OnboardingView(destination: state.onboardingDestination)
                     .environmentObject(state)
                     .environmentObject(scheduler)
+                    .transition(.opacity)
             }
         } else {
             ContentView()
                 .environmentObject(state)
                 .environmentObject(scheduler)
+                .transition(.opacity)
                 .task {
                     // Canvas-only: refresh from the cookieless calendar feed.
                     // Fires once at the onboarding -> app handoff.

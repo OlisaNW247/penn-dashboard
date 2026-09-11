@@ -82,8 +82,6 @@ struct ProfileNotificationsSection: View {
             }
         } header: {
             Text("notifications")
-        } footer: {
-            Text("classes follow your default times from settings unless you give them their own.")
         }
     }
 
@@ -111,15 +109,10 @@ struct ProfileNotificationsSection: View {
     /// a tab reads as a broken tab, and "no classes yet" is the ordinary week-one
     /// state rather than a fault.
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("no classes yet")
-                .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-            Text("each class gets a row here once it shows up above.")
-                .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text("each class gets notification controls once it appears above.")
+            .font(.lhfSans(13))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }

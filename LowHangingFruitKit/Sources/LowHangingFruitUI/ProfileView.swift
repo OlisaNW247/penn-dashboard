@@ -11,12 +11,9 @@ import LowHangingFruitKit
 /// works without them fighting over the same lines is if the thing that
 /// composes them never has to change. So:
 ///
-/// - Every section is a **no-argument** `View`. Nothing is passed down, so
-///   nobody has to come back here to add a parameter. A section that needs
-///   more data reaches for it itself — `@EnvironmentObject var state:
-///   AppState` is already in scope for anything below this view, and per-course
-///   preferences arrive through the `AppState` seam rather than as an init
-///   argument, for the same reason.
+/// - Sections get their data from the environment. The semester section takes
+///   only a placement value so its add-class action can lead the page while
+///   previous semesters remain at the bottom.
 /// - Every section renders **`Section`s, not a `Form`**. The `Form` is here.
 ///   A section that wants to disappear entirely returns `EmptyView`.
 /// - The **order is fixed here and only here**. See below for why it's this
@@ -33,15 +30,9 @@ struct ProfileView: View {
 
     var body: some View {
         Form {
-            // Semester first, and this is the one ordering decision that isn't
-            // arbitrary. A rollover offer ("looks like a new term started —
-            // want to archive the old one?") is worthless if it's below a class
-            // list long enough to scroll. It is also, for eleven months of the
-            // year, nothing at all: the section is expected to render
-            // `EmptyView` whenever there's no boundary to offer, which costs a
-            // `Form` exactly zero pixels. Top placement plus usually-invisible
-            // is the combination that works; either one alone doesn't.
-            ProfileSemesterSection()
+            // The one action students need before Canvas has fully populated
+            // their profile belongs at the top, where it remains easy to find.
+            ProfileSemesterSection(placement: .addClass)
 
             // Then the answer to "what classes am I taking, and which do I want
             // to see" — moved here out of Settings in v4, because a class list
@@ -52,6 +43,10 @@ struct ProfileView: View {
             // purpose: per-course notification settings only make sense once
             // you can see the courses they attach to.
             ProfileNotificationsSection()
+
+            // Historical controls are useful but infrequent, so they close the
+            // page instead of interrupting current-class setup.
+            ProfileSemesterSection(placement: .previousSemesters)
         }
         .navigationTitle("profile")
 #if os(iOS)
