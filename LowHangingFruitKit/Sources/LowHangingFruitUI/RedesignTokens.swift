@@ -98,7 +98,7 @@ extension Color {
 private enum SmoothFontRegistry {
     static let registration: Void = {
         for (name, ext) in [
-            ("Tanker-Regular", "ttf"),
+            ("BagelFatOne-Regular", "ttf"),
             ("InstrumentSans", "ttf"),
             ("MartianMono", "ttf"),
         ] {
@@ -172,12 +172,12 @@ private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
 #endif
 
 extension Font {
-    /// Tanker display face. Kept under the existing name so every title across
+    /// Bagel Fat One display face. Kept under the existing name so every title across
     /// the app adopts the Smooth identity without changing screen behavior.
     static func lhfSerif(_ size: CGFloat) -> Font {
         SmoothFontRegistry.ensureRegistered()
-        return fontIsAvailable("Tanker-Regular")
-            ? .custom("Tanker-Regular", size: size, relativeTo: lhfTextStyle(for: size))
+        return fontIsAvailable("BagelFatOne-Regular")
+            ? .custom("BagelFatOne-Regular", size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: .heavy, design: .rounded)
     }
 

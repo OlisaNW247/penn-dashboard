@@ -89,7 +89,8 @@ struct DoneCardView: View {
                         .font(.lhfSerif(20))
                         .foregroundStyle(Color.smoothInk)
                         .strikethrough(true, color: Color.smoothInk)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
                 Spacer(minLength: 8)
@@ -108,7 +109,6 @@ struct DoneCardView: View {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .stroke(Color.smoothInk, lineWidth: 2)
             }
-            .shadow(color: Color.smoothInk, radius: 0, x: 3, y: 3)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .opacity(0.55)
         }

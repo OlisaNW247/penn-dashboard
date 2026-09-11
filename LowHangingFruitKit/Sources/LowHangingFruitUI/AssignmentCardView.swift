@@ -93,7 +93,6 @@ struct AssignmentCardView: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .stroke(Color.smoothInk, lineWidth: 2)
         }
-        .shadow(color: Color.smoothInk, radius: 0, x: 3, y: 3)
     }
 
     private func content(now: Date) -> some View {
@@ -119,9 +118,9 @@ struct AssignmentCardView: View {
                 Text(item.assignment.title)
                     .font(.lhfSerif(20))
                     .foregroundStyle(Color.smoothInk)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 // Visible on the collapsed card, not only once expanded — a
                 // student scanning the list needs to know "nothing to turn in
