@@ -58,19 +58,29 @@ private struct SmallView: View {
     let item: WidgetItem?
 
     var body: some View {
-        HStack(spacing: 0) {
-            spine
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .containerBackground(Palette.paper, for: .widget)
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .containerBackground(for: .widget) { background }
     }
 
+    /// The Smooth card treatment, painted as the widget's own container
+    /// background: opaque paper with a pastel tint of the urgency color on
+    /// top, echoing `smoothTaskFill` (accent.opacity(0.26)) in
+    /// RedesignTokens.swift. It has to live here rather than as a
+    /// `.background` on the content stack: WidgetKit insets content by the
+    /// system content margins, so a tint on the content paints a
+    /// square-cornered pastel box floating inside a white widget, where the
+    /// container background fills edge to edge under the system's own
+    /// rounded mask — the way a dashboard card fills its whole shape. The old
+    /// 4pt urgency spine is gone for the same reason it left the dashboard:
+    /// the tint now carries the urgency.
     @ViewBuilder
-    private var spine: some View {
-        if let item {
-            Color(hex: WidgetUrgency(due: item.dueAt).spineHex)
-                .frame(width: 4)
+    private var background: some View {
+        ZStack {
+            Palette.paper
+            if let item {
+                Color(hex: WidgetUrgency(due: item.dueAt).spineHex).opacity(0.26)
+            }
         }
     }
 
@@ -100,14 +110,6 @@ private struct SmallView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The Smooth card treatment: a pastel tint of the urgency color
-            // behind the row, echoing `smoothTaskFill` (accent.opacity(0.26))
-            // in RedesignTokens.swift. `containerBackground` above stays a
-            // flat opaque paper — WidgetKit wants that fully opaque — so the
-            // tint is a normal `.background` on the content stack instead,
-            // composited over it the same way `AssignmentCardView`'s card
-            // fill sits over the screen behind it.
-            .background(Color(hex: urgency.spineHex).opacity(0.26))
         } else {
             VStack {
                 Spacer()
