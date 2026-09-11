@@ -223,9 +223,9 @@ struct ContentView: View {
         Button { showAddSheet = true } label: {
             Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothSkyInk)
+                .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothSky.opacity(0.42)))
+                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -292,6 +292,23 @@ struct ContentView: View {
                     .layoutPriority(1)
                     .accessibilityElement(children: .combine)
                     .frame(height: 48, alignment: .center)
+                    .background(alignment: .bottomLeading) {
+                        Capsule(style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.smoothTomato.opacity(0.42),
+                                        Color.smoothMarigold.opacity(0.34),
+                                        Color.smoothGrape.opacity(0.34),
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(height: 8)
+                            .rotationEffect(.degrees(-1.2))
+                            .offset(y: -2)
+                    }
 
                 Text(Self.dateText(Date()))
                     .font(.lhfMono(14, weight: .medium))
