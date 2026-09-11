@@ -33,16 +33,20 @@ struct PasteFeedLinkSheet: View {
                         #endif
                         .autocorrectionDisabled()
                 } header: {
-                    Text("canvas calendar link")
+                    SmoothSectionHeader("canvas calendar link", accent: .smoothTeal)
                 } footer: {
                     Text("these steps are for the desktop canvas site — calendar feed isn't available in the canvas app or on a phone browser, so grab the link from a computer. on canvas.upenn.edu: calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given — a webcal:// link works too.")
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.v2DateText)
                 }
+                .smoothSectionBackground(.smoothTeal)
 
                 Section {
                     Text("logging in to canvas gives you a more accurate dashboard, so that's what we recommend. with a calendar link, the app can't tell what you've already submitted, so finished work keeps showing as outstanding until you check it off yourself.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                 }
+                .smoothSectionBackground(.smoothCobalt)
 
                 if let errorMessage {
                     Section {
@@ -50,9 +54,13 @@ struct PasteFeedLinkSheet: View {
                             .font(.lhfSans(12))
                             .foregroundStyle(Color.v2SpineRed)
                     }
+                    .smoothSectionBackground(.smoothTomato)
                 }
             }
             .formStyle(.grouped)
+            .font(.lhfSecondary(15))
+            .foregroundStyle(Color.smoothInk)
+            .smoothFormChrome(accent: .smoothTeal)
             .navigationTitle("paste calendar link")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +75,7 @@ struct PasteFeedLinkSheet: View {
                 }
             }
         }
+        .lhfSheetTheme()
     }
 
     private func save() {

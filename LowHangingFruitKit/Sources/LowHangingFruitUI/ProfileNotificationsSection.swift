@@ -106,7 +106,7 @@ struct ProfileNotificationsSection: View {
     private var emptyState: some View {
         Text("no classes")
             .font(.lhfSecondary(13))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.v2DateText)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -119,7 +119,7 @@ struct ProfileNotificationsSection: View {
         HStack(alignment: .firstTextBaseline) {
             Text(state.courseDisplayName(course))
                 .font(.lhfSecondary(15))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.v2DateText)
             Spacer(minLength: 8)
             Text("class is off")
                 .font(.lhfSecondary(12))
@@ -245,7 +245,7 @@ struct ProfileNotificationsSection: View {
                     Spacer(minLength: 0)
                 }
                 .font(.lhfSecondary(13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.v2DateText)
             }
 
         }

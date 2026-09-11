@@ -35,7 +35,7 @@ struct ProfileSectionPlaceholder: View {
 
             Text(detail)
                 .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("coming in v4")

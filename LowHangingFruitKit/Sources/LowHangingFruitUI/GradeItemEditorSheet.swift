@@ -57,6 +57,7 @@ struct GradeItemEditorSheet: View {
                     }
                     Toggle("doesn\u{2019}t count", isOn: $isExcluded)
                 }
+                .smoothSectionBackground(.smoothGrape)
 
                 Section {
                     Text("canvas: \(canvasReferenceText)")
@@ -67,6 +68,7 @@ struct GradeItemEditorSheet: View {
                         .foregroundStyle(Color.v2RingSub)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .smoothSectionBackground(.smoothTeal)
 
                 if currentOverride != nil {
                     Section {
@@ -75,8 +77,13 @@ struct GradeItemEditorSheet: View {
                             dismiss()
                         }
                     }
+                    .smoothSectionBackground(.smoothTomato)
                 }
             }
+            .formStyle(.grouped)
+            .font(.lhfSecondary(15))
+            .foregroundStyle(Color.smoothInk)
+            .smoothFormChrome(accent: .smoothCobalt)
             .navigationTitle(item.name)
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -90,6 +97,7 @@ struct GradeItemEditorSheet: View {
                 }
             }
         }
+        .lhfSheetTheme()
     }
 
     private var scorePlaceholder: String {
