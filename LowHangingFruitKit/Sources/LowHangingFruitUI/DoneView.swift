@@ -86,7 +86,7 @@ struct DoneCardView: View {
                         .tracking(1.1)
                         .foregroundStyle(smoothTaskTextAccent(item.due))
                     Text(item.assignment.title)
-                        .font(.lhfSerif(20))
+                        .font(.lhfAssignmentTitle(20))
                         .foregroundStyle(Color.smoothInk)
                         .strikethrough(true, color: Color.smoothInk)
                         .lineLimit(1)
@@ -105,10 +105,6 @@ struct DoneCardView: View {
             .padding(.vertical, 10)
             .background(smoothTaskFill(item.due))
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .stroke(smoothTaskAccent(item.due).opacity(0.38), lineWidth: 1.25)
-            }
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .opacity(0.55)
         }

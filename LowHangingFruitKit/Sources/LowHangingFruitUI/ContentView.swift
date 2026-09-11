@@ -77,13 +77,13 @@ struct ContentView: View {
                         addInlineButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 24)
+                    .padding(.top, 18)
                     .padding(.bottom, 4)
 
                     ScrollView {
                         listContent
                             .padding(.horizontal, 20)
-                            .padding(.top, 18)
+                            .padding(.top, 12)
                             .padding(.bottom, 40)
                             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
                     }
@@ -292,22 +292,11 @@ struct ContentView: View {
                     .layoutPriority(1)
                     .accessibilityElement(children: .combine)
                     .frame(height: 48, alignment: .center)
-                    .background(alignment: .bottomLeading) {
+                    .overlay(alignment: .bottomLeading) {
                         Capsule(style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.smoothTomato.opacity(0.42),
-                                        Color.smoothMarigold.opacity(0.34),
-                                        Color.smoothGrape.opacity(0.34),
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(height: 8)
-                            .rotationEffect(.degrees(-1.2))
-                            .offset(y: -2)
+                            .fill(todoUnderlineColor.opacity(0.72))
+                            .frame(width: 106, height: 3)
+                            .offset(x: 1, y: -1)
                     }
 
                 Text(Self.dateText(Date()))
@@ -324,6 +313,16 @@ struct ContentView: View {
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
                 navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
+        }
+    }
+
+    /// A tiny workload signal under the wordmark: cool when the next 48 hours
+    /// are light, warming only as the list becomes genuinely busy.
+    private var todoUnderlineColor: Color {
+        switch vm.todoSections().reduce(0, { $0 + $1.items.count }) {
+        case 0...2: return .smoothTeal
+        case 3...5: return .smoothMarigold
+        default:    return .smoothTomato
         }
     }
 

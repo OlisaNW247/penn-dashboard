@@ -109,6 +109,7 @@ private enum SmoothFontRegistry {
             ("Satoshi-Variable", "ttf"),
             ("Satoshi-VariableItalic", "ttf"),
             ("Inter", "ttf"),
+            ("Questrial-Regular", "ttf"),
             ("SpaceMono-Regular", "ttf"),
             ("SpaceMono-Bold", "ttf"),
         ] {
@@ -237,6 +238,16 @@ extension Font {
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: weight, design: .default)
+    }
+
+    /// Questrial is reserved for assignment names, giving the task list its
+    /// own softer, highly readable voice without changing the rest of Smooth's
+    /// Satoshi / Inter / Space Mono hierarchy.
+    static func lhfAssignmentTitle(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("Questrial-Regular")
+            ? .custom("Questrial-Regular", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSans(size, weight: .medium)
     }
 
     /// Space Mono for course codes, deadlines, and other compact data.

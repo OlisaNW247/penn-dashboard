@@ -102,10 +102,6 @@ struct AssignmentCardView: View {
         .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
         .background(smoothTaskFill(item.due, now: now))
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .stroke(smoothTaskAccent(item.due, now: now).opacity(0.46), lineWidth: 1.25)
-        }
     }
 
     private func content(now: Date) -> some View {
@@ -129,7 +125,7 @@ struct AssignmentCardView: View {
                     .foregroundStyle(smoothTaskTextAccent(item.due, now: now))
 
                 Text(item.assignment.title)
-                    .font(.lhfSerif(20))
+                    .font(.lhfAssignmentTitle(20))
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
                     .truncationMode(.tail)

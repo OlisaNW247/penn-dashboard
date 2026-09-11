@@ -20,7 +20,7 @@ struct EditDueSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(assignment.title)
-                            .font(.geist(18, weight: .semibold))
+                            .font(.lhfAssignmentTitle(18))
                         Text(assignment.course)
                             .font(.geist(13))
                             .foregroundStyle(.secondary)

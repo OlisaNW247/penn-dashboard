@@ -215,7 +215,7 @@ struct MenuBarPanel: View {
                     .tracking(1.0)
                     .foregroundStyle(Color.v2CourseCode)
                 Text(assignment.title)
-                    .font(.lhfSans(12, weight: .medium))
+                    .font(.lhfAssignmentTitle(12))
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(1)
             }
