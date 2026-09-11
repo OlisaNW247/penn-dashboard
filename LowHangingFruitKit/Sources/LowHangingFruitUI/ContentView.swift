@@ -207,15 +207,12 @@ struct ContentView: View {
     private var assistantButton: some View {
         NavigationLink(value: DashRoute.assistant) {
             ZStack {
-                Circle()
-                    .fill(Color.smoothPaper.opacity(0.88))
-                    .overlay { Circle().stroke(Color.smoothGrape.opacity(0.28), lineWidth: 1) }
                 if let orb = bundledImage("assistant_orb", ext: "png") {
                     orb
                         .resizable()
                         .scaledToFit()
                         .opacity(0.88)
-                        .padding(4)
+                        .padding(1)
                 }
             }
             .frame(width: 60, height: 60)
