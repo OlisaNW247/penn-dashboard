@@ -91,10 +91,6 @@ struct AssistantView: View {
     /// 0 at rest, 1 fully detached — the picked chip's `PersimmonMark` reads
     /// this the same way the send button's does.
     @State private var pickedShapeProgress: Double = 0
-    /// The keyboard shortens the safe content area while the composer is
-    /// focused. Keep the tree on the resting canvas captured before that
-    /// happens so the artwork does not visibly shrink as a question is typed.
-    @State private var restingTreeSize: CGSize?
     @FocusState private var composerFocused: Bool
 
     private let tree = TreeGeometry()
@@ -147,24 +143,6 @@ struct AssistantView: View {
         _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
     }
 
-    /// The tree is a *backdrop*, and these two values are both much lower
-    /// than the ones the drawn version wanted.
-    ///
-    /// Those older numbers (0.5 fresh, 0.10 answering) were tuned for a
-    /// sparse line drawing — a bough, a few leaves, mostly empty page. The
-    /// illustration that replaced it is a dense, fully-painted object with
-    /// saturated greens and browns edge to edge, and at 0.5 it stopped being
-    /// a backdrop: on a device it competed with the suggestion chips sitting
-    /// on top of it and turned the screen into two things fighting for the
-    /// eye. Roughly halving it is not timidity, it is the same *apparent*
-    /// weight arrived at from a much heavier drawing.
-    ///
-    /// The trap worth recording: the fix looks like it should be raising the
-    /// chips' contrast so they win against the tree. That is backwards — it
-    /// treats the backdrop as the thing to beat rather than the thing to
-    /// recede, and it ends with an even louder page. Fade the tree instead.
-    private var wash: Double { conversation.isFresh ? 0.34 : 0.09 }
-
     var body: some View {
         ZStack(alignment: .top) {
             Color.v2Bg.ignoresSafeArea()
@@ -174,13 +152,7 @@ struct AssistantView: View {
                     .padding(.horizontal, 22)
 
                 GeometryReader { geo in
-                    let treeSize = restingTreeSize ?? geo.size
-
                     ZStack(alignment: .topLeading) {
-                        TreeBackdrop(geometry: tree, wash: wash)
-                            .frame(width: treeSize.width, height: treeSize.height)
-                            .animation(.easeInOut(duration: 0.55), value: conversation.isFresh)
-
                         if conversation.isFresh && !composerFocused {
                             hangingSuggestions(in: geo.size)
                                 .transition(.opacity.combined(with: .offset(y: -14)))
@@ -189,22 +161,8 @@ struct AssistantView: View {
                                 .transition(.opacity)
                         }
                     }
-                    // The tree deliberately keeps its pre-keyboard size, but
-                    // its layout container still has to contract so the
-                    // bottom safe-area inset can lift the composer above the
-                    // keyboard. Crop the overflow instead of letting the
-                    // oversized backdrop displace or cover the input field.
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                     .clipped()
-                    .onAppear {
-                        restingTreeSize = geo.size
-                    }
-                    .onChange(of: geo.size) { _, newSize in
-                        // Adapt to genuine layout changes such as rotation,
-                        // but ignore the temporary contraction from typing.
-                        guard !composerFocused else { return }
-                        restingTreeSize = newSize
-                    }
                 }
             }
         }
@@ -325,8 +283,8 @@ struct AssistantView: View {
             .padding(.vertical, 10)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.v2Card)
-                    .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 6, y: 2)
+                    .fill(suggestionGradient(index: index))
+                    .shadow(color: Color.v2CardShadow.opacity(0.08), radius: 6, y: 2)
             )
             .frame(maxWidth: maxWidth, alignment: growsRight ? .leading : .trailing)
         }
@@ -354,6 +312,19 @@ struct AssistantView: View {
     private static let suggestionColors: [Color] = [
         .smoothGrapeInk, .smoothCobaltInk, .smoothMarigoldInk, .smoothTealInk,
     ]
+
+    private static let suggestionFields: [Color] = [
+        .smoothGrape, .smoothCobalt, .smoothMarigold, .smoothTeal,
+    ]
+
+    private func suggestionGradient(index: Int) -> LinearGradient {
+        let color = Self.suggestionFields[index % Self.suggestionFields.count]
+        return LinearGradient(
+            colors: [color.opacity(0.20), Color.v2Card.opacity(0.94), color.opacity(0.08)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
     // MARK: Transcript
 
