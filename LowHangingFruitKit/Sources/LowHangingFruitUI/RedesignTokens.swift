@@ -24,6 +24,7 @@ extension Color {
     static let smoothMarigold = Color(hex: 0xF7A844)
     static let smoothLemon    = Color(hex: 0xF5D353)
     static let smoothTeal     = Color(hex: 0x40B3A5)
+    static let smoothSky      = Color(hex: 0xA9DDF0)
     static let smoothCobalt   = Color(hex: 0x699AE7)
     static let smoothGrape    = Color(hex: 0xAF85F0)
 
@@ -32,6 +33,7 @@ extension Color {
     static let smoothMarigoldInk = Color.dynamic(light: 0x985700, dark: 0xFBCB75)
     static let smoothLemonInk    = Color.dynamic(light: 0x746400, dark: 0xF9E889)
     static let smoothTealInk     = Color.dynamic(light: 0x176D65, dark: 0x76D4C9)
+    static let smoothSkyInk      = Color.dynamic(light: 0x39758A, dark: 0xBCE8F7)
     static let smoothCobaltInk   = Color.dynamic(light: 0x345EA8, dark: 0xA8C4F5)
     static let smoothGrapeInk    = Color.dynamic(light: 0x7044A6, dark: 0xD0B2F7)
 

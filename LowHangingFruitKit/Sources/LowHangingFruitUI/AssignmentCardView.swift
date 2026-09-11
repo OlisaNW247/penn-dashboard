@@ -60,6 +60,8 @@ struct AssignmentCardView: View {
             completeReveal
             card(now: now)
                 .offset(x: dragX)
+                .scaleEffect(isCompleting && !reduceMotion ? 1.012 : 1)
+                .rotationEffect(.degrees(isCompleting && !reduceMotion ? -0.7 : 0))
         }
         .opacity(exitOpacity)
         .offset(y: exitOffset)
@@ -197,7 +199,7 @@ struct AssignmentCardView: View {
                         .tracking(1.1)
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                     Text(fullDueText(item.due))
-                        .font(.lhfSans(12.5, weight: .medium))
+                        .font(.lhfSecondary(12.5, weight: .medium))
                         .foregroundStyle(Color.smoothInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -209,7 +211,7 @@ struct AssignmentCardView: View {
                         Image(systemName: "calendar")
                             .font(.system(size: 12, weight: .medium))
                         Text("edit date")
-                            .font(.lhfSans(12, weight: .medium))
+                            .font(.lhfSecondary(12, weight: .medium))
                     }
                     .foregroundStyle(Color.smoothInk)
                     .contentShape(Rectangle())
@@ -224,7 +226,7 @@ struct AssignmentCardView: View {
             // `DashItem.showsNothingToSubmit`.
             if item.showsNothingToSubmit {
                 Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
-                    .font(.lhfSans(11.5))
+                    .font(.lhfSecondary(11.5))
                     .foregroundStyle(Color.smoothInk.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
@@ -290,36 +292,48 @@ struct AssignmentCardView: View {
             return
         }
 
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.64)) {
-            completionBurst = true
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
             dragX = maxDrag
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            withAnimation(.easeIn(duration: 0.24)) {
+        DispatchQueue.main.async {
+            withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) {
+                completionBurst = true
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+            withAnimation(.easeIn(duration: 0.28)) {
                 dragX = maxDrag + 56
-                exitOffset = -5
+                exitOffset = -8
                 exitOpacity = 0
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onComplete() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.58) { onComplete() }
     }
 
     private var completionBurstView: some View {
         ZStack {
             Circle()
-                .fill(Color.smoothPaper)
+                .stroke(Color.smoothTeal.opacity(0.48), lineWidth: 2)
                 .frame(width: 46, height: 46)
-                .overlay(Circle().stroke(Color.smoothInk, lineWidth: 2))
+                .scaleEffect(completionBurst ? 1.7 : 0.78)
+                .opacity(completionBurst ? 0 : 0.72)
+
+            Circle()
+                .fill(Color.smoothTeal)
+                .frame(width: 46, height: 46)
+                .shadow(color: Color.smoothTealInk.opacity(0.16), radius: 7, y: 3)
 
             Image(systemName: "checkmark")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Color.smoothTeal)
+                .foregroundStyle(Color.smoothPaper)
+                .rotationEffect(.degrees(completionBurst ? 0 : -14))
 
             ForEach(Array(Self.burstOffsets.enumerated()), id: \.offset) { index, offset in
-                Circle()
-                    .fill(Self.burstColors[index])
-                    .frame(width: 6, height: 6)
+                Image(systemName: Self.burstSymbols[index])
+                    .font(.system(size: index.isMultiple(of: 3) ? 7 : 6, weight: .bold))
+                    .foregroundStyle(Self.burstColors[index])
                     .offset(completionBurst ? offset : .zero)
+                    .rotationEffect(.degrees(completionBurst ? Double(index * 38) : 0))
                     .opacity(completionBurst ? 0 : 1)
             }
         }
@@ -330,12 +344,19 @@ struct AssignmentCardView: View {
     private static let burstOffsets: [CGSize] = [
         CGSize(width: -34, height: -24), CGSize(width: 0, height: -38),
         CGSize(width: 34, height: -22), CGSize(width: 38, height: 18),
-        CGSize(width: 0, height: 38), CGSize(width: -36, height: 20),
+        CGSize(width: 10, height: 40), CGSize(width: -28, height: 34),
+        CGSize(width: -42, height: 2), CGSize(width: 42, height: -4),
     ]
 
     private static let burstColors: [Color] = [
         .smoothTomato, .smoothMarigold, .smoothLemon,
-        .smoothTeal, .smoothCobalt, .smoothGrape,
+        .smoothTeal, .smoothMarigold, .smoothCobalt,
+        .smoothGrape, .smoothTomato,
+    ]
+
+    private static let burstSymbols = [
+        "circle.fill", "diamond.fill", "triangle.fill", "star.fill",
+        "diamond.fill", "circle.fill", "star.fill", "triangle.fill",
     ]
 }
 

@@ -229,10 +229,9 @@ struct ContentView: View {
         Button { showAddSheet = true } label: {
             Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothInk)
+                .foregroundStyle(Color.smoothSkyInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothLemon.opacity(0.26)))
-                .overlay { Circle().stroke(Color.smoothLemonInk.opacity(0.38), lineWidth: 1.25) }
+                .background(Circle().fill(Color.smoothSky.opacity(0.42)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -301,7 +300,7 @@ struct ContentView: View {
                     .frame(height: 48, alignment: .center)
 
                 Text(Self.dateText(Date()))
-                    .font(.lhfSecondary(15, weight: .medium))
+                    .font(.lhfMono(14, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
             }
 

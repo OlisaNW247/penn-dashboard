@@ -70,8 +70,9 @@ struct TreeGeometry {
     ]
 }
 
-/// The tree, drawn by placing the bundled illustration rather than by
-/// vector shapes.
+/// The assistant's orb backdrop. The historical type name is retained so the
+/// screen's layout API stays stable while the visual identity moves away from
+/// the old tree and persimmon metaphor.
 ///
 /// `wash` is the master opacity, exactly as it was for the drawn version:
 /// the ask screen animates it from a present, scene-setting value down to a
@@ -83,6 +84,8 @@ struct TreeBackdrop: View {
     var wash: Double = 0.5
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isFloating = false
 
     /// The illustration is bright — a full-colour canopy and trunk — against
     /// a light warm greige ground (`Color.v2Bg`, `0xF4F1EC`). At the very
@@ -106,32 +109,32 @@ struct TreeBackdrop: View {
             imageLayer
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 7.5).repeatForever(autoreverses: true)) {
+                isFloating = true
+            }
+        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    /// The illustration itself, or nothing at all if the asset failed to
-    /// load. `bundledImage` returns `Image?` precisely because a missing
-    /// resource must degrade to an empty backdrop, not a crash or a visible
-    /// placeholder box — the ask screen still has to work, chips and all,
-    /// with no tree behind it.
-    ///
-    /// `.fit`, not `.fill`. The artwork is close to square (1190×1322) and
-    /// the content area it sits in is a tall phone column, so filling meant
-    /// scaling until the *height* matched and throwing away about a tenth of
-    /// the width off each side — which is precisely where this tree keeps its
-    /// outermost boughs and its widest root flare. The crop took the two
-    /// things that make the silhouette read as a whole tree rather than as a
-    /// trunk. Fitting shows all of it, at the cost of some empty ground above
-    /// and below; on a backdrop this faint that emptiness costs nothing,
-    /// where the missing branch tips cost the whole shape.
+    /// The orb is intentionally oversized and allowed to breathe past the
+    /// content edges. A slow drift and scale change make it feel alive without
+    /// moving the questions themselves; Reduce Motion keeps it completely
+    /// still.
     @ViewBuilder
     private var imageLayer: some View {
-        if let tree = bundledImage("thetree", ext: "png") {
-            tree
+        if let orb = bundledImage("assistant_orb", ext: "png") {
+            orb
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(isFloating ? 1.13 : 1.02)
+                .rotationEffect(.degrees(isFloating ? 3.2 : -2.2))
+                .offset(x: isFloating ? 12 : -9, y: isFloating ? -8 : 14)
+                .saturation(0.86)
+                .blur(radius: 1.2)
                 .opacity(effectiveWash)
         }
     }
