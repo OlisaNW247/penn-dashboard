@@ -48,7 +48,18 @@ struct ProfileView: View {
             // page instead of interrupting current-class setup.
             ProfileSemesterSection(placement: .previousSemesters)
         }
-        .navigationTitle("profile")
+        .formStyle(.grouped)
+        .font(.lhfSans(15))
+        .foregroundStyle(Color.smoothInk)
+        .tint(Color.smoothTeal)
+        .navigationTitle("")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Profile")
+                    .font(.lhfSerif(24))
+                    .foregroundStyle(Color.smoothInk)
+            }
+        }
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -61,7 +72,6 @@ struct ProfileView: View {
         // is what makes this `Form` look like the same grouped list iOS
         // already renders. Deployment target here is macOS 14, so `.grouped`
         // (macOS 13+) needs no availability check.
-        .formStyle(.grouped)
         // A maximized Mac window is ~2000pt wide; an unconstrained Form
         // stretches every row edge to edge, so trailing accessories (a
         // "DEFAULT" badge, an add button) end up hundreds of points from the

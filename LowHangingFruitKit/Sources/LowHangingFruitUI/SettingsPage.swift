@@ -126,8 +126,6 @@ struct SettingsPage: View {
                 }
             } header: {
                 Text("accounts")
-            } footer: {
-                Text("everything stays on your phone.")
             }
 
             announcementWatcherSection
@@ -161,10 +159,6 @@ struct SettingsPage: View {
                     }
                 } header: {
                     Text("grades")
-                } footer: {
-                    if !state.canUseGradeWatcher {
-                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use \u{201C}Sign in to Canvas\u{201D} in the Account section above to log in directly; your calendar feed and synced assignments stay put.")
-                    }
                 }
             }
 
@@ -197,7 +191,17 @@ struct SettingsPage: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("settings")
+        .font(.lhfSans(15))
+        .foregroundStyle(Color.smoothInk)
+        .tint(Color.smoothTeal)
+        .navigationTitle("")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Settings")
+                    .font(.lhfSerif(24))
+                    .foregroundStyle(Color.smoothInk)
+            }
+        }
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -330,8 +334,6 @@ struct SettingsPage: View {
             }
         } header: {
             Text("announcement watcher")
-        } footer: {
-            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. ai assist is on by default: announcements that might carry a task are read by an ai model on lhf's server to decide what, if anything, you need to do and by when; off, a simpler on-phone rule decides.")
         }
     }
 
@@ -376,12 +378,6 @@ struct SettingsPage: View {
             }
         } header: {
             Text("ask")
-        } footer: {
-            Text(BackendServices.client != nil
-                 ? "ask reads your syllabi, announcements and assignment pages with your canvas login. course materials are pooled with classmates in the same canvas course so everyone's ask knows the class; your grades, work and login never leave this phone. questions are answered by an ai model on lhf's server."
-                 : (OnDeviceLanguageModel.isAvailable
-                    ? "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers are phrased by apple's on-device model."
-                    : "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers come straight from that data and nothing leaves the phone."))
         }
         .confirmationDialog(
             "delete my class data from lhf's server?",
@@ -490,8 +486,6 @@ struct SettingsPage: View {
             }
         } header: {
             Text("icloud sync")
-        } footer: {
-            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to Smooth\u{2019}s developer. Takes effect the next time you quit and reopen Smooth. Both devices need to be signed into the same iCloud account.")
         }
     }
 
@@ -522,8 +516,6 @@ struct SettingsPage: View {
             ))
         } header: {
             Text("on this mac")
-        } footer: {
-            Text("Keeps Smooth in your menu bar so assignments stay fresh all day.")
         }
     }
     #endif
@@ -546,8 +538,6 @@ struct SettingsPage: View {
             }
         } header: {
             Text("troubleshooting")
-        } footer: {
-            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. \u{201C}Report a problem\u{201D} opens an email with that same redacted report already in it, so you only have to describe what happened.")
         }
     }
 

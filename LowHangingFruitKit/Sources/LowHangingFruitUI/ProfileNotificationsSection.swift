@@ -92,15 +92,9 @@ struct ProfileNotificationsSection: View {
     /// on — but a screen full of reminder controls that cannot currently fire
     /// anything owes the student an explanation at the top.
     private var remindersOffNotice: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label("reminders are off", systemImage: "bell.slash")
-                .font(.lhfSans(14, weight: .semibold))
-                .foregroundStyle(Color.v2SpineAmber)
-            Text("turn on due-date reminders in settings first. what you set here is kept until you do.")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Label("reminders are off", systemImage: "bell.slash")
+            .font(.lhfSans(14, weight: .semibold))
+            .foregroundStyle(Color.v2SpineAmber)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -109,10 +103,9 @@ struct ProfileNotificationsSection: View {
     /// a tab reads as a broken tab, and "no classes yet" is the ordinary week-one
     /// state rather than a fault.
     private var emptyState: some View {
-        Text("each class gets notification controls once it appears above.")
+        Text("no classes")
             .font(.lhfSans(13))
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -149,15 +142,9 @@ struct ProfileNotificationsSection: View {
     /// currently does, and the inherited-or-overridden badge.
     private func courseSummary(_ course: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(state.courseDisplayName(course))
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                Text(summary(for: course))
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(state.courseDisplayName(course))
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
             Spacer(minLength: 0)
             badge(for: course)
         }
@@ -210,12 +197,6 @@ struct ProfileNotificationsSection: View {
             ))
             .font(.lhfSans(14))
 
-            Text(preferences.nothingToSubmitEnabled(course)
-                 ? "readings, classes and attend-only assignments show on the dashboard and remind you."
-                 : "readings, classes and attend-only assignments are hidden from this class's list. weekly tasks you created stay, but stay silent.")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -266,10 +247,6 @@ struct ProfileNotificationsSection: View {
                 .foregroundStyle(.secondary)
             }
 
-            Text("from settings. change it there and this class follows.")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2CourseCode)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)

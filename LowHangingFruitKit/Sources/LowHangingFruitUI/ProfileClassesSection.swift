@@ -62,8 +62,6 @@ struct ProfileClassesSection: View {
             }
         } header: {
             Text("classes")
-        } footer: {
-            Text("turn off to hide. swipe to rename or delete.")
         }
         // The alert used to live on `SettingsPage`'s whole `Form`, because the
         // state driving it lived on the page. It follows the state here. It is
@@ -96,10 +94,9 @@ struct ProfileClassesSection: View {
     /// invisible course. Saying that out loud is the difference between a bug
     /// report and a shrug.
     private var emptyState: some View {
-        Text("classes appear once canvas posts something with a due date. add one above if yours hasn\u{2019}t yet.")
+        Text("no classes")
             .font(.lhfSans(13))
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }

@@ -140,9 +140,6 @@ struct ProfileSemesterSection: View {
                             Text(term.displayName)
                                 .font(.lhfSans(14))
                                 .foregroundStyle(Color.v2Ink)
-                            Text("saved, still in done")
-                                .font(.lhfSans(11))
-                                .foregroundStyle(Color.v2SectionMuted)
                         }
                         Spacer()
                         Button("restore") {
@@ -153,8 +150,6 @@ struct ProfileSemesterSection: View {
                 }
             } header: {
                 Text("prev semesters")
-            } footer: {
-                Text("restoring puts that work back on the dashboard and in reminders.")
             }
         }
     }
@@ -197,8 +192,6 @@ struct ProfileSemesterSection: View {
             ForEach(state.manuallyAddedCourseCodes(), id: \.self) { course in
                 addedClassRow(course)
             }
-        } footer: {
-            Text("missing a class? add it now. canvas will merge it when it appears.")
         }
         // A sheet of its own rather than `AddAssignmentSheet`, for one reason:
         // that sheet asks for the course as free text, and the entire point of

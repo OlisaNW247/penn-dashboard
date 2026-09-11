@@ -507,7 +507,7 @@ struct ContentView: View {
                     .opacity(0.35)
                     .accessibilityHidden(true)
             }
-            Text("go touch grass")
+            Text("go enjoy life")
                 .font(.lhfSerif(46))
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
@@ -515,7 +515,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("go touch grass")
+        .accessibilityLabel("go enjoy life")
     }
 
     /// Shown in place of the "all caught up" art while the first sync is still in
