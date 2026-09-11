@@ -305,22 +305,22 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades")
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
-                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile")
-                navButton(to: .settings, icon: "gearshape.fill", title: "settings")
+                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
+                navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
             .padding(.top, 2)
         }
     }
 
-    private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
+    private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.smoothInk)
                 .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.smoothSurface))
+                .background(Circle().fill(color))
                 .overlay { Circle().stroke(Color.smoothInk, lineWidth: 2) }
                 .contentShape(Circle())
         }
@@ -605,23 +605,25 @@ private struct SmoothTodoEmptyState: View {
     @State private var appeared = false
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.smoothLemon.opacity(0.16))
-                .frame(width: 250, height: 250)
-                .scaleEffect(appeared ? 1 : 0.72)
-                .opacity(appeared ? 1 : 0)
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.smoothLemon.opacity(0.16))
+                    .frame(width: 230, height: 230)
+                    .scaleEffect(appeared ? 1 : 0.72)
+                    .opacity(appeared ? 1 : 0)
 
-            if let img = bundledImage("chill", ext: "jpg") {
-                img
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 320)
-                    .blendMode(.multiply)
-                    .opacity(appeared ? 0.35 : 0)
-                    .scaleEffect(appeared ? 1 : 0.9)
-                    .offset(y: appeared ? -4 : 12)
-                    .accessibilityHidden(true)
+                if let img = bundledImage("chill", ext: "jpg") {
+                    img
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 250)
+                        .blendMode(.multiply)
+                        .opacity(appeared ? 0.35 : 0)
+                        .scaleEffect(appeared ? 1 : 0.9)
+                        .offset(y: appeared ? -4 : 12)
+                        .accessibilityHidden(true)
+                }
             }
 
             Text("go enjoy life")
@@ -629,7 +631,7 @@ private struct SmoothTodoEmptyState: View {
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
                 .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
+                .offset(y: appeared ? 0 : 8)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)

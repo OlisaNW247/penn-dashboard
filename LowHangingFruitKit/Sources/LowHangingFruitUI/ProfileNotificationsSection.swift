@@ -83,6 +83,7 @@ struct ProfileNotificationsSection: View {
         } header: {
             SmoothSectionHeader("notifications", accent: .smoothTeal)
         }
+        .smoothSectionBackground(.smoothCobalt)
     }
 
     // MARK: Whole-section states

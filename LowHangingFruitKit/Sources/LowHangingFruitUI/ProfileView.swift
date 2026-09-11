@@ -33,7 +33,6 @@ struct ProfileView: View {
             Section {
                 SmoothFormHeader(
                     title: "Profile",
-                    symbol: "person.crop.circle.fill",
                     accent: .smoothTeal,
                     spark: .smoothGrape
                 )

@@ -122,6 +122,7 @@ struct ProfileSemesterSection: View {
             } header: {
                 SmoothSectionHeader("semester", accent: .smoothTeal)
             }
+            .smoothSectionBackground(.smoothGrape)
         }
     }
 
@@ -151,6 +152,7 @@ struct ProfileSemesterSection: View {
             } header: {
                 SmoothSectionHeader("prev semesters", accent: .smoothTeal)
             }
+            .smoothSectionBackground(.smoothMarigold)
         }
     }
 
@@ -195,6 +197,7 @@ struct ProfileSemesterSection: View {
         } header: {
             SmoothSectionHeader("add a class", accent: .smoothTeal)
         }
+        .smoothSectionBackground(.smoothLemon)
         // A sheet of its own rather than `AddAssignmentSheet`, for one reason:
         // that sheet asks for the course as free text, and the entire point of
         // this button is that the course is already known. Sending the student

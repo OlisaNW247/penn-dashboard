@@ -63,6 +63,7 @@ struct ProfileClassesSection: View {
         } header: {
             SmoothSectionHeader("classes", accent: .smoothTeal)
         }
+        .smoothSectionBackground(.smoothTeal)
         // The alert used to live on `SettingsPage`'s whole `Form`, because the
         // state driving it lived on the page. It follows the state here. It is
         // attached to the `Section` rather than to any one row on purpose: a

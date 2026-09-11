@@ -5,7 +5,6 @@ import SwiftUI
 /// quieter so controls remain the focus.
 struct SmoothFormHeader: View {
     let title: String
-    let symbol: String
     let accent: Color
     let spark: Color
 
@@ -20,24 +19,20 @@ struct SmoothFormHeader: View {
             ZStack {
                 Circle()
                     .fill(spark)
-                    .frame(width: 18, height: 18)
-                    .offset(x: -25, y: 22)
+                    .frame(width: 22, height: 22)
+                    .offset(x: -24, y: 20)
                 Circle()
                     .fill(Color.smoothLemon)
-                    .frame(width: 10, height: 10)
-                    .offset(x: 27, y: -24)
+                    .frame(width: 12, height: 12)
+                    .offset(x: 26, y: -21)
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(accent.opacity(0.22))
+                    .frame(width: 58, height: 42)
+                    .rotationEffect(.degrees(-8))
+                Capsule()
                     .fill(accent)
-                    .frame(width: 58, height: 58)
-                    .overlay {
-                        Image(systemName: symbol)
-                            .font(.system(size: 23, weight: .semibold))
-                            .foregroundStyle(Color.smoothInk)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.smoothInk, lineWidth: 2)
-                    }
+                    .frame(width: 42, height: 13)
+                    .rotationEffect(.degrees(18))
             }
             .frame(width: 78, height: 72)
             .accessibilityHidden(true)
@@ -84,5 +79,9 @@ private struct SmoothFormChrome: ViewModifier {
 extension View {
     func smoothFormChrome(accent: Color) -> some View {
         modifier(SmoothFormChrome(accent: accent))
+    }
+
+    func smoothSectionBackground(_ color: Color) -> some View {
+        listRowBackground(color.opacity(0.13))
     }
 }

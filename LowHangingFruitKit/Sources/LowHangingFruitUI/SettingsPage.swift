@@ -66,7 +66,6 @@ struct SettingsPage: View {
             Section {
                 SmoothFormHeader(
                     title: "Settings",
-                    symbol: "gearshape.fill",
                     accent: .smoothCobalt,
                     spark: .smoothTomato
                 )
@@ -87,60 +86,26 @@ struct SettingsPage: View {
             } header: {
                 SmoothSectionHeader("your name", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothLemon)
 
             // One row per source, connect or disconnect on the right. The
             // paste-a-calendar-link fallback moved out of here: it belongs on
             // the path where a login is actually failing (onboarding), not in
             // a list of accounts, where it read as a third thing to connect.
             Section {
-                if state.isPreviewMode {
-                    // In the demo every connect action runs `restartOnboarding()`,
-                    // which drops preview mode and throws whoever tapped it at the
-                    // Penn SSO wall with no way back. One clearly labelled exit
-                    // instead, so leaving the demo is always deliberate.
-                    Button {
-                        dismiss()
-                        state.restartOnboarding()
-                    } label: {
-                        Text("exit preview")
-                    }
-                } else {
-                    accountRow(label: "canvas",
-                               connected: state.isCanvasConnected,
-                               working: state.isLoading || state.isCanvasDiscoveryLoading,
-                               disconnect: .canvas)
+                accountRow(label: "canvas",
+                           connected: state.isCanvasConnected,
+                           working: state.isLoading || state.isCanvasDiscoveryLoading,
+                           disconnect: .canvas)
 
-                    // The feed-connected-but-no-cookie-session state: the
-                    // calendar link keeps the dashboard working while
-                    // everything session-powered (Grade Watcher, submission
-                    // detection, course probes) is silently unavailable —
-                    // and, because the Grades entry and the reconnect banner
-                    // are both gated on cookie state, there was previously NO
-                    // visible way back short of Disconnect → Connect. That
-                    // pair is no longer safe advice: disconnect purges the
-                    // ledger's Canvas rows, and with iCloud sync on, those
-                    // deletions propagate to the user's other devices. This
-                    // button is the non-destructive path — same
-                    // restartOnboarding() route as "connect", which touches
-                    // no stored data and lands on the connect checklist where
-                    // the Canvas login step can be redone.
-                    if state.isCanvasConnected && !state.canUseGradeWatcher {
-                        Button {
-                            dismiss()
-                            state.restartOnboarding(for: .canvas)
-                        } label: {
-                            Label("sign in to canvas", systemImage: "link")
-                        }
-                    }
-
-                    accountRow(label: "gradescope",
-                               connected: state.isGradescopeConnected,
-                               working: state.isGradescopeLoading,
-                               disconnect: .gradescope)
-                }
+                accountRow(label: "gradescope",
+                           connected: state.isGradescopeConnected,
+                           working: state.isGradescopeLoading,
+                           disconnect: .gradescope)
             } header: {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothTeal)
 
             announcementWatcherSection
 
@@ -160,6 +125,7 @@ struct SettingsPage: View {
             } header: {
                 SmoothSectionHeader("appearance", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothCobalt)
 
             if FeatureFlags.gradeWatcher {
                 Section {
@@ -176,6 +142,7 @@ struct SettingsPage: View {
                 } header: {
                     SmoothSectionHeader("grades", accent: .smoothCobalt)
                 }
+                .smoothSectionBackground(.smoothGrape)
             }
 
             Section {
@@ -187,6 +154,7 @@ struct SettingsPage: View {
             } header: {
                 SmoothSectionHeader("tasks", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothLemon)
 
             remindersSection
 
@@ -196,16 +164,13 @@ struct SettingsPage: View {
             onThisMacSection
             #endif
 
-            storageSection
-
-            diagnosticsSection
-
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
                         .font(.lhfSans(12))
                         .foregroundStyle(.orange)
                 }
+                .smoothSectionBackground(.smoothMarigold)
             }
         }
         .formStyle(.grouped)
@@ -346,8 +311,9 @@ struct SettingsPage: View {
                 ))
             }
         } header: {
-            SmoothSectionHeader("announcement watcher", accent: .smoothCobalt)
+            SmoothSectionHeader("preferences", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothGrape)
     }
 
     // MARK: Ask (course materials)
@@ -392,6 +358,7 @@ struct SettingsPage: View {
         } header: {
             SmoothSectionHeader("ask", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothMarigold)
         .confirmationDialog(
             "delete my class data from lhf's server?",
             isPresented: $confirmingBackendDataDeletion,
@@ -463,6 +430,7 @@ struct SettingsPage: View {
         } header: {
             SmoothSectionHeader("reminders", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothTomato)
     }
 
     // MARK: iCloud sync
@@ -502,6 +470,7 @@ struct SettingsPage: View {
         } header: {
             SmoothSectionHeader("icloud sync", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothCobalt)
     }
 
     // MARK: On this Mac
@@ -532,6 +501,7 @@ struct SettingsPage: View {
         } header: {
             SmoothSectionHeader("on this mac", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothTeal)
     }
     #endif
 
@@ -591,34 +561,42 @@ struct SettingsPage: View {
 #endif
     }
 
-    /// One source, with its action on the right. Connected state is carried by
-    /// the action word itself rather than a separate "Connected" label: the row
-    /// only ever offers the one move that applies, so a second status string
-    /// was saying the same thing twice.
+    /// One tappable source row. Its trailing status says what is true; tapping
+    /// the row performs the only relevant action: connect or disconnect.
     private func accountRow(label: String,
                             connected: Bool,
                             working: Bool,
                             disconnect target: DisconnectTarget) -> some View {
-        HStack(spacing: 8) {
-            if working {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: connected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(connected ? Color.v2SpineGreen : .secondary)
-            }
-            Text(label)
-            Spacer()
+        Button {
+            guard !working else { return }
             if connected {
-                Button("disconnect", role: .destructive) { disconnecting = target }
-                    .buttonStyle(.borderless)
+                disconnecting = target
             } else {
-                Button("connect") {
-                    dismiss()
-                    state.restartOnboarding(for: target == .canvas ? .canvas : .gradescope)
+                dismiss()
+                state.restartOnboarding(for: target == .canvas ? .canvas : .gradescope)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                if working {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: connected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(connected ? Color.smoothTeal : Color.smoothMuted)
                 }
-                .buttonStyle(.borderless)
+                Text(label)
+                    .foregroundStyle(Color.smoothInk)
+                Spacer()
+                Text(working ? "checking" : (connected ? "connected" : "not connected"))
+                    .font(.lhfSecondary(12, weight: .medium))
+                    .foregroundStyle(Color.smoothMuted)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
             }
         }
+        .buttonStyle(.plain)
+        .disabled(working)
         .accessibilityElement(children: .combine)
+        .accessibilityHint(connected ? "double tap to disconnect" : "double tap to connect")
     }
 }
