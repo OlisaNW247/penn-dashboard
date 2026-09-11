@@ -285,11 +285,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Smooth")
-                    .font(.lhfSerif(18))
-                    .foregroundStyle(Color.smoothMuted)
-
-                Text(greeting)
+                Text("Smooth \(Self.weekdayText(Date()))")
                     .font(.lhfSerif(27))
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
@@ -326,10 +322,6 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
-    }
-
-    private var greeting: String {
-        state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
@@ -608,9 +600,15 @@ struct ContentView: View {
 
     // MARK: Date
 
+    private static func weekdayText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f.string(from: date)
+    }
+
     private static func dateText(_ date: Date) -> String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
+        f.dateFormat = "EEEE MMM d"
         return f.string(from: date)
     }
 }
