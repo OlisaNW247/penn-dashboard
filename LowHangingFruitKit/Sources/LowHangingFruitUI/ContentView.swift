@@ -126,7 +126,10 @@ struct ContentView: View {
                     // second copy of the ledger permanently in memory.
                     AssistantView(
                         courseCodes: state.allCourseCodes(),
-                        contextDocument: state.assistantContextDocument()
+                        contextDocument: state.assistantContextDocument(),
+                        knowledge: state.assistantKnowledge,
+                        work: state.assistantWorkItems(),
+                        userName: state.userName
                     )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
@@ -589,10 +592,28 @@ struct ContentView: View {
             switch emptyStateStatus {
             case .loading:            loadingState
             case let .error(message): errorState(message)
-            case .caughtUp:           allDoneState
+            case .caughtUp:
+                // A first-time install can have `awaitingCanvasCheck`
+                // non-empty (see `AppState`'s doc comment on that property)
+                // while every other bucket is genuinely empty — nothing
+                // caught up yet, everything held pending a Canvas check.
+                // `allDoneState`'s "you're all caught up" would be exactly
+                // the false celebration this whole feature exists to
+                // prevent, so this case takes priority over it here.
+                if state.awaitingCanvasCheck.isEmpty {
+                    allDoneState
+                } else {
+                    awaitingCanvasCheckNotice
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 24) {
+                // Some items can be visible while others from a different,
+                // not-yet-checked course are still held — the one-line notice
+                // sits above the real sections rather than replacing them.
+                if !state.awaitingCanvasCheck.isEmpty {
+                    awaitingCanvasCheckNotice
+                }
                 ForEach(sections) { section in
                     TimelineSectionView(
                         section: section,
@@ -607,6 +628,24 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// The first-launch submission hold's on-screen half — see
+    /// `AppState.awaitingCanvasCheck`'s doc comment for the underlying rule.
+    /// Doubles as a small one-line notice above populated sections and as the
+    /// whole empty-state content when nothing else has cleared the hold yet,
+    /// which is why it carries `loadingState`'s `ProgressView` rather than
+    /// inventing its own look for either spot.
+    private var awaitingCanvasCheckNotice: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .scaleEffect(0.7)
+            Text("checking canvas for what you've turned in…")
+                .font(.lhfSans(13))
+                .foregroundStyle(Color.v2DateText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var allDoneState: some View {

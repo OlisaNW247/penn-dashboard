@@ -100,21 +100,49 @@ struct AssistantView: View {
     private let tree = TreeGeometry()
 
     /// Picks the responder once, at construction, rather than the view
-    /// re-checking on every render: whether a key is saved shouldn't flip a
-    /// conversation already under way from one backend to another mid-chat.
-    /// A key saved after this screen opened takes effect the next time `ask`
-    /// is opened, exactly like `AppState`'s own "toggle on AND key present"
-    /// checks (see `refreshAnnouncementWatcher`) only take effect on the next
-    /// sync, not retroactively on one in flight.
-    init(courseCodes: [String] = [], contextDocument: String = "") {
+    /// re-checking on every render: whether a backend is configured shouldn't
+    /// flip a conversation already under way from one backend to another
+    /// mid-chat. A backend that becomes configured after this screen opened
+    /// takes effect the next time `ask` is opened, exactly like `AppState`'s
+    /// own "toggle on AND backend present" checks (see
+    /// `refreshAnnouncementWatcher`) only take effect on the next sync, not
+    /// retroactively on one in flight.
+    /// Synced course materials and the dashboard's work items, both read by
+    /// the responders through `AssistantContext`. Defaulted so previews and
+    /// the existing call sites compile unchanged.
+    var knowledge: CourseKnowledgeBase = .empty
+    var work: [WorkItem] = []
+    var userName: String = ""
+
+    /// Without a configured backend (`BackendServices.client` is `nil` —
+    /// true for every student who hasn't been enrolled against LHF's server,
+    /// and always true under tests) the on-device answerer takes the
+    /// conversation: exact answers from the dashboard's own items, retrieval
+    /// over synced course materials, no network. With a backend,
+    /// `BackendAssistantResponder` does — and gets the same retrieved
+    /// passages in its per-turn request, falling back to the on-device
+    /// answerer itself if the server call fails. The scripted stand-in is
+    /// used only when there is nothing at all to answer from (previews).
+    init(
+        courseCodes: [String] = [],
+        contextDocument: String = "",
+        knowledge: CourseKnowledgeBase = .empty,
+        work: [WorkItem] = [],
+        userName: String = "",
+        preferScripted: Bool = false
+    ) {
         self.courseCodes = courseCodes
         self.contextDocument = contextDocument
-        let apiKey = AnthropicKeyStore.load()
+        self.knowledge = knowledge
+        self.work = work
+        self.userName = userName
         let responder: AssistantResponder
-        if apiKey.isEmpty {
+        if !preferScripted, let client = BackendServices.client, !(knowledge.isEmpty && work.isEmpty) {
+            responder = BackendAssistantResponder(client: client, fallback: OnDeviceAssistantResponder())
+        } else if preferScripted || (knowledge.isEmpty && work.isEmpty) {
             responder = ScriptedAssistantResponder()
         } else {
-            responder = ClaudeAssistantResponder(apiKey: apiKey)
+            responder = OnDeviceAssistantResponder()
         }
         _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
     }
@@ -560,7 +588,13 @@ struct AssistantView: View {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
             conversation.send(
                 trimmed,
-                context: AssistantContext(courseCodes: courseCodes, contextDocument: contextDocument)
+                context: AssistantContext(
+                    courseCodes: courseCodes,
+                    contextDocument: contextDocument,
+                    knowledge: knowledge,
+                    work: work,
+                    userName: userName
+                )
             )
         }
     }

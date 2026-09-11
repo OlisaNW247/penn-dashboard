@@ -13,18 +13,35 @@ public enum CourseCode {
         /// spaces, diagnostics), so nothing silently loses its name.
         public let code: String
         public let term: Term?
+        /// The registrar section token off the raw descriptor — "001", "401",
+        /// occasionally suffixed like "201A" — the number after the dash that
+        /// follows the course number, before the term stamp. `code`
+        /// deliberately discards this: two sections of the same course
+        /// (Penn's Canvas convention for a lecture and its lab, both titled
+        /// "PHYS 0151-xxx 202630 …") are one course for everything the
+        /// student's own data keys on — selection, grades, dedup — so the
+        /// display code must not vary by section, and it never has.
+        /// `section` exists alongside it for a narrower reason: those two
+        /// sections are *also* two separate Canvas sites with two separate
+        /// sets of course materials, and something has to tell "the lecture
+        /// site's syllabus" from "the lab site's syllabus" apart once
+        /// several sites share one code. `nil` when the descriptor carries
+        /// no dash-delimited section, or isn't a recognizable course code at
+        /// all.
+        public let section: String?
     }
 
     /// Parse the raw bracket content (already stripped of the surrounding `[ ]`).
     public static func parse(_ raw: String) -> Parsed {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let term = firstTermCode(in: trimmed).flatMap(Term.init(code:))
+        let section = extractSection(from: trimmed)
 
         if let code = extractCode(from: trimmed) {
-            return Parsed(code: code, term: term)
+            return Parsed(code: code, term: term, section: section)
         }
 
-        return Parsed(code: trimmed.isEmpty ? "(unknown course)" : trimmed, term: term)
+        return Parsed(code: trimmed.isEmpty ? "(unknown course)" : trimmed, term: term, section: section)
     }
 
     /// Finds a DEPT + course-number pair, preferring the part of the
@@ -128,6 +145,30 @@ public enum CourseCode {
     /// verbatim fallback for unparseable names) is unchanged.
     public static func containsExplicitCode(_ raw: String) -> Bool {
         extractCode(from: raw.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+    }
+
+    /// Pulls the registrar section token straight off the descriptor, e.g.
+    /// the "151" in `PHYS 0151-151 202630 Physics Lab`. Runs on the same
+    /// underscore-to-hyphen normalization `extractCode` applies (a separate
+    /// copy of that one-line transform, not a shared `text` property,
+    /// because `extractCode`'s early return for an empty/unparseable
+    /// descriptor must never suppress section extraction — a descriptor
+    /// this method can find a section in but `extractCode` can't find a
+    /// code in shouldn't happen in practice, but nothing here should assume
+    /// it can't). Deliberately not scoped to the pre-term-code region the
+    /// way `extractCode` is: the pattern already requires a dept, a course
+    /// number, and a dash before the section digits, which titles don't
+    /// spell out by coincidence the way they can spell out a bare
+    /// `DEPT NUMBER`.
+    private static func extractSection(from rawText: String) -> String? {
+        let text = rawText.replacingOccurrences(of: "_", with: "-")
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\b[A-Z]{2,5}[ -]?\d{3,4}[A-Z]?-(\d{3}[A-Z]?)\b"#
+        ) else { return nil }
+        let nsText = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: nsText.length))
+        else { return nil }
+        return nsText.substring(with: match.range(at: 1))
     }
 
     private static func firstTermCode(in text: String) -> String? {

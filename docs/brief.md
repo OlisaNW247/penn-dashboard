@@ -67,7 +67,7 @@ from one SwiftUI codebase via a real, archive-ready Xcode app target.
 - Dashboard: weekly ring, This week / All / Done, per-card due-date adjust
   ("manually adjusted"), manual `+` assignments, and a header **Sync** button.
 - Local due-date reminders + optional daily digest (`NotificationScheduler`).
-- `PrivacyInfo.xcprivacy` bundled; no tracking, no backend.
+- `PrivacyInfo.xcprivacy` bundled; no tracking; a small backend of our own since 2026-09-07 (see docs/PRIVACY.md).
 See [design.md](design.md) for the design system, [decisions.md](decisions.md)
 for the decision log, and [appstore/](appstore/) for the submission package.
 

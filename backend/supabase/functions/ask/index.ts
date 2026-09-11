@@ -1,0 +1,355 @@
+// The streamed "ask" endpoint. PROTOCOL.md's "ask" section is the contract;
+// see there for the request/response shapes and the quota rules. This file
+// wires together, in order: auth, request validation, quota check, loading
+// the caller's course profiles, building the prompt, and streaming the
+// model's answer back as SSE -- deferring almost all of the actual logic to
+// `_shared/*`, which is what makes each piece independently testable
+// without a live Supabase project or OpenRouter key.
+//
+// Nothing here ever logs the question, the context document, the excerpts,
+// or the model's answer -- only status codes and token counts, per the
+// module's brief and the same discipline `ClaudeAssistantResponder` already
+// holds itself to on the iOS side for exactly the same data.
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
+import { requireUser } from "../_shared/auth.ts";
+import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
+import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
+import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
+import { activityForSection, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
+import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
+import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
+
+interface AskRequestBody {
+  question: string;
+  contextDocument: string;
+  excerpts: string;
+  askedAt: string;
+  courseIDs: string[];
+  history: HistoryTurn[];
+}
+
+function isHistoryTurn(value: unknown): value is HistoryTurn {
+  if (typeof value !== "object" || value === null) return false;
+  const turn = value as Record<string, unknown>;
+  return (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string";
+}
+
+function parseAskRequestBody(value: unknown): AskRequestBody | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const body = value as Record<string, unknown>;
+  if (
+    typeof body.question !== "string" ||
+    typeof body.contextDocument !== "string" ||
+    typeof body.excerpts !== "string" ||
+    typeof body.askedAt !== "string" ||
+    !Array.isArray(body.courseIDs) ||
+    !body.courseIDs.every((id): id is string => typeof id === "string") ||
+    !Array.isArray(body.history) ||
+    !body.history.every(isHistoryTurn)
+  ) {
+    return undefined;
+  }
+  return {
+    question: body.question,
+    contextDocument: body.contextDocument,
+    excerpts: body.excerpts,
+    askedAt: body.askedAt,
+    courseIDs: body.courseIDs,
+    history: body.history,
+  };
+}
+
+const MAX_TOKENS = 1200;
+const TEMPERATURE = 0.2;
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { userId, serviceClient } = await requireUser(req);
+    const rawBody = await readJSON<unknown>(req);
+    const body = parseAskRequestBody(rawBody);
+    if (!body) {
+      return errorResponse("bad_request", "malformed ask request", 400);
+    }
+
+    const quotaResponse = await checkAskQuota(serviceClient, userId);
+    if (quotaResponse) return quotaResponse;
+
+    const enrolledIDs = await loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
+    const profiles = await loadCourseProfiles(serviceClient, enrolledIDs);
+    const catalog = await loadCatalogCourses(serviceClient, enrolledIDs);
+
+    const messages = buildMessages({
+      contextDocument: body.contextDocument,
+      catalog,
+      profiles,
+      history: body.history,
+      excerpts: body.excerpts,
+      question: body.question,
+      askedAt: body.askedAt,
+    });
+
+    const model = Deno.env.get("LHF_MODEL") ?? "z-ai/glm-5.3-flash";
+    const fallbackModel = Deno.env.get("LHF_FALLBACK_MODEL") ?? "openai/gpt-5.6-luna";
+    const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+    if (!apiKey) {
+      console.error("ask: OPENROUTER_API_KEY is not configured");
+      return errorResponse("upstream", "model backend is not configured", 502);
+    }
+
+    const upstream = chatCompletionStream({
+      fetchImpl: fetch,
+      apiKey,
+      model,
+      fallbackModel,
+      messages,
+      provider: providerFromEnv(),
+      maxTokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+    });
+    const iterator = upstream[Symbol.asyncIterator]();
+
+    // Pull the first chunk *before* committing to a streaming response.
+    // PROTOCOL.md draws the line at whether any `delta` has reached the
+    // student yet: an upstream failure before that point is a plain 502
+    // JSON response, and only a failure after streaming has begun becomes
+    // a mid-stream `error` event. Fetching one item here is what lets this
+    // handler tell the two cases apart -- once `streamResponse` is called,
+    // the HTTP status and headers are already committed.
+    let first: IteratorResult<StreamEvent>;
+    try {
+      first = await iterator.next();
+    } catch (err) {
+      logUpstreamFailure("before first chunk", err);
+      return errorResponse("upstream", "the model backend failed", 502);
+    }
+
+    return streamResponse(runAskStream(iterator, first, serviceClient, userId));
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse("unauthorized", err.message, err.status);
+    }
+    console.error("ask: unhandled failure", err);
+    return errorResponse("bad_request", "request failed", 400);
+  }
+});
+
+async function checkAskQuota(
+  serviceClient: SupabaseClient,
+  userId: string,
+): Promise<Response | undefined> {
+  const { data, error } = await serviceClient.rpc("ask_usage_counts", { p_user_id: userId });
+  if (error) {
+    console.error("ask: ask_usage_counts failed", error.message);
+    return errorResponse("upstream", "usage lookup failed", 502);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  const limits = limitsFromEnv(Deno.env);
+  const quota = checkQuota({
+    todayRequests: row?.today_requests ?? 0,
+    monthRequests: row?.month_requests ?? 0,
+    dailyLimit: limits.dailyLimit,
+    monthlyGlobalLimit: limits.monthlyGlobalLimit,
+    now: new Date(),
+  });
+  if (!quota.allowed) {
+    return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the request's `courseIDs` down to the subset `userId` is
+ * actually enrolled in, silently dropping any id the caller isn't
+ * enrolled in (per PROTOCOL.md's recorded limitation: enrollment is
+ * asserted by the client, so this is the one place the server can still
+ * refuse to hand back another course's data). Both `loadCourseProfiles`
+ * and `loadCatalogCourses` below are handed this same already-checked
+ * list rather than each re-deriving it, and each trusts it rather than
+ * re-checking enrollment itself -- one place decides who's enrolled in
+ * what for this request, not two that could drift apart.
+ */
+async function loadEnrolledCourseIDs(
+  serviceClient: SupabaseClient,
+  userId: string,
+  courseIDs: string[],
+): Promise<string[]> {
+  if (courseIDs.length === 0) return [];
+
+  const { data: enrollments, error: enrollError } = await serviceClient
+    .from("enrollments")
+    .select("course_id")
+    .eq("user_id", userId)
+    .in("course_id", courseIDs);
+  if (enrollError || !enrollments) {
+    console.error("ask: enrollments lookup failed", enrollError?.message);
+    return [];
+  }
+
+  return enrollments.map((row: { course_id: string }) => row.course_id);
+}
+
+/**
+ * `{ label: profile }` for `enrolledIDs`, one entry per enrolled Canvas
+ * course id -- not one per registrar course -- keyed by
+ * `_shared/catalog.ts`'s `siteLabel` rather than the bare course code so
+ * that a course split across a lecture Canvas site and a lab Canvas site
+ * (PHYS 0151's two sites, see `20260908090000_course_section.sql`) gets
+ * two distinct entries instead of one clobbering the other under a
+ * shared `"PHYS 0151"` key. Resolving each course's label needs its own
+ * `courses` row (`code`, `section`, `catalog_code`) plus, when a
+ * `catalog_code` resolved, that code's `catalog_courses` row (to turn a
+ * bare section number into "lecture"/"lab" via `activityForSection`) --
+ * three queries total (courses, the catalog rows their codes point at,
+ * course_profiles), all scoped to `enrolledIDs`/the codes those rows
+ * resolve to, none joined, for the same "`serviceClient` is service_role
+ * and bypasses RLS so there's no policy doing this join for us" reason
+ * every other multi-table read in this backend is written as separate
+ * queries. A lookup failure on any of the three degrades that piece
+ * (no label refinement, or no profile) rather than failing the whole
+ * request -- consistent with every other best-effort fallback `ask`
+ * already takes toward missing profile/catalog data.
+ *
+ * Every enrolled course id gets an entry, whether or not it has an
+ * extracted profile yet (a fresh sync, or a course whose material hasn't
+ * cleared `extract-profile`) -- the entry's `profile` is `null` in that
+ * case rather than the course being absent, so the model still sees that
+ * a lecture site and a lab site both exist even before either has a
+ * profile of its own.
+ */
+async function loadCourseProfiles(
+  serviceClient: SupabaseClient,
+  enrolledIDs: string[],
+): Promise<Record<string, unknown>> {
+  if (enrolledIDs.length === 0) return {};
+
+  const { data: courseRows, error: courseError } = await serviceClient
+    .from("courses")
+    .select("course_id, code, section, catalog_code")
+    .in("course_id", enrolledIDs);
+  if (courseError || !courseRows) {
+    console.error("ask: courses lookup failed", courseError?.message);
+    return {};
+  }
+  const courses = courseRows as Array<{
+    course_id: string;
+    code: string;
+    section: string | null;
+    catalog_code: string | null;
+  }>;
+
+  const catalogCodes = [
+    ...new Set(courses.map((row) => row.catalog_code).filter((code): code is string => code !== null)),
+  ];
+  let catalogByCode = new Map<string, CatalogCourseRow>();
+  try {
+    catalogByCode = await selectCatalogCoursesByCodes(serviceClient, catalogCodes);
+  } catch (err) {
+    console.error("ask: catalog lookup for profile labels failed", err instanceof Error ? err.message : String(err));
+  }
+
+  const { data: profileRows, error: profileError } = await serviceClient
+    .from("course_profiles")
+    .select("course_id, profile")
+    .in("course_id", enrolledIDs);
+  if (profileError) {
+    console.error("ask: course_profiles lookup failed", profileError.message);
+  }
+  const profileByCourseID = new Map<string, unknown>();
+  for (const row of (profileRows ?? []) as Array<{ course_id: string; profile: unknown }>) {
+    profileByCourseID.set(row.course_id, row.profile);
+  }
+
+  const profiles: Record<string, unknown> = {};
+  for (const row of courses) {
+    const catalogRow = row.catalog_code ? catalogByCode.get(row.catalog_code) : undefined;
+    const activity = row.section && catalogRow ? activityForSection(catalogRow, row.section) : undefined;
+    const label = siteLabel(row.code, row.section ?? undefined, activity);
+    profiles[label] = profileByCourseID.get(row.course_id) ?? null;
+  }
+  return profiles;
+}
+
+/** `catalog_courses` rows reachable from `enrolledIDs` through
+ *  `courses.catalog_code`, for `buildMessages`'s COURSE STRUCTURE block.
+ *  A lookup failure degrades to an empty list rather than failing the
+ *  whole request -- exactly `loadCourseProfiles`'s posture toward its own
+ *  lookup failing, since a missing catalog block is a strictly smaller
+ *  loss to the answer than a missing course-profiles block. */
+async function loadCatalogCourses(
+  serviceClient: SupabaseClient,
+  enrolledIDs: string[],
+): Promise<CatalogCourseRow[]> {
+  try {
+    return await selectCatalogCoursesForCourseIDs(serviceClient, enrolledIDs);
+  } catch (err) {
+    console.error("ask: catalog lookup failed", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+function providerFromEnv(): { order?: string[] } | undefined {
+  const raw = Deno.env.get("LHF_PROVIDER_ORDER");
+  if (!raw) return undefined;
+  const order = raw.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  return order.length > 0 ? { order } : undefined;
+}
+
+function logUpstreamFailure(when: string, err: unknown): void {
+  const status = err instanceof UpstreamError ? err.status : undefined;
+  console.error("ask: upstream failure", when, "status:", status ?? "network");
+}
+
+/**
+ * The actual SSE body. Takes the already-fetched `first` result so the
+ * caller above can inspect it (to decide 502-vs-stream) without this
+ * generator re-requesting it and silently dropping a chunk.
+ */
+async function* runAskStream(
+  iterator: AsyncIterator<StreamEvent>,
+  first: IteratorResult<StreamEvent>,
+  serviceClient: SupabaseClient,
+  userId: string,
+): AsyncGenerator<SSEEvent> {
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let cachedTokens = 0;
+  let current = first;
+
+  try {
+    while (!current.done) {
+      const event = current.value;
+      if (event.type === "delta") {
+        yield { type: "delta", text: event.text };
+      } else if (event.type === "usage") {
+        promptTokens = event.promptTokens;
+        completionTokens = event.completionTokens;
+        cachedTokens = event.cachedTokens;
+      }
+      current = await iterator.next();
+    }
+  } catch (err) {
+    logUpstreamFailure("mid-stream", err);
+    yield { type: "error", code: "upstream", message: "the model backend failed" };
+    return;
+  }
+
+  yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
+
+  // Recorded after the stream has already fully reached the student, and a
+  // failure to record is only ever logged, never surfaced -- the answer
+  // was already delivered and can't be un-sent, so the worst case here is
+  // one under-counted request against the quota, not a broken response.
+  const { error } = await serviceClient.rpc("record_ask_usage", {
+    p_user_id: userId,
+    p_prompt_tokens: promptTokens,
+    p_completion_tokens: completionTokens,
+  });
+  if (error) {
+    console.error("ask: record_ask_usage failed", error.message);
+  }
+}

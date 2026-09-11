@@ -18,7 +18,13 @@ import LowHangingFruitKit
 //
 // ## What is deliberately absent
 //
-// Three things a reader will expect to find and won't:
+// Three things a reader will expect to find and won't. (Since 2026-09-06 the
+// first two reach the model by a different route: `CourseKnowledgeCollector`
+// keeps syllabus prose and announcement bodies on-device, and
+// `BackendAssistantResponder.retrievedExcerpts` sends the few passages that
+// match a question as a separate field on the request — after the cache
+// breakpoint, so nothing here has to change. This document stays the small,
+// stable, cached part.)
 //
 //  1. **Syllabus prose.** `SyllabusSetupView` does ingest syllabus text — from
 //     a PDF, a Canvas page, or pasted text — but `SyllabusParser` keeps only
@@ -49,7 +55,7 @@ import LowHangingFruitKit
 // bargain is not to introduce per-call variation of its own, which is why
 // `isCompleted` is the only piece of derived state consulted and why nothing
 // here formats a date. The current date reaches the model through the user
-// message instead (`ClaudeAssistantResponder.buildRequestBody`).
+// turn instead (`BackendAssistantResponder.makeRequest`).
 
 extension AppState {
     /// Renders this student's classes and work as the document the assistant
@@ -59,7 +65,17 @@ extension AppState {
         let codes = allCourseCodes()
         guard !codes.isEmpty else { return "" }
 
-        let courseIDsByCode = canvasCourseIDsByCode
+        // `canvasCourseIDsByCode` (used here before 2026-09-09) is `[code:
+        // id]` — one id per code, last-write-wins — so a code cross-listed
+        // into two Canvas sites (`AppState.canvasCourseIDs()`'s own doc
+        // comment explains why that happens) silently contributed only ONE
+        // site's grading breakdown to the assistant, with the other site's
+        // categories simply absent with no error. `canvasCourseIDs()` is
+        // computed once here, id-keyed with possibly several ids per code,
+        // and grouped by code below so `gradeCategoryFacts` can walk every
+        // site behind a code instead of just the cached "primary" one.
+        let courseIDs = canvasCourseIDs()
+        let idsByCode = Dictionary(grouping: courseIDs.keys) { courseIDs[$0]! }
 
         let courses = codes.map { code -> AssistantContextDocument.CourseFacts in
             // A rename is cosmetic everywhere else in LHF, and it stays
@@ -71,7 +87,7 @@ extension AppState {
             return AssistantContextDocument.CourseFacts(
                 code: code,
                 displayName: shown == code ? nil : shown,
-                gradeCategories: gradeCategoryFacts(for: code, courseIDsByCode: courseIDsByCode)
+                gradeCategories: gradeCategoryFacts(for: code, courseIDs: (idsByCode[code] ?? []).sorted())
             )
         }
 
@@ -104,27 +120,69 @@ extension AppState {
 
     /// This course's grading breakdown, if Grade Watcher has ever fetched it.
     ///
-    /// The join runs code → Canvas course id → categories, because Grade
+    /// The join runs code → Canvas course id(s) → categories, because Grade
     /// Watcher is keyed by Canvas's id while everything student-facing is
-    /// keyed by the course code. A course with no id in the cache (never
-    /// watched, or added by hand) simply contributes no categories, and the
-    /// document renders an explicit "not extracted from a syllabus" line for
-    /// it — silence there would read as "this class has no grading scheme".
+    /// keyed by the course code. `courseIDs` is every Canvas site behind this
+    /// code (`AppState.canvasCourseIDs()`, not the single cached "primary"
+    /// id) — a code with no ids at all (never watched, or added by hand)
+    /// simply contributes no categories, and the document renders an
+    /// explicit "not extracted from a syllabus" line for it — silence there
+    /// would read as "this class has no grading scheme".
+    ///
+    /// `courseIDs` must already be sorted by the caller: this document is a
+    /// prompt-cache prefix (see the CLAUDE.md trap on byte-stable caching),
+    /// so the order categories are concatenated in has to be deterministic
+    /// rather than whatever order a `Dictionary`'s keys happened to iterate
+    /// in this launch. A category `name` that already appeared from an
+    /// earlier id in the list is dropped — the two sites are the SAME
+    /// course, so a rare identically-named category on both (a shared
+    /// assignment group Canvas replicated to both sites) would otherwise
+    /// double the document's account of it.
     private func gradeCategoryFacts(
         for code: String,
-        courseIDsByCode: [String: String]
+        courseIDs: [String]
     ) -> [AssistantContextDocument.GradeCategoryFacts] {
-        guard let courseID = courseIDsByCode[code] else { return [] }
-        return gradeWatcher.gradeCategories(courseID: courseID).map { category in
-            AssistantContextDocument.GradeCategoryFacts(
-                name: category.name,
-                // Canvas reports weights as percentages already; `nil` means
-                // the course is graded on raw points, not weighted categories,
-                // and the document distinguishes the two.
-                weightPercent: category.weight,
-                dropsLowest: category.dropLowest > 0
+        var seenNames: Set<String> = []
+        var facts: [AssistantContextDocument.GradeCategoryFacts] = []
+        for courseID in courseIDs {
+            // An excluded course (a pass/fail lab, a zero-credit recitation)
+            // is not the class as far as "how is this graded" is concerned —
+            // Grade Watcher's own report leaves it out of the number it
+            // shows, and the assistant must describe the same course the
+            // student sees, not a category set nobody is looking at.
+            guard !gradeWatcher.isCourseExcluded(courseID: courseID) else { continue }
+
+            // Read the engine's own resolved breakdown — the same weights,
+            // drop rules, and overrides Grade Watcher's card shows — rather
+            // than Canvas's raw, un-overridden `GradeCategory` values, so
+            // `ask` and Grade Watcher never disagree about how a course is
+            // graded.
+            guard let breakdown = gradeWatcher.breakdown(courseID: courseID) else { continue }
+            let rawByID = Dictionary(
+                uniqueKeysWithValues: gradeWatcher.gradeCategories(courseID: courseID).map { ($0.id, $0) }
             )
+            for category in breakdown.categories {
+                guard !seenNames.contains(category.name) else { continue }
+                seenNames.insert(category.name)
+                // A category can be marked "drops lowest" either because the
+                // configured rule is still in force (`rawByID`'s
+                // `dropLowest`, Canvas's or a manual override's count) or
+                // because this snapshot actually dropped an item under it
+                // (`droppedItemIDs`) — either is worth telling the model.
+                let rawDropLowest = rawByID[category.id]?.dropLowest ?? 0
+                facts.append(
+                    AssistantContextDocument.GradeCategoryFacts(
+                        name: category.name,
+                        // `effectiveWeight` is nil in points mode — the
+                        // course has no weight concept — same meaning `nil`
+                        // carried before this change.
+                        weightPercent: category.effectiveWeight,
+                        dropsLowest: !category.droppedItemIDs.isEmpty || rawDropLowest > 0
+                    )
+                )
+            }
         }
+        return facts
     }
 
     /// Source labels the document uses.

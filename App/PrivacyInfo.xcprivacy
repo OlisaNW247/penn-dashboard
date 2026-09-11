@@ -2,21 +2,56 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- LHF runs on-device by default and contains no analytics, tracking,
-	     or advertising SDKs. Two things leave the device beyond talking to
-	     Canvas/Gradescope: a small, identifier-free update-manifest check
-	     against a host the maintainer controls (see
-	     LowHangingFruitKit/Sources/LowHangingFruitKit/Update/), and, only
-	     if the student pastes in their own Anthropic API key, two opt-in
-	     AI features (Announcement Watcher assist, ask/"the tree") that
-	     send class data to Anthropic's API. There is still no LHF server
-	     or account. See docs/PRIVACY.md. -->
+	<!-- LHF's grades, completions, work list, name, and login credentials
+	     stay on-device. A small backend of ours (Supabase) pools shared,
+	     non-personal Canvas course material per course and answers optional
+	     AI questions; this is what the two data types below cover. The app
+	     also makes a small, identifier-free request for a public
+	     update-policy file the maintainer hosts (see
+	     LowHangingFruitKit/Sources/LowHangingFruitKit/Update/), which
+	     carries nothing about the student. None of this is used for
+	     tracking, and the app contains no analytics, tracking, or
+	     advertising SDKs. See docs/PRIVACY.md. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
-	<array/>
+	<array>
+		<!-- The anonymous backend account id, used to scope enrollment
+		     records and per-user quota. No email, password, or name is
+		     collected. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<!-- Course material (syllabus, pages, modules, assignment
+		     descriptions, announcements) fetched from the student's own
+		     Canvas session and uploaded to be pooled per Canvas course
+		     with classmates who already have access to it. Never grades,
+		     completions, submission state, the work list, or the
+		     student's name. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<!-- The app stores the user's name, captured Canvas calendar-feed URL,

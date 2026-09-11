@@ -14,38 +14,150 @@ struct GradeReportView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let courseName: String
+    /// "lecture" / "lab" / "recitation" when this course code has several
+    /// Canvas sites (`AppState.gradeSiteLabel`), else nil. Defaults to nil so
+    /// `ContentView`'s existing call site -- which doesn't know about site
+    /// labels and is out of this change's scope -- keeps compiling unchanged;
+    /// `GradeCourseCardView`'s call site passes its own `siteLabel` through.
+    let siteLabel: String?
+
+    /// Read only for `state.courseKnowledge.syllabusText(forCourseID:)`, so
+    /// `SyllabusSetupView` can offer the syllabus text this phone already
+    /// synced as a candidate before it ever hits Canvas live. Both of this
+    /// view's call sites (`ContentView`'s `.report` case and
+    /// `GradeCourseCardView`'s `NavigationLink`) already sit under an
+    /// ancestor `.environmentObject(state)`, so this resolves without
+    /// widening either init.
+    @EnvironmentObject private var state: AppState
 
     @State private var targetPercent: Double?
     @State private var showSyllabusSetup = false
+    @State private var showResetConfirmation = false
+
+    init(store: GradeWatcherStore, courseID: String, courseName: String, siteLabel: String? = nil) {
+        self.store = store
+        self.courseID = courseID
+        self.courseName = courseName
+        self.siteLabel = siteLabel
+    }
 
     private var breakdown: GradeBreakdown? { store.breakdown(courseID: courseID) }
     private var projection: GradeProjection? { store.projection(courseID: courseID) }
     private var cutoffs: GradeCutoffs { store.cutoffs(courseID: courseID) }
 
+    private var titleText: String {
+        guard let siteLabel, !siteLabel.isEmpty else { return courseName }
+        return "\(courseName) \u{00b7} \(siteLabel)"
+    }
+
+    /// Anchor id for the categories editor -- `syllabusSection`'s "review
+    /// categories" link scrolls here rather than merely saying "see below,"
+    /// since the categories block can be a full screen's worth of content
+    /// down the report by the time a partial-match warning is relevant.
+    private static let categoriesSectionAnchor = "grade-report-categories-section"
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let breakdown, let projection {
-                    headline(breakdown)
-                    landingSection(projection)
-                    targetSection(projection)
-                    remainingSection(breakdown, projection)
-                    categoriesSection(breakdown)
-                    syllabusSection
-                    caveats(breakdown)
-                } else {
-                    emptyState
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let breakdown, let projection {
+                        headline(breakdown)
+                        explanationSection
+                        landingSection(projection)
+                        targetSection(projection)
+                        remainingSection(breakdown, projection)
+                        categoriesSection(breakdown)
+                            .id(Self.categoriesSectionAnchor)
+                        syllabusSection(scrollProxy: scrollProxy)
+                        caveats(breakdown)
+                    } else {
+                        emptyState
+                    }
                 }
+                .padding(16)
             }
-            .padding(16)
         }
         .background(Color.v2Bg)
-        .navigationTitle(courseName)
+        .navigationTitle(titleText)
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+        .toolbar { reportMenu }
+        .confirmationDialog(
+            "reset all edits for this class?",
+            isPresented: $showResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("reset all edits", role: .destructive) { resetAllEdits() }
+            Button("cancel", role: .cancel) {}
+        } message: {
+            Text("this clears every score you corrected, expected item count, grading mode choice, and manual weight for this class. canvas\u{2019}s own numbers are unaffected.")
+        }
         .sheet(isPresented: $showSyllabusSetup) {
-            SyllabusSetupView(store: store, courseID: courseID, courseName: courseName)
+            SyllabusSetupView(
+                store: store,
+                courseID: courseID,
+                courseName: courseName,
+                syncedSyllabusText: state.courseKnowledge.syllabusText(forCourseID: courseID)
+            )
+        }
+    }
+
+    // MARK: - Toolbar
+
+    /// Same grade-options menu as the card (`GradeCourseCardView.cardMenu`),
+    /// plus a class-wide "reset all edits" the card doesn't have room for.
+    /// Kept as its own copy rather than factored out: the card's version is
+    /// a plain `Menu` view, this one is a `ToolbarContent` builder, and the
+    /// two SwiftUI result-builder contexts don't share a body type.
+    @ToolbarContentBuilder
+    private var reportMenu: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Toggle("counts toward my grade", isOn: Binding(
+                    get: { !store.isCourseExcluded(courseID: courseID) },
+                    set: { countsNow in store.setCourseExcluded(courseID: courseID, !countsNow) }
+                ))
+
+                Picker("grading", selection: Binding(
+                    get: { store.modeOverride(courseID: courseID) },
+                    set: { store.setModeOverride(courseID: courseID, mode: $0) }
+                )) {
+                    Text("as canvas says").tag(GradingMode?.none)
+                    Text("weighted by category").tag(GradingMode?.some(.weighted))
+                    Text("points").tag(GradingMode?.some(.points))
+                }
+
+                Button(role: .destructive) {
+                    showResetConfirmation = true
+                } label: {
+                    Text("reset all edits for this class")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("grade options for \(courseName)")
+        }
+    }
+
+    /// Clears every student-authored edit for this course, using only the
+    /// existing per-item/per-category setters (`nil` clears each one) --
+    /// there's no bulk-clear entry point on the store, so this iterates the
+    /// override/expected-count/weight dictionaries it already exposes rather
+    /// than needing a new one. Syllabus attachment and Gradescope match
+    /// confirmations are untouched: those aren't corrections to a Canvas
+    /// number, they're the student's own source documents, and "reset my
+    /// edits" shouldn't be read as "forget my syllabus."
+    private func resetAllEdits() {
+        for itemID in store.itemOverrides(courseID: courseID).keys {
+            store.setItemOverride(courseID: courseID, itemID: itemID, override: nil)
+        }
+        for categoryID in store.manualExpectedCounts(courseID: courseID).keys {
+            store.setExpectedCount(courseID: courseID, categoryID: categoryID, count: nil)
+        }
+        store.setModeOverride(courseID: courseID, mode: nil)
+        for categoryID in store.manualWeights(courseID: courseID).keys {
+            store.setManualWeight(courseID: courseID, categoryID: categoryID, weight: nil)
         }
     }
 
@@ -53,10 +165,11 @@ struct GradeReportView: View {
 
     @ViewBuilder
     private func headline(_ breakdown: GradeBreakdown) -> some View {
+        let headlineText = GradeCourseCardView.headlineText(for: breakdown)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let percent = breakdown.currentPercent {
-                    Text(formatPercent(percent))
+                    Text(headlineText.primary)
                         .font(.lhfSerif(40))
                         .foregroundStyle(Color.v2Ink)
                     if let letter = cutoffs.letter(forPercent: percent) {
@@ -65,9 +178,21 @@ struct GradeReportView: View {
                             .foregroundStyle(Color.v2DateText)
                     }
                 } else {
-                    Text("no scores yet")
-                        .font(.lhfSerif(26))
-                        .foregroundStyle(Color.v2DateText)
+                    // "no graded work yet" + "attendance N%" when every
+                    // scored item in the course is attendance-only (the
+                    // PHYS lecture case) -- see `GradeCourseCardView
+                    // .headlineText` for the shared rule and
+                    // `currentGradeLine` for the card's identical treatment.
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(headlineText.primary)
+                            .font(.lhfSerif(26))
+                            .foregroundStyle(Color.v2DateText)
+                        if let secondary = headlineText.secondary {
+                            Text(secondary)
+                                .font(.lhfSans(11))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                    }
                 }
                 Spacer()
             }
@@ -82,8 +207,13 @@ struct GradeReportView: View {
         }
     }
 
+    /// Same "decided" rule as the card (`GradeCourseCardView.decidedFraction`/
+    /// `.decidedText`) -- reused rather than reimplemented so this headline
+    /// and the card can never end up saying two different things about the
+    /// same course's "how much is decided."
     private func decidedBar(_ breakdown: GradeBreakdown) -> some View {
-        let fraction = min(max(breakdown.decidedFraction, 0), 1)
+        let fraction = min(max(GradeCourseCardView.decidedFraction(for: breakdown), 0), 1)
+        let isSemesterKnown = breakdown.semesterDecidedFraction != nil
         return VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -91,17 +221,29 @@ struct GradeReportView: View {
                         .fill(Color.v2RingTrack)
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.v2SpineBlue)
+                        .opacity(isSemesterKnown ? 1 : 0.5)
                         .frame(width: geo.size.width * fraction)
                 }
             }
             .frame(height: 6)
-            Text("\(Int((fraction * 100).rounded()))% of your grade is decided")
+            Text(GradeCourseCardView.decidedText(for: breakdown))
                 .font(.lhfSans(10.5))
                 .foregroundStyle(Color.v2RingSub)
         }
         .padding(.top, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Int((fraction * 100).rounded())) percent of the grade is decided")
+        .accessibilityLabel(GradeCourseCardView.decidedText(for: breakdown))
+    }
+
+    // MARK: - How this is calculated
+
+    @ViewBuilder
+    private var explanationSection: some View {
+        if let explanation = store.explanation(courseID: courseID) {
+            ReportSection(title: "How this is calculated") {
+                GradeExplanationView(explanation: explanation)
+            }
+        }
     }
 
     // MARK: - Where you land
@@ -257,42 +399,33 @@ struct GradeReportView: View {
 
     // MARK: - Categories
 
+    /// The full category-map editor (`GradeCategoryMapEditor`) -- move a
+    /// Canvas group between categories, correct or exclude one item, add or
+    /// rename a category, and see the "needs a home" / "not counted" groups
+    /// the map hasn't placed. Everything below this used to be a flat,
+    /// read-only `GradeCategoryRow` list straight off `breakdown.categories`;
+    /// the PHYS lecture report (docs/grades.md — attendance's 100 points
+    /// landing inside "Problem Sets") is exactly the structural confusion a
+    /// read-only list can never let a student fix, so the report now hands
+    /// this section to the one place that can. The card's own expanded
+    /// breakdown (`GradeCourseCardView.breakdownList`) stays the old
+    /// read-mostly `GradeCategoryRow` list on purpose -- a card is not where
+    /// a student goes to restructure a class's categories.
     private func categoriesSection(_ breakdown: GradeBreakdown) -> some View {
         ReportSection(title: breakdown.mode == .weighted ? "Categories" : "Points") {
-            VStack(spacing: 8) {
-                ForEach(breakdown.categories) { category in
-                    GradeCategoryRow(
-                        store: store,
-                        courseID: courseID,
-                        category: category,
-                        hasGradescopeEarlyScore: hasGradescopeEarlyScore(for: category)
-                    )
-                }
-            }
-        }
-    }
-
-    /// `CategoryResult` doesn't carry per-item provenance, so this looks the
-    /// category back up in the overlay-applied list — same approach as the card.
-    private func hasGradescopeEarlyScore(for category: GradeBreakdown.CategoryResult) -> Bool {
-        guard let live = store.gradeCategories(courseID: courseID).first(where: { $0.id == category.id }) else {
-            return false
-        }
-        return live.items.contains { item in
-            !item.isExcused && !item.omitFromFinalGrade
-                && item.score != nil
-                && item.scoreSource == .gradescopeEarly
-                && !category.droppedItemIDs.contains(item.id)
+            GradeCategoryMapEditor(store: store, courseID: courseID)
         }
     }
 
     // MARK: - Syllabus
 
     @ViewBuilder
-    private var syllabusSection: some View {
+    private func syllabusSection(scrollProxy: ScrollViewProxy) -> some View {
         ReportSection(title: "Syllabus") {
             if let attached = store.syllabus(courseID: courseID) {
-                attachedSyllabusBody(attached)
+                attachedSyllabusBody(attached, scrollProxy: scrollProxy)
+            } else if let suggestion = store.suggestedScheme(courseID: courseID) {
+                suggestedSchemeBody(suggestion.scheme)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("canvas knows what\u{2019}s graded, not what it\u{2019}s worth. add your syllabus and this report can use the real weights, cutoffs and assignment counts.")
@@ -307,8 +440,72 @@ struct GradeReportView: View {
         }
     }
 
+    /// A course with no syllabus of its own yet, but whose weights another
+    /// student's device already read off theirs and the backend pooled
+    /// server-side (`GradeWatcherStore.suggestedScheme`). Shown instead of
+    /// the plain "add your syllabus" prompt, never instead of an actually
+    /// attached one — `syllabusSection` above only reaches this branch when
+    /// `store.syllabus(courseID:)` is nil. Honesty rule: this never applies
+    /// itself; "use these weights" is the only path to
+    /// `applySuggestedScheme`, exactly like the parsed-syllabus review
+    /// screen's own "use these weights" button.
     @ViewBuilder
-    private func attachedSyllabusBody(_ attached: AttachedSyllabus) -> some View {
+    private func suggestedSchemeBody(_ scheme: SyllabusGradingScheme) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("suggested from the syllabus, as read by locust\u{2019}s server.")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(scheme.normalizedCategories) { category in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(category.name)
+                                .font(.lhfSans(12, weight: .medium))
+                            Spacer()
+                            Text(formatPercent(category.weightPercent))
+                                .font(.lhfSans(12))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                        if category.dropLowest > 0 || category.expectedItemCount != nil {
+                            Text(suggestedExtras(for: category))
+                                .font(.lhfSans(10))
+                                .foregroundStyle(Color.v2SpinePurple)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 16) {
+                Button("use these weights") {
+                    store.applySuggestedScheme(courseID: courseID)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Button("review the syllabus instead") { showSyllabusSetup = true }
+                    .font(.lhfSans(12))
+            }
+        }
+    }
+
+    /// "12 expected" / "drops lowest 2" / both, joined — same shape as
+    /// `SyllabusSetupView.extras(for:)`, kept as a separate copy rather than
+    /// shared because that one is `private` to its own file and this row is
+    /// cosmetic enough not to be worth a shared helper over.
+    private func suggestedExtras(for category: SyllabusCategory) -> String {
+        var parts: [String] = []
+        if category.dropLowest > 0 {
+            parts.append("drops \(category.dropLowest) lowest")
+        }
+        if let count = category.expectedItemCount {
+            parts.append("\(count) expected")
+        }
+        return parts.joined(separator: " \u{00b7} ")
+    }
+
+    @ViewBuilder
+    private func attachedSyllabusBody(_ attached: AttachedSyllabus, scrollProxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text(attached.documentName ?? attached.source.label)
@@ -326,12 +523,32 @@ struct GradeReportView: View {
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2SpineGreen)
                 } else {
+                    // Old copy ("N of M categories matched. finish matching to
+                    // use your syllabus's weights.") implied the weights sat
+                    // idle until every category was matched by hand -- no
+                    // longer true once a category MAP is in effect
+                    // (`GradeCategoryMapEditor`): the map's weights apply
+                    // regardless of how many Canvas groups still read
+                    // "needs a home," so the honest statement is "these are
+                    // already being used" plus "and here's what isn't posted
+                    // yet," not "finish this before it counts."
                     let applied = match.matches.filter(\.isApplied).count
-                    Label("\(applied) of \(match.matches.count) categories matched. finish matching to use your syllabus\u{2019}s weights.",
-                          systemImage: "exclamationmark.circle")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(
+                            "\(applied) of \(match.matches.count) syllabus categories have canvas groups \u{00b7} the rest count as not yet posted.",
+                            systemImage: "exclamationmark.circle"
+                        )
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DueAmber)
                         .fixedSize(horizontal: false, vertical: true)
+
+                        Button("review categories") {
+                            withAnimation {
+                                scrollProxy.scrollTo(Self.categoriesSectionAnchor, anchor: .top)
+                            }
+                        }
+                        .font(.lhfSans(11, weight: .medium))
+                    }
                 }
             }
 

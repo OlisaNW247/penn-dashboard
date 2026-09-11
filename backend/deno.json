@@ -1,0 +1,6 @@
+{
+  "tasks": {
+    "test": "deno test --allow-env --allow-net --allow-read=test/fixtures test/",
+    "check": "deno check supabase/functions/*/index.ts"
+  }
+}

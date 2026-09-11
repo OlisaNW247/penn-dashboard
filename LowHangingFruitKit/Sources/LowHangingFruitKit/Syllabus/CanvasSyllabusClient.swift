@@ -54,12 +54,13 @@ public struct CanvasSyllabusClient: Sendable {
     public func findCandidates(courseID: String) async throws -> [SyllabusCandidate] {
         var candidates: [SyllabusCandidate] = []
 
-        if let body = try? await syllabusBody(courseID: courseID), !body.isEmpty {
+        if let body = try? await syllabusBody(courseID: courseID), !body.text.isEmpty {
             candidates.append(SyllabusCandidate(
                 id: "syllabus-body-\(courseID)",
                 source: .canvasSyllabusPage,
                 name: "Course syllabus page",
-                text: body
+                text: body.text,
+                links: body.links
             ))
         }
 
@@ -72,7 +73,7 @@ public struct CanvasSyllabusClient: Sendable {
     // MARK: - Sources
 
     /// GET /api/v1/courses/:id?include[]=syllabus_body
-    private func syllabusBody(courseID: String) async throws -> String {
+    private func syllabusBody(courseID: String) async throws -> (text: String, links: [HTMLLink]) {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/v1/courses/\(courseID)"),
             resolvingAgainstBaseURL: false
@@ -82,8 +83,8 @@ public struct CanvasSyllabusClient: Sendable {
 
         let data = try await fetch(url)
         let dto = try? JSONDecoder().decode(CourseSyllabusDTO.self, from: data)
-        guard let html = dto?.syllabusBody, !html.isEmpty else { return "" }
-        return SyllabusTextExtractor.text(fromHTML: html)
+        guard let html = dto?.syllabusBody, !html.isEmpty else { return ("", []) }
+        return (SyllabusTextExtractor.text(fromHTML: html), HTMLText.links(in: html))
     }
 
     /// GET /api/v1/courses/:id/pages?search_term=syllabus, then the body of

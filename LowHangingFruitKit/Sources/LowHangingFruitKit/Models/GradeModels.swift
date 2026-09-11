@@ -128,6 +128,52 @@ public enum GradingMode: String, Sendable, Codable, Hashable {
     case points
 }
 
+/// A student-entered correction to one Canvas grade item. Distinct from
+/// Canvas's own `omit_from_final_grade` and `points_possible`/`score` fields
+/// because this is the STUDENT's own decision, layered on top of Canvas's
+/// numbers rather than replacing them at the source -- a Canvas correction or
+/// resync still shows through the moment the override is cleared. Applied
+/// first, before any mode/weight/drop math runs (`GradeEngine.compute`), so
+/// the rest of the engine never has to know an override happened.
+public struct GradeItemOverride: Sendable, Hashable, Codable {
+    /// Replaces Canvas's `score` when non-nil. nil keeps Canvas's score.
+    public var score: Double?
+    /// Replaces Canvas's `pointsPossible` when non-nil. nil keeps Canvas's
+    /// points possible.
+    public var pointsPossible: Double?
+    /// Removes the item from the math entirely -- earned, possible, and item
+    /// counts alike -- exactly like Canvas's own `omit_from_final_grade`, but
+    /// this flag is the student's call, not the professor's.
+    public var isExcluded: Bool
+
+    public init(score: Double? = nil, pointsPossible: Double? = nil, isExcluded: Bool = false) {
+        self.score = score
+        self.pointsPossible = pointsPossible
+        self.isExcluded = isExcluded
+    }
+
+    /// True when this override would change nothing, i.e. it's a leftover
+    /// placeholder (e.g. an edit UI that was opened and cancelled) rather than
+    /// an actual correction. The engine treats an empty override as if it
+    /// weren't present at all.
+    public var isEmpty: Bool { score == nil && pointsPossible == nil && !isExcluded }
+}
+
+/// Where the weighted-vs-points decision -- and, in weighted mode, the
+/// weights themselves -- came from. Distinct from `ScoreSource` (which is
+/// per-category/per-item provenance) because this describes the MODE
+/// decision for the whole course.
+public enum GradingModeSource: String, Sendable, Codable, Hashable {
+    /// Canvas's own `apply_assignment_group_weights` flag / `group_weight`s,
+    /// or the ordinary points-mode default.
+    case canvas
+    /// `GradeEngine.Input.modeOverride` forced the mode.
+    case manual
+    /// Every weight-bearing category's weight is a confirmed syllabus weight
+    /// (`Input.syllabusWeightedCategoryIDs` covers every category).
+    case syllabus
+}
+
 /// The engine's full answer for one course: the headline numbers plus the
 /// per-category breakdown the UI expands into.
 public struct GradeBreakdown: Sendable, Hashable, Codable {
@@ -158,6 +204,66 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
         public let totalCount: Int
         /// Items removed by drop-lowest / drop-highest rules.
         public let droppedItemIDs: Set<String>
+        /// This category's expected item count for the WHOLE semester, read
+        /// from the syllabus via `GradeEngine.Input.expectedCounts`. nil when
+        /// nothing is known beyond what Canvas has posted so far -- Canvas
+        /// only ever tells us about work that already exists.
+        public let expectedCount: Int?
+        /// This category's share of decided work against the WHOLE SEMESTER,
+        /// as opposed to `possibleScoredRaw ÷ possibleTotal` (what the
+        /// top-level `decidedFraction` is built from), which only ever sees
+        /// items Canvas has posted. This is the fix for the real-phone report
+        /// that motivated it: 2 of 3 POSTED labs reading as two-thirds of the
+        /// semester when a syllabus says there will be 12. nil when
+        /// `expectedCount` is unknown, or when `totalCount == 0` (nothing
+        /// posted yet -- there's no average points-per-item to extrapolate
+        /// an estimate from).
+        public let semesterDecidedFraction: Double?
+        /// Whether this category actually counts toward `currentPercent`
+        /// right now: weighted mode needs a positive `effectiveWeight` AND
+        /// scored, point-bearing work; points mode needs only the latter.
+        /// Mirrors the filters `GradeEngine`'s current-percent helpers apply
+        /// internally, exposed so callers (the UI, `contributionPercent`
+        /// below) don't have to reverse-engineer them.
+        public let participates: Bool
+        /// How many of the headline `currentPercent` points this category is
+        /// responsible for (e.g. "+28.2 of your 91.4") -- a
+        /// pie-chart-without-a-pie-chart number. nil exactly when
+        /// `participates` is false; summing this across every category with
+        /// `participates == true` reproduces `currentPercent`.
+        public let contributionPercent: Double?
+        /// Items whose `score` or `pointsPossible` a `GradeItemOverride`
+        /// replaced, so the UI can badge them distinctly from a Canvas or
+        /// Gradescope number.
+        public let overriddenItemIDs: Set<String>
+        /// Items a `GradeItemOverride` removed from the math entirely
+        /// (`isExcluded`) -- kept for the same reason `droppedItemIDs` is,
+        /// so the UI can explain why a number looks smaller than the raw
+        /// item list rather than leaving it unexplained.
+        public let excludedItemIDs: Set<String>
+        /// Display names of the Canvas assignment groups a `GradeCategoryMap`
+        /// folded into this category (e.g. `["Problem Sets", "Worksheets"]`
+        /// folded into "HomeWorks") -- empty when there's no map, or when
+        /// this category came straight off one Canvas group with no folding.
+        /// Feeds `GradeExplanation.CategoryLine.groupsText`.
+        // `var`, not `let`, on every defaulted field below: Swift leaves a
+        // `let` with an initial value OUT of the synthesized memberwise
+        // initializer entirely, so the engine's construction sites that pass
+        // it fail with "extra arguments at positions …" — the one compile
+        // error of the round-3 blind build. A defaulted `var` becomes an
+        // optional parameter, which is what every caller and test assumes.
+        public var canvasGroupNames: [String] = []
+        /// True when this category is a Canvas assignment group a
+        /// `GradeCategoryMap` left unclaimed -- surfaced as its own
+        /// zero-weight category (`GradeRegrouper`) rather than silently
+        /// dropped, so "why doesn't this add up to what I expect" always has
+        /// an answer on screen. Always false without a map.
+        public var isUnmapped: Bool = false
+        /// Items placed in this category by `GradeCategoryMap
+        /// .itemAssignments` rather than by their Canvas group's ordinary
+        /// fold -- e.g. an attendance item pulled out of "Problem Sets" into
+        /// "Attendance/Participation". Always empty without a map.
+        public var movedItemIDs: Set<String> = []
 
         /// The category's own grade in percent, or nil when nothing scored
         /// carries possible points (extra-credit-only guards divide-by-zero).
@@ -169,12 +275,67 @@ public struct GradeBreakdown: Sendable, Hashable, Codable {
 
     public let mode: GradingMode
     /// Current grade in percent (can exceed 100 with extra credit). nil means
-    /// "no scores yet" — deliberately distinct from 0%.
+    /// "no scores yet" — deliberately distinct from 0%. Also forced to nil
+    /// whenever `decidedFraction == 0`, even if a per-mode helper somehow
+    /// produced a number: a real phone once showed "100%" next to "0%
+    /// decided" from a scored zero-point item, and nothing with points
+    /// possible scored means there is no honest percent to show yet.
     public let currentPercent: Double?
-    /// Share of the final grade already decided, 0...1.
+    /// Share of the final grade already decided, out of what CANVAS HAS
+    /// POSTED so far — NOT the whole semester (see `semesterDecidedFraction`
+    /// for that). A course where the professor has posted only 2 of a
+    /// semester's 12 labs can read 100% here once those 2 are graded, which
+    /// is exactly the real-phone report ("63% decided" two weeks into term)
+    /// that `semesterDecidedFraction` exists to correct — as an ADDITIONAL,
+    /// more honest number, not by changing what this one has always meant.
     public let decidedFraction: Double
     /// Past-due items still waiting on a score — surfaced so the headline
     /// number never looks silently rosy.
     public let pendingGradingCount: Int
     public let categories: [CategoryResult]
+    /// Share of the WHOLE SEMESTER already decided, extrapolated from
+    /// `expectedCounts` rather than only what Canvas has posted. Weighted
+    /// mode sums normalized-weight × per-category `semesterDecidedFraction`
+    /// and goes nil the instant any non-zero-weight category can't answer;
+    /// points mode instead sums the raw scored/expected points across every
+    /// category first and divides once, so a category with nothing posted
+    /// yet contributes zero to both sums rather than blocking the estimate.
+    /// See `GradeEngine`'s `semesterDecidedFraction(_:weighted:)` for the
+    /// exact rule in each mode.
+    public let semesterDecidedFraction: Double?
+    /// Where the weighted-vs-points decision (and the weights themselves, in
+    /// weighted mode) came from.
+    public let modeSource: GradingModeSource
+    /// Weighted-mode categories that carry real weight but haven't been
+    /// touched yet (no scored, point-bearing work) — the ones renormalization
+    /// quietly excludes from `currentPercent`, named so the UI can say so
+    /// instead of leaving a silent gap. Always empty in points mode, which
+    /// has no weight concept to leave anything out of.
+    public let leftOutCategoryIDs: [String]
+    /// Σ `effectiveWeight` over the categories renormalization actually used
+    /// for `currentPercent` (docs/grades.md §2's weighted-average
+    /// denominator) — exposed so callers can compute or check category
+    /// contributions without recomputing this filter themselves. nil in
+    /// points mode, which has no weights to sum.
+    public let participatingWeightSum: Double?
+    /// Set — and `currentPercent` forced to nil alongside it — when every
+    /// scored, point-bearing item in the course belongs to a category whose
+    /// name reads as attendance/participation
+    /// (`GradeItemClassifier.isAttendanceCategoryName`). A grade made only of
+    /// a 100/100 attendance item is not a grade: the honest statement is "no
+    /// graded work yet, attendance is 100% of its own (usually small)
+    /// category," not "100%" on the headline. nil the instant anything
+    /// outside an attendance-named category has been scored, at which point
+    /// `currentPercent` resumes reporting normally.
+    public var attendanceOnlyPercent: Double? = nil
+    /// Non-zero-weight categories (weighted mode only; input order) whose
+    /// own `semesterDecidedFraction` is nil because `expectedCount` itself
+    /// is unknown -- the reason the top-level `semesterDecidedFraction` is
+    /// nil, named so `GradeExplanation.decidedLine` can say "until quizzes,
+    /// homeworks have expected counts" instead of a generic "every
+    /// category." A category with a KNOWN expected count but nothing posted
+    /// yet contributes 0, not nil, to the top-level estimate (docs/grades.md
+    /// §14.2) and so never appears here even while it's silently sitting at
+    /// 0% decided. Always empty in points mode.
+    public var categoriesMissingExpectedCount: [String] = []
 }

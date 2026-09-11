@@ -204,6 +204,23 @@ struct AssignmentStoreTests {
         #expect(store.submittedCanvasAssignmentIDs().isEmpty)
     }
 
+    @Test("a course has never been checked against Canvas until applySubmissionState observes it")
+    func coursesWithCanvasSubmissionObservationTracksFirstCheck() throws {
+        let store = try store()
+        _ = store.reconcile([canvas("1", course: "CIS 1200", due: Date().addingTimeInterval(86_400))], source: .canvas)
+
+        // Nothing has ever asked Canvas about this course yet — the row exists,
+        // but `canvasSubmissionObservedAt` is nil, so the course isn't in the set.
+        #expect(store.coursesWithCanvasSubmissionObservation().isEmpty)
+
+        // `observedCanvasAssignmentIDs` defaults to "every id counts as
+        // observed", matching a normal live refresh: Canvas answered for "1",
+        // either way.
+        store.applySubmissionState(submittedCanvasAssignmentIDs: [], scores: [:])
+
+        #expect(store.coursesWithCanvasSubmissionObservation() == ["CIS 1200"])
+    }
+
     // MARK: Gradescope submission flag
 
     @Test("Gradescope submitted flag is persisted and rebuilt")

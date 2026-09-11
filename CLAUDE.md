@@ -3,21 +3,48 @@
 A personal academic dashboard for Penn students. Reads the student's own **Canvas**
 calendar feed and **Gradescope**, merges them into one chronological "what's due
 next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, also
-builds for macOS from the same source. **On-device by default** — no server, no
-accounts, no analytics, no third-party SDKs.
+builds for macOS from the same source. **The student's own data is on-device by
+default** — grades, completions, submission state, the work list, the student's
+name, and Canvas/Gradescope cookies never leave the phone. There is no analytics,
+tracking, or third-party SDK. Since 2026-09-09 the product's user-facing name is
+**Locust** (display names and copy only; bundle ids, module names, app-group
+names and defaults keys keep their LHF names), and on launch the app fetches a
+public update-policy file (`update-manifest` branch) that can require an
+update — identifier-free, fail-open, see `Update/`.
 
-Two features are the exception, and both are opt-in and off until the student
-pastes in **their own Anthropic API key** (Settings; stored in the Keychain via
-`AnthropicKeyStore`, never `UserDefaults`): the Announcement Watcher's AI assist,
-and **ask** (the screen itself is titled **"the tree"**). Those send class data
-to Anthropic. Nothing else leaves the device, there is still no LHF server or
-account, and a student who never enters a key is still fully on-device. Say it
-this way rather than flatly "everything is on-device", which stopped being true
-on the `assistant-ui` line.
+That said, the app is no longer backendless. LHF runs a small Supabase project
+(Postgres + Edge Functions; see `backend/PROTOCOL.md`) that every install talks
+to via an anonymous account created on first launch — no email, no password, no
+name. Two things go through it: course materials (syllabus, course pages,
+modules, assignment descriptions, announcements) fetched from Canvas with the
+student's own login are uploaded and pooled per Canvas course, so classmates
+share one copy and a new student gets the course instantly (sync is automatic —
+after Canvas connect, then on the existing refresh loop, hourly staleness; no
+manual sync, no user-entered API key); and questions to **ask** (the screen
+itself is titled **"the tree"**) are sent to the backend with the on-device
+context document and matched excerpts, answered by an AI model via OpenRouter
+under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
+data-collection-deny flag), with the Announcement Watcher's "AI assist"
+toggle (on by default since 2026-09-08; a student can turn it off in
+Settings) routed the same way, and only for announcements a cheap on-device
+gate judges could carry a task. Neither questions nor answers are stored — only
+per-user daily request counts and token totals. Settings has a button to delete
+a student's enrollment/usage rows and anonymous account from the backend.
+Offline, over quota, or with the backend unreachable, ask answers on-device as
+before: `OnDeviceAssistantResponder` computes exact answers from the dashboard's
+items, retrieves policy and content answers from the course materials the app
+syncs (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
+macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
+(`OnDeviceLanguageModel`). Say it this way — "the student's own data stays
+on-device; course material is pooled server-side; ask has an on-device
+fallback" — rather than flatly "everything is on-device" (stopped being true on
+`assistant-ui`) or "no server" (stopped being true adding the backend).
 
-Shipped on the App Store as **1.2.1** (App Store id `6783911002`, released
-2026-09-04 — confirmed against Apple's public lookup, not from memory; this
-line has been stale before, so re-check it rather than trusting it).
+Live on the App Store: **1.2.1** (App Store id `6783911002`, released
+2026-09-04 — Marco confirmed against Apple's public lookup; this line has
+been stale before, re-check rather than trust it). **2.0.1 (build 6)** was
+uploaded from `v3.5`; `v5` carries it, now with the backend, the Locust
+onboarding and the update gate on top.
 
 ## Commands
 
@@ -31,6 +58,10 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
 
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
+
+# Backend — Deno/Supabase Edge Functions, a separate toolchain from the above
+cd backend && deno task test
+cd backend && deno task check
 ```
 
 `-LHFDemoData` (DEBUG only) seeds the bundled sample courses so the app is
@@ -42,11 +73,51 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `assistant-ui`, verified on a Mac (2026-09-07): **769 tests / 78
-suites green** (plus 4 XCTest scheduler tests), the update gate adding 33 tests
-and 2 suites to the 736/76 mark verified on a Mac on 2026-09-02. That 736/76 was
-itself up from 693/70 on `v6`, verified the same day, closing out v6's
-uncompiled Announcement Watcher work. Earlier marks for reference: 608/61 on the v3.5+v4 merge, 517/55 on final
+Baseline on `v5`, verified on a Mac (2026-09-10): **1104 tests / 109 suites
+green** (plus 4 XCTest scheduler tests), after Grade Watcher round 2 (the
+server's syllabus extraction and the registrar's components reach Grade
+Watcher: suggested schemes, automatic exclusion of a zero-credit or
+pass/fail site via `GradeSiteExclusion`, syllabus reuse from the synced
+materials; Deno 278). Before that, 1068/105 after Grade Watcher round 1
+(docs/grades.md §14: semester-aware "decided", per-item/category/course
+overrides with provenance, the "how this is calculated" panel, site labels;
+1,400 blind lines that compiled first time). Before that, 1032/101 the same
+day after the first-launch hold
+(`AppState.isCanvasSubmissionVerified` — overdue Canvas work in a course
+never yet checked against Canvas waits in `awaitingCanvasCheck` behind a
+"checking canvas" notice instead of reading as owed), Grade Watcher fetching
+three courses at a time, and the "from announcements" card caveat. That sat
+on the 1020/98 mark of 2026-09-09, after merging Marco's `onboarding-walk`
+(the Locust intro and walk, the update gate and its 33 tests) onto the
+976/95 mark of earlier that day. That 976/95 was up from
+937/92 the day before, after
+the Canvas assignment id learned to come from the ICS URL fragment (see the
+trap below — this is what made a section-override assignment show once and
+read as submitted on a real phone, the first real-device fix of a submission
+bug), module-imported rows learned their id too, and three collapses now
+fold the same assignment's listings into one dashboard item
+(`AssignmentDeduplicator.collapseCanvasOverrides`, `.collapseCanvasDuplicates`,
+and the Gradescope pairing; title fallback in `SubmissionMatcher`).
+The 937 mark covered the course-websites layer, the Announcement Watcher
+rewrite, and multi-site course identity (a code can now be several Canvas
+sites; each site's documents are labelled by the registrar's activity for its
+section). All of it was written without a compiler; the one first-run compile
+error so far was a raw string closed early by a `"#` inside `href="#"`
+(double the delimiter). The backend
+is deployed to the live Supabase project with all six functions; the live
+path is still exercised only by hand on a device, never by `swift test`
+(`BackendServices.client` is nil under tests).
+
+Earlier on `v5`: 853/90 (2026-09-07, registrar catalog + component
+tagging); 838/89 (2026-09-07, the backend change); 804/87 (2026-09-06, the
+merge of `v3.5` and the ask knowledge engine).
+
+Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
+suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
+verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
+work; `assistant-ui` later reached **769/78** on 2026-09-07 after the update
+gate added 33 tests and 2 suites. Earlier marks for reference: 608/61 on the
+v3.5+v4 merge, 517/55 on final
 `v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
 count has lost work — investigate rather than accept it.
 
@@ -65,6 +136,7 @@ in the polluting suite, not in the assertion.
 | `…/LowHangingFruitUI/Resources/` | Bundled media. Load via `bundledImage(_:ext:)` (`Bundle.module`) — a bare `Image("name")` resolves against the *main* bundle and silently renders nothing. |
 | `App/` | iOS/macOS app target, entitlements, assets |
 | `LHFWidget/` | Home/Lock Screen widget extension — a **separate process** |
+| `backend/` | The Supabase project: SQL migrations, Edge Functions, `PROTOCOL.md` (the contract the app and server are both written against) |
 | `docs/` | Design docs and plain-language explainers |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
@@ -210,6 +282,18 @@ end to end) or pass `-LHFForceUpdateWall`.
   asking which shape encloses it. There is no PIL, ImageMagick or numpy on the
   dev Mac; `sips` resizes and converts but does none of this. A short
   CoreGraphics script run with `swift file.swift` is the tool.
+- **The Canvas assignment id is in the ICS event's URL *fragment*.** Canvas's
+  `to_ics` (`app/models/calendar_event.rb`) writes every assignment event's
+  URL as `/calendar?include_contexts=course_<id>&month=…&year=…#assignment_<id>`
+  — never `/assignments/<id>` — and its section-override branch rewrites the
+  UID to `event-assignment-override-<overrideID>` and the summary to
+  `"<title> (<section>) [<code>]"` while leaving that URL alone (its own
+  source says `# TODO: event.url`). So the fragment is the only id an
+  override row carries, and the number in an override UID is an *override*
+  id, a different id space: join on it and the wrong work reads as done.
+  `Assignment.canvasAssignmentID` reads the fragment; the diagnostics
+  report's `via=fragment` is the proof it worked. Confirmed on a real phone
+  2026-09-09 after every PHYS 0151 lab row showed `via=none`.
 - **`PersimmonMark`'s `size:` argument does not constrain it.** Its body is a
   `GeometryReader` that ends in `.frame(maxWidth: .infinity, maxHeight:
   .infinity)`, so the view expands to fill whatever space its parent hands
@@ -244,6 +328,22 @@ end to end) or pass `-LHFForceUpdateWall`.
   cycles of reasoning had not. When a layout bug survives two fixes, stop
   reasoning and draw the frames.
 - **Never commit real Canvas/Gradescope data** — user ids, feed-token URLs, cookies.
+- **A jsonb column outlives the TypeScript type that wrote it.**
+  `catalog_courses.components` rows written on 2026-09-07 had no
+  `meetings`; the next day's code iterated `component.meetings`, the stored
+  rows were read back untouched, and every manifest naming that course
+  returned 500 for a day — silently, from the app's side, because the
+  upload is gated on the manifest and the only symptom was
+  `last_full_sync_at` never filling. Normalize jsonb at the read boundary
+  (`dbRowToCatalogRow`), let a legacy row force a refetch
+  (`catalogNeedsFetch`), and never let an enrichment step fail the exchange
+  it decorates (`handleManifest` catches the catalog step). Deno tests
+  cannot catch this: they only ever see rows the current code wrote.
+- **Nothing under `backend/` can be exercised from `swift test`**; run its deno
+  tests separately (`cd backend && deno task test`, `deno task check`).
+  `BackendServices.client` is nil under tests and in an unconfigured build, so
+  the app is fully on-device there — a green test run proves nothing about the
+  backend path.
 
 ## Conventions
 
@@ -263,12 +363,15 @@ end to end) or pass `-LHFForceUpdateWall`.
 | `main` | Old — 1.0.0 App Store prep. Not the ship line. |
 | `origin/v2.5` | Former ship line, 1.1.1 build 3. Grade Watcher gated off. |
 | `v3` | Grade Watcher un-gated, grade report, syllabus, the SwiftData ledger |
-| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **shipped** 1.1.2 build 4. |
+| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **uploaded** 2.0.1 build 6 (and the shipped 2.0.0 build 5 before it). |
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
-| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5, the App Store submission. Frozen while that upload is in flight. |
-| `v5` | Cut from the 2.0.0 head above. Superseded by `v6`, which is a superset. |
-| `v6` | v5 plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
-| `assistant-ui` | **Current line.** v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on — plus the forced-update version gate. 769/78. New work goes here. |
+| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
+| `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
+| `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. Later also carries the update gate (769/78). |
+| `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
+| `update-gate` | The update gate alone, independently mergeable. |
+| `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
+| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

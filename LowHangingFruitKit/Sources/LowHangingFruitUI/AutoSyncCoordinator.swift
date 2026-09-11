@@ -57,6 +57,16 @@ enum AutoSyncCoordinator {
         // (see the plan's "Hard requirement — Grade Watcher independence"),
         // just sharing the cookies already in hand.
         await state.refreshCourseIntel(cookies: cookies)
+        // Course materials for `ask` ride the same session, throttled by
+        // their own staleness window (`AppState.courseKnowledgeStaleAfter`,
+        // one hour) rather than this function's 15-minute one. With
+        // `BackendServices` configured this is no longer just a Canvas
+        // fetch — it's a manifest exchange with LHF's shared course-material
+        // store first, then Canvas only for whatever the manifest says this
+        // phone doesn't already have fresh (see the header of
+        // `AppState+CourseKnowledge.swift`). Settings no longer offers an
+        // on-demand trigger for this; it always rides this refresh.
+        await state.refreshCourseKnowledge(cookies: cookies)
     }
 
     /// Gathers Gradescope session cookies: the Keychain-persisted set

@@ -189,6 +189,43 @@ struct CanvasModulesClientTests {
         #expect(items[0].id == "111")
     }
 
+    // MARK: - external_url (course-website discovery)
+
+    @Test("An ExternalUrl item decodes external_url")
+    func decodesExternalURLForExternalUrlItem() {
+        let json = """
+        [
+          {
+            "id": 1,
+            "items": [
+              {"id": 200, "title": "Course website", "type": "ExternalUrl", "external_url": "https://example.com/course"}
+            ]
+          }
+        ]
+        """
+        let items = CanvasModulesClient.moduleItems(fromPages: [data(json)])
+        #expect(items.count == 1)
+        #expect(items[0].typeRaw == "ExternalUrl")
+        #expect(items[0].externalURL == URL(string: "https://example.com/course"))
+    }
+
+    @Test("A Page item has a nil externalURL even when external_url is present in the JSON")
+    func pageItemHasNilExternalURL() {
+        let json = """
+        [
+          {
+            "id": 1,
+            "items": [
+              {"id": 111, "title": "Reading: Chapter 1", "type": "Page", "external_url": "https://example.com/should-be-ignored"}
+            ]
+          }
+        ]
+        """
+        let items = CanvasModulesClient.moduleItems(fromPages: [data(json)])
+        #expect(items.count == 1)
+        #expect(items[0].externalURL == nil)
+    }
+
     // MARK: - Assignment.id round-trip through Source(rawValue:)
 
     @Test(".canvasModules source round-trips through Source(rawValue:) and Assignment.id")

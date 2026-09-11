@@ -274,4 +274,196 @@ struct AssignmentDeduplicatorTests {
         state.markActive(canvasItem)
         state.markActive(gradescopeItem)
     }
+
+    // MARK: - collapseCanvasDuplicates
+
+    private static func moduleRow(
+        id: String = "m1",
+        course: String = "CIS 1200",
+        title: String,
+        due: Date? = now,
+        url: URL? = nil
+    ) -> Assignment {
+        Assignment(source: .canvasModules, sourceID: id, kind: .assignment, course: course,
+                   title: title, dueAt: due, url: url)
+    }
+
+    private static func canvasWithURL(
+        id: String = "c1",
+        course: String = "CIS 1200",
+        title: String,
+        due: Date? = now,
+        assignmentID: String
+    ) -> Assignment {
+        Assignment(
+            source: .canvas, sourceID: id, kind: .assignment, course: course,
+            title: title, dueAt: due,
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/\(assignmentID)")
+        )
+    }
+
+    @Test("a module row collapses onto a canvas row by matching canvasAssignmentID")
+    func collapseByID() {
+        let canvasItem = Self.canvasWithURL(title: "Homework 3", assignmentID: "555")
+        let moduleItem = Self.moduleRow(
+            title: "Something Completely Different",
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/555")
+        )
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleItem]
+        )
+        #expect(result.canvasItems == [canvasItem])
+        #expect(result.moduleItems.isEmpty)
+        #expect(result.collapses == [
+            AssignmentDeduplicator.CanvasCollapse(canvasID: canvasItem.id, moduleID: moduleItem.id),
+        ])
+    }
+
+    @Test("a module row with no url collapses onto a canvas row by title/due match")
+    func collapseByTitleAndDue() {
+        let canvasItem = Self.canvas(id: "c1", title: "Homework 3", due: Self.now)
+        let moduleItem = Self.moduleRow(id: "m1", title: "HW3", due: Self.now)
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleItem]
+        )
+        #expect(result.moduleItems.isEmpty)
+        #expect(result.collapses == [
+            AssignmentDeduplicator.CanvasCollapse(canvasID: canvasItem.id, moduleID: moduleItem.id),
+        ])
+    }
+
+    @Test("a module row in a different course never collapses")
+    func differentCourseNeverCollapses() {
+        let canvasItem = Self.canvas(id: "c1", course: "CIS 1200", title: "Homework 3", due: Self.now)
+        let moduleItem = Self.moduleRow(id: "m1", course: "MATH 1400", title: "Homework 3", due: Self.now)
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleItem]
+        )
+        #expect(result.moduleItems == [moduleItem])
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("survivors preserve input order")
+    func survivorsPreserveOrder() {
+        let canvasItem = Self.canvas(id: "c1", title: "Unrelated Canvas Item", due: Self.now)
+        let moduleA = Self.moduleRow(id: "m-a", title: "Reading Week 1", due: Self.now)
+        let moduleB = Self.moduleRow(id: "m-b", title: "Reading Week 2", due: Self.now)
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleA, moduleB]
+        )
+        #expect(result.moduleItems == [moduleA, moduleB])
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("a collapse reports both the surviving canvas id and the hidden module id")
+    func collapseReportsBothIDs() {
+        let canvasItem = Self.canvasWithURL(id: "c1", title: "Lab 2", assignmentID: "777")
+        let moduleItem = Self.moduleRow(
+            id: "m1", title: "Lab 2",
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/777")
+        )
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleItem]
+        )
+        let collapse = try? #require(result.collapses.first)
+        #expect(collapse?.canvasID == "canvas:c1")
+        #expect(collapse?.moduleID == "canvasModules:m1")
+    }
+
+    @Test("two module rows for the same assignment (listed in two Modules) both collapse onto the one canvas row")
+    func manyModuleRowsCollapseOntoOneCanvasRow() {
+        // The real-world case this guards: a professor lists "HW 3" under
+        // both the "Week 3" module and a standing "Labs" module, so Canvas's
+        // Modules API hands back two distinct module items — same assignment,
+        // same `/assignments/N` url — for one underlying assignment. Both
+        // copies must disappear, not just the first found; a Gradescope-style
+        // 1:1 claim would incorrectly leave the second on the dashboard.
+        let canvasItem = Self.canvasWithURL(id: "c1", title: "Homework 3", assignmentID: "555")
+        let moduleInWeek3 = Self.moduleRow(
+            id: "week3", title: "Homework 3",
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/555")
+        )
+        let moduleInLabs = Self.moduleRow(
+            id: "labs", title: "Homework 3",
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/555")
+        )
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [canvasItem], moduleItems: [moduleInWeek3, moduleInLabs]
+        )
+        #expect(result.moduleItems.isEmpty)
+        #expect(Set(result.collapses) == Set([
+            AssignmentDeduplicator.CanvasCollapse(canvasID: canvasItem.id, moduleID: moduleInWeek3.id),
+            AssignmentDeduplicator.CanvasCollapse(canvasID: canvasItem.id, moduleID: moduleInLabs.id),
+        ]))
+    }
+
+    // MARK: - collapseCanvasOverrides
+
+    @Test("three override rows sharing an assignment id keep the row nearest the preferred due date")
+    func overrideCollapseKeepsRowNearestPreferredDate() {
+        let mon = Self.canvasWithURL(id: "mon", title: "Lab 3 (Section 201)", due: Self.now, assignmentID: "555")
+        let wed = Self.canvasWithURL(id: "wed", title: "Lab 3 (Section 202)", due: Self.now.addingTimeInterval(2 * 86_400), assignmentID: "555")
+        let fri = Self.canvasWithURL(id: "fri", title: "Lab 3 (Section 203)", due: Self.now.addingTimeInterval(4 * 86_400), assignmentID: "555")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [mon, wed, fri],
+            preferredDueDates: ["555": Self.now.addingTimeInterval(2 * 86_400)]
+        )
+        #expect(result.canvasItems.map(\.id) == [wed.id])
+        #expect(Set(result.collapses) == Set([
+            AssignmentDeduplicator.OverrideCollapse(survivorID: wed.id, hiddenID: mon.id),
+            AssignmentDeduplicator.OverrideCollapse(survivorID: wed.id, hiddenID: fri.id),
+        ]))
+    }
+
+    @Test("with no preferred due date, the earliest row survives")
+    func overrideCollapseKeepsEarliestWithNoPreferredDate() {
+        let mon = Self.canvasWithURL(id: "mon", title: "Lab 3 (Section 201)", due: Self.now, assignmentID: "555")
+        let wed = Self.canvasWithURL(id: "wed", title: "Lab 3 (Section 202)", due: Self.now.addingTimeInterval(2 * 86_400), assignmentID: "555")
+        let fri = Self.canvasWithURL(id: "fri", title: "Lab 3 (Section 203)", due: Self.now.addingTimeInterval(4 * 86_400), assignmentID: "555")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [mon, wed, fri],
+            preferredDueDates: [:]
+        )
+        #expect(result.canvasItems.map(\.id) == [mon.id])
+        #expect(Set(result.collapses) == Set([
+            AssignmentDeduplicator.OverrideCollapse(survivorID: mon.id, hiddenID: wed.id),
+            AssignmentDeduplicator.OverrideCollapse(survivorID: mon.id, hiddenID: fri.id),
+        ]))
+    }
+
+    @Test("rows with no resolvable canvasAssignmentID are untouched")
+    func overrideCollapseLeavesUnresolvableRowsAlone() {
+        let noID = Self.canvas(id: "no-id", title: "Reading Response", due: Self.now)
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [noID],
+            preferredDueDates: [:]
+        )
+        #expect(result.canvasItems == [noID])
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("the same assignment id in different courses never groups")
+    func overrideCollapseNeverGroupsAcrossCourses() {
+        let phys = Self.canvasWithURL(id: "phys", course: "PHYS 0151", title: "Lab 3 (Section 201)", due: Self.now, assignmentID: "555")
+        let chem = Self.canvasWithURL(id: "chem", course: "CHEM 1012", title: "Lab 3 (Section 201)", due: Self.now, assignmentID: "555")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [phys, chem],
+            preferredDueDates: [:]
+        )
+        #expect(Set(result.canvasItems.map(\.id)) == Set([phys.id, chem.id]))
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("a Gradescope row is untouched even if it shares a course with grouped canvas rows")
+    func overrideCollapseLeavesGradescopeRowsAlone() {
+        let mon = Self.canvasWithURL(id: "mon", title: "Lab 3 (Section 201)", due: Self.now, assignmentID: "555")
+        let wed = Self.canvasWithURL(id: "wed", title: "Lab 3 (Section 202)", due: Self.now.addingTimeInterval(2 * 86_400), assignmentID: "555")
+        let gradescopeItem = Self.gradescope(id: "g1", title: "Lab 3")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [mon, wed, gradescopeItem],
+            preferredDueDates: [:]
+        )
+        #expect(result.canvasItems.contains { $0.id == gradescopeItem.id })
+        #expect(!result.collapses.contains { $0.hiddenID == gradescopeItem.id || $0.survivorID == gradescopeItem.id })
+    }
 }

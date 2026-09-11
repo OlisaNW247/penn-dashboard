@@ -14,9 +14,23 @@ import UIKit
 /// - Course intel: each course's computed profile (shape + counts +
 ///   fingerprint + Canvas course id) and a per-course feed-kind histogram —
 ///   see `AppState.courseIntelDiagnosticLines`.
+/// - Submission detection: each selected course's last grades-fetch outcome,
+///   plus one line per overdue, uncompleted Canvas assignment showing
+///   whether its Canvas assignment id resolved, by which path, a
+///   non-identifying UID shape class, and what Grade Watcher last observed
+///   for it — see `AppState.submissionDiagnosticLines`.
+/// - Course materials sync: the stored vs. current sync-version marker, the
+///   on-device knowledge base's size, one line per known Canvas course site
+///   with its document-kind counts, and the most recent
+///   `refreshCourseKnowledge()` run's trace (manifest outcome, which courses
+///   were fetched vs. already fresh, collector errors, upload counts) — see
+///   `AppState.courseKnowledgeSyncDiagnosticLines`.
 ///
 /// Never includes: credentials, cookie values/names, the ICS feed URL/token,
-/// query strings of any kind, or any assignment/reading title or URL.
+/// query strings of any kind, or any assignment/reading title or URL. This
+/// holds for the submission-detection section too: it prints course codes,
+/// numeric Canvas ids, enum states and booleans, and a UID *prefix class*
+/// (never a raw UID, which would embed both an id and Canvas's domain).
 @MainActor
 enum DiagnosticsReport {
     static func generate(state: AppState) -> String {
@@ -51,6 +65,16 @@ enum DiagnosticsReport {
             for line in courseIntelLines {
                 lines.append("  \(line)")
             }
+        }
+        lines.append("")
+        lines.append("Submission detection (codes/ids/states only — no titles or URLs):")
+        for line in state.submissionDiagnosticLines {
+            lines.append("  \(line)")
+        }
+        lines.append("")
+        lines.append("Course materials sync (site ids/codes/counts only — no titles or URLs):")
+        for line in state.courseKnowledgeSyncDiagnosticLines {
+            lines.append("  \(line)")
         }
         return lines.joined(separator: "\n")
     }

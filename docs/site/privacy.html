@@ -15,43 +15,72 @@
 </head>
 <body>
 <h1>Low Hanging Fruit — Privacy Policy</h1>
-<p><em>Effective August 22, 2026</em></p>
 
-<p>Low Hanging Fruit ("LHF") is a student assignment tracker that runs
-entirely on your device. The short version: <strong>we do not collect,
-store, sell, or share any of your data. We couldn't — the app has no
-server.</strong></p>
+<p><em>Last updated: 2026-09-07</em></p>
 
-<h2>What the app does with your data</h2>
-<p>LHF connects your device directly to the services you choose (Canvas,
-and optionally Gradescope) to fetch your own assignments, deadlines, and
-grades. That data is stored only on your device. Nothing about you or your
-coursework is ever transmitted to the developer or any third party.</p>
+<p>Low Hanging Fruit (&quot;LHF&quot;, &quot;the app&quot;) is a personal academic dashboard that shows your Canvas assignments and deadlines in one place. This policy explains what the app does with your information.</p>
+<p><strong>In short:</strong> your grades, your work, and your Canvas/Gradescope logins stay on your phone. Course materials — syllabi, course pages, assignment descriptions, announcements — are pooled with classmates in the same Canvas course, so everyone shares one copy instead of each of you re-fetching it. Questions you ask &quot;the tree&quot; are answered by an AI model running on our server and are not stored.</p>
+<h2>What stays on your phone</h2>
+<ul>
+<li><strong>Your Canvas and Gradescope logins.</strong> You sign in through each service&#x27;s own web page, shown inside the app. The app never sees or stores your password. Session cookies and your personal Canvas calendar feed URL (a bearer credential) are kept in the iOS Keychain, encrypted at rest, this-device-only, and never included in unencrypted backups.</li>
+<li><strong>Your grades, completions, and submission state.</strong> What you&#x27;ve turned in, what you&#x27;ve checked off, any grade the Grade Watcher has observed — all of it stays local. None of it is uploaded.</li>
+<li><strong>Your work list and your name.</strong> Assignments you add yourself, due-date edits, reminder settings, and the first name you enter never leave the device.</li>
+<li><strong>The widget snapshot.</strong> A small &quot;next due&quot; summary written to a private container shared only between the app and its widget on your device.</li>
+</ul>
 
-<h2>Credentials</h2>
-<p>When you sign in to Canvas or Gradescope inside the app, your login
-happens directly with those services in a secure web view — your password
-is never visible to the app and never leaves the sign-in page. Session
-cookies and your Canvas calendar feed address are stored in the iOS
-Keychain, Apple's encrypted credential store, on your device only.</p>
+<h2>What is sent to our server (and why)</h2>
+<p>LHF now runs a small backend of our own (Supabase: a Postgres database plus a few serverless functions) so that two things work better than they could on-device alone:</p>
+<ul>
+<li><strong>Course materials, pooled per class.</strong> After you connect Canvas, the app fetches your class&#x27;s syllabus, course pages, module listings, assignment descriptions, and announcements using your own logged-in session — exactly as it always has — and uploads the extracted text to our server, keyed by Canvas&#x27;s own course id. Every student in the same Canvas course site shares one copy: if a classmate already synced it, you get it instantly instead of waiting on your own fetch, and a new student gets the whole course&#x27;s material on day one. We record which Canvas section you&#x27;re in for possible future use, but material isn&#x27;t split by section yet — see &quot;Anonymous accounts&quot; below for the limits of this design. This sync is automatic: it runs once after you connect Canvas, then again on the app&#x27;s normal hourly refresh if a course&#x27;s material is stale. There&#x27;s no manual sync button and nothing to type in.</li>
+</ul>
 
-<h2>Analytics and tracking</h2>
-<p>None. The app contains no analytics, no advertising, no telemetry, and
-no third-party SDKs that collect data.</p>
+<p><strong>What is never included:</strong> your grades, completions, submission state, your work list, your name, or anything else specific to you. Only the shared, public-to-the-class content described above. The only other request the app makes on its own is the anonymous update-policy check described below.</p>
+<ul>
+<li><strong>Questions you ask &quot;the tree.&quot;</strong> When you ask a question, the app sends the question, an on-device summary of your dashboard (built without your name, grades, or completion state), and the most relevant excerpts of the pooled course material to our server, which forwards them to an AI model to generate an answer streamed back to you. Neither the question nor the answer is stored anywhere — see &quot;What we keep and for how long&quot; below.</li>
+</ul>
 
-<h2>Data deletion</h2>
-<p>Everything the app knows lives on your device. Disconnecting a service
-in the app deletes its session and data; deleting the app removes
-everything else. There is nothing to delete on any server, because there
-is no server.</p>
+<p>The Announcement Watcher&#x27;s &quot;AI assist&quot; toggle is on by default (you can turn it off in Settings). With it on, extracting a task and due date from an announcement&#x27;s text works the same way — the announcement text goes to the same server and model, and the result isn&#x27;t stored either.</p>
+<ul>
+<li><strong>An anonymous account id.</strong> The first time you launch the app, it creates an anonymous account with our backend — no email, no password, no name — so the server can tell your enrollment and quota apart from every other student&#x27;s without knowing who you are. See &quot;Anonymous accounts&quot; below.</li>
+</ul>
 
-<h2>Changes to this policy</h2>
-<p>If a future version of the app changes any of the above, this page will
-be updated before that version ships, with the effective date revised.</p>
+<p><strong>Offline, or if you&#x27;ve asked more questions than the daily limit, or if our server is unreachable, ask still works</strong> — it answers from what&#x27;s already synced to your phone, exactly as it did before this backend existed, just without the AI model&#x27;s help on questions that need it.</p>
+<h2>Keeping the app up to date</h2>
+<p>On launch, and whenever you bring LHF back to the foreground, the app makes a plain request to a small public file the developer hosts (for example on GitHub), to check whether your copy of the app is still supported. That request has no query parameters, no headers identifying you or your device, and carries nothing about your Canvas or Gradescope data, your grades, or your coursework — it is a version check, not a phone-home. Like any request to any website, whoever&#x27;s server answers it can see an IP address, the way it could for any page you load, but nothing else about you or your coursework. If the check finds your build is too old, LHF can show a full-screen notice that stops the app from opening again until you update; if a newer version simply exists, it shows a dismissible banner instead. If the check fails for any reason — no signal, the file is unreachable, anything — the app opens normally and relies on the last successful check, kept for up to 30 days, in the meantime.</p>
+<h2>Who we send data to</h2>
+<ul>
+<li><strong>Supabase</strong> hosts our database and server functions. They act as our infrastructure provider; they don&#x27;t get a separate copy for their own use beyond running the service.</li>
+<li><strong>OpenRouter</strong>, and the AI model providers it routes to, process the questions &quot;the tree&quot; is asked (and, if AI assist is on, announcement text) in order to generate an answer. We send every request with OpenRouter&#x27;s data-collection-deny setting turned on, which instructs providers on that route not to retain or train on the request. We don&#x27;t control what OpenRouter or upstream providers do beyond honoring that setting, but it&#x27;s the strictest option they offer.</li>
+</ul>
 
+<p>We do not sell data, run ads, or share anything with data brokers, and we have no relationship with Supabase or OpenRouter beyond paying for infrastructure and API access.</p>
+<h2>What we keep and for how long</h2>
+<ul>
+<li><strong>Course materials</strong> are kept as long as they&#x27;re current, shared per Canvas course as described above. They&#x27;re not tied to you individually — deleting your account doesn&#x27;t delete a course&#x27;s shared material, because it isn&#x27;t your data; it&#x27;s the course site&#x27;s public content.</li>
+<li><strong>Questions and answers are never stored</strong>, not even briefly for debugging. We keep only a per-user daily count of how many questions were asked and a running token total, used solely to enforce fair-use limits. There is no transcript.</li>
+<li><strong>Your enrollment list</strong> (which Canvas courses you&#x27;re synced to) is kept so the pooling and quota system work, and is deleted if you delete your account.</li>
+</ul>
+
+<h2>Deleting your data</h2>
+<p>Settings has a <strong>&quot;Delete my class data from LHF&#x27;s server&quot;</strong> button. It deletes your enrollment records, your usage counters, and the anonymous account itself from our server. It does not delete the shared course material other students are still using, because that material was never yours alone — it&#x27;s the same syllabus and assignment pages every enrolled student can already see on Canvas. Deleting the app also removes everything stored on your device, including the Keychain-stored sessions.</p>
+<h2>Anonymous accounts</h2>
+<p>Signing in anonymously means there&#x27;s no email, password, or name tied to your account — just an id the server uses to tell requests apart for enrollment and quota purposes. One honest limitation: the app currently tells the server which Canvas courses you&#x27;re in, and the server takes that at face value rather than verifying it against Canvas directly (verifying it would require the server to hold your Canvas login, which we&#x27;ve deliberately built the whole system to avoid). In practice this means a tampered copy of the app could claim membership in a course it isn&#x27;t enrolled in and read that course&#x27;s pooled material — material that&#x27;s already visible to every real student in that course&#x27;s Canvas site, so nothing personal is exposed this way, but it&#x27;s worth stating plainly rather than implying a guarantee we haven&#x27;t built.</p>
+<h2>What we don&#x27;t do</h2>
+<ul>
+<li><strong>No analytics, tracking, or advertising</strong>, and no data broker or ad network ever receives anything from this app.</li>
+<li><strong>No third-party SDKs.</strong> The app is built directly against Apple&#x27;s and Supabase&#x27;s plain HTTP APIs — no analytics kit, ad kit, or crash reporter bundled in.</li>
+<li><strong>No push notifications.</strong> Reminders are scheduled and delivered locally on your device.</li>
+<li>We don&#x27;t sell your data. There&#x27;s nothing to sell — we don&#x27;t have it.</li>
+</ul>
+
+<h2>Affiliation</h2>
+<p>LHF is an independent app. It is not affiliated with, endorsed by, or sponsored by the University of Pennsylvania, Instructure (Canvas), Turnitin (Gradescope), Supabase, or OpenRouter.</p>
+<h2>Children&#x27;s privacy</h2>
+<p>The app is intended for university students and is not directed at children under 13.</p>
+<h2>Changes</h2>
+<p>If this policy changes, the updated version will be posted at this page.</p>
 <h2>Contact</h2>
-<p>Questions? Email
-<a href="mailto:lowhangingfruit.help@gmail.com">lowhangingfruit.help@gmail.com</a>.</p>
+<p>Questions about this policy: <strong>lowhangingfruit.help@gmail.com</strong></p>
 
 <footer>Low Hanging Fruit is not affiliated with the University of
 Pennsylvania, Instructure (Canvas), or Gradescope.</footer>

@@ -16,6 +16,16 @@ struct SyllabusSetupView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let courseName: String
+    /// This course's syllabus prose, already synced on-device
+    /// (`CourseKnowledgeBase.syllabusText(forCourseID:)`) — passed in from
+    /// `GradeReportView`, which has `AppState` access, rather than this view
+    /// reaching for `AppState` itself, so a fixture-driven test can exercise
+    /// this path without standing up the whole app. `searchCanvas()` tries
+    /// this first, since it costs no network round trip and no live Canvas
+    /// session, before falling through to the same live search this view
+    /// has always done. Defaulted to `nil` so a caller that has no synced
+    /// text on hand (or none at all, in a test) still compiles.
+    var syncedSyllabusText: String? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -379,6 +389,24 @@ struct SyllabusSetupView: View {
 
     private func searchCanvas() async {
         stage = .searching
+
+        // Try the syllabus text this phone already synced first — no
+        // network round trip, no live Canvas session required, and it's
+        // usually the same document the live search below would find
+        // anyway. Only when it's absent or doesn't parse does this fall
+        // through to the real Canvas search, exactly as it always did.
+        if let syncedSyllabusText,
+           let scheme = SyllabusParser.parse(syncedSyllabusText) {
+            let candidate = SyllabusCandidate(
+                id: "synced-syllabus",
+                source: .canvasSyllabusPage,
+                name: "the syllabus locust already synced",
+                text: syncedSyllabusText
+            )
+            stage = .reviewing(candidate, scheme)
+            return
+        }
+
         let cookies = await AutoSyncCoordinator.canvasCookies()
         guard !cookies.isEmpty else {
             stage = .failed("Grades need a live Canvas login to read your syllabus. Reconnect Canvas, then try again.")

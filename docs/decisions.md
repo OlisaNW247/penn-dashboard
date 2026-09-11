@@ -5,6 +5,115 @@ date, the decision, and what was rejected and why.
 
 ---
 
+## 2026-09-07 — Add a small backend: Supabase + OpenRouter, pooled course material, anonymous identity
+
+LHF stops being backendless. Two problems pushed this: every student's phone
+was independently re-fetching and re-parsing the same public course content
+(syllabus, pages, announcements) from Canvas, and `ask`'s paid path only
+existed for a student who owned an Anthropic key, which was never going to be
+most students. Both are solved by giving the app a server, scoped as narrowly
+as the two problems require. `backend/PROTOCOL.md` is the contract; read it
+before touching either side.
+
+**Why GLM-5.3-Flash via OpenRouter, not Claude directly.** `ask` is
+retrieval-grounded Q&A over a short context document and a handful of
+excerpts — a task that does not need a frontier reasoning model, and cost
+scales with every question every student asks, not with development iterations.
+GLM-5.3-Flash sits at the cheapest point on the current quality/price frontier
+for this task, roughly $0.0005 per question against Sonnet 5's roughly $0.007
+for the same request shape — over an order of magnitude, and this runs
+per-question forever, not once. OpenRouter was chosen over calling GLM's API
+directly because it gives one integration surface, a fallback model
+(`openai/gpt-5.6-luna`) if the primary is down, provider selection restricted
+to US-hosted providers, and a `data_collection: deny` flag honored across
+providers. GLM's weights are open, so there's no lock-in if pricing or quality
+moves — the fallback and the option to swap models both depend on that.
+
+**Why Supabase, not a hand-rolled server.** The requirements are Postgres with
+row-level security scoped to an anonymous caller, a place to run a few
+stateless functions (`sync`, `ask`, `extract-profile`,
+`extract-announcement`, `delete-account`), and anonymous auth issuing a
+refresh token a phone can hold in the Keychain. Supabase provides all three
+without us operating a server process, a deploy pipeline, or a database
+backup schedule ourselves — the smallest amount of new infrastructure that
+does the job.
+
+**Why anonymous identity, not real accounts.** The only things the server
+needs to distinguish are "which courses is this caller enrolled in" and "how
+many questions has this caller asked today" — neither requires knowing who
+the student is. An anonymous Supabase user id is sufficient for both and
+keeps the promise in `docs/PRIVACY.md` that LHF collects no email, password,
+or name.
+
+**Why the phone still fetches Canvas, not the server.** The server never
+receiving Canvas credentials is a hard line — see `PROTOCOL.md` principle 1.
+Fetching server-side would need the student's cookies to leave the device,
+which is the one thing this whole app has never done and is not starting now.
+
+**Why course-id pooling, not section-id.** Canvas's numeric course id is the
+one identifier guaranteed to be identical for every student enrolled in the
+same course site; section ids vary and would fragment the pool into slivers
+too small to be worth deduplicating, on day one, before any evidence that
+section-specific content (announcements, due-date overrides) is common enough
+to justify the complexity. Section ids are recorded on the enrollment row now
+so that scoping can be added later without a schema change, but v1 shares at
+the course level. See `PROTOCOL.md` § Limitations for the corollary: this
+also means enrollment is asserted, not proven, by the client.
+
+**What was rejected.** A CloudKit public database instead of a server —
+rejected because it cannot hold `OPENROUTER_API_KEY` or any other secret, and
+without a secret there's no way to run the AI model server-side at all.
+Shipping the OpenRouter key inside the app so the phone calls it directly —
+rejected because any key embedded in a distributed binary can be extracted
+and used by someone else on our bill; a server-held secret is the only
+version of "our own key" that stays ours. Server-side Canvas fetching so the
+pool could be built without trusting client-asserted enrollment — rejected
+because it would mean either shipping the student's session cookies to the
+server or asking for a second, separate Canvas login on the server's behalf,
+both of which cross principle 1.
+
+---
+
+## 2026-09-06 — `v5` is the line again: `assistant-ui` + `v3.5` + on-device course materials for ask
+Three lines had drifted apart: `v3.5` carried the uploaded 2.0.1 build 6,
+`assistant-ui` carried Marco's ask screen and its Claude backend on top of `v6`,
+and a chatbot knowledge engine had been drafted against the long-stale `main`.
+`v5` was reset to `assistant-ui`, `v3.5` merged in (one conflict, this file),
+and the engine ported on top with the parts that duplicated existing code
+removed.
+
+**What the engine adds.** ask's handoff named its blocker: no syllabus prose or
+announcement bodies were kept on disk, so it could not answer a policy question.
+`CourseKnowledgeCollector` now keeps them — syllabus text from
+`CanvasSyllabusClient`, announcement bodies from `CanvasAnnouncementsClient`,
+modules from `CanvasModulesClient`, and assignment descriptions plus course
+pages from a small new `CanvasCourseContentClient` — in an on-device JSON store,
+re-synced on the grades refresh path when older than six hours. Over that store:
+BM25 retrieval (`CourseSearch`), a rule-based question parser, and
+`ClassQuestionAnswerer`, which computes exact answers (what's due, next exam,
+did I submit) from the dashboard's items and quotes the best passage for
+everything else.
+
+**Two backends, one screen.** Without an Anthropic key — every student by
+default — `OnDeviceAssistantResponder` answers from that engine, so ask works
+with nothing leaving the phone; on iOS 26 / macOS 26 Apple Intelligence devices
+Apple's on-device model rephrases retrieval answers, validated so it cannot add
+a number the sources lack. With a key, `ClaudeAssistantResponder` gets the same
+retrieved passages in the per-turn user message, *after* the cache breakpoint,
+so the cached context document stays byte-stable and the paid path can finally
+answer policy questions too.
+
+Rejected: putting whole syllabi into the cached context document — it would
+re-bill the prefix on every sync and send tens of thousands of tokens a
+question rarely needs. Rejected: a second chat UI (the draft had one) — the
+tree stays; the engine plugs in behind `AssistantResponder`. Rejected: a second
+Canvas client for syllabi/announcements/modules — the existing ones are reused;
+only descriptions and pages needed new fetches. Rejected: rewriting
+`docs/PRIVACY.md` now — it is published App Store material and, per the
+`assistant-ui` handoff, is revised at ship time.
+
+---
+
 ## 2026-09-02 — The corner belongs to `ask`; add-assignment moves to the filter row
 Prototyped `ask`, a chat over the student's own class context, on branch
 `assistant-ui` (off `v6`). The floating "+" that created a manual assignment

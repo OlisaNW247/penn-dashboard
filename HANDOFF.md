@@ -1,8 +1,198 @@
 # Low Hanging Fruit — Handoff
 
-_Last updated: 2026-09-02. This section supersedes everything below the
-first "Superseded" marker; read `CLAUDE.md` first for commands, storage
+_Last updated: 2026-09-07. Read `CLAUDE.md` first for commands, storage
 tiers, traps, and the overseer/doer working model._
+
+## ⚠️ Current state: `v5` is the line, now with a backend
+
+**New work goes on `v5`.** This session added a small backend of our own
+(Supabase: Postgres + Edge Functions, contract in `backend/PROTOCOL.md`) on
+top of the 2026-09-06 `v5` rebuild described below. See the 2026-09-07 entry
+in `docs/decisions.md` for the reasoning and what was rejected.
+
+### What landed
+
+- **The backend itself** (`backend/`): SQL migrations for `courses`,
+  `course_documents`, `enrollments`, `course_profiles`, `ask_usage`, RLS
+  policies scoping every row to the caller's enrollment; Edge Functions
+  `sync`, `ask`, `extract-profile`, `extract-announcement`, `delete-account`.
+- **Anonymous accounts.** First launch signs up anonymously with Supabase
+  GoTrue (no email, no password, no name) and stores the refresh token in the
+  Keychain beside the session cookies.
+- **Automatic course-material sync.** The manifest/upload exchange in
+  `PROTOCOL.md` § `sync` pools syllabus/page/module/assignment-description/
+  announcement text per Canvas course id, runs after Canvas connect and again
+  on the existing hourly-staleness refresh loop — no manual sync button, no
+  user-entered key.
+- **`ask` gets a server path.** With the backend reachable and under quota,
+  questions go to `ask` (context document + retrieved excerpts, streamed back)
+  answered via OpenRouter, default model `z-ai/glm-5.3-flash`, fallback
+  `openai/gpt-5.6-luna`, data-collection denied. `OnDeviceAssistantResponder`
+  remains the fallback — offline, over quota, or backend down — unchanged
+  from the 2026-09-06 work below.
+- **Announcement Watcher's "AI assist"** (still opt-in, still default off) now
+  calls `extract-announcement` on the backend instead of a user-supplied
+  Anthropic key.
+- **Settings → "delete my class data from lhf's server"**, calling
+  `delete-account`.
+
+### Added 2026-09-08 (after the head below was written)
+
+Two more layers, same shape (backend tested here, Swift compiled on the Mac):
+
+- **Registrar catalog.** `catalog_courses`, fed on sync from Penn Labs' public
+  Penn Courses API; ask gets a COURSE STRUCTURE block (components, credits,
+  grade modes, description) and the retriever labels `[lecture]`/`[lab]`
+  excerpts for split courses. Fixes the PHYS 0151 "class vs lab" answer.
+  Verified on the Mac: 853 tests / 90 suites.
+- **Course websites.** Canvas links (syllabus page, pages, assignments,
+  External URL module items) ride the upload; `discover-websites` verifies
+  candidates against the course code + current term (also the CIS Advising
+  Handbook directory and the `~cisNNNN/current/` convention), crawls the
+  best verified site (same host, depth 2, 40 pages, robots.txt, PDFs), and
+  stores pages as `website`-kind documents.
+- **Announcement Watcher rewrite.** Informational announcements yield
+  nothing; only student-directed sentences count; tasks carry a kind
+  (submission vs preparation, the latter filed as `.event` so it never goes
+  overdue); due times resolve to class meeting times from the registrar;
+  AI assist is on by default with the heuristic as a free pre-filter; a
+  one-time repair purges uncompleted announcement-derived rows.
+- **Multi-site courses.** PHYS 0151 is two Canvas sites (lecture 401, lab
+  151) that both parse to one code; the materials sync had fetched only the
+  lab. The parser keeps the section, the sync fetches every site whose code
+  is known, search scopes by code across sites, and each site's documents
+  are labelled by the registrar's activity for its section. Server keys the
+  per-site profiles by a site label.
+- **Verified on the Mac 2026-09-08: 937 tests / 92 suites green**, and all
+  four migrations plus all six functions are deployed to the live project. Device checks still outstanding: CIS 2400 site crawled and cited
+  by ask; the "Thursday Slides Posted" item gone after the repair and not
+  re-created; a real "read before class" item filed as an event.
+
+### Compile status
+
+Verified on the owner's Mac, 2026-09-07: `swift test` → **838 tests / 89
+suites passed**; the iOS simulator build (iPhone 17 Pro) → `BUILD SUCCEEDED`.
+The Swift was written without a compiler and compiled first time; the single
+first-run failure was `SharedDefaultsMigrationTests`' scan for
+`UserDefaults.standard` reads catching the debug launch-arg override in
+`BackendConfiguration.swift`, fixed by reading `ProcessInfo.arguments` like
+every other launch flag (commits `1ea20e5`, `0519932`).
+
+**What is still unexercised:** the live backend. `BackendServices.client` is
+nil under tests and in an unconfigured build, so nothing above has talked to
+a deployed Supabase project or to OpenRouter from a real client. The deno
+suite (96 tests) and the SQL policy tests pass against a local Postgres, but
+that is not a deployment. Steps 3 onward below are the first time it will
+run for real.
+
+### Mac verification steps, in order
+
+1. ~~`swift test`~~ — done 2026-09-07, 838/89 green. Re-run after any
+   further Swift change; a count below 838 has lost work.
+2. ~~iOS build~~ — done 2026-09-07, `BUILD SUCCEEDED`.
+3. ~~Paste the project URL and key into `BackendConfiguration.swift`~~ —
+   done 2026-09-07 (project `ynetfjixexksxqrrkwsg`, the `sb_publishable_…`
+   key; the legacy JWT `anon`/`service_role` keys were disabled after both
+   leaked into a chat transcript, so nothing may depend on them).
+4. ~~Deploy the backend~~ — done 2026-09-07: `db push` applied the migration
+   first time; the first `functions deploy` failed bundling because the edge
+   bundler ignores `backend/deno.json`'s import map (fixed by importing
+   `npm:@supabase/supabase-js@2` directly); the second deployed all five.
+   Always deploy with `--use-api`: the default path bundles through a local
+   Docker image and hung for hours on a Mac without Docker running.
+5. ~~Enable anonymous sign-ins~~ — done 2026-09-07; the smoke test
+   (anonymous signup → `sync` manifest → streamed `ask` answer from
+   GLM-5.3-Flash) passed end to end from a terminal. The OpenRouter key was
+   also pasted into a transcript and must be treated as rotated.
+6. Device run: connect Canvas, then watch Settings → ask for "synced N min
+   ago"; ask a policy question and confirm it answers (server path); turn on
+   Airplane Mode and ask again to confirm the on-device fallback still
+   answers (no citations to material fetched only server-side, but no
+   hard failure either); use the Settings delete button and confirm the
+   enrollment/usage rows and anonymous user disappear from the Supabase
+   dashboard.
+
+### Loose ends inherited, unchanged
+- `CourseContentDashboardTests` flake (shared `UserDefaults` race).
+- The ask screen's UI is still the prototype the owner called "not quite
+  there"; this session did not touch it.
+- No call has ever been made against the live Anthropic *or* OpenRouter API.
+- Four old branches carry a handful of July/August 1.0.0-era commits found
+  nowhere else (`claude/handoff-continuation-4a4vnv`, `-bn0e5m`,
+  `claude/agent-operating-model-0lyx87`); judged superseded, left alone.
+- `ClaudeAnnouncementExtractor` (Kit, `Announcements/`) is now dead code: nothing
+  can construct it with a key, but it still compiles and its decode tests in
+  `AnnouncementExtractionTests` still run. Left in place so this uncompiled
+  change did not also delete a tested file blind; retire it, and its tests,
+  on a Mac with the suite green.
+- Enrollment is asserted by the client, not proven — see `PROTOCOL.md` §
+  Limitations. Known and accepted for v1, not a bug to fix here.
+
+---
+
+_Superseded (2026-09-06) — kept for the reasoning behind the ask knowledge
+engine, folded into the backend work above._
+
+## ⚠️ Prior state: `v5` is the line (pre-backend)
+
+**New work goes on `v5`.** On 2026-09-06 `v5` was rebuilt as
+`assistant-ui` (Marco's ask screen + Claude backend, on `v6`) merged with
+`v3.5` (the **uploaded 2.0.1 build 6**), plus the ask knowledge engine —
+on-device course materials, the no-key `OnDeviceAssistantResponder`, and
+retrieved excerpts for the Claude backend. See the 2026-09-06 entry in
+`docs/decisions.md` for the shape and the rejected alternatives.
+
+**Verified green baseline (owner's Mac, 2026-09-06): 804 tests / 87
+suites** (plus 4 XCTest scheduler tests), zero failures, up from 736/76 on
+`assistant-ui`. The iOS simulator build (iPhone 17 Pro, Xcode 17 / iOS 26.2
+SDK) is also clean on this head — only pre-existing warnings. This baseline
+predates the 2026-09-07 backend work above and needs re-verification per the
+steps above.
+
+### What landed (all new unless marked)
+
+| Path | What |
+|---|---|
+| `Kit/Models/CourseDocument.swift` | `CourseDocument`, `CourseSummary`, `CourseKnowledgeBase` (merge keeps unchanged docs' fetch dates) |
+| `Kit/CanvasAPI/CanvasCourseContentClient.swift` | Assignment descriptions + submission state, course pages. `CourseDocumentBuilder` maps every source to documents. |
+| `Kit/Knowledge/CourseKnowledgeCollector.swift` | One sync over the existing syllabus/announcement/module clients + the content client |
+| `Kit/Knowledge/{CourseKnowledgeStore,HTMLText,PassageChunker,BM25Index,CourseSearch}.swift` | On-device JSON store, HTML→text, passages, BM25, retrieval with NLEmbedding rerank |
+| `Kit/Assistant/{WorkItem,CourseMatcher,QuestionIntent,ClassQuestionAnswerer,OnDeviceLanguageModel,SourceReference}.swift` | Rule-based parser, exact + retrieval answerer, Apple on-device model wrapper (`FoundationModels`, gated) |
+| `UI/OnDeviceAssistantResponder.swift` | The no-key backend behind `AssistantResponder` |
+| `UI/AppState+CourseKnowledge.swift` | `refreshCourseKnowledge(cookies:)`, `assistantWorkItems()`, `assistantKnowledge` (sample data in preview mode) |
+| `UI/AssistantResponder.swift` (modified) | `AssistantContext` gains `knowledge`, `work`, `userName` |
+| `UI/ClaudeAssistantResponder.swift` (modified) | `retrievedExcerpts` → user turn; one added paragraph in the frozen instructions |
+| `UI/AssistantView.swift`, `ContentView.swift` (modified) | Responder choice: key → Claude; data → on-device; nothing → scripted |
+| `UI/AutoSyncCoordinator.swift`, `SettingsPage.swift`, `SampleData.swift` (modified) | Sync on the grades refresh; Settings → "ask" section; sample syllabi |
+| `Kit/Assistant/AssistantContextDocument.swift` (modified) | Header now says policy prose arrives as excerpts (the literal "Does NOT contain syllabus prose" the test checks is kept) |
+
+### Verify before shipping (needs a Penn login)
+
+1. Settings → ask → *sync course materials*. Expect "N items · M courses".
+   A repeated "session expired" notice means Penn's Canvas rejects
+   session-cookie JSON calls for these endpoints; the syllabus/announcement
+   clients already in use would be failing the same way, so check those.
+2. Open ask with **no** key and ask the flagship question — "what's my
+   <course> attendance policy" — and one deadline question. Both should
+   answer with citations, no network.
+3. Paste a key, ask the same policy question. The answer should now quote
+   the syllabus; that is the excerpts reaching Claude.
+4. `docs/PRIVACY.md` was deliberately left untouched at the time (published
+   material); it has since been rewritten for the backend — see the entry
+   above.
+
+### Loose ends inherited, unchanged
+- `CourseContentDashboardTests` flake (shared `UserDefaults` race).
+- The ask screen's UI is still the prototype the owner called "not quite
+  there"; the engine underneath is what changed here.
+- No call has ever been made against the live Anthropic API.
+- Four old branches carry a handful of July/August 1.0.0-era commits found
+  nowhere else (`claude/handoff-continuation-4a4vnv`, `-bn0e5m`,
+  `claude/agent-operating-model-0lyx87`); judged superseded, left alone.
+
+---
+
+_Superseded (2026-09-02) — kept for the reasoning behind ask's design._
 
 ## ⚠️ Current state: `assistant-ui` is the line
 

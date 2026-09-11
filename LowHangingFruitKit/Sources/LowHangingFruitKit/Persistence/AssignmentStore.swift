@@ -319,6 +319,28 @@ public final class AssignmentStore {
         saveChanges()
     }
 
+    /// `purge(source:)`'s narrower sibling: deletes every row for a source
+    /// EXCEPT ones the student has already finished (`isFinished` — ticked
+    /// off, or reported turned in by either platform). Written for the
+    /// announcement-extraction repair (`AppState`'s one-time bump past
+    /// `announcementExtractionVersion`): the old heuristic extractor filed
+    /// purely informational announcements as assignments, and the fix is to
+    /// re-derive `.canvasAnnouncement` rows from scratch with the corrected
+    /// extractor rather than patch what's already on disk — but a student who
+    /// had already checked one of those rows off did real work marking it
+    /// done, and wiping it out from under them on the next launch would be
+    /// exactly the kind of silent data loss "the ledger is the point" exists
+    /// to prevent. A wrong-but-completed row is a harmless leftover; a
+    /// wrong-and-incomplete one is the actual bug being fixed.
+    @discardableResult
+    public func purgeIncomplete(source: Assignment.Source) -> Int {
+        let doomed = rows(source: source).filter { !$0.isFinished }
+        guard !doomed.isEmpty else { return 0 }
+        for row in doomed { context.delete(row) }
+        saveChanges()
+        return doomed.count
+    }
+
     // MARK: Identity — uniqueness is enforced here, not by the database
 
     /// Every row keyed by `id`, with any duplicate ids collapsed on the spot.
@@ -773,16 +795,30 @@ public final class AssignmentStore {
     ///
     /// Nil means "everything on the ledger was covered" — the whole-refresh
     /// case, and the behaviour before partial refreshes were handled.
+    ///
+    /// `fallbackCanvasAssignmentIDs` (ledger row id → Canvas assignment id)
+    /// covers `.canvasModules` rows whose own `canvasAssignmentID` is nil
+    /// because the module item carried no `/assignments/<id>` URL —
+    /// `SubmissionMatcher` fills the gap by title/due-date against Canvas's
+    /// own grade snapshot. It's a fallback in the literal sense: a row's own
+    /// derived id, when it has one, always wins.
+    ///
+    /// Both `.canvas` (ICS) and `.canvasModules` rows are joined here — a
+    /// module-imported assignment is exactly as real a Canvas assignment as
+    /// one the ICS feed described, and deserves the same submission truth
+    /// rather than reading as permanently outstanding just because it arrived
+    /// through the other API.
     @discardableResult
     public func applySubmissionState(
         submittedCanvasAssignmentIDs: Set<String>,
         scores: [String: (earned: Double?, max: Double?)],
         observedCanvasAssignmentIDs: Set<String>? = nil,
+        fallbackCanvasAssignmentIDs: [String: String] = [:],
         now: Date = Date()
     ) -> [ScoreChange] {
         var changes: [ScoreChange] = []
-        for row in rows(source: .canvas) {
-            guard let canvasID = row.canvasAssignmentID else { continue }
+        for row in rows(source: .canvas) + rows(source: .canvasModules) {
+            guard let canvasID = row.canvasAssignmentID ?? fallbackCanvasAssignmentIDs[row.id] else { continue }
             row.canvasSubmitted = submittedCanvasAssignmentIDs.contains(canvasID)
             // Canvas answered for this item — either way. Absence of a
             // submission is a real observation too, and it is the one most worth
@@ -857,13 +893,34 @@ public final class AssignmentStore {
     }
 
     /// The persisted Canvas submission set, for seeding `AppState` at launch
-    /// before (or without) any grade refresh.
+    /// before (or without) any grade refresh. Covers `.canvasModules` rows
+    /// too, for the same reason `applySubmissionState` does — a module-listed
+    /// assignment is the same Canvas assignment the ICS feed would otherwise
+    /// have described. This reads back only `canvasAssignmentID` (a row's own
+    /// URL-derived id), never `fallbackCanvasAssignmentIDs` — that map isn't
+    /// persisted, it's recomputed each refresh from a live grade snapshot, so
+    /// there's nothing to read back here for a row that needed one.
     public func submittedCanvasAssignmentIDs() -> Set<String> {
         var ids: Set<String> = []
-        for row in rows(source: .canvas) where row.canvasSubmitted {
+        for row in rows(source: .canvas) + rows(source: .canvasModules) where row.canvasSubmitted {
             if let canvasID = row.canvasAssignmentID { ids.insert(canvasID) }
         }
         return ids
+    }
+
+    /// The course keys the ledger has *ever*, on this device, gotten a real
+    /// Canvas submission answer for — i.e. at least one `.canvas` row whose
+    /// `canvasSubmissionObservedAt` is non-nil (see that property's doc comment
+    /// for why "observed" and "submitted" are different questions). This is
+    /// the durable half of the first-launch hold in `AppState`: a fresh
+    /// install has an empty set here (nothing has ever been checked), so the
+    /// dashboard knows not to trust "overdue" for a course until either this
+    /// device's history or this launch's live grade fetch has actually looked.
+    /// A relapse to memory-only storage (see `isPersistent`) makes this set
+    /// empty every launch, which is the correct, conservative answer — an
+    /// in-memory ledger has no history to report.
+    public func coursesWithCanvasSubmissionObservation() -> Set<String> {
+        Set(rows(source: .canvas).compactMap { $0.canvasSubmissionObservedAt != nil ? $0.course : nil })
     }
 
     // MARK: Test/diagnostic access

@@ -1,0 +1,34 @@
+# Minimal local/project config for the LHF backend. Only the settings that
+# differ from `supabase init` defaults are spelled out; everything else is
+# left at the CLI's default so this file doesn't drift from upstream churn.
+project_id = "lhf"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+# Identity is anonymous per PROTOCOL.md: no email, no password, no accounts.
+# The server only needs a stable user id to scope enrollments, ask usage and
+# quotas -- nothing more.
+enable_anonymous_sign_ins = true
+
+[functions.sync]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
+
+[functions.ask]
+verify_jwt = true
+
+[functions.extract-profile]
+verify_jwt = true
+
+[functions.extract-announcement]
+verify_jwt = true

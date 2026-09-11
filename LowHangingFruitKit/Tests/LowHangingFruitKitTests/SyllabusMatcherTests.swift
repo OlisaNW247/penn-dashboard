@@ -157,6 +157,113 @@ struct SyllabusMatcherTests {
     }
 }
 
+/// Coverage for the 2026-09-10 many-to-one/synonym-family addendum
+/// (docs/grades.md §14 addendum): a syllabus category claiming SEVERAL
+/// Canvas groups at once, the numbered-exam exception, and `appliedWeights`
+/// as a coverage-independent counterpart to `canvasWeights`. Kept as its own
+/// suite in this same file (rather than folded into `SyllabusMatcherTests`
+/// above) so this work can't accidentally corrupt the existing, already-
+/// verified suite -- the same reasoning `GradeEngineSemesterTests` documents
+/// for staying separate from `GradeEngineTests`.
+@Suite("Syllabus matching — synonyms and many-to-one")
+struct SyllabusMatcherSynonymTests {
+
+    private func canvas(_ id: String, _ name: String, items: Int = 1) -> GradeCategory {
+        GradeCategory(id: id, name: name, items: (0..<items).map {
+            GradeItem(id: "\(id)-\($0)", name: "item \($0)", pointsPossible: 100)
+        })
+    }
+
+    private func scheme(_ pairs: [(String, Double)]) -> SyllabusGradingScheme {
+        let categories = pairs.map { name, weight in
+            SyllabusCategory(id: TitleNormalizer.categoryKey(name), name: name, weightPercent: weight)
+        }
+        return SyllabusGradingScheme(categories: categories, confidence: .high, rawWeightSum: pairs.reduce(0) { $0 + $1.1 })
+    }
+
+    // MARK: - Synonym family, many-to-one
+
+    @Test("a synonym-family category folds SEVERAL Canvas groups into one syllabus category")
+    func manyToOneViaFamily() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("HomeWorks", 10), ("Final", 90)]),
+            canvasCategories: [canvas("1", "Problem Sets"), canvas("2", "Worksheets"), canvas("3", "Final")]
+        )
+
+        let hw = result.matches.first { $0.syllabusName == "HomeWorks" }
+        #expect(Set(hw?.canvasCategoryIDs ?? []) == ["1", "2"])
+        #expect(hw?.tier == .exact) // deterministic vocabulary, not a guess -- applied without asking
+        #expect(hw?.isApplied == true)
+        #expect(result.isCompleteCoverage)
+    }
+
+    @Test("a bare 'Assignment' group also joins the homework family fold")
+    func assignmentJoinsHomeworkFamily() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("HomeWorks", 10), ("Final", 90)]),
+            canvasCategories: [canvas("1", "Problem Sets"), canvas("2", "Assignment"), canvas("3", "Final")]
+        )
+
+        let hw = result.matches.first { $0.syllabusName == "HomeWorks" }
+        #expect(Set(hw?.canvasCategoryIDs ?? []) == ["1", "2"])
+    }
+
+    // MARK: - Numbered exams
+
+    @Test("numbered exam names match by number, even across the exam family's own synonyms")
+    func numberedExamsMatchAcrossSynonyms() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("Exam 1", 40), ("Exam 2", 60)]),
+            canvasCategories: [canvas("1", "Midterm 1"), canvas("2", "Midterm 2")]
+        )
+
+        let exam1 = result.matches.first { $0.syllabusName == "Exam 1" }
+        let exam2 = result.matches.first { $0.syllabusName == "Exam 2" }
+        #expect(exam1?.canvasCategoryID == "1")
+        #expect(exam2?.canvasCategoryID == "2")
+        #expect(result.isCompleteCoverage)
+    }
+
+    @Test("a numbered syllabus category never claims the wrong-numbered Canvas group")
+    func numberedExamNeverClaimsWrongNumber() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("Exam 1", 100)]),
+            canvasCategories: [canvas("2", "Midterm 2")]
+        )
+
+        let exam1 = result.matches.first { $0.syllabusName == "Exam 1" }
+        #expect(exam1?.tier == .unmatched)
+    }
+
+    @Test("a syllabus category with no Canvas group is reported in unmatchedSyllabusCategories")
+    func unmatchedSyllabusCategoryReported() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("Midterm 1", 50), ("Midterm 3", 50)]),
+            canvasCategories: [canvas("1", "Midterm 1")]
+        )
+
+        #expect(result.unmatchedSyllabusCategories.map(\.name) == ["Midterm 3"])
+    }
+
+    // MARK: - appliedWeights
+
+    @Test("appliedWeights reports every applied match's weight even when overall coverage is incomplete")
+    func appliedWeightsIgnoresCoverageGate() {
+        let result = SyllabusMatcher.match(
+            scheme: scheme([("Homework", 60), ("Final", 40)]),
+            // "Attendance" has no syllabus counterpart, so coverage is incomplete --
+            // but Homework/Final should still report their weights.
+            canvasCategories: [canvas("1", "Homework"), canvas("2", "Final"), canvas("3", "Attendance")]
+        )
+
+        #expect(result.isCompleteCoverage == false)
+        #expect(result.canvasWeights.isEmpty) // the OLD, coverage-gated accessor
+        #expect(result.appliedWeights["1"] == 60)
+        #expect(result.appliedWeights["2"] == 40)
+        #expect(result.appliedWeights["3"] == nil)
+    }
+}
+
 @Suite("Syllabus count reconciliation")
 struct SyllabusReconcilerTests {
 

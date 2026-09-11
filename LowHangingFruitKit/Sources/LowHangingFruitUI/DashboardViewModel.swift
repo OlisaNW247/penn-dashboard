@@ -50,6 +50,24 @@ struct DashItem: Identifiable, Equatable {
     /// reminder-toggle scopes stay exactly as they were.
     var showsNothingToSubmit: Bool { requiresNoSubmission || assignment.kind == .event }
 
+    /// True for a task the Announcement Watcher extracted from an
+    /// announcement's text rather than one Canvas lists as an assignment.
+    /// Surfaced as a small caveat on the card because these are the app's
+    /// reading of a professor's prose, not a Canvas record: they can be
+    /// wrong, and the student deserves to know which items to double-check
+    /// before trusting the due date. Same register as "nothing to submit".
+    var isFromAnnouncement: Bool { assignment.source == .canvasAnnouncement }
+
+    /// The one-line caveat under the title, or nil. Both caveats can apply
+    /// (an announcement can announce something with nothing to hand in), so
+    /// they join on one line rather than stacking two 9pt rows.
+    var caveatText: String? {
+        var parts: [String] = []
+        if showsNothingToSubmit { parts.append("nothing to submit") }
+        if isFromAnnouncement { parts.append("from announcements") }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
     func state(now: Date = Date()) -> DueState { DueState(due: due, now: now) }
 }
 

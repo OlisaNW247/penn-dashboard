@@ -97,6 +97,50 @@ public struct SyllabusGradingScheme: Sendable, Hashable, Codable {
     }
 }
 
+extension SyllabusGradingScheme {
+    /// Turns the backend's syllabus extraction (`CourseGradingProfile`) into
+    /// the same on-device proposal type `SyllabusParser.parse` produces, so
+    /// every downstream consumer — the review sheet, `SyllabusMatcher`,
+    /// confirmation — treats a server-suggested scheme exactly like a
+    /// locally parsed one and needs no separate code path.
+    ///
+    /// Applies the identical honesty gate `SyllabusParser.parse` applies to
+    /// its own output (`SyllabusParser.acceptedSumRange`, fewer than two
+    /// categories): the whole reason that gate exists is that a grading
+    /// scheme's weights sum to 100, so a parse — deterministic or, now,
+    /// server-side — that doesn't land in the accepted band is almost
+    /// certainly wrong and must not be offered to the student as if it were
+    /// trustworthy. The server doing the extraction instead of the device
+    /// changes *where* the parse happens, not the app's promise about what
+    /// it will present as fact versus what it makes the student confirm —
+    /// so this function refuses exactly what `SyllabusParser.parse` would
+    /// have refused, rather than trusting the server's own math.
+    public static func from(profile: CourseGradingProfile) -> SyllabusGradingScheme? {
+        guard profile.weights.count >= 2 else { return nil }
+        let sum = profile.weights.reduce(0) { $0 + $1.percent }
+        guard SyllabusParser.acceptedSumRange.contains(sum) else { return nil }
+
+        let categories = profile.weights.map { weight in
+            SyllabusCategory(
+                id: TitleNormalizer.categoryKey(weight.name),
+                name: weight.name,
+                weightPercent: weight.percent,
+                dropLowest: weight.dropLowest ?? 0,
+                expectedItemCount: weight.expectedCount,
+                evidence: "from the syllabus, read by locust's server"
+            )
+        }
+
+        return SyllabusGradingScheme(
+            categories: categories,
+            cutoffs: nil,
+            mentionsCurve: false,
+            confidence: abs(sum - 100) <= SyllabusParser.exactSumTolerance ? .high : .medium,
+            rawWeightSum: sum
+        )
+    }
+}
+
 /// Where a syllabus's text came from — shown in the report so the user knows
 /// which document the numbers are keyed to.
 public enum SyllabusSource: String, Sendable, Codable, Hashable {
@@ -105,6 +149,11 @@ public enum SyllabusSource: String, Sendable, Codable, Hashable {
     case canvasPage
     case pasted
     case importedFile
+    /// A scheme built from `CourseGradingProfile` — the backend's own
+    /// syllabus extraction, shared across everyone enrolled in the course
+    /// rather than parsed fresh on this device (`SyllabusGradingScheme.from
+    /// (profile:)`).
+    case sharedProfile
 
     public var label: String {
         switch self {
@@ -113,6 +162,7 @@ public enum SyllabusSource: String, Sendable, Codable, Hashable {
         case .canvasPage:         return "Canvas page"
         case .pasted:             return "Pasted text"
         case .importedFile:       return "Imported file"
+        case .sharedProfile:      return "the syllabus, as read by locust's server"
         }
     }
 }
@@ -146,11 +196,18 @@ public struct SyllabusCandidate: Sendable, Hashable, Identifiable {
     public let name: String
     /// Plain text, already extracted (HTML stripped / PDF flattened).
     public let text: String
+    /// Outbound links the HTML carried before it was flattened. The
+    /// syllabus page is the single most likely place an instructor points
+    /// at an external course website, and stripping to text used to throw
+    /// that pointer away; `CourseKnowledgeCollector` forwards these to the
+    /// backend's website discovery. Empty for PDF and pasted sources.
+    public let links: [HTMLLink]
 
-    public init(id: String, source: SyllabusSource, name: String, text: String) {
+    public init(id: String, source: SyllabusSource, name: String, text: String, links: [HTMLLink] = []) {
         self.id = id
         self.source = source
         self.name = name
         self.text = text
+        self.links = links
     }
 }

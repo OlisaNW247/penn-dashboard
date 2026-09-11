@@ -1,0 +1,41 @@
+-- Adds a per-course cache for `map-categories`' output onto the existing
+-- `course_profiles` row, the same way `source_hash` already caches
+-- `extract-profile`'s own staleness fact on that table rather than a
+-- separate one -- see `20260907000000_init.sql`'s comment on why
+-- `course_profiles` is a table of its own in the first place ("a profile
+-- rebuild is a single-row upsert independent of the sync path's writes to
+-- `courses`").
+--
+-- `category_map` holds the sanitized `{ categories, excludedItemIDs,
+-- reasons, extractedAt, structureHash }` object `map-categories/index.ts`
+-- returns to the app (see `_shared/categoryMap.ts`'s `CategoryMapping` and
+-- PROTOCOL.md's "map-categories" section). `category_map_hash` is the
+-- sha-256-derived `structureHash` of the Canvas assignment-group structure
+-- that produced it; a future request whose own `structureHash` matches is
+-- answered from this column with no model call. `category_map_at` is kept
+-- as its own timestamp rather than reusing `course_profiles.updated_at`,
+-- because that column is stamped by `extract-profile`'s syllabus rebuild --
+-- a wholly separate process running on a wholly separate schedule (Canvas
+-- syllabus changes vs. a Canvas assignment-group structure changing) -- and
+-- overloading it would make one process's write look like the other's.
+--
+-- No column is `not null`: a course can have a `course_profiles` row
+-- (because `extract-profile` found a syllabus) with no `category_map` yet
+-- (because no client has ever called `map-categories` for it), exactly the
+-- way `catalog_courses` and `course_profiles` themselves are only ever
+-- populated lazily, on first relevant request, rather than eagerly for
+-- every course.
+--
+-- No RLS change needed: `category_map`/`category_map_hash`/
+-- `category_map_at` are additional columns on `course_profiles`, already
+-- gated end to end by `course_profiles_select_enrolled` and the "public
+-- course-level material, private nothing" posture that policy encodes --
+-- the cached mapping is derived from Canvas assignment-group *names and
+-- point values*, not any student's scores or submission state, so it is
+-- exactly as shareable across enrolled classmates as the rest of this row
+-- already is (see PROTOCOL.md's "map-categories" section for the privacy
+-- statement this rests on).
+alter table public.course_profiles
+  add column category_map      jsonb,
+  add column category_map_hash text,
+  add column category_map_at   timestamptz;

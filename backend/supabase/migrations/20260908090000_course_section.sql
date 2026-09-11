@@ -1,0 +1,36 @@
+-- Adds `courses.section` -- the Canvas SIS section number (Penn Labs'
+-- section id suffix, e.g. "401", "151") the client synced this Canvas
+-- course site under. The problem this solves: a single Penn course can be
+-- several separate Canvas *sites* sharing one registrar code -- PHYS 0151's
+-- 1.0 CU lecture lives on Canvas site 1946718 (SIS section 401) while its
+-- 0.5 CU lab lives on an entirely different Canvas site (SIS section 151).
+-- Both resolve to the same `catalog_code` ("PHYS-0151") via
+-- `_shared/catalog.ts`'s `catalogCode`, and until now the server had no way
+-- to tell which physical site a `courses` row *was* -- so `ask` could only
+-- ever say "PHYS 0151" for either site's material, and a "class" question
+-- could get answered from the lab site's syllabus text and vice versa.
+--
+-- `section` alone doesn't answer "lecture or lab" -- that requires joining
+-- through to the course's `catalog_courses` row and finding which
+-- component's `sectionIDs` end in this section (see `_shared/catalog.ts`'s
+-- `activityForSection`/`siteLabel`, used by `ask/index.ts`'s
+-- `loadCourseProfiles` to label each course's profile by which site it
+-- came from). This column only stores the raw fact the client already
+-- knows about its own sync (the section it's on), the same way
+-- `enrollments.section_ids` already does per-user -- this one lives on
+-- `courses` itself because it describes the Canvas *site*, not any one
+-- student's enrollment in it, and every student syncing the same Canvas
+-- site would report the same section.
+--
+-- Nullable and unconstrained beyond `CourseSummaryWire`'s own validation
+-- (`_shared/manifest.ts`: at most 8 characters, `^[0-9A-Za-z]{1,8}$`) --
+-- a course code that never resolves a section (readings-only courses,
+-- older clients that don't send one yet) is left null rather than guessed
+-- at, matching `catalog_code`'s own "unlinked rather than guessed" posture
+-- a few lines up in `20260907120000_catalog.sql`.
+--
+-- No RLS change: `section` is exactly as public as every other column
+-- `courses_select_enrolled` already gates -- it is Canvas site metadata,
+-- not a student's private enrollment fact (that's `enrollments.section_ids`,
+-- a different column on a different, still separately-RLS'd table).
+alter table public.courses add column section text;

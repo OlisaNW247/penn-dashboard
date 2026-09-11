@@ -22,7 +22,32 @@ struct GradeWatcherView: View {
     private var courses: [(id: String, name: String)] {
         state.selectedCanvasCourseIDs()
             .map { (id: $0.key, name: state.courseDisplayName($0.value)) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            .sorted { lhs, rhs in
+                let nameOrder = lhs.name.localizedStandardCompare(rhs.name)
+                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+                // Same display name -- this is a course code with several
+                // Canvas sites (docs/grades.md, `AppState.gradeSiteLabel`),
+                // e.g. one PHYS 0151 lecture card and one PHYS 0151 lab
+                // card. Lecture (or an unlabeled/undistinguished site) reads
+                // first, since it's what a student means by the bare course
+                // name; the lab card is still fully identified by its own
+                // "· LAB" header suffix, not by sort position.
+                return Self.siteSortRank(state.gradeSiteLabel(courseID: lhs.id))
+                    < Self.siteSortRank(state.gradeSiteLabel(courseID: rhs.id))
+            }
+    }
+
+    /// Sort weight for a same-named course's Canvas site label: lecture (or
+    /// no distinguishing label at all) first, then recitation, then lab
+    /// last. Only the lecture-before-lab ordering is actually specified;
+    /// recitation is placed between them as the least surprising middle
+    /// ground rather than left unranked.
+    private static func siteSortRank(_ label: String?) -> Int {
+        switch label {
+        case "lab": return 2
+        case "recitation": return 1
+        default: return 0
+        }
     }
 
     /// Classes the picker has switched on, regardless of whether we managed to
@@ -137,7 +162,8 @@ struct GradeWatcherView: View {
                         GradeCourseCardView(
                             store: store,
                             courseID: course.id,
-                            courseName: course.name
+                            courseName: course.name,
+                            siteLabel: state.gradeSiteLabel(courseID: course.id)
                         )
                     }
                 }
@@ -158,7 +184,12 @@ struct GradeWatcherView: View {
     /// have a grade, since an "average" of one course is just that course.
     @ViewBuilder
     private var termSummary: some View {
-        let percents = courses.compactMap { store.breakdown(courseID: $0.id)?.currentPercent }
+        // A course marked "doesn't count toward my grade" (the lab-site fix,
+        // docs/grades.md — a pass/fail lab site must not sit in the same
+        // average as a letter-graded lecture) is left out of both the count
+        // and the average entirely, same as if it had never been selected.
+        let counted = courses.filter { !store.isCourseExcluded(courseID: $0.id) }
+        let percents = counted.compactMap { store.breakdown(courseID: $0.id)?.currentPercent }
         if percents.count >= 2 {
             let gpa = percents.map(GradeScale.gpa(forPercent:)).reduce(0, +) / Double(percents.count)
             VStack(alignment: .leading, spacing: 2) {
@@ -168,10 +199,30 @@ struct GradeWatcherView: View {
                 Text("estimated gpa across your \(percents.count) classes \u{00b7} standard cutoffs")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
+                if !excludedCourses.isEmpty {
+                    Text("not counting: \(excludedCoursesSummary)")
+                        .font(.lhfSans(10.5))
+                        .foregroundStyle(Color.v2RingSub)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(String(format: "Estimated GPA %.2f across %d classes, using standard cutoffs", gpa, percents.count))
         }
+    }
+
+    private var excludedCourses: [(id: String, name: String)] {
+        courses.filter { store.isCourseExcluded(courseID: $0.id) }
+    }
+
+    /// "PHYS 0151 · lab, PHYS 0151 · lab" style list for the GPA caption's
+    /// second line — names carry their site label (`state.gradeSiteLabel`)
+    /// so two excluded classes sharing a bare course name still read as
+    /// distinct.
+    private var excludedCoursesSummary: String {
+        excludedCourses.map { course in
+            guard let label = state.gradeSiteLabel(courseID: course.id) else { return course.name }
+            return "\(course.name) \u{00b7} \(label)"
+        }.joined(separator: ", ")
     }
 
     /// `GradeWatcherStore.refresh` reports every non-expiry failure through

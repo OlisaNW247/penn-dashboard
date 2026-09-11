@@ -98,6 +98,46 @@ struct SubmissionDetectionTests {
         #expect(a.canvasAssignmentID == "67890")
     }
 
+    @Test("a section-override row's #assignment_<id> URL fragment extracts the numeric id")
+    func canvasAssignmentIDFromURLFragmentOnOverrideRow() {
+        // Ground truth: Canvas's `to_ics` override branch never sets `URL`
+        // differently from the normal branch, so the fragment carries the
+        // assignment id even though the UID carries an unrelated
+        // section-override id.
+        let a = canvasAssignment(
+            url: URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#assignment_4242"),
+            sourceID: "event-assignment-override-99@canvas.upenn.edu"
+        )
+        #expect(a.canvasAssignmentID == "4242")
+    }
+
+    @Test("a #sub_assignment_<id> fragment on an override row does not match the assignment fragment pattern")
+    func canvasAssignmentIDFromSubAssignmentFragmentYieldsNil() {
+        let a = canvasAssignment(
+            url: URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#sub_assignment_4242"),
+            sourceID: "event-assignment-override-99@canvas.upenn.edu"
+        )
+        #expect(a.canvasAssignmentID == nil)
+    }
+
+    @Test("a #quiz_<id> fragment on an override row does not match the assignment fragment pattern")
+    func canvasAssignmentIDFromQuizFragmentYieldsNil() {
+        let a = canvasAssignment(
+            url: URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#quiz_4242"),
+            sourceID: "event-assignment-override-99@canvas.upenn.edu"
+        )
+        #expect(a.canvasAssignmentID == nil)
+    }
+
+    @Test("a direct /assignments/ URL path still wins over a #assignment_<id> fragment")
+    func canvasAssignmentIDURLPathWinsOverFragment() {
+        let a = canvasAssignment(
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/12345#assignment_99999"),
+            sourceID: "event-assignment-12345@canvas.upenn.edu"
+        )
+        #expect(a.canvasAssignmentID == "12345")
+    }
+
     @Test("canvas quiz-style URL and sourceID use a different id space and yield nil")
     func canvasQuizYieldsNil() {
         let a = canvasAssignment(
@@ -132,6 +172,43 @@ struct SubmissionDetectionTests {
             dueAt: nil,
             url: nil
         )
+        #expect(a.canvasAssignmentID == nil)
+    }
+
+    // MARK: - Assignment.canvasAssignmentID for .canvasModules rows
+
+    private func moduleAssignment(url: URL?, sourceID: String) -> Assignment {
+        Assignment(
+            source: .canvasModules,
+            sourceID: sourceID,
+            kind: .assignment,
+            course: "TEST 1000",
+            title: "Test item",
+            dueAt: nil,
+            url: url
+        )
+    }
+
+    @Test(".canvasModules row with an /assignments/N url extracts the numeric id")
+    func canvasModulesIDFromURL() {
+        let a = moduleAssignment(
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/54321"),
+            sourceID: "module-item-99"
+        )
+        #expect(a.canvasAssignmentID == "54321")
+    }
+
+    @Test(".canvasModules row with no url yields nil even when the sourceID looks assignment-shaped")
+    func canvasModulesWithNoURLNeverFallsBackToSourceID() {
+        // A module item's sourceID id-space is `module-item-<id>` — a wrapper
+        // object id in a different id space from the assignment itself, even
+        // on the rare module item literally named to look like the
+        // `assignment-N` pattern the ICS `.canvas` fallback uses. Trusting it
+        // here would risk joining Grade Watcher's submission truth to the
+        // wrong assignment, which is a worse failure than just not joining at
+        // all — so `.canvasModules` never gets the sourceID fallback, only
+        // `.canvas` does.
+        let a = moduleAssignment(url: nil, sourceID: "module-item-assignment-5")
         #expect(a.canvasAssignmentID == nil)
     }
 }

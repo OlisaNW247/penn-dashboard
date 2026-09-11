@@ -26,6 +26,17 @@ final class GradeWatcherStore: ObservableObject {
     @Published private(set) var isSessionExpired = false
     @Published var error: String?
 
+    /// Diagnostics only — never surfaced in normal UI. `refresh` folds every
+    /// per-course failure into one banner (`outcome(...)` above), which is
+    /// the right call for the student but useless for telling "this course's
+    /// grades fetch is silently failing" apart from "the join to this
+    /// assignment's Canvas id is broken" apart from "Canvas reported it as
+    /// not-submitted." This keeps one short label per Canvas course id from
+    /// the most recent refresh that touched it, so `AppState`'s submission
+    /// diagnostics can rule hypothesis (a) — a failed grades fetch — in or
+    /// out without guessing from the single collapsed error string.
+    @Published private(set) var lastRefreshOutcomes: [String: String] = [:]
+
     /// This course's Gradescope items, already scoped by course name — the
     /// raw input `overlayResult(courseID:)` re-applies the overlay against on
     /// every read. Empty when Gradescope isn't connected. Not `@Published`:
@@ -91,6 +102,38 @@ final class GradeWatcherStore: ObservableObject {
         self.watchedCourseIDs = Set(UserDefaults.lhf.stringArray(forKey: Self.watchedCoursesKey) ?? [])
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
+        self.categoryMapEdits = Self.loadCategoryMapEdits()
+        self.expectedCounts = Self.loadExpectedCounts()
+        self.itemOverrides = Self.loadItemOverrides()
+        self.modeOverrides = Self.loadModeOverrides()
+
+        // Round-2 migration: round 1 only ever recorded "excluded" as a flat
+        // set (`gradeWatcherExcludedCourses`). Every id in it becomes an
+        // explicit `false` (excluded) choice here — the student had already
+        // said this course doesn't count, and the storage shape changing
+        // underneath them must not silently forget that — and the old key is
+        // then removed so this block is a no-op on every later launch.
+        // Direct property assignments only (no instance-method calls): a
+        // class initializer can't call `self`'s methods until every stored
+        // property has a value, and `excludedCourseIDs` below is one of them.
+        var choice = Self.loadCourseCountsChoice()
+        if let legacy = UserDefaults.lhf.stringArray(forKey: Self.legacyExcludedCourseIDsKey) {
+            for id in legacy where choice[id] == nil {
+                choice[id] = false
+            }
+            UserDefaults.lhf.removeObject(forKey: Self.legacyExcludedCourseIDsKey)
+            if let data = try? JSONEncoder().encode(choice) {
+                UserDefaults.lhf.set(data, forKey: Self.courseCountsChoiceKey)
+            }
+        }
+        self.courseCountsChoice = choice
+        // Populated after construction by `AppState.pushGradeWatcherFacts`
+        // from synced course-catalog data — never persisted, since it's a
+        // pure function of that data and would just go stale sitting in
+        // UserDefaults between syncs.
+        self.automaticExclusions = []
+        self.gradingProfiles = [:]
+        self.excludedCourseIDs = Set(choice.compactMap { $0.value ? nil : $0.key })
     }
 
     func isWatching(_ courseID: String) -> Bool {
@@ -117,6 +160,37 @@ final class GradeWatcherStore: ObservableObject {
     /// its own (docs/grades.md §4/§9). If Gradescope isn't connected
     /// (`SessionCookieStore` has no Gradescope cookies), the overlay is
     /// skipped entirely and courses fall back to Canvas-only scores.
+    ///
+    /// Courses are fetched with **at most 3 in flight at once**, not fully
+    /// sequential and not fully parallel. On a real phone with eight Canvas
+    /// sites, fetching them one at a time — each paginating its own
+    /// assignment-group requests — took minutes on first launch, and for
+    /// every one of those minutes the dashboard kept showing the ICS feed's
+    /// view of what's due, which reads as overdue work the student may
+    /// already have turned in: the submission signal that rides along with a
+    /// grades fetch (`CourseGradeSnapshot.submissions`) simply hadn't landed
+    /// yet for whichever course was still waiting its turn. Unbounded
+    /// concurrency was rejected too: Canvas rate-limits per session, and
+    /// firing eight requests at once from one login is exactly the traffic
+    /// shape that trips it, which would turn a slow-but-correct sync into a
+    /// pile of `sessionExpired`/`http 4xx` failures that have nothing to do
+    /// with whether the session is actually still good. 3 is a bound chosen
+    /// to buy most of the wall-clock win without looking like abuse to
+    /// Canvas's rate limiter.
+    ///
+    /// Concurrency only changes *when* each course's network I/O runs, never
+    /// how its result is folded into state: every fetch still runs to
+    /// completion (a `sessionExpired` on one course does not stop the others,
+    /// same as before), and every observable outcome — `snapshots`,
+    /// `gradescopeItemsByCourse`, recorded history, `lastRefreshOutcomes`,
+    /// the success/failure tally, and the final `error`/`isSessionExpired`
+    /// banner — is applied afterward in ascending `courseID` order, exactly
+    /// as the old one-at-a-time loop would have produced them. That matters
+    /// for two reasons: outcomes have to be deterministic regardless of which
+    /// course's network reply happens to land first on a given run, and
+    /// `lastRefreshOutcomes` (the diagnostics report) reads as a stable,
+    /// sorted list rather than one that reshuffles every refresh for reasons
+    /// a student could never explain.
     func refresh(
         courseIDs: [String: String],
         cookies: [HTTPCookie],
@@ -148,6 +222,12 @@ final class GradeWatcherStore: ObservableObject {
         // `AppState`) even though its Keychain calls are thread-safe on
         // their own, so match that discipline here rather than call it
         // straight from whatever background executor this handler runs on.
+        //
+        // `CanvasGradesClient` is itself `Sendable` — every stored property is
+        // (`URL`, `[HTTPCookie]`, `URLSession`, and a `@Sendable` closure) —
+        // so one instance is built here and captured by every child task
+        // below instead of constructing one per course; there's nothing
+        // course-specific in it that would require isolating separately.
         let client = CanvasGradesClient(cookies: cookies) { rotated in
             Task { @MainActor in
                 SessionCookieStore.merge(rotated, service: .canvas)
@@ -163,9 +243,51 @@ final class GradeWatcherStore: ObservableObject {
         // both correct and cheaper than filtering every service's by domain.
         let gradescopeConnected = !SessionCookieStore.load(service: .gradescope).isEmpty
 
-        for courseID in courseIDs.keys.sorted() {
-            do {
-                let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+        let sortedCourseIDs = courseIDs.keys.sorted()
+
+        // Bounded-concurrency fan-out: start up to 3 fetches, then start one
+        // more each time one finishes, until every course has been asked
+        // for. Each child task only computes and returns a value — it never
+        // touches `self` or any `@Published` property. That's required for
+        // correctness (child tasks run off the main actor, so mutating
+        // `@Published` state from inside one would be a data race) and it's
+        // also what makes the sorted-order application below possible: the
+        // network's actual completion order is discarded entirely, kept only
+        // long enough to know a course is done and another slot is free.
+        var resultsByCourse: [String: Result<CourseGradeSnapshot, Swift.Error>] = [:]
+        resultsByCourse.reserveCapacity(sortedCourseIDs.count)
+        await withTaskGroup(of: (courseID: String, result: Result<CourseGradeSnapshot, Swift.Error>).self) { group in
+            var nextIndex = 0
+            func addNext() {
+                guard nextIndex < sortedCourseIDs.count else { return }
+                let courseID = sortedCourseIDs[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    do {
+                        let snapshot = try await client.fetchSnapshot(courseID: courseID, now: now)
+                        return (courseID, .success(snapshot))
+                    } catch {
+                        return (courseID, .failure(error))
+                    }
+                }
+            }
+
+            let initialBatch = min(3, sortedCourseIDs.count)
+            for _ in 0..<initialBatch { addNext() }
+
+            while let finished = await group.next() {
+                resultsByCourse[finished.courseID] = finished.result
+                addNext()
+            }
+        }
+
+        // Apply every result in ascending-courseID order — see the doc
+        // comment above for why this has to be a second pass over
+        // `sortedCourseIDs` rather than folded into the fetch loop itself.
+        for courseID in sortedCourseIDs {
+            guard let result = resultsByCourse[courseID] else { continue }
+            switch result {
+            case let .success(snapshot):
                 snapshots[courseID] = snapshot
 
                 // Store the Canvas-only snapshot alongside its raw (course-
@@ -181,10 +303,15 @@ final class GradeWatcherStore: ObservableObject {
                 fetchedAny = true
                 succeeded += 1
                 recordHistory(courseID: courseID, now: now)
-            } catch CanvasGradesClient.Error.sessionExpired {
-                sawSessionExpired = true
-            } catch {
-                lastFailure = error
+                lastRefreshOutcomes[courseID] = "ok"
+            case let .failure(fetchError):
+                if case CanvasGradesClient.Error.sessionExpired = fetchError {
+                    sawSessionExpired = true
+                    lastRefreshOutcomes[courseID] = "sessionExpired"
+                } else {
+                    lastFailure = fetchError
+                    lastRefreshOutcomes[courseID] = Self.fetchOutcomeLabel(for: fetchError)
+                }
             }
         }
 
@@ -205,6 +332,27 @@ final class GradeWatcherStore: ObservableObject {
     struct RefreshOutcome: Equatable {
         let isSessionExpired: Bool
         let error: String?
+    }
+
+    /// Short, privacy-safe label for `lastRefreshOutcomes` — pure so it's
+    /// testable without a live session. Never includes a URL: `.http`'s
+    /// associated `url` can carry a query-string token (Canvas API calls are
+    /// cookie-authenticated, but some proxies append one), so only the status
+    /// code is reported.
+    static func fetchOutcomeLabel(for error: Swift.Error) -> String {
+        guard let gradesError = error as? CanvasGradesClient.Error else { return "error" }
+        switch gradesError {
+        case .sessionExpired:
+            return "sessionExpired"
+        case let .http(status, _):
+            return "http \(status)"
+        case .decodingFailed:
+            return "decode"
+        case .notHTTP:
+            return "notHTTP"
+        case .invalidURL:
+            return "invalidURL"
+        }
     }
 
     /// Turns a per-course refresh tally into the banner state. Pure and
@@ -325,6 +473,10 @@ final class GradeWatcherStore: ObservableObject {
         manualWeights: [String: Double] = [:],
         dropLowestOverrides: [String: Int] = [:],
         syllabusWeightedCategoryIDs: Set<String> = [],
+        expectedCounts: [String: Int] = [:],
+        itemOverrides: [String: GradeItemOverride] = [:],
+        modeOverride: GradingMode? = nil,
+        categoryMap: GradeCategoryMap? = nil,
         now: Date = Date()
     ) -> GradeBreakdown? {
         guard let snapshot = snapshots[courseID] else { return nil }
@@ -334,18 +486,30 @@ final class GradeWatcherStore: ObservableObject {
             manualWeights: manualWeights,
             dropLowestOverrides: dropLowestOverrides,
             syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs,
-            now: now
+            now: now,
+            expectedCounts: expectedCounts,
+            itemOverrides: itemOverrides,
+            modeOverride: modeOverride,
+            categoryMap: categoryMap
         ))
     }
 
-    /// Convenience overload the UI uses: folds in this course's syllabus
-    /// weights and hand-typed overrides automatically, so views don't have to
-    /// thread weight resolution through by hand.
+    /// Convenience overload the UI uses: folds in this course's category map
+    /// (docs above `CategoryMapEdits`), syllabus weights, expected counts,
+    /// and every hand-typed override automatically, so views don't have to
+    /// thread resolution through by hand — and so every number the UI shows
+    /// (this, `trajectory`, `projection`, `weekDelta`, all of which read
+    /// through this or `breakdown` directly) is computed from the same
+    /// overrides.
     func breakdown(courseID: String, now: Date = Date()) -> GradeBreakdown? {
         breakdown(
             courseID: courseID,
             manualWeights: effectiveWeights(courseID: courseID),
             syllabusWeightedCategoryIDs: syllabusWeightedCategoryIDs(courseID: courseID),
+            expectedCounts: effectiveExpectedCounts(courseID: courseID),
+            itemOverrides: itemOverrides(courseID: courseID),
+            modeOverride: modeOverride(courseID: courseID),
+            categoryMap: effectiveCategoryMap(courseID: courseID),
             now: now
         )
     }
@@ -415,6 +579,304 @@ final class GradeWatcherStore: ObservableObject {
         return dict
     }
 
+    // MARK: - Item overrides, expected counts, mode & course exclusion
+    //
+    // Everything below is a student-entered correction, not a fetched fact,
+    // so it is persisted the same way `manualWeights` above is: small,
+    // non-secret, JSON-encoded UserDefaults, not the SwiftData ledger and not
+    // the Keychain. It is cheap to lose (worst case, the student re-types a
+    // fixed typo or re-excludes a pass/fail lab next launch) and meaningless
+    // off this device, exactly the profile `docs/persistence-explained.md`
+    // describes for tier 2.
+
+    /// Category id → the whole-semester expected item count the student
+    /// typed by hand, courseID -> categoryID -> count. Distinct from
+    /// `syllabusExpectedCounts`, which reads the same number off a confirmed
+    /// syllabus instead — `effectiveExpectedCounts` merges the two with the
+    /// hand-typed value winning, same precedence as `effectiveWeights`.
+    @Published private(set) var expectedCounts: [String: [String: Int]] = [:]
+    private static let expectedCountsKey = "gradeWatcherExpectedCounts"
+
+    /// A student's own correction to one Canvas grade item — a wrong score, a
+    /// wrong points-possible, or an item they want removed from the math
+    /// entirely. `GradeEngine.compute` applies these before any other math,
+    /// so a correction flows through weights, drops, and both flavors of %
+    /// decided exactly as if Canvas had reported the item that way. courseID
+    /// -> itemID -> override.
+    @Published private(set) var itemOverrides: [String: [String: GradeItemOverride]] = [:]
+    private static let itemOverridesKey = "gradeWatcherItemOverrides"
+
+    /// Forces one course into weighted or points mode, overriding both
+    /// Canvas's `apply_assignment_group_weights` flag and the
+    /// manual-weights-cover-every-category rule. courseID -> mode.
+    @Published private(set) var modeOverrides: [String: GradingMode] = [:]
+    private static let modeOverridesKey = "gradeWatcherModeOverrides"
+
+    /// The student's own per-course choice about whether a course counts
+    /// toward "the" grade and the GPA estimate — `true` = counts, `false` =
+    /// excluded. Absence of a course's id here means "no manual choice,"
+    /// which is what leaves room for `automaticExclusions` to apply a
+    /// default. A manual choice always wins over the automatic one, in
+    /// either direction: a student can choose to count a component the
+    /// registrar's catalog data excluded, or exclude one it left in.
+    /// Persisted the same way `manualWeights` is (JSON into UserDefaults) —
+    /// small, non-secret UI preference, not a session credential.
+    @Published private(set) var courseCountsChoice: [String: Bool] = [:]
+    private static let courseCountsChoiceKey = "gradeWatcherCourseCountsChoice"
+
+    /// Round 1's flat exclude set — kept only as the migration source read
+    /// once at init (see `init`'s doc comment there) and then removed.
+    private static let legacyExcludedCourseIDsKey = "gradeWatcherExcludedCourses"
+
+    /// Course ids the registrar's own catalog data says are NOT part of "the"
+    /// grade — a pass/fail lab or a zero-credit recitation riding along on
+    /// the same course code is its OWN Canvas gradebook, graded on its own
+    /// scale (often literally pass/fail, which has no percent to average in
+    /// at all), and folding its number into the lecture's would misrepresent
+    /// both. Computed by `AppState.pushGradeWatcherFacts` from
+    /// `GradeSiteExclusion.isAutomaticallyExcluded` and handed in via
+    /// `setAutomaticExclusions` every sync; never persisted here, since it's
+    /// a pure function of synced data `AppState` already durably caches.
+    /// Applies only where `courseCountsChoice` has no entry for the course —
+    /// see `isCourseExcluded`.
+    @Published private(set) var automaticExclusions: Set<String> = []
+
+    /// This course's shared grading profile — the weights and category list
+    /// another student's device already extracted from a syllabus and the
+    /// backend pooled per Canvas course. Feeds `suggestedScheme(courseID:)`.
+    /// Handed in via `setGradingProfiles` every sync; never persisted for the
+    /// same reason as `automaticExclusions`.
+    @Published private(set) var gradingProfiles: [String: CourseGradingProfile] = [:]
+
+    /// Courses currently excluded from "the" grade and the GPA estimate —
+    /// the manual `false` choices, unioned with the automatic exclusions
+    /// that no manual choice has overridden either way. A `@Published`
+    /// mirror (not a plain computed property) so a course card observing
+    /// only this property, rather than calling `isCourseExcluded` in its
+    /// body, still redraws when either input changes; kept in step by
+    /// `recomputeExcludedCourseIDs`, called from every setter below and,
+    /// during `init`, computed inline instead (see that comment).
+    @Published private(set) var excludedCourseIDs: Set<String> = []
+
+    private func recomputeExcludedCourseIDs() {
+        let manuallyIncluded = Set(courseCountsChoice.compactMap { $0.value ? $0.key : nil })
+        let manuallyExcluded = Set(courseCountsChoice.compactMap { $0.value ? nil : $0.key })
+        excludedCourseIDs = manuallyExcluded.union(automaticExclusions.subtracting(manuallyIncluded))
+    }
+
+    /// Sets (or, with `count: nil` or `count < 1`, clears) a hand-typed
+    /// expected-item-count override for one category.
+    func setExpectedCount(courseID: String, categoryID: String, count: Int?) {
+        var courseCounts = expectedCounts[courseID] ?? [:]
+        if let count, count >= 1 {
+            courseCounts[categoryID] = count
+        } else {
+            courseCounts.removeValue(forKey: categoryID)
+        }
+        if courseCounts.isEmpty {
+            expectedCounts.removeValue(forKey: courseID)
+        } else {
+            expectedCounts[courseID] = courseCounts
+        }
+        persistExpectedCounts()
+    }
+
+    /// Sets (or, with `override: nil` or an empty override, clears) a
+    /// correction for one Canvas grade item.
+    func setItemOverride(courseID: String, itemID: String, override: GradeItemOverride?) {
+        var courseOverrides = itemOverrides[courseID] ?? [:]
+        if let override, !override.isEmpty {
+            courseOverrides[itemID] = override
+        } else {
+            courseOverrides.removeValue(forKey: itemID)
+        }
+        if courseOverrides.isEmpty {
+            itemOverrides.removeValue(forKey: courseID)
+        } else {
+            itemOverrides[courseID] = courseOverrides
+        }
+        persistItemOverrides()
+    }
+
+    /// Sets (or, with `mode: nil`, clears) a forced grading mode for one
+    /// course.
+    func setModeOverride(courseID: String, mode: GradingMode?) {
+        if let mode {
+            modeOverrides[courseID] = mode
+        } else {
+            modeOverrides.removeValue(forKey: courseID)
+        }
+        persistModeOverrides()
+    }
+
+    /// Records the student's own choice about whether one course counts
+    /// toward "the" grade and the GPA estimate. This always wins over
+    /// `automaticExclusions`, in either direction.
+    func setCourseExcluded(courseID: String, _ excluded: Bool) {
+        courseCountsChoice[courseID] = !excluded
+        persistCourseCountsChoice()
+        recomputeExcludedCourseIDs()
+    }
+
+    /// Replaces the registrar-derived automatic-exclusion set — called once
+    /// per `AppState.pushGradeWatcherFacts` run, never merged incrementally,
+    /// since the incoming set is already every course's current answer, not
+    /// a delta.
+    func setAutomaticExclusions(_ courseIDs: Set<String>) {
+        automaticExclusions = courseIDs
+        recomputeExcludedCourseIDs()
+    }
+
+    /// Replaces the pooled grading-profile cache. Same "whole set, not a
+    /// delta" shape as `setAutomaticExclusions`, and for the same reason.
+    func setGradingProfiles(_ profiles: [CourseGradingProfile]) {
+        gradingProfiles = Dictionary(profiles.map { ($0.courseID, $0) }, uniquingKeysWith: { _, newest in newest })
+    }
+
+    func manualExpectedCounts(courseID: String) -> [String: Int] {
+        expectedCounts[courseID] ?? [:]
+    }
+
+    /// Canvas category id → whole-semester expected item count, read off the
+    /// attached syllabus's categories through the same confirmed match
+    /// `syllabusWeights` uses. Empty when no syllabus is attached, the course
+    /// hasn't been fetched, or coverage is incomplete — same gate as
+    /// `syllabusWeights`, and for the same reason: a partial mapping can't
+    /// say which category an unmatched count belongs to, so a half-covered
+    /// syllabus must not reach the engine at all.
+    func syllabusExpectedCounts(courseID: String) -> [String: Int] {
+        guard let syllabus = syllabusSchemes[courseID],
+              let match = syllabusMatch(courseID: courseID),
+              match.isCompleteCoverage
+        else { return [:] }
+        // `normalizedCategories` (not `scheme.categories`) because that's the
+        // list `SyllabusMatcher.match` actually walked to build `matches` —
+        // same ids either way, but matching the matcher's own input avoids
+        // ever having to reason about whether the two lists could diverge.
+        let expectedBySyllabusID = Dictionary(
+            uniqueKeysWithValues: syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) }
+        )
+        return match.matches.reduce(into: [:]) { result, m in
+            guard m.isApplied,
+                  let canvasID = m.canvasCategoryID,
+                  let expected = expectedBySyllabusID[m.syllabusCategoryID] ?? nil
+            else { return }
+            result[canvasID] = expected
+        }
+    }
+
+    /// The expected counts actually used for this course: syllabus first,
+    /// with any hand-typed override winning — same precedence rule as
+    /// `effectiveWeights`, and for the same reason: an edit typed after
+    /// importing a syllabus is the more recent, more deliberate statement of
+    /// intent.
+    func effectiveExpectedCounts(courseID: String) -> [String: Int] {
+        syllabusExpectedCounts(courseID: courseID).merging(manualExpectedCounts(courseID: courseID)) { _, manual in manual }
+    }
+
+    func itemOverrides(courseID: String) -> [String: GradeItemOverride] {
+        itemOverrides[courseID] ?? [:]
+    }
+
+    func modeOverride(courseID: String) -> GradingMode? {
+        modeOverrides[courseID]
+    }
+
+    /// Manual choice wins where one exists; otherwise the registrar-derived
+    /// automatic exclusion applies. Computed directly from the two inputs
+    /// (not read off the `excludedCourseIDs` mirror) so this stays correct
+    /// even if a future edit adds a code path that forgets to call
+    /// `recomputeExcludedCourseIDs`.
+    func isCourseExcluded(courseID: String) -> Bool {
+        courseCountsChoice[courseID].map { !$0 } ?? automaticExclusions.contains(courseID)
+    }
+
+    /// Why this course currently reads as excluded, for the excluded card's
+    /// copy — `nil` when it isn't excluded at all. "you chose" whenever a
+    /// manual choice exists (even one that happens to match what the
+    /// automatic default would have said), since the honest label is what
+    /// the student actually did, not what the registrar's data would have
+    /// produced on its own.
+    func courseExclusionSource(courseID: String) -> String? {
+        guard isCourseExcluded(courseID: courseID) else { return nil }
+        if courseCountsChoice[courseID] != nil {
+            return "you chose"
+        }
+        if automaticExclusions.contains(courseID) {
+            return "from the registrar"
+        }
+        return nil
+    }
+
+    /// The "how this is calculated" model behind Grade Watcher's explanation
+    /// panel, built from the same overlay-applied, overrides-and-all
+    /// breakdown every other number on the card reads — so the explanation
+    /// can never disagree with the headline it's explaining.
+    func explanation(courseID: String, now: Date = Date()) -> GradeExplanation? {
+        guard let breakdown = breakdown(courseID: courseID, now: now) else { return nil }
+        return GradeExplanation.make(
+            from: breakdown,
+            canvasScore: canvasComputedScore(courseID: courseID),
+            categoryMapProvenance: effectiveCategoryMap(courseID: courseID).provenance
+        )
+    }
+
+    /// This course's overlay-applied items in one category — Canvas's (and
+    /// Gradescope's) own values, unaffected by `itemOverrides`, so an item
+    /// override editor can show "Canvas says X" right beside whatever
+    /// correction the student has typed.
+    func items(courseID: String, categoryID: String) -> [GradeItem] {
+        gradeCategories(courseID: courseID).first { $0.id == categoryID }?.items ?? []
+    }
+
+    private func persistExpectedCounts() {
+        guard let data = try? JSONEncoder().encode(expectedCounts) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.expectedCountsKey)
+    }
+
+    private static func loadExpectedCounts() -> [String: [String: Int]] {
+        guard let data = UserDefaults.lhf.data(forKey: expectedCountsKey),
+              let dict = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistItemOverrides() {
+        guard let data = try? JSONEncoder().encode(itemOverrides) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.itemOverridesKey)
+    }
+
+    private static func loadItemOverrides() -> [String: [String: GradeItemOverride]] {
+        guard let data = UserDefaults.lhf.data(forKey: itemOverridesKey),
+              let dict = try? JSONDecoder().decode([String: [String: GradeItemOverride]].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistModeOverrides() {
+        guard let data = try? JSONEncoder().encode(modeOverrides) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.modeOverridesKey)
+    }
+
+    private static func loadModeOverrides() -> [String: GradingMode] {
+        guard let data = UserDefaults.lhf.data(forKey: modeOverridesKey),
+              let dict = try? JSONDecoder().decode([String: GradingMode].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistCourseCountsChoice() {
+        guard let data = try? JSONEncoder().encode(courseCountsChoice) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.courseCountsChoiceKey)
+    }
+
+    private static func loadCourseCountsChoice() -> [String: Bool] {
+        guard let data = UserDefaults.lhf.data(forKey: courseCountsChoiceKey),
+              let dict = try? JSONDecoder().decode([String: Bool].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
     // MARK: - Syllabus (docs/grades.md §13)
 
     /// The syllabus the user attached to each watched course, by course id.
@@ -446,6 +908,37 @@ final class GradeWatcherStore: ObservableObject {
         confirmedCategoryMappings.removeValue(forKey: courseID)
         persistSyllabusSchemes()
         persistConfirmedCategoryMappings()
+    }
+
+    /// A scheme built from this course's pooled `CourseGradingProfile` —
+    /// another student's device already read a syllabus and shared the
+    /// extracted weights server-side — offered as a starting point for a
+    /// course that hasn't had its own syllabus attached yet. `nil` once a
+    /// syllabus IS attached (attached, not merely suggested, always wins:
+    /// this is a suggestion, not a silent override) or when no profile has
+    /// synced for this course. Never applied on its own — see
+    /// `applySuggestedScheme`.
+    func suggestedScheme(courseID: String) -> (scheme: SyllabusGradingScheme, source: SyllabusSource)? {
+        guard syllabusSchemes[courseID] == nil else { return nil }
+        guard let profile = gradingProfiles[courseID],
+              let scheme = SyllabusGradingScheme.from(profile: profile)
+        else { return nil }
+        return (scheme, .sharedProfile)
+    }
+
+    /// Accepts `suggestedScheme(courseID:)` exactly as `attachSyllabus`
+    /// accepts a scheme parsed from a real document — same call, same
+    /// side effects (persists, starts watching) — because from the ledger's
+    /// point of view a synced profile and a freshly parsed syllabus are the
+    /// same kind of fact, just from a different origin. A no-op when there
+    /// is nothing to suggest (already attached, or no synced profile), so a
+    /// stale button tap can never invent a scheme from nothing.
+    func applySuggestedScheme(courseID: String) {
+        guard let suggestion = suggestedScheme(courseID: courseID) else { return }
+        attachSyllabus(
+            AttachedSyllabus(scheme: suggestion.scheme, source: suggestion.source, documentName: nil, attachedAt: Date()),
+            courseID: courseID
+        )
     }
 
     /// This course's syllabus categories matched against its Canvas assignment
@@ -537,6 +1030,384 @@ final class GradeWatcherStore: ObservableObject {
         return dict
     }
 
+    // MARK: - Category map (docs/grades.md §14 addendum, round 2/3)
+    //
+    // Every course now goes through a `GradeCategoryMap` (`effectiveCategoryMap`
+    // below), whether or not it has a syllabus: a course with nothing attached
+    // gets a map that mirrors Canvas's own groups one-to-one
+    // (`GradeCategoryMapBuilder.mirroringCanvas`), and a course with a syllabus
+    // gets one built from the matcher's result
+    // (`GradeCategoryMapBuilder.suggested`). That single code path is the
+    // point — `GradeRegrouper`/`GradeEngine` only ever have to understand ONE
+    // shape of category list, not "categories, or maybe categories-plus-a-map
+    // if a syllabus happens to be attached."
+    //
+    // Layered on top of that suggestion is `CategoryMapEdits`: the student's
+    // own corrections, persisted as a DIFF over the suggestion rather than as
+    // a saved copy of the resulting map. That distinction is deliberate and
+    // not just tidiness — the suggestion underneath a course's map can change
+    // out from under the student at any time: the backend re-extracts a
+    // syllabus and pools a better version, Canvas creates a new assignment
+    // group mid-semester, or a shared grading profile syncs for the first
+    // time on a course that had nothing before. A saved SNAPSHOT of the old
+    // map would silently stop reflecting any of that the moment the
+    // suggestion improves. A diff phrased in terms of ids — "move Canvas
+    // group X into map category Y," "exclude item Z" — survives a
+    // re-suggestion, because those ids (Canvas group/item ids, and the
+    // student's own added-category ids) are stable across it in a way "the
+    // whole shape of the map" is not.
+
+    /// The student's edits to a course's category map, persisted; layered
+    /// over whatever `suggestedCategoryMap`/`GradeCategoryMapBuilder
+    /// .mirroringCanvas` currently proposes by `effectiveCategoryMap`. See
+    /// this section's doc comment above for why a diff, not a snapshot.
+    struct CategoryMapEdits: Codable, Sendable, Hashable, Equatable {
+        /// Canvas assignment-group id → map category id the student moved it
+        /// to. `""` means "the student explicitly wants this group
+        /// unmapped" — distinct from the group's absence from this
+        /// dictionary at all, which means "no edit; let the suggested map's
+        /// own fold decide."
+        var groupAssignments: [String: String] = [:]
+        /// Canvas item id → map category id the student moved it to. An item
+        /// removed from this dictionary (rather than set to `""`) goes back
+        /// to whatever its Canvas group's fold, or the automatic classifier,
+        /// would otherwise say — there's no "explicitly homeless" state for
+        /// a single item the way there is for a whole group, since an item
+        /// always has a Canvas group to fall back on.
+        var itemAssignments: [String: String] = [:]
+        /// Items the student excluded by hand, on top of whatever
+        /// `GradeItemClassifier` already excludes automatically.
+        var excludedItemIDs: Set<String> = []
+        /// Items the student pulled back IN after an automatic exclusion.
+        /// Kept as its own set rather than expressed as "the absence of an
+        /// exclusion," because an automatic exclusion is recomputed fresh on
+        /// every `effectiveCategoryMap` call — Canvas's own data changes
+        /// (today's zero-point placeholder can get a real score tomorrow,
+        /// an attendance item can move once a course gains an
+        /// Attendance/Participation category) — so if "back in" were only
+        /// ever the absence of an exclusion, the very next automatic pass
+        /// would have nothing recorded to override and would silently
+        /// re-exclude the item, forcing the student to notice and re-decide
+        /// every single refresh. This set is what makes "put it back" a
+        /// durable, one-time choice instead of a fight with the classifier.
+        var includedItemIDs: Set<String> = []
+        /// Category id → the student's own display name for it. Cosmetic
+        /// only — a rename never touches weight, membership, or math.
+        var renamedCategories: [String: String] = [:]
+        /// Categories the student created by hand, entirely outside
+        /// anything the syllabus or Canvas suggested. Always carry
+        /// `provenance: .student` (see `addCategory`).
+        var addedCategories: [GradeCategoryMap.Category] = []
+        /// Ids of suggested categories the student removed. A removed
+        /// category's own `groupAssignments`/`itemAssignments` entries are
+        /// dropped at the same time (see `removeCategory`), so its former
+        /// groups/items fall back through the normal unmapped/auto-assigned
+        /// path rather than pointing at a category that no longer exists.
+        var removedCategoryIDs: Set<String> = []
+
+        var isEmpty: Bool {
+            groupAssignments.isEmpty
+                && itemAssignments.isEmpty
+                && excludedItemIDs.isEmpty
+                && includedItemIDs.isEmpty
+                && renamedCategories.isEmpty
+                && addedCategories.isEmpty
+                && removedCategoryIDs.isEmpty
+        }
+    }
+
+    /// Every course's edits, keyed by course id. Empty for a course the
+    /// student has never touched the map for.
+    @Published private(set) var categoryMapEdits: [String: CategoryMapEdits] = [:]
+    private static let categoryMapEditsKey = "gradeWatcherCategoryMapEdits"
+
+    /// Applies `edits` over `map`, producing the map `GradeRegrouper` and
+    /// `GradeEngine` actually see. Pure and `static` — like `outcome(...)`
+    /// and `fetchOutcomeLabel(...)` above, this is unit-testable without a
+    /// live store — so this is where every edit KIND's semantics live in one
+    /// place, rather than scattered across the setters that build a
+    /// `CategoryMapEdits` value in the first place.
+    static func apply(_ edits: CategoryMapEdits, to map: GradeCategoryMap) -> GradeCategoryMap {
+        var result = map
+
+        // Category structure first — additions, removals, then renames —
+        // since group/item reassignment below needs to resolve target
+        // category ids against the FINAL category list, including anything
+        // the student added this pass.
+        for category in edits.addedCategories where !result.categories.contains(where: { $0.id == category.id }) {
+            result.categories.append(category)
+        }
+        if !edits.removedCategoryIDs.isEmpty {
+            result.categories.removeAll { edits.removedCategoryIDs.contains($0.id) }
+        }
+        for (categoryID, name) in edits.renamedCategories {
+            if let index = result.categories.firstIndex(where: { $0.id == categoryID }) {
+                result.categories[index].name = name
+            }
+        }
+
+        // Group reassignment: a group can only ever belong to one category,
+        // so pull it out of every category's fold first, then add it back to
+        // its target — "" (or a target that no longer exists, e.g. one the
+        // student just removed) leaves it pulled out, i.e. unmapped.
+        for (groupID, categoryID) in edits.groupAssignments {
+            for index in result.categories.indices {
+                result.categories[index].canvasGroupIDs.removeAll { $0 == groupID }
+            }
+            if !categoryID.isEmpty,
+               let index = result.categories.firstIndex(where: { $0.id == categoryID }),
+               !result.categories[index].canvasGroupIDs.contains(groupID) {
+                result.categories[index].canvasGroupIDs.append(groupID)
+            }
+        }
+
+        // Item reassignment overrides whatever the group fold or the
+        // automatic classifier would otherwise say for that one item.
+        for (itemID, categoryID) in edits.itemAssignments {
+            result.itemAssignments[itemID] = categoryID
+        }
+
+        // Exclusions: manual excludes are added, then manual re-includes
+        // clear both the exclusion and its reason — reversing an automatic
+        // exclusion has to look exactly like the item was never excluded at
+        // all, never like a "hidden" exclusion still lurking underneath.
+        result.excludedItemIDs.formUnion(edits.excludedItemIDs)
+        for itemID in edits.includedItemIDs {
+            result.excludedItemIDs.remove(itemID)
+            result.exclusionReasons.removeValue(forKey: itemID)
+        }
+
+        return result
+    }
+
+    /// A map built from this course's attached syllabus and its Canvas
+    /// match, or `nil` when no syllabus is attached — the "suggestion" half
+    /// of `effectiveCategoryMap`'s precedence chain. Deliberately not gated
+    /// on `SyllabusMatcher.Result.isCompleteCoverage`: `GradeCategoryMapBuilder
+    /// .suggested` already only folds APPLIED per-category matches, so a
+    /// partially-matched syllabus still produces a map — the unmatched
+    /// Canvas groups simply come out of `GradeRegrouper` as visible,
+    /// zero-weight "needs a home" entries instead of silently blocking the
+    /// whole course from getting a map at all, which is what the OLD
+    /// all-or-nothing `syllabusWeights`/`isCompleteCoverage` gate did to the
+    /// plain-weights path this doesn't replace.
+    func suggestedCategoryMap(courseID: String) -> GradeCategoryMap? {
+        guard let syllabus = syllabusSchemes[courseID] else { return nil }
+        let provenance: GradeCategoryMap.Provenance = syllabus.source == .sharedProfile ? .sharedProfile : .syllabus
+        return GradeCategoryMapBuilder.suggested(
+            scheme: syllabus.scheme,
+            match: syllabusMatch(courseID: courseID),
+            canvasCategories: gradeCategories(courseID: courseID),
+            provenance: provenance
+        )
+    }
+
+    /// The map actually in effect for this course: the syllabus-derived
+    /// suggestion (or, absent a syllabus, a plain mirror of Canvas's own
+    /// groups) with the student's own edits layered on top, and the
+    /// automatic classifier re-applied for anything the edits didn't touch.
+    /// Never `nil` — see this section's opening doc comment for why every
+    /// course goes through one map, syllabus or not.
+    ///
+    /// The classifier runs a SECOND time here (the suggestion/mirror already
+    /// ran it once while it was built) because the student's edits can
+    /// change the very structure the classifier reasons about — moving a
+    /// group, renaming a category to "Attendance," or adding/removing a
+    /// category can change which category is "the" attendance category, or
+    /// which Canvas group an item's fold now resolves through. Items the
+    /// edits themselves mention are left alone: `GradeItemClassifier
+    /// .autoAssignments` already only ever adds entries for items neither
+    /// `itemAssignments` nor `excludedItemIDs` already cover, but that
+    /// alone isn't enough for `includedItemIDs` — an item the student pulled
+    /// back in has, by definition, just had its exclusion REMOVED, so
+    /// without excluding it from this second pass too it would read as
+    /// "not yet covered" and the classifier would immediately re-exclude it,
+    /// silently defeating the whole reason `includedItemIDs` exists.
+    func effectiveCategoryMap(courseID: String) -> GradeCategoryMap {
+        let base = suggestedCategoryMap(courseID: courseID) ?? GradeCategoryMapBuilder.mirroringCanvas(
+            gradeCategories(courseID: courseID),
+            courseUsesWeights: snapshots[courseID]?.courseUsesWeights ?? false
+        )
+        let edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        var map = Self.apply(edits, to: base)
+
+        let editsMention = Set(edits.itemAssignments.keys)
+            .union(edits.excludedItemIDs)
+            .union(edits.includedItemIDs)
+        let auto = GradeItemClassifier.autoAssignments(canvasCategories: gradeCategories(courseID: courseID), map: map)
+        for (itemID, categoryID) in auto.itemAssignments where !editsMention.contains(itemID) {
+            map.itemAssignments[itemID] = categoryID
+        }
+        for itemID in auto.excludedItemIDs where !editsMention.contains(itemID) {
+            map.excludedItemIDs.insert(itemID)
+        }
+        for (itemID, reason) in auto.reasons where !editsMention.contains(itemID) {
+            map.exclusionReasons[itemID] = reason
+        }
+
+        // Belt-and-suspenders: `apply(edits:to:)` already cleared these, and
+        // the loop above already skips anything an include mentions, so this
+        // is only ever a no-op in practice — but it's what actually
+        // guarantees "included always wins," rather than that guarantee
+        // living implicitly in two other pieces of code agreeing with each
+        // other.
+        for itemID in edits.includedItemIDs {
+            map.excludedItemIDs.remove(itemID)
+        }
+
+        return map
+    }
+
+    func hasCategoryMapEdits(courseID: String) -> Bool {
+        !(categoryMapEdits[courseID]?.isEmpty ?? true)
+    }
+
+    /// Moves a Canvas assignment group to a different map category, or
+    /// (`toCategory: nil`) marks it explicitly unmapped.
+    func assignGroup(courseID: String, groupID: String, toCategory categoryID: String?) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        edits.groupAssignments[groupID] = categoryID ?? ""
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Moves a single Canvas item to a different map category, or
+    /// (`toCategory: nil`) clears the override so the item goes back to
+    /// following its Canvas group (or the automatic classifier).
+    func assignItem(courseID: String, itemID: String, toCategory categoryID: String?) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if let categoryID {
+            edits.itemAssignments[itemID] = categoryID
+        } else {
+            edits.itemAssignments.removeValue(forKey: itemID)
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Excludes or re-includes one item, on top of the automatic classifier
+    /// (docs above `includedItemIDs`).
+    func setItemExcluded(courseID: String, itemID: String, _ excluded: Bool) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if excluded {
+            edits.excludedItemIDs.insert(itemID)
+            edits.includedItemIDs.remove(itemID)
+        } else {
+            edits.excludedItemIDs.remove(itemID)
+            edits.includedItemIDs.insert(itemID)
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Adds a student-authored category (provenance `.student`) with no
+    /// Canvas groups or items yet — those come from subsequent
+    /// `assignGroup`/`assignItem` calls. Returns the new category's id so a
+    /// caller can immediately route something into it. Calling this again
+    /// with the same name replaces the earlier addition rather than
+    /// duplicating it, since the id (`"map:" + slug(name)`) is derived from
+    /// the name alone.
+    @discardableResult
+    func addCategory(courseID: String, name: String, weightPercent: Double) -> String {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        // The id is derived from the name, and the suggested map may already
+        // own that id (a student adding "Homework" beside the syllabus's
+        // "HomeWorks" lands on "map:homeworks"). `apply` refuses to append a
+        // duplicate id, which would leave this edit recorded but invisible —
+        // so pick the first free suffix instead, and the new category shows
+        // up beside the existing one as the student expects.
+        let base = "map:" + GradeCategoryMap.slug(name)
+        let taken = Set(effectiveCategoryMap(courseID: courseID).categories.map(\.id))
+            .subtracting(edits.addedCategories.map(\.id))
+        var id = base
+        var suffix = 2
+        while taken.contains(id) {
+            id = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        edits.addedCategories.removeAll { $0.id == id }
+        edits.removedCategoryIDs.remove(id)
+        edits.addedCategories.append(
+            GradeCategoryMap.Category(id: id, name: name, weightPercent: weightPercent, provenance: .student)
+        )
+        setCategoryMapEdits(edits, courseID: courseID)
+        return id
+    }
+
+    /// Removes a category — one the student added, or one the suggested map
+    /// proposed. Its groups/items are released back to the normal
+    /// unmapped/auto-assigned path (see `removedCategoryIDs`'s doc comment).
+    func removeCategory(courseID: String, categoryID: String) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        edits.addedCategories.removeAll { $0.id == categoryID }
+        edits.removedCategoryIDs.insert(categoryID)
+        edits.groupAssignments = edits.groupAssignments.filter { $0.value != categoryID }
+        edits.itemAssignments = edits.itemAssignments.filter { $0.value != categoryID }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Cosmetic rename — never touches weight, membership, or math.
+    func renameCategory(courseID: String, categoryID: String, name: String) {
+        var edits = categoryMapEdits[courseID] ?? CategoryMapEdits()
+        if let index = edits.addedCategories.firstIndex(where: { $0.id == categoryID }) {
+            edits.addedCategories[index].name = name
+        } else {
+            edits.renamedCategories[categoryID] = name
+        }
+        setCategoryMapEdits(edits, courseID: courseID)
+    }
+
+    /// Discards every edit for a course, reverting it to whatever
+    /// `suggestedCategoryMap`/Canvas-mirroring would produce on its own.
+    func resetCategoryMapEdits(courseID: String) {
+        categoryMapEdits.removeValue(forKey: courseID)
+        persistCategoryMapEdits()
+    }
+
+    private func setCategoryMapEdits(_ edits: CategoryMapEdits, courseID: String) {
+        if edits.isEmpty {
+            categoryMapEdits.removeValue(forKey: courseID)
+        } else {
+            categoryMapEdits[courseID] = edits
+        }
+        persistCategoryMapEdits()
+    }
+
+    /// Canvas groups the effective map doesn't claim — a course-report
+    /// "needs a home" list, via the same `GradeRegrouper` pass `GradeEngine`
+    /// itself runs, so this can never disagree with what the math actually
+    /// did with an unmapped group (weight 0, passthrough category).
+    func unmappedGroups(courseID: String) -> [GradeCategory] {
+        let map = effectiveCategoryMap(courseID: courseID)
+        let output = GradeRegrouper.apply(map, to: gradeCategories(courseID: courseID))
+        let unmappedIDs = Set(output.unmappedGroupIDs)
+        return output.categories.filter { unmappedIDs.contains($0.id) }
+    }
+
+    /// Every item the effective map removes from the math, with its reason —
+    /// an automatic classification (a placeholder, an attendance item with
+    /// nowhere to go) or the student's own manual exclusion.
+    func excludedItems(courseID: String) -> [(item: GradeItem, reason: String)] {
+        let map = effectiveCategoryMap(courseID: courseID)
+        guard !map.excludedItemIDs.isEmpty else { return [] }
+        var result: [(item: GradeItem, reason: String)] = []
+        for category in gradeCategories(courseID: courseID) {
+            for item in category.items where map.excludedItemIDs.contains(item.id) {
+                result.append((item, map.exclusionReasons[item.id] ?? "excluded"))
+            }
+        }
+        return result
+    }
+
+    private func persistCategoryMapEdits() {
+        guard let data = try? JSONEncoder().encode(categoryMapEdits) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.categoryMapEditsKey)
+    }
+
+    private static func loadCategoryMapEdits() -> [String: CategoryMapEdits] {
+        guard let data = UserDefaults.lhf.data(forKey: categoryMapEditsKey),
+              let dict = try? JSONDecoder().decode([String: CategoryMapEdits].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
     // MARK: - Trajectory, history & week delta (docs/grades.md §11)
 
     /// The course's reconstructed grade-over-time line, overlay-applied and
@@ -548,7 +1419,11 @@ final class GradeWatcherStore: ObservableObject {
             courseUsesWeights: snapshot.courseUsesWeights,
             categories: gradeCategories(courseID: courseID),
             manualWeights: manualWeights(courseID: courseID),
-            now: now
+            now: now,
+            expectedCounts: effectiveExpectedCounts(courseID: courseID),
+            itemOverrides: itemOverrides(courseID: courseID),
+            modeOverride: modeOverride(courseID: courseID),
+            categoryMap: effectiveCategoryMap(courseID: courseID)
         ))
     }
 
