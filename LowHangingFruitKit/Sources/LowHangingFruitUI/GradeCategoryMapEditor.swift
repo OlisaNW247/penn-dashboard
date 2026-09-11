@@ -35,6 +35,10 @@ struct GradeCategoryMapEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let suggestion = store.sharedMappingSuggestion(courseID: courseID) {
+                sharedSuggestionBlock(suggestion)
+            }
+
             ForEach(map.categories) { category in
                 categoryBlock(category)
             }
@@ -83,6 +87,73 @@ struct GradeCategoryMapEditor: View {
         } message: {
             Text("this puts every canvas group and item back where canvas put it, and removes any category you added or renamed. scores and syllabus attachment are unaffected.")
         }
+    }
+
+    // MARK: - Shared mapping suggestion (map-categories)
+
+    /// The server's `map-categories` suggestion for this course, shown only
+    /// when `GradeWatcherStore.sharedMappingSuggestion` has already decided
+    /// it says something the local syllabus/Canvas matcher didn't already
+    /// say — this view never re-checks that itself. Mirrors
+    /// `GradeReportView.suggestedSchemeBody`'s honesty rule for a
+    /// syllabus-weights suggestion: this never applies itself. "use it" is
+    /// the only path to `acceptSharedMapping`, and "not now" records a
+    /// decline (`declineSharedMapping`) so the same offer doesn't keep
+    /// resurfacing every time this view redraws.
+    @ViewBuilder
+    private func sharedSuggestionBlock(_ suggestion: GradeCategoryMap) -> some View {
+        let canvasCategories = store.gradeCategories(courseID: courseID)
+        let lines = suggestion.categories.filter { category in
+            !category.canvasGroupIDs.isEmpty || suggestion.itemAssignments.values.contains(category.id)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("suggested mapping, as read by locust\u{2019}s server.")
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !lines.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(lines) { category in
+                        Text(sharedSuggestionLine(category, canvasCategories: canvasCategories, itemAssignments: suggestion.itemAssignments))
+                            .font(.lhfSans(12))
+                    }
+                }
+            }
+
+            HStack(spacing: 16) {
+                Button("use it") { store.acceptSharedMapping(courseID: courseID) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                Button("not now") { store.declineSharedMapping(courseID: courseID) }
+                    .font(.lhfSans(12))
+            }
+        }
+    }
+
+    /// One line of `sharedSuggestionBlock`: `"<name> \u{2190} <group names,
+    /// resolved through this course's own Canvas categories, joined by
+    /// ", ">"`, plus `" + <n> item(s)"` when the suggestion also routes
+    /// individual items into this category (`itemAssignments`) — a group
+    /// fold and an item-level move are different kinds of change, so both
+    /// are named rather than one silently standing in for the other.
+    private func sharedSuggestionLine(
+        _ category: GradeCategoryMap.Category,
+        canvasCategories: [GradeCategory],
+        itemAssignments: [String: String]
+    ) -> String {
+        let groupNames = category.canvasGroupIDs.compactMap { groupID in
+            canvasCategories.first { $0.id == groupID }?.name
+        }
+        var line = category.name
+        if !groupNames.isEmpty {
+            line += " \u{2190} " + groupNames.joined(separator: ", ")
+        }
+        let itemCount = itemAssignments.values.filter { $0 == category.id }.count
+        if itemCount > 0 {
+            line += " + \(itemCount) item" + (itemCount == 1 ? "" : "s")
+        }
+        return line
     }
 
     // MARK: - One map category

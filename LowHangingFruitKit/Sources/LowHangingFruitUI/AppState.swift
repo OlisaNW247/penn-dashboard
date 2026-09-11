@@ -266,6 +266,19 @@ final class AppState: ObservableObject {
     /// term of existing scores. See `notifiableGradeChanges`.
     private var gradeBaselinedCourses: Set<String> = []
 
+    /// Per-process memory of which course + Canvas-structure-hash
+    /// combinations `requestSharedCategoryMappingsIfNeeded` has already
+    /// asked the server about this launch — including one that hit a
+    /// transport/HTTP error and was "answered" only by giving up. This
+    /// keeps a network hiccup from being retried every single refresh cycle
+    /// within one process. Deliberately NOT persisted: a genuine server
+    /// answer (including an explicit null mapping) is already remembered
+    /// forever by `GradeWatcherStore.setSharedMapping`, so this set only
+    /// ever needs to cover the in-process "we tried and it failed, don't
+    /// hammer it again this run" case — a relaunch, or the Canvas structure
+    /// itself changing (which changes the hash), naturally clears it.
+    private var sharedMappingRequestedHashes: Set<String> = []
+
     /// When this `AppState` came up, for the first-launch submission hold's
     /// safety valve (`isCanvasSubmissionVerified`'s `holdWindow`). Captured
     /// once at `init` time rather than read live from `Date()` each rebuild —
@@ -1873,6 +1886,7 @@ final class AppState: ObservableObject {
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
         updateSubmissionState()
+        await requestSharedCategoryMappingsIfNeeded()
 
         // A course actually fetching here is proof the session is alive —
         // stronger proof than a silent-renewal attempt even gets, since this
@@ -1897,6 +1911,64 @@ final class AppState: ObservableObject {
         // no-op.
         if gradeWatcher.isSessionExpired {
             Task { await attemptSilentCanvasRenewal() }
+        }
+    }
+
+    /// Builds `"\(courseID)|\(hash)"` — the key `sharedMappingRequestedHashes`
+    /// tracks against, factored out to a pure `static` function so the
+    /// dedup logic itself is unit-testable without spinning up a whole
+    /// `AppState`.
+    static func sharedMappingRequestKey(courseID: String, hash: String) -> String {
+        "\(courseID)|\(hash)"
+    }
+
+    /// Offers Grade Watcher's category-map report the server's pooled
+    /// `map-categories` suggestion for each watched course, one course at a
+    /// time. Fire-and-forget and per-course: nothing here changes a grade or
+    /// touches `categoryMapEdits` directly — `GradeWatcherStore
+    /// .setSharedMapping` only ever records a SUGGESTION the student can
+    /// tap "use it" on in the report
+    /// (`GradeCategoryMapEditor.sharedSuggestionBlock`); the local matcher's
+    /// answer keeps computing the actual grade either way until the student
+    /// accepts one.
+    ///
+    /// Sequential rather than concurrent, unlike `GradeWatcherStore
+    /// .refresh`'s bounded-3 grade fetches: those are rate-limited per
+    /// request (Canvas's own session throttling), but `map-categories` is
+    /// quota-limited per USER per DAY (`MAP_DAILY_LIMIT`,
+    /// `backend/PROTOCOL.md`) — there's no wall-clock reason to parallelize
+    /// a handful of calls that all draw from the same daily budget, and
+    /// firing them concurrently buys nothing but a slightly earlier moment
+    /// of exhausting it. Capped at 5 courses per refresh for the same
+    /// reason: a student watching more than that gets the rest on a later
+    /// refresh rather than this one call spending most of a day's quota by
+    /// itself.
+    ///
+    /// Errors are swallowed entirely — no error state set, no retry inside
+    /// this call, just `continue` to the next course. The backend being
+    /// unreachable, rate-limited, or simply unconfigured
+    /// (`BackendServices.client == nil`) must never be visible anywhere in
+    /// Grade Watcher, whose whole contract is "grades come from Canvas
+    /// either way" — a `map-categories` suggestion is a bonus on top of a
+    /// report that already works completely without it.
+    func requestSharedCategoryMappingsIfNeeded() async {
+        guard let client = BackendServices.client else { return }
+        var attempted = 0
+        for courseID in gradeWatcher.watchedCourseIDs.sorted() {
+            guard attempted < 5 else { break }
+            guard gradeWatcher.shouldRequestSharedMapping(courseID: courseID) else { continue }
+            guard let request = gradeWatcher.mapCategoriesRequest(courseID: courseID) else { continue }
+            let hash = request.localStructureHash
+            let key = Self.sharedMappingRequestKey(courseID: courseID, hash: hash)
+            guard !sharedMappingRequestedHashes.contains(key) else { continue }
+            sharedMappingRequestedHashes.insert(key)
+            attempted += 1
+            do {
+                let response = try await client.mapCategories(request)
+                gradeWatcher.setSharedMapping(response.mapping, courseID: courseID, localStructureHash: hash)
+            } catch {
+                continue
+            }
         }
     }
 

@@ -103,6 +103,8 @@ final class GradeWatcherStore: ObservableObject {
         self.syllabusSchemes = Self.loadSyllabusSchemes()
         self.confirmedCategoryMappings = Self.loadConfirmedCategoryMappings()
         self.categoryMapEdits = Self.loadCategoryMapEdits()
+        self.sharedMappings = Self.loadSharedMappings()
+        self.sharedMappingDecisions = Self.loadSharedMappingDecisions()
         self.expectedCounts = Self.loadExpectedCounts()
         self.itemOverrides = Self.loadItemOverrides()
         self.modeOverrides = Self.loadModeOverrides()
@@ -1193,6 +1195,48 @@ final class GradeWatcherStore: ObservableObject {
     /// plain-weights path this doesn't replace.
     func suggestedCategoryMap(courseID: String) -> GradeCategoryMap? {
         guard let syllabus = syllabusSchemes[courseID] else { return nil }
+
+        // Precedence: when the student has accepted the server's
+        // `map-categories` suggestion FOR THE COURSE'S CURRENT CANVAS
+        // STRUCTURE, build from that shared mapping instead of the local
+        // syllabus/Canvas matcher below — "use it" in the report
+        // (`acceptSharedMapping`) is the only path here, never automatic.
+        // The moment Canvas's own groups change shape (a new assignment
+        // group appears, one gets renamed), `currentStructureHash` changes
+        // too, the accepted decision no longer matches it, and this falls
+        // straight back through to the local suggestion until the student
+        // is offered — and accepts — a fresh server suggestion for the new
+        // shape. An accepted mapping is a statement about a SPECIFIC
+        // structure, not a standing preference that should keep applying
+        // once the course it was made about no longer exists in that shape.
+        //
+        // Deliberately NOT done by folding the server's mapping into
+        // `categoryMapEdits` instead: that dictionary is defined (see this
+        // section's opening doc comment) as the student's OWN corrections,
+        // and `GradeExplanation`, `hasCategoryMapEdits`, and the "reset
+        // categories" confirmation copy all read its presence as "you
+        // edited this." Writing the server's answer there would make an
+        // unmodified, server-suggested mapping read as a personal edit —
+        // losing the `.sharedProfile` provenance the report needs to say
+        // "as read by locust's server" rather than "you typed this in" —
+        // and would survive a re-suggestion as a stale saved copy instead
+        // of being recomputed fresh from the current mapping and Canvas
+        // structure the way this accepted-decision branch does every time
+        // it's read.
+        if let hash = currentStructureHash(courseID: courseID),
+           let decision = sharedMappingDecisions[courseID],
+           decision.choice == .accepted,
+           decision.localStructureHash == hash,
+           let record = sharedMappings[courseID],
+           record.localStructureHash == hash,
+           let mapping = record.mapping {
+            return GradeCategoryMapBuilder.fromSharedMapping(
+                mapping,
+                scheme: syllabus.scheme,
+                canvasCategories: gradeCategories(courseID: courseID)
+            )
+        }
+
         let provenance: GradeCategoryMap.Provenance = syllabus.source == .sharedProfile ? .sharedProfile : .syllabus
         return GradeCategoryMapBuilder.suggested(
             scheme: syllabus.scheme,
@@ -1355,10 +1399,14 @@ final class GradeWatcherStore: ObservableObject {
     }
 
     /// Discards every edit for a course, reverting it to whatever
-    /// `suggestedCategoryMap`/Canvas-mirroring would produce on its own.
+    /// `suggestedCategoryMap`/Canvas-mirroring would produce on its own —
+    /// including any accepted-shared-mapping decision, since that decision
+    /// is itself a kind of "how this course's map is built" choice that
+    /// "reset categories" promises to undo.
     func resetCategoryMapEdits(courseID: String) {
         categoryMapEdits.removeValue(forKey: courseID)
         persistCategoryMapEdits()
+        clearSharedMappingDecision(courseID: courseID)
     }
 
     private func setCategoryMapEdits(_ edits: CategoryMapEdits, courseID: String) {
@@ -1404,6 +1452,224 @@ final class GradeWatcherStore: ObservableObject {
     private static func loadCategoryMapEdits() -> [String: CategoryMapEdits] {
         guard let data = UserDefaults.lhf.data(forKey: categoryMapEditsKey),
               let dict = try? JSONDecoder().decode([String: CategoryMapEdits].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    // MARK: - Shared category mapping (map-categories)
+    //
+    // A second, independent suggestion layered ABOVE the local
+    // syllabus/Canvas matcher the previous section builds: LHF's backend
+    // pools a `map-categories` answer per course (`backend/PROTOCOL.md`),
+    // built by a model that can read every Canvas group and item name at
+    // once, rather than the small synonym/fuzzy table `SyllabusMatcher` uses
+    // on-device — so it can catch a fold the local matcher can't ("Imported
+    // Assignments" really being homework, say). It is never applied
+    // automatically; see `sharedMappingSuggestion`'s doc comment for the
+    // honesty rule this store enforces before ever showing one, and
+    // `suggestedCategoryMap`'s doc comment above for exactly what accepting
+    // one does and does not do.
+    //
+    // Two dictionaries, cached separately on purpose:
+    //   - `sharedMappings` is what the SERVER said, keyed by course id, one
+    //     record at a time — a fresh answer for a new Canvas structure
+    //     simply overwrites the old one. This is a cache of a FACT (what did
+    //     the server last say), not a decision.
+    //   - `sharedMappingDecisions` is what the STUDENT said about that fact
+    //     — accepted or declined — recorded against the specific structure
+    //     hash they were looking at when they decided, so a later Canvas
+    //     structure change (a new assignment group appearing) makes the old
+    //     decision stop applying rather than silently keep applying to a
+    //     course that no longer looks like what was decided about.
+    //
+    // Neither dictionary is folded into `categoryMapEdits` — see
+    // `suggestedCategoryMap`'s doc comment for why that would be the wrong
+    // design (it would read as the student's own edit and lose its
+    // provenance).
+
+    /// The server's cached `map-categories` answer for a course, and the
+    /// `localStructureHash` (`MapCategoriesRequest.localStructureHash`) it
+    /// was requested for — so a later read can tell "this is still the
+    /// answer for the Canvas structure I have right now" from "Canvas's
+    /// groups changed since I asked, this answer is stale." `mapping: nil`
+    /// is a real, rememberable answer (the server has nothing to suggest for
+    /// this course yet) — not a "no data" placeholder — precisely so a
+    /// brand-new course with no syllabus-derived categories to map onto
+    /// doesn't get asked again every single refresh (see
+    /// `shouldRequestSharedMapping`).
+    struct SharedMappingRecord: Codable, Sendable, Hashable {
+        var mapping: SharedCategoryMapping?
+        var localStructureHash: String
+        var fetchedAt: Date
+    }
+
+    /// Persisted so a relaunch doesn't re-ask the server for a course it
+    /// already answered this same Canvas structure for.
+    @Published private(set) var sharedMappings: [String: SharedMappingRecord] = [:]
+    private static let sharedMappingsKey = "gradeWatcherSharedCategoryMappings"
+
+    /// The student's own accept/decline choice about a course's shared
+    /// mapping, recorded against the specific `localStructureHash` they were
+    /// looking at — see this section's opening doc comment for why the hash
+    /// travels with the choice rather than the choice being a standing,
+    /// structure-independent preference.
+    struct SharedMappingDecision: Codable, Sendable, Hashable {
+        enum Choice: String, Codable, Sendable {
+            case accepted, declined
+        }
+        var choice: Choice
+        var localStructureHash: String
+    }
+
+    @Published private(set) var sharedMappingDecisions: [String: SharedMappingDecision] = [:]
+    private static let sharedMappingDecisionsKey = "gradeWatcherSharedMappingDecisions"
+
+    /// The Canvas-structure fingerprint `map-categories` would be asked
+    /// about for this course right now, or `nil` when the course hasn't been
+    /// fetched at all yet — there is nothing to fingerprint before a
+    /// snapshot exists. Unlike `mapCategoriesRequest` below, this doesn't
+    /// also require non-empty categories: an empty-but-fetched course still
+    /// has a well-defined (if trivial) structure hash, and callers that only
+    /// need the hash to compare cached records against
+    /// (`shouldRequestSharedMapping`, `sharedMappingSuggestion`) shouldn't
+    /// have to reason about why a perfectly good hash came back `nil`.
+    func currentStructureHash(courseID: String) -> String? {
+        guard snapshots[courseID] != nil else { return nil }
+        return MapCategoriesRequest(courseID: courseID, canvasCategories: gradeCategories(courseID: courseID)).localStructureHash
+    }
+
+    /// The request `AppState` would actually send the server for this
+    /// course, or `nil` when there's nothing worth sending: no snapshot yet,
+    /// or a snapshot with zero Canvas categories (a course Canvas itself
+    /// hasn't populated with assignment groups yet — asking the server to
+    /// map nothing would just spend a call against the daily quota for no
+    /// reason).
+    func mapCategoriesRequest(courseID: String) -> MapCategoriesRequest? {
+        guard snapshots[courseID] != nil else { return nil }
+        let categories = gradeCategories(courseID: courseID)
+        guard !categories.isEmpty else { return nil }
+        return MapCategoriesRequest(courseID: courseID, canvasCategories: categories)
+    }
+
+    /// Whether asking the server for this course is worth a call against the
+    /// per-user daily quota (`MAP_DAILY_LIMIT`, `backend/PROTOCOL.md`): a
+    /// snapshot exists (there's something to describe), a syllabus scheme is
+    /// attached (without one there are no categories to map ONTO, and
+    /// `suggestedCategoryMap` wouldn't use the answer anyway), the student
+    /// hasn't already hand-edited this course's map (an edit is a more
+    /// specific, more recent statement of intent than anything the server
+    /// could offer), and neither a cached record nor a decision already
+    /// exists for the CURRENT Canvas structure — re-asking about a structure
+    /// already answered (with a real mapping, an explicit `nil`, or a
+    /// decision either way) would just spend quota to hear the same thing
+    /// again.
+    func shouldRequestSharedMapping(courseID: String) -> Bool {
+        guard snapshots[courseID] != nil else { return false }
+        guard syllabusSchemes[courseID] != nil else { return false }
+        guard !hasCategoryMapEdits(courseID: courseID) else { return false }
+        guard let hash = currentStructureHash(courseID: courseID) else { return false }
+        if let record = sharedMappings[courseID], record.localStructureHash == hash { return false }
+        if let decision = sharedMappingDecisions[courseID], decision.localStructureHash == hash { return false }
+        return true
+    }
+
+    /// Records the server's answer for this course and structure hash —
+    /// called by `AppState` after a successful `map-categories` call.
+    /// `mapping: nil` is recorded exactly like a real mapping (see
+    /// `SharedMappingRecord`'s doc comment): both are legitimate answers
+    /// that stop `shouldRequestSharedMapping` from asking again about this
+    /// same structure.
+    func setSharedMapping(_ mapping: SharedCategoryMapping?, courseID: String, localStructureHash: String, fetchedAt: Date = Date()) {
+        sharedMappings[courseID] = SharedMappingRecord(mapping: mapping, localStructureHash: localStructureHash, fetchedAt: fetchedAt)
+        persistSharedMappings()
+    }
+
+    /// The shared mapping to OFFER in the report right now, or `nil` when
+    /// there's nothing worth showing. Every one of these has to hold:
+    ///   - a syllabus scheme is attached (nothing to build the alternative
+    ///     from otherwise);
+    ///   - the student hasn't hand-edited this course's map (an edit already
+    ///     says more than a suggestion could add, and offering one over an
+    ///     edit would read as second-guessing a choice already made);
+    ///   - a cached record exists for the CURRENT structure hash, with a
+    ///     non-nil mapping (a stale-hash or a `nil`-mapping record has
+    ///     nothing to offer);
+    ///   - the student hasn't already decided about THIS hash (accepted or
+    ///     declined — either way, re-showing the same offer over and over is
+    ///     the failure mode this guards against);
+    ///   - and, the actual honesty rule: the map the server's answer would
+    ///     BUILD has to differ from what the local matcher already proposes,
+    ///     in at least one category's `canvasGroupIDs` or in
+    ///     `itemAssignments`. If the server agrees with the local matcher
+    ///     down to the id, showing a suggestion would be a UI lie — there is
+    ///     nothing to accept that isn't already true.
+    func sharedMappingSuggestion(courseID: String) -> GradeCategoryMap? {
+        guard let syllabus = syllabusSchemes[courseID] else { return nil }
+        guard !hasCategoryMapEdits(courseID: courseID) else { return nil }
+        guard let hash = currentStructureHash(courseID: courseID) else { return nil }
+        guard let record = sharedMappings[courseID], record.localStructureHash == hash, let mapping = record.mapping else { return nil }
+        if let decision = sharedMappingDecisions[courseID], decision.localStructureHash == hash { return nil }
+
+        let built = GradeCategoryMapBuilder.fromSharedMapping(mapping, scheme: syllabus.scheme, canvasCategories: gradeCategories(courseID: courseID))
+        guard let local = suggestedCategoryMap(courseID: courseID) else { return built }
+
+        let builtGroups = Dictionary(uniqueKeysWithValues: built.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
+        let localGroups = Dictionary(uniqueKeysWithValues: local.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
+        guard builtGroups != localGroups || built.itemAssignments != local.itemAssignments else { return nil }
+        return built
+    }
+
+    /// The student taps "use it" — records acceptance for the CURRENT
+    /// structure hash. See `suggestedCategoryMap`'s doc comment for what
+    /// this changes and why it's recorded as a decision rather than copied
+    /// into `categoryMapEdits`. A no-op (nothing to accept) when there's no
+    /// snapshot to hash against.
+    func acceptSharedMapping(courseID: String) {
+        guard let hash = currentStructureHash(courseID: courseID) else { return }
+        sharedMappingDecisions[courseID] = SharedMappingDecision(choice: .accepted, localStructureHash: hash)
+        persistSharedMappingDecisions()
+    }
+
+    /// The student taps "not now" — records a decline for the CURRENT
+    /// structure hash, so the same offer stops resurfacing every time this
+    /// course's report is opened, without discarding the cached record
+    /// itself (a later `clearSharedMappingDecision` can still bring the
+    /// exact same offer back).
+    func declineSharedMapping(courseID: String) {
+        guard let hash = currentStructureHash(courseID: courseID) else { return }
+        sharedMappingDecisions[courseID] = SharedMappingDecision(choice: .declined, localStructureHash: hash)
+        persistSharedMappingDecisions()
+    }
+
+    /// Forgets whatever accept/decline decision is on record for this
+    /// course, regardless of which structure hash it names — used by
+    /// `resetCategoryMapEdits` (a full "start over" for the course's map)
+    /// and available on its own for a "reconsider" affordance.
+    func clearSharedMappingDecision(courseID: String) {
+        sharedMappingDecisions.removeValue(forKey: courseID)
+        persistSharedMappingDecisions()
+    }
+
+    private func persistSharedMappings() {
+        guard let data = try? JSONEncoder().encode(sharedMappings) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.sharedMappingsKey)
+    }
+
+    private static func loadSharedMappings() -> [String: SharedMappingRecord] {
+        guard let data = UserDefaults.lhf.data(forKey: sharedMappingsKey),
+              let dict = try? JSONDecoder().decode([String: SharedMappingRecord].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    private func persistSharedMappingDecisions() {
+        guard let data = try? JSONEncoder().encode(sharedMappingDecisions) else { return }
+        UserDefaults.lhf.set(data, forKey: Self.sharedMappingDecisionsKey)
+    }
+
+    private static func loadSharedMappingDecisions() -> [String: SharedMappingDecision] {
+        guard let data = UserDefaults.lhf.data(forKey: sharedMappingDecisionsKey),
+              let dict = try? JSONDecoder().decode([String: SharedMappingDecision].self, from: data)
         else { return [:] }
         return dict
     }

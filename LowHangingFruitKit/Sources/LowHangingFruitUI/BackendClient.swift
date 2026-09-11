@@ -48,6 +48,24 @@ struct BackendClient: Sendable {
         let _: IgnoredResponse = try await post("extract-profile", body: ExtractProfileRequest(courseIDs: courseIDs))
     }
 
+    // MARK: - map-categories
+
+    /// Asks the server's pooled category-mapping model which Canvas
+    /// assignment groups (and stray items) belong to which of a course's
+    /// syllabus grading categories. What travels in `request` is Canvas's
+    /// own group/item *names*, `pointsPossible`, and `submissionTypes` —
+    /// never a score, a submission state, or anything else describing this
+    /// student's own work (see `MapCategoriesRequest`'s own header for why
+    /// there isn't even a field to accidentally send one). The response is
+    /// only ever a SUGGESTION: nothing on this client applies it
+    /// automatically, and `GradeWatcherStore` doesn't even surface it to the
+    /// student unless it says something the local syllabus/Canvas matcher
+    /// didn't already say on its own (`GradeWatcherStore
+    /// .sharedMappingSuggestion`).
+    func mapCategories(_ request: MapCategoriesRequest) async throws -> MapCategoriesResponse {
+        try await post("map-categories", body: request)
+    }
+
     // MARK: - discover-websites
 
     /// Same fire-and-forget shape as `extractProfile`: triggers the
