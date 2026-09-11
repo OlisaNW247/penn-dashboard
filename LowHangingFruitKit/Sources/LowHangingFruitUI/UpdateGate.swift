@@ -162,9 +162,15 @@ final class UpdateGateStore: ObservableObject {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains(Self.forceWallArgument) {
+            // No message on purpose: the wall then shows its own fallback
+            // copy, which is exactly what a student sees when the live
+            // manifest raises the floor without a custom note. The forced
+            // wall exists to preview and screenshot that screen, and a
+            // "forced by <flag>" line made every preview show something no
+            // student ever would.
             forcedVerdict = .updateRequired(
                 minimum: Self.forcedVersion,
-                message: "Forced by \(Self.forceWallArgument) for local testing."
+                message: nil
             )
         } else if arguments.contains(Self.forceBannerArgument) {
             forcedVerdict = .updateAvailable(latest: Self.forcedVersion)
