@@ -81,17 +81,15 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5` after the Smooth merge (2026-09-12): **1244 tests / 122
-suites**, compiled first time. Marco's `codex/redesign-v5` (43 commits, 72
-files) merged with no textual conflicts; the only file both sides touched
-was `OnboardingView.swift`, and the six leftover "locust" copy strings
-became "smooth". Two full runs after the merge each failed exactly one
-pre-existing flaky test (see the known-flakes note below) and no test
-Marco's change could touch; the cookie-store suite passed alone twice. A
-run with zero failures is still owed.
-
 Baseline on `v5`, verified on a Mac (2026-09-12): **1244 tests / 122 suites
-green** (plus 4 XCTest scheduler tests), after the login WebView's
+green** after the Smooth merge, compiled first time. Marco's
+`codex/redesign-v5` (43 commits, 72 files) merged with no textual
+conflicts; the only file both sides touched was `OnboardingView.swift`,
+and the six leftover "locust" copy strings became "smooth". The first two
+runs after the merge each tripped one of the two known flakes below and
+nothing Marco's change could touch; the third was clean.
+
+Earlier the same day, 1244/122 (plus 4 XCTest scheduler tests) after the login WebView's
 universal-link guard (`LoginNavigationObserver.appLinkGuardHost`, the
 Canvas Student trap below; one first-run compile error, a non-optional
 `sourceFrame`). Earlier the same day, 1230/121 after "decided" became a syllabus
