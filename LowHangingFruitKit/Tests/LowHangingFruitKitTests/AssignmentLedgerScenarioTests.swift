@@ -113,7 +113,12 @@ struct AssignmentLedgerScenarioTests {
         // title, dates within tolerance) and collapse to one dashboard item.
         let store = try AssignmentStore(inMemory: true)
         let course = "SCEN-E 100"
-        let due = Date()
+        // An hour ahead of now, not at it: a due date of exactly `Date()` is
+        // overdue by the time the dashboard is computed, and the first-launch
+        // hold can then hide it whenever another suite is concurrently
+        // saving Canvas cookies (see AssignmentDeduplicatorTests for the
+        // full account). This test is not about overdue work.
+        let due = Date().addingTimeInterval(3600)
         let canvasItem = canvas("e1", course: course, title: "Homework 3", due: due)
         let gradescopeItem = Assignment(source: .gradescope, sourceID: "e9", kind: .assignment,
                                         course: course, title: "HW 3", dueAt: due, url: nil)

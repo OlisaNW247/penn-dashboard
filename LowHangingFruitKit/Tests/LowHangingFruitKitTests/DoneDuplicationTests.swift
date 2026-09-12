@@ -23,7 +23,12 @@ struct DoneDuplicationTests {
     @Test("completing a cross-posted assignment leaves exactly one card in Done")
     func mergedCompletionAppearsOnceInDone() {
         let state = AppState()
-        let due = Date()
+        // An hour ahead of now, not at it: a due date of exactly `Date()` is
+        // overdue by the time the dashboard is computed, and the first-launch
+        // hold can then hide it whenever another suite is concurrently
+        // saving Canvas cookies (see AssignmentDeduplicatorTests for the
+        // full account). This test is not about overdue work.
+        let due = Date().addingTimeInterval(3600)
         let canvasItem = assignment(.canvas, "donedup-c1", "Homework 4", due: due)
         let gradescopeItem = assignment(.gradescope, "donedup-g1", "HW4", due: due)
 
@@ -60,7 +65,12 @@ struct DoneDuplicationTests {
     @Test("two distinct assignments in one course still show separately in Done")
     func distinctAssignmentsAreNotCollapsed() {
         let state = AppState()
-        let due = Date()
+        // An hour ahead of now, not at it: a due date of exactly `Date()` is
+        // overdue by the time the dashboard is computed, and the first-launch
+        // hold can then hide it whenever another suite is concurrently
+        // saving Canvas cookies (see AssignmentDeduplicatorTests for the
+        // full account). This test is not about overdue work.
+        let due = Date().addingTimeInterval(3600)
         let first = assignment(.canvas, "donedup-c2", "Homework 5", due: due)
         let second = assignment(.canvas, "donedup-c3", "Final project proposal", due: due)
 

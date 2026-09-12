@@ -203,12 +203,22 @@ struct AssignmentDeduplicatorTests {
         let state = AppState()
 
         // `AppState.assignments` filters by term/age relative to the real
-        // `Date()` (it's not injectable), so this due date has to be "now",
-        // not the fixed `Self.now` the pure matcher tests use. A dedicated,
+        // `Date()` (it's not injectable), so this due date has to be near
+        // "now", not the fixed `Self.now` the pure matcher tests use -- and
+        // an hour AHEAD of now, not at it. A due date of exactly `Date()`
+        // is overdue by the time `assignments` is computed, and an overdue
+        // Canvas item in a never-checked course is what the first-launch
+        // hold (`AppState.isCanvasSubmissionVerified`) hides -- whenever
+        // `canUseGradeWatcher` happens to be true, which under `swift test`
+        // it is exactly while `SessionCookieStoreTests` is saving cookies
+        // into the process-wide in-memory store on another thread. That
+        // made this dedup assertion fail one run in several with no dedup
+        // code in the stack. A future due date keeps the hold out of a test
+        // that was never about overdue work. A dedicated,
         // unlikely-to-collide course code sidesteps other tests in this
         // package that toggle "CIS 1200"'s class-picker selection on the
         // same shared `UserDefaults.lhf`.
-        let due = Date()
+        let due = Date().addingTimeInterval(3600)
         let course = "DEDUPE 9999"
         let canvasItem = Self.canvas(id: "dedupe-c1", course: course, title: "Homework 3", due: due)
         let gradescopeItem = Self.gradescope(id: "dedupe-g1", course: course, title: "HW3", due: due)

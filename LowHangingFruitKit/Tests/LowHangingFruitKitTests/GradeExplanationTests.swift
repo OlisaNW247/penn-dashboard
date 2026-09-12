@@ -150,7 +150,7 @@ struct GradeExplanationTests {
             + "graded work so far, in one bucket.")
     }
 
-    @Test("points fixture: category lines have no weight concept and no expected-count suffix")
+    @Test("points fixture: category lines have no weight concept; the expected-count suffix is the predicted count")
     func pointsCategoryLines() {
         let explanation = GradeExplanation.make(from: pointsFixture(), canvasScore: nil)
         #expect(explanation.categoryLines.count == 2)
@@ -159,7 +159,10 @@ struct GradeExplanationTests {
         #expect(asgn.id == "asgn")
         #expect(asgn.weightText == "\u{2014}")
         #expect(asgn.weightSourceText == nil)
-        #expect(asgn.gradedText == "1 of 2 posted graded") // no expectedCounts entry -> no suffix
+        // No stated count and no due dates to project from, so the
+        // predictor falls back to what is listed (2) -- the suffix is
+        // always present now that every category carries a prediction.
+        #expect(asgn.gradedText == "1 of 2 posted graded \u{00b7} 2 expected")
         #expect(asgn.percentText == "80%")
         #expect(asgn.contributionText == "+57.1 of your grade") // 80 * (50/70)
         #expect(asgn.participates == true)
@@ -167,7 +170,7 @@ struct GradeExplanationTests {
         let quiz = explanation.categoryLines[1]
         #expect(quiz.id == "quiz")
         #expect(quiz.weightText == "\u{2014}")
-        #expect(quiz.gradedText == "1 of 1 posted graded")
+        #expect(quiz.gradedText == "1 of 1 posted graded \u{00b7} 1 expected")
         #expect(quiz.percentText == "100%")
         #expect(quiz.contributionText == "+28.6 of your grade") // 100 * (20/70)
         #expect(quiz.participates == true)
@@ -179,11 +182,14 @@ struct GradeExplanationTests {
         #expect(explanation.leftOutLine == nil)
     }
 
-    @Test("points fixture: decidedLine falls back to the posted-only figure when the semester estimate is unknown")
-    func pointsDecidedLineSemesterUnknown() {
+    @Test("points fixture: decidedLine always reports the semester share, since every category now carries a predicted count")
+    func pointsDecidedLineSemesterKnown() {
+        // With nothing to project from, the prediction equals what is
+        // listed, so the semester share and the posted-only share coincide
+        // -- but the wording is the semester one: the "unknown until every
+        // category has an expected count" caveat no longer exists.
         let explanation = GradeExplanation.make(from: pointsFixture(), canvasScore: nil)
-        #expect(explanation.decidedLine == "58.3% of what's posted is graded "
-            + "\u{2014} semester share unknown until every category has an expected count")
+        #expect(explanation.decidedLine == "58.3% of the semester decided")
     }
 
     @Test("points fixture: canvasLine is nil when there's no Canvas score to compare")
