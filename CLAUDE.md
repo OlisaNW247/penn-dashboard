@@ -73,8 +73,17 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-11): **1193 tests / 119 suites
-green** (plus 4 XCTest scheduler tests), after the app learned to ask the
+Baseline on `v5`, verified on a Mac (2026-09-12): **1230 tests / 121 suites
+green** (plus 4 XCTest scheduler tests), after "decided" became a syllabus
+prediction (`GradeCountPredictor`, docs/grades.md §16: every category gets
+a count with a source, attendance is decided by time elapsed, the
+"semester share unknown" caveat is gone) and the grade card and report
+were cut down to numbers and tables (three tap levels; a copy-budget
+test holds the text helpers to six words). 2,400 blind lines from two
+concurrent agents that compiled first time; the five first-run failures
+were stale test premises and a due-exactly-now fixture race with the
+first-launch hold. Before that, 1193/119 on
+2026-09-11 after the app learned to ask the
 deployed `map-categories` function for a suggested category mapping and
 offer it in the categories editor as "use it / not now" (docs/grades.md
 §15.8; 1,500 blind lines, compiled first time). Before that, 1170/117 on

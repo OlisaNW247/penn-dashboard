@@ -676,3 +676,32 @@ structure change made the mapping stale. Accepted mappings instead take
 the `suggested` slot in `effectiveCategoryMap`'s precedence chain, with
 `.sharedProfile` provenance, and the student's own edits still layer on
 top.
+
+## 16. "Decided" is a prediction, and the screens are tables (2026-09-12)
+
+§14's semester-aware "decided" was honest and useless: it needed an
+expected count for every weighted category, and until the student typed
+them it fell back to the posted-only ratio with a caveat naming what it
+wanted. Two weeks into PHYS 0151 that ratio read 60%.
+
+`GradeCountPredictor` gives every category a count and a source, first
+rule that applies: the student's override; the syllabus's stated count; a
+name that implies one (Midterm 2, Final); what Canvas already lists; or a
+projection of the listing pace over the term. The term is anchored on the
+earliest due date across the course and runs 14 weeks (the registrar's
+dates are not on the device yet). A count never drops below what is
+listed. Attendance and participation categories are decided by time
+elapsed, not by their running tally. Empty categories are zero. The
+course-wide figure is nil only when no weight exists, so
+`categoriesMissingExpectedCount` is always empty and kept only for source
+compatibility. The explanation panel names each category's count and its
+source ("6 projected from pace", "by time · week 3 of 14").
+
+The card is one tap target: name, number, bar, "12% decided · week 3 of
+14". The report is three levels, one tap each: headline; a category table
+(name, weight, so far, decided as graded/predicted) whose rows expand to
+their items with a state dot and score; the item override sheet from any
+item. Targets and "how" are collapsed. The server's suggested mapping, a
+found syllabus scheme and a Gradescope fuzzy match are each one row with
+use and skip. `GradeMinimalCopyTests` holds every text helper to six
+words, forty characters, no period.
