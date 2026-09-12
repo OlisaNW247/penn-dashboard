@@ -481,4 +481,34 @@ struct CourseSearchTests {
         #expect(classHits.contains { $0.document.id == lab.id })
         #expect(labHits.contains { $0.document.id == lecture.id })
     }
+
+    @Test("a cold embedding provider never blocks search, and BM25 order stands")
+    func searchWithColdEmbeddingProvider() {
+        // `CourseSearch(knowledge:)`'s public initializer always wires up
+        // `.shared` — reaching `rerank` with a *guaranteed*-cold provider
+        // (rather than racing whatever state `.shared` happens to be in from
+        // another test, or a real `NLEmbedding` asset already present on the
+        // machine running this suite) needs the internal
+        // `init(knowledge:embeddingProvider:)` seam instead.
+        let heavy = CourseDocument(courseID: "1", course: "CIS 2400", kind: .syllabus, sourceID: "a", title: "A", url: nil,
+                                    text: "Late policy. Late work. Late submissions lose points every late day, no exceptions for late work.")
+        let light = CourseDocument(courseID: "1", course: "CIS 2400", kind: .syllabus, sourceID: "b", title: "B", url: nil,
+                                    text: "Office hours are Tuesdays. Grading is 50% homework, 50% exams.")
+        let coldProvider = SentenceEmbeddingProvider { nil }
+        let search = CourseSearch(knowledge: CourseKnowledgeBase(documents: [heavy, light]), embeddingProvider: coldProvider)
+
+        // A loader that always returns nil settles into `.unavailable` (see
+        // `SentenceEmbeddingProviderTests`), so this also exercises the
+        // never-blocks contract: if `rerank` called `current()` and it ever
+        // blocked waiting on the loader, this call would hang the test.
+        let hits = search.search("late policy", limit: 2)
+        #expect(hits.count == 2)
+        #expect(hits.first?.document.id == heavy.id)
+
+        // BM25 order is deterministic — calling again (the provider now
+        // possibly `.unavailable` rather than `.cold`) produces the same
+        // order, because `rerank` only ever blends in a *ready* embedding.
+        let again = search.search("late policy", limit: 2)
+        #expect(hits.map(\.document.id) == again.map(\.document.id))
+    }
 }

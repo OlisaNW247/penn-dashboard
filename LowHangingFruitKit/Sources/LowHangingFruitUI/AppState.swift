@@ -814,6 +814,19 @@ final class AppState: ObservableObject {
         // `enrolledCanvasCourses`, and `coursePreferences`, all of which are
         // only fully seeded by the blocks above.
         pushGradeWatcherFacts()
+
+        // Starts the on-device sentence embedding's background load (if it
+        // hasn't already started elsewhere) well before `ask` is ever
+        // opened, rather than the student's first question being what
+        // triggers a download that can take minutes — see
+        // `SentenceEmbeddingProvider`'s doc comment. Guarded the same way
+        // the ledger/shared-defaults choke points are: an unsandboxed
+        // `swift test` run has no business kicking off a background asset
+        // fetch, and `SentenceEmbeddingProviderTests` exercises this type
+        // directly with an injected loader instead.
+        if !SharedDefaults.isTestRunner {
+            SentenceEmbeddingProvider.shared.warmUp()
+        }
     }
 
     /// One-time-per-launch (but idempotent, and safe to re-run every launch)

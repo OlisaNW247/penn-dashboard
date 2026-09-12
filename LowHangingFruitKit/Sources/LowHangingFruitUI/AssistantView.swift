@@ -167,6 +167,13 @@ struct AssistantView: View {
             }
         }
         .safeAreaInset(edge: .bottom) { composer }
+        // Gives the on-device sentence embedding a head start before the
+        // student's first question — see `SentenceEmbeddingProvider`'s doc
+        // comment for the two-minute frozen-cursor bug this and
+        // `AppState.init`'s matching call guard against. `warmUp()` is
+        // idempotent, so opening this screen twice in one launch (or after
+        // `AppState.init` already called it) costs nothing.
+        .task { SentenceEmbeddingProvider.shared.warmUp() }
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: conversation.isFresh)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

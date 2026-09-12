@@ -25,14 +25,26 @@ struct OnDeviceAssistantResponder: AssistantResponder {
 
     func reply(to prompt: String, context: AssistantContext) -> AsyncStream<AssistantChunk> {
         let delay = wordDelay
-        let knowledgeContext = AskKnowledgeContext(
-            userName: context.userName,
-            now: context.askedAt,
-            items: context.work,
-            knowledge: context.knowledge
-        )
         return AsyncStream { continuation in
-            let task = Task {
+            // `.detached`, and `AskKnowledgeContext(...)` built inside it
+            // rather than above on the caller's own actor: that initializer
+            // constructs `CourseSearch(knowledge:)` — a fresh BM25 index over
+            // every synced document — and this responder is `ask`'s fallback,
+            // reached both directly (backend unconfigured) and after
+            // `BackendAssistantResponder` hands off mid-answer, so the same
+            // synchronous-retrieval-on-the-caller's-actor freeze that
+            // `SentenceEmbeddingProvider`'s doc comment describes for the
+            // backend path applies here too. `reply` is called synchronously
+            // from `AssistantConversation.send`, `@MainActor`, so a plain
+            // `Task { }` here would still run its body on the main actor —
+            // detaching is what actually gets this off it.
+            let task = Task.detached(priority: .userInitiated) {
+                let knowledgeContext = AskKnowledgeContext(
+                    userName: context.userName,
+                    now: context.askedAt,
+                    items: context.work,
+                    knowledge: context.knowledge
+                )
                 let answer = await ClassAssistant(context: knowledgeContext).respond(to: prompt)
                 for word in answer.text.splittingKeepingSeparators() {
                     if Task.isCancelled { break }

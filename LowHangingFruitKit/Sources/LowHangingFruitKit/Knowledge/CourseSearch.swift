@@ -33,9 +33,23 @@ public struct CourseSearch: Sendable {
     private let passages: [String: Passage]
     private let documents: [String: CourseDocument]
     private let index: BM25Index
+    /// Where the on-device sentence embedding comes from. Defaults to the
+    /// process-wide `.shared` instance — every real call site wants that one
+    /// so a downloaded embedding, once warmed up anywhere, benefits every
+    /// search in the process — and exists as a parameter only so a test can
+    /// hand this a fresh, cold provider instead of racing whatever state
+    /// `.shared` happens to be in from another test or from a real
+    /// `NLEmbedding` asset actually present on the machine running the
+    /// suite.
+    private let embeddingProvider: SentenceEmbeddingProvider
 
     public init(knowledge: CourseKnowledgeBase) {
+        self.init(knowledge: knowledge, embeddingProvider: .shared)
+    }
+
+    init(knowledge: CourseKnowledgeBase, embeddingProvider: SentenceEmbeddingProvider) {
         self.knowledge = knowledge
+        self.embeddingProvider = embeddingProvider
         var passageMap: [String: Passage] = [:]
         var all: [Passage] = []
         for document in knowledge.documents {
@@ -171,12 +185,26 @@ public struct CourseSearch: Sendable {
     }
 
     /// Blends BM25 with cosine similarity from Apple's on-device sentence
-    /// embedding when available. On other platforms (and when the embedding
-    /// asset isn't downloaded) the BM25 order stands.
+    /// embedding when available. On other platforms, when the embedding
+    /// asset hasn't finished loading yet, or when it turns out to be absent
+    /// on this device entirely, the BM25 order stands.
+    ///
+    /// `embeddingProvider.current()` — never
+    /// `NLEmbedding.sentenceEmbedding(for:)` called directly — is the fix for
+    /// the two-minute frozen assistant bubble described on
+    /// `SentenceEmbeddingProvider`'s doc comment: calling the framework
+    /// function here synchronously would, on a fresh install, block whatever
+    /// actor is running this search for as long as iOS takes to download the
+    /// embedding asset. `current()` instead returns immediately — `nil` on
+    /// every question until the asset happens to finish loading in the
+    /// background, after which every subsequent question benefits for the
+    /// rest of the process's life. An answer that skips the rerank entirely
+    /// while cold is a strictly better outcome than a correct answer that
+    /// takes minutes to start.
     private func rerank(query: String, hits: [SearchHit]) -> [SearchHit] {
         #if canImport(NaturalLanguage)
         guard hits.count > 1,
-              let embedding = NLEmbedding.sentenceEmbedding(for: .english),
+              let embedding = embeddingProvider.current() as? NLEmbedding,
               let queryVector = embedding.vector(for: query)
         else { return hits }
         let maxScore = hits.map(\.score).max() ?? 1

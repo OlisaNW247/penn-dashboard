@@ -49,10 +49,27 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     func reply(to prompt: String, context: AssistantContext) -> AsyncStream<AssistantChunk> {
         let client = client
         let fallback = fallback
-        let request = Self.makeRequest(question: prompt, context: context)
 
         return AsyncStream { continuation in
-            let task = Task {
+            // `.detached`, not a plain `Task { }`, and `Self.makeRequest`
+            // moved inside it rather than built above on the caller's own
+            // actor: `makeRequest` → `retrievedExcerpts` builds a fresh
+            // `CourseSearch(knowledge:)` (tokenising every synced document
+            // into a BM25 index) and calls `.search`, whose `rerank` used to
+            // call `NLEmbedding.sentenceEmbedding(for:)` straight off —
+            // exactly the call that froze the ask screen for two minutes on
+            // a fresh install while iOS fetched the embedding asset (see
+            // `SentenceEmbeddingProvider`'s doc comment). `reply` is called
+            // synchronously from `AssistantConversation.send`, which is
+            // `@MainActor`, so anything done in this function's body before
+            // an `AsyncStream`'s producing task starts runs on the main
+            // actor and freezes the whole app, not just this screen. A plain
+            // (non-detached) `Task { }` here would not have been enough on
+            // its own — it still inherits the enclosing main-actor context
+            // for its body — so both changes (detached, and moving the
+            // request build inside) are needed together.
+            let task = Task.detached(priority: .userInitiated) {
+                let request = Self.makeRequest(question: prompt, context: context)
                 await Self.run(
                     request: request,
                     prompt: prompt,
