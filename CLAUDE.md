@@ -81,8 +81,11 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-12): **1244 tests / 122 suites
-green** after the Smooth merge, compiled first time. Marco's
+Baseline on `v5`, verified on a Mac (2026-09-12): **1250 tests / 123 suites
+green** after the ask fix for the sentence-embedding asset
+(`SentenceEmbeddingProvider`, trap below; one first-run compile error, an
+`NSLock` call inside an async task body, and one fixture with no matching
+passage). Earlier the same day, 1244/122 after the Smooth merge, compiled first time. Marco's
 `codex/redesign-v5` (43 commits, 72 files) merged with no textual
 conflicts; the only file both sides touched was `OnboardingView.swift`,
 and the six leftover "locust" copy strings became "smooth". The first two
