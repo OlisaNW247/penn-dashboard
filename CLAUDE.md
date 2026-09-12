@@ -81,12 +81,14 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-**Merge pending verification (2026-09-12):** Marco's `codex/redesign-v5`
-(43 commits, 72 files, the Smooth redesign) was merged onto the 1244/122
-head below with no textual conflicts; the only file both sides touched was
-`OnboardingView.swift`. The six leftover "locust" copy strings became
-"smooth". The Mac run and device check are outstanding; replace this
-paragraph with the verified count.
+Baseline on `v5` after the Smooth merge (2026-09-12): **1244 tests / 122
+suites**, compiled first time. Marco's `codex/redesign-v5` (43 commits, 72
+files) merged with no textual conflicts; the only file both sides touched
+was `OnboardingView.swift`, and the six leftover "locust" copy strings
+became "smooth". Two full runs after the merge each failed exactly one
+pre-existing flaky test (see the known-flakes note below) and no test
+Marco's change could touch; the cookie-store suite passed alone twice. A
+run with zero failures is still owed.
 
 Baseline on `v5`, verified on a Mac (2026-09-12): **1244 tests / 122 suites
 green** (plus 4 XCTest scheduler tests), after the login WebView's
@@ -163,11 +165,16 @@ v3.5+v4 merge, 517/55 on final
 `v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
 count has lost work — investigate rather than accept it.
 
-One known flake, pre-existing and untouched: `CourseContentDashboardTests`
+Two known flakes, pre-existing and untouched. `CourseContentDashboardTests`
 ("flipping a content decision never changes `canvasCourseIDsByCode`…") races
-another suite over shared `UserDefaults` and fails perhaps one run in four. It
-passes in isolation. See the shared-`UserDefaults` trap below — the fix belongs
-in the polluting suite, not in the assertion.
+another suite over shared `UserDefaults` and fails perhaps one run in four.
+`SessionCookieStoreTests` ("a calendar-link-only install … cannot use Grade
+Watcher") reads `canvasSessionExpired` as true perhaps one run in ten; it
+passes alone every time (`swift test --filter SessionCookieStoreTests`), no
+other suite writes the Keychain item, and the reader is `AppState.init`
+racing something process-wide that has not been pinned down. Both pass in
+isolation. See the shared-`UserDefaults` trap below — the fix belongs in the
+polluting suite, not in the assertion.
 
 ## Layout
 
