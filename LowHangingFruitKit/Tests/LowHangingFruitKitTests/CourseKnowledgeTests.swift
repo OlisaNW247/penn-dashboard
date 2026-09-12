@@ -493,7 +493,10 @@ struct CourseSearchTests {
         let heavy = CourseDocument(courseID: "1", course: "CIS 2400", kind: .syllabus, sourceID: "a", title: "A", url: nil,
                                     text: "Late policy. Late work. Late submissions lose points every late day, no exceptions for late work.")
         let light = CourseDocument(courseID: "1", course: "CIS 2400", kind: .syllabus, sourceID: "b", title: "B", url: nil,
-                                    text: "Office hours are Tuesdays. Grading is 50% homework, 50% exams.")
+                                    // Mentions the query terms once so BM25 returns it at all --
+                                    // a passage with no overlap is not a weak hit, it is no hit --
+                                    // while the heavy document above outscores it on term frequency.
+                                    text: "Office hours are Tuesdays. Grading is 50% homework, 50% exams. See the late policy below.")
         let coldProvider = SentenceEmbeddingProvider { nil }
         let search = CourseSearch(knowledge: CourseKnowledgeBase(documents: [heavy, light]), embeddingProvider: coldProvider)
 
