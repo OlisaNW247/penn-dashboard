@@ -597,11 +597,10 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         // synthesizes itself) takes the same "allow, unchanged" path as a
         // script that finds no matching form — never worse than not having
         // this guard.
-        guard let sourceFrame = navigationAction.sourceFrame else {
-            appendLogEntry(host: host, path: "\(url.path) [app-link guard: form not found, allowing]", status: nil)
-            decisionHandler(.allow)
-            return
-        }
+        // `sourceFrame` is non-optional in the current SDK (it was implicitly
+        // unwrapped in older ones); the form-not-found path below already
+        // covers a frame that has no matching form.
+        let sourceFrame = navigationAction.sourceFrame
         let script = Self.formSerializerScript(targetURL: url)
         webView.evaluateJavaScript(script, in: sourceFrame, in: .page) { [weak self] result in
             guard let self else {
