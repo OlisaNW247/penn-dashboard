@@ -74,7 +74,7 @@ struct DashItem: Identifiable, Equatable {
 // MARK: – Toggle tabs
 
 enum DashFilter: String, CaseIterable, Identifiable {
-    case thisWeek = "this week"
+    case thisWeek = "todo"
     case all      = "all"
     case done     = "done"
     var id: String { rawValue }
@@ -209,19 +209,35 @@ final class DashboardViewModel: ObservableObject {
 
     private var activeItems: [DashItem] { items.filter { !$0.isCompleted } }
 
-    /// "This week" = overdue (pinned on top) + everything due in the next 7 days.
-    /// Nothing beyond a week out appears here.
-    func thisWeekSections(now: Date = Date()) -> [DashSection] {
-        timelineSections(now: now, includeOverdue: true, includeLater: false)
+    /// "Todo" = overdue (pinned on top) + everything due in the next 48 hours.
+    /// Keeping overdue work here prevents unfinished work from disappearing
+    /// entirely, while the forward-looking window stays deliberately tight.
+    func todoSections(now: Date = Date()) -> [DashSection] {
+        timelineSections(
+            now: now,
+            includeOverdue: true,
+            includeLater: false,
+            upcomingHorizon: 2 * 86_400
+        )
     }
 
     /// "All" = strictly future work through the end of the current term (the pool
     /// is already term-capped). Overdue items live only on the This-week tab.
     func allSections(now: Date = Date()) -> [DashSection] {
-        timelineSections(now: now, includeOverdue: false, includeLater: true)
+        timelineSections(
+            now: now,
+            includeOverdue: false,
+            includeLater: true,
+            upcomingHorizon: 7 * 86_400
+        )
     }
 
-    private func timelineSections(now: Date, includeOverdue: Bool, includeLater: Bool) -> [DashSection] {
+    private func timelineSections(
+        now: Date,
+        includeOverdue: Bool,
+        includeLater: Bool,
+        upcomingHorizon: TimeInterval
+    ) -> [DashSection] {
         var overdue: [DashItem] = []
         var today: [DashItem] = []
         var rest: [DashItem] = []
@@ -239,7 +255,7 @@ final class DashboardViewModel: ObservableObject {
                 overdue.append(item)
             } else if s < 86_400 {
                 today.append(item)
-            } else if s <= 86_400 * 7 {
+            } else if s <= upcomingHorizon {
                 rest.append(item)
             } else {
                 later.append(item)
@@ -265,7 +281,7 @@ final class DashboardViewModel: ObservableObject {
                                   labelColor: .v2SectionMuted, items: today))
         }
         if !rest.isEmpty {
-            sections.append(.init(id: "rest", label: includeLater ? "this week" : "rest of week",
+            sections.append(.init(id: "rest", label: includeLater ? "this week" : "next two days",
                                   labelColor: .v2SectionMuted, items: rest))
         }
         if includeLater && !later.isEmpty {

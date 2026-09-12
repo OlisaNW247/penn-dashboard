@@ -20,7 +20,7 @@ private struct LHFSheetTheme: ViewModifier {
     func body(content: Content) -> some View {
         content
             .preferredColorScheme(state.appearanceMode.colorScheme)
-            .tint(Color.v2SpineBlue)
+            .tint(Color.smoothTeal)
             .scrollContentBackground(.hidden)
             .background(Color.v2Bg)
     }

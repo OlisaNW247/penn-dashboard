@@ -127,7 +127,7 @@ extension SyllabusGradingScheme {
                 weightPercent: weight.percent,
                 dropLowest: weight.dropLowest ?? 0,
                 expectedItemCount: weight.expectedCount,
-                evidence: "from the syllabus, read by locust's server"
+                evidence: "from the syllabus, read by smooth's server"
             )
         }
 
@@ -162,7 +162,7 @@ public enum SyllabusSource: String, Sendable, Codable, Hashable {
         case .canvasPage:         return "Canvas page"
         case .pasted:             return "Pasted text"
         case .importedFile:       return "Imported file"
-        case .sharedProfile:      return "the syllabus, as read by locust's server"
+        case .sharedProfile:      return "the syllabus, as read by smooth's server"
         }
     }
 }

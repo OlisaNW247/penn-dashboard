@@ -1,8 +1,8 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// An active (incomplete) assignment card: white surface, 13pt corners, soft
-/// shadow, and a 6pt urgency-colored spine on the left edge.
+/// An active assignment rendered as a saturated Smooth ticket. The fill, the
+/// section label, and the compact value all describe when it is due.
 ///
 /// **Completing is a swipe right, not a tap.** Tapping the body used to
 /// complete the assignment, which put the app's only destructive-feeling action
@@ -35,8 +35,12 @@ struct AssignmentCardView: View {
     @State private var exitOffset: CGFloat = 0
     @State private var dragX: CGFloat = 0
     @State private var isExpanded = false
+    @State private var isCompleting = false
+    @State private var completionBurst = false
 
-    private let corner: CGFloat = 13
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let corner: CGFloat = 18
 
     /// How far right the card has to travel to count as "done". Roughly a
     /// thumb's width: far enough that a stray horizontal nudge while scrolling
@@ -54,11 +58,20 @@ struct AssignmentCardView: View {
 
         return ZStack(alignment: .leading) {
             completeReveal
-            card(state: state, now: now)
+            card(now: now)
                 .offset(x: dragX)
+                .scaleEffect(isCompleting && !reduceMotion ? 1.012 : 1)
+                .rotationEffect(.degrees(isCompleting && !reduceMotion ? -0.7 : 0))
         }
         .opacity(exitOpacity)
         .offset(y: exitOffset)
+        .overlay(alignment: .trailing) {
+            if isCompleting && !reduceMotion {
+                completionBurstView
+                    .padding(.trailing, 22)
+                    .allowsHitTesting(false)
+            }
+        }
         .gesture(completeDrag(state: state))
         // Swipe is invisible to VoiceOver, so completing needs a spoken action
         // of its own. Without this the feature would simply not exist for
@@ -68,44 +81,32 @@ struct AssignmentCardView: View {
 
     // MARK: The card
 
-    private func card(state: DueState, now: Date) -> some View {
-        HStack(spacing: 0) {
-            Rectangle()
-                .fill(state.spineColor)
-                .frame(width: 6)
-
-            // Deliberately a tap gesture, not a Button. A Button consumes the
-            // touch sequence, so the swipe below never reached the card: a
-            // horizontal drag registered as a tap and merely expanded it. Tap
-            // gestures don't claim drags, which leaves the horizontal one to
-            // this card and the vertical one to the ScrollView.
-            VStack(alignment: .leading, spacing: 0) {
-                content(state: state, now: now)
-                if isExpanded { expandedDetail(now: now) }
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 14)
-            .padding(.vertical, 13)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                    isExpanded.toggle()
-                }
-                lhfHapticLight()
-            }
-            // Losing the Button also loses what it told VoiceOver, so the trait
-            // and the actions are restored by hand.
-            .accessibilityElement(children: .contain)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
+    private func card(now: Date) -> some View {
+        // Deliberately a tap gesture, not a Button. A Button consumes the
+        // touch sequence, so the swipe below never reached the card.
+        VStack(alignment: .leading, spacing: 0) {
+            content(now: now)
+            if isExpanded { expandedDetail(now: now) }
         }
-        .background(Color.v2Card)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                isExpanded.toggle()
+            }
+            lhfHapticLight()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
+        .background(smoothTaskFill(item.due, now: now))
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
     }
 
-    private func content(state: DueState, now: Date) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    private func content(now: Date) -> some View {
+        let value = smoothDueValue(item.due, now: now)
+        return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 // Bold: the course is how you find your way around this list.
                 // Scanning for "the CIS one" is the actual reading pattern, and
@@ -119,16 +120,16 @@ struct AssignmentCardView: View {
                 // is now the single marker (see `DashItem.showsNothingToSubmit`);
                 // this row is back to being plain course-code text.
                 Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                    .font(.lhfSans(9.5, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.v2CourseCode)
+                    .font(.lhfMono(9.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(smoothTaskTextAccent(item.due, now: now))
 
                 Text(item.assignment.title)
-                    .font(.lhfSans(14, weight: .medium))
-                    .foregroundStyle(Color.v2Ink)
-                    .lineLimit(2)
+                    .font(.lhfAssignmentTitle(20))
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 // Visible on the collapsed card, not only once expanded — a
                 // student scanning the list needs to know "nothing to turn in
@@ -144,8 +145,8 @@ struct AssignmentCardView: View {
                 // joined onto the same line by `DashItem.caveatText`.
                 if let caveat = item.caveatText {
                     Text(caveat)
-                        .font(.lhfSans(9, weight: .semibold))
-                        .foregroundStyle(Color.v2CourseCode)
+                        .font(.lhfSecondary(9, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
 
@@ -154,16 +155,21 @@ struct AssignmentCardView: View {
             // The due date is the one thing this card exists to tell you, and
             // it used to be 11pt beside a calendar glyph of equal weight. With
             // the glyph gone it takes the corner outright.
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(dueText(item.due, now: now))
-                    .font(.lhfSans(13.5, weight: .semibold))
-                    .foregroundStyle(state.dueTextColor)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(value.primary)
+                    .font(.lhfMono(18, weight: .medium))
+                    .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                if let secondary = value.secondary {
+                    Text(secondary)
+                        .font(.lhfMono(8.5, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                }
                 if item.dueOverride != nil {
                     Text("adjusted")
-                        .font(.lhfSans(8.5))
-                        .foregroundStyle(Color.v2CourseCode)
+                        .font(.lhfMono(8.5))
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
         }
@@ -178,19 +184,19 @@ struct AssignmentCardView: View {
     private func expandedDetail(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle()
-                .fill(Color.v2Divider)
-                .frame(height: 0.5)
+                .fill(Color.smoothInk.opacity(0.22))
+                .frame(height: 1)
                 .padding(.top, 12)
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("due")
-                        .font(.lhfSans(9, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(Color.v2CourseCode)
+                        .font(.lhfAssignmentTitle(9))
+                        .tracking(0.5)
+                        .foregroundStyle(Color.smoothInk.opacity(0.68))
                     Text(fullDueText(item.due))
-                        .font(.lhfSans(12.5, weight: .medium))
-                        .foregroundStyle(Color.v2Ink)
+                        .font(.lhfAssignmentTitle(12.5))
+                        .foregroundStyle(Color.smoothInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -201,9 +207,9 @@ struct AssignmentCardView: View {
                         Image(systemName: "calendar")
                             .font(.system(size: 12, weight: .medium))
                         Text("edit date")
-                            .font(.lhfSans(12, weight: .medium))
+                            .font(.lhfAssignmentTitle(12))
                     }
-                    .foregroundStyle(Color.v2SpineBlue)
+                    .foregroundStyle(Color.smoothInk)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -216,8 +222,8 @@ struct AssignmentCardView: View {
             // `DashItem.showsNothingToSubmit`.
             if item.showsNothingToSubmit {
                 Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
-                    .font(.lhfSans(11.5))
-                    .foregroundStyle(.secondary)
+                    .font(.lhfAssignmentTitle(11.5))
+                    .foregroundStyle(Color.smoothInk.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
@@ -238,11 +244,11 @@ struct AssignmentCardView: View {
     /// take.
     private var completeReveal: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(Color.v2SpineGreen)
+            .fill(Color.smoothTeal)
             .overlay(alignment: .leading) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.smoothInk)
                     .padding(.leading, 20)
                     .opacity(dragX >= completeThreshold ? 1 : 0.45)
                     .scaleEffect(dragX >= completeThreshold ? 1.15 : 1)
@@ -269,19 +275,85 @@ struct AssignmentCardView: View {
     }
 
     private func triggerComplete(state: DueState) {
+        guard !isCompleting else { return }
+        isCompleting = true
         lhfHaptic(for: state)
-        withAnimation(.easeIn(duration: 0.28)) {
-            // Finish the direction the finger was already going, rather than
-            // snapping back and then leaving upward, which reads as a rejected
-            // gesture followed by an unrelated deletion.
-            dragX = maxDrag + 40
-            exitOpacity = 0
+
+        if reduceMotion {
+            withAnimation(.easeOut(duration: 0.18)) {
+                dragX = maxDrag + 40
+                exitOpacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onComplete() }
+            return
         }
-        // Defer the data mutation until the exit animation finishes.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-            onComplete()
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
+            dragX = maxDrag
         }
+        DispatchQueue.main.async {
+            withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) {
+                completionBurst = true
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+            withAnimation(.easeIn(duration: 0.28)) {
+                dragX = maxDrag + 56
+                exitOffset = -8
+                exitOpacity = 0
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.58) { onComplete() }
     }
+
+    private var completionBurstView: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.smoothTeal.opacity(0.48), lineWidth: 2)
+                .frame(width: 46, height: 46)
+                .scaleEffect(completionBurst ? 1.7 : 0.78)
+                .opacity(completionBurst ? 0 : 0.72)
+
+            Circle()
+                .fill(Color.smoothTeal)
+                .frame(width: 46, height: 46)
+                .shadow(color: Color.smoothTealInk.opacity(0.16), radius: 7, y: 3)
+
+            Image(systemName: "checkmark")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color.smoothPaper)
+                .rotationEffect(.degrees(completionBurst ? 0 : -14))
+
+            ForEach(Array(Self.burstOffsets.enumerated()), id: \.offset) { index, offset in
+                Image(systemName: Self.burstSymbols[index])
+                    .font(.system(size: index.isMultiple(of: 3) ? 7 : 6, weight: .bold))
+                    .foregroundStyle(Self.burstColors[index])
+                    .offset(completionBurst ? offset : .zero)
+                    .rotationEffect(.degrees(completionBurst ? Double(index * 38) : 0))
+                    .opacity(completionBurst ? 0 : 1)
+            }
+        }
+        .scaleEffect(completionBurst ? 1 : 0.62)
+        .opacity(completionBurst ? 1 : 0)
+    }
+
+    private static let burstOffsets: [CGSize] = [
+        CGSize(width: -34, height: -24), CGSize(width: 0, height: -38),
+        CGSize(width: 34, height: -22), CGSize(width: 38, height: 18),
+        CGSize(width: 10, height: 40), CGSize(width: -28, height: 34),
+        CGSize(width: -42, height: 2), CGSize(width: 42, height: -4),
+    ]
+
+    private static let burstColors: [Color] = [
+        .smoothTomato, .smoothMarigold, .smoothLemon,
+        .smoothTeal, .smoothMarigold, .smoothCobalt,
+        .smoothGrape, .smoothTomato,
+    ]
+
+    private static let burstSymbols = [
+        "circle.fill", "diamond.fill", "triangle.fill", "star.fill",
+        "diamond.fill", "circle.fill", "star.fill", "triangle.fill",
+    ]
 }
 
 #if DEBUG

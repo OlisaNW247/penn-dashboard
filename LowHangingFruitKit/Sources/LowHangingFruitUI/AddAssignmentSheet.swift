@@ -27,6 +27,7 @@ struct AddAssignmentSheet: View {
                     TextField("title", text: $title)
                     TextField("course (optional)", text: $course)
                 }
+                .smoothSectionBackground(.smoothLemon)
 
                 Section {
                     DatePicker(repeatsWeekly ? "First due" : "Due",
@@ -36,12 +37,20 @@ struct AddAssignmentSheet: View {
                 } footer: {
                     if repeatsWeekly {
                         Text("repeats every \(weekdayName(dueDate)) at \(timeString(dueDate)).")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2DateText)
                     } else {
                         Text("a one-time assignment. the sync never touches items you add.")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2DateText)
                     }
                 }
+                .smoothSectionBackground(.smoothTeal)
             }
             .formStyle(.grouped)
+            .font(.lhfSecondary(15))
+            .foregroundStyle(Color.smoothInk)
+            .smoothFormChrome(accent: .smoothTeal)
             .navigationTitle("new assignment")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

@@ -147,13 +147,32 @@ public enum WidgetUrgency: String, Codable, Sendable {
         else { self = .later }
     }
 
-    /// Matches the app's urgency spine palette (overdue/today/soon/later).
+    /// Matches the app's urgency spine palette (overdue/today/soon/later) —
+    /// `DueState.spineColor` in RedesignTokens.swift, which is
+    /// smoothTomato/smoothMarigold/smoothCobalt/smoothTeal.
     public var spineHex: UInt32 {
         switch self {
-        case .overdue: return 0xC8443A
-        case .today: return 0xD98C2B
-        case .soon: return 0x3A6EA5
-        case .later: return 0x2E7D6B
+        case .overdue: return 0xF07256
+        case .today: return 0xF7A844
+        case .soon: return 0x699AE7
+        case .later: return 0x40B3A5
+        }
+    }
+
+    /// The darker "ink" partner for each urgency color, used where the widget
+    /// draws text directly on a pastel tint of `spineHex` (the course code on
+    /// the Home Screen card treatment) so it stays legible against the fill.
+    /// Mirrors the *light-mode* value of `smoothTomatoInk`/`smoothMarigoldInk`/
+    /// `smoothCobaltInk`/`smoothTealInk` in RedesignTokens.swift — the widget
+    /// has no light/dark appearance system of its own (see `Palette` in
+    /// NextDueWidgetViews.swift), so only the light variant is duplicated
+    /// here rather than introducing one.
+    public var inkHex: UInt32 {
+        switch self {
+        case .overdue: return 0xB63B23
+        case .today: return 0x985700
+        case .soon: return 0x345EA8
+        case .later: return 0x176D65
         }
     }
 

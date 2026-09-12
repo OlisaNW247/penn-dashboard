@@ -20,16 +20,16 @@ struct EditDueSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(assignment.title)
-                            .font(.geist(18, weight: .semibold))
+                            .font(.lhfAssignmentTitle(18))
                         Text(assignment.course)
-                            .font(.geist(13))
-                            .foregroundStyle(.secondary)
+                            .font(.lhfSecondary(13))
+                            .foregroundStyle(Color.v2DateText)
                     }
 
                     if overrideDate != nil, let original = assignment.dueAt {
                         Text("originally due \(Self.format(original))")
-                            .font(.geist(12))
-                            .foregroundStyle(.secondary)
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2DateText)
                     }
 
                     DatePicker("due", selection: $draft, displayedComponents: [.date, .hourAndMinute])
@@ -43,7 +43,7 @@ struct EditDueSheet: View {
                             Label("reset to original due date", systemImage: "arrow.counterclockwise")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
                     }
                 }
                 .padding(20)
@@ -61,7 +61,7 @@ struct EditDueSheet: View {
                         overrideDate = draft
                         dismiss()
                     }
-                    .font(.geist(14, weight: .semibold))
+                    .font(.lhfSans(14, weight: .semibold))
                 }
             }
         }

@@ -81,10 +81,9 @@ struct ProfileNotificationsSection: View {
                 }
             }
         } header: {
-            Text("notifications")
-        } footer: {
-            Text("classes follow your default times from settings unless you give them their own.")
+            SmoothSectionHeader("notifications", accent: .smoothTeal)
         }
+        .smoothSectionBackground(.smoothCobalt)
     }
 
     // MARK: Whole-section states
@@ -94,15 +93,9 @@ struct ProfileNotificationsSection: View {
     /// on — but a screen full of reminder controls that cannot currently fire
     /// anything owes the student an explanation at the top.
     private var remindersOffNotice: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label("reminders are off", systemImage: "bell.slash")
-                .font(.lhfSans(14, weight: .semibold))
-                .foregroundStyle(Color.v2SpineAmber)
-            Text("turn on due-date reminders in settings first. what you set here is kept until you do.")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Label("reminders are off", systemImage: "bell.slash")
+            .font(.lhfSecondary(14, weight: .semibold))
+            .foregroundStyle(Color.v2SpineAmber)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -111,15 +104,9 @@ struct ProfileNotificationsSection: View {
     /// a tab reads as a broken tab, and "no classes yet" is the ordinary week-one
     /// state rather than a fault.
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("no classes yet")
-                .font(.lhfSans(15, weight: .semibold))
-                .foregroundStyle(Color.v2Ink)
-            Text("each class gets a row here once it shows up above.")
-                .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text("no classes")
+            .font(.lhfSecondary(13))
+            .foregroundStyle(Color.v2DateText)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
@@ -131,11 +118,11 @@ struct ProfileNotificationsSection: View {
     private func switchedOffRow(_ course: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(state.courseDisplayName(course))
-                .font(.lhfSans(15))
-                .foregroundStyle(.secondary)
+                .font(.lhfSecondary(15))
+                .foregroundStyle(Color.v2DateText)
             Spacer(minLength: 8)
             Text("class is off")
-                .font(.lhfSans(12))
+                .font(.lhfSecondary(12))
                 .foregroundStyle(Color.v2CourseCode)
         }
         .accessibilityElement(children: .combine)
@@ -156,15 +143,9 @@ struct ProfileNotificationsSection: View {
     /// currently does, and the inherited-or-overridden badge.
     private func courseSummary(_ course: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(state.courseDisplayName(course))
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                Text(summary(for: course))
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(state.courseDisplayName(course))
+                .font(.lhfSecondary(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
             Spacer(minLength: 0)
             badge(for: course)
         }
@@ -182,7 +163,7 @@ struct ProfileNotificationsSection: View {
                 scheduler.rescheduleAfterPreferenceChange()
             }
         ))
-        .font(.lhfSans(14))
+        .font(.lhfSecondary(14))
 
         if preferences.notificationsEnabled(course) {
             leadTimeControls(course)
@@ -215,14 +196,8 @@ struct ProfileNotificationsSection: View {
                     scheduler.rescheduleAfterPreferenceChange()
                 }
             ))
-            .font(.lhfSans(14))
+            .font(.lhfSecondary(14))
 
-            Text(preferences.nothingToSubmitEnabled(course)
-                 ? "readings, classes and attend-only assignments show on the dashboard and remind you."
-                 : "readings, classes and attend-only assignments are hidden from this class's list. weekly tasks you created stay, but stay silent.")
-                .font(.lhfSans(12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -247,7 +222,7 @@ struct ProfileNotificationsSection: View {
                 scheduler.rescheduleAfterPreferenceChange()
             }
         ))
-        .font(.lhfSans(14))
+        .font(.lhfSecondary(14))
 
         if isInheriting {
             inheritedLeadTimes
@@ -269,14 +244,10 @@ struct ProfileNotificationsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .font(.lhfSans(13))
-                .foregroundStyle(.secondary)
+                .font(.lhfSecondary(13))
+                .foregroundStyle(Color.v2DateText)
             }
 
-            Text("from settings. change it there and this class follows.")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2CourseCode)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
@@ -302,7 +273,7 @@ struct ProfileNotificationsSection: View {
                     scheduler.rescheduleAfterPreferenceChange()
                 }
             ))
-            .font(.lhfSans(13))
+            .font(.lhfSecondary(13))
         }
 
         // An empty set is allowed and is not an error, but it is invisible in a
@@ -311,7 +282,7 @@ struct ProfileNotificationsSection: View {
         if chosen.isEmpty {
             Label("no reminder times. this class won\u{2019}t warn you.",
                   systemImage: "exclamationmark.triangle")
-                .font(.lhfSans(12))
+                .font(.lhfSecondary(12))
                 .foregroundStyle(Color.v2SpineAmber)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -335,7 +306,7 @@ struct ProfileNotificationsSection: View {
         let tint: Color = muted ? .v2SpineAmber : (overridden ? .v2SpineBlue : .v2CourseCode)
 
         Text(badgeText(for: course).uppercased())
-            .font(.lhfSans(10, weight: .semibold))
+            .font(.lhfSecondary(10, weight: .semibold))
             .tracking(0.8)
             .foregroundStyle(tint)
             .padding(.horizontal, 7)

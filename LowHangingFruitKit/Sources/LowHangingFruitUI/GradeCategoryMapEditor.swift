@@ -105,7 +105,7 @@ struct GradeCategoryMapEditor: View {
             !category.canvasGroupIDs.isEmpty || suggestion.itemAssignments.values.contains(category.id)
         }
         VStack(alignment: .leading, spacing: 8) {
-            Text("suggested mapping, as read by locust\u{2019}s server.")
+            Text("suggested mapping, as read by smooth\u{2019}s server.")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)

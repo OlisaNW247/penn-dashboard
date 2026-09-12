@@ -63,78 +63,55 @@ struct SettingsPage: View {
 
     var body: some View {
         Form {
+            Section {
+                SmoothFormHeader(
+                    title: "Settings",
+                    accent: .smoothCobalt,
+                    spark: .smoothTomato
+                )
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+            .listRowSeparator(.hidden)
+
             // Header deliberately isn't "Profile" any more: that word now names
             // a tab, and a Settings section wearing the same label would read
             // as a shortcut to it. The field itself hasn't moved — a name is a
             // preference, and Profile is about classes.
-            Section("your name") {
+            Section {
                 TextField("your name", text: Binding(
                     get: { state.userName },
                     set: { state.updateName($0) }
                 ))
+            } header: {
+                SmoothSectionHeader("your name", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothLemon)
 
             // One row per source, connect or disconnect on the right. The
             // paste-a-calendar-link fallback moved out of here: it belongs on
             // the path where a login is actually failing (onboarding), not in
             // a list of accounts, where it read as a third thing to connect.
             Section {
-                if state.isPreviewMode {
-                    // In the demo every connect action runs `restartOnboarding()`,
-                    // which drops preview mode and throws whoever tapped it at the
-                    // Penn SSO wall with no way back. One clearly labelled exit
-                    // instead, so leaving the demo is always deliberate.
-                    Button {
-                        dismiss()
-                        state.restartOnboarding()
-                    } label: {
-                        Text("exit preview")
-                    }
-                } else {
-                    accountRow(label: "canvas",
-                               connected: state.isCanvasConnected,
-                               working: state.isLoading || state.isCanvasDiscoveryLoading,
-                               disconnect: .canvas)
+                accountRow(label: "canvas",
+                           connected: state.isCanvasConnected,
+                           working: state.isLoading || state.isCanvasDiscoveryLoading,
+                           disconnect: .canvas)
 
-                    // The feed-connected-but-no-cookie-session state: the
-                    // calendar link keeps the dashboard working while
-                    // everything session-powered (Grade Watcher, submission
-                    // detection, course probes) is silently unavailable —
-                    // and, because the Grades entry and the reconnect banner
-                    // are both gated on cookie state, there was previously NO
-                    // visible way back short of Disconnect → Connect. That
-                    // pair is no longer safe advice: disconnect purges the
-                    // ledger's Canvas rows, and with iCloud sync on, those
-                    // deletions propagate to the user's other devices. This
-                    // button is the non-destructive path — same
-                    // restartOnboarding() route as "connect", which touches
-                    // no stored data and lands on the connect checklist where
-                    // the Canvas login step can be redone.
-                    if state.isCanvasConnected && !state.canUseGradeWatcher {
-                        Button {
-                            dismiss()
-                            state.restartOnboarding(for: .canvas)
-                        } label: {
-                            Label("sign in to canvas", systemImage: "link")
-                        }
-                    }
-
-                    accountRow(label: "gradescope",
-                               connected: state.isGradescopeConnected,
-                               working: state.isGradescopeLoading,
-                               disconnect: .gradescope)
-                }
+                accountRow(label: "gradescope",
+                           connected: state.isGradescopeConnected,
+                           working: state.isGradescopeLoading,
+                           disconnect: .gradescope)
             } header: {
-                Text("accounts")
-            } footer: {
-                Text("everything stays on your phone.")
+                SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothTeal)
 
             announcementWatcherSection
 
             askSection
 
-            Section("appearance") {
+            Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
                     set: { state.setAppearanceMode($0) }
@@ -145,7 +122,10 @@ struct SettingsPage: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            } header: {
+                SmoothSectionHeader("appearance", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothCobalt)
 
             if FeatureFlags.gradeWatcher {
                 Section {
@@ -157,24 +137,24 @@ struct SettingsPage: View {
                         }
                     } else {
                         Label("grade watcher", systemImage: "chart.bar.fill")
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Color.v2DateText)
                     }
                 } header: {
-                    Text("grades")
-                } footer: {
-                    if !state.canUseGradeWatcher {
-                        Text("Grade Watcher needs the in-app Canvas login \u{2014} a pasted calendar link carries no account access, so it can never show grades. Use \u{201C}Sign in to Canvas\u{201D} in the Account section above to log in directly; your calendar feed and synced assignments stay put.")
-                    }
+                    SmoothSectionHeader("grades", accent: .smoothCobalt)
                 }
+                .smoothSectionBackground(.smoothGrape)
             }
 
-            Section("tasks") {
+            Section {
                 Button {
                     showRecurring = true
                 } label: {
                     Label("add recurring task", systemImage: "calendar.badge.plus")
                 }
+            } header: {
+                SmoothSectionHeader("tasks", accent: .smoothCobalt)
             }
+            .smoothSectionBackground(.smoothLemon)
 
             remindersSection
 
@@ -184,20 +164,20 @@ struct SettingsPage: View {
             onThisMacSection
             #endif
 
-            storageSection
-
-            diagnosticsSection
-
             if let notice = state.syncNotice ?? state.error {
                 Section {
                     Label(notice, systemImage: "exclamationmark.triangle")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(.orange)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.smoothMarigoldInk)
                 }
+                .smoothSectionBackground(.smoothMarigold)
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("settings")
+        .font(.lhfSecondary(15))
+        .foregroundStyle(Color.smoothInk)
+        .smoothFormChrome(accent: .smoothCobalt)
+        .navigationTitle("")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -233,7 +213,7 @@ struct SettingsPage: View {
     @ViewBuilder
     private var storageSection: some View {
         if let stats = state.assignmentStore?.stats() {
-            Section("storage") {
+            Section {
                 LabeledContent("saved", value: "\(stats.total)")
                 LabeledContent("canvas / gradescope", value: "\(stats.canvas) / \(stats.gradescope)")
                 LabeledContent("finished", value: "\(stats.finished)")
@@ -255,8 +235,8 @@ struct SettingsPage: View {
                 LabeledContent("Duplicate entries", value: "\(stats.duplicateIDs)")
                 if stats.duplicateIDs > 0 {
                     Text("The ledger is holding more than one copy of the same assignment. It will self-heal on the next sync, but this appearing at all is a bug worth reporting.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.orange)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
                 // Three states, not two. A store can be perfectly on-disk and
                 // still be failing every write, and telling that user their
@@ -270,8 +250,8 @@ struct SettingsPage: View {
                         : "not saving. assignments will be lost when the app quits.",
                     systemImage: stats.isHealthy ? "checkmark.circle" : "exclamationmark.triangle"
                 )
-                .font(.lhfSans(12))
-                .foregroundStyle(stats.isHealthy ? Color.secondary : Color.orange)
+                .font(.lhfSecondary(12))
+                .foregroundStyle(stats.isHealthy ? Color.v2DateText : Color.smoothTomatoInk)
 
                 // The specifics, when there are any. "Not saving" on its own
                 // tells the user something is wrong but nothing about what —
@@ -280,14 +260,16 @@ struct SettingsPage: View {
                 // difference between an actionable warning and a shrug.
                 if let reason = stats.storageFailureReason {
                     Text(reason)
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.orange)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
                 if stats.failedSaveCount > 0 {
                     Text("\(stats.failedSaveCount) change\(stats.failedSaveCount == 1 ? "" : "s") couldn't be written to storage. Check that your device isn't out of space.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(Color.orange)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.smoothTomatoInk)
                 }
+            } header: {
+                SmoothSectionHeader("storage", accent: .smoothCobalt)
             }
         }
     }
@@ -329,10 +311,9 @@ struct SettingsPage: View {
                 ))
             }
         } header: {
-            Text("announcement watcher")
-        } footer: {
-            Text("reads your professors' announcements with your canvas login and turns 'read this before class' into items here. ai assist is on by default: announcements that might carry a task are read by an ai model on lhf's server to decide what, if anything, you need to do and by when; off, a simpler on-phone rule decides.")
+            SmoothSectionHeader("preferences", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothGrape)
     }
 
     // MARK: Ask (course materials)
@@ -354,19 +335,19 @@ struct SettingsPage: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
-                        .foregroundStyle(state.courseKnowledge.isEmpty ? .secondary : Color.v2SpineGreen)
+                        .foregroundStyle(state.courseKnowledge.isEmpty ? Color.v2DateText : Color.v2SpineGreen)
                 }
                 Text("course materials")
                 Spacer()
                 Text(courseKnowledgeSummary)
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.secondary)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
             }
 
             if let notice = state.courseKnowledgeNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.orange)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.smoothMarigoldInk)
             }
 
             if BackendServices.client != nil {
@@ -375,14 +356,9 @@ struct SettingsPage: View {
                 }
             }
         } header: {
-            Text("ask")
-        } footer: {
-            Text(BackendServices.client != nil
-                 ? "ask reads your syllabi, announcements and assignment pages with your canvas login. course materials are pooled with classmates in the same canvas course so everyone's ask knows the class; your grades, work and login never leave this phone. questions are answered by an ai model on lhf's server."
-                 : (OnDeviceLanguageModel.isAvailable
-                    ? "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers are phrased by apple's on-device model."
-                    : "ask reads your syllabi, announcements and assignment pages with your canvas login and keeps them on this phone. answers come straight from that data and nothing leaves the phone."))
+            SmoothSectionHeader("ask", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothMarigold)
         .confirmationDialog(
             "delete my class data from lhf's server?",
             isPresented: $confirmingBackendDataDeletion,
@@ -416,7 +392,7 @@ struct SettingsPage: View {
     /// student sets once, not the per-course tuning they revisit.
     @ViewBuilder
     private var remindersSection: some View {
-        Section("reminders") {
+        Section {
             Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
                 set: { newValue in Task { await scheduler.setEnabled(newValue) } }
@@ -425,8 +401,8 @@ struct SettingsPage: View {
             if scheduler.isEnabled {
                 if scheduler.authStatus == .denied {
                     Label("notifications are off in system settings.", systemImage: "bell.slash")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(.secondary)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.v2DateText)
                     Button("open settings") { openSystemNotificationSettings() }
                 } else {
                     ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
@@ -451,7 +427,10 @@ struct SettingsPage: View {
                     }
                 }
             }
+        } header: {
+            SmoothSectionHeader("reminders", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothTomato)
     }
 
     // MARK: iCloud sync
@@ -476,23 +455,22 @@ struct SettingsPage: View {
             // otherwise a student who just turned sync on would see "Sync is
             // on" immediately, which isn't true until they relaunch.
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
-                Text("Takes effect after you quit and reopen Locust.")
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.secondary)
+                Text("Takes effect after you quit and reopen Smooth.")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
             } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
                 Text(reason)
-                    .font(.lhfSans(12))
-                    .foregroundStyle(Color.orange)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.smoothTomatoInk)
             } else if state.cloudSyncEnabled {
                 Text("Sync is on. Changes appear on your other devices within a minute or two.")
-                    .font(.lhfSans(12))
-                    .foregroundStyle(.secondary)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
             }
         } header: {
-            Text("icloud sync")
-        } footer: {
-            Text("Syncs your assignments and choices through your own iCloud account \u{2014} nothing is visible to Locust\u{2019}s developer. Takes effect the next time you quit and reopen Locust. Both devices need to be signed into the same iCloud account.")
+            SmoothSectionHeader("icloud sync", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothCobalt)
     }
 
     // MARK: On this Mac
@@ -521,10 +499,9 @@ struct SettingsPage: View {
                 }
             ))
         } header: {
-            Text("on this mac")
-        } footer: {
-            Text("Keeps Locust in your menu bar so assignments stay fresh all day.")
+            SmoothSectionHeader("on this mac", accent: .smoothCobalt)
         }
+        .smoothSectionBackground(.smoothTeal)
     }
     #endif
 
@@ -545,9 +522,7 @@ struct SettingsPage: View {
                 Label("report a problem", systemImage: "envelope")
             }
         } header: {
-            Text("troubleshooting")
-        } footer: {
-            Text("Copies device/app info and a redacted login redirect log \u{2014} no passwords, cookies, or links. \u{201C}Report a problem\u{201D} opens an email with that same redacted report already in it, so you only have to describe what happened.")
+            SmoothSectionHeader("troubleshooting", accent: .smoothCobalt)
         }
     }
 
@@ -586,34 +561,42 @@ struct SettingsPage: View {
 #endif
     }
 
-    /// One source, with its action on the right. Connected state is carried by
-    /// the action word itself rather than a separate "Connected" label: the row
-    /// only ever offers the one move that applies, so a second status string
-    /// was saying the same thing twice.
+    /// One tappable source row. Its trailing status says what is true; tapping
+    /// the row performs the only relevant action: connect or disconnect.
     private func accountRow(label: String,
                             connected: Bool,
                             working: Bool,
                             disconnect target: DisconnectTarget) -> some View {
-        HStack(spacing: 8) {
-            if working {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: connected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(connected ? Color.v2SpineGreen : .secondary)
-            }
-            Text(label)
-            Spacer()
+        Button {
+            guard !working else { return }
             if connected {
-                Button("disconnect", role: .destructive) { disconnecting = target }
-                    .buttonStyle(.borderless)
+                disconnecting = target
             } else {
-                Button("connect") {
-                    dismiss()
-                    state.restartOnboarding(for: target == .canvas ? .canvas : .gradescope)
+                dismiss()
+                state.restartOnboarding(for: target == .canvas ? .canvas : .gradescope)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                if working {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: connected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(connected ? Color.smoothTeal : Color.smoothMuted)
                 }
-                .buttonStyle(.borderless)
+                Text(label)
+                    .foregroundStyle(Color.smoothInk)
+                Spacer()
+                Text(working ? "checking" : (connected ? "connected" : "not connected"))
+                    .font(.lhfSecondary(12, weight: .medium))
+                    .foregroundStyle(Color.smoothMuted)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
             }
         }
+        .buttonStyle(.plain)
+        .disabled(working)
         .accessibilityElement(children: .combine)
+        .accessibilityHint(connected ? "double tap to disconnect" : "double tap to connect")
     }
 }

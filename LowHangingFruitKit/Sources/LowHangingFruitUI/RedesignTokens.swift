@@ -1,63 +1,77 @@
 import SwiftUI
 import LowHangingFruitKit
+import CoreText
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
 
-// MARK: – Palette (UI redesign v2)
+// MARK: – Smooth palette
 //
-// A warm-greige, paper-like system. Cards are white with a colored "spine"
-// on the left whose color encodes due-date urgency. All values are taken
-// straight from the design spec. `Color(hex:)` is defined in DesignSystem.swift.
-//
-// Every token below is a *dynamic* color (see `Color.dynamic(light:dark:)`):
-// it resolves per interface style, so anything that reads e.g. `.v2Bg` just
-// works in both Light and Dark without touching call sites. Light values are
-// the original, unchanged palette (zero visual diff for existing users);
-// dark values are a tasteful inversion — near-black warm charcoal surfaces,
-// warm off-white text, and the same four urgency hues brightened/desaturated
-// slightly for legibility on a dark background.
+// The dashboard's color is semantic: every assignment is filled from a
+// warm-to-cool deadline ramp. Neutral app chrome stays on white so color never
+// competes with urgency. The v2 aliases keep the rest of the app on the
+// same family without changing any feature wiring.
 
 extension Color {
-    static let v2Bg          = Color.dynamic(light: 0xF4F1EC, dark: 0x1C1A17)  // warm greige background
-    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)  // active card surface
-    static let v2CardShadow  = Color.dynamic(light: 0x786E5A, dark: 0x000000)  // soft shadow tint (used at ~6%)
-    static let v2Ink         = Color.dynamic(light: 0x211F1B, dark: 0xEFECE6)  // primary text / titles
-    static let v2DateText    = Color.dynamic(light: 0x5C574E, dark: 0xB9B3A8)  // header date / serif footer
-    static let v2CourseCode  = Color.dynamic(light: 0xA39C8E, dark: 0x9A9384)  // course code on active cards
+    static let smoothPaper    = Color(hex: 0xFFFFFF)
+    static let smoothSurface  = Color(hex: 0xF2E5C9)
+    static let smoothRule     = Color(hex: 0xD9C9A6)
+    static let smoothInk      = Color(hex: 0x1B1714)
+    static let smoothMuted    = Color(hex: 0x7C7060)
+    static let smoothTomato   = Color(hex: 0xF07256)
+    static let smoothMarigold = Color(hex: 0xF7A844)
+    static let smoothLemon    = Color(hex: 0xF5D353)
+    static let smoothTeal     = Color(hex: 0x40B3A5)
+    static let smoothCobalt   = Color(hex: 0x699AE7)
+    static let smoothGrape    = Color(hex: 0xAF85F0)
+
+    // Dark companions for text placed on each pastel urgency field.
+    static let smoothTomatoInk   = Color.dynamic(light: 0xB63B23, dark: 0xF59A85)
+    static let smoothMarigoldInk = Color.dynamic(light: 0x985700, dark: 0xFBCB75)
+    static let smoothLemonInk    = Color.dynamic(light: 0x746400, dark: 0xF9E889)
+    static let smoothTealInk     = Color.dynamic(light: 0x176D65, dark: 0x76D4C9)
+    static let smoothCobaltInk   = Color.dynamic(light: 0x345EA8, dark: 0xA8C4F5)
+    static let smoothGrapeInk    = Color.dynamic(light: 0x7044A6, dark: 0xD0B2F7)
+
+    static let v2Bg          = Color.dynamic(light: 0xFFFFFF, dark: 0x1C1A17)
+    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)
+    static let v2CardShadow  = Color.dynamic(light: 0x1B1714, dark: 0x000000)
+    static let v2Ink         = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
+    static let v2DateText    = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
+    static let v2CourseCode  = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
 
     // Urgency — spines (hot → cool: overdue → today → soon → later)
-    static let v2SpineRed    = Color.dynamic(light: 0xC8443A, dark: 0xE0574C)  // overdue
-    static let v2SpineAmber  = Color.dynamic(light: 0xD98C2B, dark: 0xE6A248)  // due <24h
-    static let v2SpineBlue   = Color.dynamic(light: 0x3A6EA5, dark: 0x5B8FC7)  // due 1–3 days (upcoming)
-    static let v2SpineGreen  = Color.dynamic(light: 0x2E7D6B, dark: 0x4FA08D)  // due 4+ days / later
+    static let v2SpineRed    = Color.smoothTomato
+    static let v2SpineAmber  = Color.smoothMarigold
+    static let v2SpineBlue   = Color.smoothCobalt
+    static let v2SpineGreen  = Color.smoothTeal
     /// Provenance accent, not an urgency: marks numbers that came from the
     /// user's own syllabus. Deliberately outside the hot→cool urgency ramp so
     /// a syllabus badge can't be misread as a deadline signal.
-    static let v2SpinePurple = Color.dynamic(light: 0x6B5B95, dark: 0x9B8BC4)
+    static let v2SpinePurple = Color.smoothGrape
 
     // Urgency — due text (slightly darker than the spine)
-    static let v2DueRed      = Color.dynamic(light: 0xC8443A, dark: 0xE0574C)
-    static let v2DueAmber    = Color.dynamic(light: 0xC2861A, dark: 0xD9A13F)
-    static let v2DueBlue     = Color.dynamic(light: 0x2F5C8A, dark: 0x5B8FC7)
-    static let v2DueGreen    = Color.dynamic(light: 0x2E7D6B, dark: 0x4FA08D)
+    static let v2DueRed      = Color.smoothTomato
+    static let v2DueAmber    = Color.smoothMarigold
+    static let v2DueBlue     = Color.smoothCobalt
+    static let v2DueGreen    = Color.smoothTeal
 
     // Ring
-    static let v2RingTrack   = Color.dynamic(light: 0xE5DDCE, dark: 0x35322B)
-    static let v2RingSub     = Color.dynamic(light: 0x928C80, dark: 0x9A9384)  // "done" caption under ring number
+    static let v2RingTrack   = Color.dynamic(light: 0xD9C9A6, dark: 0x35322B)
+    static let v2RingSub     = Color.dynamic(light: 0x7C7060, dark: 0x9A9384)
 
     // Segmented toggle
-    static let v2ToggleBg       = Color.dynamic(light: 0xE9E3D8, dark: 0x2E2B25)
-    static let v2ToggleActive   = Color.dynamic(light: 0x211F1B, dark: 0xEFECE6)
-    static let v2ToggleActiveTx = Color.dynamic(light: 0xF4F1EC, dark: 0x1C1A17)
-    static let v2ToggleInactive = Color.dynamic(light: 0x928C80, dark: 0x8B8477)
+    static let v2ToggleBg       = Color.dynamic(light: 0xF2E5C9, dark: 0x2E2B25)
+    static let v2ToggleActive   = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
+    static let v2ToggleActiveTx = Color.dynamic(light: 0xFFFFFF, dark: 0x1B1714)
+    static let v2ToggleInactive = Color.dynamic(light: 0x1B1714, dark: 0xD9C9A6)
 
     // Section headers
-    static let v2Divider       = Color.dynamic(light: 0xE2DBCE, dark: 0x322F28)
-    static let v2SectionMuted  = Color.dynamic(light: 0x7A6F50, dark: 0xA79C7E)  // TODAY / REST OF WEEK / LATER labels
-    static let v2SectionCount  = Color.dynamic(light: 0xB0A892, dark: 0x7D7666)  // per-section count
+    static let v2Divider       = Color.dynamic(light: 0xD9C9A6, dark: 0x322F28)
+    static let v2SectionMuted  = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
+    static let v2SectionCount  = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
 
     // Done (archived) cards
     static let v2DoneCard    = Color.dynamic(light: 0xF0EDE6, dark: 0x201E1A)
@@ -87,11 +101,27 @@ extension Color {
     }
 }
 
-// MARK: – Fonts (Instrument Serif display, Geist body)
-//
-// Prefers the bundled custom faces if present, otherwise falls back to the
-// system serif / sans designs so the serif↔sans distinction survives even
-// when the .ttf files aren't bundled.
+// MARK: – Smooth fonts
+
+private enum SmoothFontRegistry {
+    static let registration: Void = {
+        for (name, ext) in [
+            ("Satoshi-Variable", "ttf"),
+            ("Satoshi-VariableItalic", "ttf"),
+            ("Roobert-SemiBold", "otf"),
+            ("Roobert-SemiBoldItalic", "otf"),
+            ("Inter", "ttf"),
+            ("FamiljenGrotesk-Variable", "ttf"),
+            ("SpaceMono-Regular", "ttf"),
+            ("SpaceMono-Bold", "ttf"),
+        ] {
+            guard let url = Bundle.module.url(forResource: name, withExtension: ext) else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }()
+
+    static func ensureRegistered() { _ = registration }
+}
 
 private func fontIsAvailable(_ name: String) -> Bool {
 #if canImport(UIKit)
@@ -155,33 +185,92 @@ private func uiTextStyle(for style: Font.TextStyle) -> UIFont.TextStyle {
 #endif
 
 extension Font {
-    /// Instrument Serif (display) with a system-serif fallback. Both paths
-    /// scale with the user's text size.
+    /// Satoshi for every primary title, including assignment and screen titles.
+    /// Kept under the existing name so screen behavior stays unchanged.
     static func lhfSerif(_ size: CGFloat) -> Font {
-        fontIsAvailable("InstrumentSerif-Regular")
-            ? .custom("InstrumentSerif-Regular", size: size, relativeTo: lhfTextStyle(for: size))
-            : .system(size: lhfScaled(size), weight: .regular, design: .serif)
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("SatoshiVariable-Bold")
+            ? .custom("SatoshiVariable-Bold", size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: .bold, design: .default)
     }
 
-    /// Geist (body) with a system-sans fallback. Keeps weights, and scales with
-    /// the user's text size.
-    ///
-    /// The fallback branch is the one that actually ships today — no Geist or
-    /// Instrument Serif files are bundled or registered, so `fontIsAvailable`
-    /// is always false. That is exactly why this needed fixing: `.system(size:)`
-    /// is a fixed point size and ignores Dynamic Type entirely, so every font
-    /// in the app was frozen at its design size no matter what the user chose
-    /// in Accessibility settings.
+    /// Roobert's italic display cut is reserved for the Smooth wordmark.
+    static func lhfWordmark(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("RoobertTRIAL-SemiBoldItalic")
+            ? .custom("RoobertTRIAL-SemiBoldItalic", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSerif(size).italic()
+    }
+
+    /// Upright Roobert for the weekday paired with the Smooth wordmark.
+    static func lhfHeaderTitle(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("RoobertTRIAL-SemiBold")
+            ? .custom("RoobertTRIAL-SemiBold", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSerif(size)
+    }
+
+    /// Satoshi is the primary interface face, with Inter as a safe fallback.
     static func lhfSans(_ size: CGFloat, weight: Weight = .regular) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        let satoshi: String
+        let inter: String
+        switch weight {
+        case .bold, .heavy, .black:
+            satoshi = "SatoshiVariable-Bold"
+            inter = "Inter-Bold"
+        case .semibold:
+            satoshi = "SatoshiVariable-Medium"
+            inter = "Inter-SemiBold"
+        case .medium:
+            satoshi = "SatoshiVariable-Medium"
+            inter = "Inter-Medium"
+        default:
+            satoshi = "SatoshiVariable-Regular"
+            inter = "Inter-Regular"
+        }
+        let custom = fontIsAvailable(satoshi) ? satoshi : inter
+        return fontIsAvailable(custom)
+            ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: weight, design: .default)
+    }
+
+    /// Inter is reserved for supporting copy beneath the primary hierarchy.
+    static func lhfSecondary(_ size: CGFloat, weight: Weight = .regular) -> Font {
+        SmoothFontRegistry.ensureRegistered()
         let custom: String
         switch weight {
-        case .semibold, .bold, .heavy, .black: custom = "Geist-SemiBold"
-        case .medium:                          custom = "Geist-Medium"
-        default:                               custom = "Geist-Regular"
+        case .bold, .heavy, .black: custom = "Inter-Bold"
+        case .semibold:            custom = "Inter-SemiBold"
+        case .medium:              custom = "Inter-Medium"
+        default:                   custom = "Inter-Regular"
         }
         return fontIsAvailable(custom)
             ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
             : .system(size: lhfScaled(size), weight: weight, design: .default)
+    }
+
+    /// Familjen Grotesk is reserved for assignment names, giving the task list
+    /// a sturdy, contemporary voice without changing the rest of Smooth's
+    /// Satoshi / Inter / Space Mono hierarchy.
+    static func lhfAssignmentTitle(_ size: CGFloat) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        return fontIsAvailable("FamiljenGroteskRoman-Medium")
+            ? .custom("FamiljenGroteskRoman-Medium", size: size, relativeTo: lhfTextStyle(for: size))
+            : lhfSans(size, weight: .medium)
+    }
+
+    /// Space Mono for course codes, deadlines, and other compact data.
+    static func lhfMono(_ size: CGFloat, weight: Weight = .regular) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        let custom: String
+        switch weight {
+        case .semibold, .bold, .heavy, .black: custom = "SpaceMono-Bold"
+        default:                              custom = "SpaceMono-Regular"
+        }
+        return fontIsAvailable(custom)
+            ? .custom(custom, size: size, relativeTo: lhfTextStyle(for: size))
+            : .system(size: lhfScaled(size), weight: weight, design: .monospaced)
     }
 }
 
@@ -258,6 +347,76 @@ enum DueState {
         case .soon, .later:    return false
         }
     }
+}
+
+/// The card accent is always derived from the effective due date. Green is
+/// intentionally absent from Smooth: weekend and early-week work use
+/// turquoise, then the ramp walks through cobalt and grape.
+func smoothTaskAccent(_ due: Date?, now: Date = Date()) -> Color {
+    guard let due else { return .smoothGrape }
+    let seconds = due.timeIntervalSince(now)
+    if seconds < 0 { return .smoothTomato }
+    if seconds <= 7 * 3_600 { return .smoothMarigold }
+    if seconds < 86_400 { return .smoothLemon }
+    if seconds < 4 * 86_400 { return .smoothTeal }
+    if seconds < 6 * 86_400 { return .smoothCobalt }
+    return .smoothGrape
+}
+
+/// The darker partner used for course codes on the matching pastel field.
+func smoothTaskTextAccent(_ due: Date?, now: Date = Date()) -> Color {
+    guard let due else { return .smoothGrapeInk }
+    let seconds = due.timeIntervalSince(now)
+    if seconds < 0 { return .smoothTomatoInk }
+    if seconds <= 7 * 3_600 { return .smoothMarigoldInk }
+    if seconds < 86_400 { return .smoothLemonInk }
+    if seconds < 4 * 86_400 { return .smoothTealInk }
+    if seconds < 6 * 86_400 { return .smoothCobaltInk }
+    return .smoothGrapeInk
+}
+
+/// A middle ground between the original solid cards and the first very pale
+/// pass: still airy, but with enough hue to group deadlines at a glance.
+func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
+    smoothTaskAccent(due, now: now).opacity(0.26)
+}
+
+struct SmoothDueValue {
+    let primary: String
+    let secondary: String?
+}
+
+/// Compact two-line deadline value used on Smooth cards: `4d / late`, `5h`,
+/// the weekday for the next five days, or a short date beyond that window.
+/// Full dates remain available in expanded detail.
+func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
+    guard let due else { return SmoothDueValue(primary: "—", secondary: "no date") }
+    let seconds = due.timeIntervalSince(now)
+    if seconds < 0 {
+        let late = -seconds
+        if late < 86_400 {
+            return SmoothDueValue(primary: "\(max(1, Int(late / 3_600)))h", secondary: "late")
+        }
+        let days = Calendar.current.dateComponents(
+            [.day],
+            from: Calendar.current.startOfDay(for: due),
+            to: Calendar.current.startOfDay(for: now)
+        ).day ?? Int(late / 86_400)
+        return SmoothDueValue(primary: "\(max(1, days))d", secondary: "late")
+    }
+    if seconds < 86_400 {
+        return SmoothDueValue(primary: "\(max(1, Int(seconds / 3_600)))h", secondary: nil)
+    }
+    if seconds <= 5 * 86_400 {
+        return SmoothDueValue(
+            primary: due.formatted(.dateTime.weekday(.abbreviated)),
+            secondary: nil
+        )
+    }
+    return SmoothDueValue(
+        primary: due.formatted(.dateTime.month(.abbreviated).day()),
+        secondary: nil
+    )
 }
 
 /// Compact, weekday-free due text: "2 days late", "5h left", "in 3 days".

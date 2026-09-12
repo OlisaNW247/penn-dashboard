@@ -16,7 +16,7 @@ public struct LHFScenes: Scene {
     public init() {}
 
     public var body: some Scene {
-        WindowGroup("Locust", id: "main") {
+        WindowGroup("Smooth", id: "main") {
             RootCore(state: state, scheduler: scheduler)
         }
 #if os(macOS)
@@ -176,7 +176,7 @@ struct MenuBarPanel: View {
             Divider()
 
             HStack {
-                Button("Open Locust") {
+                Button("Open Smooth") {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
                 }
@@ -215,7 +215,7 @@ struct MenuBarPanel: View {
                     .tracking(1.0)
                     .foregroundStyle(Color.v2CourseCode)
                 Text(assignment.title)
-                    .font(.lhfSans(12, weight: .medium))
+                    .font(.lhfAssignmentTitle(12))
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(1)
             }

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#FBF2DF" />
+    <meta
+      name="description"
+      content="Smooth assignment tracker — interactive retro-pop design prototype"
+    />
+    <title>Smooth — assignment tracker prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="stage">
+      <section class="phone" aria-label="Smooth mobile app prototype">
+        <header class="status-bar" aria-label="Phone status">
+          <time id="statusTime">9:41</time>
+          <div class="dynamic-island" aria-hidden="true"></div>
+          <div class="status-icons" aria-hidden="true">
+            <span class="signal"><i></i><i></i><i></i><i></i></span>
+            <span class="wifi">◒</span>
+            <span class="battery"><i></i></span>
+          </div>
+        </header>
+
+        <div class="app-shell">
+          <header class="app-header">
+            <div>
+              <h1>Smooth <span id="dayName">Friday</span></h1>
+              <p><span id="dateLabel">July 3</span> · <span id="weekCount">6</span> left this week</p>
+            </div>
+            <div class="header-actions">
+              <button class="round-button add-button" id="openAdd" type="button" aria-label="Add assignment">+</button>
+              <button class="round-button menu-button" id="openMenu" type="button" aria-label="Open prototype menu" aria-expanded="false">≡</button>
+            </div>
+          </header>
+
+          <aside class="prototype-menu" id="prototypeMenu" hidden>
+            <div>
+              <strong>Prototype mode</strong>
+              <span>Your changes stay in this browser.</span>
+            </div>
+            <button type="button" id="resetData">Reset</button>
+          </aside>
+
+          <nav class="segments" aria-label="Assignment filters">
+            <button class="segment active" type="button" data-filter="week" aria-pressed="true">This week</button>
+            <button class="segment" type="button" data-filter="all" aria-pressed="false">All</button>
+            <button class="segment" type="button" data-filter="done" aria-pressed="false">Done</button>
+          </nav>
+
+          <div class="assignment-list" id="assignmentList" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+    <section class="sheet" id="addSheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading">
+        <div>
+          <span class="eyebrow">New assignment</span>
+          <h2 id="sheetTitle">Add something due</h2>
+        </div>
+        <button class="sheet-close" id="closeAdd" type="button" aria-label="Close add assignment sheet">×</button>
+      </div>
+
+      <form id="addForm">
+        <label>
+          <span>Course</span>
+          <input id="courseInput" name="course" autocomplete="off" placeholder="CIS 1210" required maxlength="18" />
+        </label>
+        <label>
+          <span>Assignment</span>
+          <input id="titleInput" name="title" autocomplete="off" placeholder="Problem set 7" required maxlength="70" />
+        </label>
+        <label>
+          <span>Due date</span>
+          <input id="dueInput" name="due" type="datetime-local" required />
+          <small>Smooth assigns the color from this date.</small>
+        </label>
+        <button class="save-button" type="submit">Add assignment</button>
+      </form>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

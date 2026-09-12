@@ -24,7 +24,7 @@ struct SyllabusGradingSchemeFromProfileTests {
         #expect(scheme.rawWeightSum == 100)
         #expect(scheme.cutoffs == nil)
         #expect(!scheme.mentionsCurve)
-        #expect(scheme.categories.allSatisfy { $0.evidence == "from the syllabus, read by locust's server" })
+        #expect(scheme.categories.allSatisfy { $0.evidence == "from the syllabus, read by smooth's server" })
     }
 
     @Test("three weights summing to 95 produces a medium-confidence scheme")

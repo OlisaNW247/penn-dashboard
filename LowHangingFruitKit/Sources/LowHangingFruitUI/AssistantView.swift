@@ -82,7 +82,7 @@ struct AssistantView: View {
 
     @StateObject private var conversation: AssistantConversation
     @State private var draft = ""
-    @State private var detach: Double = 0
+    @State private var sendPulse: Double = 0
     /// Which suggestion chip, if any, is mid-pick — driving the fade on the
     /// other three chips and, together with `pickedDetach`, that one chip's
     /// own falling persimmon. `nil` at rest and reset in `conversation.clear()`
@@ -90,7 +90,7 @@ struct AssistantView: View {
     @State private var pickedIndex: Int?
     /// 0 at rest, 1 fully detached — the picked chip's `PersimmonMark` reads
     /// this the same way the send button's does.
-    @State private var pickedDetach: Double = 0
+    @State private var pickedShapeProgress: Double = 0
     @FocusState private var composerFocused: Bool
 
     private let tree = TreeGeometry()
@@ -143,24 +143,6 @@ struct AssistantView: View {
         _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
     }
 
-    /// The tree is a *backdrop*, and these two values are both much lower
-    /// than the ones the drawn version wanted.
-    ///
-    /// Those older numbers (0.5 fresh, 0.10 answering) were tuned for a
-    /// sparse line drawing — a bough, a few leaves, mostly empty page. The
-    /// illustration that replaced it is a dense, fully-painted object with
-    /// saturated greens and browns edge to edge, and at 0.5 it stopped being
-    /// a backdrop: on a device it competed with the suggestion chips sitting
-    /// on top of it and turned the screen into two things fighting for the
-    /// eye. Roughly halving it is not timidity, it is the same *apparent*
-    /// weight arrived at from a much heavier drawing.
-    ///
-    /// The trap worth recording: the fix looks like it should be raising the
-    /// chips' contrast so they win against the tree. That is backwards — it
-    /// treats the backdrop as the thing to beat rather than the thing to
-    /// recede, and it ends with an even louder page. Fade the tree instead.
-    private var wash: Double { conversation.isFresh ? 0.22 : 0.07 }
-
     var body: some View {
         ZStack(alignment: .top) {
             Color.v2Bg.ignoresSafeArea()
@@ -171,18 +153,16 @@ struct AssistantView: View {
 
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
-                        TreeBackdrop(geometry: tree, wash: wash)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .animation(.easeInOut(duration: 0.55), value: conversation.isFresh)
-
-                        if conversation.isFresh {
+                        if conversation.isFresh && !composerFocused {
                             hangingSuggestions(in: geo.size)
                                 .transition(.opacity.combined(with: .offset(y: -14)))
-                        } else {
+                        } else if !conversation.isFresh {
                             transcript
                                 .transition(.opacity)
                         }
                     }
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                    .clipped()
                 }
             }
         }
@@ -201,7 +181,7 @@ struct AssistantView: View {
                             // chip already fallen and faded, from the last
                             // conversation's pick.
                             pickedIndex = nil
-                            pickedDetach = 0
+                            pickedShapeProgress = 0
                         }
                     }
                     .font(.lhfSans(14, weight: .medium))
@@ -213,26 +193,22 @@ struct AssistantView: View {
 
     // MARK: Title
 
-    /// Present only on the empty state. Once there is a transcript the screen
-    /// needs every point of height it can get, and the back button in the nav
-    /// bar already says where you are.
-    @ViewBuilder
     private var titleBlock: some View {
-        if conversation.isFresh {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("the tree")
-                    .font(.lhfSerif(38))
-                    .foregroundStyle(Color.v2Ink)
-                Text("your syllabi, deadlines and announcements — in one place, in plain language.")
-                    .font(.lhfSans(14))
-                    .foregroundStyle(Color.v2DateText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.trailing, 40)
-            }
+        Text(greeting)
+            .font(.lhfSerif(38))
+            .foregroundStyle(Color.v2Ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
             .padding(.bottom, 8)
-        }
+    }
+
+    private var greeting: String {
+        let firstName = userName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .first
+            .map(String.init)
+        return firstName.map { "Hello \($0)" } ?? "Hello"
     }
 
     // MARK: The fruit on the tree
@@ -287,8 +263,7 @@ struct AssistantView: View {
             pickSuggestion(index)
         } label: {
             HStack(alignment: .top, spacing: 9) {
-                let fruit = PersimmonMark(size: 26, detach: index == pickedIndex ? pickedDetach : 0)
-                    .frame(width: 26, height: 26)
+                let shape = suggestionShape(index: index)
                 let label = Text(item.prompt)
                     .font(.lhfSerif(16))
                     .foregroundStyle(Color.v2Ink)
@@ -296,11 +271,11 @@ struct AssistantView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if growsRight {
-                    fruit
+                    shape
                     label
                 } else {
                     label
-                    fruit
+                    shape
                 }
             }
             .padding(.leading, growsRight ? 12 : 15)
@@ -308,14 +283,47 @@ struct AssistantView: View {
             .padding(.vertical, 10)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.v2Card)
-                    .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 6, y: 2)
+                    .fill(suggestionGradient(index: index))
+                    .shadow(color: Color.v2CardShadow.opacity(0.08), radius: 6, y: 2)
             )
             .frame(maxWidth: maxWidth, alignment: growsRight ? .leading : .trailing)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.prompt)
         .accessibilityHint("Asks this question")
+    }
+
+    private func suggestionShape(index: Int) -> some View {
+        let progress = index == pickedIndex ? pickedShapeProgress : 0
+        return Image(systemName: Self.suggestionSymbols[index % Self.suggestionSymbols.count])
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(Self.suggestionColors[index % Self.suggestionColors.count])
+            .frame(width: 26, height: 26)
+            .scaleEffect(1 - progress * 0.24)
+            .rotationEffect(.degrees(progress * 24))
+            .offset(y: progress * 12)
+            .opacity(1 - progress * 0.2)
+    }
+
+    private static let suggestionSymbols = [
+        "diamond.fill", "circle.fill", "triangle.fill", "hexagon.fill",
+    ]
+
+    private static let suggestionColors: [Color] = [
+        .smoothGrapeInk, .smoothCobaltInk, .smoothMarigoldInk, .smoothTealInk,
+    ]
+
+    private static let suggestionFields: [Color] = [
+        .smoothGrape, .smoothCobalt, .smoothMarigold, .smoothTeal,
+    ]
+
+    private func suggestionGradient(index: Int) -> LinearGradient {
+        let color = Self.suggestionFields[index % Self.suggestionFields.count]
+        return LinearGradient(
+            colors: [color.opacity(0.20), Color.v2Card.opacity(0.94), color.opacity(0.08)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     // MARK: Transcript
@@ -534,21 +542,16 @@ struct AssistantView: View {
                         .fill(Color.v2Ink)
                         .frame(width: 13, height: 13)
                 } else {
-                    PersimmonMark(size: 28, detach: detach)
-                        .frame(width: 28, height: 28)
-                        // Unsendable state: dimmed rather than hidden, so the
-                        // target never moves under the thumb. The first pass
-                        // took this to 0.9 grayscale at 45% opacity and the
-                        // fruit went to a pale blob that read as a broken
-                        // image. The first correction, 0.45 grayscale at 62%
-                        // opacity, still didn't back off far enough — on a
-                        // device it read as a pale beige blob, a missing
-                        // asset rather than unripe fruit. This second
-                        // correction backs off further again, to 0.2
-                        // grayscale at 78% opacity, which is the point it
-                        // reads as fruit that just isn't ripe yet.
-                        .grayscale(canSend ? 0 : 0.2)
-                        .opacity(canSend ? 1 : 0.78)
+                    SmoothStarMark(size: 34)
+                        .overlay {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundStyle(Color.smoothInk)
+                        }
+                        .scaleEffect(sendPulse > 0 ? 0.72 : 1)
+                        .rotationEffect(.degrees(sendPulse * 12))
+                        .grayscale(canSend ? 0 : 0.35)
+                        .opacity(canSend ? 0.9 : 0.58)
                 }
             }
             .frame(width: 48, height: 48)
@@ -568,10 +571,10 @@ struct AssistantView: View {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        withAnimation(.easeIn(duration: 0.34)) { detach = 1 }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) { sendPulse = 1 }
         Task {
             try? await Task.sleep(nanoseconds: 340_000_000)
-            detach = 0
+            sendPulse = 0
         }
 
         draft = ""
@@ -603,7 +606,7 @@ struct AssistantView: View {
         guard pickedIndex == nil, suggestions.indices.contains(index) else { return }
         let prompt = suggestions[index].prompt
         pickedIndex = index
-        withAnimation(.easeIn(duration: 0.34)) { pickedDetach = 1 }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.68)) { pickedShapeProgress = 1 }
         Task {
             try? await Task.sleep(nanoseconds: 300_000_000)
             ask(prompt)
@@ -635,7 +638,7 @@ struct AssistantView: View {
         return [
             Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
             Suggestion(prompt: "when's my next exam?"),
-            Suggestion(prompt: "what am i actually missing right now?"),
+            Suggestion(prompt: "where is my physics class?"),
             Suggestion(prompt: "how much is the \(code(1)) final worth?"),
         ]
     }

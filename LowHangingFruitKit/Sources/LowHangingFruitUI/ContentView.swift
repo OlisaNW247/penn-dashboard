@@ -18,17 +18,6 @@ struct ContentView: View {
     /// booleans so the screenshot flag can open Settings directly.
     @State private var path: [DashRoute] = []
 
-    /// Whether the "you're not fully connected" banner has been dismissed
-    /// THIS launch. Deliberately plain `@State`, not persisted to
-    /// `UserDefaults` anywhere: the whole point of the banner is that a
-    /// student can otherwise use the app for weeks without noticing half
-    /// their work is missing, so it should come back and remind them again
-    /// next time they open the app rather than being silenced forever by one
-    /// tap. A relaunch resetting it to `false` is that behavior, for free —
-    /// persisting it would require a second flag to deliberately re-arm it
-    /// later, for no benefit over just not persisting it in the first place.
-    @State private var connectionNoticeDismissed = false
-
     /// Where the header's buttons lead. Both are pushes onto the dashboard's own
     /// stack, so Settings and Grades are full screens with a back button rather
     /// than cards presented over the list.
@@ -71,7 +60,7 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     header
                         .padding(.horizontal, 20)
-                        .padding(.top, 8)
+                        .padding(.top, 18)
 
                     syncErrorBanner
                         .padding(.horizontal, 20)
@@ -83,24 +72,18 @@ struct ContentView: View {
                             .padding(.top, 10)
                     }
 
-                    if showsConnectionNotice {
-                        connectionNoticeBanner
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                    }
-
                     HStack(spacing: 10) {
                         SegmentedToggle(selection: $filter)
                         addInlineButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                    .padding(.top, 18)
                     .padding(.bottom, 4)
 
                     ScrollView {
                         listContent
                             .padding(.horizontal, 20)
-                            .padding(.top, 18)
+                            .padding(.top, 12)
                             .padding(.bottom, 40)
                             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
                     }
@@ -108,7 +91,7 @@ struct ContentView: View {
 
                 assistantButton
             }
-            .background(Color.v2Bg.ignoresSafeArea())
+            .background(Color.smoothPaper.ignoresSafeArea())
             .navigationDestination(for: DashRoute.self) { route in
                 switch route {
                 case .settings:
@@ -152,6 +135,7 @@ struct ContentView: View {
                 vm.loadSampleData()
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.settings] }
+                if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
                 if args.contains("-LHFShowReport") {
@@ -220,28 +204,10 @@ struct ContentView: View {
         }
     }
 
-    /// The floating action is the persimmon, and it opens `ask`.
-    ///
-    /// This corner used to hold a "+" that created a manual assignment. The
-    /// swap is a real trade and worth being honest about: creating work is a
-    /// thing every student does, and it has been demoted to the filter row
-    /// (see `addInlineButton`). What it buys is that the app's single most
-    /// prominent control is now its most distinctive feature rather than its
-    /// most ordinary one — every to-do app on the phone has a "+" bottom
-    /// right, and none of them has this.
-    ///
-    /// The mark is deliberately not sitting on an ink-filled circle like the
-    /// old "+" did. A persimmon reversed out on near-black loses the one
-    /// thing that makes it recognisable, which is that it is orange. It gets
-    /// a raised paper disc instead, so it reads as fruit against the greige.
     private var assistantButton: some View {
         NavigationLink(value: DashRoute.assistant) {
             ZStack {
-                Circle()
-                    .fill(Color.v2Card)
-                    .shadow(color: Color.v2CardShadow.opacity(0.26), radius: 8, y: 3)
-                PersimmonMark(size: 34)
-                    .frame(width: 34, height: 34)
+                SmoothStarMark(size: 58)
             }
             .frame(width: 60, height: 60)
         }
@@ -251,32 +217,20 @@ struct ContentView: View {
         .padding(.bottom, 24)
     }
 
-    /// The new home for "add assignment": trailing the filter row.
-    ///
-    /// Of the places it could have gone this is the only one that keeps every
-    /// property the floating button had. It is always on screen and never
-    /// scrolls away; it is one tap, from anywhere in the list; and it now sits
-    /// directly above the list it adds to, which the bottom-right corner never
-    /// did. The alternatives both lost something — a fourth icon in the header
-    /// crowds the greeting off narrow phones and puts "create" in with
-    /// navigation, and a ghost row at the end of the list is only reachable
-    /// after scrolling past everything, which is precisely backwards for the
-    /// student who has just realised something is missing.
-    ///
-    /// The cost is reach: this is no longer in the thumb zone. That is the
-    /// price of giving the corner to `ask`, and it lands on the rarer action.
+    /// Opens the existing add sheet, whose weekly-repeat toggle creates a
+    /// recurring task without changing the dashboard's data flow.
     private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
-            Image(systemName: "plus")
+            Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.v2DateText)
+                .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.v2Ink.opacity(0.07)))
+                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("add assignment")
-        .help("add assignment")
+        .accessibilityLabel("add assignment or recurring task")
+        .help("add assignment or recurring task")
     }
 
     /// Reschedule due-date reminders from the current (override-aware) items.
@@ -320,187 +274,68 @@ struct ContentView: View {
         .accessibilityLabel("your canvas login needs a refresh. reconnect canvas.")
     }
 
-    // MARK: Connection notice banner
-
-    /// Whether either data-source gap this feature warns about is currently
-    /// open AND the student hasn't already dismissed the notice this launch.
-    /// Deliberately one flag covering two independent conditions
-    /// (`needsGradescopeConnection`, `canvasIsLinkOnly`) rather than two
-    /// separate banners: a student who is missing both Canvas's cookie
-    /// session and Gradescope entirely should see one clear "you're not
-    /// fully connected" card, not a stack of two nags competing for the same
-    /// slot above the segmented toggle.
-    private var showsConnectionNotice: Bool {
-        !connectionNoticeDismissed && (state.needsGradescopeConnection || state.canvasIsLinkOnly)
-    }
-
-    /// Lowercase, matching `canvasSessionExpiredBanner`'s voice, and chosen
-    /// per which gap(s) are actually open so a student missing only one
-    /// source isn't told to "connect both."
-    private var connectionNoticeTitle: String {
-        if state.needsGradescopeConnection && state.canvasIsLinkOnly {
-            return "canvas and gradescope aren't fully connected"
-        } else if state.canvasIsLinkOnly {
-            return "canvas is connected by link only"
-        } else {
-            return "gradescope isn't connected"
-        }
-    }
-
-    private var connectionNoticeSubtitle: String {
-        if state.needsGradescopeConnection && state.canvasIsLinkOnly {
-            return "you're seeing calendar items only. connect both to see everything you owe."
-        } else if state.canvasIsLinkOnly {
-            return "log in to canvas for grades and automatic submission tracking."
-        } else {
-            return "connect it to see gradescope work alongside canvas."
-        }
-    }
-
-    /// Warns a student who is quietly missing a whole data source — a
-    /// Gradescope connection that was never made, or a Canvas connection
-    /// that's only a pasted calendar link with no cookie session behind it
-    /// (see `AppState.needsGradescopeConnection` and `.canvasIsLinkOnly`) —
-    /// so they don't spend weeks treating a partial dashboard as complete.
-    ///
-    /// The main tap target and the dismiss control are SIBLING `Button`s
-    /// inside one `HStack`, not one nested inside the other's label. A
-    /// control placed inside another control's label is not reliably
-    /// tappable in SwiftUI — `.buttonStyle(.plain)` on the outer button
-    /// narrows the outer hit target to its label's bounds, but that does not
-    /// guarantee the inner button gets first refusal on a tap that lands on
-    /// it, and the failure mode (a dismiss button that silently swallows or
-    /// loses the tap) is worse than not having one, since the student was
-    /// told they could dismiss the banner and then can't. What still makes
-    /// this read as one card is the shared background/padding/corner radius
-    /// applied to the outer `HStack` that contains both buttons, not a
-    /// single button wrapping everything — matching `canvasSessionExpiredBanner`'s
-    /// fonts, colors, corner radius (11) and padding (12).
-    ///
-    /// The dismiss button carries an explicit 44×44pt frame before its
-    /// `.contentShape`, per Apple's minimum tappable-target guidance; the
-    /// 11pt `xmark` glyph alone would offer a target a few points on a side.
-    /// That frame makes this card a few points taller than
-    /// `canvasSessionExpiredBanner`, which has no such control — an accepted,
-    /// deliberate cost, since correct tap routing on a control whose entire
-    /// job is "let the student make this go away" matters more than an exact
-    /// height match between the two banners.
-    private var connectionNoticeBanner: some View {
-        HStack(spacing: 10) {
-            Button {
-                state.restartOnboarding(for: connectionNoticeDestination)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "link.badge.plus")
-                        .font(.system(size: 13, weight: .semibold))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(connectionNoticeTitle)
-                            .font(.lhfSans(12, weight: .semibold))
-                        Text(connectionNoticeSubtitle)
-                            .font(.lhfSans(11))
-                            .foregroundStyle(Color.v2DateText)
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(connectionNoticeTitle). \(connectionNoticeSubtitle)")
-
-            Button {
-                connectionNoticeDismissed = true
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.v2DateText)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("dismiss")
-        }
-        .foregroundStyle(Color.v2Ink)
-        .padding(12)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-    }
-
-    private var connectionNoticeDestination: AppState.OnboardingDestination {
-        state.canvasIsLinkOnly ? .canvas : .gradescope
-    }
-
     // MARK: Header
 
-    /// Wordmark, greeting and date on the left; the destinations on the right,
-    /// where the weekly ring used to sit. There's no manual reload button:
-    /// opening the app auto-refreshes, so these are the only header controls.
-    ///
-    /// v4 briefly made profile and settings tabs. They are pushed routes again,
-    /// off one stack, which is what the gear had always been. The tab bar cost
-    /// a permanent strip of screen on a list that wants the height, and put two
-    /// screens a student visits at the start of a semester next to the one they
-    /// open every day.
-    ///
-    /// One stack also means one Settings. When the gear pushed while a Settings
-    /// tab existed, the app could hold two live independent copies, each with
-    /// its own scroll position and half-typed rename, which is the "back button
-    /// went to the wrong screen" bug pre-built.
+    /// The original v5 hierarchy, with Smooth's visual identity layered on top.
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Locust")
-                    .font(.lhfSans(11, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(Color.v2CourseCode)
-
-                Text(greeting)
-                    .font(.lhfSerif(27))
-                    .foregroundStyle(Color.v2Ink)
+                (
+                    Text("Smooth")
+                        .font(.lhfWordmark(32))
+                    + Text(" \(Self.weekdayText(Date()))")
+                        .font(.lhfHeaderTitle(32))
+                )
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .layoutPriority(1)
+                    .accessibilityElement(children: .combine)
+                    .frame(height: 48, alignment: .center)
+                    .overlay(alignment: .bottomLeading) {
+                        SmoothSquiggle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                            )
+                            .frame(width: 104, height: 6)
+                            .offset(x: 2, y: -1)
+                    }
 
                 Text(Self.dateText(Date()))
-                    .font(.lhfSerif(15))
-                    .foregroundStyle(Color.v2DateText)
-                    .padding(.top, 2)
+                    .font(.lhfMono(14, weight: .medium))
+                    .foregroundStyle(Color.smoothMuted)
             }
 
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades")
+                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
-                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile")
-                navButton(to: .settings, icon: "gearshape.fill", title: "settings")
+                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
+                navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
-            .padding(.top, 2)
         }
     }
 
-    /// Matching circular icons in the top right. Every one is a push onto the
-    /// dashboard's own stack, so profile and settings are full screens with a
-    /// back button. Labels live in the accessibility layer only.
-    private func navButton(to route: DashRoute, icon: String, title: String) -> some View {
+    private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
-            headerIcon(icon)
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.smoothInk)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(color.opacity(0.18)))
+                .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
-    }
-
-
-    private func headerIcon(_ icon: String) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Color.v2DateText)
-            .frame(width: 48, height: 48)
-            .background(Circle().fill(Color.v2Ink.opacity(0.07)))
-            .contentShape(Circle())
-    }
-
-    private var greeting: String {
-        state.userName.isEmpty ? "Hello" : "Hello, \(state.userName)"
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
@@ -543,7 +378,7 @@ struct ContentView: View {
     @ViewBuilder
     private var listContent: some View {
         switch filter {
-        case .thisWeek: timeline(sections: vm.thisWeekSections())
+        case .thisWeek: timeline(sections: vm.todoSections(), showsTodoEmptyState: true)
         case .all:      timeline(sections: vm.allSections())
         case .done:
             DoneView(
@@ -586,7 +421,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func timeline(sections: [DashSection]) -> some View {
+    private func timeline(sections: [DashSection], showsTodoEmptyState: Bool = false) -> some View {
         if sections.isEmpty {
             switch emptyStateStatus {
             case .loading:            loadingState
@@ -600,13 +435,17 @@ struct ContentView: View {
                 // the false celebration this whole feature exists to
                 // prevent, so this case takes priority over it here.
                 if state.awaitingCanvasCheck.isEmpty {
-                    allDoneState
+                    if showsTodoEmptyState {
+                        todoEmptyState
+                    } else {
+                        allDoneState
+                    }
                 } else {
                     awaitingCanvasCheckNotice
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 14) {
                 // Some items can be visible while others from a different,
                 // not-yet-checked course are still held — the one-line notice
                 // sits above the real sections rather than replacing them.
@@ -663,12 +502,16 @@ struct ContentView: View {
                     .font(.lhfSerif(46))
                     .foregroundStyle(Color.v2Ink)
                 Text("you're all caught up")
-                    .font(.lhfSans(15))
+                    .font(.lhfSecondary(15))
                     .foregroundStyle(Color.v2DateText.opacity(0.85))
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+    }
+
+    private var todoEmptyState: some View {
+        SmoothTodoEmptyState()
     }
 
     /// Shown in place of the "all caught up" art while the first sync is still in
@@ -677,7 +520,7 @@ struct ContentView: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("loading your assignments…")
-                .font(.lhfSans(15))
+                .font(.lhfSecondary(15))
                 .foregroundStyle(Color.v2DateText)
         }
         .frame(maxWidth: .infinity)
@@ -698,7 +541,7 @@ struct ContentView: View {
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
             Text(message)
-                .font(.lhfSans(14))
+                .font(.lhfSecondary(14))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -753,10 +596,85 @@ struct ContentView: View {
 
     // MARK: Date
 
+    private static func weekdayText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f.string(from: date)
+    }
+
     private static func dateText(_ date: Date) -> String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"   // "Tuesday, May 26"
+        f.dateFormat = "MMM d"
         return f.string(from: date)
+    }
+}
+
+/// A compact three-wave underline with a hand-drawn rhythm. Its fixed width is
+/// tuned to the Roobert "Smooth" wordmark and deliberately stops before the
+/// weekday begins.
+private struct SmoothSquiggle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let amplitude = rect.height * 0.32
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+
+        for step in 1...48 {
+            let progress = CGFloat(step) / 48
+            let x = rect.minX + rect.width * progress
+            let y = rect.midY + sin(progress * .pi * 6) * amplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+        }
+        return path
+    }
+}
+
+private struct SmoothTodoEmptyState: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.smoothLemon.opacity(0.16))
+                    .frame(width: 230, height: 230)
+                    .scaleEffect(appeared ? 1 : 0.72)
+                    .opacity(appeared ? 1 : 0)
+
+                if let img = bundledImage("chill", ext: "jpg") {
+                    img
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 250)
+                        .blendMode(.multiply)
+                        .opacity(appeared ? 0.35 : 0)
+                        .scaleEffect(appeared ? 1 : 0.9)
+                        .offset(y: appeared ? -4 : 12)
+                        .accessibilityHidden(true)
+                }
+            }
+
+            Text("go enjoy life")
+                .font(.lhfSerif(46))
+                .foregroundStyle(Color.v2Ink)
+                .multilineTextAlignment(.center)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("go enjoy life")
+        .onAppear {
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.82)) {
+                    appeared = true
+                }
+            }
+        }
+        .onDisappear { appeared = false }
     }
 }
 

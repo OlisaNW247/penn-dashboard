@@ -1,7 +1,7 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The semester card and the add-a-class entry point.
+/// The semester controls and the add-a-class entry point.
 ///
 /// Two features share this file because they are two halves of one complaint:
 /// *"I'm seeing notifications for last semester, and only one class shows up."*
@@ -13,19 +13,18 @@ import LowHangingFruitKit
 ///
 /// ## The signature is the contract
 ///
-/// `ProfileView` composes this as `ProfileSemesterSection()` and is never
-/// edited again: no init parameters, everything from the environment, `Section`s
-/// rather than a `Form`. `AppState` and `NotificationScheduler` are the only two
-/// environment objects guaranteed to be there.
+/// `ProfileView` places the add-class entry point at the top of the form and
+/// the semester controls at the bottom. Keeping both halves here preserves the
+/// shared course/term behavior while allowing the profile's reading order to
+/// match what students need most often.
 ///
 /// ## What renders when
 ///
 /// The rollover card renders **nothing at all** when there is no term boundary
 /// to offer, which is the state for eleven months of the year — that is the
-/// bargain that earns this section the top slot in Profile. The add-a-class row
-/// renders always: a course the student is taking but Canvas hasn't posted for
-/// is not a seasonal problem, and it is most acute in exactly the week the
-/// rollover card is also up.
+/// bargain that keeps the bottom of Profile quiet most of the year. The
+/// add-a-class row renders always: a course the student is taking but Canvas
+/// hasn't posted for is not a seasonal problem.
 ///
 /// Add-a-class living here rather than in `ProfileClassesSection` is worth a
 /// note, since that file's own comments propose the opposite. It is here
@@ -39,7 +38,14 @@ import LowHangingFruitKit
 /// one of them is reversible from the "Archived" disclosure underneath. See
 /// `AppState.archiveTerms`.
 struct ProfileSemesterSection: View {
+    enum Placement {
+        case addClass
+        case previousSemesters
+    }
+
     @EnvironmentObject var state: AppState
+
+    let placement: Placement
 
     /// The class the student is typing. Held as raw text and normalised only on
     /// submit, so the field doesn't rewrite itself under the cursor.
@@ -50,10 +56,15 @@ struct ProfileSemesterSection: View {
     /// The hand-added class an assignment is being attached to.
     @State private var addingAssignmentTo: String?
 
+    @ViewBuilder
     var body: some View {
-        rolloverSection
-        archivedSection
-        addClassSection
+        switch placement {
+        case .addClass:
+            addClassSection
+        case .previousSemesters:
+            rolloverSection
+            archivedSection
+        }
     }
 
     // MARK: Rollover
@@ -65,7 +76,7 @@ struct ProfileSemesterSection: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("new semester?", systemImage: "calendar.badge.clock")
-                        .font(.lhfSans(15, weight: .semibold))
+                        .font(.lhfSecondary(15, weight: .semibold))
                         .foregroundStyle(Color.v2Ink)
 
                     // The concrete count is the whole point of showing a card
@@ -75,22 +86,22 @@ struct ProfileSemesterSection: View {
                     Text("\(offer.currentTerm.displayName) has started, and " +
                          "\(offer.summary) \(offer.totalItemCount == 1 ? "is" : "are") still " +
                          "on your dashboard.")
-                        .font(.lhfSans(13))
-                        .foregroundStyle(.secondary)
+                        .font(.lhfSecondary(13))
+                        .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !offer.courseKeys.isEmpty {
                         Text(offer.courseKeys.map { state.courseDisplayName($0) }
                             .joined(separator: " \u{00B7} "))
-                            .font(.lhfSans(12))
+                            .font(.lhfSecondary(12))
                             .foregroundStyle(Color.v2SectionMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text("nothing is deleted. it stays in done, just off the " +
                          "dashboard and out of reminders. you can undo it below.")
-                        .font(.lhfSans(12))
-                        .foregroundStyle(.secondary)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 4)
@@ -100,17 +111,18 @@ struct ProfileSemesterSection: View {
                     state.archiveTerms(Set(offer.terms))
                 } label: {
                     Label("archive \(offer.summary)", systemImage: "archivebox")
-                        .font(.lhfSans(14, weight: .semibold))
+                        .font(.lhfSecondary(14, weight: .semibold))
                 }
 
                 Button("not now") {
                     state.dismissRolloverOffer()
                 }
-                .font(.lhfSans(14))
-                .foregroundStyle(.secondary)
+                .font(.lhfSecondary(14))
+                .foregroundStyle(Color.v2DateText)
             } header: {
-                Text("semester")
+                SmoothSectionHeader("semester", accent: .smoothTeal)
             }
+            .smoothSectionBackground(.smoothGrape)
         }
     }
 
@@ -127,24 +139,20 @@ struct ProfileSemesterSection: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(term.displayName)
-                                .font(.lhfSans(14))
+                                .font(.lhfSecondary(14))
                                 .foregroundStyle(Color.v2Ink)
-                            Text("saved, still in done")
-                                .font(.lhfSans(11))
-                                .foregroundStyle(Color.v2SectionMuted)
                         }
                         Spacer()
                         Button("restore") {
                             state.unarchiveTerms([term])
                         }
-                        .font(.lhfSans(13))
+                        .font(.lhfSecondary(13))
                     }
                 }
             } header: {
-                Text("prev semesters")
-            } footer: {
-                Text("restoring puts that work back on the dashboard and in reminders.")
+                SmoothSectionHeader("prev semesters", accent: .smoothTeal)
             }
+            .smoothSectionBackground(.smoothMarigold)
         }
     }
 
@@ -163,22 +171,22 @@ struct ProfileSemesterSection: View {
                 // for a title that's now blank. iOS is unaffected: the title
                 // there was already only ever shown as placeholder text, so
                 // `prompt:` renders identically.
-                TextField("", text: $newCourse, prompt: Text("e.g. cis 1200"))
+                TextField("", text: $newCourse, prompt: Text("class code, e.g. cis 1200"))
                     .labelsHidden()
-                    .font(.lhfSans(14))
+                    .font(.lhfSecondary(14))
 #if os(iOS)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
 #endif
                     .onSubmit(submitCourse)
                 Button("add", action: submitCourse)
-                    .font(.lhfSans(14, weight: .semibold))
+                    .font(.lhfSecondary(14, weight: .semibold))
                     .disabled(AppState.normalizedCourseKey(newCourse) == nil)
             }
 
             if let addError {
                 Text(addError)
-                    .font(.lhfSans(12))
+                    .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2SpineRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -187,13 +195,9 @@ struct ProfileSemesterSection: View {
                 addedClassRow(course)
             }
         } header: {
-            Text("add a class")
-        } footer: {
-            // Says the quiet part out loud, because "where are my other
-            // classes" is the question this whole section exists to answer and
-            // the honest answer is not obvious.
-            Text("canvas only shows a class once it posts something. add it here and it appears now; the two merge when canvas catches up.")
+            SmoothSectionHeader("add a class", accent: .smoothTeal)
         }
+        .smoothSectionBackground(.smoothLemon)
         // A sheet of its own rather than `AddAssignmentSheet`, for one reason:
         // that sheet asks for the course as free text, and the entire point of
         // this button is that the course is already known. Sending the student
@@ -221,7 +225,7 @@ struct ProfileSemesterSection: View {
     private func addedClassRow(_ course: String) -> some View {
         HStack {
             Text(state.courseDisplayName(course))
-                .font(.lhfSans(14))
+                .font(.lhfSecondary(14))
                 .foregroundStyle(Color.v2Ink)
             Spacer()
             Button {
@@ -323,7 +327,10 @@ private struct AddToAddedClassSheet: View {
 #if DEBUG
 #Preview {
     NavigationStack {
-        Form { ProfileSemesterSection() }
+        Form {
+            ProfileSemesterSection(placement: .addClass)
+            ProfileSemesterSection(placement: .previousSemesters)
+        }
             .environmentObject(AppState())
             .environmentObject(NotificationScheduler())
     }
