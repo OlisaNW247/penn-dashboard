@@ -420,6 +420,23 @@ end to end) or pass `-LHFForceUpdateWall`.
   a POST body on that request, so the SAML POST would arrive empty. The
   guard rebuilds the POST from the identity provider's form in the page
   before re-issuing it, and allows the navigation unchanged when it cannot.
+- **`NLEmbedding.sentenceEmbedding(for:)` blocks the calling thread while
+  iOS downloads the asset.** On a fresh install (2026-09-12, the first
+  Smooth build, the app deleted and reinstalled for the icon) the first
+  question in ask showed the streaming cursor for two minutes and nothing
+  else. Not the network: the phone's 60 s URLSession timeout would have
+  printed the fallback message. `CourseSearch.rerank` asked Apple's
+  NaturalLanguage framework for the English sentence embedding, on the
+  main actor, synchronously, before the request was even built, and on a
+  device that has never loaded that asset the call waits for a system
+  daemon to fetch it, with no timeout and outside any URLSession. The
+  tell: a stuck cursor that outlives every network timeout, on a device
+  that just had the app reinstalled or was just restored. The embedding is
+  a bonus on top of BM25, so `SentenceEmbeddingProvider` hands it out
+  only once it is already loaded and starts the load on a background task
+  the first time anyone asks; retrieval itself now runs off the caller's
+  actor. The wrong fix is moving the whole search to a background queue:
+  the student still waits minutes for an asset that may never arrive.
 - **A jsonb column outlives the TypeScript type that wrote it.**
   `catalog_courses.components` rows written on 2026-09-07 had no
   `meetings`; the next day's code iterated `component.meetings`, the stored
