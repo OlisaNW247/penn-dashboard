@@ -281,3 +281,28 @@ on `v2.5` directly (and, if `V2`/`main` are still maintained in parallel,
 ported there too — `V2`'s `SessionCookieStore`/`AutoSyncCoordinator`, checked
 in §... above, has the *same* missing-cookie-clear pattern, just via
 UserDefaults instead of Keychain, so it's very likely equally affected).
+
+## 7. 2026-09-12: Canvas Student steals the SAML return hop
+
+**Symptom** (real phone, `v5`): with the Canvas Student app installed,
+tapping "Connect Canvas" walks through Penn SSO/Duo normally and then "just
+opens the Canvas app" instead of returning to Locust — the login `WKWebView`
+never sees a signed-in page, so `connect()` never fires. **Confirmed** by
+deleting Canvas Student: with it gone, the identical flow connects.
+
+**Mechanism**: WebKit treats a main-frame navigation as a universal-link
+("app link") candidate when it both traces back to a user gesture and
+crosses hosts. Penn's IdP page was loaded by the student's own Duo tap, and
+WebKit propagates that gesture permission forward to navigations the IdP
+page itself starts — including the auto-submitted SAML POST back to
+`canvas.upenn.edu`. Canvas Student claims universal links for that host, so
+iOS hands the hop to the installed app instead of this `WKWebView`.
+
+**Fix**: `LoginNavigationObserver.appLinkGuardHost` (set to
+`canvas.upenn.edu` only on the Canvas pane) makes `decidePolicyFor
+navigationAction` detect exactly that cross-host, gesture-descended hop
+(`needsAppLinkGuard`) and cancel it, replacing it with a *programmatic*
+`WKWebView.load(_:)` — never an app-link candidate. A POST's body isn't in
+`WKNavigationAction.request` (WebKit strips it), so the guard reads the
+on-screen form via `evaluateJavaScript` and reissues a real POST built from
+the form's own serialized fields. See `LoginNavigationObserver.swift`.

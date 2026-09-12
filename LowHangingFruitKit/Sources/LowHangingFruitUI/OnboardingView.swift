@@ -565,6 +565,12 @@ private struct CanvasLoginPane: View {
     @StateObject private var navObserver: LoginNavigationObserver = {
         let observer = LoginNavigationObserver()
         observer.signedInHostMarker = "canvas.upenn.edu"
+        // Canvas Student claims universal links for canvas.upenn.edu, which
+        // hijacks the SAML return hop away from this WebView on a device
+        // that has it installed — see `appLinkGuardHost`'s doc comment.
+        // Gradescope's pane below leaves this `nil`: no Gradescope iOS app
+        // claims those links, so there is nothing to guard against there.
+        observer.appLinkGuardHost = "canvas.upenn.edu"
         return observer
     }()
 
