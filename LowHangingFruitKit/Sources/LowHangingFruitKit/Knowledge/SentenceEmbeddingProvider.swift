@@ -131,11 +131,18 @@ public final class SentenceEmbeddingProvider: @unchecked Sendable {
     /// assertion at every capture site.
     private func startLoad() {
         Task.detached(priority: .utility) { [self] in
-            let value = self.loader()
-            self.lock.lock()
-            self.loaded = value
-            self._state = value == nil ? .unavailable : .ready
-            self.lock.unlock()
+            // The store is a synchronous helper on purpose: Swift 6 refuses
+            // `NSLock.lock()` directly inside an async context (a suspension
+            // while holding the lock would deadlock), and the compiler
+            // enforces that even though nothing here suspends.
+            self.store(self.loader())
         }
+    }
+
+    private func store(_ value: AnyObject?) {
+        lock.lock()
+        loaded = value
+        _state = value == nil ? .unavailable : .ready
+        lock.unlock()
     }
 }
