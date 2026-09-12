@@ -377,6 +377,25 @@ end to end) or pass `-LHFForceUpdateWall`.
   per-instance seam (`forceCanvasSessionConfirmedDeadForTesting()`), not a
   shared-domain write. Restore-on-exit protects the *next* suite, never the
   ones running *alongside*.
+- **An installed Canvas Student app steals the login WebView's return hop.**
+  Confirmed 2026-09-12: with Canvas Student on the phone, "connect
+  Canvas" opened the Canvas app and never connected; deleting Canvas
+  Student fixed it. WebKit treats a main-frame navigation as a universal
+  link candidate when it traces back to a user gesture (the identity
+  provider's page was loaded by the user's Duo tap, and that permission
+  propagates to navigations the page starts) and the destination host
+  differs from the current main-frame host. The SAML return from
+  idp.pennkey.upenn.edu to canvas.upenn.edu is exactly that, and Canvas
+  serves the app-association file on canvas.upenn.edu, so iOS hands the
+  hop to Canvas Student. Nothing in Locust opens a Canvas URL on purpose;
+  the code had not changed in a month; the phone had. A programmatic
+  `WKWebView.load(_:)` is never an app-link candidate, so
+  `LoginNavigationObserver` cancels a cross-host arrival at the guard host
+  and re-issues it itself (`appLinkGuardHost`). The wrong fix is
+  cancelling and reloading `navigationAction.request`: WebKit never puts
+  a POST body on that request, so the SAML POST would arrive empty. The
+  guard rebuilds the POST from the identity provider's form in the page
+  before re-issuing it, and allows the navigation unchanged when it cannot.
 - **A jsonb column outlives the TypeScript type that wrote it.**
   `catalog_courses.components` rows written on 2026-09-07 had no
   `meetings`; the next day's code iterated `component.meetings`, the stored
