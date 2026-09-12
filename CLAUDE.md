@@ -73,8 +73,11 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-12): **1230 tests / 121 suites
-green** (plus 4 XCTest scheduler tests), after "decided" became a syllabus
+Baseline on `v5`, verified on a Mac (2026-09-12): **1244 tests / 122 suites
+green** (plus 4 XCTest scheduler tests), after the login WebView's
+universal-link guard (`LoginNavigationObserver.appLinkGuardHost`, the
+Canvas Student trap below; one first-run compile error, a non-optional
+`sourceFrame`). Earlier the same day, 1230/121 after "decided" became a syllabus
 prediction (`GradeCountPredictor`, docs/grades.md §16: every category gets
 a count with a source, attendance is decided by time elapsed, the
 "semester share unknown" caveat is gone) and the grade card and report
