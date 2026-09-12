@@ -6,9 +6,17 @@ next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, als
 builds for macOS from the same source. **The student's own data is on-device by
 default** — grades, completions, submission state, the work list, the student's
 name, and Canvas/Gradescope cookies never leave the phone. There is no analytics,
-tracking, or third-party SDK. Since 2026-09-09 the product's user-facing name is
-**Locust** (display names and copy only; bundle ids, module names, app-group
-names and defaults keys keep their LHF names), and on launch the app fetches a
+tracking, or third-party SDK. Since 2026-09-12 the product's user-facing name is
+**Smooth** (it was **Locust** from 2026-09-09; display names and copy only —
+bundle ids, module names, app-group names and defaults keys keep their LHF
+names), with Marco's Smooth visual language throughout: a white paper ground
+with tomato/marigold/lemon/teal/cobalt/grape accents, the S app mark, and
+bundled type registered at runtime by `SmoothFontRegistry`
+(`RedesignTokens.swift`): Satoshi (Fontshare FFL), Inter, Familjen Grotesk
+and Space Mono (all SIL OFL, licence files beside them in `Resources/`), and
+Roobert SemiBold for the dashboard title — **Roobert is a commercial face
+from Displaay and no licence file is in the repo; confirm a licence exists
+before shipping it**. On launch the app fetches a
 public update-policy file (`update-manifest` branch) that can require an
 update — identifier-free, fail-open, see `Update/`.
 
@@ -72,6 +80,13 @@ screen instead of tapping through to it on every rebuild:
 ```bash
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
+
+**Merge pending verification (2026-09-12):** Marco's `codex/redesign-v5`
+(43 commits, 72 files, the Smooth redesign) was merged onto the 1244/122
+head below with no textual conflicts; the only file both sides touched was
+`OnboardingView.swift`. The six leftover "locust" copy strings became
+"smooth". The Mac run and device check are outstanding; replace this
+paragraph with the verified count.
 
 Baseline on `v5`, verified on a Mac (2026-09-12): **1244 tests / 122 suites
 green** (plus 4 XCTest scheduler tests), after the login WebView's
@@ -165,6 +180,7 @@ in the polluting suite, not in the assertion.
 | `LHFWidget/` | Home/Lock Screen widget extension — a **separate process** |
 | `backend/` | The Supabase project: SQL migrations, Edge Functions, `PROTOCOL.md` (the contract the app and server are both written against) |
 | `docs/` | Design docs and plain-language explainers |
+| `smooth-prototype/` | Marco's dependency-free HTML/CSS/JS tester for the Smooth redesign. Isolated from the app; `python3 -m http.server 4173 --directory smooth-prototype`. |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
 ## Architecture
@@ -441,6 +457,7 @@ end to end) or pass `-LHFForceUpdateWall`.
 | `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. Later also carries the update gate (769/78). |
 | `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
 | `update-gate` | The update gate alone, independently mergeable. |
+| `codex/redesign-v5` | Marco's **Smooth** redesign: the palette, the bundled type, the S mark and icon, restyled dashboard, sheets, profile, settings, widget, intro and update wall; launch splash removed. Branched from `v5` at the round 3 fixes; merged into `v5` 2026-09-12. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
 | `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |

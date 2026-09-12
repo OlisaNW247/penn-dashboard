@@ -661,7 +661,7 @@ and a `null` answer is remembered too. Errors are swallowed: the backend
 being down never changes the report.
 
 What the student sees: in the categories editor, "suggested mapping, as
-read by locust's server" with one line per category naming the groups and
+read by smooth's server" with one line per category naming the groups and
 items it would fold, and two buttons, "use it" and "not now." Nothing is
 applied until "use it." Acceptance is recorded against the structure hash;
 when the structure changes the acceptance lapses and the local suggestion
