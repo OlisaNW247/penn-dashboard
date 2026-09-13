@@ -13,7 +13,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
+import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
 import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
 import { activityForSection, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
@@ -142,22 +142,17 @@ async function checkAskQuota(
   serviceClient: SupabaseClient,
   userId: string,
 ): Promise<Response | undefined> {
-  const { data, error } = await serviceClient.rpc("ask_usage_counts", { p_user_id: userId });
-  if (error) {
-    console.error("ask: ask_usage_counts failed", error.message);
-    return errorResponse("upstream", "usage lookup failed", 502);
+  const lookup = await lookupUsageCounts(serviceClient, userId);
+  if (!lookup.ok) {
+    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
+    // section for the 2026-09-13 incident this guards against. A stalled
+    // counter must never turn into a dead "ask" for the student in front
+    // of it.
+    console.warn(`ask: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
   }
-  const row = Array.isArray(data) ? data[0] : data;
-  const limits = limitsFromEnv(Deno.env);
-  const quota = checkQuota({
-    todayRequests: row?.today_requests ?? 0,
-    monthRequests: row?.month_requests ?? 0,
-    dailyLimit: limits.dailyLimit,
-    monthlyGlobalLimit: limits.monthlyGlobalLimit,
-    now: new Date(),
-  });
-  if (!quota.allowed) {
-    return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
+  const decision = quotaDecision(lookup, limitsFromEnv(Deno.env), new Date());
+  if (!decision.allowed) {
+    return json(429, { error: "quota_exceeded", resetAt: decision.resetAt.toISOString() });
   }
   return undefined;
 }
@@ -344,12 +339,9 @@ async function* runAskStream(
   // failure to record is only ever logged, never surfaced -- the answer
   // was already delivered and can't be un-sent, so the worst case here is
   // one under-counted request against the quota, not a broken response.
-  const { error } = await serviceClient.rpc("record_ask_usage", {
-    p_user_id: userId,
-    p_prompt_tokens: promptTokens,
-    p_completion_tokens: completionTokens,
-  });
-  if (error) {
-    console.error("ask: record_ask_usage failed", error.message);
-  }
+  // `recordUsage` carries its own deadline: this call runs inside the SSE
+  // generator's `for await` loop, so an unbounded stall here would hold
+  // the client's connection open long after the last byte it will ever
+  // receive has already gone out.
+  await recordUsage(serviceClient, userId, promptTokens, completionTokens);
 }

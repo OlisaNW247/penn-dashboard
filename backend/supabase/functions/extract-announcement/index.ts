@@ -3,7 +3,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
+import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import {
   ANNOUNCEMENT_INSTRUCTIONS,
@@ -62,22 +62,13 @@ Deno.serve(async (req) => {
       return errorResponse("bad_request", "malformed extract-announcement request", 400);
     }
 
-    const { data: counts, error: countsError } = await serviceClient.rpc("ask_usage_counts", {
-      p_user_id: userId,
-    });
-    if (countsError) {
-      console.error("extract-announcement: ask_usage_counts failed", countsError.message);
-      return errorResponse("upstream", "usage lookup failed", 502);
+    const lookup = await lookupUsageCounts(serviceClient, userId);
+    if (!lookup.ok) {
+      // Fail open -- see quota.ts's module comment and PROTOCOL.md's
+      // quota section for the 2026-09-13 incident this guards against.
+      console.warn(`extract-announcement: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
     }
-    const row = Array.isArray(counts) ? counts[0] : counts;
-    const limits = limitsFromEnv(Deno.env);
-    const quota = checkQuota({
-      todayRequests: row?.today_requests ?? 0,
-      monthRequests: row?.month_requests ?? 0,
-      dailyLimit: limits.dailyLimit,
-      monthlyGlobalLimit: limits.monthlyGlobalLimit,
-      now: new Date(),
-    });
+    const quota = quotaDecision(lookup, limitsFromEnv(Deno.env), new Date());
     if (!quota.allowed) {
       return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
     }
@@ -127,14 +118,7 @@ Deno.serve(async (req) => {
     // reached the model (quota check itself, or a validation failure
     // above) shouldn't burn quota, but one that got a real answer should,
     // same as `ask` records after a stream actually completes.
-    const { error: recordError } = await serviceClient.rpc("record_ask_usage", {
-      p_user_id: userId,
-      p_prompt_tokens: 0,
-      p_completion_tokens: 0,
-    });
-    if (recordError) {
-      console.error("extract-announcement: record_ask_usage failed", recordError.message);
-    }
+    await recordUsage(serviceClient, userId, 0, 0);
 
     return json(200, { assignments: parseAssignments(text, now) });
   } catch (err) {

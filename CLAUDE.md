@@ -114,7 +114,7 @@ items are regrouped into syllabus categories by `GradeCategoryMap` /
 `GradeRegrouper`, attendance items and zero-point placeholders are
 classified out by `GradeItemClassifier`, the student edits the map in
 `GradeCategoryMapEditor`, and the deployed `map-categories` function can
-propose one; Deno 308). Round 3 was 3,400 blind lines and needed four
+propose one; Deno 308, now 320 after the fail-open quota lookup). Round 3 was 3,400 blind lines and needed four
 fix commits to go green: two memberwise-init/argument-order compile
 errors, a main-actor trap in a View static called from a test (trap
 below), and one real logic bug plus one test-pollution bug (trap below)

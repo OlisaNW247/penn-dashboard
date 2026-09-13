@@ -18,7 +18,7 @@
 // the same fact for every student in the course, not a private one.
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { checkQuota, limitsFromEnv } from "../_shared/quota.ts";
+import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import { selectCourseProfileForCategoryMap, selectEnrolledCourseIDs, storeCategoryMap } from "../_shared/db.ts";
 import {
@@ -188,33 +188,20 @@ async function checkAndConsumeQuota(
   serviceClient: SupabaseClient,
   userId: string,
 ): Promise<Response | undefined> {
-  const { data, error } = await serviceClient.rpc("ask_usage_counts", { p_user_id: userId });
-  if (error) {
-    console.error("map-categories: ask_usage_counts failed", error.message);
-    return errorResponse("upstream", "usage lookup failed", 502);
+  const lookup = await lookupUsageCounts(serviceClient, userId);
+  if (!lookup.ok) {
+    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
+    // section for the 2026-09-13 incident this guards against.
+    console.warn(`map-categories: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
   }
-  const row = Array.isArray(data) ? data[0] : data;
   const dailyLimit = parsePositiveInt(Deno.env.get("MAP_DAILY_LIMIT"), DEFAULT_MAP_DAILY_LIMIT);
   const monthlyGlobalLimit = limitsFromEnv(Deno.env).monthlyGlobalLimit;
-  const quota = checkQuota({
-    todayRequests: row?.today_requests ?? 0,
-    monthRequests: row?.month_requests ?? 0,
-    dailyLimit,
-    monthlyGlobalLimit,
-    now: new Date(),
-  });
+  const quota = quotaDecision(lookup, { dailyLimit, monthlyGlobalLimit }, new Date());
   if (!quota.allowed) {
     return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
   }
 
-  const { error: recordError } = await serviceClient.rpc("record_ask_usage", {
-    p_user_id: userId,
-    p_prompt_tokens: 0,
-    p_completion_tokens: 0,
-  });
-  if (recordError) {
-    console.error("map-categories: record_ask_usage failed", recordError.message);
-  }
+  await recordUsage(serviceClient, userId, 0, 0);
   return undefined;
 }
 

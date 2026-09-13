@@ -204,6 +204,21 @@ Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 (default 100000). Usage is recorded in `ask_usage` after the stream ends;
 questions and answers are never stored.
 
+The quota lookup (`ask_usage_counts`) and record (`record_ask_usage`) RPCs
+each carry a 4s client-side deadline (`_shared/quota.ts`'s
+`lookupUsageCounts` / `recordUsage`) and fail open with a `console.warn`
+rather than propagate the failure: a lookup that times out or errors is
+treated as "allow this call, unmetered," and a record that times out or
+errors just drops one request from the count. A database stall degrades
+the quota counter to "unmetered for that call," never a 502 -- the counter
+protects the aggregate budget, not the individual student, so it must
+never be the thing that makes `ask` (or the extract functions) unusable.
+This follows a real incident: on 2026-09-13 20:47 UTC a student's `ask`
+request came back 502 because `ask_usage_counts` hit PostgREST's ~60s
+gateway timeout during an unrelated database stall
+(`ask: ask_usage_counts failed Gateway Timeout` in the function log),
+even though the RPC itself is two trivial lookups on a tiny table.
+
 ## Catalog
 
 The problem this solves: a Canvas course site is one thing, but the
