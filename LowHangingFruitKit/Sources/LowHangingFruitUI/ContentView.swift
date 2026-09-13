@@ -278,49 +278,52 @@ struct ContentView: View {
 
     /// The original v5 hierarchy, with Smooth's visual identity layered on top.
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 3) {
-                (
-                    Text("Smooth")
-                        .font(.lhfWordmark(32))
-                    + Text(" \(Self.weekdayText(Date()))")
-                        .font(.lhfHeaderTitle(32))
-                )
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .center) {
+                Text("Smooth")
+                    .font(.lhfWordmark(40))
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
                     .layoutPriority(1)
-                    .accessibilityElement(children: .combine)
-                    .frame(height: 48, alignment: .center)
-                    .overlay(alignment: .bottomLeading) {
-                        SmoothSquiggle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                            )
-                            .frame(width: 104, height: 6)
-                            .offset(x: 2, y: -1)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 10) {
+                    if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
+                        navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                     }
-
-                Text(Self.dateText(Date()))
-                    .font(.lhfMono(14, weight: .medium))
-                    .foregroundStyle(Color.smoothMuted)
-            }
-
-            Spacer(minLength: 12)
-
-            HStack(spacing: 10) {
-                if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
-                    navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
+                    navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
+                    navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
                 }
-                navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
-                navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
+
+            Text(Self.weekdayText(Date()))
+                .font(.lhfHeaderTitle(40))
+                .foregroundStyle(Color.smoothInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(Self.dateText(Date()))
+                .font(.lhfMono(14, weight: .medium))
+                .foregroundStyle(Color.smoothMuted)
+                .fixedSize()
+                .padding(.bottom, 8)
+                .overlay(alignment: .bottomLeading) {
+                    SmoothSquiggle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(height: 6)
+                        .offset(y: 1)
+                }
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
@@ -609,9 +612,8 @@ struct ContentView: View {
     }
 }
 
-/// A compact three-wave underline with a hand-drawn rhythm. Its fixed width is
-/// tuned to the Roobert "Smooth" wordmark and deliberately stops before the
-/// weekday begins.
+/// A compact three-wave underline with a hand-drawn rhythm, sized by the date
+/// label it sits beneath.
 private struct SmoothSquiggle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
