@@ -83,6 +83,20 @@ public enum WorkKindFilter: Sendable, Hashable {
         }
     }
 
+    /// Plural form for "nothing qualifies" answers ("no upcoming exams…").
+    /// A separate table rather than an `-s`-appending helper: English
+    /// pluralization of these particular words isn't uniform ("quiz" →
+    /// "quizzes"), and the label set is small and fixed.
+    var pluralLabel: String {
+        switch self {
+        case .any: return "things"
+        case .assessment: return "exams or quizzes"
+        case .quiz: return "quizzes"
+        case .exam: return "exams"
+        case .assignment: return "assignments"
+        }
+    }
+
     func matches(_ item: WorkItem) -> Bool {
         switch self {
         case .any: return true
@@ -90,7 +104,11 @@ public enum WorkKindFilter: Sendable, Hashable {
         case .quiz:
             return item.kind == .quiz || item.title.range(of: #"(?i)\bquiz(zes)?\b"#, options: .regularExpression) != nil
         case .exam:
-            return item.title.range(of: #"(?i)\b(midterms?|exams?|finals?|final exam|prelims?|test)\b"#, options: .regularExpression) != nil
+            // `ExamDetector` is the shared, negation-aware rule (see its
+            // header for the phone transcript that made a bare keyword
+            // regex here insufficient); this case used to carry its own
+            // duplicate pattern.
+            return ExamDetector.isExam(title: item.title)
         case .assignment: return !item.isAssessment
         }
     }

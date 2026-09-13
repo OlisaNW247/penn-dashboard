@@ -46,6 +46,20 @@ public struct WorkItem: Sendable, Hashable, Identifiable {
         return title.range(of: pattern, options: .regularExpression) != nil
     }
 
+    /// Whether this item names a real course rather than the "(unknown
+    /// course)" placeholder `CourseCode.parse` and `CanvasICSClient` fall
+    /// back to when a calendar entry carries no department code — a
+    /// university-wide holiday or break, not a student's coursework. A
+    /// real phone transcript (2026-09-13) had ask's "next exam" answer name
+    /// one of these ("Yom Kippur (no exams/assignments) for (unknown
+    /// course)") once the title-matching bug above was the only thing
+    /// fixed; excluding course-less items from that answer is the other
+    /// half of the fix, in `ClassQuestionAnswerer.nextItem`.
+    public var hasKnownCourse: Bool {
+        let trimmed = course.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed != "(unknown course)"
+    }
+
     /// Canvas course id parsed from the item URL, when it has one.
     public var courseID: String? {
         guard let url else { return nil }

@@ -137,10 +137,18 @@ public struct ClassQuestionAnswerer: Sendable {
     }
 
     private func nextItem(_ parsed: ParsedQuestion, kind: WorkKindFilter) -> AssistantAnswer {
-        let upcoming = openItems(course: parsed.course, includeCompleted: true)
-            .filter { kind.matches($0) }
-            .filter { ($0.dueAt ?? .distantPast) >= context.now }
-            .sorted(by: byDue)
+        // Course-less calendar entries (university holidays, "no class"
+        // days) are never a student's coursework, and the ICS feed
+        // sometimes ships the same entry twice — an all-day copy and a
+        // timed one. Both surfaced together in a real "next exam" answer
+        // (see `ExamDetector`'s header); filter and dedupe before picking
+        // "next".
+        let upcoming = dedupeSameDayTitle(
+            openItems(course: parsed.course, includeCompleted: true)
+                .filter { kind.matches($0) }
+                .filter(\.hasKnownCourse)
+                .filter { ($0.dueAt ?? .distantPast) >= context.now }
+        ).sorted(by: byDue)
 
         if let next = upcoming.first, let due = next.dueAt {
             var text = "Your next \(kind.label) is \(next.title) for \(next.course): \(DateText.long(due, calendar: context.calendar)) (\(relative(due)))."
@@ -171,7 +179,7 @@ public struct ClassQuestionAnswerer: Sendable {
             return AssistantAnswer(text: text, sources: sources(for: hits), question: parsed, grounding: hits, isExact: false)
         }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
-        return AssistantAnswer(text: "I don't see any upcoming \(kind.label)\(scope) in your Canvas data.", sources: [], question: parsed, isExact: true)
+        return AssistantAnswer(text: "No upcoming \(kind.pluralLabel)\(scope) in your synced classes.", sources: [], question: parsed, isExact: true)
     }
 
     private func itemDetail(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
@@ -412,6 +420,39 @@ public struct ClassQuestionAnswerer: Sendable {
 
     private func byDue(_ a: WorkItem, _ b: WorkItem) -> Bool {
         (a.dueAt ?? .distantFuture) < (b.dueAt ?? .distantFuture)
+    }
+
+    /// Collapses items that share a normalized title and calendar day,
+    /// keeping the copy with a time of day. Canvas's ICS export (or the
+    /// university calendar it re-exports) sometimes lists the same event
+    /// twice for one day — an all-day placeholder and a timed copy — and
+    /// without this an item like a holiday notice showed up as both
+    /// "next" and "after that" in the same answer. Preserves input order
+    /// otherwise, so callers can sort after deduping.
+    private func dedupeSameDayTitle(_ items: [WorkItem]) -> [WorkItem] {
+        var order: [String] = []
+        var kept: [String: WorkItem] = [:]
+        for item in items {
+            let titleKey = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard let due = item.dueAt else {
+                // Nothing to collide on; keep every undated item.
+                let key = "nodate:\(item.id)"
+                kept[key] = item
+                order.append(key)
+                continue
+            }
+            let startOfDay = context.calendar.startOfDay(for: due)
+            let key = "\(titleKey)|\(startOfDay.timeIntervalSinceReferenceDate)"
+            if let existing = kept[key] {
+                let existingHasTime = existing.dueAt.map { $0 != startOfDay } ?? false
+                let newHasTime = due != startOfDay
+                if !existingHasTime, newHasTime { kept[key] = item }
+            } else {
+                kept[key] = item
+                order.append(key)
+            }
+        }
+        return order.compactMap { kept[$0] }
     }
 
     /// "in 2 days", "in 3 hours", "4 days ago".
