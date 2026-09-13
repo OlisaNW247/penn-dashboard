@@ -117,7 +117,9 @@ struct BackendClient: Sendable {
     }
 
     private func askStream(bodyData: Data, forceRefresh: Bool) async throws -> URLSession.AsyncBytes {
+        askTrace.info("3 requesting access token (forceRefresh=\(forceRefresh, privacy: .public))")
         let accessToken = try await session.accessToken(forceRefresh: forceRefresh)
+        askTrace.info("3b access token obtained; posting to ask")
         var request = URLRequest(url: configuration.url.appendingPathComponent("functions/v1/ask"))
         request.httpMethod = "POST"
         request.httpBody = bodyData
@@ -130,9 +132,11 @@ struct BackendClient: Sendable {
         do {
             (bytes, response) = try await urlSession.bytes(for: request)
         } catch {
+            askTrace.error("4x bytes(for:) threw: \(String(describing: error), privacy: .public)")
             throw BackendError.transport
         }
         guard let http = response as? HTTPURLResponse else { throw BackendError.transport }
+        askTrace.info("4 response headers: status \(http.statusCode, privacy: .public)")
 
         if http.statusCode == 401 {
             guard !forceRefresh else { throw BackendError.unauthorized }

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import os
 
 /// One turn in the conversation.
 struct AssistantMessage: Identifiable, Sendable {
@@ -49,8 +50,10 @@ final class AssistantConversation: ObservableObject {
         isResponding = true
 
         let index = messages.count - 1
+        askTrace.info("0 send: consumer task starting")
         inFlight = Task { [responder] in
             for await chunk in responder.reply(to: trimmed, context: context) {
+                askTrace.info("8 chunk delivered to conversation")
                 guard !Task.isCancelled, messages.indices.contains(index) else { break }
                 switch chunk {
                 case let .text(piece):
@@ -59,6 +62,7 @@ final class AssistantConversation: ObservableObject {
                     messages[index].citations = list
                 }
             }
+            askTrace.info("9 consumer loop ended")
             if messages.indices.contains(index) {
                 messages[index].isStreaming = false
             }

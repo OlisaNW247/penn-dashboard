@@ -1,5 +1,12 @@
 import Foundation
 import LowHangingFruitKit
+import os
+
+/// Stage-by-stage trace of one ask, so a stuck cursor on a device can be
+/// read off the Xcode console instead of reasoned about: filter the console
+/// on "ask-trace". Public-privacy strings only; never the question or the
+/// context, which are the student's own.
+let askTrace = Logger(subsystem: Bundle.main.bundleIdentifier ?? "LHF", category: "ask-trace")
 
 // MARK: – The one place LHF sends class data off-device
 //
@@ -69,7 +76,9 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // for its body — so both changes (detached, and moving the
             // request build inside) are needed together.
             let task = Task.detached(priority: .userInitiated) {
+                askTrace.info("1 reply task started; building request")
                 let request = Self.makeRequest(question: prompt, context: context)
+                askTrace.info("2 request built: \(request.excerpts.count, privacy: .public) excerpt chars, \(request.courseIDs.count, privacy: .public) courses")
                 await Self.run(
                     request: request,
                     prompt: prompt,
@@ -101,7 +110,9 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         let bytes: URLSession.AsyncBytes
         do {
             bytes = try await client.askStream(request)
+            askTrace.info("5 stream open; waiting for first event")
         } catch {
+            askTrace.error("5x askStream threw: \(String(describing: error), privacy: .public)")
             // Nothing has streamed yet — `client.askStream` either failed to
             // authenticate, get a 2xx status, or open the connection at all,
             // which by construction happens before this function has had
@@ -128,6 +139,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             parsing: for try await line in bytes.lines {
                 if Task.isCancelled { break }
                 guard let event = AskStreamEvent.parse(line: line) else { continue }
+                askTrace.info("6 event received")
                 switch event {
                 case let .delta(text):
                     let visible = splitter.feed(text)
@@ -166,6 +178,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             }
         }
 
+        askTrace.info("7 stream finished")
         continuation.finish()
     }
 
