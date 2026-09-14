@@ -1,15 +1,13 @@
 import SwiftUI
 
-/// Smooth's one-time opening story. A first-time student meets the problem
-/// before the product: assignments, announcements, grades, and deadlines
-/// crowd the screen around a stressed figure. The cards then physically
-/// collapse into Smooth's rainbow line, the figure relaxes onto it, and the
-/// connect flow gets one calm, unambiguous entrance.
+/// Smooth's one-time opening story in three beats: a student begins at ease,
+/// school demands crowd in until they are visibly overwhelmed, and the noise
+/// resolves into one straight line with a calmer perspective on life.
 struct IntroView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var phase: IntroPhase = .overloaded
+    @State private var phase: IntroPhase = .standing
     @State private var notificationsVisible = false
     @State private var runID = 0
 
@@ -22,7 +20,7 @@ struct IntroView: View {
                 notificationStorm(in: size)
                 smoothLine(in: size)
 
-                StudentFigure(isCalm: phase == .calm)
+                StudentFigure(pose: studentPose)
                     .frame(width: phase == .calm ? 178 : 126, height: phase == .calm ? 132 : 154)
                     .position(
                         x: size.width * 0.5,
@@ -79,9 +77,18 @@ struct IntroView: View {
 
     private var notificationOpacity: Double {
         switch phase {
+        case .standing: 0
         case .overloaded: notificationsVisible ? 1 : 0
         case .gathering: 0.72
         case .calm: 0
+        }
+    }
+
+    private var studentPose: StudentPose {
+        switch phase {
+        case .standing: .standing
+        case .overloaded, .gathering: .stressed
+        case .calm: .relaxed
         }
     }
 
@@ -89,13 +96,12 @@ struct IntroView: View {
         let progress = CGFloat(index) / CGFloat(max(count - 1, 1))
         let x = 22 + progress * (size.width - 44)
         let baseline = size.height * 0.535
-        let wave = sin(progress * .pi * 4) * 7
-        return CGPoint(x: x, y: baseline + wave)
+        return CGPoint(x: x, y: baseline)
     }
 
     private func smoothLine(in size: CGSize) -> some View {
         SmoothIntroLine()
-            .trim(from: 0, to: phase == .overloaded ? 0 : 1)
+            .trim(from: 0, to: phase == .gathering || phase == .calm ? 1 : 0)
             .stroke(
                 LinearGradient(
                     colors: [
@@ -113,7 +119,7 @@ struct IntroView: View {
             )
             .frame(width: size.width - 44, height: 34)
             .position(x: size.width * 0.5, y: size.height * 0.535)
-            .opacity(phase == .overloaded ? 0 : 1)
+            .opacity(phase == .gathering || phase == .calm ? 1 : 0)
             .shadow(color: Color.smoothGrape.opacity(phase == .calm ? 0.12 : 0), radius: 10)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -121,34 +127,20 @@ struct IntroView: View {
     }
 
     private func calmIdentity(in size: CGSize) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                SmoothAppMark(size: 58)
-                Text("Smooth")
-                    .font(.lhfWordmark(52))
-                    .foregroundStyle(Color.smoothInk)
-                    .minimumScaleFactor(0.8)
-            }
-
-            Text("Make your life smooth.")
-                .font(.lhfSans(22, weight: .medium))
-                .foregroundStyle(Color.v2Ink)
-                .multilineTextAlignment(.center)
-
-            Text("There’s more to life than school.\nMake it all smooth.")
-                .font(.lhfSans(16, weight: .regular))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-        }
+        (
+            Text("There’s more to life than school.\nMake it all ")
+                + Text("smooth").italic()
+                + Text(".")
+        )
+        .font(.lhfSans(28, weight: .semibold))
+        .foregroundStyle(Color.v2Ink)
+        .multilineTextAlignment(.center)
+        .lineSpacing(7)
         .padding(.horizontal, 24)
-        .position(x: size.width * 0.5, y: size.height * 0.275)
+        .position(x: size.width * 0.5, y: size.height * 0.30)
         .opacity(phase == .calm ? 1 : 0)
         .scaleEffect(phase == .calm ? 1 : 0.92)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Smooth. Make your life smooth. There’s more to life than school. Make it all smooth."
-        )
+        .accessibilityLabel("There’s more to life than school. Make it all smooth.")
     }
 
     private var controls: some View {
@@ -208,12 +200,22 @@ struct IntroView: View {
 
     @MainActor
     private func playIntro() async {
-        phase = reduceMotion ? .calm : .overloaded
+        phase = reduceMotion ? .calm : .standing
         notificationsVisible = false
 
         guard !reduceMotion else { return }
 
-        withAnimation {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LHFIntroHoldStanding") {
+            return
+        }
+#endif
+
+        try? await Task.sleep(nanoseconds: 1_600_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.spring(response: 0.48, dampingFraction: 0.76)) {
+            phase = .overloaded
             notificationsVisible = true
         }
 
@@ -223,7 +225,7 @@ struct IntroView: View {
         }
 #endif
 
-        try? await Task.sleep(nanoseconds: 1_900_000_000)
+        try? await Task.sleep(nanoseconds: 2_350_000_000)
         guard !Task.isCancelled else { return }
 
         lhfHapticLight()
@@ -241,7 +243,7 @@ struct IntroView: View {
 
     private func replay() {
         lhfHapticLight()
-        phase = .overloaded
+        phase = .standing
         notificationsVisible = false
         runID += 1
     }
@@ -258,6 +260,7 @@ struct IntroView: View {
 }
 
 private enum IntroPhase {
+    case standing
     case overloaded
     case gathering
     case calm
@@ -329,44 +332,76 @@ private struct NotificationCard: View {
     }
 }
 
-/// The destination every notification contracts into. Its two gentle waves
-/// echo the small underline already used throughout Smooth without copying a
-/// generic loading curve or progress bar.
+/// The destination every notification contracts into: one perfectly straight,
+/// uninterrupted path after the visual noise of the school-day cards.
 private struct SmoothIntroLine: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: 0, y: rect.midY))
-        let segment = rect.width / 4
-        for index in 0..<4 {
-            let start = CGFloat(index) * segment
-            let direction: CGFloat = index.isMultiple(of: 2) ? -1 : 1
-            path.addCurve(
-                to: CGPoint(x: start + segment, y: rect.midY),
-                control1: CGPoint(x: start + segment * 0.28, y: rect.midY + 13 * direction),
-                control2: CGPoint(x: start + segment * 0.72, y: rect.midY - 13 * direction)
-            )
-        }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
         return path
     }
 }
 
+private enum StudentPose {
+    case standing
+    case stressed
+    case relaxed
+}
+
 private struct StudentFigure: View {
-    let isCalm: Bool
+    let pose: StudentPose
 
     var body: some View {
         ZStack {
+            StandingStudent()
+                .opacity(pose == .standing ? 1 : 0)
+                .scaleEffect(pose == .standing ? 1 : 0.88)
+
             StressedStudent()
-                .opacity(isCalm ? 0 : 1)
-                .scaleEffect(isCalm ? 0.82 : 1)
-                .rotationEffect(.degrees(isCalm ? -5 : 0))
+                .opacity(pose == .stressed ? 1 : 0)
+                .scaleEffect(pose == .stressed ? 1 : 0.86)
 
             RelaxedStudent()
-                .opacity(isCalm ? 1 : 0)
-                .scaleEffect(isCalm ? 1 : 0.82)
-                .offset(y: isCalm ? 0 : 10)
+                .opacity(pose == .relaxed ? 1 : 0)
+                .scaleEffect(pose == .relaxed ? 1 : 0.82)
+                .offset(y: pose == .relaxed ? 0 : 10)
         }
-        .animation(.spring(response: 0.62, dampingFraction: 0.78), value: isCalm)
+        .animation(.spring(response: 0.62, dampingFraction: 0.78), value: pose)
         .accessibilityHidden(true)
+    }
+}
+
+private struct StandingStudent: View {
+    var body: some View {
+        Canvas { context, size in
+            let ink = Color.smoothInk
+            let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+
+            let head = Path(
+                ellipseIn: CGRect(
+                    x: size.width * 0.35,
+                    y: 5,
+                    width: size.width * 0.30,
+                    height: size.width * 0.30
+                )
+            )
+            context.fill(head, with: .color(Color.v2Bg))
+            context.stroke(head, with: .color(ink), style: stroke)
+
+            var body = Path()
+            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.29))
+            body.addLine(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
+            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.40))
+            body.addLine(to: CGPoint(x: size.width * 0.28, y: size.height * 0.60))
+            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.40))
+            body.addLine(to: CGPoint(x: size.width * 0.72, y: size.height * 0.60))
+            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
+            body.addLine(to: CGPoint(x: size.width * 0.30, y: size.height * 0.98))
+            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
+            body.addLine(to: CGPoint(x: size.width * 0.70, y: size.height * 0.98))
+            context.stroke(body, with: .color(ink), style: stroke)
+        }
     }
 }
 
