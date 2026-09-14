@@ -42,7 +42,7 @@ import UserNotifications
 ///
 /// The cache-update rule and the scheduler gate are both pure functions
 /// (`AppState.updatedNoSubmissionIDs`, `NotificationScheduler
-/// .plannedRequests`/`digestRequest`), so most of this needs no network, no
+/// `.plannedRequests`), so most of this needs no network, no
 /// `GradeWatcherStore`, and no notification permission — the same shape
 /// `NoSubmissionAutoCompleteTests` and `PerCourseNotificationTests` already
 /// use for their siblings.
@@ -244,7 +244,7 @@ struct NoSubmissionCaveatTests {
     // gate survives: a no-submission Canvas assignment with the toggle off
     // is now HIDDEN from `vm.items` entirely by `AppState
     // .rebuildDashboardItems` (section 6 below), so it can no longer reach
-    // `plannedRequests`/`digestRequest` to need a gate here at all — these
+    // `plannedRequests` to need a gate here at all — these
     // three tests used to build a `requiresNoSubmission` `DashItem` and
     // assert the scheduler silenced it; that's provably unreachable now, so
     // they're reworked around occurrences instead, mirroring
@@ -284,27 +284,6 @@ struct NoSubmissionCaveatTests {
 
             #expect(!due.contains { $0.identifier.contains(taskA.uuidString) })
             #expect(due.contains { $0.identifier.contains(taskB.uuidString) })
-        }
-    }
-
-    @Test("The digest excludes a silenced class's occurrences while still counting its normal assignments")
-    func digestExcludesSilencedOccurrences() {
-        withSchedulerFixture(digest: true) { scheduler, prefs, now in
-            let soon = now + 20 * .hour
-            let items = [
-                occurrenceItem("CIS 1200", taskID: UUID(), due: soon),
-                normalItem("CIS 1200", "pset", due: soon),
-            ]
-
-            // Both count while the toggle is on (the default).
-            let bodyBefore = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
-                .first { $0.identifier == "digest:daily" }?.content.body
-            #expect(bodyBefore?.contains("2 assignments") == true)
-
-            prefs.setNothingToSubmitEnabled("CIS 1200", false)
-            let bodyAfter = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
-                .first { $0.identifier == "digest:daily" }?.content.body
-            #expect(bodyAfter?.contains("1 assignment ") == true)
         }
     }
 
@@ -563,7 +542,6 @@ struct NoSubmissionCaveatTests {
     /// cache tests above or leak into any other suite. Mirrors
     /// `PerCourseNotificationTests.withFixture`.
     private func withSchedulerFixture(
-        digest: Bool = false,
         _ body: (NotificationScheduler, CoursePreferencesStore, Date) -> Void
     ) {
         let name = "lhf.tests.\(UUID().uuidString)"
@@ -576,8 +554,6 @@ struct NoSubmissionCaveatTests {
         let scheduler = NotificationScheduler(defaults: defaults)
         scheduler.setOffset(.h24, on: true)
         scheduler.setOffset(.h1, on: true)
-        scheduler.setDigestEnabled(digest)
-
         body(scheduler, CoursePreferencesStore(defaults: defaults), Date())
     }
 

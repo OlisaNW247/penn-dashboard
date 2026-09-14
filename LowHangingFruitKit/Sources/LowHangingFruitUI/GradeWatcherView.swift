@@ -74,18 +74,30 @@ struct GradeWatcherView: View {
     }
 
     var body: some View {
-        Group {
-            if isAwaitingCourseData {
-                loadingState
-            } else if courses.isEmpty {
-                if selectedCodes.isEmpty { emptyCoursesState } else { unmatchedCoursesState }
-            } else if isFirstLoad {
-                loadingState
-            } else {
-                courseList
+        VStack(spacing: 0) {
+            SmoothFormHeader(
+                title: "Grade Watcher",
+                accent: .smoothGrape,
+                spark: .smoothTomato
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+
+            Group {
+                if isAwaitingCourseData {
+                    loadingState
+                } else if courses.isEmpty {
+                    if selectedCodes.isEmpty { emptyCoursesState } else { unmatchedCoursesState }
+                } else if isFirstLoad {
+                    loadingState
+                } else {
+                    courseList
+                }
             }
         }
-        .navigationTitle("grade watcher")
+        .background(Color.v2Bg.ignoresSafeArea())
+        .navigationTitle("")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif

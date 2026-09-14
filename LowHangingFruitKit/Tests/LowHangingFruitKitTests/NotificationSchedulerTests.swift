@@ -44,7 +44,7 @@ final class NotificationSchedulerTests: XCTestCase {
     }
 
     func testFiltersIneligibleAndUsesDefaultOffsets() {
-        withScheduler { s, prefs in    // defaults: [.h24, .h1], digest off
+        withScheduler { s, prefs in    // defaults: [.h24, .h1]
             let now = Date()
             let items = [
                 item("1", due: now.addingTimeInterval(3 * 86_400)),                 // eligible → 2 reminders

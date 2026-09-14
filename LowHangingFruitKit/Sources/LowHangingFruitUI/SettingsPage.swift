@@ -9,15 +9,9 @@ import AppKit
 import ServiceManagement
 #endif
 
-/// Account, appearance, reminder defaults, tasks, storage and troubleshooting.
-///
-/// **The class list is no longer here.** It moved to the Profile tab in v4 —
-/// see `ProfileClassesSection`, which is that code, moved rather than rewritten.
-/// The split is "a preference vs. a thing you own": appearance and reminder
-/// lead times are preferences; which classes you're taking is not, and it was
-/// odd that turning off a course lived next to the light/dark picker.
-/// What stays here is the *global* reminder configuration that per-course
-/// settings in Profile will inherit from and override.
+/// The single Profile destination: identity, classes, notification choices and
+/// app preferences. Infrequent preferences collapse into one group so the page
+/// stays short during ordinary use.
 ///
 /// In v4 this is the root of the **Settings tab**, which is where its
 /// `NavigationStack` comes from (the dashboard's stack supplies one). It still
@@ -30,6 +24,7 @@ struct SettingsPage: View {
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var showRecurring = false
+    @State private var showPreferences = false
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
@@ -60,19 +55,15 @@ struct SettingsPage: View {
         Form {
             Section {
                 SmoothFormHeader(
-                    title: "Settings",
-                    accent: .smoothCobalt,
-                    spark: .smoothTomato
+                    title: "Profile",
+                    accent: .smoothTeal,
+                    spark: .smoothGrape
                 )
             }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
             .listRowSeparator(.hidden)
 
-            // Header deliberately isn't "Profile" any more: that word now names
-            // a tab, and a Settings section wearing the same label would read
-            // as a shortcut to it. The field itself hasn't moved — a name is a
-            // preference, and Profile is about classes.
             Section {
                 TextField("your name", text: Binding(
                     get: { state.userName },
@@ -83,61 +74,12 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
-            // One row per source, connect or disconnect on the right. The
-            // paste-a-calendar-link fallback moved out of here: it belongs on
-            // the path where a login is actually failing (onboarding), not in
-            // a list of accounts, where it read as a third thing to connect.
-            Section {
-                accountRow(label: "canvas",
-                           connected: state.isCanvasConnected,
-                           working: state.isLoading || state.isCanvasDiscoveryLoading,
-                           disconnect: .canvas)
+            ProfileSemesterSection(placement: .addClass)
+            ProfileClassesSection()
+            ProfileNotificationsSection()
 
-                accountRow(label: "gradescope",
-                           connected: state.isGradescopeConnected,
-                           working: state.isGradescopeLoading,
-                           disconnect: .gradescope)
-            } header: {
-                SmoothSectionHeader("accounts", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothTeal)
-
-            announcementWatcherSection
-
-            Section {
-                Picker("appearance", selection: Binding(
-                    get: { state.appearanceMode },
-                    set: { state.setAppearanceMode($0) }
-                )) {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            } header: {
-                SmoothSectionHeader("appearance", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothCobalt)
-
-            Section {
-                Button {
-                    showRecurring = true
-                } label: {
-                    Label("add recurring task", systemImage: "calendar.badge.plus")
-                }
-            } header: {
-                SmoothSectionHeader("tasks", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothLemon)
-
-            remindersSection
-
-            iCloudSyncSection
-
-            #if os(macOS)
-            onThisMacSection
-            #endif
+            compactPreferencesSection
+            ProfileSemesterSection(placement: .previousSemesters)
 
             if let notice = state.syncNotice ?? state.error {
                 Section {
@@ -151,7 +93,7 @@ struct SettingsPage: View {
         .formStyle(.grouped)
         .font(.lhfSecondary(15))
         .foregroundStyle(Color.smoothInk)
-        .smoothFormChrome(accent: .smoothCobalt)
+        .smoothFormChrome(accent: .smoothTeal)
         .navigationTitle("")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -175,6 +117,141 @@ struct SettingsPage: View {
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    /// Everything students change occasionally, folded into one quiet card.
+    /// Classes and per-class notifications stay visible above because they are
+    /// the profile's everyday content; account and app-level controls do not
+    /// need to make every visit several screens tall.
+    private var compactPreferencesSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showPreferences) {
+                VStack(alignment: .leading, spacing: 16) {
+                    preferenceLabel("accounts")
+                    accountRow(label: "canvas",
+                               connected: state.isCanvasConnected,
+                               working: state.isLoading || state.isCanvasDiscoveryLoading,
+                               disconnect: .canvas)
+                    accountRow(label: "gradescope",
+                               connected: state.isGradescopeConnected,
+                               working: state.isGradescopeLoading,
+                               disconnect: .gradescope)
+
+                    Divider()
+                    preferenceLabel("appearance")
+                    Picker("appearance", selection: Binding(
+                        get: { state.appearanceMode },
+                        set: { state.setAppearanceMode($0) }
+                    )) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Divider()
+                    preferenceLabel("dashboard")
+                    Toggle("watch announcements", isOn: Binding(
+                        get: { state.announcementWatcherEnabled },
+                        set: { state.setAnnouncementWatcherEnabled($0) }
+                    ))
+                    if state.announcementWatcherEnabled, BackendServices.client != nil {
+                        Toggle("ai assist", isOn: Binding(
+                            get: { state.announcementAIEnabled },
+                            set: { state.setAnnouncementAIEnabled($0) }
+                        ))
+                    }
+                    Button {
+                        showRecurring = true
+                    } label: {
+                        Label("add recurring task", systemImage: "calendar.badge.plus")
+                    }
+
+                    Divider()
+                    preferenceLabel("reminders")
+                    Toggle("due-date reminders", isOn: Binding(
+                        get: { scheduler.isEnabled },
+                        set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+                    ))
+                    if scheduler.isEnabled {
+                        if scheduler.authStatus == .denied {
+                            Label("notifications are off in system settings.", systemImage: "bell.slash")
+                                .font(.lhfSecondary(12))
+                                .foregroundStyle(Color.v2DateText)
+                            Button("open settings") { openSystemNotificationSettings() }
+                        } else {
+                            ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                                Toggle(offset.label, isOn: Binding(
+                                    get: { scheduler.leadOffsets.contains(offset) },
+                                    set: { scheduler.setOffset(offset, on: $0) }
+                                ))
+                            }
+                            Toggle("“turned in” confirmations", isOn: Binding(
+                                get: { scheduler.turnedInEnabled },
+                                set: { scheduler.setTurnedInEnabled($0) }
+                            ))
+                        }
+                    }
+
+                    Divider()
+                    preferenceLabel("devices")
+                    Toggle("sync between my devices", isOn: Binding(
+                        get: { state.cloudSyncEnabled },
+                        set: { state.setCloudSyncEnabled($0) }
+                    ))
+                    cloudSyncStatus
+
+                    #if os(macOS)
+                    Toggle("open at login", isOn: Binding(
+                        get: {
+                            _ = loginItemRefreshNonce
+                            return SMAppService.mainApp.status == .enabled
+                        },
+                        set: { newValue in
+                            if newValue {
+                                try? SMAppService.mainApp.register()
+                            } else {
+                                try? SMAppService.mainApp.unregister()
+                            }
+                            loginItemRefreshNonce += 1
+                        }
+                    ))
+                    #endif
+                }
+                .padding(.vertical, 8)
+            } label: {
+                Label("preferences", systemImage: "slider.horizontal.3")
+                    .font(.lhfSecondary(15, weight: .semibold))
+                    .foregroundStyle(Color.smoothInk)
+            }
+        }
+        .smoothSectionBackground(.smoothTeal)
+    }
+
+    private func preferenceLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.lhfMono(10, weight: .semibold))
+            .tracking(0.45)
+            .foregroundStyle(Color.smoothTeal)
+            .textCase(.uppercase)
+    }
+
+    @ViewBuilder
+    private var cloudSyncStatus: some View {
+        if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
+            Text("Takes effect after you quit and reopen Smooth.")
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.v2DateText)
+        } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
+            Text(reason)
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.smoothTomatoInk)
+        } else if state.cloudSyncEnabled {
+            Text("Sync is on. Changes appear on your other devices within a minute or two.")
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.v2DateText)
+        }
     }
 
     // MARK: Storage
@@ -294,7 +371,7 @@ struct SettingsPage: View {
     // MARK: Reminders
 
     /// The **global** reminder configuration: whether due-date reminders run at
-    /// all, which lead times they use, and the daily digest. v4's Profile tab
+    /// all and which lead times they use. v4's Profile tab
     /// adds a per-class layer that inherits from exactly these values and
     /// overrides them class by class, which is why they stay in Settings rather
     /// than following the class list over to Profile — this is the default a
@@ -326,14 +403,6 @@ struct SettingsPage: View {
                         set: { scheduler.setTurnedInEnabled($0) }
                     ))
 
-                    Toggle("daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
-                        get: { scheduler.digestEnabled },
-                        set: { scheduler.setDigestEnabled($0) }
-                    ))
-                    if scheduler.digestEnabled {
-                        DatePicker("digest time", selection: digestTimeBinding,
-                                   displayedComponents: .hourAndMinute)
-                    }
                 }
             }
         } header: {
@@ -449,13 +518,6 @@ struct SettingsPage: View {
     private func reportProblem() {
         let report = DiagnosticsReport.generate(state: state)
         SupportContact.openReportMail(diagnostics: report)
-    }
-
-    private var digestTimeBinding: Binding<Date> {
-        Binding(
-            get: { Calendar.current.date(from: scheduler.digestTime) ?? Date() },
-            set: { scheduler.setDigestTime(Calendar.current.dateComponents([.hour, .minute], from: $0)) }
-        )
     }
 
     private func openSystemNotificationSettings() {

@@ -9,7 +9,7 @@ import LowHangingFruitKit
 /// view-model so manually-adjusted due dates are respected.
 ///
 /// **Two layers of settings, and only one of them lives here.** The properties
-/// below (`isEnabled`, `leadOffsets`, `digestEnabled`, `digestTime`) are the
+/// below (`isEnabled`, `leadOffsets`) are the
 /// *global* configuration — the one control set in Settings → Reminders. Since
 /// v4 there is a second, per-course layer in `CoursePreferences`: a mute, an
 /// optional lead-time override, and a switch for recurring non-assignment work.
@@ -33,12 +33,10 @@ final class NotificationScheduler: ObservableObject {
 
     @Published private(set) var isEnabled: Bool
     @Published private(set) var leadOffsets: Set<LeadOffset>
-    @Published private(set) var digestEnabled: Bool
     /// Whether "Turned in ✓" confirmations post when a Grade Watcher refresh
-    /// detects a new submission. Defaults ON (unlike reminders/digest): the
+    /// detects a new submission. Defaults ON (unlike reminders): the
     /// feature was requested as always-on, so the toggle exists to opt OUT.
     @Published private(set) var turnedInEnabled: Bool
-    @Published private(set) var digestTime: DateComponents
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
     // Lazy so launch on an unbundled binary never touches the notification center.
@@ -59,9 +57,6 @@ final class NotificationScheduler: ObservableObject {
 
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
-    private static let digestKey       = "notif.digestEnabled"
-    private static let digestHourKey   = "notif.digestHour"
-    private static let digestMinuteKey = "notif.digestMinute"
     private static let turnedInKey     = "notif.turnedInEnabled"
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
@@ -79,20 +74,15 @@ final class NotificationScheduler: ObservableObject {
             // the two cannot drift apart.
             self.leadOffsets = LeadOffset.defaults
         }
-        self.digestEnabled = d.bool(forKey: Self.digestKey)
         // Default ON when never set — `bool(forKey:)` alone would read a
         // missing key as false and silently disable the feature for everyone.
         self.turnedInEnabled = d.object(forKey: Self.turnedInKey) as? Bool ?? true
-        let hour = d.object(forKey: Self.digestHourKey) as? Int ?? 8
-        let minute = d.object(forKey: Self.digestMinuteKey) as? Int ?? 0
-        self.digestTime = DateComponents(hour: hour, minute: minute)
 
         #if DEBUG
         // Screenshot seam: show the reminders feature fully expanded (in-memory
         // only — never calls requestAuthorization, so no permission prompt fires).
         if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
             self.isEnabled = true
-            self.digestEnabled = true
         }
         #endif
     }
@@ -130,20 +120,9 @@ final class NotificationScheduler: ObservableObject {
         defaults.set(leadOffsets.map(\.rawValue), forKey: Self.offsetsKey)
     }
 
-    func setDigestEnabled(_ on: Bool) {
-        digestEnabled = on
-        defaults.set(on, forKey: Self.digestKey)
-    }
-
     func setTurnedInEnabled(_ on: Bool) {
         turnedInEnabled = on
         defaults.set(on, forKey: Self.turnedInKey)
-    }
-
-    func setDigestTime(_ comps: DateComponents) {
-        digestTime = DateComponents(hour: comps.hour ?? 8, minute: comps.minute ?? 0)
-        defaults.set(digestTime.hour, forKey: Self.digestHourKey)
-        defaults.set(digestTime.minute, forKey: Self.digestMinuteKey)
     }
 
     // MARK: Reschedule (idempotent)
@@ -341,8 +320,8 @@ final class NotificationScheduler: ObservableObject {
     /// Identifiers use the `turnedin:` prefix, which does not collide with
     /// any scheme already in use here: due-date reminders are
     /// `due:<assignment id>:<offset>` (built/removed in `plannedRequests` /
-    /// `reschedule`'s `cancelAll()`), the daily summary is the fixed
-    /// `digest:daily`, and grade alerts are `grade:<assignment id>:<earned>`
+    /// `reschedule`'s `cancelAll()`), and grade alerts are
+    /// `grade:<assignment id>:<earned>`
     /// or `grade:batch:<timestamp>`. A random UUID per call additionally
     /// guarantees two confirmations for the same assignment (e.g. a
     /// submission retracted and redone) never collide with each other either.
@@ -431,9 +410,8 @@ final class NotificationScheduler: ObservableObject {
             guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
             let course = item.assignment.course
 
-            // A muted course produces nothing at all — not a quieter reminder,
-            // not a digest line, nothing. That is the whole promise of the
-            // switch.
+            // A muted course produces nothing at all. That is the whole
+            // promise of the switch.
             guard prefs.notificationsEnabled(course) else { continue }
 
             // The merged "items with nothing to submit" toggle
@@ -472,10 +450,10 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        let budget = max(0, Self.maxPending - (digestEnabled ? 1 : 0))
+        let budget = Self.maxPending
         let calendar = Calendar.current
 
-        var requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
+        let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
             let content = UNMutableNotificationContent()
             // Owner's notification redesign (2026-08-26): the class name is
             // the headline and the lead phrase is the entire body — no
@@ -495,9 +473,6 @@ final class NotificationScheduler: ObservableObject {
                                          content: content, trigger: trigger)
         }
 
-        if digestEnabled, let digest = digestRequest(from: items, now: now, preferences: prefs) {
-            requests.append(digest)
-        }
         return requests
     }
 
@@ -562,48 +537,6 @@ final class NotificationScheduler: ObservableObject {
         if lhs.fireDate != rhs.fireDate { return lhs.fireDate < rhs.fireDate }
         if lhs.isRecurring != rhs.isRecurring { return !lhs.isRecurring }
         return identifier(for: lhs) < identifier(for: rhs)
-    }
-
-    /// The daily "what's due" summary.
-    ///
-    /// It counts through the same per-course gates the individual reminders use.
-    /// A digest that included a muted class would be the mute leaking straight
-    /// back in through a different door — the student turned that class off and
-    /// would still be told about it every morning, which is worse than not
-    /// having the switch, because now it looks broken.
-    func digestRequest(
-        from items: [DashItem],
-        now: Date = Date(),
-        preferences: CoursePreferencesStore? = nil
-    ) -> UNNotificationRequest? {
-        let prefs = resolvedPreferences(preferences)
-        let soon = now.addingTimeInterval(86_400)
-        let count = items.filter { item in
-            guard !item.isCompleted, let due = item.due else { return false }
-            guard due > now, due <= soon else { return false }
-            let course = item.assignment.course
-            guard prefs.notificationsEnabled(course) else { return false }
-            // Mirrors `plannedRequests`'s single occurrence-only gate above —
-            // see its comment for why the digest needs no separate
-            // no-submission clause any more: those items are hidden from
-            // `vm.items` entirely when the toggle is off, so they were never
-            // in `items` to be counted here in the first place.
-            if RecurringTask.isOccurrence(item.assignment), !prefs.nothingToSubmitEnabled(course) {
-                return false
-            }
-            return true
-        }.count
-
-        let content = UNMutableNotificationContent()
-        content.title = "What's due"
-        content.body = count == 0
-            ? "nothing due in the next 24 hours. go enjoy life."
-            : "\(count) assignment\(count == 1 ? "" : "s") due in the next 24 hours."
-        content.sound = .default
-
-        let comps = DateComponents(hour: digestTime.hour ?? 8, minute: digestTime.minute ?? 0)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-        return UNNotificationRequest(identifier: "digest:daily", content: content, trigger: trigger)
     }
 
     private static func format(_ date: Date) -> String {
