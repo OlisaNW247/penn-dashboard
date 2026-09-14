@@ -294,7 +294,7 @@ struct ContentView: View {
                                         style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                                     )
                                     .frame(width: proxy.size.width, height: 6)
-                                    .offset(y: -1)
+                                    .offset(y: 5)
                             }
                         }
                     Text(" \(Self.weekdayText(Date()))")
