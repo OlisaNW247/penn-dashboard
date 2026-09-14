@@ -8,7 +8,10 @@ struct IntroView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var phase: IntroPhase = .standing
-    @State private var notificationsVisible = false
+    @State private var visibleNotificationCount = 0
+    @State private var stressProgress: CGFloat = 0
+    @State private var finalCopyVisible = false
+    @State private var ctaVisible = false
     @State private var runID = 0
 
     var body: some View {
@@ -20,11 +23,11 @@ struct IntroView: View {
                 notificationStorm(in: size)
                 smoothLine(in: size)
 
-                StudentFigure(pose: studentPose)
-                    .frame(width: phase == .calm ? 178 : 126, height: phase == .calm ? 132 : 154)
+                StudentFigure(stress: stressProgress, isRelaxed: phase == .calm)
+                    .frame(width: phase == .calm ? 190 : 126, height: phase == .calm ? 140 : 154)
                     .position(
                         x: size.width * 0.5,
-                        y: size.height * (phase == .calm ? 0.49 : 0.51)
+                        y: size.height * (phase == .calm ? 0.53 : 0.51)
                     )
                     .shadow(color: Color.v2CardShadow.opacity(phase == .calm ? 0 : 0.12), radius: 12, y: 7)
                     .zIndex(3)
@@ -48,25 +51,23 @@ struct IntroView: View {
         ZStack {
             ForEach(Array(IntroNotification.samples.enumerated()), id: \.element.id) { index, item in
                 let destination = linePoint(for: index, count: IntroNotification.samples.count, in: size)
+                let isVisible = index < visibleNotificationCount
                 NotificationCard(item: item)
                     .frame(width: item.width)
                     .rotationEffect(.degrees(phase == .overloaded ? item.rotation : 0))
                     .scaleEffect(
                         phase == .overloaded
-                            ? (notificationsVisible ? 1 : 0.72)
+                            ? (isVisible ? 1 : 0.72)
                             : (phase == .gathering ? 0.055 : 0.02)
                     )
-                    .opacity(notificationOpacity)
+                    .opacity(notificationOpacity(isVisible: isVisible))
                     .position(
                         x: phase == .overloaded ? item.x * size.width : destination.x,
                         y: phase == .overloaded ? item.y * size.height : destination.y
                     )
                     .animation(
-                        reduceMotion
-                            ? nil
-                            : .spring(response: 0.44, dampingFraction: 0.72)
-                                .delay(Double(index) * 0.045),
-                        value: notificationsVisible
+                        reduceMotion ? nil : .spring(response: 0.44, dampingFraction: 0.72),
+                        value: isVisible
                     )
             }
         }
@@ -75,28 +76,21 @@ struct IntroView: View {
         .zIndex(1)
     }
 
-    private var notificationOpacity: Double {
+    private func notificationOpacity(isVisible: Bool) -> Double {
         switch phase {
         case .standing: 0
-        case .overloaded: notificationsVisible ? 1 : 0
+        case .overloaded: isVisible ? 1 : 0
         case .gathering: 0.72
         case .calm: 0
-        }
-    }
-
-    private var studentPose: StudentPose {
-        switch phase {
-        case .standing: .standing
-        case .overloaded, .gathering: .stressed
-        case .calm: .relaxed
         }
     }
 
     private func linePoint(for index: Int, count: Int, in size: CGSize) -> CGPoint {
         let progress = CGFloat(index) / CGFloat(max(count - 1, 1))
         let x = 22 + progress * (size.width - 44)
-        let baseline = size.height * 0.535
-        return CGPoint(x: x, y: baseline)
+        let baseline = size.height * 0.56
+        let wave = sin(progress * .pi * 6) * 9.6
+        return CGPoint(x: x, y: baseline + wave)
     }
 
     private func smoothLine(in size: CGSize) -> some View {
@@ -117,8 +111,8 @@ struct IntroView: View {
                 ),
                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
             )
-            .frame(width: size.width - 44, height: 34)
-            .position(x: size.width * 0.5, y: size.height * 0.535)
+            .frame(width: size.width - 44, height: 30)
+            .position(x: size.width * 0.5, y: size.height * 0.56)
             .opacity(phase == .gathering || phase == .calm ? 1 : 0)
             .shadow(color: Color.smoothGrape.opacity(phase == .calm ? 0.12 : 0), radius: 10)
             .allowsHitTesting(false)
@@ -127,19 +121,26 @@ struct IntroView: View {
     }
 
     private func calmIdentity(in size: CGSize) -> some View {
-        (
-            Text("There’s more to life than school.\nMake it all ")
-                + Text("smooth").italic()
-                + Text(".")
-        )
-        .font(.lhfSans(28, weight: .semibold))
+        ZStack {
+            Text("There’s more to life\nthan school.")
+                .font(.lhfSans(34, weight: .semibold))
+                .position(x: size.width * 0.5, y: size.height * 0.25)
+
+            (
+                Text("Make it all ")
+                    + Text("smooth").italic()
+                    + Text(".")
+            )
+            .font(.lhfSans(34, weight: .semibold))
+            .position(x: size.width * 0.5, y: size.height * 0.69)
+        }
+        .frame(width: size.width, height: size.height)
         .foregroundStyle(Color.v2Ink)
         .multilineTextAlignment(.center)
-        .lineSpacing(7)
-        .padding(.horizontal, 24)
-        .position(x: size.width * 0.5, y: size.height * 0.30)
-        .opacity(phase == .calm ? 1 : 0)
-        .scaleEffect(phase == .calm ? 1 : 0.92)
+        .padding(.horizontal, 18)
+        .opacity(finalCopyVisible ? 1 : 0)
+        .scaleEffect(finalCopyVisible ? 1 : 0.94)
+        .offset(y: finalCopyVisible ? 0 : 10)
         .accessibilityLabel("There’s more to life than school. Make it all smooth.")
     }
 
@@ -191,9 +192,9 @@ struct IntroView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 24)
             .padding(.bottom, 22)
-            .opacity(phase == .calm ? 1 : 0)
-            .offset(y: phase == .calm ? 0 : 16)
-            .disabled(phase != .calm)
+            .opacity(ctaVisible ? 1 : 0)
+            .offset(y: ctaVisible ? 0 : 18)
+            .disabled(!ctaVisible)
             .accessibilityHint("Opens Canvas setup")
         }
     }
@@ -201,7 +202,10 @@ struct IntroView: View {
     @MainActor
     private func playIntro() async {
         phase = reduceMotion ? .calm : .standing
-        notificationsVisible = false
+        visibleNotificationCount = 0
+        stressProgress = 0
+        finalCopyVisible = reduceMotion
+        ctaVisible = reduceMotion
 
         guard !reduceMotion else { return }
 
@@ -214,9 +218,26 @@ struct IntroView: View {
         try? await Task.sleep(nanoseconds: 1_600_000_000)
         guard !Task.isCancelled else { return }
 
-        withAnimation(.spring(response: 0.48, dampingFraction: 0.76)) {
+        withAnimation(.easeInOut(duration: 0.24)) {
             phase = .overloaded
-            notificationsVisible = true
+        }
+
+        for index in IntroNotification.samples.indices {
+            guard !Task.isCancelled else { return }
+
+            let progress = CGFloat(index + 1) / CGFloat(IntroNotification.samples.count)
+            withAnimation(.spring(response: 0.46 - Double(progress) * 0.16, dampingFraction: 0.74)) {
+                visibleNotificationCount = index + 1
+                stressProgress = progress
+            }
+
+            if index == 3 || index == 7 || index == IntroNotification.samples.count - 1 {
+                lhfHapticLight()
+            }
+
+            guard index < IntroNotification.samples.count - 1 else { continue }
+            let interval = max(45_000_000.0, 520_000_000.0 * pow(0.76, Double(index)))
+            try? await Task.sleep(nanoseconds: UInt64(interval))
         }
 
 #if DEBUG
@@ -225,7 +246,7 @@ struct IntroView: View {
         }
 #endif
 
-        try? await Task.sleep(nanoseconds: 2_350_000_000)
+        try? await Task.sleep(nanoseconds: 650_000_000)
         guard !Task.isCancelled else { return }
 
         lhfHapticLight()
@@ -239,12 +260,30 @@ struct IntroView: View {
         withAnimation(.spring(response: 0.62, dampingFraction: 0.82)) {
             phase = .calm
         }
+
+        try? await Task.sleep(nanoseconds: 420_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.spring(response: 0.58, dampingFraction: 0.86)) {
+            finalCopyVisible = true
+        }
+
+        try? await Task.sleep(nanoseconds: 850_000_000)
+        guard !Task.isCancelled else { return }
+
+        lhfHapticLight()
+        withAnimation(.spring(response: 0.54, dampingFraction: 0.82)) {
+            ctaVisible = true
+        }
     }
 
     private func replay() {
         lhfHapticLight()
         phase = .standing
-        notificationsVisible = false
+        visibleNotificationCount = 0
+        stressProgress = 0
+        finalCopyVisible = false
+        ctaVisible = false
         runID += 1
     }
 
@@ -332,114 +371,108 @@ private struct NotificationCard: View {
     }
 }
 
-/// The destination every notification contracts into: one perfectly straight,
-/// uninterrupted path after the visual noise of the school-day cards.
+/// The destination every notification contracts into. It deliberately matches
+/// the compact three-wave underline used beneath the Smooth wordmark in-app.
 private struct SmoothIntroLine: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
+        let amplitude = rect.height * 0.32
         path.move(to: CGPoint(x: 0, y: rect.midY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+
+        for step in 1...64 {
+            let progress = CGFloat(step) / 64
+            let x = rect.minX + rect.width * progress
+            let y = rect.midY + sin(progress * .pi * 6) * amplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+        }
         return path
     }
 }
 
-private enum StudentPose {
-    case standing
-    case stressed
-    case relaxed
-}
-
 private struct StudentFigure: View {
-    let pose: StudentPose
+    let stress: CGFloat
+    let isRelaxed: Bool
 
     var body: some View {
         ZStack {
-            StandingStudent()
-                .opacity(pose == .standing ? 1 : 0)
-                .scaleEffect(pose == .standing ? 1 : 0.88)
-
-            StressedStudent()
-                .opacity(pose == .stressed ? 1 : 0)
-                .scaleEffect(pose == .stressed ? 1 : 0.86)
+            EscalatingStudent(stress: stress)
+                .opacity(isRelaxed ? 0 : 1)
+                .scaleEffect(isRelaxed ? 0.86 : 1)
 
             RelaxedStudent()
-                .opacity(pose == .relaxed ? 1 : 0)
-                .scaleEffect(pose == .relaxed ? 1 : 0.82)
-                .offset(y: pose == .relaxed ? 0 : 10)
+                .opacity(isRelaxed ? 1 : 0)
+                .scaleEffect(isRelaxed ? 1 : 0.82)
+                .offset(y: isRelaxed ? 0 : 10)
         }
-        .animation(.spring(response: 0.62, dampingFraction: 0.78), value: pose)
+        .animation(.spring(response: 0.62, dampingFraction: 0.78), value: isRelaxed)
         .accessibilityHidden(true)
     }
 }
 
-private struct StandingStudent: View {
-    var body: some View {
-        Canvas { context, size in
-            let ink = Color.smoothInk
-            let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+private struct EscalatingStudent: View, @preconcurrency Animatable {
+    var stress: CGFloat
 
-            let head = Path(
-                ellipseIn: CGRect(
-                    x: size.width * 0.35,
-                    y: 5,
-                    width: size.width * 0.30,
-                    height: size.width * 0.30
-                )
-            )
-            context.fill(head, with: .color(Color.v2Bg))
-            context.stroke(head, with: .color(ink), style: stroke)
-
-            var body = Path()
-            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.29))
-            body.addLine(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
-            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.40))
-            body.addLine(to: CGPoint(x: size.width * 0.28, y: size.height * 0.60))
-            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.40))
-            body.addLine(to: CGPoint(x: size.width * 0.72, y: size.height * 0.60))
-            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
-            body.addLine(to: CGPoint(x: size.width * 0.30, y: size.height * 0.98))
-            body.move(to: CGPoint(x: size.width * 0.50, y: size.height * 0.68))
-            body.addLine(to: CGPoint(x: size.width * 0.70, y: size.height * 0.98))
-            context.stroke(body, with: .color(ink), style: stroke)
-        }
+    var animatableData: CGFloat {
+        get { stress }
+        set { stress = newValue }
     }
-}
 
-private struct StressedStudent: View {
     var body: some View {
         Canvas { context, size in
             let ink = Color.smoothInk
             let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+
+            func point(_ calmX: CGFloat, _ calmY: CGFloat, _ stressedX: CGFloat, _ stressedY: CGFloat) -> CGPoint {
+                CGPoint(
+                    x: size.width * (calmX + (stressedX - calmX) * stress),
+                    y: size.height * (calmY + (stressedY - calmY) * stress)
+                )
+            }
 
             let head = Path(ellipseIn: CGRect(x: size.width * 0.35, y: 5, width: size.width * 0.30, height: size.width * 0.30))
             context.fill(head, with: .color(Color.v2Bg))
             context.stroke(head, with: .color(ink), style: stroke)
 
             var body = Path()
-            body.move(to: CGPoint(x: size.width * 0.52, y: size.height * 0.29))
-            body.addCurve(to: CGPoint(x: size.width * 0.46, y: size.height * 0.68), control1: CGPoint(x: size.width * 0.43, y: size.height * 0.39), control2: CGPoint(x: size.width * 0.42, y: size.height * 0.54))
-            body.move(to: CGPoint(x: size.width * 0.47, y: size.height * 0.39))
-            body.addLine(to: CGPoint(x: size.width * 0.20, y: size.height * 0.27))
-            body.addLine(to: CGPoint(x: size.width * 0.31, y: size.height * 0.14))
-            body.move(to: CGPoint(x: size.width * 0.48, y: size.height * 0.40))
-            body.addLine(to: CGPoint(x: size.width * 0.79, y: size.height * 0.28))
-            body.addLine(to: CGPoint(x: size.width * 0.68, y: size.height * 0.14))
-            body.move(to: CGPoint(x: size.width * 0.46, y: size.height * 0.68))
-            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.86))
-            body.addLine(to: CGPoint(x: size.width * 0.16, y: size.height * 0.98))
-            body.move(to: CGPoint(x: size.width * 0.46, y: size.height * 0.68))
-            body.addLine(to: CGPoint(x: size.width * 0.68, y: size.height * 0.85))
-            body.addLine(to: CGPoint(x: size.width * 0.82, y: size.height * 0.96))
+            let neck = point(0.50, 0.29, 0.52, 0.29)
+            let hip = point(0.50, 0.68, 0.46, 0.68)
+            body.move(to: neck)
+            body.addCurve(
+                to: hip,
+                control1: point(0.50, 0.41, 0.43, 0.39),
+                control2: point(0.50, 0.55, 0.42, 0.54)
+            )
+
+            body.move(to: point(0.50, 0.40, 0.47, 0.39))
+            body.addLine(to: point(0.39, 0.50, 0.20, 0.27))
+            body.addLine(to: point(0.28, 0.60, 0.31, 0.14))
+
+            body.move(to: point(0.50, 0.40, 0.48, 0.40))
+            body.addLine(to: point(0.61, 0.50, 0.79, 0.28))
+            body.addLine(to: point(0.72, 0.60, 0.68, 0.14))
+
+            body.move(to: hip)
+            body.addLine(to: point(0.36, 0.84, 0.24, 0.86))
+            body.addLine(to: point(0.30, 0.98, 0.16, 0.98))
+            body.move(to: hip)
+            body.addLine(to: point(0.64, 0.84, 0.68, 0.85))
+            body.addLine(to: point(0.70, 0.98, 0.82, 0.96))
             context.stroke(body, with: .color(ink), style: stroke)
 
-            var stress = Path()
-            stress.move(to: CGPoint(x: size.width * 0.18, y: size.height * 0.07))
-            stress.addLine(to: CGPoint(x: size.width * 0.10, y: 0))
-            stress.move(to: CGPoint(x: size.width * 0.80, y: size.height * 0.08))
-            stress.addLine(to: CGPoint(x: size.width * 0.90, y: 0))
-            stress.move(to: CGPoint(x: size.width * 0.92, y: size.height * 0.19))
-            stress.addLine(to: CGPoint(x: size.width, y: size.height * 0.17))
-            context.stroke(stress, with: .color(Color.smoothTomato), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            guard stress > 0.30 else { return }
+
+            var marks = Path()
+            marks.move(to: CGPoint(x: size.width * 0.18, y: size.height * 0.07))
+            marks.addLine(to: CGPoint(x: size.width * 0.10, y: 0))
+            marks.move(to: CGPoint(x: size.width * 0.80, y: size.height * 0.08))
+            marks.addLine(to: CGPoint(x: size.width * 0.90, y: 0))
+            if stress > 0.68 {
+                marks.move(to: CGPoint(x: size.width * 0.92, y: size.height * 0.19))
+                marks.addLine(to: CGPoint(x: size.width, y: size.height * 0.17))
+            }
+            let markOpacity = min(1, (stress - 0.30) / 0.50)
+            context.opacity = markOpacity
+            context.stroke(marks, with: .color(Color.smoothTomato), style: StrokeStyle(lineWidth: 3, lineCap: .round))
         }
     }
 }
@@ -450,26 +483,58 @@ private struct RelaxedStudent: View {
             let ink = Color.smoothInk
             let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
 
-            let head = Path(ellipseIn: CGRect(x: size.width * 0.18, y: size.height * 0.18, width: size.height * 0.25, height: size.height * 0.25))
+            let head = Path(
+                ellipseIn: CGRect(
+                    x: size.width * 0.17,
+                    y: size.height * 0.18,
+                    width: size.height * 0.24,
+                    height: size.height * 0.24
+                )
+            )
             context.fill(head, with: .color(Color.v2Bg))
             context.stroke(head, with: .color(ink), style: stroke)
 
             var body = Path()
-            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.43))
-            body.addCurve(to: CGPoint(x: size.width * 0.67, y: size.height * 0.60), control1: CGPoint(x: size.width * 0.48, y: size.height * 0.44), control2: CGPoint(x: size.width * 0.58, y: size.height * 0.54))
-            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.44))
-            body.addLine(to: CGPoint(x: size.width * 0.20, y: size.height * 0.35))
-            body.addLine(to: CGPoint(x: size.width * 0.28, y: size.height * 0.24))
-            body.move(to: CGPoint(x: size.width * 0.42, y: size.height * 0.45))
-            body.addLine(to: CGPoint(x: size.width * 0.29, y: size.height * 0.32))
-            body.addLine(to: CGPoint(x: size.width * 0.35, y: size.height * 0.24))
-            body.move(to: CGPoint(x: size.width * 0.67, y: size.height * 0.60))
-            body.addLine(to: CGPoint(x: size.width * 0.86, y: size.height * 0.72))
-            body.addLine(to: CGPoint(x: size.width * 0.98, y: size.height * 0.69))
-            body.move(to: CGPoint(x: size.width * 0.66, y: size.height * 0.60))
-            body.addLine(to: CGPoint(x: size.width * 0.83, y: size.height * 0.51))
-            body.addLine(to: CGPoint(x: size.width * 0.94, y: size.height * 0.55))
+            let shoulder = CGPoint(x: size.width * 0.36, y: size.height * 0.43)
+            let hip = CGPoint(x: size.width * 0.63, y: size.height * 0.61)
+            body.move(to: shoulder)
+            body.addCurve(
+                to: hip,
+                control1: CGPoint(x: size.width * 0.46, y: size.height * 0.43),
+                control2: CGPoint(x: size.width * 0.56, y: size.height * 0.55)
+            )
+
+            // One arm clearly props up the head; the other rests on the torso.
+            let supportingHand = CGPoint(x: size.width * 0.31, y: size.height * 0.27)
+            body.move(to: shoulder)
+            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.36))
+            body.addLine(to: supportingHand)
+
+            let restingHand = CGPoint(x: size.width * 0.54, y: size.height * 0.52)
+            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.45))
+            body.addLine(to: CGPoint(x: size.width * 0.47, y: size.height * 0.49))
+            body.addLine(to: restingHand)
+
+            body.move(to: hip)
+            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.70))
+            body.addLine(to: CGPoint(x: size.width * 0.97, y: size.height * 0.68))
+            body.move(to: hip)
+            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.53))
+            body.addLine(to: CGPoint(x: size.width * 0.94, y: size.height * 0.57))
             context.stroke(body, with: .color(ink), style: stroke)
+
+            let handRadius: CGFloat = 3.4
+            for hand in [supportingHand, restingHand] {
+                let dot = Path(
+                    ellipseIn: CGRect(
+                        x: hand.x - handRadius,
+                        y: hand.y - handRadius,
+                        width: handRadius * 2,
+                        height: handRadius * 2
+                    )
+                )
+                context.fill(dot, with: .color(ink))
+            }
 
             var breeze = Path()
             breeze.move(to: CGPoint(x: size.width * 0.08, y: size.height * 0.13))
