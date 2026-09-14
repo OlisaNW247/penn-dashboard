@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Smooth's one-time opening story in three beats: a student begins at ease,
 /// school demands crowd in until they are visibly overwhelmed, and the noise
-/// resolves into one straight line with a calmer perspective on life.
+/// resolves into the app's signature squiggle with a calmer perspective on life.
 struct IntroView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -10,7 +10,9 @@ struct IntroView: View {
     @State private var phase: IntroPhase = .standing
     @State private var visibleNotificationCount = 0
     @State private var stressProgress: CGFloat = 0
-    @State private var finalCopyVisible = false
+    @State private var topCopyVisible = false
+    @State private var bottomCopyVisible = false
+    @State private var smoothWordVisible = false
     @State private var ctaVisible = false
     @State private var runID = 0
 
@@ -27,7 +29,7 @@ struct IntroView: View {
                     .frame(width: phase == .calm ? 190 : 126, height: phase == .calm ? 140 : 154)
                     .position(
                         x: size.width * 0.5,
-                        y: size.height * (phase == .calm ? 0.53 : 0.51)
+                        y: size.height * (phase == .calm ? 0.522 : 0.51)
                     )
                     .shadow(color: Color.v2CardShadow.opacity(phase == .calm ? 0 : 0.12), radius: 12, y: 7)
                     .zIndex(3)
@@ -88,7 +90,7 @@ struct IntroView: View {
     private func linePoint(for index: Int, count: Int, in size: CGSize) -> CGPoint {
         let progress = CGFloat(index) / CGFloat(max(count - 1, 1))
         let x = 22 + progress * (size.width - 44)
-        let baseline = size.height * 0.56
+        let baseline = size.height * 0.54
         let wave = sin(progress * .pi * 6) * 9.6
         return CGPoint(x: x, y: baseline + wave)
     }
@@ -112,7 +114,7 @@ struct IntroView: View {
                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
             )
             .frame(width: size.width - 44, height: 30)
-            .position(x: size.width * 0.5, y: size.height * 0.56)
+            .position(x: size.width * 0.5, y: size.height * 0.54)
             .opacity(phase == .gathering || phase == .calm ? 1 : 0)
             .shadow(color: Color.smoothGrape.opacity(phase == .calm ? 0.12 : 0), radius: 10)
             .allowsHitTesting(false)
@@ -125,22 +127,33 @@ struct IntroView: View {
             Text("There’s more to life\nthan school.")
                 .font(.lhfSans(34, weight: .semibold))
                 .position(x: size.width * 0.5, y: size.height * 0.25)
+                .opacity(topCopyVisible ? 1 : 0)
+                .scaleEffect(topCopyVisible ? 1 : 0.94)
+                .offset(y: topCopyVisible ? 0 : 12)
 
-            (
+            HStack(spacing: 0) {
                 Text("Make it all ")
-                    + Text("smooth").italic()
-                    + Text(".")
-            )
+
+                Text("smooth")
+                    .italic()
+                    .opacity(smoothWordVisible ? 1 : 0)
+                    .scaleEffect(smoothWordVisible ? 1 : 0.68)
+                    .rotationEffect(.degrees(smoothWordVisible ? 0 : -5))
+                    .blur(radius: smoothWordVisible ? 0 : 5)
+                    .offset(y: smoothWordVisible ? 0 : 8)
+
+                Text(".")
+            }
             .font(.lhfSans(34, weight: .semibold))
             .position(x: size.width * 0.5, y: size.height * 0.69)
+            .opacity(bottomCopyVisible ? 1 : 0)
+            .scaleEffect(bottomCopyVisible ? 1 : 0.94)
+            .offset(y: bottomCopyVisible ? 0 : 12)
         }
         .frame(width: size.width, height: size.height)
         .foregroundStyle(Color.v2Ink)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 18)
-        .opacity(finalCopyVisible ? 1 : 0)
-        .scaleEffect(finalCopyVisible ? 1 : 0.94)
-        .offset(y: finalCopyVisible ? 0 : 10)
         .accessibilityLabel("There’s more to life than school. Make it all smooth.")
     }
 
@@ -204,7 +217,9 @@ struct IntroView: View {
         phase = reduceMotion ? .calm : .standing
         visibleNotificationCount = 0
         stressProgress = 0
-        finalCopyVisible = reduceMotion
+        topCopyVisible = reduceMotion
+        bottomCopyVisible = reduceMotion
+        smoothWordVisible = reduceMotion
         ctaVisible = reduceMotion
 
         guard !reduceMotion else { return }
@@ -257,18 +272,27 @@ struct IntroView: View {
         try? await Task.sleep(nanoseconds: 1_100_000_000)
         guard !Task.isCancelled else { return }
 
-        withAnimation(.spring(response: 0.62, dampingFraction: 0.82)) {
-            phase = .calm
+        withAnimation(.spring(response: 0.58, dampingFraction: 0.86)) {
+            topCopyVisible = true
         }
 
-        try? await Task.sleep(nanoseconds: 420_000_000)
+        try? await Task.sleep(nanoseconds: 720_000_000)
         guard !Task.isCancelled else { return }
 
-        withAnimation(.spring(response: 0.58, dampingFraction: 0.86)) {
-            finalCopyVisible = true
+        withAnimation(.spring(response: 0.66, dampingFraction: 0.82)) {
+            phase = .calm
+            bottomCopyVisible = true
         }
 
-        try? await Task.sleep(nanoseconds: 850_000_000)
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        guard !Task.isCancelled else { return }
+
+        lhfHapticLight()
+        withAnimation(.spring(response: 0.72, dampingFraction: 0.58)) {
+            smoothWordVisible = true
+        }
+
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
         guard !Task.isCancelled else { return }
 
         lhfHapticLight()
@@ -282,7 +306,9 @@ struct IntroView: View {
         phase = .standing
         visibleNotificationCount = 0
         stressProgress = 0
-        finalCopyVisible = false
+        topCopyVisible = false
+        bottomCopyVisible = false
+        smoothWordVisible = false
         ctaVisible = false
         runID += 1
     }
@@ -318,18 +344,18 @@ private struct IntroNotification: Identifiable {
     let width: CGFloat
 
     static let samples: [IntroNotification] = [
-        .init(id: 0, app: "CANVAS", icon: "bell.badge.fill", headline: "CIS 1210 · Quiz 7", detail: "Due in 10 minutes", accent: .smoothTomato, x: 0.24, y: 0.12, rotation: -7, width: 174),
-        .init(id: 1, app: "GRADESCOPE", icon: "checkmark.circle.fill", headline: "Homework 6 graded", detail: "71% · View feedback", accent: .smoothGrape, x: 0.73, y: 0.16, rotation: 6, width: 184),
-        .init(id: 2, app: "CALENDAR", icon: "calendar", headline: "Midterm tomorrow", detail: "9:00 AM · DRLB 2N36", accent: .smoothCobalt, x: 0.18, y: 0.28, rotation: 5, width: 176),
-        .init(id: 3, app: "CANVAS", icon: "bubble.left.and.bubble.right.fill", headline: "3 new announcements", detail: "ECON 0100", accent: .smoothMarigold, x: 0.78, y: 0.31, rotation: -8, width: 178),
-        .init(id: 4, app: "REMINDERS", icon: "exclamationmark.circle.fill", headline: "Reading response", detail: "Overdue", accent: .smoothTomato, x: 0.25, y: 0.42, rotation: -4, width: 158),
-        .init(id: 5, app: "MAIL", icon: "envelope.badge.fill", headline: "Office hours moved", detail: "Plus 18 unread messages", accent: .smoothTeal, x: 0.78, y: 0.45, rotation: 7, width: 174),
-        .init(id: 6, app: "CANVAS", icon: "doc.text.fill", headline: "Lab report 4", detail: "Due tonight at 11:59", accent: .smoothLemon, x: 0.17, y: 0.60, rotation: 8, width: 175),
-        .init(id: 7, app: "GRADESCOPE", icon: "chart.line.downtrend.xyaxis", headline: "Exam 1 posted", detail: "Below class median", accent: .smoothTomato, x: 0.80, y: 0.61, rotation: -5, width: 170),
-        .init(id: 8, app: "CANVAS", icon: "person.2.fill", headline: "Discussion reply", detail: "2 classmates mentioned you", accent: .smoothTeal, x: 0.22, y: 0.74, rotation: -7, width: 182),
-        .init(id: 9, app: "CALENDAR", icon: "clock.badge.exclamationmark.fill", headline: "Problem set 3", detail: "Due in 5 hours", accent: .smoothMarigold, x: 0.77, y: 0.77, rotation: 5, width: 166),
-        .init(id: 10, app: "CANVAS", icon: "arrow.triangle.2.circlepath", headline: "Course updated", detail: "Syllabus · Modules · Files", accent: .smoothCobalt, x: 0.23, y: 0.88, rotation: 4, width: 180),
-        .init(id: 11, app: "MAIL", icon: "tray.full.fill", headline: "47 unread", detail: "Penn · Canvas · Classes", accent: .smoothGrape, x: 0.76, y: 0.91, rotation: -6, width: 166),
+        .init(id: 0, app: "CANVAS", icon: "bell.badge.fill", headline: "CIS 1210 · Quiz 7", detail: "Due in 10 minutes", accent: .smoothTomato, x: 0.18, y: 0.16, rotation: -9, width: 174),
+        .init(id: 1, app: "GRADESCOPE", icon: "checkmark.circle.fill", headline: "Homework 6 graded", detail: "71% · View feedback", accent: .smoothGrape, x: 0.79, y: 0.73, rotation: 7, width: 184),
+        .init(id: 2, app: "CALENDAR", icon: "calendar", headline: "Midterm tomorrow", detail: "9:00 AM · DRLB 2N36", accent: .smoothCobalt, x: 0.50, y: 0.10, rotation: 3, width: 176),
+        .init(id: 3, app: "CANVAS", icon: "bubble.left.and.bubble.right.fill", headline: "3 new announcements", detail: "ECON 0100", accent: .smoothMarigold, x: 0.87, y: 0.35, rotation: -10, width: 178),
+        .init(id: 4, app: "REMINDERS", icon: "exclamationmark.circle.fill", headline: "Reading response", detail: "Overdue", accent: .smoothTomato, x: 0.11, y: 0.56, rotation: -5, width: 158),
+        .init(id: 5, app: "MAIL", icon: "envelope.badge.fill", headline: "Office hours moved", detail: "Plus 18 unread messages", accent: .smoothTeal, x: 0.72, y: 0.20, rotation: 8, width: 174),
+        .init(id: 6, app: "CANVAS", icon: "doc.text.fill", headline: "Lab report 4", detail: "Due tonight at 11:59", accent: .smoothLemon, x: 0.28, y: 0.86, rotation: 9, width: 175),
+        .init(id: 7, app: "GRADESCOPE", icon: "chart.line.downtrend.xyaxis", headline: "Exam 1 posted", detail: "Below class median", accent: .smoothTomato, x: 0.83, y: 0.52, rotation: -7, width: 170),
+        .init(id: 8, app: "CANVAS", icon: "person.2.fill", headline: "Discussion reply", detail: "2 classmates mentioned you", accent: .smoothTeal, x: 0.49, y: 0.69, rotation: -4, width: 182),
+        .init(id: 9, app: "CALENDAR", icon: "clock.badge.exclamationmark.fill", headline: "Problem set 3", detail: "Due in 5 hours", accent: .smoothMarigold, x: 0.14, y: 0.33, rotation: 6, width: 166),
+        .init(id: 10, app: "CANVAS", icon: "arrow.triangle.2.circlepath", headline: "Course updated", detail: "Syllabus · Modules · Files", accent: .smoothCobalt, x: 0.74, y: 0.91, rotation: 5, width: 180),
+        .init(id: 11, app: "MAIL", icon: "tray.full.fill", headline: "47 unread", detail: "Penn · Canvas · Classes", accent: .smoothGrape, x: 0.10, y: 0.76, rotation: -8, width: 166),
     ]
 }
 
