@@ -199,6 +199,12 @@ frozen system instructions → `contextDocument` → course profiles JSON,
 keyed by site label (see "Catalog" below), for `courseIDs` → history → user
 turn `Current date: …\n\n{excerpts}\n\nQUESTION: {question}`.
 
+The request to OpenRouter sets `reasoning: { enabled: false }`: `ask`
+answers from the context and excerpts it was already handed, not by
+reasoning the problem out, and the default model is a thinking model that
+otherwise spends the whole `MAX_TOKENS` budget on hidden reasoning before
+emitting any answer text at all on a large enough prompt.
+
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month
 (default 100000). Usage is recorded in `ask_usage` after the stream ends;

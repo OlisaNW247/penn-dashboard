@@ -110,6 +110,15 @@ Deno.serve(async (req) => {
       provider: providerFromEnv(),
       maxTokens: MAX_TOKENS,
       temperature: TEMPERATURE,
+      // `ask` answers from the context document and excerpts it was already
+      // handed, not by reasoning the problem out -- and `model` is a
+      // thinking model that otherwise spends the whole `MAX_TOKENS` budget
+      // on hidden `delta.reasoning` before ever emitting `delta.content`.
+      // See `_shared/openrouter.ts`'s `buildRequestBody` comment for the
+      // 2026-09-14 incident (a real 14.5k-token prompt reasoned until
+      // max_tokens and answered with nothing) and why raising MAX_TOKENS is
+      // the wrong fix.
+      reasoning: { enabled: false },
     });
     const iterator = upstream[Symbol.asyncIterator]();
 
@@ -313,12 +322,14 @@ async function* runAskStream(
   let promptTokens = 0;
   let completionTokens = 0;
   let cachedTokens = 0;
+  let deltaCount = 0;
   let current = first;
 
   try {
     while (!current.done) {
       const event = current.value;
       if (event.type === "delta") {
+        deltaCount += 1;
         yield { type: "delta", text: event.text };
       } else if (event.type === "usage") {
         promptTokens = event.promptTokens;
@@ -331,6 +342,17 @@ async function* runAskStream(
     logUpstreamFailure("mid-stream", err);
     yield { type: "error", code: "upstream", message: "the model backend failed" };
     return;
+  }
+
+  // Reasoning is disabled for `ask` (see `_shared/openrouter.ts`), so a
+  // stream that reaches `done` having yielded no `delta` at all is no
+  // longer expected to happen from reasoning alone -- but `completionTokens`
+  // being nonzero while `deltaCount` is zero is still the exact shape of
+  // the 2026-09-14 incident, and worth knowing about the next time it
+  // happens for whatever reason, rather than the student's empty answer
+  // being the only trace.
+  if (deltaCount === 0) {
+    console.warn(`ask: stream ended with no text; completion tokens ${completionTokens}`);
   }
 
   yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };

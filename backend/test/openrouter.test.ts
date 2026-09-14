@@ -167,6 +167,34 @@ Deno.test("chatCompletionStream includes provider.order only when configured", a
   assert.deepEqual(body.provider.order, ["a", "b"]);
 });
 
+Deno.test("chatCompletionStream sets reasoning.enabled false when asked (ask disables reasoning)", async () => {
+  const { fetchImpl, calls } = scriptedFetch([sseResponse("data: [DONE]\n\n")]);
+  await collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, reasoning: { enabled: false }, fetchImpl }));
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.deepEqual(body.reasoning, { enabled: false });
+});
+
+Deno.test("chatCompletionStream omits reasoning entirely when not configured", async () => {
+  const { fetchImpl, calls } = scriptedFetch([sseResponse("data: [DONE]\n\n")]);
+  await collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, fetchImpl }));
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.equal(Object.prototype.hasOwnProperty.call(body, "reasoning"), false);
+});
+
+Deno.test("chatCompletionJSON's request body has no reasoning field (JSON-mode extract functions never set it)", async () => {
+  const payload = { choices: [{ message: { content: "{}" } }] };
+  const { fetchImpl, calls } = scriptedFetch([new Response(JSON.stringify(payload), { status: 200 })]);
+  await chatCompletionJSON({
+    apiKey: "k",
+    model: "z-ai/glm-5.3-flash",
+    messages: [{ role: "user", content: "extract" }],
+    maxTokens: 500,
+    fetchImpl,
+  });
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.equal(Object.prototype.hasOwnProperty.call(body, "reasoning"), false);
+});
+
 Deno.test("chatCompletionStream sets Authorization, HTTP-Referer and X-Title headers", async () => {
   const { fetchImpl, calls } = scriptedFetch([sseResponse("data: [DONE]\n\n")]);
   await collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, apiKey: "sk-test", fetchImpl }));

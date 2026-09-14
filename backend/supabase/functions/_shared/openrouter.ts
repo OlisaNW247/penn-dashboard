@@ -53,6 +53,13 @@ export interface ChatCompletionStreamOptions {
   provider?: ProviderPreferences;
   maxTokens: number;
   temperature?: number;
+  /** OpenRouter's unified reasoning control -- forwarded verbatim as the
+   *  request body's `reasoning` field when present. `ask/index.ts` passes
+   *  `{ enabled: false }`; see the comment on `buildRequestBody` for why.
+   *  Omitted entirely (not just left `undefined` inside an object) when the
+   *  caller doesn't set it, which is what keeps the extract functions'
+   *  request body byte-for-byte unchanged. */
+  reasoning?: { enabled: boolean };
   signal?: AbortSignal;
 }
 
@@ -86,6 +93,7 @@ export async function* chatCompletionStream(
     temperature: options.temperature,
     provider: options.provider,
     stream: true,
+    reasoning: options.reasoning,
   });
 
   const response = await requestWithFallback(
@@ -152,8 +160,26 @@ interface BuildRequestBodyOptions {
   provider?: ProviderPreferences;
   stream: boolean;
   responseFormat?: { type: string };
+  reasoning?: { enabled: boolean };
 }
 
+/**
+ * `z-ai/glm-5.3-flash`, `ask`'s model, is a thinking model: unless told
+ * otherwise it spends output tokens on a `delta.reasoning` stream before it
+ * ever emits `delta.content` (OpenRouter forwards both; `parseSSEStream`
+ * above only reads the latter). Against a real 14.5k-token prompt of full
+ * syllabi (2026-09-14, a phone asking "when's my next exam?") the model
+ * reasoned until `max_tokens` was exhausted and produced zero content --
+ * 35s of streaming, a 200, and nothing the student could read. Synthetic
+ * test prompts of the same size reason briefly and still answer, which is
+ * why this shipped unnoticed. `ask` answers from context it was already
+ * handed, not from working the problem out itself, so it has no use for
+ * reasoning output; `reasoning: { enabled: false }` is OpenRouter's
+ * unified switch for turning it off (the JSON-mode extract functions never
+ * set it, so their request body is unaffected). The wrong fix is raising
+ * `MAX_TOKENS`: it only makes the failure rarer and the bill bigger, and a
+ * long enough prompt still exhausts it.
+ */
 function buildRequestBody(options: BuildRequestBodyOptions): Record<string, unknown> {
   const provider: Record<string, unknown> = {
     data_collection: "deny",
@@ -184,6 +210,9 @@ function buildRequestBody(options: BuildRequestBodyOptions): Record<string, unkn
   }
   if (options.responseFormat) {
     body.response_format = options.responseFormat;
+  }
+  if (options.reasoning) {
+    body.reasoning = { enabled: options.reasoning.enabled };
   }
   return body;
 }
