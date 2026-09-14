@@ -15,21 +15,19 @@ struct ContentView: View {
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showAddSheet = false
-    /// The pushed pages behind the header's two buttons. A path rather than two
-    /// booleans so the screenshot flag can open Settings directly.
+    /// The pushed pages behind the header actions. A path rather than separate
+    /// booleans keeps the screenshot seams deterministic.
     @State private var path: [DashRoute] = []
 
-    /// Where the header's buttons lead. Both are pushes onto the dashboard's own
-    /// stack, so Settings and Grades are full screens with a back button rather
+    /// Where the header's buttons lead. They push onto the dashboard's own
+    /// stack, so Profile and Grades are full screens with a back button rather
     /// than cards presented over the list.
     /// `report` carries its own course identity so the stack can be restored
     /// (or, in DEBUG, seeded straight to the report for screenshots) without
     /// walking through the cards.
     ///
-    /// `.settings` survives v4's tab bar even though the gear no longer pushes
-    /// it. It is what the `-LHFShowSettings` screenshot seam drives, and
-    /// keeping it means the App Store capture script keeps producing the same
-    /// frame it always did — now with the tab bar underneath it.
+    /// `.settings` remains as a compatibility route for the existing screenshot
+    /// flag, but resolves to the same combined Profile page as `.profile`.
     enum DashRoute: Hashable {
         case settings
         case profile
@@ -100,7 +98,7 @@ struct ContentView: View {
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .profile:
-                    ProfileView()
+                    SettingsPage()
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .assistant:
@@ -281,31 +279,31 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                (
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Smooth")
                         .font(.lhfWordmark(32))
-                    + Text(" \(Self.weekdayText(Date()))")
+                        .overlay(alignment: .bottomLeading) {
+                            SmoothSquiggle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                                )
+                                .frame(width: 122, height: 6)
+                                .offset(x: 1, y: 9)
+                        }
+                    Text(" \(Self.weekdayText(Date()))")
                         .font(.lhfHeaderTitle(32))
-                )
-                    .foregroundStyle(Color.smoothInk)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .layoutPriority(1)
-                    .accessibilityElement(children: .combine)
-                    .frame(height: 48, alignment: .center)
-                    .overlay(alignment: .bottomLeading) {
-                        SmoothSquiggle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                            )
-                            .frame(width: 90, height: 6)
-                            .offset(x: 2, y: -1)
-                    }
+                }
+                .foregroundStyle(Color.smoothInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .layoutPriority(1)
+                .accessibilityElement(children: .combine)
+                .frame(height: 48, alignment: .center)
 
                 Text(Self.dateText(Date()))
                     .font(.lhfMono(14, weight: .medium))
@@ -319,7 +317,6 @@ struct ContentView: View {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
-                navButton(to: .settings, icon: "gearshape.fill", title: "settings", color: .smoothCobalt)
             }
         }
     }

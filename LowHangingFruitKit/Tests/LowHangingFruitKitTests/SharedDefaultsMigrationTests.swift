@@ -41,7 +41,6 @@ struct SharedDefaultsMigrationTests {
             legacy.set(["a1", "a2"], forKey: "completedAssignmentIDs")
             legacy.set(completionDates, forKey: "completionDates")
             legacy.set(["CIS 3200": "900001"], forKey: "canvasCourseIDsByCode")
-            legacy.set(9, forKey: "notif.digestHour")
             legacy.set(Data([0x01]), forKey: "gradeWatcherHistory")
 
             let outcome = SharedDefaultsMigration.run(from: legacy, to: shared)
@@ -50,7 +49,7 @@ struct SharedDefaultsMigrationTests {
                 Issue.record("expected a migration, got \(outcome)")
                 return
             }
-            #expect(keys.count == 8)
+            #expect(keys.count == 7)
 
             #expect(shared.string(forKey: "userName") == "Marco")
             #expect(shared.bool(forKey: "hasCompletedOnboarding"))
@@ -59,7 +58,6 @@ struct SharedDefaultsMigrationTests {
             #expect(shared.data(forKey: "completionDates") == completionDates)
             #expect(shared.dictionary(forKey: "canvasCourseIDsByCode") as? [String: String]
                     == ["CIS 3200": "900001"])
-            #expect(shared.integer(forKey: "notif.digestHour") == 9)
             #expect(shared.data(forKey: "gradeWatcherHistory") == Data([0x01]))
         }
     }
@@ -216,8 +214,7 @@ struct SharedDefaultsMigrationTests {
             "gradeWatcherManualWeights", "gradeWatcherConfirmedGradescopeMappings",
             "gradeWatcherHistory", "gradeWatcherWatchedCourses",
             "gradeWatcherSyllabusSchemes", "gradeWatcherConfirmedCategoryMappings",
-            "notif.enabled", "notif.leadOffsets", "notif.digestEnabled",
-            "notif.digestHour", "notif.digestMinute",
+            "notif.enabled", "notif.leadOffsets",
         ]
         #expect(Set(SharedDefaultsMigration.legacyKeys) == expected)
         // No duplicates — a repeat would double-count the migrated key list.

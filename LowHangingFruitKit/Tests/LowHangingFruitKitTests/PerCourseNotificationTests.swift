@@ -27,16 +27,13 @@ struct PerCourseNotificationTests {
 
     // MARK: Muting
 
-    /// The mute has to be total. Not quieter, not fewer lead times — nothing,
-    /// including the daily digest, which is the door a mute most easily leaks
-    /// back in through.
-    @Test("A muted course produces no requests, and no digest line either")
+    /// The mute has to be total. Not quieter, not fewer lead times — nothing.
+    @Test("A muted course produces no requests")
     func mutedCourseIsSilent() {
-        withFixture(global: [.h24, .h1], digest: true) { scheduler, prefs, now in
+        withFixture(global: [.h24, .h1]) { scheduler, prefs, now in
             let items = [
                 assignment("CIS 1200", "a", due: now + 2 * .day),
                 assignment("MATH 1400", "b", due: now + 2 * .day),
-                // Due inside 24h so it would otherwise be counted by the digest.
                 assignment("CIS 1200", "c", due: now + 20 * .hour),
             ]
 
@@ -46,10 +43,6 @@ struct PerCourseNotificationTests {
             #expect(courses(of: requests, in: items) == ["MATH 1400"])
             // MATH 1400 keeps both of its lead times; CIS 1200 contributes zero.
             #expect(dueRequests(requests).count == 2)
-
-            // And the digest counts nothing from the muted class: the only item
-            // inside the next 24 hours belongs to it.
-            #expect(digestBody(scheduler, items, now, prefs)?.contains("nothing due") == true)
         }
     }
 
@@ -203,22 +196,6 @@ struct PerCourseNotificationTests {
         }
     }
 
-    /// The digest costs one slot, and it comes out of the same sixty rather than
-    /// being added on top — iOS's real ceiling is 64 and the headroom is there on
-    /// purpose.
-    @Test("The daily digest is paid for out of the budget, not added to it")
-    func digestComesOutOfTheBudget() {
-        withFixture(global: [.h24, .h1], digest: true) { scheduler, prefs, now in
-            let items = (0..<50).map {
-                assignment("CIS 1200", "a\($0)", due: now + 3 * .day + Double($0) * .minute)
-            }
-            let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
-            #expect(requests.count == NotificationScheduler.maxPending)
-            #expect(dueRequests(requests).count == NotificationScheduler.maxPending - 1)
-            #expect(requests.contains { $0.identifier == "digest:daily" })
-        }
-    }
-
     /// Within a course the cut falls on the far-out tail, because the planner
     /// re-runs on every sync — a reminder scheduled for day thirteen is nearly
     /// certain to be re-planned before it ever fires, whereas one scheduled for
@@ -319,26 +296,6 @@ struct PerCourseNotificationTests {
         }
     }
 
-    @Test("The digest counts the same items the reminders do")
-    func digestHonoursTheSameGates() {
-        withFixture(global: [.h24, .h1], digest: true) { scheduler, prefs, now in
-            let soon = now + 20 * .hour
-            let items = [
-                assignment("CIS 1200", "hw1", due: soon),
-                assignment("MATH 1400", "hw2", due: soon),
-                occurrence("MATH 1400", taskID: UUID(), due: soon),
-            ]
-
-            #expect(digestBody(scheduler, items, now, prefs)?.contains("3 assignments") == true)
-
-            prefs.setNotificationsEnabled("CIS 1200", false)
-            #expect(digestBody(scheduler, items, now, prefs)?.contains("2 assignments") == true)
-
-            prefs.setNothingToSubmitEnabled("MATH 1400", false)
-            #expect(digestBody(scheduler, items, now, prefs)?.contains("1 assignment ") == true)
-        }
-    }
-
     // MARK: Recognising an occurrence
 
     /// The recurring switch can only work if a generated occurrence is
@@ -405,7 +362,6 @@ struct PerCourseNotificationTests {
     /// horizon are arithmetic rather than a race with the clock.
     private func withFixture(
         global: Set<LeadOffset>,
-        digest: Bool = false,
         _ body: (NotificationScheduler, CoursePreferencesStore, Date) -> Void
     ) {
         let name = "lhf.tests.\(UUID().uuidString)"
@@ -419,8 +375,6 @@ struct PerCourseNotificationTests {
         for offset in LeadOffset.allCases {
             scheduler.setOffset(offset, on: global.contains(offset))
         }
-        scheduler.setDigestEnabled(digest)
-
         body(scheduler, CoursePreferencesStore(defaults: defaults), Date())
     }
 
@@ -486,14 +440,6 @@ struct PerCourseNotificationTests {
         offsets(of: dueRequests(requests).filter { self.course(of: $0, in: items) == course })
     }
 
-    private func digestBody(_ scheduler: NotificationScheduler,
-                            _ items: [DashItem],
-                            _ now: Date,
-                            _ prefs: CoursePreferencesStore) -> String? {
-        scheduler.plannedRequests(from: items, now: now, preferences: prefs)
-            .first { $0.identifier == "digest:daily" }?
-            .content.body
-    }
 }
 
 // MARK: - Readable time arithmetic

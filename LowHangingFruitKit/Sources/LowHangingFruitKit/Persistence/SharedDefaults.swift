@@ -171,9 +171,6 @@ public enum SharedDefaultsMigration {
         // NotificationScheduler
         "notif.enabled",
         "notif.leadOffsets",
-        "notif.digestEnabled",
-        "notif.digestHour",
-        "notif.digestMinute",
     ]
 
     public enum Outcome: Equatable, Sendable {

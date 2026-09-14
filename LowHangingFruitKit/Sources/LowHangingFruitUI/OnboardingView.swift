@@ -307,20 +307,10 @@ struct OnboardingView: View {
         .accessibilityAddTraits(isOn ? [.isSelected] : [])
     }
 
-    /// Secondary notification choices live directly below the lead times so
-    /// first-run defaults are visible rather than hidden until Settings. The
-    /// scheduler owns those defaults: digest off, turned-in confirmations on.
+    /// Submission confirmations live directly below the lead times so the
+    /// first-run default is visible rather than hidden until Profile.
     private var notificationExtrasSection: some View {
         VStack(spacing: 10) {
-            notificationOption(
-                title: "what’s due digest",
-                detail: "one daily look at what’s coming up",
-                isOn: Binding(
-                    get: { scheduler.digestEnabled },
-                    set: { scheduler.setDigestEnabled($0) }
-                )
-            )
-
             notificationOption(
                 title: "turned in notifications",
                 detail: "confirm when Canvas sees a submission",

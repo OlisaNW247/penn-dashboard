@@ -9,15 +9,9 @@ import AppKit
 import ServiceManagement
 #endif
 
-/// Account, appearance, reminder defaults, tasks, storage and troubleshooting.
-///
-/// **The class list is no longer here.** It moved to the Profile tab in v4 —
-/// see `ProfileClassesSection`, which is that code, moved rather than rewritten.
-/// The split is "a preference vs. a thing you own": appearance and reminder
-/// lead times are preferences; which classes you're taking is not, and it was
-/// odd that turning off a course lived next to the light/dark picker.
-/// What stays here is the *global* reminder configuration that per-course
-/// settings in Profile will inherit from and override.
+/// The single Profile destination: identity, classes, notification choices and
+/// app preferences. Infrequent preferences collapse into one group so the page
+/// stays short during ordinary use.
 ///
 /// In v4 this is the root of the **Settings tab**, which is where its
 /// `NavigationStack` comes from (the dashboard's stack supplies one). It still
@@ -60,19 +54,15 @@ struct SettingsPage: View {
         Form {
             Section {
                 SmoothFormHeader(
-                    title: "Settings",
-                    accent: .smoothCobalt,
-                    spark: .smoothTomato
+                    title: "Profile",
+                    accent: .smoothTeal,
+                    spark: .smoothGrape
                 )
             }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
             .listRowSeparator(.hidden)
 
-            // Header deliberately isn't "Profile" any more: that word now names
-            // a tab, and a Settings section wearing the same label would read
-            // as a shortcut to it. The field itself hasn't moved — a name is a
-            // preference, and Profile is about classes.
             Section {
                 TextField("your name", text: Binding(
                     get: { state.userName },
@@ -83,16 +73,11 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
-            // One row per source, connect or disconnect on the right. The
-            // paste-a-calendar-link fallback moved out of here: it belongs on
-            // the path where a login is actually failing (onboarding), not in
-            // a list of accounts, where it read as a third thing to connect.
             Section {
                 accountRow(label: "canvas",
                            connected: state.isCanvasConnected,
                            working: state.isLoading || state.isCanvasDiscoveryLoading,
                            disconnect: .canvas)
-
                 accountRow(label: "gradescope",
                            connected: state.isGradescopeConnected,
                            working: state.isGradescopeLoading,
@@ -101,8 +86,6 @@ struct SettingsPage: View {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }
             .smoothSectionBackground(.smoothTeal)
-
-            announcementWatcherSection
 
             Section {
                 Picker("appearance", selection: Binding(
@@ -131,13 +114,18 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
-            remindersSection
+            ProfileSemesterSection(placement: .addClass)
+            ProfileClassesSection()
+            ProfileNotificationsSection()
 
+            remindersSection
             iCloudSyncSection
 
             #if os(macOS)
             onThisMacSection
             #endif
+
+            ProfileSemesterSection(placement: .previousSemesters)
 
             if let notice = state.syncNotice ?? state.error {
                 Section {
@@ -151,7 +139,7 @@ struct SettingsPage: View {
         .formStyle(.grouped)
         .font(.lhfSecondary(15))
         .foregroundStyle(Color.smoothInk)
-        .smoothFormChrome(accent: .smoothCobalt)
+        .smoothFormChrome(accent: .smoothTeal)
         .navigationTitle("")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -175,6 +163,31 @@ struct SettingsPage: View {
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    private func preferenceLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.lhfMono(10, weight: .semibold))
+            .tracking(0.45)
+            .foregroundStyle(Color.smoothTeal)
+            .textCase(.uppercase)
+    }
+
+    @ViewBuilder
+    private var cloudSyncStatus: some View {
+        if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
+            Text("Takes effect after you quit and reopen Smooth.")
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.v2DateText)
+        } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
+            Text(reason)
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.smoothTomatoInk)
+        } else if state.cloudSyncEnabled {
+            Text("Sync is on. Changes appear on your other devices within a minute or two.")
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.v2DateText)
+        }
     }
 
     // MARK: Storage
@@ -255,46 +268,10 @@ struct SettingsPage: View {
     // class now behaves like any other class: it lives in the Profile classes
     // list and the normal per-class toggle is what hides it.
 
-    // MARK: Announcement watcher
-
-    /// Settings → "announcement watcher": turns Canvas course announcements
-    /// into dashboard items the same way the ICS feed and Modules readings
-    /// already do. Placed right after the accounts section — like Grade
-    /// Watcher above, this is session-powered (it reads announcements with
-    /// the same Canvas login the accounts section connects), so it reads as
-    /// one more thing that login unlocks rather than an unrelated preference.
-    ///
-    /// **Why the "ai assist" toggle only shows up with a backend
-    /// configured.** There used to be a student-pasted Anthropic key here
-    /// (`AnthropicKeyStore`, removed); now the AI path is LHF's own server
-    /// (`BackendAnnouncementExtractor`), and with no key for a student to
-    /// paste there is nothing this toggle could turn on when
-    /// `BackendServices.client` is `nil` — showing it anyway would just be a
-    /// switch that silently does nothing.
-    @ViewBuilder
-    private var announcementWatcherSection: some View {
-        Section {
-            Toggle("watch announcements", isOn: Binding(
-                get: { state.announcementWatcherEnabled },
-                set: { state.setAnnouncementWatcherEnabled($0) }
-            ))
-
-            if state.announcementWatcherEnabled, BackendServices.client != nil {
-                Toggle("ai assist", isOn: Binding(
-                    get: { state.announcementAIEnabled },
-                    set: { state.setAnnouncementAIEnabled($0) }
-                ))
-            }
-        } header: {
-            SmoothSectionHeader("preferences", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothGrape)
-    }
-
     // MARK: Reminders
 
     /// The **global** reminder configuration: whether due-date reminders run at
-    /// all, which lead times they use, and the daily digest. v4's Profile tab
+    /// all and which lead times they use. v4's Profile tab
     /// adds a per-class layer that inherits from exactly these values and
     /// overrides them class by class, which is why they stay in Settings rather
     /// than following the class list over to Profile — this is the default a
@@ -326,14 +303,6 @@ struct SettingsPage: View {
                         set: { scheduler.setTurnedInEnabled($0) }
                     ))
 
-                    Toggle("daily \u{201C}what\u{2019}s due\u{201D} digest", isOn: Binding(
-                        get: { scheduler.digestEnabled },
-                        set: { scheduler.setDigestEnabled($0) }
-                    ))
-                    if scheduler.digestEnabled {
-                        DatePicker("digest time", selection: digestTimeBinding,
-                                   displayedComponents: .hourAndMinute)
-                    }
                 }
             }
         } header: {
@@ -449,13 +418,6 @@ struct SettingsPage: View {
     private func reportProblem() {
         let report = DiagnosticsReport.generate(state: state)
         SupportContact.openReportMail(diagnostics: report)
-    }
-
-    private var digestTimeBinding: Binding<Date> {
-        Binding(
-            get: { Calendar.current.date(from: scheduler.digestTime) ?? Date() },
-            set: { scheduler.setDigestTime(Calendar.current.dateComponents([.hour, .minute], from: $0)) }
-        )
     }
 
     private func openSystemNotificationSettings() {
