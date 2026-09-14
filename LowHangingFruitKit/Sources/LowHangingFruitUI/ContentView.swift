@@ -292,8 +292,15 @@ struct ContentView: View {
                                     ),
                                     style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                                 )
-                                .frame(width: 122, height: 6)
-                                .offset(x: 1, y: 9)
+                                // No fixed width: the overlay takes the
+                                // wordmark's rendered width, which is what
+                                // `minimumScaleFactor` below actually drew
+                                // once "Wednesday" or "Saturday" forces the
+                                // row to shrink. A 122pt squiggle under a
+                                // shrunken "Smooth" ran into the weekday;
+                                // under a full-size one it stopped short.
+                                .frame(height: 6)
+                                .offset(y: 9)
                         }
                     Text(" \(Self.weekdayText(Date()))")
                         .font(.lhfHeaderTitle(32))
@@ -626,9 +633,10 @@ struct ContentView: View {
     }
 }
 
-/// A compact three-wave underline with a hand-drawn rhythm. Its fixed width is
-/// tuned to the Roobert "Smooth" wordmark and deliberately stops before the
-/// weekday begins.
+/// A compact three-wave underline with a hand-drawn rhythm. It is drawn into
+/// whatever width the overlay hands it — the rendered width of the Roobert
+/// "Smooth" wordmark, scaled or not — so it always ends where the word ends
+/// and never reaches the weekday.
 private struct SmoothSquiggle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
