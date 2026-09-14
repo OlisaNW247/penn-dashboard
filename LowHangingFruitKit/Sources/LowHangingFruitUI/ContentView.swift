@@ -279,31 +279,33 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                (
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Smooth")
                         .font(.lhfWordmark(32))
-                    + Text(" \(Self.weekdayText(Date()))")
+                        .overlay(alignment: .bottomLeading) {
+                            GeometryReader { proxy in
+                                SmoothSquiggle()
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                                    )
+                                    .frame(width: proxy.size.width, height: 6)
+                                    .offset(y: -1)
+                            }
+                        }
+                    Text(" \(Self.weekdayText(Date()))")
                         .font(.lhfHeaderTitle(32))
-                )
-                    .foregroundStyle(Color.smoothInk)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .layoutPriority(1)
-                    .accessibilityElement(children: .combine)
-                    .frame(height: 48, alignment: .center)
-                    .overlay(alignment: .bottomLeading) {
-                        SmoothSquiggle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                            )
-                            .frame(width: 90, height: 6)
-                            .offset(x: 2, y: -1)
-                    }
+                }
+                .foregroundStyle(Color.smoothInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .layoutPriority(1)
+                .accessibilityElement(children: .combine)
+                .frame(height: 48, alignment: .center)
 
                 Text(Self.dateText(Date()))
                     .font(.lhfMono(14, weight: .medium))
