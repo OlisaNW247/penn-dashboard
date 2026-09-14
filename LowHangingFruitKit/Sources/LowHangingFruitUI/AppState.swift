@@ -582,19 +582,13 @@ final class AppState: ObservableObject {
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
         )
-        // `object(forKey:) as? Bool ?? true`, not `.bool(forKey:)` — the
-        // latter returns `false` for a key that was never set, which would
-        // ship this watcher off by default instead of on. Mirrors
-        // `NotificationScheduler.turnedInEnabled`'s init line exactly.
-        self.announcementWatcherEnabled = UserDefaults.lhf.object(
-            forKey: Self.announcementWatcherEnabledKey
-        ) as? Bool ?? true
-        // `object(forKey:) as? Bool ?? true` — see `announcementAIEnabledKey`'s
-        // doc comment for why this can no longer be the plain
-        // `.bool(forKey:)` it used to be now that the default is on.
-        self.announcementAIEnabled = UserDefaults.lhf.object(
-            forKey: Self.announcementAIEnabledKey
-        ) as? Bool ?? true
+        // Announcement watching and its AI assist are core Smooth behavior,
+        // not user-facing preferences. Keep both enabled for every launch,
+        // including installs that previously stored an explicit false.
+        self.announcementWatcherEnabled = true
+        self.announcementAIEnabled = true
+        UserDefaults.lhf.set(true, forKey: Self.announcementWatcherEnabledKey)
+        UserDefaults.lhf.set(true, forKey: Self.announcementAIEnabledKey)
         self.processedAnnouncementIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.processedAnnouncementIDsKey) ?? []
         )

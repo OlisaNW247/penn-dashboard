@@ -24,7 +24,6 @@ struct SettingsPage: View {
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var showRecurring = false
-    @State private var showPreferences = false
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
@@ -74,11 +73,10 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
+            settingsSection
             ProfileSemesterSection(placement: .addClass)
             ProfileClassesSection()
             ProfileNotificationsSection()
-
-            compactPreferencesSection
             ProfileSemesterSection(placement: .previousSemesters)
 
             if let notice = state.syncNotice ?? state.error {
@@ -119,112 +117,92 @@ struct SettingsPage: View {
         .frame(minWidth: 360, minHeight: 420)
     }
 
-    /// Everything students change occasionally, folded into one quiet card.
-    /// Classes and per-class notifications stay visible above because they are
-    /// the profile's everyday content; account and app-level controls do not
-    /// need to make every visit several screens tall.
-    private var compactPreferencesSection: some View {
+    /// The combined settings card. Keep identity and connection controls first,
+    /// followed by the quieter app behavior controls so the page reads naturally
+    /// from "who am I?" into "how should Smooth behave?".
+    private var settingsSection: some View {
         Section {
-            DisclosureGroup(isExpanded: $showPreferences) {
-                VStack(alignment: .leading, spacing: 16) {
-                    preferenceLabel("accounts")
-                    accountRow(label: "canvas",
-                               connected: state.isCanvasConnected,
-                               working: state.isLoading || state.isCanvasDiscoveryLoading,
-                               disconnect: .canvas)
-                    accountRow(label: "gradescope",
-                               connected: state.isGradescopeConnected,
-                               working: state.isGradescopeLoading,
-                               disconnect: .gradescope)
+            preferenceLabel("accounts")
+            accountRow(label: "canvas",
+                       connected: state.isCanvasConnected,
+                       working: state.isLoading || state.isCanvasDiscoveryLoading,
+                       disconnect: .canvas)
+            accountRow(label: "gradescope",
+                       connected: state.isGradescopeConnected,
+                       working: state.isGradescopeLoading,
+                       disconnect: .gradescope)
 
-                    Divider()
-                    preferenceLabel("appearance")
-                    Picker("appearance", selection: Binding(
-                        get: { state.appearanceMode },
-                        set: { state.setAppearanceMode($0) }
-                    )) {
-                        ForEach(AppearanceMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+            Divider()
+            preferenceLabel("appearance")
+            Picker("appearance", selection: Binding(
+                get: { state.appearanceMode },
+                set: { state.setAppearanceMode($0) }
+            )) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
 
-                    Divider()
-                    preferenceLabel("dashboard")
-                    Toggle("watch announcements", isOn: Binding(
-                        get: { state.announcementWatcherEnabled },
-                        set: { state.setAnnouncementWatcherEnabled($0) }
-                    ))
-                    if state.announcementWatcherEnabled, BackendServices.client != nil {
-                        Toggle("ai assist", isOn: Binding(
-                            get: { state.announcementAIEnabled },
-                            set: { state.setAnnouncementAIEnabled($0) }
+            Divider()
+            preferenceLabel("dashboard")
+            Button {
+                showRecurring = true
+            } label: {
+                Label("add recurring task", systemImage: "calendar.badge.plus")
+            }
+
+            Divider()
+            preferenceLabel("reminders")
+            Toggle("due-date reminders", isOn: Binding(
+                get: { scheduler.isEnabled },
+                set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+            ))
+            if scheduler.isEnabled {
+                if scheduler.authStatus == .denied {
+                    Label("notifications are off in system settings.", systemImage: "bell.slash")
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.v2DateText)
+                    Button("open settings") { openSystemNotificationSettings() }
+                } else {
+                    ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                        Toggle(offset.label, isOn: Binding(
+                            get: { scheduler.leadOffsets.contains(offset) },
+                            set: { scheduler.setOffset(offset, on: $0) }
                         ))
                     }
-                    Button {
-                        showRecurring = true
-                    } label: {
-                        Label("add recurring task", systemImage: "calendar.badge.plus")
-                    }
-
-                    Divider()
-                    preferenceLabel("reminders")
-                    Toggle("due-date reminders", isOn: Binding(
-                        get: { scheduler.isEnabled },
-                        set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+                    Toggle("“turned in” confirmations", isOn: Binding(
+                        get: { scheduler.turnedInEnabled },
+                        set: { scheduler.setTurnedInEnabled($0) }
                     ))
-                    if scheduler.isEnabled {
-                        if scheduler.authStatus == .denied {
-                            Label("notifications are off in system settings.", systemImage: "bell.slash")
-                                .font(.lhfSecondary(12))
-                                .foregroundStyle(Color.v2DateText)
-                            Button("open settings") { openSystemNotificationSettings() }
-                        } else {
-                            ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
-                                Toggle(offset.label, isOn: Binding(
-                                    get: { scheduler.leadOffsets.contains(offset) },
-                                    set: { scheduler.setOffset(offset, on: $0) }
-                                ))
-                            }
-                            Toggle("“turned in” confirmations", isOn: Binding(
-                                get: { scheduler.turnedInEnabled },
-                                set: { scheduler.setTurnedInEnabled($0) }
-                            ))
-                        }
-                    }
-
-                    Divider()
-                    preferenceLabel("devices")
-                    Toggle("sync between my devices", isOn: Binding(
-                        get: { state.cloudSyncEnabled },
-                        set: { state.setCloudSyncEnabled($0) }
-                    ))
-                    cloudSyncStatus
-
-                    #if os(macOS)
-                    Toggle("open at login", isOn: Binding(
-                        get: {
-                            _ = loginItemRefreshNonce
-                            return SMAppService.mainApp.status == .enabled
-                        },
-                        set: { newValue in
-                            if newValue {
-                                try? SMAppService.mainApp.register()
-                            } else {
-                                try? SMAppService.mainApp.unregister()
-                            }
-                            loginItemRefreshNonce += 1
-                        }
-                    ))
-                    #endif
                 }
-                .padding(.vertical, 8)
-            } label: {
-                Label("preferences", systemImage: "slider.horizontal.3")
-                    .font(.lhfSecondary(15, weight: .semibold))
-                    .foregroundStyle(Color.smoothInk)
             }
+
+            Divider()
+            preferenceLabel("devices")
+            Toggle("sync between my devices", isOn: Binding(
+                get: { state.cloudSyncEnabled },
+                set: { state.setCloudSyncEnabled($0) }
+            ))
+            cloudSyncStatus
+
+            #if os(macOS)
+            Toggle("open at login", isOn: Binding(
+                get: {
+                    _ = loginItemRefreshNonce
+                    return SMAppService.mainApp.status == .enabled
+                },
+                set: { newValue in
+                    if newValue {
+                        try? SMAppService.mainApp.register()
+                    } else {
+                        try? SMAppService.mainApp.unregister()
+                    }
+                    loginItemRefreshNonce += 1
+                }
+            ))
+            #endif
         }
         .smoothSectionBackground(.smoothTeal)
     }
@@ -331,42 +309,6 @@ struct SettingsPage: View {
     // 2026-08-26 — see `AppState.includesAsOptedInContent`). A readings-only
     // class now behaves like any other class: it lives in the Profile classes
     // list and the normal per-class toggle is what hides it.
-
-    // MARK: Announcement watcher
-
-    /// Settings → "announcement watcher": turns Canvas course announcements
-    /// into dashboard items the same way the ICS feed and Modules readings
-    /// already do. Placed right after the accounts section — like Grade
-    /// Watcher above, this is session-powered (it reads announcements with
-    /// the same Canvas login the accounts section connects), so it reads as
-    /// one more thing that login unlocks rather than an unrelated preference.
-    ///
-    /// **Why the "ai assist" toggle only shows up with a backend
-    /// configured.** There used to be a student-pasted Anthropic key here
-    /// (`AnthropicKeyStore`, removed); now the AI path is LHF's own server
-    /// (`BackendAnnouncementExtractor`), and with no key for a student to
-    /// paste there is nothing this toggle could turn on when
-    /// `BackendServices.client` is `nil` — showing it anyway would just be a
-    /// switch that silently does nothing.
-    @ViewBuilder
-    private var announcementWatcherSection: some View {
-        Section {
-            Toggle("watch announcements", isOn: Binding(
-                get: { state.announcementWatcherEnabled },
-                set: { state.setAnnouncementWatcherEnabled($0) }
-            ))
-
-            if state.announcementWatcherEnabled, BackendServices.client != nil {
-                Toggle("ai assist", isOn: Binding(
-                    get: { state.announcementAIEnabled },
-                    set: { state.setAnnouncementAIEnabled($0) }
-                ))
-            }
-        } header: {
-            SmoothSectionHeader("preferences", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothGrape)
-    }
 
     // MARK: Reminders
 
