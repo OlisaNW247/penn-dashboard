@@ -10,6 +10,7 @@ struct ContentView: View {
     @StateObject private var vm: DashboardViewModel
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
@@ -488,15 +489,7 @@ struct ContentView: View {
 
     private var allDoneState: some View {
         ZStack {
-            if let img = bundledImage("chill", ext: "jpg") {
-                img
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 320)
-                    .blendMode(.multiply)
-                    .opacity(0.35)
-                    .accessibilityHidden(true)
-            }
+            chillArtwork(maxWidth: 320, opacity: 0.35)
             VStack(spacing: 8) {
                 Text("go enjoy life")
                     .font(.lhfSerif(46))
@@ -512,6 +505,33 @@ struct ContentView: View {
 
     private var todoEmptyState: some View {
         SmoothTodoEmptyState()
+    }
+
+    /// The source illustration is black ink on white paper. Multiply makes
+    /// that paper disappear in light mode; in dark mode, invert + screen does
+    /// the equivalent job and turns the drawing into quiet moonlit linework.
+    @ViewBuilder
+    private func chillArtwork(maxWidth: CGFloat, opacity: Double) -> some View {
+        if let img = bundledImage("chill", ext: "jpg") {
+            if colorScheme == .dark {
+                img
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: maxWidth)
+                    .colorInvert()
+                    .blendMode(.screen)
+                    .opacity(opacity * 0.72)
+                    .accessibilityHidden(true)
+            } else {
+                img
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: maxWidth)
+                    .blendMode(.multiply)
+                    .opacity(opacity)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     /// Shown in place of the "all caught up" art while the first sync is still in
@@ -629,6 +649,7 @@ private struct SmoothSquiggle: Shape {
 }
 
 private struct SmoothTodoEmptyState: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
@@ -642,15 +663,26 @@ private struct SmoothTodoEmptyState: View {
                     .opacity(appeared ? 1 : 0)
 
                 if let img = bundledImage("chill", ext: "jpg") {
-                    img
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 250)
-                        .blendMode(.multiply)
-                        .opacity(appeared ? 0.35 : 0)
-                        .scaleEffect(appeared ? 1 : 0.9)
-                        .offset(y: appeared ? -4 : 12)
-                        .accessibilityHidden(true)
+                    Group {
+                        if colorScheme == .dark {
+                            img
+                                .resizable()
+                                .scaledToFit()
+                                .colorInvert()
+                                .blendMode(.screen)
+                                .opacity(appeared ? 0.25 : 0)
+                        } else {
+                            img
+                                .resizable()
+                                .scaledToFit()
+                                .blendMode(.multiply)
+                                .opacity(appeared ? 0.35 : 0)
+                        }
+                    }
+                    .frame(maxWidth: 250)
+                    .scaleEffect(appeared ? 1 : 0.9)
+                    .offset(y: appeared ? -4 : 12)
+                    .accessibilityHidden(true)
                 }
             }
 
