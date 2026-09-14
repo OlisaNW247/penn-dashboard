@@ -73,7 +73,54 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
-            settingsSection
+            Section {
+                accountRow(label: "canvas",
+                           connected: state.isCanvasConnected,
+                           working: state.isLoading || state.isCanvasDiscoveryLoading,
+                           disconnect: .canvas)
+                accountRow(label: "gradescope",
+                           connected: state.isGradescopeConnected,
+                           working: state.isGradescopeLoading,
+                           disconnect: .gradescope)
+            } header: {
+                SmoothSectionHeader("accounts", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothTeal)
+
+            Section {
+                Picker("appearance", selection: Binding(
+                    get: { state.appearanceMode },
+                    set: { state.setAppearanceMode($0) }
+                )) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            } header: {
+                SmoothSectionHeader("appearance", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothCobalt)
+
+            Section {
+                Button {
+                    showRecurring = true
+                } label: {
+                    Label("add recurring task", systemImage: "calendar.badge.plus")
+                }
+            } header: {
+                SmoothSectionHeader("tasks", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothLemon)
+
+            remindersSection
+            iCloudSyncSection
+
+            #if os(macOS)
+            onThisMacSection
+            #endif
+
             ProfileSemesterSection(placement: .addClass)
             ProfileClassesSection()
             ProfileNotificationsSection()
@@ -115,96 +162,6 @@ struct SettingsPage: View {
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
-    }
-
-    /// The combined settings card. Keep identity and connection controls first,
-    /// followed by the quieter app behavior controls so the page reads naturally
-    /// from "who am I?" into "how should Smooth behave?".
-    private var settingsSection: some View {
-        Section {
-            preferenceLabel("accounts")
-            accountRow(label: "canvas",
-                       connected: state.isCanvasConnected,
-                       working: state.isLoading || state.isCanvasDiscoveryLoading,
-                       disconnect: .canvas)
-            accountRow(label: "gradescope",
-                       connected: state.isGradescopeConnected,
-                       working: state.isGradescopeLoading,
-                       disconnect: .gradescope)
-
-            Divider()
-            preferenceLabel("appearance")
-            Picker("appearance", selection: Binding(
-                get: { state.appearanceMode },
-                set: { state.setAppearanceMode($0) }
-            )) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Divider()
-            preferenceLabel("dashboard")
-            Button {
-                showRecurring = true
-            } label: {
-                Label("add recurring task", systemImage: "calendar.badge.plus")
-            }
-
-            Divider()
-            preferenceLabel("reminders")
-            Toggle("due-date reminders", isOn: Binding(
-                get: { scheduler.isEnabled },
-                set: { newValue in Task { await scheduler.setEnabled(newValue) } }
-            ))
-            if scheduler.isEnabled {
-                if scheduler.authStatus == .denied {
-                    Label("notifications are off in system settings.", systemImage: "bell.slash")
-                        .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.v2DateText)
-                    Button("open settings") { openSystemNotificationSettings() }
-                } else {
-                    ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
-                        Toggle(offset.label, isOn: Binding(
-                            get: { scheduler.leadOffsets.contains(offset) },
-                            set: { scheduler.setOffset(offset, on: $0) }
-                        ))
-                    }
-                    Toggle("“turned in” confirmations", isOn: Binding(
-                        get: { scheduler.turnedInEnabled },
-                        set: { scheduler.setTurnedInEnabled($0) }
-                    ))
-                }
-            }
-
-            Divider()
-            preferenceLabel("devices")
-            Toggle("sync between my devices", isOn: Binding(
-                get: { state.cloudSyncEnabled },
-                set: { state.setCloudSyncEnabled($0) }
-            ))
-            cloudSyncStatus
-
-            #if os(macOS)
-            Toggle("open at login", isOn: Binding(
-                get: {
-                    _ = loginItemRefreshNonce
-                    return SMAppService.mainApp.status == .enabled
-                },
-                set: { newValue in
-                    if newValue {
-                        try? SMAppService.mainApp.register()
-                    } else {
-                        try? SMAppService.mainApp.unregister()
-                    }
-                    loginItemRefreshNonce += 1
-                }
-            ))
-            #endif
-        }
-        .smoothSectionBackground(.smoothTeal)
     }
 
     private func preferenceLabel(_ title: String) -> some View {
