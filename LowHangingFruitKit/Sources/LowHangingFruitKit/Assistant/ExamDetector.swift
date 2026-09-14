@@ -23,10 +23,14 @@ public enum ExamDetector {
     /// "exam" never fires inside "example" or "examine". Plurals included
     /// because a title says "no exams" as often as "no exam". `prelim(s)`
     /// carries over from the regex this replaces
-    /// (the old `WorkKindFilter.exam` pattern).
+    /// (the old `WorkKindFilter.exam` pattern). "quiz" is deliberately
+    /// absent: quizzes are `WorkKindFilter.quiz`'s job and `.assessment`
+    /// already unions the two, so listing it here made "when is my next
+    /// midterm?" answer with a weekly quiz (the first compile of this file
+    /// failed `ClassAssistantTests` exactly that way).
     private static let examWords: Set<String> = [
         "exam", "exams", "midterm", "midterms", "final", "finals",
-        "quiz", "quizzes", "test", "tests", "prelim", "prelims",
+        "test", "tests", "prelim", "prelims",
     ]
 
     /// Nearby words that mean the title is about NOT having an exam:
@@ -53,7 +57,7 @@ public enum ExamDetector {
     private static let negationWindow = 4
     private static let governingWindow = 3
 
-    /// True when `title` is naming an exam/midterm/final/quiz/test itself,
+    /// True when `title` is naming an exam/midterm/final/test itself,
     /// as opposed to mentioning the word in passing, negating it, or using
     /// it as a plain adjective for something else ("final project",
     /// "final draft", "the Final Frontier").

@@ -18,7 +18,8 @@ struct ExamDetectorTests {
         let cases: [(title: String, isExam: Bool)] = [
             ("Midterm 1", true),
             ("Final Exam", true),
-            ("Quiz 3", true),
+            // Quizzes belong to `WorkKindFilter.quiz`, not the exam filter.
+            ("Quiz 3", false),
             // The exact holiday title from the phone transcript: the word
             // "exams" is present, but negated by "no" two words earlier.
             ("Yom Kippur (no exams/assignments)", false),
