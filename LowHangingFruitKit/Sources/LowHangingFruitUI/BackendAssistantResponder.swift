@@ -134,19 +134,37 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         }
 
         var splitter = SourcesBlockSplitter()
+        // Counts only, never content: a real phone (2026-09-14) parsed exactly
+        // one event from a stream the server had spent 35 s writing, and the
+        // trace could not say whether the lines never arrived, arrived but
+        // did not parse, or parsed as deltas whose text the splitter held.
+        var linesRead = 0
+        var dataLinesUnparsed = 0
+        var deltaEvents = 0
+        var textChars = 0
+        var lastEvent = "none"
 
         do {
             parsing: for try await line in bytes.lines {
                 if Task.isCancelled { break }
-                guard let event = AskStreamEvent.parse(line: line) else { continue }
+                linesRead += 1
+                guard let event = AskStreamEvent.parse(line: line) else {
+                    if line.hasPrefix("data:") { dataLinesUnparsed += 1 }
+                    continue
+                }
                 askTrace.info("6 event received")
                 switch event {
                 case let .delta(text):
+                    deltaEvents += 1
+                    lastEvent = "delta"
                     let visible = splitter.feed(text)
+                    textChars += visible.count
                     if !visible.isEmpty { continuation.yield(.text(visible)) }
-                case .done:
+                case let .done(promptTokens, completionTokens, cachedTokens):
+                    lastEvent = "done(prompt \(promptTokens), completion \(completionTokens), cached \(cachedTokens))"
                     break parsing
                 case let .error(code, _):
+                    lastEvent = "error(\(code))"
                     // An error arriving mid-stream (a 200 that later gives
                     // up) is different from `client.askStream` throwing:
                     // some of the answer may already be on screen, so this
@@ -168,17 +186,19 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // `AssistantConversation` treats a cut-off answer as something
             // to keep, not discard, and a mid-stream network failure should
             // read the same way rather than as a wiped answer.
+            lastEvent = "threw(\(String(describing: type(of: error))))"
         }
 
         if !Task.isCancelled {
             let trailing = splitter.finish()
+            textChars += trailing.count
             if !trailing.isEmpty { continuation.yield(.text(trailing)) }
             if !splitter.citations.isEmpty {
                 continuation.yield(.citations(splitter.citations))
             }
         }
 
-        askTrace.info("7 stream finished")
+        askTrace.info("7 stream finished: \(linesRead, privacy: .public) lines, \(dataLinesUnparsed, privacy: .public) data lines unparsed, \(deltaEvents, privacy: .public) deltas, \(textChars, privacy: .public) visible chars, \(splitter.citations.count, privacy: .public) citations, last \(lastEvent, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
         continuation.finish()
     }
 
