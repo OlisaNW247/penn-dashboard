@@ -81,8 +81,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-12): **1250 tests / 123 suites
-green** after the ask fix for the sentence-embedding asset
+Baseline on `v5`, verified on a Mac (2026-09-14): **1253 tests / 125 suites
+green** after `ExamDetector` (the on-device "next exam" answer no longer
+names a holiday titled "no exams"; one first-run failure, the detector's
+word list had widened the exam filter to quizzes, fixed in c81afd4; the
+second run tripped the `SessionCookieStoreTests` flake, the third was
+clean). Before that, 1250/123 on 2026-09-12 after the ask fix for the sentence-embedding asset
 (`SentenceEmbeddingProvider`, trap below; one first-run compile error, an
 `NSLock` call inside an async task body, and one fixture with no matching
 passage). Earlier the same day, 1244/122 after the Smooth merge, compiled first time. Marco's
