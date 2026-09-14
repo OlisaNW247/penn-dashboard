@@ -14,9 +14,30 @@ struct IntroView: View {
     @State private var bottomCopyVisible = false
     @State private var smoothWordVisible = false
     @State private var ctaVisible = false
+    @State private var showMissionPages: Bool = {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-LHFMissionPages")
+#else
+        false
+#endif
+    }()
     @State private var runID = 0
 
     var body: some View {
+        ZStack {
+            if showMissionPages {
+                MissionIntroView(onFinish: finishIntro)
+                    .transition(.opacity)
+            } else {
+                animatedStory
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: 480)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.30), value: showMissionPages)
+    }
+
+    private var animatedStory: some View {
         GeometryReader { proxy in
             let size = proxy.size
 
@@ -29,7 +50,7 @@ struct IntroView: View {
                     .frame(width: phase == .calm ? 190 : 126, height: phase == .calm ? 140 : 154)
                     .position(
                         x: size.width * 0.5,
-                        y: size.height * (phase == .calm ? 0.522 : 0.51)
+                        y: size.height * (phase == .calm ? 0.477 : 0.51)
                     )
                     .shadow(color: Color.v2CardShadow.opacity(phase == .calm ? 0 : 0.12), radius: 12, y: 7)
                     .zIndex(3)
@@ -42,7 +63,6 @@ struct IntroView: View {
             }
             .frame(width: size.width, height: size.height)
         }
-        .frame(maxWidth: 480)
         .task(id: runID) {
             await playIntro()
         }
@@ -90,7 +110,7 @@ struct IntroView: View {
     private func linePoint(for index: Int, count: Int, in size: CGSize) -> CGPoint {
         let progress = CGFloat(index) / CGFloat(max(count - 1, 1))
         let x = 22 + progress * (size.width - 44)
-        let baseline = size.height * 0.54
+        let baseline = size.height * 0.50
         let wave = sin(progress * .pi * 6) * 9.6
         return CGPoint(x: x, y: baseline + wave)
     }
@@ -114,7 +134,7 @@ struct IntroView: View {
                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
             )
             .frame(width: size.width - 44, height: 30)
-            .position(x: size.width * 0.5, y: size.height * 0.54)
+            .position(x: size.width * 0.5, y: size.height * 0.50)
             .opacity(phase == .gathering || phase == .calm ? 1 : 0)
             .shadow(color: Color.smoothGrape.opacity(phase == .calm ? 0.12 : 0), radius: 10)
             .allowsHitTesting(false)
@@ -193,7 +213,13 @@ struct IntroView: View {
 
             Button {
                 lhfHapticLight()
-                finishIntro()
+                if reduceMotion {
+                    showMissionPages = true
+                } else {
+                    withAnimation(.easeInOut(duration: 0.30)) {
+                        showMissionPages = true
+                    }
+                }
             } label: {
                 Text("Get started")
                     .font(.lhfSans(16, weight: .semibold))
@@ -356,6 +382,12 @@ private struct IntroNotification: Identifiable {
         .init(id: 9, app: "CALENDAR", icon: "clock.badge.exclamationmark.fill", headline: "Problem set 3", detail: "Due in 5 hours", accent: .smoothMarigold, x: 0.14, y: 0.33, rotation: 6, width: 166),
         .init(id: 10, app: "CANVAS", icon: "arrow.triangle.2.circlepath", headline: "Course updated", detail: "Syllabus · Modules · Files", accent: .smoothCobalt, x: 0.74, y: 0.91, rotation: 5, width: 180),
         .init(id: 11, app: "MAIL", icon: "tray.full.fill", headline: "47 unread", detail: "Penn · Canvas · Classes", accent: .smoothGrape, x: 0.10, y: 0.76, rotation: -8, width: 166),
+        .init(id: 12, app: "CANVAS", icon: "pencil.and.list.clipboard", headline: "Essay draft", detail: "Due tomorrow at noon", accent: .smoothMarigold, x: 0.91, y: 0.12, rotation: 10, width: 172),
+        .init(id: 13, app: "ED DISCUSSION", icon: "bubble.left.fill", headline: "12 new replies", detail: "Your thread was mentioned", accent: .smoothTeal, x: 0.35, y: 0.45, rotation: -11, width: 178),
+        .init(id: 14, app: "PENN MOBILE", icon: "person.3.fill", headline: "Club meeting now", detail: "Houston Hall · Room 218", accent: .smoothCobalt, x: 0.65, y: 0.81, rotation: 7, width: 176),
+        .init(id: 15, app: "GRADESCOPE", icon: "arrow.uturn.backward.circle.fill", headline: "Regrade request", detail: "Response received", accent: .smoothGrape, x: 0.31, y: 0.25, rotation: -6, width: 174),
+        .init(id: 16, app: "CALENDAR", icon: "person.2.badge.gearshape.fill", headline: "Project sync", detail: "Starts in 15 minutes", accent: .smoothTomato, x: 0.92, y: 0.63, rotation: 11, width: 170),
+        .init(id: 17, app: "MAIL", icon: "envelope.open.fill", headline: "Professor replied", detail: "Re: Final project scope", accent: .smoothLemon, x: 0.37, y: 0.94, rotation: -9, width: 178),
     ]
 }
 
@@ -512,7 +544,7 @@ private struct RelaxedStudent: View {
             let head = Path(
                 ellipseIn: CGRect(
                     x: size.width * 0.17,
-                    y: size.height * 0.18,
+                    y: size.height * 0.39,
                     width: size.height * 0.24,
                     height: size.height * 0.24
                 )
@@ -521,24 +553,24 @@ private struct RelaxedStudent: View {
             context.stroke(head, with: .color(ink), style: stroke)
 
             var body = Path()
-            let shoulder = CGPoint(x: size.width * 0.36, y: size.height * 0.43)
+            let shoulder = CGPoint(x: size.width * 0.36, y: size.height * 0.53)
             let hip = CGPoint(x: size.width * 0.63, y: size.height * 0.61)
             body.move(to: shoulder)
             body.addCurve(
                 to: hip,
-                control1: CGPoint(x: size.width * 0.46, y: size.height * 0.43),
-                control2: CGPoint(x: size.width * 0.56, y: size.height * 0.55)
+                control1: CGPoint(x: size.width * 0.46, y: size.height * 0.52),
+                control2: CGPoint(x: size.width * 0.56, y: size.height * 0.58)
             )
 
             // One arm clearly props up the head; the other rests on the torso.
-            let supportingHand = CGPoint(x: size.width * 0.31, y: size.height * 0.27)
+            let supportingHand = CGPoint(x: size.width * 0.31, y: size.height * 0.48)
             body.move(to: shoulder)
-            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.36))
+            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.54))
             body.addLine(to: supportingHand)
 
-            let restingHand = CGPoint(x: size.width * 0.54, y: size.height * 0.52)
-            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.45))
-            body.addLine(to: CGPoint(x: size.width * 0.47, y: size.height * 0.49))
+            let restingHand = CGPoint(x: size.width * 0.55, y: size.height * 0.57)
+            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.54))
+            body.addLine(to: CGPoint(x: size.width * 0.47, y: size.height * 0.55))
             body.addLine(to: restingHand)
 
             body.move(to: hip)
