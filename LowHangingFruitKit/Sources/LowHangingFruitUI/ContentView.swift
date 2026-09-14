@@ -302,7 +302,7 @@ struct ContentView: View {
                                 ),
                                 style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                             )
-                            .frame(width: 104, height: 6)
+                            .frame(width: 90, height: 6)
                             .offset(x: 2, y: -1)
                     }
 

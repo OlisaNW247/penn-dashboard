@@ -35,11 +35,6 @@ struct SettingsPage: View {
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
     @State private var didCopyDiagnostics = false
-    /// Drives the "are you sure" confirmation on "delete my class data from
-    /// lhf's server" (`askSection`) — a destructive, server-side action, so
-    /// it gets the same confirm-before-acting treatment `disconnecting`
-    /// above gives disconnecting an account.
-    @State private var confirmingBackendDataDeletion = false
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -109,8 +104,6 @@ struct SettingsPage: View {
 
             announcementWatcherSection
 
-            askSection
-
             Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
@@ -126,24 +119,6 @@ struct SettingsPage: View {
                 SmoothSectionHeader("appearance", accent: .smoothCobalt)
             }
             .smoothSectionBackground(.smoothCobalt)
-
-            if FeatureFlags.gradeWatcher {
-                Section {
-                    if state.canUseGradeWatcher {
-                        NavigationLink {
-                            GradeWatcherView(store: state.gradeWatcher)
-                        } label: {
-                            Label("grade watcher", systemImage: "chart.bar.fill")
-                        }
-                    } else {
-                        Label("grade watcher", systemImage: "chart.bar.fill")
-                            .foregroundStyle(Color.v2DateText)
-                    }
-                } header: {
-                    SmoothSectionHeader("grades", accent: .smoothCobalt)
-                }
-                .smoothSectionBackground(.smoothGrape)
-            }
 
             Section {
                 Button {
@@ -314,72 +289,6 @@ struct SettingsPage: View {
             SmoothSectionHeader("preferences", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothGrape)
-    }
-
-    // MARK: Ask (course materials)
-
-    /// What `ask` knows. The row is a status line, not a toggle: materials
-    /// sync on their own whenever the grades refresh runs with a live Canvas
-    /// session (`AutoSyncCoordinator.refreshCanvasGrades`) — there is no
-    /// on-demand "sync now" here anymore, since with a backend configured
-    /// that sync is a manifest exchange the phone should just always be
-    /// current on, not a heavy action worth a button. What stays is a way to
-    /// see that it happened, and — only with a backend configured, since
-    /// there's nothing server-side to delete otherwise — a way to erase this
-    /// student's row on LHF's server.
-    @ViewBuilder
-    private var askSection: some View {
-        Section {
-            HStack(spacing: 8) {
-                if state.isCourseKnowledgeSyncing {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
-                        .foregroundStyle(state.courseKnowledge.isEmpty ? Color.v2DateText : Color.v2SpineGreen)
-                }
-                Text("course materials")
-                Spacer()
-                Text(courseKnowledgeSummary)
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.v2DateText)
-            }
-
-            if let notice = state.courseKnowledgeNotice {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.smoothMarigoldInk)
-            }
-
-            if BackendServices.client != nil {
-                Button("delete my class data from lhf's server", role: .destructive) {
-                    confirmingBackendDataDeletion = true
-                }
-            }
-        } header: {
-            SmoothSectionHeader("ask", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothMarigold)
-        .confirmationDialog(
-            "delete my class data from lhf's server?",
-            isPresented: $confirmingBackendDataDeletion,
-            titleVisibility: .visible
-        ) {
-            Button("delete", role: .destructive) {
-                Task { _ = await state.deleteBackendData() }
-            }
-            Button("cancel", role: .cancel) {}
-        } message: {
-            Text("removes your enrollment and question history from lhf's server, and the course materials synced on this phone. classmates' access to shared course material is unaffected.")
-        }
-    }
-
-    private var courseKnowledgeSummary: String {
-        let knowledge = state.courseKnowledge
-        guard let synced = knowledge.lastSyncedAt else { return "not synced" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        let when = formatter.localizedString(for: synced, relativeTo: Date())
-        return "\(knowledge.documents.count) items · \(knowledge.courses.count) courses · \(when)"
     }
 
     // MARK: Reminders
