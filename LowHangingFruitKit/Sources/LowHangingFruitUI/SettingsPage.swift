@@ -114,6 +114,10 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothLemon)
 
+            ProfileSemesterSection(placement: .addClass)
+            ProfileClassesSection()
+            ProfileNotificationsSection()
+
             remindersSection
             iCloudSyncSection
 
@@ -121,9 +125,6 @@ struct SettingsPage: View {
             onThisMacSection
             #endif
 
-            ProfileSemesterSection(placement: .addClass)
-            ProfileClassesSection()
-            ProfileNotificationsSection()
             ProfileSemesterSection(placement: .previousSemesters)
 
             if let notice = state.syncNotice ?? state.error {

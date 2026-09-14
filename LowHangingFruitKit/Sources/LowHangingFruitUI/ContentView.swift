@@ -283,26 +283,24 @@ struct ContentView: View {
                     Text("Smooth")
                         .font(.lhfWordmark(32))
                         .overlay(alignment: .bottomLeading) {
-                            GeometryReader { proxy in
-                                SmoothSquiggle()
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ),
-                                        style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                                    )
-                                    .frame(width: proxy.size.width, height: 6)
-                                    .offset(y: 5)
-                            }
+                            SmoothSquiggle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                                )
+                                .frame(width: 122, height: 6)
+                                .offset(x: 1, y: 9)
                         }
                     Text(" \(Self.weekdayText(Date()))")
                         .font(.lhfHeaderTitle(32))
                 }
                 .foregroundStyle(Color.smoothInk)
                 .lineLimit(1)
-                .minimumScaleFactor(0.68)
+                .minimumScaleFactor(0.62)
                 .layoutPriority(1)
                 .accessibilityElement(children: .combine)
                 .frame(height: 48, alignment: .center)
