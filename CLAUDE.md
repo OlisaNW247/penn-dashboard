@@ -82,7 +82,14 @@ xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistan
 ```
 
 Baseline on `v5`, verified on a Mac (2026-09-14): **1253 tests / 125 suites
-green** (Deno **324**) after the empty-answer fix for ask (trap below: the
+green** (Deno **324**) after merging Marco's `codex/fire-dark-mode`
+(00f24cc: the "after sunset" dark mode in `RedesignTokens.swift`, the
+rebuilt three-beat Smooth intro with `MissionIntroView`, simplified
+Settings, the `-LHFFullOnboardingReview` launch flag; 13 commits, 9 UI
+and docs files, no file touched on both sides, compiled first time;
+`docs/DARK_MODE_HANDOFF.md` and `docs/SMOOTH_INTRO_AND_APP_POLISH_HANDOFF.md`
+are his notes — intro and onboarding were deliberately not restyled for
+dark). Same count earlier that day after the empty-answer fix for ask (trap below: the
 thinking model spent the whole output cap reasoning; the cap is 3000 for
 now, the client answers on-device when a stream ends with no text, and
 `ask-trace` counts what the stream delivered) and `ExamDetector` (the
@@ -522,6 +529,7 @@ end to end) or pass `-LHFForceUpdateWall`.
 | `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
 | `update-gate` | The update gate alone, independently mergeable. |
 | `codex/redesign-v5` | Marco's **Smooth** redesign: the palette, the bundled type, the S mark and icon, restyled dashboard, sheets, profile, settings, widget, intro and update wall; launch splash removed. Branched from `v5` at the round 3 fixes; merged into `v5` 2026-09-12. |
+| `codex/fire-dark-mode` | Marco's Smooth dark mode ("after sunset"), the rebuilt three-beat intro, simplified Settings. Merged into `v5` 2026-09-14 (00f24cc). |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
 | `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
