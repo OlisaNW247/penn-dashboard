@@ -82,11 +82,15 @@ xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistan
 ```
 
 Baseline on `v5`, verified on a Mac (2026-09-14): **1253 tests / 125 suites
-green** after `ExamDetector` (the on-device "next exam" answer no longer
-names a holiday titled "no exams"; one first-run failure, the detector's
-word list had widened the exam filter to quizzes, fixed in c81afd4; the
-second run tripped the `SessionCookieStoreTests` flake, the third was
-clean). Before that, 1250/123 on 2026-09-12 after the ask fix for the sentence-embedding asset
+green** (Deno **324**) after the empty-answer fix for ask (trap below: the
+thinking model spent the whole output cap reasoning; the cap is 3000 for
+now, the client answers on-device when a stream ends with no text, and
+`ask-trace` counts what the stream delivered) and `ExamDetector` (the
+on-device "next exam" answer no longer names a holiday titled "no exams";
+one first-run failure, the detector's word list had widened the exam
+filter to quizzes, fixed in c81afd4; the second run tripped the
+`SessionCookieStoreTests` flake, the third was clean). Both verified on a
+real phone the same day. Before that, 1250/123 on 2026-09-12 after the ask fix for the sentence-embedding asset
 (`SentenceEmbeddingProvider`, trap below; one first-run compile error, an
 `NSLock` call inside an async task body, and one fixture with no matching
 passage). Earlier the same day, 1244/122 after the Smooth merge, compiled first time. Marco's
@@ -118,7 +122,7 @@ items are regrouped into syllabus categories by `GradeCategoryMap` /
 `GradeRegrouper`, attendance items and zero-point placeholders are
 classified out by `GradeItemClassifier`, the student edits the map in
 `GradeCategoryMapEditor`, and the deployed `map-categories` function can
-propose one; Deno 308, now 320 after the fail-open quota lookup). Round 3 was 3,400 blind lines and needed four
+propose one; Deno 308, 320 after the fail-open quota lookup, 324 after the reasoning/error-body work). Round 3 was 3,400 blind lines and needed four
 fix commits to go green: two memberwise-init/argument-order compile
 errors, a main-actor trap in a View static called from a test (trap
 below), and one real logic bug plus one test-pollution bug (trap below)
@@ -455,6 +459,37 @@ end to end) or pass `-LHFForceUpdateWall`.
   (`catalogNeedsFetch`), and never let an enrichment step fail the exchange
   it decorates (`handleManifest` catches the catalog step). Deno tests
   cannot catch this: they only ever see rows the current code wrote.
+- **A thinking model's reasoning counts against `max_tokens`, and the
+  server never forwards it.** `z-ai/glm-5.3-flash` streams its reasoning as
+  `delta.reasoning`; `_shared/openrouter.ts` forwards only `delta.content`.
+  On a real phone (2026-09-14) "when's my next exam?" with a 14.5k-token
+  prompt of real syllabi reasoned until the 1200-token cap and emitted no
+  content: the server returned 200 after 35 s having sent exactly one
+  line, `done`, and the student saw an empty bubble. Two repros with
+  synthetic prompts of the same size reasoned briefly and answered, so
+  size alone does not trigger it; real course text does. The tells: the
+  `ask-trace` line `7 stream finished: 1 lines, 0 deltas … completion
+  1200`, and `pg_stat_statements` showing the quota RPC never slow (it was
+  the first suspect). `reasoning: { enabled: false }` was rejected by
+  OpenRouter with 400 on its first live call and the 400 body was not
+  logged then (it is now, `ask: upstream failure detail`); the interim is
+  `MAX_TOKENS = 3000` with no reasoning field, and the client's
+  `BackendAssistantResponder` hands an empty `done` to the on-device
+  answerer. Raising the cap alone is not the end state: a long enough
+  prompt still hits it.
+- **A 504 from `/rest/v1` can be the API gateway, not Postgres.** The
+  2026-09-13 20:47 "database stall" was `sb_gateway_version: 2` timing out
+  after ~5 s (`origin_time: 5126`, 29-byte body
+  `{"message":"Gateway Timeout"}`) on the hop to PostgREST, with Postgres
+  idle, no restart, no errors, and the RPC's max ever 23 ms. Before
+  blaming the database, pull `edge_logs` for the request id and read
+  `origin_time`, then `pg_stat_statements` for the query; the management
+  API's `logs.all` returns nothing for windows wider than a few minutes,
+  so query narrow windows. Also from that day: `record_ask_usage` is
+  awaited after `yield done` in `ask/index.ts`, so the app has already
+  closed the connection and the isolate never sees the reply; the RPC
+  lands (the row count rises) but every ask logs a false "exceeded 4000ms
+  deadline, one request will go under-counted". Not yet fixed.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so

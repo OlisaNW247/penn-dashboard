@@ -10,8 +10,11 @@
 // place every quota-checking function goes through to actually talk to
 // Postgres. They exist because of a real incident (2026-09-13 20:47 UTC): a
 // student's `ask` request came back 502 because `ask_usage_counts` -- two
-// trivial lookups on a tiny table -- hit a ~60s PostgREST gateway timeout
-// during a database stall that had nothing to do with the query itself. A
+// trivial lookups on a tiny table -- hit Supabase's API gateway timeout
+// (about 5 s in front of PostgREST, `sb_gateway_version: 2`, body
+// `{"message":"Gateway Timeout"}`; the logs later showed Postgres itself
+// idle and never slow, so the stall was the gateway-to-PostgREST hop, not
+// the database) that had nothing to do with the query itself. A
 // quota counter is a budget guard, not a feature gate, so it must never be
 // able to turn a transient database hiccup into a dead feature: a lookup
 // that times out or errors degrades to "treat this call as unmetered" (fail
@@ -146,8 +149,8 @@ const DEFAULT_QUOTA_DEADLINE_MS = 4000;
 
 /**
  * Reads `ask_usage_counts` with a hard client-side deadline (default 4s,
- * well under PostgREST's ~60s gateway timeout that caused the 2026-09-13
- * incident). Never throws -- a timeout or a Postgres error is reported back
+ * just under the ~5 s API-gateway timeout that caused the 2026-09-13
+ * incident, so this deadline wins). Never throws -- a timeout or a Postgres error is reported back
  * as a value, not thrown, so every caller can fail OPEN (proceed as if the
  * counts were zero) rather than propagate a 502 for a lookup that has
  * nothing to do with whether the student is actually over quota.

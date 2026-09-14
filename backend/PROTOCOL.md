@@ -225,10 +225,11 @@ the quota counter to "unmetered for that call," never a 502 -- the counter
 protects the aggregate budget, not the individual student, so it must
 never be the thing that makes `ask` (or the extract functions) unusable.
 This follows a real incident: on 2026-09-13 20:47 UTC a student's `ask`
-request came back 502 because `ask_usage_counts` hit PostgREST's ~60s
-gateway timeout during an unrelated database stall
-(`ask: ask_usage_counts failed Gateway Timeout` in the function log),
-even though the RPC itself is two trivial lookups on a tiny table.
+request came back 502 because `ask_usage_counts` hit Supabase's API-gateway
+timeout — about 5 s in front of PostgREST — during a stall of that hop
+(`ask: ask_usage_counts failed Gateway Timeout` in the function log; the
+logs showed Postgres idle and the RPC never slower than 23 ms), even
+though the RPC itself is two trivial lookups on a tiny table.
 
 ## Catalog
 
