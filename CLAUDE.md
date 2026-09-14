@@ -32,10 +32,12 @@ manual sync, no user-entered API key); and questions to **ask** (the screen
 itself is titled **"the tree"**) are sent to the backend with the on-device
 context document and matched excerpts, answered by an AI model via OpenRouter
 under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
-data-collection-deny flag), with the Announcement Watcher's "AI assist"
-toggle (on by default since 2026-09-08; a student can turn it off in
-Settings) routed the same way, and only for announcements a cheap on-device
-gate judges could carry a task. Neither questions nor answers are stored — only
+data-collection-deny flag), with the Announcement Watcher's AI assist
+(on by default since 2026-09-08; **always on since 2026-09-14** — Marco's
+settings merge dropped the toggle and `AppState` writes `true` on every
+launch, a decision Olisa accepted on 2026-09-14; the daily digest went in
+the same merge) routed the same way, and only for announcements a cheap
+on-device gate judges could carry a task. Neither questions nor answers are stored — only
 per-user daily request counts and token totals. Settings has a button to delete
 a student's enrollment/usage rows and anonymous account from the backend.
 Offline, over quota, or with the backend unreachable, ask answers on-device as
@@ -529,7 +531,7 @@ end to end) or pass `-LHFForceUpdateWall`.
 | `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
 | `update-gate` | The update gate alone, independently mergeable. |
 | `codex/redesign-v5` | Marco's **Smooth** redesign: the palette, the bundled type, the S mark and icon, restyled dashboard, sheets, profile, settings, widget, intro and update wall; launch splash removed. Branched from `v5` at the round 3 fixes; merged into `v5` 2026-09-12. |
-| `codex/fire-dark-mode` | Marco's Smooth dark mode ("after sunset"), the rebuilt three-beat intro, simplified Settings. Merged into `v5` 2026-09-14 (00f24cc). |
+| `codex/fire-dark-mode` | Marco's Smooth dark mode ("after sunset"), the rebuilt three-beat intro, profile and settings merged into one screen, Grade Watcher compacted, the daily digest removed, AI assist always on. Merged into `v5` 2026-09-14 twice (00f24cc at 03ababd, a2b66bc at 49441ac). |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
 | `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
