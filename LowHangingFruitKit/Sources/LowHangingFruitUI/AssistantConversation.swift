@@ -74,6 +74,7 @@ final class AssistantConversation: ObservableObject {
     /// a stop control, not an undo. Deleting the partial text would throw away
     /// something the student may already have read.
     func stop() {
+        askTrace.info("S stop() called; cancelling the in-flight answer")
         inFlight?.cancel()
         inFlight = nil
         if let last = messages.indices.last {
@@ -83,6 +84,7 @@ final class AssistantConversation: ObservableObject {
     }
 
     func clear() {
+        askTrace.info("C clear() called; cancelling the in-flight answer")
         inFlight?.cancel()
         inFlight = nil
         messages.removeAll()
