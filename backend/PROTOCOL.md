@@ -199,11 +199,16 @@ frozen system instructions → `contextDocument` → course profiles JSON,
 keyed by site label (see "Catalog" below), for `courseIDs` → history → user
 turn `Current date: …\n\n{excerpts}\n\nQUESTION: {question}`.
 
-The request to OpenRouter sets `reasoning: { enabled: false }`: `ask`
-answers from the context and excerpts it was already handed, not by
+`ask` answers from the context and excerpts it was already handed, not by
 reasoning the problem out, and the default model is a thinking model that
-otherwise spends the whole `MAX_TOKENS` budget on hidden reasoning before
-emitting any answer text at all on a large enough prompt.
+otherwise spends output tokens on hidden reasoning before emitting any
+answer text at all on a large enough prompt. The intended fix is
+OpenRouter's `reasoning: { enabled: false }` switch, but the first live
+call after turning it on was rejected with a 400 from OpenRouter (or the
+provider behind it) — the shape it wants is not yet known. Reasoning
+control is pending that; in the meantime the output cap (`MAX_TOKENS`) is
+3000, raised from 1200, so a prompt that reasons and then answers has room
+for both.
 
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month

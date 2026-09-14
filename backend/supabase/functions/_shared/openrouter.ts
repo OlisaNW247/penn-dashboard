@@ -285,7 +285,11 @@ async function requestWithFallback(
 
   if (!retryable || !fallbackModel) {
     if (primaryResponse) {
-      throw new UpstreamError(`OpenRouter responded ${primaryResponse.status}`, primaryResponse.status);
+      const errorBody = await readErrorBody(primaryResponse);
+      throw new UpstreamError(
+        `OpenRouter responded ${primaryResponse.status}: ${errorBody}`,
+        primaryResponse.status,
+      );
     }
     throw new UpstreamError(`OpenRouter request failed: ${describeError(primaryError)}`);
   }
@@ -298,13 +302,37 @@ async function requestWithFallback(
     throw new UpstreamError(`OpenRouter fallback request failed: ${describeError(err)}`);
   }
   if (!fallbackResponse.ok) {
-    throw new UpstreamError(`OpenRouter fallback responded ${fallbackResponse.status}`, fallbackResponse.status);
+    const errorBody = await readErrorBody(fallbackResponse);
+    throw new UpstreamError(
+      `OpenRouter fallback responded ${fallbackResponse.status}: ${errorBody}`,
+      fallbackResponse.status,
+    );
   }
   return fallbackResponse;
 }
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Best-effort read of a failed response's body, capped at 400 characters, so
+ * an `UpstreamError` carries OpenRouter's own rejection reason instead of
+ * just a bare status code -- the 2026-09-14 `reasoning: {enabled:false}` 400
+ * was undiagnosable from the logs precisely because nothing here ever read
+ * it. OpenRouter error bodies are its own JSON (`{"error":{"message":...}}`),
+ * never the prompt or the student's question, so logging them is safe. Reading
+ * the body can itself throw (an already-consumed stream, a network hiccup
+ * mid-read); swallow that and fall back to an empty string rather than
+ * letting a diagnostic best-effort read replace the real error.
+ */
+async function readErrorBody(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.slice(0, 400);
+  } catch {
+    return "";
+  }
 }
 
 // ---------------------------------------------------------------------

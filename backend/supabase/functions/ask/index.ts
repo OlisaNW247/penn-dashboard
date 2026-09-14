@@ -60,7 +60,7 @@ function parseAskRequestBody(value: unknown): AskRequestBody | undefined {
   };
 }
 
-const MAX_TOKENS = 1200;
+const MAX_TOKENS = 3000;
 const TEMPERATURE = 0.2;
 
 Deno.serve(async (req) => {
@@ -112,13 +112,21 @@ Deno.serve(async (req) => {
       temperature: TEMPERATURE,
       // `ask` answers from the context document and excerpts it was already
       // handed, not by reasoning the problem out -- and `model` is a
-      // thinking model that otherwise spends the whole `MAX_TOKENS` budget
-      // on hidden `delta.reasoning` before ever emitting `delta.content`.
-      // See `_shared/openrouter.ts`'s `buildRequestBody` comment for the
-      // 2026-09-14 incident (a real 14.5k-token prompt reasoned until
-      // max_tokens and answered with nothing) and why raising MAX_TOKENS is
-      // the wrong fix.
-      reasoning: { enabled: false },
+      // thinking model that otherwise spends output tokens on hidden
+      // `delta.reasoning` before ever emitting `delta.content`. On
+      // 2026-09-14 a real 14.5k-token prompt reasoned until the then-1200
+      // `max_tokens` cap and answered with nothing. The fix that shipped
+      // the same day, `reasoning: { enabled: false }`, was rejected by
+      // OpenRouter (or the provider behind it) with a 400 on the very
+      // first live call, so `reasoning` is not set here -- see
+      // `_shared/openrouter.ts`'s `ChatCompletionStreamOptions.reasoning`
+      // and `buildRequestBody`, which still support the field and are
+      // still covered by tests, for when the rejection text (now captured
+      // by `requestWithFallback`/`readErrorBody`) says what shape the
+      // model will actually accept. Raising `MAX_TOKENS` to 3000 here is
+      // the interim measure so a prompt that reasons *and* answers has
+      // room for both; turning reasoning off again, once it can be done
+      // without a 400, is the intended end state, not this cap.
     });
     const iterator = upstream[Symbol.asyncIterator]();
 
@@ -306,6 +314,9 @@ function providerFromEnv(): { order?: string[] } | undefined {
 function logUpstreamFailure(when: string, err: unknown): void {
   const status = err instanceof UpstreamError ? err.status : undefined;
   console.error("ask: upstream failure", when, "status:", status ?? "network");
+  if (err instanceof UpstreamError) {
+    console.error("ask: upstream failure detail", err.message);
+  }
 }
 
 /**
@@ -344,13 +355,12 @@ async function* runAskStream(
     return;
   }
 
-  // Reasoning is disabled for `ask` (see `_shared/openrouter.ts`), so a
-  // stream that reaches `done` having yielded no `delta` at all is no
-  // longer expected to happen from reasoning alone -- but `completionTokens`
-  // being nonzero while `deltaCount` is zero is still the exact shape of
-  // the 2026-09-14 incident, and worth knowing about the next time it
-  // happens for whatever reason, rather than the student's empty answer
-  // being the only trace.
+  // Reasoning is not turned off for `ask` right now (see the call site
+  // above), so `completionTokens` nonzero while `deltaCount` is zero can
+  // still happen if a prompt is large enough to exhaust the raised
+  // `MAX_TOKENS` on reasoning alone -- this is the exact shape of the
+  // 2026-09-14 incident, and worth knowing about the next time it
+  // happens, rather than the student's empty answer being the only trace.
   if (deltaCount === 0) {
     console.warn(`ask: stream ended with no text; completion tokens ${completionTokens}`);
   }

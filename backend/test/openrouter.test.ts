@@ -131,6 +131,20 @@ Deno.test("chatCompletionStream throws UpstreamError with no fallback configured
   );
 });
 
+Deno.test("chatCompletionStream's UpstreamError message includes the upstream error body text", async () => {
+  const errorBody = JSON.stringify({ error: { message: "reasoning.enabled is not supported for this model" } });
+  const { fetchImpl } = scriptedFetch([new Response(errorBody, { status: 400 })]);
+
+  await assert.rejects(
+    () => collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, fetchImpl })),
+    (err: unknown) => {
+      assert.ok(err instanceof UpstreamError);
+      assert.match((err as UpstreamError).message, /reasoning\.enabled is not supported for this model/);
+      return true;
+    },
+  );
+});
+
 Deno.test("chatCompletionStream retries once on a thrown network error and then succeeds", async () => {
   const sse = [`data: ${JSON.stringify({ choices: [{ delta: { content: "ok" } }] })}`, "data: [DONE]", ""].join("\n\n");
   let calls = 0;
