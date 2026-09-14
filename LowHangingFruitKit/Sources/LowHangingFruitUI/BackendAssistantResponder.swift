@@ -143,6 +143,10 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         var deltaEvents = 0
         var textChars = 0
         var lastEvent = "none"
+        // Set only in the `.done` case below, never inferred from `lastEvent`
+        // (a string meant for the trace log, not for branching on) — see the
+        // no-text handoff after the parsing loop.
+        var endedInDone = false
 
         do {
             parsing: for try await line in bytes.lines {
@@ -162,6 +166,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
                     if !visible.isEmpty { continuation.yield(.text(visible)) }
                 case let .done(promptTokens, completionTokens, cachedTokens):
                     lastEvent = "done(prompt \(promptTokens), completion \(completionTokens), cached \(cachedTokens))"
+                    endedInDone = true
                     break parsing
                 case let .error(code, _):
                     lastEvent = "error(\(code))"
@@ -196,6 +201,26 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             if !splitter.citations.isEmpty {
                 continuation.yield(.citations(splitter.citations))
             }
+        }
+
+        // A real phone (2026-09-14) hit exactly this: the server sent
+        // nothing but `done` — the model spent its whole token budget
+        // reasoning and never emitted an answer — and the student was left
+        // staring at an empty bubble. That is not a mid-stream `error`
+        // event (the `.error` case above already owns that path, appending
+        // its apology to whatever partial text rendered) and it is not the
+        // pre-stream `catch` above either: the connection opened and closed
+        // cleanly, `done`, with nothing to show for it. The wrong fix is
+        // showing the empty bubble with a retry button — that leaves the
+        // student with nothing while an on-device answer, built from the
+        // same synced course materials and the dashboard's own items, is
+        // sitting right there unused. So an empty `done` gets the same
+        // on-device handoff a pre-stream failure gets, just with a message
+        // that doesn't blame a connection or a quota that were both fine.
+        if !Task.isCancelled, endedInDone, textChars == 0, splitter.citations.isEmpty {
+            askTrace.info("6e stream ended with no text; answering on-device")
+            continuation.yield(.text("the server didn't send an answer that time — answering from your phone instead.\n\n"))
+            await forward(fallback.reply(to: prompt, context: context), to: continuation)
         }
 
         askTrace.info("7 stream finished: \(linesRead, privacy: .public) lines, \(dataLinesUnparsed, privacy: .public) data lines unparsed, \(deltaEvents, privacy: .public) deltas, \(textChars, privacy: .public) visible chars, \(splitter.citations.count, privacy: .public) citations, last \(lastEvent, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
