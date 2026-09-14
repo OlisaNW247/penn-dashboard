@@ -62,7 +62,6 @@ struct ProfileSemesterSection: View {
         case .addClass:
             addClassSection
         case .previousSemesters:
-            rolloverSection
             archivedSection
         }
     }

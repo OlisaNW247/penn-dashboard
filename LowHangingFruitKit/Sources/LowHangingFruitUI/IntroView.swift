@@ -1,433 +1,342 @@
 import SwiftUI
 
-/// The first thing a new user sees after the splash, and before the connect
-/// checklist (`OnboardingView`). Three skippable screens that make the pitch
-/// before the login ask arrives: the problem (Canvas rewards points as
-/// heavily for a four-minute quiz as for a midterm, and those are exactly the
-/// ones that get missed), what Smooth actually does about it (turns scattered
-/// work into a clear class-to-assignment list), and — immediately before the
-/// checklist opens on "Connect Canvas" — a compact overview of the four parts
-/// of the app, using miniatures of the real dashboard, notification, assistant,
-/// and Grade Watcher UI.
-///
-/// Shown exactly once, gated on `AppState.hasSeenIntro` (never on
-/// `hasCompletedOnboarding`, which the Settings reconnect buttons clear).
-///
-/// One visual idea carries across the first two screens: a set of small
-/// assignment chips starts scattered and chaotic, then resolves into explicit
-/// `CLASS → Assignment` rows. The third screen replaces that illustration with
-/// four slim feature snapshots. The morph between the first two screens
-/// only works if the chips are the *same* nine views throughout, which is why
-/// this file has no `TabView`. `.tabViewStyle(.page(...))` (what the old
-/// three-pane intro used) renders every page as its own independent view
-/// hierarchy under the hood, so "chip #4 on page 0" and "chip #4 on page 1"
-/// would be two unrelated view instances with nothing to tell SwiftUI they're
-/// the same element — `matchedGeometryEffect` has nothing to interpolate
-/// between, and the chips would simply pop into their new positions when the
-/// page changed. That failure is invisible in code review and in a preview,
-/// and only shows up as a jump-cut on a real device. The fix is `ChipLayer`:
-/// one persistent view, outside the pager, holding one `ForEach` over one
-/// array of chip models with stable ids, never torn down. Only each chip's
-/// *target frame* changes with `page` (via a `switch` between three mutually
-/// exclusive layout functions, all tagged with the same `matchedGeometryEffect`
-/// id), which is exactly the case that modifier exists for. Because the three
-/// layout branches are mutually exclusive — never more than one mounted at a
-/// time — there is never ambiguity about which instance drives the shared
-/// geometry, so there's no need to hand-toggle `isSource` between them; the
-/// default (`true` on whichever branch happens to exist) is already correct.
-/// Paging itself is a plain `DragGesture` plus the Continue button, both
-/// driving the same `@State private var page`, so the whole screen — chips,
-/// pane text, dots — is one ordinary SwiftUI view tree animated by one
-/// ordinary `withAnimation` transaction. That also removes the only iOS-only
-/// API this file used to have (`PageTabViewStyle`), so there is nothing here
-/// behind `#if os(iOS)` any more: `swift test` compiles this file for macOS
-/// too, and it now does so unconditionally.
+/// Smooth's one-time opening story in three beats: a student begins at ease,
+/// school demands crowd in until they are visibly overwhelmed, and the noise
+/// resolves into the app's signature squiggle with a calmer perspective on life.
 struct IntroView: View {
-    @EnvironmentObject var state: AppState
+    @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var chipSpace
 
-    /// Where the text column currently begins, fed by `TextTopKey` and handed
-    /// to `ChipLayer` so no chip can be drawn on top of the copy. `.infinity`
-    /// until the first layout pass reports a real value.
-    @State private var textTopY: CGFloat = .infinity
-
-    @State private var page: Int = {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if let flag = arguments.firstIndex(of: "-LHFIntroPage"),
-           arguments.indices.contains(flag + 1),
-           let requested = Int(arguments[flag + 1]) {
-            return max(0, min(2, requested))
-        }
-        #endif
-        return 0
+    @State private var phase: IntroPhase = .standing
+    @State private var visibleNotificationCount = 0
+    @State private var stressProgress: CGFloat = 0
+    @State private var topCopyVisible = false
+    @State private var bottomCopyVisible = false
+    @State private var smoothWordVisible = false
+    @State private var ctaVisible = false
+    @State private var showMissionPages: Bool = {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-LHFMissionPages")
+#else
+        false
+#endif
     }()
-
-    private static let pageCount = 3
-    private var isLastPage: Bool { page == Self.pageCount - 1 }
-
-    /// Extra clearance, beyond whatever the system safe area already reserves
-    /// on the top edge, that the chip canvas must never draw above. The
-    /// system safe area alone only guarantees clearing the Dynamic Island —
-    /// it knows nothing about the skip bar drawn just below it, which is
-    /// ordinary content, not a safe-area inset. Sized to comfortably clear
-    /// "Skip" (12pt top padding plus a 14pt line) with margin to spare, so a
-    /// chip can never render in the same row as the Dynamic Island *or* the
-    /// Skip button. See the call site in `body` for why this has to be a
-    /// `.padding` stacked with a *partial* `ignoresSafeArea`, not a single
-    /// full-bleed frame.
-    private static let chipCanvasTopInset: CGFloat = 44
-
-    // MARK: Body
+    @State private var runID = 0
 
     var body: some View {
         ZStack {
-            Color.v2Bg.ignoresSafeArea()
-
-            // The chip layer sits behind the text column and is purely
-            // decorative — VoiceOver never lands on it, and it never takes a
-            // touch, so the drag gesture below is free to read the whole
-            // screen without the chips getting in its way.
-            // Ignoring only the horizontal and bottom safe areas — never the
-            // top — means the GeometryReader inside ChipLayer is handed a
-            // canvas that already starts below the notch or Dynamic Island;
-            // stacking `chipCanvasTopInset` on top of that clears the skip
-            // bar too, which sits inside the safe area and so isn't
-            // accounted for by the safe area alone. Both bugs this fixes
-            // (a chip clipped by the Island, a chip crowding Skip) came from
-            // the previous bare `.ignoresSafeArea()` here, which bled the
-            // chip canvas under everything with no reservation for either.
-            // A future "simplification" back to full-bleed would silently
-            // reopen both.
-            ChipLayer(page: page, namespace: chipSpace, textTopY: textTopY)
-                .padding(.top, Self.chipCanvasTopInset)
-                .ignoresSafeArea(edges: [.horizontal, .bottom])
-                .opacity(page < 2 ? 1 : 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 0) {
-                skipBar
-                textColumn
-                footer
+            if showMissionPages {
+                MissionIntroView(onFinish: finishIntro)
+                    .transition(.opacity)
+            } else {
+                animatedStory
+                    .transition(.opacity)
             }
         }
-        // Both halves of the collision measure themselves against this one
-        // space: the text column reports its top edge into `TextTopKey`, and
-        // `ChipLayer` converts that back into its own local coordinates.
-        .coordinateSpace(name: lhfIntroSpace)
-        .onPreferenceChange(TextTopKey.self) { textTopY = $0 }
         .frame(maxWidth: 480)
-        // A plain horizontal swipe drives paging, in either direction, the
-        // same way the old TabView let you drag both ways. `simultaneousGesture`
-        // rather than `gesture` so this never steals the vertical scroll a
-        // tall pane needs at large Dynamic Type sizes — it only acts once a
-        // drag has ended and was clearly more horizontal than vertical.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-                    guard abs(dx) > abs(dy) else { return }
-                    setPage(page + (dx < 0 ? 1 : -1))
-                }
-        )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.30), value: showMissionPages)
     }
 
-    /// Skip lives in the corner rather than under the primary button so it's
-    /// reachable from every screen without competing with "Get started" on
-    /// the last one, where the two would do exactly the same thing.
-    private var skipBar: some View {
-        HStack {
+    private var animatedStory: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                Color.v2Bg.ignoresSafeArea()
+                notificationStorm(in: size)
+                smoothLine(in: size)
+
+                StudentFigure(stress: stressProgress, isRelaxed: phase == .calm)
+                    .frame(width: phase == .calm ? 190 : 126, height: phase == .calm ? 140 : 154)
+                    .position(
+                        x: size.width * 0.5,
+                        y: size.height * (phase == .calm ? 0.477 : 0.51)
+                    )
+                    .shadow(color: Color.v2CardShadow.opacity(phase == .calm ? 0 : 0.12), radius: 12, y: 7)
+                    .zIndex(3)
+
+                calmIdentity(in: size)
+                    .zIndex(4)
+
+                controls
+                    .zIndex(5)
+            }
+            .frame(width: size.width, height: size.height)
+        }
+        .task(id: runID) {
+            await playIntro()
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func notificationStorm(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(Array(IntroNotification.samples.enumerated()), id: \.element.id) { index, item in
+                let destination = linePoint(for: index, count: IntroNotification.samples.count, in: size)
+                let isVisible = index < visibleNotificationCount
+                NotificationCard(item: item)
+                    .frame(width: item.width)
+                    .rotationEffect(.degrees(phase == .overloaded ? item.rotation : 0))
+                    .scaleEffect(
+                        phase == .overloaded
+                            ? (isVisible ? 1 : 0.72)
+                            : (phase == .gathering ? 0.055 : 0.02)
+                    )
+                    .opacity(notificationOpacity(isVisible: isVisible))
+                    .position(
+                        x: phase == .overloaded ? item.x * size.width : destination.x,
+                        y: phase == .overloaded ? item.y * size.height : destination.y
+                    )
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.44, dampingFraction: 0.72),
+                        value: isVisible
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .zIndex(1)
+    }
+
+    private func notificationOpacity(isVisible: Bool) -> Double {
+        switch phase {
+        case .standing: 0
+        case .overloaded: isVisible ? 1 : 0
+        case .gathering: 0.72
+        case .calm: 0
+        }
+    }
+
+    private func linePoint(for index: Int, count: Int, in size: CGSize) -> CGPoint {
+        let progress = CGFloat(index) / CGFloat(max(count - 1, 1))
+        let x = 22 + progress * (size.width - 44)
+        let baseline = size.height * 0.50
+        let wave = sin(progress * .pi * 6) * 9.6
+        return CGPoint(x: x, y: baseline + wave)
+    }
+
+    private func smoothLine(in size: CGSize) -> some View {
+        SmoothIntroLine()
+            .trim(from: 0, to: phase == .gathering || phase == .calm ? 1 : 0)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        .smoothTomato,
+                        .smoothMarigold,
+                        .smoothLemon,
+                        .smoothTeal,
+                        .smoothCobalt,
+                        .smoothGrape,
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+            )
+            .frame(width: size.width - 44, height: 30)
+            .position(x: size.width * 0.5, y: size.height * 0.50)
+            .opacity(phase == .gathering || phase == .calm ? 1 : 0)
+            .shadow(color: Color.smoothGrape.opacity(phase == .calm ? 0.12 : 0), radius: 10)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .zIndex(2)
+    }
+
+    private func calmIdentity(in size: CGSize) -> some View {
+        ZStack {
+            Text("There’s more to life\nthan school.")
+                .font(.lhfSans(34, weight: .semibold))
+                .position(x: size.width * 0.5, y: size.height * 0.25)
+                .opacity(topCopyVisible ? 1 : 0)
+                .scaleEffect(topCopyVisible ? 1 : 0.94)
+                .offset(y: topCopyVisible ? 0 : 12)
+
+            HStack(spacing: 0) {
+                Text("Make it all ")
+
+                Text("smooth")
+                    .italic()
+                    .opacity(smoothWordVisible ? 1 : 0)
+                    .scaleEffect(smoothWordVisible ? 1 : 0.68)
+                    .rotationEffect(.degrees(smoothWordVisible ? 0 : -5))
+                    .blur(radius: smoothWordVisible ? 0 : 5)
+                    .offset(y: smoothWordVisible ? 0 : 8)
+
+                Text(".")
+            }
+            .font(.lhfSans(34, weight: .semibold))
+            .position(x: size.width * 0.5, y: size.height * 0.69)
+            .opacity(bottomCopyVisible ? 1 : 0)
+            .scaleEffect(bottomCopyVisible ? 1 : 0.94)
+            .offset(y: bottomCopyVisible ? 0 : 12)
+        }
+        .frame(width: size.width, height: size.height)
+        .foregroundStyle(Color.v2Ink)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 18)
+        .accessibilityLabel("There’s more to life than school. Make it all smooth.")
+    }
+
+    private var controls: some View {
+        VStack {
+            HStack {
+                if phase == .calm {
+                    Button {
+                        replay()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.v2DateText)
+                    .accessibilityLabel("Replay intro")
+                    .transition(.opacity)
+                }
+
+                Spacer()
+
+                Button("Skip") {
+                    finishIntro()
+                }
+                .font(.lhfSans(14, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityHint("Goes straight to setup")
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 6)
+
             Spacer()
+
             Button {
                 lhfHapticLight()
-                finishIntro()
-            } label: {
-                Text("Skip")
-                    .font(.lhfSans(14, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("skip the intro")
-            .accessibilityHint("goes straight to setup")
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-    }
-
-    // MARK: Text column
-
-    /// The `GeometryReader` + `ScrollView` + `minHeight` combination is
-    /// carried over unchanged from the old file: a paged view won't scroll
-    /// its own contents, so this is what keeps the copy reachable instead of
-    /// clipped once Dynamic Type pushes it past the available height. The one
-    /// change is `alignment: .bottom` instead of the old paired `Spacer`s —
-    /// this screen wants its content sitting low, not centered.
-    private var textColumn: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                paneContent(for: page)
-                .id(page)
-                // Reports the top of the text block so the chips can stay
-                // above it on the two illustrated pages.
-                .background(
-                    GeometryReader { textProxy in
-                        Color.clear.preference(
-                            key: TextTopKey.self,
-                            value: textProxy.frame(in: .named(lhfIntroSpace)).minY
-                        )
-                    }
-                )
-                .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
-                .frame(
-                    minHeight: proxy.size.height,
-                    alignment: page == 2 ? .center : .bottom
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func paneContent(for index: Int) -> some View {
-        switch index {
-        case 0: screenOne
-        case 1: screenTwo
-        default: screenThree
-        }
-    }
-
-    private var screenOne: some View {
-        Text("We kept losing points on the easy stuff.")
-            .font(.lhfSerif(34))
-            .foregroundStyle(Color.v2Ink)
-            .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var screenTwo: some View {
-        Text("Go get the low hanging fruit.")
-            .font(.lhfSerif(34))
-            .foregroundStyle(Color.v2Ink)
-            .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var screenThree: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("How Smooth keeps you ahead.")
-                .font(.lhfSerif(30))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(spacing: 10) {
-                compactFeatureRow(label: "Dashboard", symbol: "rectangle.grid.1x2") {
-                    VStack(spacing: 5) {
-                        compactAssignment(course: "CIS 1200", title: "Homework 4", due: Date().addingTimeInterval(3 * 3_600))
-                        compactAssignment(course: "MATH 1410", title: "Written assignment", due: Date().addingTimeInterval(3 * 86_400))
+                if reduceMotion {
+                    showMissionPages = true
+                } else {
+                    withAnimation(.easeInOut(duration: 0.30)) {
+                        showMissionPages = true
                     }
                 }
-
-                compactFeatureRow(label: "Reminders", symbol: "bell.badge") {
-                    compactNotification
-                }
-
-                compactFeatureRow(label: "Ask", symbol: "sparkles") {
-                    compactAskPrompt
-                }
-
-                compactFeatureRow(label: "Grades", symbol: "chart.line.uptrend.xyaxis") {
-                    compactGrade
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func compactFeatureRow<Content: View>(
-        label: String,
-        symbol: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                Text(label)
-                    .font(.lhfSans(14, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(Color.v2Ink)
-
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .shadow(color: Color.v2CardShadow.opacity(0.07), radius: 5, y: 2)
-        .accessibilityElement(children: .combine)
-    }
-
-    /// A miniature of `AssignmentCardView`'s own recipe — pastel fill keyed
-    /// off the due date, mono course code in that date's ink partner, the
-    /// assignment title in `lhfAssignmentTitle`, compact due value at the
-    /// trailing edge — rather than a bespoke illustration style. The point of
-    /// this feature preview is "this is what your dashboard actually looks
-    /// like," so it draws from the same due-date functions the real card
-    /// does (`smoothTaskFill`, `smoothTaskTextAccent`, `smoothDueValue`)
-    /// instead of a caller-chosen flat color and a hand-typed due string,
-    /// which is also why there is no colored spine here any more — the real
-    /// card doesn't have one either.
-    private func compactAssignment(course: String, title: String, due: Date?) -> some View {
-        let now = Date()
-        let value = smoothDueValue(due, now: now)
-        return HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(course.uppercased())
-                    .font(.lhfMono(8.5, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(smoothTaskTextAccent(due, now: now))
-                Text(title)
-                    .font(.lhfAssignmentTitle(13))
-                    .foregroundStyle(Color.smoothInk)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            Spacer(minLength: 4)
-            Text(value.primary)
-                .font(.lhfMono(11, weight: .medium))
-                .foregroundStyle(Color.smoothInk)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(smoothTaskFill(due, now: now), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private var compactNotification: some View {
-        HStack(alignment: .top, spacing: 7) {
-            SmoothAppMark(size: 29)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("SMOOTH")
-                        .font(.lhfSans(9.5, weight: .semibold))
-                        .tracking(0.6)
-                    Spacer()
-                    Text("now")
-                        .font(.lhfSans(9.5))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                Text("CIS 1200 · Homework 4")
-                    .font(.lhfSans(12, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                Text("Unsubmitted · due in 2 hours")
-                    .font(.lhfSans(10.5))
-                    .foregroundStyle(Color.v2DateText)
-            }
-        }
-        .padding(10)
-        .background(Color.v2Bg.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private var compactAskPrompt: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color.smoothGrape.opacity(0.12), Color.smoothTeal.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            HStack(spacing: 6) {
-                SmoothStarMark(size: 25)
-                Text("what is the attendance policy for this class?")
-                    .font(.lhfSerif(13))
-                    .foregroundStyle(Color.v2Ink)
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .background(Color.v2Card, in: Capsule())
-            .shadow(color: Color.v2CardShadow.opacity(0.13), radius: 4, y: 1)
-        }
-        .frame(height: 70)
-        .clipped()
-    }
-
-    private var compactGrade: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("ECON 0100")
-                .font(.lhfSans(9, weight: .medium))
-                .tracking(1)
-                .foregroundStyle(Color.v2CourseCode)
-            HStack(alignment: .center, spacing: 7) {
-                Text("93.4%")
-                    .font(.lhfSerif(26))
-                    .foregroundStyle(Color.v2Ink)
-                Text("▲ 1.8 this week")
-                    .font(.lhfSans(9.5, weight: .semibold))
-                    .foregroundStyle(Color.smoothTeal)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.v2RingTrack)
-                    Capsule().fill(Color.smoothCobalt)
-                        .frame(width: geo.size.width * 0.72)
-                }
-            }
-            .frame(height: 5)
-            Text("72% decided")
-                .font(.lhfSans(9.5))
-                .foregroundStyle(Color.v2RingSub)
-        }
-    }
-
-    // MARK: Footer
-
-    private var footer: some View {
-        VStack(spacing: 14) {
-            dots
-
-            Button {
-                advance()
             } label: {
-                Text(isLastPage ? "Get started" : "Continue")
-                    .font(.lhfSans(15, weight: .semibold))
+                Text("Get started")
+                    .font(.lhfSans(16, weight: .semibold))
                     .foregroundStyle(Color.v2ToggleActiveTx)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, 15)
                     .background(Capsule().fill(Color.v2Ink))
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 22)
+            .opacity(ctaVisible ? 1 : 0)
+            .offset(y: ctaVisible ? 0 : 18)
+            .disabled(!ctaVisible)
+            .accessibilityHint("Opens Canvas setup")
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 8)
-        .padding(.bottom, 24)
     }
 
-    private var dots: some View {
-        HStack(spacing: 7) {
-            ForEach(0..<Self.pageCount, id: \.self) { index in
-                Circle()
-                    .fill(index == page ? Color.v2Ink : Color.v2DateText.opacity(0.45))
-                    .frame(width: 6, height: 6)
-            }
-        }
-        .accessibilityHidden(true)
-    }
+    @MainActor
+    private func playIntro() async {
+        phase = reduceMotion ? .calm : .standing
+        visibleNotificationCount = 0
+        stressProgress = 0
+        topCopyVisible = reduceMotion
+        bottomCopyVisible = reduceMotion
+        smoothWordVisible = reduceMotion
+        ctaVisible = reduceMotion
 
-    // MARK: Paging
+        guard !reduceMotion else { return }
 
-    private func advance() {
-        lhfHapticLight()
-        guard !isLastPage else {
-            finishIntro()
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LHFIntroHoldStanding") {
             return
         }
-        setPage(page + 1)
+#endif
+
+        try? await Task.sleep(nanoseconds: 1_600_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.easeInOut(duration: 0.24)) {
+            phase = .overloaded
+        }
+
+        for index in IntroNotification.samples.indices {
+            guard !Task.isCancelled else { return }
+
+            let progress = CGFloat(index + 1) / CGFloat(IntroNotification.samples.count)
+            withAnimation(.spring(response: 0.46 - Double(progress) * 0.16, dampingFraction: 0.74)) {
+                visibleNotificationCount = index + 1
+                stressProgress = progress
+            }
+
+            if index == 3 || index == 7 || index == IntroNotification.samples.count - 1 {
+                lhfHapticLight()
+            }
+
+            guard index < IntroNotification.samples.count - 1 else { continue }
+            let interval = max(45_000_000.0, 520_000_000.0 * pow(0.76, Double(index)))
+            try? await Task.sleep(nanoseconds: UInt64(interval))
+        }
+
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LHFIntroHoldChaos") {
+            return
+        }
+#endif
+
+        try? await Task.sleep(nanoseconds: 650_000_000)
+        guard !Task.isCancelled else { return }
+
+        lhfHapticLight()
+        withAnimation(.easeInOut(duration: 1.15)) {
+            phase = .gathering
+        }
+
+        try? await Task.sleep(nanoseconds: 1_100_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.spring(response: 0.58, dampingFraction: 0.86)) {
+            topCopyVisible = true
+        }
+
+        try? await Task.sleep(nanoseconds: 720_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.spring(response: 0.66, dampingFraction: 0.82)) {
+            phase = .calm
+            bottomCopyVisible = true
+        }
+
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        guard !Task.isCancelled else { return }
+
+        lhfHapticLight()
+        withAnimation(.spring(response: 0.72, dampingFraction: 0.58)) {
+            smoothWordVisible = true
+        }
+
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        guard !Task.isCancelled else { return }
+
+        lhfHapticLight()
+        withAnimation(.spring(response: 0.54, dampingFraction: 0.82)) {
+            ctaVisible = true
+        }
+    }
+
+    private func replay() {
+        lhfHapticLight()
+        phase = .standing
+        visibleNotificationCount = 0
+        stressProgress = 0
+        topCopyVisible = false
+        bottomCopyVisible = false
+        smoothWordVisible = false
+        ctaVisible = false
+        runID += 1
     }
 
     private func finishIntro() {
@@ -439,319 +348,268 @@ struct IntroView: View {
             }
         }
     }
-
-    private func setPage(_ target: Int) {
-        let clamped = max(0, min(Self.pageCount - 1, target))
-        guard clamped != page else { return }
-        if reduceMotion {
-            page = clamped
-        } else {
-            withAnimation(.easeInOut(duration: 0.28)) { page = clamped }
-        }
-    }
 }
 
-// MARK: - The text/chip boundary
-
-/// The coordinate space the chip layer and the text column both measure
-/// themselves in, so that the two can be compared at all.
-private let lhfIntroSpace = "lhfIntroSpace"
-
-/// Publishes the top edge of the text column so `ChipLayer` can keep every
-/// chip above it.
-///
-/// Two earlier passes tried to stop chips landing on the headline by hand
-/// tuning the fractions each layout positions against, and both regressed —
-/// the second one worse than the first, putting three chips straight through
-/// the headline and body of screen two. The reason neither could work is
-/// structural: the text column is *bottom* anchored and sized by its own
-/// content, so its top edge moves whenever the copy length, the Dynamic Type
-/// size or the device changes, while the chip fractions stayed fixed.
-/// Nothing connected the two, so any number that looked right in one
-/// screenshot was wrong in the next.
-///
-/// Measuring where the text actually begins and clamping the chips to it
-/// makes the overlap structurally impossible rather than merely unlikely,
-/// which is what the preference key buys and why it is worth the
-/// indirection. The tempting "simplification" here is to delete this and go
-/// back to a tuned constant, because on any single screenshot a constant
-/// looks identical. It is not identical: it is the bug, reintroduced.
-private struct TextTopKey: PreferenceKey {
-    static let defaultValue: CGFloat = .infinity
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = min(value, nextValue())
-    }
+private enum IntroPhase {
+    case standing
+    case overloaded
+    case gathering
+    case calm
 }
 
-// MARK: - Chips
-
-/// One decorative "assignment" used only to dramatize the pitch on the intro
-/// screens. It never touches real Canvas or Gradescope data, and it isn't
-/// shown again once onboarding starts.
-///
-/// `id` doubles as a fixed "how reachable is this one" rank: 0 is the most
-/// reachable of the nine, 8 the least. That ordering is what lets the three
-/// layouts agree with each other without any extra bookkeeping — the three
-/// lowest ids are the ones the hanging column marks "reachable" (screen two,
-/// `ChipLayer.reachableCount`), and they're the same three ids that land at
-/// the top of the tidy list, since it's laid out in id order. Post-Smooth,
-/// "reachable" isn't one fixed color any more — every chip keeps the ramp
-/// tone it's cycled onto by id (`ChipLayer.tone(for:)`), the same tone on
-/// both screens it appears on, and the reachable three are marked by
-/// wearing their own tone harder (deeper fill, firmer border) rather than by
-/// switching to a color borrowed from outside the ramp. The metaphor is
-/// literal: the fruit nearest the ground is both what you'd reach for first
-/// and, once picked, the top of your list.
-private struct AssignmentChip: Identifiable {
+private struct IntroNotification: Identifiable {
     let id: Int
-    let code: String
-    let due: String
+    let app: String
+    let icon: String
+    let headline: String
+    let detail: String
+    let accent: Color
+    let x: CGFloat
+    let y: CGFloat
+    let rotation: Double
+    let width: CGFloat
 
-    /// Only the three "reachable" chips carry one, and it only ever renders
-    /// in the page-2 list stage's top rows (see `chipView`'s `isRow` branch).
-    /// Giving every chip a title would suggest pages 0 and 1 might grow one
-    /// too, which they never do — those stages intentionally show nothing
-    /// more than the same small `COURSE · Day` pill throughout.
-    let title: String?
+    static let samples: [IntroNotification] = [
+        .init(id: 0, app: "CANVAS", icon: "bell.badge.fill", headline: "CIS 1210 · Quiz 7", detail: "Due in 10 minutes", accent: .smoothTomato, x: 0.18, y: 0.16, rotation: -9, width: 174),
+        .init(id: 1, app: "GRADESCOPE", icon: "checkmark.circle.fill", headline: "Homework 6 graded", detail: "71% · View feedback", accent: .smoothGrape, x: 0.79, y: 0.73, rotation: 7, width: 184),
+        .init(id: 2, app: "CALENDAR", icon: "calendar", headline: "Midterm tomorrow", detail: "9:00 AM · DRLB 2N36", accent: .smoothCobalt, x: 0.50, y: 0.10, rotation: 3, width: 176),
+        .init(id: 3, app: "CANVAS", icon: "bubble.left.and.bubble.right.fill", headline: "3 new announcements", detail: "ECON 0100", accent: .smoothMarigold, x: 0.87, y: 0.35, rotation: -10, width: 178),
+        .init(id: 4, app: "REMINDERS", icon: "exclamationmark.circle.fill", headline: "Reading response", detail: "Overdue", accent: .smoothTomato, x: 0.11, y: 0.56, rotation: -5, width: 158),
+        .init(id: 5, app: "MAIL", icon: "envelope.badge.fill", headline: "Office hours moved", detail: "Plus 18 unread messages", accent: .smoothTeal, x: 0.72, y: 0.20, rotation: 8, width: 174),
+        .init(id: 6, app: "CANVAS", icon: "doc.text.fill", headline: "Lab report 4", detail: "Due tonight at 11:59", accent: .smoothLemon, x: 0.28, y: 0.86, rotation: 9, width: 175),
+        .init(id: 7, app: "GRADESCOPE", icon: "chart.line.downtrend.xyaxis", headline: "Exam 1 posted", detail: "Below class median", accent: .smoothTomato, x: 0.83, y: 0.52, rotation: -7, width: 170),
+        .init(id: 8, app: "CANVAS", icon: "person.2.fill", headline: "Discussion reply", detail: "2 classmates mentioned you", accent: .smoothTeal, x: 0.49, y: 0.69, rotation: -4, width: 182),
+        .init(id: 9, app: "CALENDAR", icon: "clock.badge.exclamationmark.fill", headline: "Problem set 3", detail: "Due in 5 hours", accent: .smoothMarigold, x: 0.14, y: 0.33, rotation: 6, width: 166),
+        .init(id: 10, app: "CANVAS", icon: "arrow.triangle.2.circlepath", headline: "Course updated", detail: "Syllabus · Modules · Files", accent: .smoothCobalt, x: 0.74, y: 0.91, rotation: 5, width: 180),
+        .init(id: 11, app: "MAIL", icon: "tray.full.fill", headline: "47 unread", detail: "Penn · Canvas · Classes", accent: .smoothGrape, x: 0.10, y: 0.76, rotation: -8, width: 166),
+        .init(id: 12, app: "CANVAS", icon: "pencil.and.list.clipboard", headline: "Essay draft", detail: "Due tomorrow at noon", accent: .smoothMarigold, x: 0.91, y: 0.12, rotation: 10, width: 172),
+        .init(id: 13, app: "ED DISCUSSION", icon: "bubble.left.fill", headline: "12 new replies", detail: "Your thread was mentioned", accent: .smoothTeal, x: 0.35, y: 0.45, rotation: -11, width: 178),
+        .init(id: 14, app: "PENN MOBILE", icon: "person.3.fill", headline: "Club meeting now", detail: "Houston Hall · Room 218", accent: .smoothCobalt, x: 0.65, y: 0.81, rotation: 7, width: 176),
+        .init(id: 15, app: "GRADESCOPE", icon: "arrow.uturn.backward.circle.fill", headline: "Regrade request", detail: "Response received", accent: .smoothGrape, x: 0.31, y: 0.25, rotation: -6, width: 174),
+        .init(id: 16, app: "CALENDAR", icon: "person.2.badge.gearshape.fill", headline: "Project sync", detail: "Starts in 15 minutes", accent: .smoothTomato, x: 0.92, y: 0.63, rotation: 11, width: 170),
+        .init(id: 17, app: "MAIL", icon: "envelope.open.fill", headline: "Professor replied", detail: "Re: Final project scope", accent: .smoothLemon, x: 0.37, y: 0.94, rotation: -9, width: 178),
+    ]
+}
 
-    init(id: Int, code: String, due: String, title: String? = nil) {
-        self.id = id
-        self.code = code
-        self.due = due
-        self.title = title
+private struct NotificationCard: View {
+    let item: IntroNotification
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: item.icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(item.accent)
+                .frame(width: 29, height: 29)
+                .background(item.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.app)
+                    .font(.lhfMono(8.5, weight: .semibold))
+                    .tracking(0.7)
+                    .foregroundStyle(Color.v2DateText)
+                Text(item.headline)
+                    .font(.lhfSans(12.5, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .lineLimit(1)
+                Text(item.detail)
+                    .font(.lhfSecondary(10.5))
+                    .foregroundStyle(Color.v2DateText)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.v2Card.opacity(0.97), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.76), lineWidth: 0.8)
+        }
+        .shadow(color: Color.v2CardShadow.opacity(0.15), radius: 9, y: 4)
     }
 }
 
-/// See the note on `IntroView` for why this exists as one persistent layer
-/// rather than living inside the pager: chip identity across the first two
-/// screens depends on it never being rebuilt.
-private struct ChipLayer: View {
-    let page: Int
-    let namespace: Namespace.ID
+/// The destination every notification contracts into. It deliberately matches
+/// the compact three-wave underline used beneath the Smooth wordmark in-app.
+private struct SmoothIntroLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let amplitude = rect.height * 0.32
+        path.move(to: CGPoint(x: 0, y: rect.midY))
 
-    /// The text column's top edge, in `lhfIntroSpace`. `.infinity` until the
-    /// first measurement lands, which simply means "nothing to avoid yet" —
-    /// the clamp below is a no-op at that value, so the first frame renders
-    /// exactly as it would have without this and then settles. See
-    /// `TextTopKey`.
-    let textTopY: CGFloat
+        for step in 1...64 {
+            let progress = CGFloat(step) / 64
+            let x = rect.minX + rect.width * progress
+            let y = rect.midY + sin(progress * .pi * 6) * amplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+        }
+        return path
+    }
+}
 
-    /// Breathing room between the lowest chip and the first line of text.
-    /// Chips are positioned by their centre, so this has to cover half a
-    /// chip's height plus the gap we actually want to see.
-    private static let textClearance: CGFloat = 34
+private struct StudentFigure: View {
+    let stress: CGFloat
+    let isRelaxed: Bool
 
-    fileprivate static let chips: [AssignmentChip] = [
-        AssignmentChip(id: 0, code: "PHYS 151", due: "Fri", title: "Problem set 3"),
-        AssignmentChip(id: 1, code: "PSYC 1010", due: "Mon", title: "Reading response 4"),
-        AssignmentChip(id: 2, code: "CIS 1200", due: "Wed", title: "Lab check-in"),
-        AssignmentChip(id: 3, code: "ECON 001", due: "Tue", title: "Weekly quiz"),
-        AssignmentChip(id: 4, code: "ENGL 016", due: "Thu", title: "Discussion post"),
-        AssignmentChip(id: 5, code: "MATH 114", due: "Fri", title: "Problem set 6"),
-        AssignmentChip(id: 6, code: "HIST 020", due: "Mon", title: "Primary source notes"),
-        AssignmentChip(id: 7, code: "STAT 111", due: "Wed", title: "Lab check-in"),
-        AssignmentChip(id: 8, code: "SPAN 110", due: "Tue", title: "Vocabulary quiz"),
-    ]
+    var body: some View {
+        ZStack {
+            EscalatingStudent(stress: stress)
+                .opacity(isRelaxed ? 0 : 1)
+                .scaleEffect(isRelaxed ? 0.86 : 1)
 
-    /// How many of the nine read as "reachable" — highlighted in the column,
-    /// promoted to real assignment rows in the final list. Kept as one
-    /// constant so the two screens can't quietly disagree about which three
-    /// that is.
-    private static let reachableCount = 3
+            RelaxedStudent()
+                .opacity(isRelaxed ? 1 : 0)
+                .scaleEffect(isRelaxed ? 1 : 0.82)
+                .offset(y: isRelaxed ? 0 : 10)
+        }
+        .animation(.spring(response: 0.62, dampingFraction: 0.78), value: isRelaxed)
+        .accessibilityHidden(true)
+    }
+}
 
-    /// The Smooth due-date ramp, cycled by chip id rather than by due state —
-    /// these nine chips are illustration, not real deadlines, so there is no
-    /// `Date` to derive `smoothTaskAccent` from. Cycling by id instead of
-    /// picking one flat color keeps every chip visually distinct, which is
-    /// the whole point of a "scattered work" illustration, and keeps the
-    /// same chip roughly the same hue across screens 1 and 2 — the two
-    /// stages a `matchedGeometryEffect` id actually carries across.
-    private static let ramp: [(fill: Color, ink: Color)] = [
-        (.smoothTomato, .smoothTomatoInk),
-        (.smoothMarigold, .smoothMarigoldInk),
-        (.smoothLemon, .smoothLemonInk),
-        (.smoothTeal, .smoothTealInk),
-        (.smoothCobalt, .smoothCobaltInk),
-        (.smoothGrape, .smoothGrapeInk),
-    ]
+private struct EscalatingStudent: View, @preconcurrency Animatable {
+    var stress: CGFloat
 
-    private static func tone(for chip: AssignmentChip) -> (fill: Color, ink: Color) {
-        ramp[chip.id % ramp.count]
+    var animatableData: CGFloat {
+        get { stress }
+        set { stress = newValue }
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            // `textTopY` arrives in `lhfIntroSpace`, but every `.position()`
-            // below is in this layer's own local coordinates, which start
-            // lower down (the layer is inset past the Dynamic Island and the
-            // skip bar). Subtracting this layer's own origin in that shared
-            // space converts one to the other. Without the conversion the
-            // clamp would be wrong by exactly the inset, which is the kind of
-            // off-by-a-safe-area that looks fine on the device you tested.
-            let originY = proxy.frame(in: .named(lhfIntroSpace)).minY
-            let maxY = max(0, textTopY - Self.textClearance - originY)
-            ZStack {
-                switch page {
-                case 0: scattered(in: proxy.size, maxY: maxY)
-                default: organized(in: proxy.size, maxY: maxY)
-                }
+        Canvas { context, size in
+            let ink = Color.smoothInk
+            let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+
+            func point(_ calmX: CGFloat, _ calmY: CGFloat, _ stressedX: CGFloat, _ stressedY: CGFloat) -> CGPoint {
+                CGPoint(
+                    x: size.width * (calmX + (stressedX - calmX) * stress),
+                    y: size.height * (calmY + (stressedY - calmY) * stress)
+                )
             }
-            // `.position()` pulls a view out of normal layout flow, so a
-            // ZStack containing only positioned children reports almost no
-            // size of its own. This frame is what keeps the ZStack (and so
-            // the coordinate space every `.position()` call below is
-            // computed against) actually equal to the full canvas the
-            // GeometryReader was given, rather than collapsing to fit.
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+
+            let head = Path(ellipseIn: CGRect(x: size.width * 0.35, y: 5, width: size.width * 0.30, height: size.width * 0.30))
+            context.fill(head, with: .color(Color.v2Bg))
+            context.stroke(head, with: .color(ink), style: stroke)
+
+            var body = Path()
+            let neck = point(0.50, 0.29, 0.52, 0.29)
+            let hip = point(0.50, 0.68, 0.46, 0.68)
+            body.move(to: neck)
+            body.addCurve(
+                to: hip,
+                control1: point(0.50, 0.41, 0.43, 0.39),
+                control2: point(0.50, 0.55, 0.42, 0.54)
+            )
+
+            body.move(to: point(0.50, 0.40, 0.47, 0.39))
+            body.addLine(to: point(0.39, 0.50, 0.20, 0.27))
+            body.addLine(to: point(0.28, 0.60, 0.31, 0.14))
+
+            body.move(to: point(0.50, 0.40, 0.48, 0.40))
+            body.addLine(to: point(0.61, 0.50, 0.79, 0.28))
+            body.addLine(to: point(0.72, 0.60, 0.68, 0.14))
+
+            body.move(to: hip)
+            body.addLine(to: point(0.36, 0.84, 0.24, 0.86))
+            body.addLine(to: point(0.30, 0.98, 0.16, 0.98))
+            body.move(to: hip)
+            body.addLine(to: point(0.64, 0.84, 0.68, 0.85))
+            body.addLine(to: point(0.70, 0.98, 0.82, 0.96))
+            context.stroke(body, with: .color(ink), style: stroke)
+
+            guard stress > 0.30 else { return }
+
+            var marks = Path()
+            marks.move(to: CGPoint(x: size.width * 0.18, y: size.height * 0.07))
+            marks.addLine(to: CGPoint(x: size.width * 0.10, y: 0))
+            marks.move(to: CGPoint(x: size.width * 0.80, y: size.height * 0.08))
+            marks.addLine(to: CGPoint(x: size.width * 0.90, y: 0))
+            if stress > 0.68 {
+                marks.move(to: CGPoint(x: size.width * 0.92, y: size.height * 0.19))
+                marks.addLine(to: CGPoint(x: size.width, y: size.height * 0.17))
+            }
+            let markOpacity = min(1, (stress - 0.30) / 0.50)
+            context.opacity = markOpacity
+            context.stroke(marks, with: .color(Color.smoothTomato), style: StrokeStyle(lineWidth: 3, lineCap: .round))
         }
     }
+}
 
-    // MARK: Screen 1 — loose scatter
+private struct RelaxedStudent: View {
+    var body: some View {
+        Canvas { context, size in
+            let ink = Color.smoothInk
+            let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
 
-    /// Hand-placed rather than drawn from `Double.random`: a real RNG
-    /// reshuffles on every redraw, and SwiftUI recomputes `body` far more
-    /// often than the intro actually changes pages, which would make the
-    /// "chaos" visibly jitter instead of holding still. Fixed fractions of
-    /// the canvas size give the same restrained scatter every time, while
-    /// still landing differently on an iPad than an iPhone SE because
-    /// they're fractions of the available size, not fixed points.
-    private func scattered(in size: CGSize, maxY: CGFloat) -> some View {
-        ForEach(Self.chips) { chip in
-            let placement = Self.scatterPlacement[chip.id] ?? (0.5, 0.3, 0)
-            chipView(chip, isAccent: false, isRow: false)
-                .rotationEffect(.degrees(placement.2))
-                .matchedGeometryEffect(id: chip.id, in: namespace)
-                .position(
-                    x: placement.0 * size.width,
-                    // Clamped, not scaled: squashing every chip's fraction to
-                    // fit would flatten the scatter into a band and lose the
-                    // looseness that is the whole point of this stage. Only
-                    // the lowest one or two are ever affected, and they stop
-                    // just above the headline rather than moving with it.
-                    y: min(placement.1 * size.height, maxY)
+            let head = Path(
+                ellipseIn: CGRect(
+                    x: size.width * 0.17,
+                    y: size.height * 0.39,
+                    width: size.height * 0.24,
+                    height: size.height * 0.24
                 )
-        }
-    }
+            )
+            context.fill(head, with: .color(Color.v2Bg))
+            context.stroke(head, with: .color(ink), style: stroke)
 
-    /// (x fraction, y fraction, rotation in degrees) per chip id. A couple sit
-    /// past 0 or past 1 on purpose, so they read as clipped by the screen
-    /// edge rather than as a tidy grid — restrained chaos, not confetti.
-    private static let scatterPlacement: [Int: (CGFloat, CGFloat, Double)] = [
-        0: (0.18, 0.16, -11),
-        // Was (0.66, 0.10, 8) — high and to the right, which put this chip
-        // directly under "Skip" and made the button hard to read against it.
-        // Moved lower and more central, clear of the top-right corner Skip
-        // occupies.
-        1: (0.50, 0.26, 8),
-        2: (0.97, 0.24, 14),
-        3: (0.02, 0.36, 9),
-        4: (0.42, 0.06, -6),
-        5: (0.80, 0.30, -10),
-        6: (0.30, 0.42, 12),
-        7: (0.58, 0.48, -5),
-        8: (0.08, 0.52, 6),
-    ]
+            var body = Path()
+            let shoulder = CGPoint(x: size.width * 0.36, y: size.height * 0.53)
+            let hip = CGPoint(x: size.width * 0.63, y: size.height * 0.61)
+            body.move(to: shoulder)
+            body.addCurve(
+                to: hip,
+                control1: CGPoint(x: size.width * 0.46, y: size.height * 0.52),
+                control2: CGPoint(x: size.width * 0.56, y: size.height * 0.58)
+            )
 
-    // MARK: Screen 2 — class to assignment
+            // One arm clearly props up the head; the other rests on the torso.
+            let supportingHand = CGPoint(x: size.width * 0.31, y: size.height * 0.48)
+            body.move(to: shoulder)
+            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.54))
+            body.addLine(to: supportingHand)
 
-    /// The same nine chips settle into an explicit class-to-assignment list.
-    /// The arrow is the explanation: students can see immediately that Smooth
-    /// turns scattered course obligations into named work, without a paragraph
-    /// below the illustration having to narrate it.
-    private func organized(in size: CGSize, maxY: CGFloat) -> some View {
-        let top = size.height * 0.04
-        let bottom = min(size.height * 0.78, maxY)
-        let step = max(0, bottom - top) / CGFloat(Self.chips.count - 1)
-        return ForEach(Self.chips) { chip in
-            let isAccent = chip.id < Self.reachableCount
-            assignmentRow(chip, isAccent: isAccent, width: min(350, size.width - 32))
-                .matchedGeometryEffect(id: chip.id, in: namespace)
-                .position(
-                    x: size.width * 0.5,
-                    y: top + CGFloat(chip.id) * step
+            let restingHand = CGPoint(x: size.width * 0.55, y: size.height * 0.57)
+            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.54))
+            body.addLine(to: CGPoint(x: size.width * 0.47, y: size.height * 0.55))
+            body.addLine(to: restingHand)
+
+            body.move(to: hip)
+            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.70))
+            body.addLine(to: CGPoint(x: size.width * 0.97, y: size.height * 0.68))
+            body.move(to: hip)
+            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.53))
+            body.addLine(to: CGPoint(x: size.width * 0.94, y: size.height * 0.57))
+            context.stroke(body, with: .color(ink), style: stroke)
+
+            let handRadius: CGFloat = 3.4
+            for hand in [supportingHand, restingHand] {
+                let dot = Path(
+                    ellipseIn: CGRect(
+                        x: hand.x - handRadius,
+                        y: hand.y - handRadius,
+                        width: handRadius * 2,
+                        height: handRadius * 2
+                    )
                 )
+                context.fill(dot, with: .color(ink))
+            }
+
+            var breeze = Path()
+            breeze.move(to: CGPoint(x: size.width * 0.08, y: size.height * 0.13))
+            breeze.addCurve(to: CGPoint(x: size.width * 0.20, y: size.height * 0.06), control1: CGPoint(x: size.width * 0.11, y: size.height * 0.04), control2: CGPoint(x: size.width * 0.17, y: size.height * 0.15))
+            context.stroke(breeze, with: .color(Color.smoothTeal), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        }
+        .overlay(alignment: .topTrailing) {
+            Text("z z")
+                .font(.lhfMono(11, weight: .semibold))
+                .foregroundStyle(Color.smoothGrape)
+                .offset(x: -10, y: 8)
         }
     }
-
-    // MARK: Chip presentation
-
-    private func chipView(_ chip: AssignmentChip, isAccent: Bool, isRow: Bool) -> some View {
-        let tone = Self.tone(for: chip)
-        return HStack(spacing: 5) {
-            Text(chip.code)
-                .font(.lhfMono(isRow ? 13 : 11, weight: .semibold))
-            Text("\u{00B7}")
-                .font(.lhfSans(isRow ? 13 : 11))
-                .opacity(0.5)
-            Text(chip.due)
-                .font(.lhfSans(isRow ? 13 : 11, weight: .medium))
-        }
-        .foregroundStyle(tone.ink)
-        .padding(.horizontal, isRow ? 12 : 9)
-        .padding(.vertical, isRow ? 9 : 5)
-        .fixedSize()
-        .background(
-            RoundedRectangle(cornerRadius: isRow ? 11 : 8, style: .continuous)
-                // The same opacity `smoothTaskFill` draws real dashboard
-                // cards at, so a scattered chip reads as the same visual
-                // family as the assignment cards it is foreshadowing.
-                .fill(tone.fill.opacity(0.26))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: isRow ? 11 : 8, style: .continuous)
-                .strokeBorder(tone.fill.opacity(0.45), lineWidth: 1)
-        )
-        .shadow(color: Color.v2CardShadow.opacity(isRow ? 0.08 : 0.04), radius: isRow ? 3 : 1, y: 1)
-    }
-
-    /// `isAccent` (the three "reachable" chips) used to be the only source of
-    /// color here — a plain grey row for six chips, a green one for three.
-    /// Every row now carries its own ramp tone (see `Self.tone`), the same
-    /// one it wore as a scattered chip on screen one, so the "reachable"
-    /// three no longer need to borrow the one spare accent color to stand
-    /// out — instead they keep their own hue but wear it harder (deeper
-    /// fill, firmer border) than the rest of the list, which is what
-    /// actually reads as "these are the ones," in the same palette the rest
-    /// of the row is drawn from rather than a color borrowed from outside it.
-    private func assignmentRow(_ chip: AssignmentChip, isAccent: Bool, width: CGFloat) -> some View {
-        let tone = Self.tone(for: chip)
-        return HStack(spacing: 10) {
-            Text(chip.code)
-                .font(.lhfMono(12, weight: .semibold))
-                .foregroundStyle(tone.ink)
-                .frame(width: 72, alignment: .trailing)
-
-            Image(systemName: "arrow.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.v2Ink.opacity(0.35))
-
-            Text(chip.title ?? "Assignment")
-                .font(.lhfAssignmentTitle(14))
-                .foregroundStyle(Color.v2Ink)
-                .lineLimit(1)
-
-            Spacer(minLength: 6)
-
-            Text(chip.due)
-                .font(.lhfSans(11, weight: .medium))
-                .foregroundStyle(Color.v2DateText)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .frame(width: width, alignment: .leading)
-        .background(tone.fill.opacity(isAccent ? 0.30 : 0.16), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(tone.fill.opacity(isAccent ? 0.55 : 0.22), lineWidth: isAccent ? 1.5 : 1)
-        )
-        .shadow(color: Color.v2CardShadow.opacity(0.06), radius: 2, y: 1)
-    }
-
 }
 
 #if DEBUG
-#Preview {
+#Preview("chaos to smooth") {
     IntroView()
         .environmentObject(AppState())
         .frame(width: 393, height: 852)

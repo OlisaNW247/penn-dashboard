@@ -10,16 +10,20 @@ import AppKit
 // MARK: – Smooth palette
 //
 // The dashboard's color is semantic: every assignment is filled from a
-// warm-to-cool deadline ramp. Neutral app chrome stays on white so color never
-// competes with urgency. The v2 aliases keep the rest of the app on the
-// same family without changing any feature wiring.
+// warm-to-cool deadline ramp. In light mode the neutral chrome stays on paper;
+// in dark mode it becomes a blue-black "night paper" so the same six urgency
+// colors remain the only loud colors in the interface. The dark companions are
+// deliberately cool rather than neutral grey: cobalt is already part of
+// Smooth's identity, so the app feels like the same palette after sunset.
 
 extension Color {
-    static let smoothPaper    = Color(hex: 0xFFFFFF)
-    static let smoothSurface  = Color(hex: 0xF2E5C9)
-    static let smoothRule     = Color(hex: 0xD9C9A6)
-    static let smoothInk      = Color(hex: 0x1B1714)
-    static let smoothMuted    = Color(hex: 0x7C7060)
+    // Core chrome. Every post-onboarding screen should use these semantic
+    // colors (or the v2 aliases below), never a literal white/black pair.
+    static let smoothPaper    = Color.dynamic(light: 0xFFFFFF, dark: 0x0B1020)
+    static let smoothSurface  = Color.dynamic(light: 0xF2E5C9, dark: 0x171D31)
+    static let smoothRule     = Color.dynamic(light: 0xD9C9A6, dark: 0x303A59)
+    static let smoothInk      = Color.dynamic(light: 0x1B1714, dark: 0xF8F1E5)
+    static let smoothMuted    = Color.dynamic(light: 0x7C7060, dark: 0xAEB8CF)
     static let smoothTomato   = Color(hex: 0xF07256)
     static let smoothMarigold = Color(hex: 0xF7A844)
     static let smoothLemon    = Color(hex: 0xF5D353)
@@ -35,12 +39,12 @@ extension Color {
     static let smoothCobaltInk   = Color.dynamic(light: 0x345EA8, dark: 0xA8C4F5)
     static let smoothGrapeInk    = Color.dynamic(light: 0x7044A6, dark: 0xD0B2F7)
 
-    static let v2Bg          = Color.dynamic(light: 0xFFFFFF, dark: 0x1C1A17)
-    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x26241F)
-    static let v2CardShadow  = Color.dynamic(light: 0x1B1714, dark: 0x000000)
-    static let v2Ink         = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
-    static let v2DateText    = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
-    static let v2CourseCode  = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
+    static let v2Bg          = Color.smoothPaper
+    static let v2Card        = Color.dynamic(light: 0xFFFFFF, dark: 0x151B2D)
+    static let v2CardShadow  = Color.dynamic(light: 0x1B1714, dark: 0x02040B)
+    static let v2Ink         = Color.smoothInk
+    static let v2DateText    = Color.smoothMuted
+    static let v2CourseCode  = Color.smoothMuted
 
     // Urgency — spines (hot → cool: overdue → today → soon → later)
     static let v2SpineRed    = Color.smoothTomato
@@ -59,25 +63,25 @@ extension Color {
     static let v2DueGreen    = Color.smoothTeal
 
     // Ring
-    static let v2RingTrack   = Color.dynamic(light: 0xD9C9A6, dark: 0x35322B)
-    static let v2RingSub     = Color.dynamic(light: 0x7C7060, dark: 0x9A9384)
+    static let v2RingTrack   = Color.dynamic(light: 0xD9C9A6, dark: 0x27304B)
+    static let v2RingSub     = Color.dynamic(light: 0x7C7060, dark: 0x929DB7)
 
     // Segmented toggle
-    static let v2ToggleBg       = Color.dynamic(light: 0xF2E5C9, dark: 0x2E2B25)
-    static let v2ToggleActive   = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
-    static let v2ToggleActiveTx = Color.dynamic(light: 0xFFFFFF, dark: 0x1B1714)
-    static let v2ToggleInactive = Color.dynamic(light: 0x1B1714, dark: 0xD9C9A6)
+    static let v2ToggleBg       = Color.smoothSurface
+    static let v2ToggleActive   = Color.smoothInk
+    static let v2ToggleActiveTx = Color.dynamic(light: 0xFFFFFF, dark: 0x0B1020)
+    static let v2ToggleInactive = Color.dynamic(light: 0x1B1714, dark: 0xB9C3D9)
 
     // Section headers
-    static let v2Divider       = Color.dynamic(light: 0xD9C9A6, dark: 0x322F28)
-    static let v2SectionMuted  = Color.dynamic(light: 0x1B1714, dark: 0xFBF2DF)
-    static let v2SectionCount  = Color.dynamic(light: 0x7C7060, dark: 0xD9C9A6)
+    static let v2Divider       = Color.smoothRule
+    static let v2SectionMuted  = Color.smoothInk
+    static let v2SectionCount  = Color.smoothMuted
 
     // Done (archived) cards
-    static let v2DoneCard    = Color.dynamic(light: 0xF0EDE6, dark: 0x201E1A)
-    static let v2DoneSpine   = Color.dynamic(light: 0xB6B0A2, dark: 0x4A473E)
-    static let v2DoneTitle   = Color.dynamic(light: 0x8A8478, dark: 0x6E6A5D)
-    static let v2DoneCourse  = Color.dynamic(light: 0xAEA899, dark: 0x7A755F)
+    static let v2DoneCard    = Color.dynamic(light: 0xF0EDE6, dark: 0x11172A)
+    static let v2DoneSpine   = Color.dynamic(light: 0xB6B0A2, dark: 0x3A4563)
+    static let v2DoneTitle   = Color.dynamic(light: 0x8A8478, dark: 0x7F8AA3)
+    static let v2DoneCourse  = Color.dynamic(light: 0xAEA899, dark: 0x68738D)
 
     /// A color that resolves to `light` or `dark` hex based on the active
     /// interface style, wherever it's drawn. Backed by a `UIColor`/`NSColor`

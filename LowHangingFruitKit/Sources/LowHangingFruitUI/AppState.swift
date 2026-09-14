@@ -791,6 +791,21 @@ final class AppState: ObservableObject {
             hasSeenIntro = false
             userName = ""
         }
+        // Full first-run review without destroying the developer's saved
+        // connections. These overrides are in-memory for this process only;
+        // the next ordinary launch reads the real Canvas feed and Gradescope
+        // flag from their stores again. Login panes still begin with their
+        // normal clean WebView session, which is the review equivalent of
+        // refreshing browser cookies without erasing app data.
+        if ProcessInfo.processInfo.arguments.contains("-LHFFullOnboardingReview") {
+            hasCompletedOnboarding = false
+            hasSeenIntro = false
+            onboardingDestination = .full
+            userName = ""
+            canvasICSURL = ""
+            isCanvasDiscoveryConnected = false
+            isGradescopeConnected = false
+        }
         // Focused Gradescope review seam: opens that connection page directly
         // without replaying the intro or Canvas setup. State is in-memory for
         // this launch; the pane clears its isolated web session before loading.
