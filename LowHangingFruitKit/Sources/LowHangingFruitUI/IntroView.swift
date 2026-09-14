@@ -134,13 +134,21 @@ struct IntroView: View {
                 .font(.lhfSans(22, weight: .medium))
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
+
+            Text("There’s more to life than school.\nMake it all smooth.")
+                .font(.lhfSans(16, weight: .regular))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
         }
         .padding(.horizontal, 24)
         .position(x: size.width * 0.5, y: size.height * 0.275)
         .opacity(phase == .calm ? 1 : 0)
         .scaleEffect(phase == .calm ? 1 : 0.92)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Smooth. Make your life smooth.")
+        .accessibilityLabel(
+            "Smooth. Make your life smooth. There’s more to life than school. Make it all smooth."
+        )
     }
 
     private var controls: some View {
