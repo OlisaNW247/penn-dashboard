@@ -100,4 +100,38 @@ struct PreviewModeTests {
             #expect(state.canvasCourseIDsByCode["CIS 1210"] != "900001")
         }
     }
+
+    /// The regression this closes: every test above proves `enterPreviewMode()`
+    /// does the right thing once called, and none of them noticed that nothing
+    /// in the shipped UI ever called it — `git grep enterPreviewMode` had zero
+    /// hits outside test targets, so no user, and no App Store reviewer
+    /// following `docs/appstore/REVIEW_NOTES.md`, could reach the door at all.
+    /// Views can't be driven headlessly here (no UI-testing target in this
+    /// package), so this scans source text instead, the same seam
+    /// `SharedDefaultsMigrationTests.uiSourcesUseTheSharedAccessor()` uses for
+    /// an equivalent "is this actually wired up" question. It requires a call
+    /// in BOTH `IntroView.swift` and `OnboardingView.swift`, not just one —
+    /// see `c999c38`'s commit message for why one placement stranded a
+    /// reviewer who tapped the intro's ordinary "Skip" button: that sets
+    /// `hasSeenIntro` permanently and routes to `OnboardingView` forever, so
+    /// a door only on the intro is a door that can vanish for good.
+    @Test("the reviewer's preview door is called from both the intro and onboarding")
+    func previewDoorIsWiredIntoShippedUI() throws {
+        let sources = URL(fileURLWithPath: #filePath)      // .../Tests/LowHangingFruitKitTests/<this>
+            .deletingLastPathComponent()                    // .../Tests/LowHangingFruitKitTests
+            .deletingLastPathComponent()                    // .../Tests
+            .deletingLastPathComponent()                    // .../LowHangingFruitKit
+            .appendingPathComponent("Sources/LowHangingFruitUI")
+        // A prebuilt test bundle run away from the checkout has nothing to scan.
+        guard FileManager.default.fileExists(atPath: sources.path) else { return }
+
+        for filename in ["IntroView.swift", "OnboardingView.swift"] {
+            let file = sources.appendingPathComponent(filename)
+            let text = try String(contentsOf: file, encoding: .utf8)
+            #expect(
+                text.contains("state.enterPreviewMode()"),
+                "\(filename) has no reachable call to enterPreviewMode() — a reviewer landing here has no way past Penn SSO"
+            )
+        }
+    }
 }
