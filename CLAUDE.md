@@ -14,9 +14,10 @@ with tomato/marigold/lemon/teal/cobalt/grape accents, the S app mark, and
 bundled type registered at runtime by `SmoothFontRegistry`
 (`RedesignTokens.swift`): Satoshi (Fontshare FFL), Inter, Familjen Grotesk
 and Space Mono (all SIL OFL, licence files beside them in `Resources/`), and
-Roobert SemiBold for the dashboard title — **Roobert is a commercial face
-from Displaay and no licence file is in the repo; confirm a licence exists
-before shipping it**. On launch the app fetches a
+Roobert SemiBold for the dashboard title — a commercial face from Displaay,
+cleared for shipping on 2026-09-15 under a personal agreement Olisa holds.
+There is deliberately no licence file in the repo, so a future reader will
+not find one: the agreement is Olisa's to produce if it is ever asked for. On launch the app fetches a
 public update-policy file (`update-manifest` branch) that can require an
 update — identifier-free, fail-open, see `Update/`.
 
