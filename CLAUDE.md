@@ -34,11 +34,12 @@ itself is titled **"the tree"**) are sent to the backend with the on-device
 context document and matched excerpts, answered by an AI model via OpenRouter
 under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
 data-collection-deny flag), with the Announcement Watcher's AI assist
-(on by default since 2026-09-08; **always on since 2026-09-14** — Marco's
-settings merge dropped the toggle and `AppState` writes `true` on every
-launch, a decision Olisa accepted on 2026-09-14; the daily digest went in
-the same merge) routed the same way, and only for announcements a cheap
-on-device gate judges could carry a task. Neither questions nor answers are stored — only
+(on by default since 2026-09-08, and a student can turn it off in
+Settings — 49441ac dropped that toggle and forced the flag on at every
+launch, which `docs/PRIVACY.md` promises students can switch off, so it
+was restored on 2026-09-15 with the default left on; the daily digest,
+removed in the same merge, did not come back) routed the same way, and
+only for announcements a cheap on-device gate judges could carry a task. Neither questions nor answers are stored — only
 per-user daily request counts and token totals. Settings has a button to delete
 a student's enrollment/usage rows and anonymous account from the backend.
 Offline, over quota, or with the backend unreachable, ask answers on-device as
@@ -590,7 +591,16 @@ end to end) or pass `-LHFForceUpdateWall`.
   pins `cloudKitDatabase: .none` unless the toggle was on at launch. The
   sync path has had little real-device soak time; treat it as Phase A.
 - The onboarding per-course walk is covered by tests but has never been walked on
-  a device (it needs a real Canvas session; preview mode skips onboarding).
+  a device (it needs a real Canvas session).
+- **There is no way to use the app without a PennKey.** Preview mode — the
+  sample-data path that let anyone, including an App Store reviewer, explore
+  the app without signing in — was removed on 2026-09-15 at Olisa's
+  instruction, after being told it was App Review's only route in. So 3.0.0
+  ships with no reviewable path and may be rejected under Guideline 2.1;
+  `docs/appstore/REVIEW_NOTES.md` says so to Apple in as many words. The
+  DEBUG `-LHFDemoData` seam is unrelated and still works: it is a launch
+  argument, compiled out of release, and it is what `capture-screenshots.sh`
+  and the demo video run on.
 
 ## Overseer / doer split
 
