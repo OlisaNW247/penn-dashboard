@@ -204,9 +204,11 @@ optionally Gradescope), accessed with the user's own credentials. See
 ## Build / version
 
 - Marketing version: **3.0.0**
-- Build: **7** (must exceed the live **1.2.1** — it does; every 2.0.0/2.0.1
+- Build: **8** (must exceed the live **1.2.1** — it does; every 2.0.0/2.0.1
   build was uploaded but never released, so 1.2.1 is still the version App
-  Review and App Store Connect compare against)
+  Review and App Store Connect compare against. It is 8 rather than 7
+  because a build 7 already went up to App Store Connect: ASC refuses a
+  build number it has seen before, whatever became of that upload.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
   already 3.0.0 / 7 in the committed project.

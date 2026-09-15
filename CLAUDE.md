@@ -58,7 +58,7 @@ has been stale before, re-check rather than trust it). The 2.x numbers in
 this file's history never reached the store: builds were uploaded to App
 Store Connect from `v3.5` and `v5` but none was ever released, so the
 uploaded-vs-live numbering drifted apart. `v5` is therefore stamped
-**3.0.0 (build 7)**, chosen on 2026-09-15 to end the confusion rather than
+**3.0.0 (build 8)**, chosen on 2026-09-15 to end the confusion rather than
 to mean anything about the diff — the next release is simply 3.0.0 over a
 live 1.2.1. `v5` carries the backend, the Locust
 onboarding and the update gate on top.
@@ -90,8 +90,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-15): **1252 tests / 125 suites
-green** (Deno **324**) after dropping the "week W of T" label from the
+Baseline on `v5`, verified on a Mac (2026-09-15): **1241 tests / 123 suites
+green** (Deno **324**) after removing preview mode (known gap below): twelve
+tests deleted, four reworked to seed state through the real assignment path,
+and two suites gone with the files that held them — that accounts for the
+whole drop from 1252, and none of it is lost coverage of surviving
+behaviour. Earlier the same day, 1252/125 after dropping the "week W of T" label from the
 grade card and the explanation panel (Olisa's call — the student knows
 what week it is, and `term` is inferred rather than known; one test
 fewer because two `statusText` cases collapsed into one, which is the

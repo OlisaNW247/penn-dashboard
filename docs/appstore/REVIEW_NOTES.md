@@ -1,6 +1,6 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-_Last updated: 2026-09-15 (3.0.0, build 7). Add a contact name and email before
+_Last updated: 2026-09-15 (3.0.0, build 8). Add a contact name and email before
 pasting._
 
 _The product's user-facing name is now **Smooth** (it was **Low Hanging
