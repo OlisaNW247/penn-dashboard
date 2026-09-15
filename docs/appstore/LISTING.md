@@ -25,49 +25,48 @@ within limits.
 
 ## Promotional text (≤170, editable anytime)
 
-Every Canvas deadline in one calm list, sorted so the next thing you should do
-is always on top — now with grades, ask, and dark mode.
+Every Canvas deadline in one calm list, soonest first — now with your real
+grades, answers to questions about your classes, and a dark mode worth
+staying up for. (159)
 
 ## Description
 
-Smooth turns your Canvas deadlines into one clear, calm list — sorted so the
-most urgent thing is always on top. No more digging through course pages to
-figure out what's actually due next.
+There's more to life than school. Smooth is for the rest of it.
 
-Log in once with your school Canvas account and Smooth pulls your deadlines
-straight from your personal Canvas calendar. Each item shows when it's due,
-color-coded by urgency. Swipe to check it off — and work you've already
-submitted on Canvas files itself away automatically.
+Every deadline your classes throw at you — assignments, readings, quizzes,
+labs, the lecture you keep forgetting — lands in one calm list, soonest
+first. You open it, you see what's next, you close it. That's the whole idea.
 
-MORE THAN ASSIGNMENTS
-Your classes aren't just problem sets. Smooth also picks up readings, class
-sessions, and other calendar items — including readings a professor posts only
-to the Modules page — and labels anything with nothing to turn in with a plain
-"nothing to submit" tag, so you always know whether a deadline needs a file or
-just you. Items with nothing to submit never show up as "late": once their
-moment passes, they file themselves away.
+Connect Canvas once and Smooth fills itself in: what's due, when, for which
+class, colored so a glance is enough. Swipe to check something off. Anything
+you've already submitted on Canvas files itself away without you touching it.
+
+NOT JUST PROBLEM SETS
+A week of school isn't only things you upload. Smooth picks up readings, class
+sessions, and everything else on your Canvas calendar — including readings a
+professor buries in the Modules page — and tags anything you don't hand in
+with a plain "nothing to submit," so you always know whether a deadline wants
+a file or just you. Those never turn red for being late. They just pass.
 
 YOUR CLASSES, YOUR RULES
-Every class gets its own row in Profile: rename it, hide it, choose its own
-reminder times, or switch off reminders for readings and attend-only work while
-keeping the ones for real assignments. When the semester turns over, Smooth
-offers to archive last term's classes in one tap — nothing is deleted, and
-Done keeps your whole record.
+Rename a class, hide one, give each its own reminder times, or silence the
+readings while keeping the reminders that matter. When the term ends, archive
+it in a tap — nothing is deleted, and Done keeps the whole record of what you
+got through.
 
-TRACK YOUR GRADES
-Grade Watcher pulls each class's grades from Canvas and regroups them into
-your syllabus's own categories instead of however Canvas's assignment groups
-happen to be set up — categories you can edit if it gets one wrong. It shows
-what share of your grade is already decided this far into the semester, so
-you can see how much is still up for grabs before you go chasing a curve that
-doesn't exist yet.
+KNOW WHERE YOU STAND
+Grade Watcher reads your Canvas grades and regroups them into your syllabus's
+own categories, not whatever the assignment groups happen to be called — and
+you can fix the map if it guesses wrong. It also tells you how much of your
+grade is actually decided so far, which is usually the number you wanted: it's
+the difference between a bad week and a bad semester.
 
-ASK THE TREE
-Have a question about a class? Ask it in plain English on "the tree" and get
-an answer pulled from your own synced course material — the syllabus, pages,
-assignment instructions, announcements. It's answered by an AI model; if
-you're offline or over the daily limit, Smooth answers instead from what it
-already has on your device.
+JUST ASK
+"When's my next exam?" "What's the late policy in 2400?" Ask in plain English
+on the tree and get an answer out of your own course material — syllabus,
+pages, assignment instructions, announcements. An AI model writes the answer;
+offline or over the daily limit, Smooth answers from what's already on your
+phone instead.
 
 FEATURES
 • One chronological list of everything due, sorted by what's next
@@ -91,13 +90,15 @@ FEATURES
 • Adjust any due date by hand when your professor moves it
 
 PRIVATE BY DESIGN
-Your grades, your work, and your Canvas/Gradescope logins never leave your
-device. Smooth talks to your school's Canvas (and Gradescope, if you connect
-it), and to a small server of ours that pools shared course material —
-syllabi, pages, assignments, announcements — across classmates in the same
-class, and answers optional questions you ask "the tree" with an AI model.
-Nothing personal is in that pool, questions and answers aren't stored, and
-there's no tracking, no ads, and no third-party SDKs.
+Your grades, your work, your name, and your Canvas and Gradescope logins stay
+on your phone. Smooth talks to your school's Canvas, to Gradescope if you
+connect it, and to one small server of ours. That server does two things:
+it pools the course material everyone in a class can already see — syllabi,
+pages, assignment instructions, announcements — so a classmate who installs
+tomorrow gets the class instantly, and it answers what you ask on the tree.
+Nothing personal goes into that pool. Questions and answers aren't kept. No
+tracking, no ads, no third-party SDKs, and a button in Settings that deletes
+your account from our server whenever you want.
 
 Smooth is an independent app and is not affiliated with or endorsed by
 Instructure (Canvas), Turnitin (Gradescope), or any university.
