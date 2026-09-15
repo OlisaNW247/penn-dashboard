@@ -102,27 +102,6 @@ public enum GradeCountPredictor {
         }
     }
 
-    /// The minimum gap between two consecutive due dates that CANNOT be
-    /// explained by a real term's own internal breaks — winter break,
-    /// reading days, spring break — and therefore must mean the items on
-    /// either side belong to different ACADEMIC YEARS sharing one reused
-    /// Canvas site.
-    ///
-    /// Penn's fall-to-spring winter break runs about 4-5 weeks; reading days
-    /// and spring break are shorter still. 8 weeks clears all of those with
-    /// room to spare, so an ordinary one-semester or fall-into-spring
-    /// course's due dates are never split by this rule. The wrong fix here
-    /// is a SMALLER threshold: anything under roughly 6 weeks starts eating
-    /// into winter break itself and would wrongly cut a real two-semester
-    /// course's due dates in half at the New Year, reading its fall work as
-    /// a separate, already-finished term the moment spring's items start
-    /// posting. The failure this constant exists to catch runs the other
-    /// way and is much bigger: a Canvas site recycled from a prior year
-    /// leaves a due-date gap of roughly nine months (~39 weeks) between the
-    /// old year's items and the current year's first one, which clears 8
-    /// weeks with enormous room to spare.
-    private static let recycledSiteGapWeeks: Double = 8
-
     /// The term implied by a set of categories' own items, or nil when none
     /// of them carry a due date at all (a brand-new course sync with no
     /// dates yet) — there is nothing to anchor a term to, so callers fall
@@ -152,9 +131,10 @@ public enum GradeCountPredictor {
     /// evidenced.
     ///
     /// The fix: sort the DISTINCT due dates ascending and walk them looking
-    /// for the LAST gap between consecutive dates that exceeds
-    /// `recycledSiteGapWeeks`. The term starts at the first date AFTER that
-    /// gap — the start of the current cluster — rather than at the leftover
+    /// for the LAST gap between consecutive dates that exceeds `weeks`, the
+    /// term's own length (see the note on that threshold above). The term
+    /// starts at the first date AFTER that gap — the start of the current
+    /// cluster — rather than at the leftover
     /// items before it. With no such gap anywhere in the list, behavior is
     /// unchanged from before this fix: the term starts at the single
     /// earliest date, exactly as it always has for a course that has never
@@ -162,8 +142,29 @@ public enum GradeCountPredictor {
     public static func term(for categories: [GradeCategory], weeks: Double = 14) -> Term? {
         let dates = Set(categories.flatMap(\.items).compactMap(\.dueAt)).sorted()
         guard var start = dates.first else { return nil }
+        // The threshold is the term's own length, not a tuned constant: two
+        // items more than a whole term apart cannot both belong to that
+        // term, by definition.
+        //
+        // A fixed 8 weeks was tried first and is the wrong fix, for a reason
+        // worth keeping. It reads an ordinary end-of-semester hole as a year
+        // boundary: a course whose last regular assignment falls in late
+        // September and whose final exam sits in mid-December has an
+        // 11-week gap between them with nothing in between, and anchoring
+        // after the last big gap then puts the term start on the final
+        // exam, so the card reads as though the semester begins in
+        // December. The first version of this fix shipped exactly that and
+        // its own test caught it.
+        //
+        // Sizing to `weeks` clears every real within-term hole (winter break
+        // is 4-5 weeks, reading days and spring break shorter, the
+        // pre-finals gap above 11) while still catching what this exists
+        // for: a recycled site's leftovers sit about nine months — roughly
+        // 39 weeks — before the current year's first item, and even the
+        // tightest recycling, spring into the following fall, leaves a
+        // summer of about 16 weeks. Both clear a 14-week term comfortably.
         let secondsPerWeek = 7.0 * 24.0 * 60.0 * 60.0
-        let gapThreshold = recycledSiteGapWeeks * secondsPerWeek
+        let gapThreshold = weeks * secondsPerWeek
         // Walking forward and overwriting `start` every time a qualifying
         // gap is found — rather than stopping at the first one — is what
         // makes this the LAST such gap: if a course somehow carried TWO
