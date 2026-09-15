@@ -52,9 +52,14 @@ fallback" — rather than flatly "everything is on-device" (stopped being true o
 `assistant-ui`) or "no server" (stopped being true adding the backend).
 
 Live on the App Store: **1.2.1** (App Store id `6783911002`, released
-2026-09-04 — Marco confirmed against Apple's public lookup; this line has
-been stale before, re-check rather than trust it). **2.0.1 (build 6)** was
-uploaded from `v3.5`; `v5` carries it, now with the backend, the Locust
+2026-09-04 — re-confirmed by Olisa on the store page 2026-09-15; this line
+has been stale before, re-check rather than trust it). The 2.x numbers in
+this file's history never reached the store: builds were uploaded to App
+Store Connect from `v3.5` and `v5` but none was ever released, so the
+uploaded-vs-live numbering drifted apart. `v5` is therefore stamped
+**3.0.0 (build 7)**, chosen on 2026-09-15 to end the confusion rather than
+to mean anything about the diff — the next release is simply 3.0.0 over a
+live 1.2.1. `v5` carries the backend, the Locust
 onboarding and the update gate on top.
 
 ## Commands
