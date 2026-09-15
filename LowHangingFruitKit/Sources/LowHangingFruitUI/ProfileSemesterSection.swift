@@ -243,6 +243,19 @@ struct ProfileSemesterSection: View {
                 Label("remove", systemImage: "trash")
             }
         }
+        // The same action again, reachable by right-click. A swipe is the only
+        // way to remove one of these on a trackpad, and a Mac user on a plain
+        // mouse has no trackpad -- so without this, a class they added by hand
+        // is a class they cannot remove. `ProfileClassesSection` already pairs
+        // its swipe actions with a context menu for exactly this reason; this
+        // row was the one that did not.
+        .contextMenu {
+            Button(role: .destructive) {
+                state.removeAddedCourse(course)
+            } label: {
+                Label("remove class", systemImage: "trash")
+            }
+        }
     }
 
     /// Normalises and files the typed class. Clears the field on success so the
