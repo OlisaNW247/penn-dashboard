@@ -17,6 +17,18 @@ struct GradeCountPredictorTests {
         GradeItem(id: id, name: id, pointsPossible: 10, dueAt: dueAt)
     }
 
+    /// A calendar date pinned to UTC, for building the exact due dates from
+    /// the CIS 4500 real-phone evidence without any local-timezone drift.
+    private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return calendar.date(from: components)!
+    }
+
     // MARK: - Source precedence
 
     @Test("an override wins over a stated count, a name implication, and any pace projection")
@@ -227,6 +239,74 @@ struct GradeCountPredictorTests {
         let a = GradeCategory(id: "a", name: "a", items: [item("a1", dueAt: nil)])
         let term = GradeCountPredictor.term(for: [a])
         #expect(term == nil)
+    }
+
+    @Test("term(for:) anchors on the current cluster, not a prior year's leftover items, on a recycled Canvas site")
+    func recycledSiteGapAnchorsOnCurrentCluster() {
+        // The CIS 4500 real-phone shape from 2026-09-15: three 2025 items
+        // left over on a reused Canvas site, then the real Fall 2026 work
+        // starting 2026-09-11. Before this fix, `term(for:)` anchored on
+        // 2025-10-14 -- 48 weeks before "now" -- and `elapsedWeeks(at:)`'s
+        // clamp to `0...weeks` saturated at the full 14, which is what
+        // actually produced the "week 14 of 14" card on a course that had
+        // barely begun.
+        let leftoverA = item("met-instructor", dueAt: date(2025, 10, 14))
+        let leftoverB = item("class-participation", dueAt: date(2025, 12, 9))
+        let leftoverC = item("ed-participation", dueAt: date(2025, 12, 9))
+        let currentA = item("course-policy-exercise", dueAt: date(2026, 9, 11))
+        let currentB = item("hw1", dueAt: date(2026, 9, 22))
+        let currentC = item("final", dueAt: date(2026, 12, 12))
+        let categories = [
+            GradeCategory(id: "participation", name: "Participation", items: [leftoverA, leftoverB, leftoverC]),
+            GradeCategory(id: "assignments", name: "Assignments", items: [currentA, currentB, currentC]),
+        ]
+
+        let term = GradeCountPredictor.term(for: categories)
+
+        #expect(term?.start == date(2026, 9, 11))
+        // The real evidence date, three days into the current cluster --
+        // the card should read "week 1", not "week 14".
+        let now = date(2026, 9, 15)
+        #expect(term.map { $0.elapsedWeeks(at: now) } ?? .infinity < 1)
+    }
+
+    @Test("term(for:) is unaffected on an ordinary single-term course with no large gaps")
+    func ordinarySingleTermCourseUnaffected() {
+        let earliest = date(2026, 9, 1)
+        let items = [
+            item("a", dueAt: earliest),
+            item("b", dueAt: date(2026, 9, 15)),
+            item("c", dueAt: date(2026, 10, 1)),
+            item("d", dueAt: date(2026, 11, 1)),
+            item("e", dueAt: date(2026, 12, 1)),
+        ]
+        let category = GradeCategory(id: "a", name: "a", items: items)
+
+        let term = GradeCountPredictor.term(for: [category])
+
+        #expect(term?.start == earliest)
+    }
+
+    @Test("a ~5-week winter break between a fall and spring due date is NOT treated as a recycled-site gap")
+    func winterBreakGapDoesNotSplitTerm() {
+        // Consecutive gaps here are all well under `recycledSiteGapWeeks`
+        // (8), including the fall-to-spring one (2025-12-10 to 2026-01-15,
+        // about 5 weeks) that this test exists to protect: a threshold
+        // under roughly 6 weeks would wrongly treat Penn's own winter break
+        // as evidence of a recycled Canvas site and split a real two-
+        // semester course's due dates in half at the New Year.
+        let earliest = date(2025, 11, 15)
+        let items = [
+            item("fall-1", dueAt: earliest),
+            item("fall-2", dueAt: date(2025, 12, 10)),
+            item("spring-1", dueAt: date(2026, 1, 15)),
+            item("spring-2", dueAt: date(2026, 2, 10)),
+        ]
+        let category = GradeCategory(id: "a", name: "a", items: items)
+
+        let term = GradeCountPredictor.term(for: [category])
+
+        #expect(term?.start == earliest)
     }
 
     @Test("elapsedFraction clamps to 0 before the term starts and to 1 once it's over")

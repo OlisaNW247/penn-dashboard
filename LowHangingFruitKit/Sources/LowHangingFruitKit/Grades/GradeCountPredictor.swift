@@ -102,15 +102,80 @@ public enum GradeCountPredictor {
         }
     }
 
+    /// The minimum gap between two consecutive due dates that CANNOT be
+    /// explained by a real term's own internal breaks — winter break,
+    /// reading days, spring break — and therefore must mean the items on
+    /// either side belong to different ACADEMIC YEARS sharing one reused
+    /// Canvas site.
+    ///
+    /// Penn's fall-to-spring winter break runs about 4-5 weeks; reading days
+    /// and spring break are shorter still. 8 weeks clears all of those with
+    /// room to spare, so an ordinary one-semester or fall-into-spring
+    /// course's due dates are never split by this rule. The wrong fix here
+    /// is a SMALLER threshold: anything under roughly 6 weeks starts eating
+    /// into winter break itself and would wrongly cut a real two-semester
+    /// course's due dates in half at the New Year, reading its fall work as
+    /// a separate, already-finished term the moment spring's items start
+    /// posting. The failure this constant exists to catch runs the other
+    /// way and is much bigger: a Canvas site recycled from a prior year
+    /// leaves a due-date gap of roughly nine months (~39 weeks) between the
+    /// old year's items and the current year's first one, which clears 8
+    /// weeks with enormous room to spare.
+    private static let recycledSiteGapWeeks: Double = 8
+
     /// The term implied by a set of categories' own items, or nil when none
     /// of them carry a due date at all (a brand-new course sync with no
     /// dates yet) — there is nothing to anchor a term to, so callers fall
     /// back to whatever `predict` does with a nil term (posted-count-only,
     /// never a projection built on no information).
+    ///
+    /// Anchors on the START OF THE CURRENT CLUSTER of due dates, not simply
+    /// the single earliest one, because a course's Canvas site can be a
+    /// recycled prior-year site that still carries a handful of leftover
+    /// items from before. Real-phone evidence, 2026-09-15, third week of the
+    /// Fall 2026 term: CIS 4500's grade card read "week 14 of 14" — the
+    /// semester read as already over, on a course that had barely begun —
+    /// because its Canvas site still carried three 2025 items ("Met
+    /// Instructor" 2025-10-14, "Class Participation" and "Ed Participation"
+    /// both 2025-12-09) alongside the real 2026 work, which starts
+    /// 2026-09-11 ("Course Policy Exercise") and runs to 2026-12-12. Taking
+    /// the single earliest `dueAt` anchored the term 48 weeks in the past,
+    /// and `Term.elapsedWeeks(at:)`'s clamp to `0...weeks` saturated at the
+    /// full 14, which is what actually produced "14 of 14" — the clamp
+    /// itself is correct and untouched; the bug was handing it a `start`
+    /// nearly a year too early. Beyond the label, `term` also feeds
+    /// `predict`'s pace projection (`dueSoFar / elapsedWeeks`), so a wrong
+    /// `start` is capable of distorting that arithmetic for any category
+    /// that actually reaches the pace-projection fallback — though nothing
+    /// here establishes that CIS 4500's own categories took that path; the
+    /// "week 14 of 14" symptom is the only effect that is directly
+    /// evidenced.
+    ///
+    /// The fix: sort the DISTINCT due dates ascending and walk them looking
+    /// for the LAST gap between consecutive dates that exceeds
+    /// `recycledSiteGapWeeks`. The term starts at the first date AFTER that
+    /// gap — the start of the current cluster — rather than at the leftover
+    /// items before it. With no such gap anywhere in the list, behavior is
+    /// unchanged from before this fix: the term starts at the single
+    /// earliest date, exactly as it always has for a course that has never
+    /// been recycled.
     public static func term(for categories: [GradeCategory], weeks: Double = 14) -> Term? {
-        let earliest = categories.flatMap(\.items).compactMap(\.dueAt).min()
-        guard let earliest else { return nil }
-        return Term(start: earliest, weeks: weeks)
+        let dates = Set(categories.flatMap(\.items).compactMap(\.dueAt)).sorted()
+        guard var start = dates.first else { return nil }
+        let secondsPerWeek = 7.0 * 24.0 * 60.0 * 60.0
+        let gapThreshold = recycledSiteGapWeeks * secondsPerWeek
+        // Walking forward and overwriting `start` every time a qualifying
+        // gap is found — rather than stopping at the first one — is what
+        // makes this the LAST such gap: if a course somehow carried TWO
+        // recycled years' worth of leftovers, the current cluster is still
+        // the one after the most recent gap, not the one after the oldest.
+        for index in 1..<dates.count {
+            let gap = dates[index].timeIntervalSince(dates[index - 1])
+            if gap > gapThreshold {
+                start = dates[index]
+            }
+        }
+        return Term(start: start, weeks: weeks)
     }
 
     /// Predicts one category's whole-semester item count. `items` are the
