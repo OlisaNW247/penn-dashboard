@@ -83,8 +83,15 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-14): **1253 tests / 125 suites
-green** (Deno **324**) after merging Marco's `codex/fire-dark-mode`
+Baseline on `v5`, verified on a Mac (2026-09-14): **1250 tests / 125 suites
+green** (Deno **324**) after the second merge of Marco's
+`codex/fire-dark-mode` (a2b66bc at 49441ac: profile and settings on one
+screen, Grade Watcher compacted, the daily digest removed with its three
+tests — the only reason the count fell from 1253, checked, not accepted
+blind — AI assist forced on, the wordmark squiggle extended and lowered)
+plus 3aebb63, the squiggle sized to the rendered width of "Smooth" so it
+fits on every weekday (Marco's ask; blind, compiled first time). Earlier
+the same day, 1253/125 after the first merge of that branch
 (00f24cc: the "after sunset" dark mode in `RedesignTokens.swift`, the
 rebuilt three-beat Smooth intro with `MissionIntroView`, simplified
 Settings, the `-LHFFullOnboardingReview` launch flag; 13 commits, 9 UI
