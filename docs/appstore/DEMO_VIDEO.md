@@ -56,7 +56,8 @@ shows the real login working end to end.
    *Caption: "Next due on your Home Screen. Light or dark."*
 
 9. **Reminders** · 1:10–1:20
-   Settings → toggle **Due-date reminders**, show lead times and the daily digest.
+   Settings → toggle **Due-date reminders**, show lead times and the
+   announcement watcher's "ai assist" switch.
    *Caption: "Optional local reminders — all on-device."*
 
 10. **Close** · 1:20–1:25

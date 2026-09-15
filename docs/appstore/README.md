@@ -16,7 +16,7 @@ Generated from the app via the DEBUG `-LHFDemoData` seam (compiled out of releas
 2. `2-dashboard-thisweek.png` — the hero shot: urgency-sorted list + progress ring
 3. `3-dashboard-all.png` — All view (includes later items)
 4. `4-dashboard-done.png` — Done view, grouped by day
-5. `5-settings-reminders.png` — reminders / daily digest
+5. `5-settings-reminders.png` — reminders / announcement watching
 
 Regenerate anytime: `bash docs/appstore/capture-screenshots.sh`
 
