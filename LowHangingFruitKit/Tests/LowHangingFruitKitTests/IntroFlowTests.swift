@@ -10,15 +10,14 @@ import Testing
 /// to reconnect Canvas.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, so every test here
-/// restores what it touched — see the note in `PreviewModeTests`.
+/// restores what it touched — see `withFlags` below.
 @MainActor
 @Suite("Intro flow")
 struct IntroFlowTests {
 
     private static let introKey = "hasSeenIntro"
     private static let onboardedKey = "hasCompletedOnboarding"
-    private static let previewKey = "isPreviewMode"
-    private static let touchedKeys = [introKey, onboardedKey, previewKey]
+    private static let touchedKeys = [introKey, onboardedKey]
 
     /// Runs `body` against a known set of persisted flags, then puts the user's
     /// real values back. `seenIntro: nil` removes the key outright — the state
@@ -46,7 +45,6 @@ struct IntroFlowTests {
         }
 
         defaults.set(onboarded, forKey: Self.onboardedKey)
-        defaults.set(false, forKey: Self.previewKey)
         if let seenIntro {
             defaults.set(seenIntro, forKey: Self.introKey)
         } else {
@@ -118,21 +116,6 @@ struct IntroFlowTests {
             state.completeOnboarding()
             #expect(state.onboardingDestination == .full)
             #expect(!state.needsOnboarding)
-        }
-    }
-
-    /// Preview is entered from the intro's first pane, so it counts as having
-    /// seen it — including for a reviewer who later switches to real Canvas.
-    @Test("entering preview mode counts as having seen the intro")
-    func previewMarksIntroSeen() {
-        withFlags {
-            let state = makeState()
-            state.enterPreviewMode()
-            #expect(!state.needsIntro)
-
-            state.restartOnboarding()
-            #expect(state.needsOnboarding)
-            #expect(!state.needsIntro)
         }
     }
 

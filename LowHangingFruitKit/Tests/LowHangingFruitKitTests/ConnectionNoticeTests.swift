@@ -13,25 +13,26 @@ import Testing
 /// having been connected by a pasted calendar link that carries no cookie
 /// session.
 ///
-/// The single most important case here is `needsGradescopeConnection`
-/// staying false in preview/fixture mode: that mode is the one way through
-/// this app for someone who can't pass Penn SSO — notably an App Store
-/// reviewer — and it is not backed by a real Gradescope connection. Getting
-/// the guard wrong would show a "connect your accounts" nag on the one
-/// screen that's supposed to just work.
+/// The `needsGradescopeConnection`/fixture-mode interaction that used to be
+/// pinned here (`gradescopeGapHiddenInPreview`) went with the reviewer-facing
+/// preview mode it depended on — 2026-09-15, at the owner's instruction —
+/// because `isUsingFixtureData` (the DEBUG `-LHFDemoData` seam that remains)
+/// reads a real process launch argument and cannot be flipped from inside a
+/// test the way the persisted preview flag could. What's left here is the
+/// case that *is* testable without it: a real, connected-but-not-fully
+/// account is correctly flagged.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, so every
-/// test here restores what it touched — see the note in `IntroFlowTests` and
-/// `PreviewModeTests`. `canvasIsLinkOnly`'s two cases below need no such
-/// bookkeeping: `isCanvasConnected` is backed by `ICSFeedURLStore`'s Keychain
-/// item, which no test in this file (or, so far, anywhere in the suite)
-/// writes to, so a freshly constructed `AppState` starts with an empty
-/// `canvasICSURL` for free. Deliberately not adding Keychain-writing
-/// infrastructure here to manufacture the "Canvas connected by link" case
-/// directly — the existing suites don't do that either, and `canvasIsLinkOnly
-/// == isCanvasConnected && !canUseGradeWatcher` is already exercised on its
-/// `canUseGradeWatcher` half by `GradeWatcherAvailabilityTests` and
-/// `SessionCookieStoreTests`, so this file only needs to add the
+/// test here restores what it touched — see the note in `IntroFlowTests`.
+/// `canvasIsLinkOnly`'s two cases below need no such bookkeeping:
+/// `isCanvasConnected` is backed by `ICSFeedURLStore`'s Keychain item, which
+/// no test in this file (or, so far, anywhere in the suite) writes to, so a
+/// freshly constructed `AppState` starts with an empty `canvasICSURL` for
+/// free. Deliberately not adding Keychain-writing infrastructure here to
+/// manufacture the "Canvas connected by link" case directly — the existing
+/// suites don't do that either, and `canvasIsLinkOnly == isCanvasConnected
+/// && !canUseGradeWatcher` is already exercised on its `canUseGradeWatcher`
+/// half by `SessionCookieStoreTests`, so this file only needs to add the
 /// `isCanvasConnected` half against states that don't need the Keychain.
 @MainActor
 @Suite("Connection notice")
@@ -40,12 +41,11 @@ struct ConnectionNoticeTests {
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardedKey = "hasCompletedOnboarding"
     private static let introKey = "hasSeenIntro"
-    private static let previewKey = "isPreviewMode"
-    private static let touchedKeys = [gradescopeConnectedKey, onboardedKey, introKey, previewKey]
+    private static let touchedKeys = [gradescopeConnectedKey, onboardedKey, introKey]
 
-    /// Same in-memory-store injection as `IntroFlowTests` and
-    /// `GradeWatcherAvailabilityTests`, so this suite can't contend with a
-    /// real on-disk ledger from a machine that has actually run the app.
+    /// Same in-memory-store injection as `IntroFlowTests`, so this suite
+    /// can't contend with a real on-disk ledger from a machine that has
+    /// actually run the app.
     private func makeState() -> AppState {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))
     }
@@ -78,31 +78,6 @@ struct ConnectionNoticeTests {
 
             #expect(!state.isUsingFixtureData)
             #expect(state.needsGradescopeConnection)
-        }
-    }
-
-    @Test("needsGradescopeConnection stays false in preview/fixture mode, even unconnected")
-    func gradescopeGapHiddenInPreview() {
-        withRestoredDefaults {
-            let state = makeState()
-            state.setGradescopeConnected(false)
-            state.enterPreviewMode()
-
-            #expect(state.isUsingFixtureData)
-            #expect(!state.isGradescopeConnected)
-            #expect(!state.needsGradescopeConnection)
-        }
-    }
-
-    @Test("canvasIsLinkOnly is false in preview/fixture mode")
-    func canvasLinkOnlyHiddenInPreview() {
-        withRestoredDefaults {
-            let state = makeState()
-            state.enterPreviewMode()
-
-            #expect(state.isUsingFixtureData)
-            #expect(state.canUseGradeWatcher)
-            #expect(!state.canvasIsLinkOnly)
         }
     }
 

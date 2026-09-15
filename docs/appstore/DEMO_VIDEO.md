@@ -9,9 +9,12 @@ Pro Max** simulator (6.9", the size the App Store requires) for a clean frame.
 
 ## Why a video
 
-App Review can't sign in (Penn SSO — see REVIEW_NOTES.md). The **in-app preview
-mode is the primary review path**; this recording is supporting evidence that
-shows the real login working end to end.
+App Review can't sign in (Penn SSO — see REVIEW_NOTES.md), and as of 2026-09-15
+there is no in-app sample-data/preview path either — it was removed at the
+product owner's instruction. This recording is the only way a reviewer sees
+the app populated at all, showing the real login working end to end and the
+populated screens via the DEBUG `-LHFDemoData` seam (see "How to record"
+below), which never ships in a Release build.
 
 ---
 
@@ -62,7 +65,7 @@ shows the real login working end to end.
 
 10. **Close** · 1:20–1:25
     End on the clean dashboard (or the "Touch Grass" all-clear state).
-    *Caption: "Low Hanging Fruit."*
+    *Caption: "Smooth."*
 
 ---
 
@@ -93,8 +96,9 @@ xcrun simctl io booted recordVideo --codec h264 demo.mov
 
 > DEBUG launch flags: `-LHFDemoData`, `-LHFTabAll`, `-LHFTabDone`,
 > `-LHFShowSettings`, `-LHFShowGrades`, `-LHFShowReport`. These are compiled out
-> of release builds — the **reviewer-facing** demo is preview mode, which ships
-> in Release and needs no flags.
+> of release builds, so they only work on a DEBUG build installed by hand (as
+> above) — a shipped Release build has no populated-demo path at all, which is
+> exactly why this recording exists.
 
 ## Tips
 

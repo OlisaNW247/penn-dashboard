@@ -2,7 +2,7 @@ import Foundation
 import LowHangingFruitKit
 
 /// Hardcoded fixtures used by (1) SwiftUI previews / offline UI work and (2) the
-/// in-app **Preview mode** an App Store reviewer taps on the onboarding screen —
+/// DEBUG-only `-LHFDemoData` screenshot seam (`ContentView`, `SettingsPage`) —
 /// no scrapers, no login, no network. Populates every section richly (2 overdue,
 /// 2 due today, 4 rest-of-week, 2 later, 4 completed this week, 2 completed
 /// earlier this semester) so the full design is visible without a Canvas account.
@@ -83,16 +83,16 @@ enum SampleData {
         ]
     }
 
-    // MARK: - Grade Watcher fixtures (preview mode)
+    // MARK: - Grade Watcher fixtures (fixture/demo mode)
 
     /// Synthetic Canvas course ids for the sample courses, `id -> course code`
     /// (the shape `AppState.canvasCourseIDs()` returns).
     ///
     /// These are deliberately **never persisted** into
     /// `canvasCourseIDsByCode`: a leftover "CIS 1210 → 900001" mapping would
-    /// outlive preview mode and send a real Grade Watcher refresh at a course
-    /// id that doesn't exist on the user's Canvas. `AppState` substitutes this
-    /// map in-memory while `isPreviewMode` is on instead.
+    /// outlive the demo and send a real Grade Watcher refresh at a course id
+    /// that doesn't exist on the user's Canvas. `AppState` substitutes this
+    /// map in-memory while `isUsingFixtureData` is true instead.
     static let previewCourseIDsByID: [String: String] = [
         "900001": "CIS 1210",
         "900002": "ECON 1",
@@ -101,7 +101,7 @@ enum SampleData {
         "900005": "PSYC 1",
     ]
 
-    /// Fully-formed grade snapshots for preview mode — the same type
+    /// Fully-formed grade snapshots for fixture/demo mode — the same type
     /// `CanvasGradesClient.fetchSnapshot` returns, so Grade Watcher, the grade
     /// report, and the projection math all run their real code paths against
     /// them. Covers the interesting shapes on purpose: weighted and points
@@ -250,11 +250,11 @@ enum SampleData {
         ]
     }
 
-    // MARK: - Course materials for ask (preview mode)
+    // MARK: - Course materials for ask (fixture/demo mode)
 
     /// Syllabus prose, an announcement, and an assignment description for the
-    /// sample courses, so `ask` can answer a policy question in preview mode
-    /// and on the `-LHFDemoData` seam with no Canvas account — the same role
+    /// sample courses, so `ask` can answer a policy question on the
+    /// `-LHFDemoData` seam with no Canvas account — the same role
     /// `gradeSnapshots()` plays for Grade Watcher. Course ids match
     /// `previewCourseIDsByID`.
     static func knowledge(now: Date = Date()) -> CourseKnowledgeBase {

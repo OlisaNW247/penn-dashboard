@@ -64,43 +64,22 @@ personal data never leave the device.
 
 ---
 
-## ✅ How to review without a school login — tap "Preview with sample data"
+## Sign-in and review access
 
 Sign-in uses the **University of Pennsylvania's own Canvas login (PennKey single
-sign-on)**, so we cannot issue test credentials — PennKey accounts are
-institutional and only the university can create them. **You do not need one to
-review the app.**
+sign-on)**. We cannot issue test/demo credentials for this: PennKey accounts
+are institutional, issued only by the university to its own students, staff,
+and faculty, and there is no mechanism for a third party (including us) to
+create one for a reviewer.
 
-On the **first screen**, tap **"Just exploring? Preview with sample data"** (the
-link just below the "Connect Canvas" card). This loads a fully-populated demo
-with no account and no network access.
-
-**Everything in the app is reachable from the demo:**
-
-1. **Dashboard** — sample items across **This week / All / Done**, colored by
-   urgency. Swipe a card to complete it; tap it for details. Items with
-   nothing to turn in (readings, class sessions, attend-only assignments)
-   carry a "nothing to submit" label.
-2. **Grades** — the chart icon in the dashboard header (next to the profile
-   icon; only shown once a course has grade data, which the demo seeds): a
-   per-class grade, regrouped into syllabus categories, and what share of the
-   grade is decided so far this semester.
-3. **Profile** — the person icon in the header: the class list (rename, hide,
-   or archive a class) and per-class notification settings (reminder times,
-   mute, and the "items with nothing to submit" switch).
-4. **Ask ("the tree")** — the button at the bottom of the dashboard: ask a
-   question about your classes in plain English. In the demo there is no
-   network, so answers are computed on the device from the sample course
-   material — the same fallback a student gets offline. With a connection,
-   the question and the matched course excerpts go to our server and on to
-   an AI model, as described under "Backend" above.
-5. **Settings** — the gear icon: appearance (light/dark), reminders,
-   announcement watching and its "ai assist" switch, storage, and account
-   connections.
-6. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
-
-The attached screen recording additionally shows the real Canvas login flow
-end-to-end.
+**There is no sample-data or preview mode in this build.** An earlier build
+of this app had an in-app "preview with sample data" path that let someone
+explore a populated demo without signing in; it has been removed at the
+product owner's instruction, and every screen in the app now requires a real
+Canvas sign-in to show anything. We are aware this means App Review has no
+way to authenticate into the app and may not be able to complete a full
+functional review under Guideline 2.1 as a result. We do not have a
+workaround to offer beyond what's described below.
 
 ## What the app does, step by step
 

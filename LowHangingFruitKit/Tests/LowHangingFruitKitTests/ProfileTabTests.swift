@@ -10,7 +10,7 @@ import Testing
 /// is built on.
 ///
 /// `AppState` persists into the process-wide `UserDefaults.lhf`, so every test
-/// here restores what it touched — see the note in `PreviewModeTests`.
+/// here restores what it touched — see the note in `IntroFlowTests`.
 @MainActor
 @Suite("Profile tab")
 struct ProfileTabTests {
@@ -34,40 +34,34 @@ struct ProfileTabTests {
                 != ContentView.DashRoute.report(courseID: "2", courseName: "a"))
     }
 
-    // MARK: Preview mode, on the Profile tab
+    // MARK: A larger course set, on the Profile tab
 
-    /// The regression this exists for, in advance. An App Store reviewer can't
-    /// pass Penn SSO, so preview mode is the *only* way they see the app — and
-    /// the previous time something in this area broke, it stranded them at the
-    /// login wall (see commit `c999c38`).
-    ///
-    /// The trap here is specific and easy to fall into: the dashboard gets its
-    /// sample data by calling `loadSampleData()` on the *view model*, which
-    /// leaves `AppState` empty. The Profile tab's class list reads `AppState`
-    /// directly. If preview mode ever stops seeding `AppState` itself, the
-    /// dashboard would look perfect and the Profile tab would be blank — the
-    /// hardest kind of demo bug to notice, because two of three tabs are fine.
-    @Test("preview mode fills the Profile tab's class list, not just the dashboard's")
-    func previewModePopulatesClassList() {
-        withPreviewMode { state in
+    /// Every listed class is switched on and nothing is sitting in the
+    /// "Deleted classes" disclosure for a student who has just synced a normal
+    /// course load — the same real-data path `renameIsCosmeticOnly` and
+    /// `deleteAndRestoreRoundTrip` below exercise, just with `SampleData`'s
+    /// full course set standing in for a real Canvas feed so this runs across
+    /// several classes instead of one or two named directly.
+    @Test("a normal course load leaves every class visible and selected")
+    func fullCourseLoadPopulatesClassList() {
+        withCourseState { state in
+            state.canvasItems = SampleData.items().map(\.assignment)
             let courses = state.visibleCourseCodes()
             #expect(!courses.isEmpty)
-            // Every listed class is switched on, so the reviewer's Profile tab
-            // opens populated rather than looking like a set of disabled rows.
             for course in courses {
                 #expect(state.isCourseSelected(course))
             }
-            // And nothing is sitting in the "Deleted classes" disclosure.
             #expect(state.deletedCourseCodes().isEmpty)
         }
     }
 
     /// Each row renders `courseDisplayName(_:)`, which has to produce something
-    /// printable for every fixture course — an empty label in the demo reads as
-    /// a data bug.
-    @Test("every preview class has a display name to render")
-    func previewClassesHaveNames() {
-        withPreviewMode { state in
+    /// printable for every course a real sync could hand it — an empty label
+    /// reads as a data bug.
+    @Test("every synced class has a display name to render")
+    func syncedClassesHaveNames() {
+        withCourseState { state in
+            state.canvasItems = SampleData.items().map(\.assignment)
             for course in state.visibleCourseCodes() {
                 #expect(!state.courseDisplayName(course).isEmpty)
                 // No fixture ships a rename, so the code is what shows.
@@ -165,21 +159,6 @@ struct ProfileTabTests {
     private func assignment(course: String, id: String) -> Assignment {
         Assignment(source: .canvas, sourceID: id, kind: .assignment,
                    course: course, title: "HW\(id)", dueAt: Date(), url: nil)
-    }
-
-    /// Runs `body` against a preview-mode `AppState`, then puts the persisted
-    /// preview flag back the way it was. Mirrors `PreviewModeTests`.
-    private func withPreviewMode(_ body: (AppState) -> Void) {
-        let state = AppState()
-        let wasPreview = state.isPreviewMode
-        state.enterPreviewMode()
-        defer {
-            if !wasPreview {
-                state.restartOnboarding()
-                UserDefaults.lhf.set(false, forKey: "isPreviewMode")
-            }
-        }
-        body(state)
     }
 
     /// A clean slate for the hidden/deleted/renamed sets, restored afterwards.

@@ -12,13 +12,13 @@ import Testing
 /// its suggestions come from, and the writes each decision makes. Those are
 /// deliberately factored out of the view into `OnboardingCourseSetup` for
 /// exactly this reason: a decision that only exists inside a `.task` closure is
-/// a decision nothing can check, and the one that matters most here (preview
+/// a decision nothing can check, and the one that matters most here (fixture
 /// mode never reaching the network) has already shipped broken once, stranding
 /// App Store reviewers at the login wall (commit `c999c38`).
 ///
 /// `AppState` and `CoursePreferencesStore` both persist into the process-wide
 /// `UserDefaults.lhf`, so every test here restores what it touched — see the
-/// note in `PreviewModeTests`.
+/// note in `IntroFlowTests`.
 @MainActor
 @Suite("Onboarding course setup")
 struct OnboardingCourseSetupTests {
@@ -339,12 +339,16 @@ struct OnboardingCourseSetupTests {
         )
     }
 
-    /// Preview mode must reach this step with classes to walk and suggestions
-    /// to show, or the reviewer sees an empty screen — the "two of three tabs
-    /// look fine" failure `ProfileTabTests` describes, in a different place.
-    @Test("preview mode reaches the step with classes and suggestions")
-    func previewHasSomethingToShow() {
-        withPreviewMode { state in
+    /// Fixture mode (the DEBUG `-LHFDemoData` seam) must reach this step with
+    /// classes to walk and suggestions to show, or the screenshot run sees an
+    /// empty screen — the "two of three tabs look fine" failure `ProfileTabTests`
+    /// describes, in a different place. `previewSuggestions(for:)` is a pure
+    /// function of a course list, so this exercises it directly against the
+    /// same `SampleData` course set the demo seam actually seeds, without
+    /// needing preview mode to get there.
+    @Test("fixture mode reaches the step with classes and suggestions")
+    func fixtureModeHasSomethingToShow() {
+        withFixtureCourses { state in
             let courses = state.selectedCourseCodes()
             #expect(!courses.isEmpty)
 
@@ -366,12 +370,12 @@ struct OnboardingCourseSetupTests {
         }
     }
 
-    /// The fixtures are real `CanvasRequirementSuggestion` values, so a
-    /// reviewer who taps "Add it" exercises the same `addCanvasSuggestion` path
-    /// a student does — the demo runs the actual code rather than miming it.
-    @Test("a reviewer accepting a demo suggestion gets a real recurring task")
+    /// The fixtures are real `CanvasRequirementSuggestion` values, so accepting
+    /// one on the demo seam exercises the same `addCanvasSuggestion` path a
+    /// student does — the demo runs the actual code rather than miming it.
+    @Test("accepting a demo suggestion gets a real recurring task")
     func previewSuggestionsAreAcceptable() throws {
-        try withPreviewMode { state in
+        try withFixtureCourses { state in
             let courses = state.selectedCourseCodes()
             let suggestion = try #require(
                 OnboardingCourseSetup.previewSuggestions(for: courses).first
@@ -501,12 +505,10 @@ struct OnboardingCourseSetupTests {
         let keys = [
             OnboardingCourseSetup.onboardingCompletedKey,
             OnboardingCourseSetup.completedKey,
-            "isPreviewMode",
         ]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer { restore(saved, in: defaults) }
 
-        defaults.set(false, forKey: "isPreviewMode")
         set(onboarded, forKey: OnboardingCourseSetup.onboardingCompletedKey, in: defaults)
         set(courseSetup, forKey: OnboardingCourseSetup.completedKey, in: defaults)
 
@@ -542,27 +544,22 @@ struct OnboardingCourseSetupTests {
         try body(makeState(), defaults)
     }
 
-    /// Mirrors `PreviewModeTests` and `ProfileTabTests`, including putting the
-    /// persisted preview flag back.
+    /// A fresh `AppState` seeded with `SampleData`'s course set through the
+    /// real assignment path — `canvasItems`, exactly what a genuine Canvas
+    /// sync would populate — rather than through the (now-removed) reviewer
+    /// preview mode. Mirrors `ProfileTabTests`' equivalent helper.
     ///
-    /// Also restores `recurringTasks`, which those two don't need to: accepting
-    /// a demo suggestion writes a real task to `UserDefaults.lhf` like any
-    /// other, and leaving one behind would put a phantom weekly reading on the
-    /// developer's own dashboard.
-    private func withPreviewMode(_ body: (AppState) throws -> Void) rethrows {
+    /// Restores `recurringTasks`, unlike `withCourseState` above: accepting a
+    /// demo suggestion writes a real task to `UserDefaults.lhf` like any
+    /// other, and leaving one behind would put a phantom weekly reading on
+    /// the developer's own dashboard.
+    private func withFixtureCourses(_ body: (AppState) throws -> Void) rethrows {
         let defaults = UserDefaults.lhf
         let saved = [Self.recurringTasksKey].map { ($0, defaults.object(forKey: $0)) }
         defer { restore(saved, in: defaults) }
 
         let state = makeState()
-        let wasPreview = state.isPreviewMode
-        state.enterPreviewMode()
-        defer {
-            if !wasPreview {
-                state.restartOnboarding()
-                defaults.set(false, forKey: "isPreviewMode")
-            }
-        }
+        state.canvasItems = SampleData.items().map(\.assignment)
         try body(state)
     }
 

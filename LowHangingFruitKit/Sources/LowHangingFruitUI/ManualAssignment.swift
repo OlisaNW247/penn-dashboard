@@ -56,8 +56,8 @@ extension Assignment {
 
 /// User renames from Settings → Classes, keyed by course code. Passed through
 /// the environment rather than read from `AppState` so cards stay usable in
-/// previews and in Preview mode, where there are no overrides — an empty map
-/// reproduces the old behaviour exactly.
+/// SwiftUI previews and under the DEBUG `-LHFDemoData` seam, where there are
+/// no overrides — an empty map reproduces the old behaviour exactly.
 private struct CourseNameOverridesKey: EnvironmentKey {
     static let defaultValue: [String: String] = [:]
 }

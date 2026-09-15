@@ -317,7 +317,6 @@ final class AppState: ObservableObject {
     /// replay the whole product pitch at someone who only wanted to reconnect
     /// Canvas.
     @Published private(set) var hasSeenIntro: Bool
-    @Published private(set) var isPreviewMode: Bool
     @Published private(set) var userName: String
 
     /// Course materials synced for `ask` — syllabus prose, announcement
@@ -468,7 +467,14 @@ final class AppState: ObservableObject {
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
     private static let introSeenKey = "hasSeenIntro"
-    private static let previewModeKey = "isPreviewMode"
+    // `previewModeKey` ("isPreviewMode") was removed 2026-09-15 along with the
+    // reviewer-facing preview mode it backed. Following this file's own
+    // convention for a retired key (see `LegacyStateMigration`'s doc comment:
+    // "the legacy keys are deliberately not deleted... they simply stop being
+    // written"), the key is not migrated or scrubbed here — an existing
+    // install that has it set to `true` just keeps an inert boolean nothing
+    // reads any more, which costs nothing and needs no new migration
+    // machinery. Do not reintroduce a read of this key.
     private static let appearanceModeKey = "appearanceMode"
     private static let gradeBaselinedCoursesKey = "gradeBaselinedCourses"
     /// Backs `noSubmissionCanvasAssignmentIDs`. Device-local and never
@@ -559,7 +565,6 @@ final class AppState: ObservableObject {
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
         self.hasSeenIntro = UserDefaults.lhf.bool(forKey: Self.introSeenKey)
-        self.isPreviewMode = UserDefaults.lhf.bool(forKey: Self.previewModeKey)
         self.userName = UserDefaults.lhf.string(forKey: Self.userNameKey) ?? ""
         // Test runners must not read the dev Mac's real app-support store, for
         // the same reason `SharedDefaults.isTestRunner` guards the ledger.
@@ -758,20 +763,11 @@ final class AppState: ObservableObject {
         // `hasCompletedOnboarding` but no `hasSeenIntro`, so without this the
         // first Settings reconnect (`restartOnboarding()`) would drop them into
         // a first-run pitch they've long since outgrown. Reads the *persisted*
-        // onboarding flag, so it has to run before the preview and demo seams
-        // below force that flag true.
+        // onboarding flag, so it has to run before the DEBUG demo seam below
+        // forces that flag true.
         if hasCompletedOnboarding && !hasSeenIntro {
             hasSeenIntro = true
             UserDefaults.lhf.set(true, forKey: Self.introSeenKey)
-        }
-
-        // Preview (demo) mode persists across launches so an App Store reviewer
-        // who relaunches still lands on the populated sample dashboard.
-        if isPreviewMode {
-            hasCompletedOnboarding = true
-            hasSeenIntro = true
-            if userName.isEmpty { userName = "there" }
-            loadPreviewData()
         }
 
         #if DEBUG
@@ -1014,11 +1010,10 @@ final class AppState: ObservableObject {
     }
 
     /// True when the store is showing bundled fixtures rather than a real
-    /// account: the reviewer-facing preview, or the DEBUG screenshot seam.
-    /// Both need the same treatment everywhere the app would otherwise reach
-    /// for the network or for Canvas-derived identifiers.
+    /// account: the DEBUG screenshot/preview seam (`-LHFDemoData`), never
+    /// present in a release build. Everywhere the app would otherwise reach
+    /// for the network or for Canvas-derived identifiers checks this first.
     var isUsingFixtureData: Bool {
-        if isPreviewMode { return true }
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-LHFDemoData")
         #else
@@ -1038,10 +1033,9 @@ final class AppState: ObservableObject {
     /// at all — so it can't tell the one path Grade Watcher can work on apart
     /// from the one where every fetch would fail.
     ///
-    /// Fixture/preview mode short-circuits to true because Grade Watcher runs
-    /// entirely off bundled sample data there, never the network, and preview
-    /// is the only way through the app for someone who can't pass Penn SSO —
-    /// notably an App Store reviewer (see `isUsingFixtureData`).
+    /// Fixture mode (`isUsingFixtureData`, the DEBUG `-LHFDemoData` seam)
+    /// short-circuits to true because Grade Watcher runs entirely off bundled
+    /// sample data there, never the network.
     ///
     /// `canvasSessionExpired` also counts as available — the same
     /// cookies-or-expired test `DiagnosticsReport.canvasConnectPath` uses.
@@ -1065,17 +1059,12 @@ final class AppState: ObservableObject {
     ///
     /// Explicitly excludes `isUsingFixtureData`, unlike `canvasIsLinkOnly`
     /// below, because nothing else in this expression supplies that guard:
-    /// `isGradescopeConnected` is backed by a plain persisted flag that
-    /// starts (and stays) `false` for a reviewer in preview mode, since
-    /// `enterPreviewMode()` never touches it. Preview mode is deliberately
-    /// the ONE path through this app for someone who cannot pass Penn SSO —
-    /// notably an App Store reviewer — and it renders entirely off bundled
-    /// fixtures that were never going to come from Gradescope either. Without
-    /// this guard, that reviewer would be shown a "connect your accounts" nag
-    /// on the one screen the app promises will just work; the fixture data
-    /// itself would look fine, so the bug would read as a small copy problem
-    /// rather than the "reviewer sees a broken-looking dashboard" risk it
-    /// actually is.
+    /// `isGradescopeConnected` is backed by a plain persisted flag that stays
+    /// `false` under the DEBUG `-LHFDemoData` screenshot seam, since that seam
+    /// never touches it, and the bundled fixtures it renders were never going
+    /// to come from Gradescope either. Without this guard, a screenshot run
+    /// would show a "connect your accounts" nag on the one screen it's
+    /// supposed to demonstrate fully connected.
     var needsGradescopeConnection: Bool {
         !isUsingFixtureData && !isGradescopeConnected
     }
@@ -1085,13 +1074,13 @@ final class AppState: ObservableObject {
     /// dashboard's timeline, but one with no cookie session behind it, so
     /// automatic submission tracking, Canvas Scan and Grade Watcher are all
     /// silently unavailable. `canUseGradeWatcher` already draws exactly this
-    /// line (see its doc comment): true for a cookie session OR fixture/
-    /// preview mode, false for a link-only connection. So this needs no
-    /// separate preview guard of its own — a reviewer in preview mode has
-    /// `canUseGradeWatcher == true`, which alone makes this `false` without
-    /// re-deriving `isUsingFixtureData` a second time. Duplicating the guard
-    /// here would not be wrong, just redundant, and redundant guards are how
-    /// two copies of the same rule quietly drift apart later.
+    /// line (see its doc comment): true for a cookie session OR fixture mode,
+    /// false for a link-only connection. So this needs no separate fixture
+    /// guard of its own — the DEBUG demo seam has `canUseGradeWatcher ==
+    /// true`, which alone makes this `false` without re-deriving
+    /// `isUsingFixtureData` a second time. Duplicating the guard here would
+    /// not be wrong, just redundant, and redundant guards are how two copies
+    /// of the same rule quietly drift apart later.
     var canvasIsLinkOnly: Bool {
         isCanvasConnected && !canUseGradeWatcher
     }
@@ -1416,61 +1405,6 @@ final class AppState: ObservableObject {
         onboardingDestination = destination
         hasCompletedOnboarding = false
         UserDefaults.lhf.set(false, forKey: Self.onboardingCompletedKey)
-        // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
-        // student who tapped Preview can switch to their own Canvas cleanly.
-        let wasPreview = isPreviewMode
-        isPreviewMode = false
-        UserDefaults.lhf.set(false, forKey: Self.previewModeKey)
-        if wasPreview {
-            // Drop the fixtures on the way out. They'd never render again
-            // (their course ids leave with preview mode), but leaving demo
-            // grades in the store means the first real refresh merges into
-            // sample data rather than starting clean.
-            canvasItems = []
-            gradeWatcher.clearAll()
-            rebuildDashboardItems()
-        }
-    }
-
-    /// Enters a read-only demo populated with sample courses and assignments, so
-    /// anyone who can't pass Penn SSO (notably an App Store reviewer) can explore
-    /// the full app. No network, no login; the dashboard reads bundled fixtures.
-    /// Populates the demo's *shared* state — the class list, the widget
-    /// snapshot, and Grade Watcher — from the bundled fixtures.
-    ///
-    /// The dashboard itself doesn't come through here: `ContentView` hands
-    /// `DashboardViewModel` its own `SampleData` items and never binds to this
-    /// store in preview. But everything that reads `AppState` directly
-    /// (Settings → Classes, the class picker, Grade Watcher's course list) was
-    /// reading an empty store and rendering an empty screen, which is exactly
-    /// the "app looks broken" impression preview mode exists to prevent.
-    ///
-    /// Deliberately non-destructive: it never touches `completedAssignmentIDs`
-    /// or `completionDates` (unlike DEBUG's `loadSampleData`), so a real
-    /// student who taps Preview out of curiosity doesn't lose their own
-    /// completion history.
-    func loadPreviewData() {
-        canvasItems = SampleData.items().map(\.assignment)
-        rebuildDashboardItems()
-        gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
-    }
-
-    func enterPreviewMode() {
-        isPreviewMode = true
-        UserDefaults.lhf.set(true, forKey: Self.previewModeKey)
-        // Preview is entered *from* the intro's first pane, so the panes have
-        // served their purpose. Marking them seen also keeps a reviewer who
-        // later taps Connect Canvas (via `restartOnboarding()`) on the
-        // checklist instead of replaying the pitch.
-        completeIntro()
-        if userName.isEmpty { userName = "there" }
-        // Seed immediately, not just on the next launch: `init` only reaches
-        // `loadPreviewData` when preview mode was already persisted, so
-        // without this the reviewer who just tapped "Preview with sample data"
-        // gets an empty class list and an empty Grade Watcher until they
-        // relaunch the app.
-        loadPreviewData()
-        completeOnboarding()
     }
 
     /// Sets the Canvas calendar feed URL — either captured automatically from
@@ -2313,7 +2247,7 @@ final class AppState: ObservableObject {
     /// toggle itself is immediate" posture as the rest of this file's
     /// cookie-gathering call sites.
     ///
-    /// No-ops in fixture/preview mode, when there's no live Canvas session
+    /// No-ops in fixture mode, when there's no live Canvas session
     /// to fetch with, or when `courseKey`'s Canvas course id can't be
     /// resolved — the "silent no-op, not a user-facing error" posture
     /// `refreshGradeWatcher`/`refreshCourseIntel` already use for the same
@@ -3018,7 +2952,7 @@ final class AppState: ObservableObject {
     /// on-device profile is visible live in Xcode's console without the user
     /// having to export the copyable report. Same privacy budget as that
     /// report — `.public` is safe here because the content is built to stay
-    /// inside it. Skipped in fixture/preview mode: that's sample data, not a
+    /// inside it. Skipped in fixture mode: that's sample data, not a
     /// real account worth logging.
     private static let courseIntelLog = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "LHF",
@@ -4058,9 +3992,8 @@ final class AppState: ObservableObject {
     /// Completing a merged item marks both ids, but only the item the user
     /// tapped is in hand — the counterpart is just a `linkedID`. Where the pools
     /// came from a sync both already have rows and this changes nothing. Where
-    /// they didn't — preview mode and sample data assign `canvasItems` /
-    /// `gradescopeItems` directly, and preview mode is the path App Store
-    /// reviewers use because they can't pass Penn SSO — the counterpart has no
+    /// they didn't — the DEBUG `-LHFDemoData` seam assigns `canvasItems` /
+    /// `gradescopeItems` directly from sample data — the counterpart has no
     /// row, and half the merge comes back undone on the next launch.
     private func rowsNeededToComplete(_ assignment: Assignment) -> [Assignment] {
         guard let linkedID = assignment.linkedID else { return [assignment] }
@@ -4588,7 +4521,7 @@ final class AppState: ObservableObject {
     /// `private` in Swift is file-scoped even across an extension on the
     /// same type in a different file.
     func canvasCourseIDs() -> [String: String] {
-        // Preview mode's sample assignments carry no Canvas URLs, so nothing
+        // Fixture mode's sample assignments carry no Canvas URLs, so nothing
         // ever resolved a course id and Grade Watcher showed "Can't reach
         // Canvas for your classes" — the demo's most visible dead end. Serve
         // the fixture ids instead, in memory only: writing them into
