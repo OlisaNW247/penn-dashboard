@@ -16,8 +16,17 @@ within limits.
 
 ## Identity
 
-- **App name** (≤30): `Smooth`
-- **Subtitle** (≤30): `Your next deadline, first`
+- **App name** (≤30): `Smooth for Students` (19)
+- **Subtitle** (≤30): `Your next deadline, first` (25)
+
+> **The store name and the Home Screen name are different on purpose.** This
+> field is the App Store listing only. What appears under the icon on the
+> phone — and in notification banners, Settings, and the app switcher — is
+> `CFBundleDisplayName`, which is **`Smooth`** in `project.yml` (app and
+> widget) and must stay that way. Do not "fix" the mismatch: the longer name
+> exists so the listing is findable and unambiguous among other apps called
+> Smooth, while the phone keeps the short brand. iOS would truncate anything
+> much longer than ~12 characters under the icon anyway.
 - **Bundle ID:** `com.lhf.lowhangingfruit`
 - **Primary category:** Education
 - **Secondary category:** Productivity
@@ -163,7 +172,13 @@ load, not just the assignments.
 
 ## Keywords (≤100, comma-separated, no spaces)
 
-canvas,assignments,deadlines,homework,grades,planner,student,college,readings,reminders,assistant
+canvas,assignments,deadlines,homework,grades,planner,college,syllabus,readings,reminders,gpa,due
+
+<!-- 93 of 100. "student" was dropped when the app name became "Smooth for
+     Students": Apple already indexes the name, so spending a keyword slot on
+     a word that is in it is waste. "syllabus", "gpa" and "due" took the
+     freed room. "smooth" is likewise absent on purpose — the name covers
+     it. -->
 
 <!-- 97 characters, within the 100-char limit. -->
 

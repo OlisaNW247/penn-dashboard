@@ -11,7 +11,8 @@ their LHF spelling. **Grade Watcher is visible in this build**
 was hidden and this file said nothing about a grades screen. The walkthrough
 below now points a reviewer at it._
 
-**App:** Smooth (bundle id `com.lhf.lowhangingfruit`)
+**App:** Smooth for Students — listed under that name, shown on the device as
+**Smooth** (`CFBundleDisplayName`); bundle id `com.lhf.lowhangingfruit`
 **What it is:** A personal academic dashboard for university students. It reads
 the student's own Canvas deadlines — assignments, readings, and class
 sessions — and shows them as one chronological "what's due next" list, with
