@@ -10,7 +10,10 @@ cd "$ROOT"
 DEVICE="iPhone 17 Pro Max"        # 6.9" — the size the App Store requires
 BUNDLE="com.lhf.lowhangingfruit"
 DD="build/screenshots"            # DerivedData (gitignored)
-APP="$DD/Build/Products/Debug-iphonesimulator/LowHangingFruit.app"
+# Smooth.app, not LowHangingFruit.app: the app target's PRODUCT_NAME was
+# renamed for 3.0.0 so the Mac icon reads "Smooth" (macOS labels an icon by
+# the bundle's file name). The scheme is still LowHangingFruit.
+APP="$DD/Build/Products/Debug-iphonesimulator/Smooth.app"
 OUT="docs/appstore/screenshots"
 mkdir -p "$OUT"
 

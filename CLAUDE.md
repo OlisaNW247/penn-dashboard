@@ -315,6 +315,23 @@ end to end) or pass `-LHFForceUpdateWall`.
   `project.yml`'s `info.properties`. The widget dependency must be
   `platformFilter: iOS` — case-sensitive; `platforms:` is silently discarded.
   Don't regenerate unless a build actually demands it.
+- **iOS names an app from `CFBundleDisplayName`; macOS does not.** The Mac
+  build called itself "LowHangingFruit" for every version of the Smooth
+  rename, in the application menu beside the Apple logo, in About, and under
+  its icon, while the phone said Smooth — because nothing on macOS reads
+  `CFBundleDisplayName`. The menu bar, About box and alerts read
+  **`CFBundleName`**, which was still `$(PRODUCT_NAME)`; Finder, Launchpad
+  and the Dock read neither, they read the **file name of the .app bundle**,
+  which is `PRODUCT_NAME` itself. So the rename took all three keys, and the
+  fix is not complete with any two of them. The keys had to go in
+  `project.yml`, not just `App/Info.plist` — the Mac archive is the one lane
+  that must run `xcodegen generate`, for the per-SDK entitlements override,
+  which is precisely the step that rewrites the plist (see the trap above).
+  Renaming `PRODUCT_NAME` is safe for the ledger because every path that
+  holds student data derives from the bundle id or the App Group, neither of
+  which moved; what it does break is a script hard-coding the built product's
+  path, and it leaves an existing Mac user's pinned Dock tile stale.
+
 - **Tests share `UserDefaults.standard`.** Any test touching selection or
   completion must normalize on the way in *and* out, or it fails the *next*
   suite. Use a scratch suite (`UserDefaults(suiteName:)` + `removePersistentDomain`).

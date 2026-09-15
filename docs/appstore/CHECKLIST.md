@@ -103,7 +103,7 @@ one line, and the widget's copy must match.
   iOS-only appex. The `NSExtension` / `NSExtensionPointIdentifier` keys now live
   in `project.yml`'s `info.properties`, so `xcodegen generate` can no longer
   delete them. Verified: target dependencies 0 → 5, copy-files phases 0 → 3, and
-  a Release build produces `LowHangingFruit.app/PlugIns/LHFWidgetExtension.appex`
+  a Release build produces `Smooth.app/PlugIns/LHFWidgetExtension.appex`
   with the right extension point. **`git checkout -- LHFWidget/Info.plist` after
   regenerating is no longer needed.**
 - ✅ **`UIUserInterfaceStyle: Light` removed** from the app's Info.plist. It
@@ -221,7 +221,7 @@ Mac is a **separate binary and a separate review** on the same app record
   this: the archive log prints them itself, in the `ProcessProductPackaging`
   step, which is also the proof that the per-SDK override picked the macOS
   file rather than the iOS one. To re-check a built archive the bundle is
-  `Products/Applications/LowHangingFruit.app` (the product name, not `LHF` —
+  `Products/Applications/Smooth.app` (the product name, not `LHF` —
   `LHF` is only the display name).
 - ⬜ **Run the sandboxed build once before uploading, and relaunch it.** This is
   the whole risk of the Mac build: if the App Group container doesn't resolve,

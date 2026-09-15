@@ -19,14 +19,18 @@ within limits.
 - **App name** (≤30): `Smooth for Students` (19)
 - **Subtitle** (≤30): `Your next deadline, first` (25)
 
-> **The store name and the Home Screen name are different on purpose.** This
-> field is the App Store listing only. What appears under the icon on the
-> phone — and in notification banners, Settings, and the app switcher — is
-> `CFBundleDisplayName`, which is **`Smooth`** in `project.yml` (app and
-> widget) and must stay that way. Do not "fix" the mismatch: the longer name
-> exists so the listing is findable and unambiguous among other apps called
-> Smooth, while the phone keeps the short brand. iOS would truncate anything
-> much longer than ~12 characters under the icon anyway.
+> **The store name and the name on the device are different on purpose.**
+> This field is the App Store listing only. Three separate settings decide
+> what a student actually sees, all of them **`Smooth`** in `project.yml`
+> (app and widget), and all of them must stay that way:
+> `CFBundleDisplayName` (the iPhone Home Screen, notification banners,
+> Settings, the app switcher), `CFBundleName` (the Mac's application menu,
+> About box and alerts), and `PRODUCT_NAME` (the .app bundle's file name,
+> which is what labels the icon in Finder, Launchpad and the Dock on the
+> Mac). Do not "fix" the mismatch with the listing: the longer name exists
+> so the listing is findable and unambiguous among other apps called Smooth,
+> while the device keeps the short brand. iOS would truncate anything much
+> longer than ~12 characters under the icon anyway.
 - **Bundle ID:** `com.lhf.lowhangingfruit`
 - **Primary category:** Education
 - **Secondary category:** Productivity

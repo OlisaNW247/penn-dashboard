@@ -39,6 +39,27 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Smooth
+        # macOS reads the application menu (the bold one beside the Apple
+        # logo), the Dock label and the Finder name from CFBundleName, NOT
+        # from CFBundleDisplayName -- so leaving this at its $(PRODUCT_NAME)
+        # default is why the Mac build still called itself "LowHangingFruit"
+        # while the phone said Smooth. iOS is the reverse: it prefers
+        # CFBundleDisplayName, which is why this went unnoticed for as long
+        # as the phone was the only thing anyone looked at. Both keys are set
+        # now, to the same string; they are not interchangeable.
+        #
+        # It has to be declared here and not only in App/Info.plist, for the
+        # same reason as the version keys below: the Mac archive lane is the
+        # one place that has to run `xcodegen generate` (for the per-SDK
+        # entitlements override), and that rewrites the .plist from this list
+        # -- so a value living only on disk would be replaced by the default
+        # by the very step the Mac build requires.
+        #
+        # CFBundleName is not the whole fix on its own. Finder, Launchpad and
+        # the Dock label an app by the file name of its bundle, so the icon in
+        # /Applications would still have read "LowHangingFruit" with only this
+        # key changed -- which is why PRODUCT_NAME moves too, below.
+        CFBundleName: Smooth
         # Required for the Mac App Store. Without it the archive warns "No App
         # Category is set" and upload validation rejects the build outright;
         # iOS never needed it, which is why it was missing for four builds.
@@ -68,6 +89,31 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit
+        # The built bundle is Smooth.app, not LowHangingFruit.app. This is the
+        # half of the rename that CFBundleName cannot do: macOS labels an icon
+        # in Finder, Launchpad and the Dock with the bundle's *file name*, so
+        # the Mac icon read "LowHangingFruit" no matter what the Info.plist
+        # said. On iOS none of this was visible -- the Home Screen reads
+        # CFBundleDisplayName -- which is why it survived every phone build.
+        #
+        # Only the product name changes. The bundle id stays
+        # com.lhf.lowhangingfruit, so this is an update to the same App Store
+        # record and not a new app, and every path derived from the bundle id
+        # -- the App Group container that holds the SwiftData ledger, the
+        # Keychain items, the widget's shared defaults -- is untouched, so no
+        # student loses anything on updating. The Xcode scheme is still called
+        # LowHangingFruit (a scheme name is not a product name), so the
+        # commands in CLAUDE.md still work unchanged.
+        #
+        # What this does break is any script that hard-codes the built
+        # product's path; capture-screenshots.sh and the App Store docs were
+        # updated with it (bundle-mac.sh was not -- it bundles the SwiftPM
+        # executable under its own com.olisa.* id and never touches this
+        # target). One cosmetic cost on the Mac, accepted knowingly:
+        # an existing 1.2.1 user who has the old bundle pinned to their Dock
+        # will get a stale tile when the update replaces LowHangingFruit.app
+        # with Smooth.app, and has to re-pin it.
+        PRODUCT_NAME: Smooth
         MARKETING_VERSION: "3.0.0"
         CURRENT_PROJECT_VERSION: "8"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -107,6 +153,10 @@ targets:
       path: LHFWidget/Info.plist
       properties:
         CFBundleDisplayName: Smooth
+        # Same split as the app target: CFBundleDisplayName covers iOS, and
+        # macOS reads CFBundleName. Declared here rather than in the .plist
+        # because this file is regenerated -- see the note above.
+        CFBundleName: Smooth
         # Must be declared HERE, not just in the .plist on disk: this file is
         # rewritten from scratch on every `xcodegen generate` (see the comment
         # above), so version keys left only in the .plist are silently wiped,

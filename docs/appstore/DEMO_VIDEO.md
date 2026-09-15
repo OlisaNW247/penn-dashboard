@@ -80,7 +80,7 @@ xcrun simctl status_bar "iPhone 17 Pro Max" override \
 
 # 2. Install the DEBUG build (built to build/screenshots — see capture-screenshots.sh)
 xcrun simctl install booted \
-  build/screenshots/Build/Products/Debug-iphonesimulator/LowHangingFruit.app
+  build/screenshots/Build/Products/Debug-iphonesimulator/Smooth.app
 
 # 3a. For the REAL login shots (scenes 1–2): launch with no flags (fresh onboarding)
 xcrun simctl launch booted com.lhf.lowhangingfruit
