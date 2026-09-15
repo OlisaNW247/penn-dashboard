@@ -89,8 +89,14 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-14): **1250 tests / 125 suites
-green** (Deno **324**) after the second merge of Marco's
+Baseline on `v5`, verified on a Mac (2026-09-15): **1253 tests / 125 suites
+green** (Deno **324**) after the submission prep for **3.0.0 (build 7)**:
+the announcement watcher's "ai assist" opt-out restored (49441ac had
+forced both flags on and dropped the toggles, which `docs/PRIVACY.md`
+promises students can switch off — compiled first time), and the
+recycled-Canvas-site term fix (trap below; the first version of that fix
+failed its own new test on the first compile and the rule, not the
+fixture, was wrong). Earlier the same day, 1250/125 after the second merge of Marco's
 `codex/fire-dark-mode` (a2b66bc at 49441ac: profile and settings on one
 screen, Grade Watcher compacted, the daily digest removed with its three
 tests — the only reason the count fell from 1253, checked, not accepted
@@ -512,6 +518,23 @@ end to end) or pass `-LHFForceUpdateWall`.
   closed the connection and the isolate never sees the reply; the RPC
   lands (the row count rises) but every ask logs a false "exceeded 4000ms
   deadline, one request will go under-counted". Not yet fixed.
+- **A recycled Canvas site carries the previous year's due dates, and one
+  of them can define the whole term.** `GradeCountPredictor.term(for:)`
+  anchored the term on the earliest due date across a course's items, and
+  `Term.elapsedWeeks` clamps to the term's own length, so CIS 4500 read
+  "week 14 of 14" on 2026-09-15 — the third week of the semester — while
+  every other course read "week 1 of 14". The site was reused: three items
+  still carried 2025 dates ("Met Instructor" 2025-10-14, "Class
+  Participation" and "Ed Participation" 2025-12-09) ahead of the real work
+  starting 2026-09-11. The term now starts after the last gap wider than
+  the term's own length, since two items more than a whole term apart
+  cannot belong to the same term. The first attempt used a tuned 8-week
+  threshold and its own new test caught the flaw on the first compile: the
+  last 8-week-plus gap in that course is the eleven weeks between the
+  September homework and the December final, so it anchored on the final
+  exam and claimed the semester begins in December. When a rule needs a
+  magic number, check whether the quantity it is really about is already
+  in scope — here it was `weeks`, the parameter one line away.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
