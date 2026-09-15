@@ -204,21 +204,21 @@ struct GradeCourseCardView: View {
         return "\(base) \u{00b7} add expected counts for \(names)"
     }
 
-    /// The card's and report's one status line: "N% decided", with
-    /// " · week W of T" appended once the engine knows the term's length
-    /// (`GradeBreakdown.term`). W is the elapsed week, rounded up and floored
-    /// at 1 -- a course three days into week 1 should read "week 1", not
-    /// "week 0". At most six words, no sentence, matching the copy budget
-    /// `GradeMinimalCopyTests` enforces.
+    /// The card's and report's one status line: "N% decided". At most six
+    /// words, no sentence, matching the copy budget `GradeMinimalCopyTests`
+    /// enforces.
+    ///
+    /// This used to append " · week W of T" from `GradeBreakdown.term`.
+    /// Dropped on Olisa's call 2026-09-15: the week number answers a
+    /// question nobody asked of a grade card — the student knows what week
+    /// it is — while being wrong often enough to undermine the number it
+    /// sits beside, since `term` is inferred from due dates rather than
+    /// known (see the recycled-Canvas-site trap in CLAUDE.md). `term`
+    /// itself stays: it still anchors `GradeCountPredictor`'s pace
+    /// projection, which is load-bearing for the percent.
     nonisolated static func statusText(for breakdown: GradeBreakdown) -> String {
         let percent = Int((min(max(decidedFraction(for: breakdown), 0), 1) * 100).rounded())
-        var text = "\(percent)% decided"
-        if let term = breakdown.term {
-            let elapsed = max(1, Int(term.elapsedWeeks(at: Date()).rounded(.up)))
-            let total = Int(term.weeks.rounded())
-            text += " \u{00b7} week \(elapsed) of \(total)"
-        }
-        return text
+        return "\(percent)% decided"
     }
 
     /// The card's/report's headline pair: the big number, and -- only in the

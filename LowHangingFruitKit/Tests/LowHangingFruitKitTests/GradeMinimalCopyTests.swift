@@ -65,20 +65,17 @@ struct GradeMinimalCopyTests {
         assertBudget(text)
     }
 
-    @Test("statusText: term just started -- week 1, never week 0")
-    func statusTextTermWeekOne() {
-        let term = GradeCountPredictor.Term(start: Date(), weeks: 14)
-        let text = GradeCourseCardView.statusText(for: breakdown(term: term))
-        #expect(text == "63% decided \u{00b7} week 1 of 14")
-        assertBudget(text)
-    }
-
-    @Test("statusText: term fully elapsed -- clamped to the last week, not beyond it")
-    func statusTextTermWeekFourteen() {
-        let term = GradeCountPredictor.Term(start: Date().addingTimeInterval(-100 * 7 * 86400), weeks: 14)
-        let text = GradeCourseCardView.statusText(for: breakdown(term: term))
-        #expect(text == "63% decided \u{00b7} week 14 of 14")
-        assertBudget(text)
+    @Test("statusText: a term changes nothing -- the week number is gone")
+    func statusTextTermIgnored() {
+        let justStarted = GradeCountPredictor.Term(start: Date(), weeks: 14)
+        let longElapsed = GradeCountPredictor.Term(
+            start: Date().addingTimeInterval(-100 * 7 * 86400), weeks: 14
+        )
+        for term in [justStarted, longElapsed] {
+            let text = GradeCourseCardView.statusText(for: breakdown(term: term))
+            #expect(text == "63% decided")
+            assertBudget(text)
+        }
     }
 
     // MARK: - targetText

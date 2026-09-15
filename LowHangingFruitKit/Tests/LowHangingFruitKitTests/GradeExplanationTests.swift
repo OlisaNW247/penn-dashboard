@@ -280,6 +280,6 @@ struct GradeExplanationTests {
         ))
         let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
         let attendanceLine = explanation.categoryLines.first { $0.id == "att" }
-        #expect(attendanceLine?.expectedCountText == "by time \u{00b7} week 3 of 14")
+        #expect(attendanceLine?.expectedCountText == "by time")
     }
 }

@@ -169,14 +169,12 @@ public struct GradeExplanation: Sendable, Hashable {
             // beside.
             let expectedCountText: String?
             if category.isAttendance {
-                if let term = breakdown.term {
-                    let elapsedWeeks = (category.semesterDecidedFraction ?? 0) * term.weeks
-                    let weekNumber = max(Int(elapsedWeeks.rounded(.up)), 1)
-                    let totalWeeks = Int(term.weeks.rounded())
-                    expectedCountText = "by time \u{00b7} week \(weekNumber) of \(totalWeeks)"
-                } else {
-                    expectedCountText = "by time"
-                }
+                // Just the source, no week number. The " · week W of T"
+                // suffix went with the card's status line on 2026-09-15
+                // (see `GradeCourseCardView.statusText`); leaving it here
+                // alone would have been the only place in the app still
+                // asserting a term boundary the app only infers.
+                expectedCountText = "by time"
             } else if let prediction = category.countPrediction {
                 switch prediction.source {
                 case .stated:        expectedCountText = "\(prediction.count) from syllabus"
