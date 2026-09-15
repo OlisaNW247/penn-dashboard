@@ -300,7 +300,7 @@ struct ContentView: View {
                                 // shrunken "Smooth" ran into the weekday;
                                 // under a full-size one it stopped short.
                                 .frame(height: 6)
-                                .offset(y: 9)
+                                .offset(y: 6)
                         }
                     Text(" \(Self.weekdayText(Date()))")
                         .font(.lhfHeaderTitle(32))
