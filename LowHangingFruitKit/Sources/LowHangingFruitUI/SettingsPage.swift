@@ -87,6 +87,8 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothTeal)
 
+            announcementWatcherSection
+
             Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
@@ -267,6 +269,42 @@ struct SettingsPage: View {
     // 2026-08-26 — see `AppState.includesAsOptedInContent`). A readings-only
     // class now behaves like any other class: it lives in the Profile classes
     // list and the normal per-class toggle is what hides it.
+
+    // MARK: Announcement watcher
+
+    /// Settings → "announcement watcher": turns Canvas course announcements
+    /// into dashboard items the same way the ICS feed and Modules readings
+    /// already do. Placed right after the accounts section — like Grade
+    /// Watcher above, this is session-powered (it reads announcements with
+    /// the same Canvas login the accounts section connects), so it reads as
+    /// one more thing that login unlocks rather than an unrelated preference.
+    ///
+    /// **Why the "ai assist" toggle only shows up with a backend
+    /// configured.** There used to be a student-pasted Anthropic key here
+    /// (`AnthropicKeyStore`, removed); now the AI path is LHF's own server
+    /// (`BackendAnnouncementExtractor`), and with no key for a student to
+    /// paste there is nothing this toggle could turn on when
+    /// `BackendServices.client` is `nil` — showing it anyway would just be a
+    /// switch that silently does nothing.
+    @ViewBuilder
+    private var announcementWatcherSection: some View {
+        Section {
+            Toggle("watch announcements", isOn: Binding(
+                get: { state.announcementWatcherEnabled },
+                set: { state.setAnnouncementWatcherEnabled($0) }
+            ))
+
+            if state.announcementWatcherEnabled, BackendServices.client != nil {
+                Toggle("ai assist", isOn: Binding(
+                    get: { state.announcementAIEnabled },
+                    set: { state.setAnnouncementAIEnabled($0) }
+                ))
+            }
+        } header: {
+            SmoothSectionHeader("preferences", accent: .smoothCobalt)
+        }
+        .smoothSectionBackground(.smoothGrape)
+    }
 
     // MARK: Reminders
 

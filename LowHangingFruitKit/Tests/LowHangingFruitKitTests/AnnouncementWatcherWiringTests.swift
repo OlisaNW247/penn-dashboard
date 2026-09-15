@@ -245,26 +245,26 @@ struct AnnouncementWatcherWiringTests {
         }
     }
 
-    @Test("announcement settings stay enabled even when an older install stored false")
-    func announcementSettingsForceOnForExistingInstall() {
+    @Test("announcementAIEnabled honors an explicit false on disk rather than the new true default")
+    func announcementAISettingExplicitFalseHonored() {
         withRestoredDefaults {
             UserDefaults.lhf.set(false, forKey: Self.aiEnabledKey)
 
             let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
 
-            #expect(state.announcementAIEnabled)
+            #expect(!state.announcementAIEnabled)
         }
     }
 
-    @Test("announcement settings are restored as enabled on the next AppState")
-    func announcementSettingsRestoreEnabledAcrossLaunches() {
+    @Test("setAnnouncementWatcherEnabled/setAnnouncementAIEnabled persist through UserDefaults.lhf and are read back on the next AppState")
+    func announcementSettingsPersistAcrossLaunches() {
         withRestoredDefaults {
             let firstLaunch = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
             firstLaunch.setAnnouncementWatcherEnabled(false)
             firstLaunch.setAnnouncementAIEnabled(true)
 
             let secondLaunch = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
-            #expect(secondLaunch.announcementWatcherEnabled)
+            #expect(!secondLaunch.announcementWatcherEnabled)
             #expect(secondLaunch.announcementAIEnabled)
         }
     }

@@ -582,13 +582,19 @@ final class AppState: ObservableObject {
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
         )
-        // Announcement watching and its AI assist are core Smooth behavior,
-        // not user-facing preferences. Keep both enabled for every launch,
-        // including installs that previously stored an explicit false.
-        self.announcementWatcherEnabled = true
-        self.announcementAIEnabled = true
-        UserDefaults.lhf.set(true, forKey: Self.announcementWatcherEnabledKey)
-        UserDefaults.lhf.set(true, forKey: Self.announcementAIEnabledKey)
+        // Both default to true (absent-key-means-on, per each property's doc
+        // comment) but MUST be read back from UserDefaults.lhf rather than
+        // forced, because docs/PRIVACY.md tells students they can turn "ai
+        // assist" (and the watcher itself) off in Settings — that promise is
+        // only true if a stored `false` survives the next launch. The wrong
+        // fix, tried once already (49441ac), is forcing both to `true` and
+        // writing that back to defaults on every init to simplify the
+        // Settings screen: it silently re-enables the setting for anyone who
+        // had turned it off, and for "ai assist" specifically that means a
+        // student's Canvas announcement text starts going to the backend and
+        // OpenRouter again without their consent surviving a relaunch.
+        self.announcementWatcherEnabled = UserDefaults.lhf.object(forKey: Self.announcementWatcherEnabledKey) as? Bool ?? true
+        self.announcementAIEnabled = UserDefaults.lhf.object(forKey: Self.announcementAIEnabledKey) as? Bool ?? true
         self.processedAnnouncementIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.processedAnnouncementIDsKey) ?? []
         )
