@@ -89,8 +89,12 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-15): **1253 tests / 125 suites
-green** (Deno **324**) after the submission prep for **3.0.0 (build 7)**:
+Baseline on `v5`, verified on a Mac (2026-09-15): **1252 tests / 125 suites
+green** (Deno **324**) after dropping the "week W of T" label from the
+grade card and the explanation panel (Olisa's call — the student knows
+what week it is, and `term` is inferred rather than known; one test
+fewer because two `statusText` cases collapsed into one, which is the
+whole of the drop from 1253). Earlier the same day, 1253/125 after the submission prep for **3.0.0 (build 7)**:
 the announcement watcher's "ai assist" opt-out restored (49441ac had
 forced both flags on and dropped the toggles, which `docs/PRIVACY.md`
 promises students can switch off — compiled first time), and the
