@@ -58,7 +58,7 @@ has been stale before, re-check rather than trust it). The 2.x numbers in
 this file's history never reached the store: builds were uploaded to App
 Store Connect from `v3.5` and `v5` but none was ever released, so the
 uploaded-vs-live numbering drifted apart. `v5` is therefore stamped
-**3.0.0 (build 8)**, chosen on 2026-09-15 to end the confusion rather than
+**3.0.0 (build 9)**, chosen on 2026-09-15 to end the confusion rather than
 to mean anything about the diff — the next release is simply 3.0.0 over a
 live 1.2.1. `v5` carries the backend, the Locust
 onboarding and the update gate on top.
@@ -90,8 +90,14 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v5`, verified on a Mac (2026-09-15): **1241 tests / 123 suites
-green** (Deno **324**) after removing preview mode (known gap below): twelve
+Baseline on `v5`: **not yet verified** after reverting the preview-mode
+removal on 2026-09-16 (Apple's 2.1(a) rejection of build 8; known gap
+below). The revert is a clean `git revert 3ace7f0` — no file it restores
+was touched in between — so the expectation is the pre-removal mark of
+1253/125, and a lower count means the revert lost something. The same
+day, uncompiled, the Mac build was renamed to Smooth (trap below).
+Before that, verified on a Mac (2026-09-15): **1241 tests / 123 suites
+green** (Deno **324**) after removing preview mode: twelve
 tests deleted, four reworked to seed state through the real assignment path,
 and two suites gone with the files that held them — that accounts for the
 whole drop from 1252, and none of it is lost coverage of surviving
@@ -613,15 +619,19 @@ end to end) or pass `-LHFForceUpdateWall`.
   sync path has had little real-device soak time; treat it as Phase A.
 - The onboarding per-course walk is covered by tests but has never been walked on
   a device (it needs a real Canvas session).
-- **There is no way to use the app without a PennKey.** Preview mode — the
-  sample-data path that let anyone, including an App Store reviewer, explore
-  the app without signing in — was removed on 2026-09-15 at Olisa's
-  instruction, after being told it was App Review's only route in. So 3.0.0
-  ships with no reviewable path and may be rejected under Guideline 2.1;
-  `docs/appstore/REVIEW_NOTES.md` says so to Apple in as many words. The
-  DEBUG `-LHFDemoData` seam is unrelated and still works: it is a launch
-  argument, compiled out of release, and it is what `capture-screenshots.sh`
-  and the demo video run on.
+- **Preview mode is App Review's only way in, and it was removed once.** The
+  only sign-in is PennKey, which nobody outside Penn can be issued, so the
+  "just exploring? preview with sample data" link on the intro's first pane
+  (and again at the foot of the Connect Canvas step) is the whole of the
+  reviewer's path — Apple's 2.1(a) note says a video is not enough and a
+  "demonstration mode" is. It was removed at Olisa's instruction on
+  2026-09-15 (3ace7f0), build 8 went up without it, and Apple rejected that
+  build under 2.1(a) on 2026-09-16 (submission 067299d2…). The removal was
+  reverted the same day for build 9. Do not remove it again, and do not
+  gate it behind `#if DEBUG`: the DEBUG `-LHFDemoData` seam is a different
+  thing — a launch argument compiled out of release, for
+  `capture-screenshots.sh` and the demo video — and it does not help a
+  reviewer.
 
 ## Overseer / doer split
 

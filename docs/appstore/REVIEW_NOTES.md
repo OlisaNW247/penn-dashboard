@@ -1,6 +1,6 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-_Last updated: 2026-09-15 (3.0.0, build 8). Add a contact name and email before
+_Last updated: 2026-09-16 (3.0.0, build 9). Add a contact name and email before
 pasting._
 
 _The product's user-facing name is now **Smooth** (it was **Low Hanging
@@ -65,22 +65,50 @@ personal data never leave the device.
 
 ---
 
-## Sign-in and review access
+## ✅ How to review without a school login — tap "preview with sample data"
+
+_Re: the Guideline 2.1(a) rejection of build 8 (submission
+067299d2-4b83-42a1-bc3c-65a461c722b5, 2026-09-16). Build 8 had no way in
+without a PennKey. This build adds the demonstration mode your note asks for;
+the steps below are how to reach it._
 
 Sign-in uses the **University of Pennsylvania's own Canvas login (PennKey single
-sign-on)**. We cannot issue test/demo credentials for this: PennKey accounts
-are institutional, issued only by the university to its own students, staff,
-and faculty, and there is no mechanism for a third party (including us) to
-create one for a reviewer.
+sign-on)**, so we cannot issue test credentials — PennKey accounts are
+institutional and only the university can create them. **You do not need one to
+review the app.**
 
-**There is no sample-data or preview mode in this build.** An earlier build
-of this app had an in-app "preview with sample data" path that let someone
-explore a populated demo without signing in; it has been removed at the
-product owner's instruction, and every screen in the app now requires a real
-Canvas sign-in to show anything. We are aware this means App Review has no
-way to authenticate into the app and may not be able to complete a full
-functional review under Guideline 2.1 as a result. We do not have a
-workaround to offer beyond what's described below.
+On the **very first screen**, under the "get started" button, tap
+**"just exploring? — preview with sample data"**. The same link is pinned to
+the bottom of the **Connect Canvas** screen, so it is still there if you tap
+"get started" first. Either one loads a fully-populated demo with no account
+and no network access, and the demo persists across relaunches.
+
+**Everything in the app is reachable from the demo:**
+
+1. **Dashboard** — sample items across **This week / All / Done**, colored by
+   urgency. Swipe a card to complete it; tap it for details. Items with
+   nothing to turn in (readings, class sessions, attend-only assignments)
+   carry a "nothing to submit" label.
+2. **Grades** — the chart icon in the dashboard header (next to the profile
+   icon; only shown once a course has grade data, which the demo seeds): a
+   per-class grade, regrouped into syllabus categories, and what share of the
+   grade is decided so far this semester.
+3. **Profile and settings** — the person icon in the header, one combined
+   screen: the class list (rename, hide, or archive a class; add a class by
+   hand), per-class notification settings (reminder times, mute, and the
+   "items with nothing to submit" switch), appearance (light/dark),
+   reminders, announcement watching and its "ai assist" switch, storage, and
+   account connections.
+4. **Ask ("the tree")** — the "ask about your classes" button on the
+   dashboard: ask a question about your classes in plain English. In the
+   demo there is no network, so answers are computed on the device from the
+   sample course material — the same fallback a student gets offline. With a
+   connection, the question and the matched course excerpts go to our server
+   and on to an AI model, as described under "Backend" above.
+5. **Widget** — add the "Next Due" widget to the Home or Lock Screen.
+
+The attached screen recording additionally shows the real Canvas login flow
+end-to-end.
 
 ## What the app does, step by step
 

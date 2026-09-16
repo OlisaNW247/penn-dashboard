@@ -74,14 +74,36 @@ struct SettingsPage: View {
             .smoothSectionBackground(.smoothLemon)
 
             Section {
-                accountRow(label: "canvas",
-                           connected: state.isCanvasConnected,
-                           working: state.isLoading || state.isCanvasDiscoveryLoading,
-                           disconnect: .canvas)
-                accountRow(label: "gradescope",
-                           connected: state.isGradescopeConnected,
-                           working: state.isGradescopeLoading,
-                           disconnect: .gradescope)
+                if state.isPreviewMode {
+                    // Every row below calls `restartOnboarding()`, which
+                    // silently drops preview mode — the reviewer's only way
+                    // to see a populated app without Penn SSO, which they
+                    // cannot pass. Left as two ordinary rows, "canvas" would
+                    // read "not connected" in preview (there's no real
+                    // login), so a reviewer poking at Profile the way
+                    // REVIEW_NOTES.md tells them to would tap it expecting
+                    // to see connection status and get ejected instead, with
+                    // no way back short of reinstalling. One clearly-labelled
+                    // exit, so leaving the demo is always deliberate. See
+                    // `c999c38` — this collapsed row is that same fix,
+                    // restored after a later Settings/Profile merge dropped
+                    // it along with the rest of the old two-row layout.
+                    Button {
+                        dismiss()
+                        state.restartOnboarding()
+                    } label: {
+                        Label("exit preview and connect my Canvas", systemImage: "arrow.right.circle")
+                    }
+                } else {
+                    accountRow(label: "canvas",
+                               connected: state.isCanvasConnected,
+                               working: state.isLoading || state.isCanvasDiscoveryLoading,
+                               disconnect: .canvas)
+                    accountRow(label: "gradescope",
+                               connected: state.isGradescopeConnected,
+                               working: state.isGradescopeLoading,
+                               disconnect: .gradescope)
+                }
             } header: {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }

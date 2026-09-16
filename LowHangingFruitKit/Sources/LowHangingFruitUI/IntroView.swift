@@ -235,7 +235,43 @@ struct IntroView: View {
             .offset(y: ctaVisible ? 0 : 18)
             .disabled(!ctaVisible)
             .accessibilityHint("Opens Canvas setup")
+
+            // The reviewer's door. Penn's own PennKey SSO is the only sign-in
+            // this app offers, and Apple's reviewers cannot obtain PennKey
+            // credentials, so without a way to see the app populated they
+            // hit the login wall and reject on Guideline 2.1. This has to sit
+            // on the very first screen a reviewer sees, not several pages
+            // into the tour (`MissionIntroView`) or only inside the setup
+            // walk (`OnboardingView.canvasStep` carries the same door,
+            // below its own primary action, for the same reason) — Skip
+            // is the most ordinary thing to do with an intro, and it must not
+            // be able to strand anyone. Below "Get started" so it never
+            // competes with the primary path of connecting a real account.
+            previewLink
+                .opacity(ctaVisible ? 1 : 0)
+                .disabled(!ctaVisible)
+                .padding(.bottom, 22)
         }
+    }
+
+    private var previewLink: some View {
+        Button {
+            lhfHapticLight()
+            state.enterPreviewMode()
+        } label: {
+            VStack(spacing: 3) {
+                Text("just exploring?")
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2DateText)
+                Text("preview with sample data")
+                    .font(.lhfSans(14, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .underline()
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     @MainActor

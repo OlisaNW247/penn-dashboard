@@ -98,7 +98,7 @@ enum OnboardingCourseSetup {
     /// How this run of the walk should populate its suggestions.
     ///
     /// This exists as a value, computed by a pure function, for one reason: it
-    /// is the seam a test can hold to assert that **fixture mode never reaches
+    /// is the seam a test can hold to assert that **preview mode never reaches
     /// the network**. `swift test` does not render SwiftUI, so a decision buried
     /// in a `.task` closure is a decision nothing can check — and the last time
     /// something in this area went wrong it stranded App Store reviewers at the
@@ -136,7 +136,7 @@ enum OnboardingCourseSetup {
     /// meaningless outside this screen. They are keyed by position rather than
     /// by course code so the demo shows the three states a reviewer needs to
     /// see — a course with two findings, a course with one, and a course with
-    /// none — no matter which fixture courses fixture mode happens to seed.
+    /// none — no matter which fixture courses preview mode happens to seed.
     static func previewSuggestions(for courses: [String]) -> [CanvasRequirementSuggestion] {
         guard !courses.isEmpty else { return [] }
 

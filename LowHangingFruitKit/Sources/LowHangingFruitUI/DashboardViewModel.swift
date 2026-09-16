@@ -126,9 +126,8 @@ final class DashboardViewModel: ObservableObject {
         reload(preservingEdits: true)
     }
 
-    /// Populate from bundled fixtures. Used by SwiftUI previews and by the
-    /// DEBUG `-LHFDemoData` screenshot seam. Real usage reads scraped data via
-    /// `reload()`.
+    /// Populate from bundled fixtures. Used by SwiftUI previews and by the in-app
+    /// Preview mode (reviewer demo). Real usage reads scraped data via `reload()`.
     func loadSampleData() {
         usingSampleData = true
         items = SampleData.items()

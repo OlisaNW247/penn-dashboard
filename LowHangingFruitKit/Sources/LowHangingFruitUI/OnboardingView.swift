@@ -141,8 +141,46 @@ struct OnboardingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 loginHeader(title: "Connect Canvas")
             }
+            // The reviewer's door, restored here after a regression
+            // (`358bc5f`) deleted it along with the old checklist's name
+            // step. `IntroView`'s first screen carries the same link, but
+            // that one is reachable only while `hasSeenIntro` is still
+            // false — Skip sets it permanently, and this Canvas step is
+            // exactly where Skip lands, forever, with no way back to the
+            // intro short of reinstalling. One door is not enough; see
+            // `c999c38`. Pinned to the bottom safe area, below the entire
+            // login pane above it, so it never competes with actually
+            // connecting a real account.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                previewFooter
+            }
             .background(Color.v2Bg.ignoresSafeArea())
         }
+    }
+
+    /// Same door as `IntroView.previewLink`, on the screen a reviewer
+    /// actually lands on after skipping the intro.
+    private var previewFooter: some View {
+        Button {
+            lhfHapticLight()
+            state.enterPreviewMode()
+        } label: {
+            VStack(spacing: 3) {
+                Text("just exploring?")
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.v2DateText)
+                Text("preview with sample data")
+                    .font(.lhfSans(14, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .underline()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+        .background(Color.v2Card)
+        .accessibilityLabel("preview the app with sample data")
+        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
     private func canvasConnected() {

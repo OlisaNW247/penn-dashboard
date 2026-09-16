@@ -259,12 +259,31 @@ struct CourseIntelRefinementTests {
         }
     }
 
-    // The "no-ops in fixture mode" case that used to live here
-    // (`importReadingsIfNeededNoOpsInFixtureMode`) went with the reviewer-
-    // facing preview mode it depended on to flip `isUsingFixtureData` true —
-    // 2026-09-15, at the owner's instruction. `isUsingFixtureData`'s
-    // surviving path, the DEBUG `-LHFDemoData` seam, reads a real process
-    // launch argument that cannot be set from inside a running test, so this
-    // guard has no test-reachable seam left; see `importReadingsIfNeeded`'s
-    // own guard order for the logic that used to be pinned here.
+    /// Fixture/preview mode must never reach the network — same posture as
+    /// `refreshCourseIntel`/`refreshGradeWatcher`. `isUsingFixtureData`'s
+    /// guard in `importReadingsIfNeeded` runs before the courseID lookup, so
+    /// this is a no-op even for a course with no enrolled-course entry.
+    @Test("importReadingsIfNeeded no-ops in preview/fixture mode")
+    func importReadingsIfNeededNoOpsInFixtureMode() {
+        let course = "LGST 9996"
+        withCleanDecision(course) {
+            let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+            // enterPreviewMode PERSISTS the flag in UserDefaults.lhf — leaving
+            // it set poisons every AppState any other suite constructs while
+            // (or after) this test runs, flooding them with the s-1…s-16
+            // sample fixtures. Clear it UNCONDITIONALLY, both on the way out
+            // and — unlike PreviewModeTests' conditional restore — regardless
+            // of what it read on entry: a stuck-true flag from a previous
+            // poisoned run would otherwise make the restore skip itself
+            // forever (wasPreview reads true, reset never fires), which is
+            // exactly the self-perpetuating failure observed on 2026-08-23.
+            state.enterPreviewMode()
+            defer {
+                UserDefaults.lhf.set(false, forKey: "isPreviewMode")
+            }
+            let before = state.moduleReadingItems
+            state.importReadingsIfNeeded(for: course)
+            #expect(state.moduleReadingItems == before)
+        }
+    }
 }

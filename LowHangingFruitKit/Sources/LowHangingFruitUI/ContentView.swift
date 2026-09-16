@@ -150,6 +150,12 @@ struct ContentView: View {
                 return
             }
             #endif
+            // Reviewer/demo preview: show bundled sample data instead of binding
+            // to the (empty, un-synced) real store. No network, no login.
+            if state.isPreviewMode {
+                vm.loadSampleData()
+                return
+            }
             vm.bind(to: state)
         }
         .task {

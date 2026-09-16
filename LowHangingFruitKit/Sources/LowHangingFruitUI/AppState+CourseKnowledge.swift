@@ -148,10 +148,10 @@ extension AppState {
         UserDefaults.lhf.set(Self.courseKnowledgeSyncVersion, forKey: Self.courseKnowledgeSyncVersionKey)
     }
 
-    /// The knowledge `ask` reasons over. Fixture mode (the DEBUG
-    /// `-LHFDemoData` seam) gets the bundled sample syllabi so the screen can
-    /// be exercised with no Canvas account, exactly as the dashboard and
-    /// Grade Watcher do with `SampleData`.
+    /// The knowledge `ask` reasons over. Preview mode (the App Store
+    /// reviewer's path and `-LHFDemoData`) gets the bundled sample syllabi so
+    /// the screen can be exercised with no Canvas account, exactly as the
+    /// dashboard and Grade Watcher do with `SampleData`.
     var assistantKnowledge: CourseKnowledgeBase {
         isUsingFixtureData ? SampleData.knowledge() : courseKnowledge
     }
@@ -185,7 +185,7 @@ extension AppState {
     /// tell apart "the guard never let this run start," "the manifest never
     /// came back," and "the collector ran but every endpoint failed."
     func refreshCourseKnowledge(cookies: [HTTPCookie], force: Bool = false) async {
-        // Fixture/demo mode isn't a real sync attempt — `assistantKnowledge`
+        // Preview/demo mode isn't a real sync attempt — `assistantKnowledge`
         // reads `SampleData.knowledge()` in that mode regardless, so there is
         // nothing here worth tracing and no reason to overwrite whatever
         // trace a real device already has.
