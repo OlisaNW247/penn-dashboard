@@ -246,17 +246,31 @@ struct ContentView: View {
     /// (paste-link) user, or one whose feed still syncs fine, never sees
     /// this. It's specifically about the cookie-authed login session behind
     /// automatic submission tracking and Canvas Scan going stale.
+    ///
+    /// Branches on `state.autoLoginDisabledReason` — "stay signed in"
+    /// (CLAUDE.md's "stay signed in" entry) tried to fix this on its own and
+    /// couldn't, because the stored PennKey password was rejected. Sending
+    /// that student BACK into the same login pane whose auto-fill would
+    /// immediately retry the identical wrong password is pointless (worse:
+    /// it's exactly the repeated-wrong-password shape this feature exists to
+    /// avoid); Profile is where they actually fix it
+    /// (`PennKeyCredentialsSheet` via the "update password" button).
     private var canvasSessionExpiredBanner: some View {
-        Button {
-            state.restartOnboarding(for: .canvas)
+        let rejected = state.autoLoginDisabledReason != nil
+        return Button {
+            if rejected {
+                path.append(.settings)
+            } else {
+                state.restartOnboarding(for: .canvas)
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("your canvas login needs a refresh")
+                    Text(rejected ? "your stored pennkey password didn't work" : "your canvas login needs a refresh")
                         .font(.lhfSans(12, weight: .semibold))
-                    Text("reconnect to keep automatic submission tracking accurate.")
+                    Text(rejected ? "update it in profile." : "reconnect to keep automatic submission tracking accurate.")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -270,7 +284,11 @@ struct ContentView: View {
             .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("your canvas login needs a refresh. reconnect canvas.")
+        .accessibilityLabel(
+            rejected
+                ? "your stored pennkey password didn't work. update it in profile."
+                : "your canvas login needs a refresh. reconnect canvas."
+        )
     }
 
     // MARK: Header

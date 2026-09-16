@@ -5,8 +5,11 @@ calendar feed and **Gradescope**, merges them into one chronological "what's due
 next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, also
 builds for macOS from the same source. **The student's own data is on-device by
 default** — grades, completions, submission state, the work list, the student's
-name, and Canvas/Gradescope cookies never leave the phone. There is no analytics,
-tracking, or third-party SDK. Since 2026-09-12 the product's user-facing name is
+name, and Canvas/Gradescope cookies never leave the phone. Since 2026-09-16 a
+student can opt in to "stay signed in", which stores their PennKey password in
+the Keychain to re-fill Penn's login form; off by default; see
+`PennKeyCredentialStore`. There is no analytics, tracking, or third-party SDK.
+Since 2026-09-12 the product's user-facing name is
 **Smooth** (it was **Locust** from 2026-09-09; display names and copy only —
 bundle ids, module names, app-group names and defaults keys keep their LHF
 names), with Marco's Smooth visual language throughout: a white paper ground
@@ -89,6 +92,11 @@ screen instead of tapping through to it on every rebuild:
 ```bash
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
+
+`v6` is **uncompiled** as of this writing — two blind features (the gated
+Canvas access-token plumbing and stay-signed-in) on top of the verified
+1253/125 mark below; expect 1253 plus whatever new suites those add, and
+treat that as an expectation to check, not a result to report.
 
 Baseline on `v5`: **not yet verified** after reverting the preview-mode
 removal on 2026-09-16 (Apple's 2.1(a) rejection of build 8; known gap
@@ -314,6 +322,29 @@ them; only a future release can. And local builds are `2.0.0`, above any floor
 that is safe to publish, so the wall never appears in normal development: to see
 it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
 end to end) or pass `-LHFForceUpdateWall`.
+
+### Stay signed in
+
+An optional, off-by-default alternative to re-doing PennKey (and sometimes
+Duo) every time Canvas signs the student out. `PennKeyLoginForm` (Kit, pure)
+recognizes the identity provider's login form and knows how to fill it;
+`PennKeyCredentialStore` holds the username and password the student types
+into the app's own sheet in the Keychain, this-device-only, never synced.
+When the visible reconnect pane or the background `CanvasSessionRenewer`
+hits an expired session, the fill happens through the same seam:
+`LoginNavigationObserver` auto-fills and submits the identity provider's form
+in the visible pane, and the renewer does the equivalent with one JavaScript
+submission of that same IdP credential form per attempt — never more than
+one, and never the SAML response form the browser posts back to Canvas
+afterward, because that second form is exactly what the login WebView's
+universal-link guard already has to rebuild by hand (see the Canvas Student
+trap below); resubmitting it from here would double-POST it. One rejected
+password disables the feature outright rather than retrying, so a typo or a
+changed password can't lock the PennKey account. Duo is a hard boundary: the
+stored credential only ever reaches the identity provider's password field,
+never a Duo prompt, so a student enrolled in Duo still completes that step
+themselves every time Duo actually asks (which, with Duo's own "remember this
+device" for 30 days, is roughly monthly in practice).
 
 ## Traps that have already bitten
 
@@ -567,6 +598,26 @@ end to end) or pass `-LHFForceUpdateWall`.
   exam and claimed the semester begins in December. When a rule needs a
   magic number, check whether the quantity it is really about is already
   in scope — here it was `weeks`, the parameter one line away.
+- **Penn restricts student Canvas access tokens.** The app can mint a 120-day
+  Canvas access token from inside the student's own login and use it for
+  `/api/v1` fetches (`CanvasAccessToken.swift`, `CanvasAccessTokenMinter.swift`,
+  `CanvasAccessTokenStore.swift`, `accessToken:` on the Canvas clients), but
+  Olisa's own Canvas settings page shows "+ New Access Token" greyed out, with
+  the tooltip "Your Canvas administrators have chosen to limit your ability to
+  generate your own access token" (canvas.upenn.edu/profile/settings) — the
+  tell to check for on any other Penn account before assuming this works. A
+  mint would 403 for every Penn student, so `FeatureFlags.canvasAccessTokens =
+  false` gates the whole path off rather than deleting it, for the day Penn
+  issues an OAuth developer key (what the Canvas Student app uses) or lifts
+  the restriction. `CanvasDiscoveryClient` must stay cookie-only regardless of
+  that flag, because bearer tokens are only honoured on `/api/` paths
+  (`lib/authentication_methods.rb`) and discovery hits non-API pages. The
+  wrong fix in both directions: storing nothing and living with the daily
+  re-login the app already had before this work is simply the *previous*
+  state, not a fix owed here; and scraping the password back out of the
+  login page's DOM to synthesize a token is the fix that was considered and
+  rejected — it defeats the whole point of a scoped, revocable token by
+  handing the app a full credential anyway.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -594,14 +645,14 @@ end to end) or pass `-LHFForceUpdateWall`.
 | `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **uploaded** 2.0.1 build 6 (and the shipped 2.0.0 build 5 before it). |
 | `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
 | `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
-| `v6` | 2.0.0 head plus Grade Watcher back on, the Announcement Watcher, and the Mac build lane. 693/70. |
+| `v6` | **Current line as of 2026-09-16.** `v5` (3.0.0 build 9) plus the gated Canvas access-token plumbing (off via `FeatureFlags.canvasAccessTokens`) and the stay-signed-in feature. The old `v6` — Grade Watcher back on, the Announcement Watcher, the Mac build lane — lives on in `v5` via `assistant-ui`; this row's ref was replaced, not extended. |
 | `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. Later also carries the update gate (769/78). |
 | `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
 | `update-gate` | The update gate alone, independently mergeable. |
 | `codex/redesign-v5` | Marco's **Smooth** redesign: the palette, the bundled type, the S mark and icon, restyled dashboard, sheets, profile, settings, widget, intro and update wall; launch splash removed. Branched from `v5` at the round 3 fixes; merged into `v5` 2026-09-12. |
 | `codex/fire-dark-mode` | Marco's Smooth dark mode ("after sunset"), the rebuilt three-beat intro, profile and settings merged into one screen, Grade Watcher compacted, the daily digest removed, AI assist always on. Merged into `v5` 2026-09-14 twice (00f24cc at 03ababd, a2b66bc at 49441ac). |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
-| `v5` | **Current line** (rebuilt 2026-09-06). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. |
+| `v5` | **App Store submission line** (rebuilt 2026-09-06; the current feature line is `v6`, below). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. 3.0.0 build 9 is the App Store submission line; feature work moved to `v6`. |
 | `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
 
 ## Known gaps

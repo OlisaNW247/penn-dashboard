@@ -542,6 +542,31 @@ final class AppState: ObservableObject {
     /// state, not a preference that makes sense synced to another device.
     private static let canvasSessionConfirmedDeadKey = "canvasSessionConfirmedDeadV1"
 
+    /// Backs `stayLoggedInEnabled` — the "stay signed in" auto-login toggle
+    /// (Settings → account). Off by default, same "explicit opt-in, not a
+    /// silent default flip" posture as every other credential-adjacent
+    /// switch in this file. Device-local: whether THIS device is allowed to
+    /// hold a copy of the student's PennKey password says nothing about any
+    /// other device, so this is deliberately absent from
+    /// `CloudPrefsMirror`'s allowlist, same reasoning as
+    /// `canvasSessionConfirmedDeadKey` above.
+    private static let stayLoggedInEnabledKey = "stayLoggedInEnabledV1"
+    /// Backs `autoLoginDisabledReason` — `nil` (absent key) means "no known
+    /// problem." Persisted (not just in-memory) so a rejected password
+    /// doesn't quietly start looking fine again after a relaunch; the
+    /// student has to either re-enter it (`enableStayLoggedIn` clears this)
+    /// or turn the feature off.
+    private static let autoLoginDisabledReasonKey = "autoLoginDisabledReasonV1"
+    /// Backs `hasOfferedStayLoggedIn` — whether the one-time "want Smooth to
+    /// remember your PennKey password?" offer has already been shown once,
+    /// right after a successful interactive Canvas login
+    /// (`OnboardingView.canvasConnected`). Never re-offered automatically
+    /// after that, on purpose: a sheet a student already dismissed once
+    /// (either "not now" or by turning the feature on) reappearing on every
+    /// future login would be exactly the kind of repeat interruption this
+    /// "once, then Settings is the way back" design exists to avoid.
+    private static let hasOfferedStayLoggedInKey = "hasOfferedStayLoggedInV1"
+
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
     /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
@@ -576,6 +601,11 @@ final class AppState: ObservableObject {
         // otherwise a confirmed-dead session would read as fine again on the
         // very next cold launch, before anything re-confirms it either way.
         self.canvasSessionConfirmedDead = UserDefaults.lhf.bool(forKey: Self.canvasSessionConfirmedDeadKey)
+        // "Stay signed in" — off by default, and only ever true after the
+        // student explicitly turned it on through `PennKeyCredentialsSheet`.
+        self.stayLoggedInEnabled = UserDefaults.lhf.bool(forKey: Self.stayLoggedInEnabledKey)
+        self.autoLoginDisabledReason = UserDefaults.lhf.string(forKey: Self.autoLoginDisabledReasonKey)
+        self.hasOfferedStayLoggedIn = UserDefaults.lhf.bool(forKey: Self.hasOfferedStayLoggedInKey)
         // Seeded here (not left at its `= []` default) so the dashboard's
         // "nothing to submit" caveat is correct on the very first frame of a
         // cold launch, before any grade refresh has had a chance to run.
@@ -1276,6 +1306,131 @@ final class AppState: ObservableObject {
         canvasSessionConfirmedDead = true
     }
 
+    // MARK: - Stay signed in (PennKey auto-login)
+
+    /// Settings → "stay signed in". Off by default (Penn blocks Canvas
+    /// access tokens for students, and the owner's decision to store a
+    /// PennKey password at all — CLAUDE.md's "stay signed in" entry — is
+    /// deliberately opt-in, never a default flip). True only after the
+    /// student has typed their PennKey username and password into
+    /// `PennKeyCredentialsSheet` and tapped save (`enableStayLoggedIn`).
+    @Published private(set) var stayLoggedInEnabled: Bool
+
+    /// `nil` when nothing is known to be wrong. Set by `noteAutoLoginRejected()`
+    /// after a single failed auto-login attempt (a fill-and-submit that
+    /// landed back on the login form instead of Duo/Canvas) — the whole
+    /// point of stopping after exactly one failure, rather than retrying, is
+    /// that PennKey/Duo accounts lock out after a small number of
+    /// consecutive wrong passwords, and a background loop must never be the
+    /// thing that locks a student out of their own PennKey. Cleared ONLY by
+    /// `enableStayLoggedIn()` — the student re-entering the password is the
+    /// one and only signal this is allowed to trust that the old failure no
+    /// longer applies. Deliberately NOT cleared by a `.renewed` outcome
+    /// elsewhere in the app: a plain cookie-only renewal (still-live IdP
+    /// session cookies, no credential submission at all) succeeding proves
+    /// nothing about whether the STORED PASSWORD is actually correct, and
+    /// clearing this on that evidence would silently re-arm auto-login to
+    /// resubmit the same still-wrong password on some later expiry — exactly
+    /// the repeated-wrong-password shape this flag exists to prevent. (An
+    /// earlier draft of this feature had a `noteAutoLoginSucceeded()` that
+    /// cleared this on every `.renewed` outcome; removed for that reason.)
+    @Published private(set) var autoLoginDisabledReason: String?
+
+    /// Whether the one-time post-login "want Smooth to remember your
+    /// PennKey password?" offer (`OnboardingView.canvasConnected`) has
+    /// already been shown. See `hasOfferedStayLoggedInKey`'s doc comment for
+    /// why this never re-arms itself.
+    @Published private(set) var hasOfferedStayLoggedIn: Bool
+
+    /// True only when auto-login actually has something usable to do:
+    /// the toggle is on, a credential pair is actually on file (the toggle
+    /// being on with nothing in the Keychain is a state that should never
+    /// happen in practice, but this is the one place that treats it exactly
+    /// like "off" rather than trusting the toggle blindly), and no prior
+    /// attempt has been confirmed rejected. Every auto-login call site
+    /// (`LoginNavigationObserver`'s visible-pane fill, `CanvasSessionRenewer`'s
+    /// silent renewal) reads this — never the raw toggle — so a rejected
+    /// password can't keep being retried through some path that forgot to
+    /// check `autoLoginDisabledReason` on its own.
+    var canAutoLogin: Bool {
+        stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials && autoLoginDisabledReason == nil
+    }
+
+    /// `DiagnosticsReport`'s one line for this feature — "off", "on", or
+    /// "on (disabled: <reason>)". Never the username, never the password,
+    /// never anything read from `PennKeyCredentialStore` beyond the fact
+    /// that it does or doesn't have something on file (folded into
+    /// `canAutoLogin`, not surfaced separately here since it adds nothing a
+    /// support conversation would act on).
+    var stayLoggedInDiagnosticDescription: String {
+        guard stayLoggedInEnabled else { return "off" }
+        guard let reason = autoLoginDisabledReason else { return "on" }
+        return "on (disabled: \(reason))"
+    }
+
+    /// Settings → "stay signed in", turned on. Called only after the student
+    /// has typed both fields into `PennKeyCredentialsSheet` and tapped save
+    /// — never with an empty username or password (the sheet's own "save"
+    /// button stays disabled until both are non-empty, so this is a second,
+    /// belt-and-suspenders guard rather than the only one). Clears any prior
+    /// rejection: entering a (presumably corrected) password is the
+    /// student's own signal that the old failure no longer applies, and is
+    /// also how "update password" after a rejection re-arms the feature.
+    func enableStayLoggedIn(username: String, password: String) {
+        guard !username.isEmpty, !password.isEmpty else { return }
+        PennKeyCredentialStore.save(username: username, password: password)
+        stayLoggedInEnabled = true
+        UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
+        setAutoLoginDisabledReason(nil)
+    }
+
+    /// Settings → "stay signed in", turned off — and the one path
+    /// `disconnectCanvas()` also calls (see that method's own comment on
+    /// why): the password goes with the login the moment either the student
+    /// turns the toggle off directly, or says "forget my Canvas" wholesale.
+    /// Clears the Keychain FIRST, then the flags, so a crash or termination
+    /// mid-call can never leave the toggle reading false while the password
+    /// is still sitting in the Keychain — the more dangerous of the two
+    /// possible inconsistent states.
+    func disableStayLoggedIn() {
+        PennKeyCredentialStore.clear()
+        stayLoggedInEnabled = false
+        UserDefaults.lhf.set(false, forKey: Self.stayLoggedInEnabledKey)
+        setAutoLoginDisabledReason(nil)
+    }
+
+    /// Called by the one failed auto-login attempt this feature ever allows
+    /// (`LoginNavigationObserver`'s `.rejected` outcome,
+    /// `CanvasSessionRenewer`'s `.passwordRejected` outcome) — see
+    /// `autoLoginDisabledReason`'s doc comment for why this disables further
+    /// attempts rather than retrying. Deliberately does NOT clear
+    /// `PennKeyCredentialStore` — the stored username is what pre-fills
+    /// `PennKeyCredentialsSheet`'s "update password" flow, so the student
+    /// only has to retype the password, not both fields.
+    func noteAutoLoginRejected() {
+        setAutoLoginDisabledReason("your stored PennKey password didn't work")
+    }
+
+    /// Single write path for `autoLoginDisabledReason`, mirroring
+    /// `setCanvasSessionConfirmedDead`'s "one place, never drifts from the
+    /// persisted copy" shape.
+    private func setAutoLoginDisabledReason(_ reason: String?) {
+        autoLoginDisabledReason = reason
+        if let reason {
+            UserDefaults.lhf.set(reason, forKey: Self.autoLoginDisabledReasonKey)
+        } else {
+            UserDefaults.lhf.removeObject(forKey: Self.autoLoginDisabledReasonKey)
+        }
+    }
+
+    /// Marks the one-time post-login offer as shown, whether the student
+    /// accepted it, said "not now," or dismissed it any other way — see
+    /// `hasOfferedStayLoggedInKey`'s doc comment.
+    func noteStayLoggedInOffered() {
+        hasOfferedStayLoggedIn = true
+        UserDefaults.lhf.set(true, forKey: Self.hasOfferedStayLoggedInKey)
+    }
+
     /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
     /// on its appear, cleared on its disappear. Not `@Published`: nothing
     /// renders off this, it exists purely as a guard `CanvasSessionRenewer`
@@ -1374,22 +1529,29 @@ final class AppState: ObservableObject {
     /// `.timedOut` and `.landedOnLoginPage` are both real network round trips
     /// against Penn's IdP that ended somewhere other than a fresh Canvas
     /// session — that's the server-side proof of death this flag exists to
-    /// record. `.renewed` is the opposite proof: the session is alive, so any
-    /// prior "confirmed dead" record is stale and gets cleared. `.notAttempted`
+    /// record. `.passwordRejected` joins them: a stored PennKey password was
+    /// actually submitted and the chain landed back on the login form
+    /// instead of Duo/Canvas, which is just as much proof the session needs
+    /// a real (human) login as the no-credentials case. `.renewed` is the
+    /// opposite proof: the session is alive, so any prior "confirmed dead"
+    /// record is stale and gets cleared. `.needsDuo` proves nothing either
+    /// way about the CANVAS session specifically — the password worked well
+    /// enough to reach Duo, but whether a human is there to answer it is
+    /// unknown from here — so, like `.notAttempted`
     /// (cooldown/in-flight/pane-active/test-runner) and `.abortedByLoginPane`
-    /// prove nothing either way — the attempt never actually reached the IdP
-    /// — so `current` passes through unchanged rather than being reset to
-    /// `false`, which would silently drop real evidence gathered earlier.
+    /// (the attempt never actually reached the IdP), `current` passes through
+    /// unchanged rather than being reset to `false`, which would silently
+    /// drop real evidence gathered earlier.
     static func confirmedDeadAfterRenewal(
         current: Bool,
         outcome: CanvasSessionRenewer.Outcome
     ) -> Bool {
         switch outcome {
-        case .timedOut, .landedOnLoginPage:
+        case .timedOut, .landedOnLoginPage, .passwordRejected:
             return true
         case .renewed:
             return false
-        case .abortedByLoginPane, .notAttempted:
+        case .needsDuo, .abortedByLoginPane, .notAttempted:
             return current
         }
     }
@@ -1422,9 +1584,25 @@ final class AppState: ObservableObject {
     /// the `isLoginPaneActive` closure it's constructed with.
     func attemptSilentCanvasRenewal() async {
         guard !isUsingFixtureData else { return }
-        let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(isLoginPaneActive: { [weak self] in
-            self?.isCanvasLoginPaneActive ?? false
-        })
+        let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(
+            isLoginPaneActive: { [weak self] in
+                self?.isCanvasLoginPaneActive ?? false
+            },
+            // A closure, not a stored reference to the credentials
+            // themselves, so `CanvasSessionRenewer` never holds the secret
+            // — it asks for it fresh on every attempt and only gets one back
+            // when `canAutoLogin` says the feature is actually usable right
+            // now (on, credentials on file, no unresolved rejection). This
+            // is also what makes a rejection stick: once
+            // `autoLoginDisabledReason` is set, `canAutoLogin` is false, this
+            // closure starts returning `nil`, and the renewer's own "GET-only
+            // unless credentials are offered" behavior falls back to
+            // exactly what it did before this feature existed.
+            autoLogin: { [weak self] in
+                guard let self, self.canAutoLogin else { return nil }
+                return PennKeyCredentialStore.load()
+            }
+        )
         canvasSessionRenewer = renewer
 
         let outcome = await renewer.renewIfNeeded()
@@ -1433,6 +1611,20 @@ final class AppState: ObservableObject {
         // result (real proof the session is dead server-side) must reach
         // `canvasSessionExpired` too, not just a successful renewal.
         setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(current: canvasSessionConfirmedDead, outcome: outcome))
+        // `.passwordRejected` is ALSO evidence about the stored PennKey
+        // password specifically (as opposed to the Canvas session in
+        // general, which the line above already tracks) — see
+        // `autoLoginDisabledReason`'s doc comment for why a rejection latches
+        // until the student re-enters the password. `.renewed` is
+        // deliberately NOT wired to clear it here (or anywhere but
+        // `enableStayLoggedIn()`): a plain cookie-only renewal succeeding
+        // proves the Canvas session is alive, not that the stored password is
+        // correct, and clearing the rejection on that evidence would
+        // silently re-arm auto-login to resubmit the same still-wrong
+        // password later.
+        if outcome == .passwordRejected {
+            noteAutoLoginRejected()
+        }
         // Recomputes on both the dead and renewed paths so the banner
         // reflects whichever way this attempt cut. Note: if this call flips
         // `canvasSessionExpired` false→true (the dead path), its own
@@ -1703,6 +1895,13 @@ final class AppState: ObservableObject {
     /// SSO) — so disconnecting one service never silently signs the user out
     /// of the other.
     func disconnectCanvas() {
+        // Disconnecting Canvas is the student saying "forget my Canvas" —
+        // the stored PennKey password goes with it. Called first, ahead of
+        // everything else below: there's no ordering hazard to protect
+        // against here (unlike the token revoke just below, this has no
+        // dependency on anything this method clears afterward), so it's
+        // simplest to get out of the way immediately.
+        disableStayLoggedIn()
         SessionCookieStore.remove(service: .canvas)
         // Best-effort revoke BEFORE the local clear, not after: the revoke
         // authenticates as the token itself (`Authorization: Bearer

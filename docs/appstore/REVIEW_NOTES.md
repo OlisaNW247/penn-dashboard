@@ -81,7 +81,9 @@ On the **very first screen**, under the "get started" button, tap
 **"just exploring? — preview with sample data"**. The same link is pinned to
 the bottom of the **Connect Canvas** screen, so it is still there if you tap
 "get started" first. Either one loads a fully-populated demo with no account
-and no network access, and the demo persists across relaunches.
+and no network access, and the demo persists across relaunches. The demo
+never touches "stay signed in" — there is no PennKey password to store,
+since there is no PennKey login in preview mode at all.
 
 **Everything in the app is reachable from the demo:**
 
@@ -115,7 +117,11 @@ end-to-end.
 1. **Onboarding:** the user enters a first name and taps "Connect Canvas."
 2. **Canvas login:** the school's real Canvas login page loads in a web view. The
    user signs in with their own credentials. The app never sees or stores the
-   password.
+   password typed into that page. Separately, a user can opt in to "stay
+   signed in" (off by default), which stores a PennKey password — typed into
+   the app's own sheet, not into Canvas's page — in the device Keychain, used
+   only to refill Penn's login form when Canvas signs the user out; see "Stay
+   signed in" under Third-party services below.
 3. **Feed capture:** after login the app reads the user's personal Canvas
    *calendar feed* URL (an iCalendar/.ics link Canvas generates per user) and
    fetches their deadlines from it.
@@ -142,6 +148,11 @@ end-to-end.
   self-created tasks, and the student's name live in local storage and are
   never uploaded. Login session cookies are stored in the **iOS Keychain**,
   encrypted at rest and marked this-device-only, and are also never uploaded.
+  If the student opts into "stay signed in" (off by default), the PennKey
+  password they type into the app's own sheet is likewise stored only in the
+  device Keychain, this-device-only, never uploaded to our server; it is used
+  solely to refill Penn's own login form when Canvas signs the student out,
+  and Duo is never bypassed. See "Stay signed in" below.
 - **No analytics, tracking, ads, or third-party SDKs.** Privacy manifests are
   bundled in both the app and the widget; the backend does not add tracking —
   see the updated data-type answers under "Backend" above.
@@ -157,7 +168,21 @@ the **user's own credentials**, to display the **user's own data**:
 
 - The user authenticates directly with Canvas and Gradescope through those
   services' own login pages, rendered in a web view. Smooth never handles or
-  stores passwords.
+  stores the password typed into those pages.
+
+  **Stay signed in (opt-in, off by default):** a student can choose to have
+  the app store their PennKey username and password — typed into the app's
+  own sheet, separately from Canvas's login page — in the device Keychain,
+  this-device-only, never synced or uploaded, so the app can refill Penn's
+  own login form (`weblogin.pennkey.upenn.edu`) when Canvas's session
+  expires, instead of the student re-entering it by hand every time. It is
+  sent nowhere but that one Penn login page, over HTTPS, inside the same
+  isolated login web view the app already uses for sign-in. Duo is never
+  bypassed — if Duo prompts, the app stops and the student completes it
+  themselves. One rejected password (e.g. after a change) disables the
+  feature and shows a banner asking the student to update it; the app never
+  retries, so it cannot lock a PennKey. The student turns this off, or
+  disconnects Canvas, to delete the stored password immediately.
 - The app reads only data belonging to the signed-in student — their own
   deadlines, their own readings, their own submission status, their own
   grades. It cannot access any other user's content.

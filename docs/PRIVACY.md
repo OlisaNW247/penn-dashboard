@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-09-07_
+_Last updated: 2026-09-16_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -16,10 +16,14 @@ stored.
 ## What stays on your phone
 
 - **Your Canvas and Gradescope logins.** You sign in through each service's own
-  web page, shown inside the app. The app never sees or stores your password.
-  Session cookies and your personal Canvas calendar feed URL (a bearer
-  credential) are kept in the iOS Keychain, encrypted at rest, this-device-only,
-  and never included in unencrypted backups.
+  web page, shown inside the app. The app never sees or stores the password you
+  type into that page. Session cookies and your personal Canvas calendar feed
+  URL (a bearer credential) are kept in the iOS Keychain, encrypted at rest,
+  this-device-only, and never included in unencrypted backups. Separately, if
+  you turn on the optional **"stay signed in"** feature, the app does store a
+  PennKey password — the one you type into the app's own sheet, not Canvas's
+  page — for its own use re-filling Canvas's login form later. See "Stay
+  signed in (optional)" below.
 - **Your grades, completions, and submission state.** What you've turned in,
   what you've checked off, any grade the Grade Watcher has observed — all of it
   stays local. None of it is uploaded.
@@ -28,6 +32,47 @@ stored.
   device.
 - **The widget snapshot.** A small "next due" summary written to a private
   container shared only between the app and its widget on your device.
+
+## Stay signed in (optional)
+
+Canvas signs you out from time to time, and normally reconnecting means going
+through PennKey (and often Duo) again. Since 2026-09-16 you can turn on
+**"stay signed in"** (Settings → account, or the one-time offer shown right
+after your first Canvas login) so the app can do that reconnecting for you.
+
+- **Off by default.** Nothing changes unless you turn it on.
+- **What is stored:** the PennKey username and password you type into the
+  app's own sheet for this purpose — not anything captured from Canvas's or
+  PennKey's own login page.
+- **Where:** the iOS/macOS Keychain, this-device-only, never synced to iCloud
+  or any other device.
+- **What it's used for:** when Canvas's session has expired, the app fills
+  Penn's own login form (`weblogin.pennkey.upenn.edu`) with the stored
+  username and password, inside the same isolated login web view it always
+  uses for sign-in — both when you see the reconnect screen and when the app
+  renews the session silently in the background.
+- **Where it's sent:** nowhere but Penn's own login page, over HTTPS. It is
+  never sent to LHF's server, never logged, and never written to
+  `UserDefaults`.
+- **Duo is never bypassed.** If Duo prompts for a second factor, the app
+  stops and waits for you to complete it yourself, the same as if you'd
+  typed your password by hand. In practice, because Duo can remember a
+  device for 30 days, this makes re-login roughly monthly and otherwise
+  invisible rather than eliminating Duo.
+- **If Penn rejects the stored password once** — a password change is the
+  usual reason — the app disables the feature and shows a banner telling you
+  to update it in Profile. It does not keep retrying, so it can't be the
+  reason a PennKey gets locked.
+- **How to delete it:** turn the toggle off, or disconnect Canvas. Either one
+  removes the stored password from the Keychain immediately.
+
+A caution worth stating plainly: Penn's Acceptable Use Policy asks students
+not to share their PennKey password with anyone. This feature stores that
+password on your own phone, under your own control, to type it into Penn's
+own login page on your behalf — comparable to a password manager's autofill,
+except the app also submits the form for you. If that trade-off doesn't sit
+right with you, leave the feature off; everything else in the app works
+exactly the same either way.
 
 ## What is sent to our server (and why)
 

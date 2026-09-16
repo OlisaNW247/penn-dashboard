@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 import WebKit
 import os
 
@@ -104,6 +105,47 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// The actual page title that tripped `detectedKnownErrorPage`, kept for
     /// diagnostics. Cleared everywhere `detectedKnownErrorPage` is cleared.
     @Published private(set) var detectedErrorPageTitle: String?
+
+    /// What `attemptAutoLoginIfNeeded` reports back to the owning pane —
+    /// `.submitted` once the PennKey form has actually been filled and
+    /// submitted, `.rejected` if the login form reappears afterward (the
+    /// stored password didn't work). There is no `.succeeded` case here:
+    /// success is already what `reachedSignedInDestination` exists to
+    /// report, through the pane's ordinary `onChange`/`connect()` path — this
+    /// enum only carries the two things that path can't tell on its own.
+    enum AutoLoginEvent {
+        case submitted
+        case rejected
+    }
+
+    /// Credentials to auto-fill into Penn's PennKey login form if/when it
+    /// appears — the "stay signed in" feature (see `PennKeyLoginForm`'s and
+    /// `PennKeyCredentialStore`'s doc comments). `nil` (the default) means
+    /// auto-fill never fires. `CanvasLoginPane` is the one caller that sets
+    /// this, from `PennKeyCredentialStore.load()`, and ONLY when
+    /// `AppState.canAutoLogin` says the feature is actually on, has a
+    /// credential pair on file, and has no unresolved prior rejection — this
+    /// observer trusts whatever it's handed and does no policy checking of
+    /// its own; it is purely the mechanism, not the decision of whether to
+    /// use it.
+    var autoLoginCredentials: (username: String, password: String)?
+
+    /// Fires at most once per pane appearance, from `webView(_:didFinish:)`
+    /// — see `AutoLoginEvent`'s doc comment for what each case means.
+    var onAutoLoginOutcome: ((AutoLoginEvent) -> Void)?
+
+    /// How many times this observer has evaluated
+    /// `PennKeyLoginForm.fillAndSubmitScript` during the CURRENT pane
+    /// appearance. 0 before any attempt; bumped to 1 right before the one
+    /// and only fill-and-submit; bumped to 2 the moment a second sighting of
+    /// the login form is reported as `.rejected`, which is also what stops
+    /// this observer from ever looking at the login form again for the rest
+    /// of this appearance. This is the hard "never more than one credential
+    /// submission per pane appearance, never any submission after a
+    /// rejection" rule this whole feature is built around — see
+    /// `PennKeyLoginForm`'s doc comment for why retrying a rejected password
+    /// was rejected as an alternative (PennKey/Duo lockout).
+    private var autoLoginAttempts = 0
 
     /// Host substring the caller considers signed in once a non-login page
     /// actually renders (for example Canvas or Gradescope's own host).
@@ -232,6 +274,7 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
         postProvisionalDiedAt = nil
         reachedSignedInDestination = false
         sawForeignHost = false
+        autoLoginAttempts = 0
     }
 
     /// Mirrors every redirect-log entry to the unified system log, so the
@@ -730,6 +773,58 @@ extension LoginNavigationObserver: WKNavigationDelegate {
                 // path as the host/path/status entries below.
                 self.appendLogEntry(host: "(page title)", path: " \(title)", status: nil)
             }
+        }
+        attemptAutoLoginIfNeeded(webView)
+    }
+
+    /// Drives the "stay signed in" visible-pane auto-fill — see
+    /// `autoLoginCredentials`'s doc comment for what sets it and why this
+    /// observer does no policy checking of its own. Runs alongside the
+    /// title-based error-page check above, not instead of it: they are two
+    /// independent observations of the same `didFinish` event.
+    ///
+    /// This is the ONE new thing this observer is allowed to do that its own
+    /// class doc comment's "does (almost) nothing to steer navigation" rule
+    /// would otherwise forbid, and it is scoped as narrowly as the hard
+    /// safety rule allows: it evaluates
+    /// `PennKeyLoginForm.fillAndSubmitScript` — which fills and submits the
+    /// IdP's *credential* form — at most once per pane appearance
+    /// (`autoLoginAttempts`), and never touches the SAML *response* form
+    /// Canvas's own return hop auto-submits, which remains exclusively this
+    /// class's duplicate-POST guard and app-link guard's territory (see
+    /// `PennKeyLoginForm`'s doc comment for the full argument that this
+    /// cannot reopen the historical double-POST bug).
+    private func attemptAutoLoginIfNeeded(_ webView: WKWebView) {
+        guard let credentials = autoLoginCredentials else { return }
+        guard PennKeyLoginForm.isLoginForm(webView.url) else { return }
+
+        if autoLoginAttempts == 0 {
+            autoLoginAttempts += 1
+            let script = PennKeyLoginForm.fillAndSubmitScript(
+                username: credentials.username,
+                password: credentials.password
+            )
+            webView.evaluateJavaScript(script) { [weak self] result, _ in
+                guard let self else { return }
+                if PennKeyLoginForm.outcome(from: result) == .submitted {
+                    self.onAutoLoginOutcome?(.submitted)
+                }
+            }
+            return
+        }
+
+        if autoLoginAttempts == 1 {
+            // The login form finished loading a SECOND time after the one
+            // and only submission above — Shibboleth re-rendered its own
+            // credential form, which is exactly what it does for a wrong
+            // password. Bump past 1 immediately, before calling out, so this
+            // branch can only ever fire once per pane appearance no matter
+            // how many more times the login form happens to finish loading
+            // afterward (e.g. a student's own manual retry on the
+            // re-rendered form) — this observer never submits again on its
+            // own regardless.
+            autoLoginAttempts += 1
+            onAutoLoginOutcome?(.rejected)
         }
     }
 }

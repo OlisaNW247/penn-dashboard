@@ -28,6 +28,12 @@ struct SettingsPage: View {
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
     @State private var disconnecting: DisconnectTarget?
+    /// Presents `PennKeyCredentialsSheet` — set true by the "stay signed in"
+    /// toggle's own binding when it's flipped ON (the sheet's own save is
+    /// what actually calls `AppState.enableStayLoggedIn`; see
+    /// `stayLoggedInRows`) and by its "update password" button after a
+    /// rejection.
+    @State private var showStayLoggedInSheet = false
     @State private var didCopyDiagnostics = false
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
@@ -103,6 +109,7 @@ struct SettingsPage: View {
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
+                    stayLoggedInRows
                 }
             } header: {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
@@ -170,6 +177,9 @@ struct SettingsPage: View {
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
+        }
+        .sheet(isPresented: $showStayLoggedInSheet) {
+            PennKeyCredentialsSheet().environmentObject(state)
         }
         .alert(item: $disconnecting) { target in
             Alert(
@@ -490,6 +500,47 @@ struct SettingsPage: View {
             NSWorkspace.shared.open(url)
         }
 #endif
+    }
+
+    /// "Stay signed in" — the owner's decision (CLAUDE.md's "stay signed in"
+    /// entry) to optionally store the student's PennKey password and use it
+    /// to sign back into Canvas automatically. Off by default; lives inside
+    /// the "accounts" section, right below the Canvas/Gradescope rows, since
+    /// it's a property of the Canvas login specifically, not a general
+    /// preference.
+    ///
+    /// Turning the toggle ON does NOT itself call
+    /// `AppState.enableStayLoggedIn` — it only opens
+    /// `PennKeyCredentialsSheet`, whose own "save" button is the one thing
+    /// that actually turns the feature on (see that binding's `set` below).
+    /// Turning it OFF calls `AppState.disableStayLoggedIn()` immediately,
+    /// with no confirmation — unlike disconnecting a whole account, this
+    /// only throws away a locally-stored password copy the student can
+    /// re-enter in a few seconds, so the same "are you sure" friction that
+    /// `disconnecting` guards elsewhere in this file isn't warranted here.
+    @ViewBuilder
+    private var stayLoggedInRows: some View {
+        Toggle("stay signed in", isOn: Binding(
+            get: { state.stayLoggedInEnabled },
+            set: { newValue in
+                if newValue {
+                    showStayLoggedInSheet = true
+                } else {
+                    state.disableStayLoggedIn()
+                }
+            }
+        ))
+        Text("smooth keeps your pennkey password in this phone's keychain and signs you back in when canvas logs you out. it never leaves the phone. tick \u{201c}remember this device\u{201d} at the duo step so duo doesn't ask either.")
+            .font(.lhfSecondary(12))
+            .foregroundStyle(Color.v2DateText)
+        if let reason = state.autoLoginDisabledReason {
+            Text(reason)
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.smoothTomatoInk)
+            Button("update password") {
+                showStayLoggedInSheet = true
+            }
+        }
     }
 
     /// One tappable source row. Its trailing status says what is true; tapping

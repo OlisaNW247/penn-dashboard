@@ -173,4 +173,32 @@ struct CanvasSessionRenewerTests {
         let c = cookie(name: "canvas_session", domain: "example.com")
         #expect(!CanvasSessionRenewer.isCanvasSessionCookie(c))
     }
+
+    // MARK: - credentialSubmissionAllowed(lastSubmissionAt:now:) — "stay signed in"
+
+    @Test("no prior submission always allows one")
+    func credentialSubmissionAllowedWithNoPriorSubmission() {
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: nil, now: Date()))
+    }
+
+    @Test("a submission inside the cooldown window is not allowed")
+    func credentialSubmissionBlockedInsideCooldown() {
+        let now = Date()
+        let last = now.addingTimeInterval(-60) // one minute ago, well inside 6h
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: last, now: now))
+    }
+
+    @Test("a submission exactly at the cooldown boundary is allowed")
+    func credentialSubmissionAllowedAtBoundary() {
+        let now = Date()
+        let last = now.addingTimeInterval(-CanvasSessionRenewer.autoLoginCooldown)
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: last, now: now))
+    }
+
+    @Test("a submission just past the cooldown window is allowed")
+    func credentialSubmissionAllowedAfterCooldown() {
+        let now = Date()
+        let last = now.addingTimeInterval(-CanvasSessionRenewer.autoLoginCooldown - 1)
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: last, now: now))
+    }
 }

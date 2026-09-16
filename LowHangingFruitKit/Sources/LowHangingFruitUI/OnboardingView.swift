@@ -42,6 +42,11 @@ struct OnboardingView: View {
     /// lifetime (see `RootView.swift`), not a locally-owned `@StateObject`.
     @EnvironmentObject var scheduler: NotificationScheduler
     @State private var phase: Phase = .canvasLogin
+    /// Presents `PennKeyCredentialsSheet` once, right after a successful
+    /// interactive Canvas login — see `canvasConnected()`'s doc comment for
+    /// the "why here" and `AppState.hasOfferedStayLoggedIn` for why this
+    /// never fires a second time.
+    @State private var showStayLoggedInOffer = false
 
     /// One case per screen in the linear walk, plus the per-course walk that
     /// can follow it. Order here is the order a student walks them in; there
@@ -86,6 +91,28 @@ struct OnboardingView: View {
             // the missing height; the height was never missing, the step just
             // never claimed it.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Attached here, at the OUTER body level, rather than inside
+            // `canvasStep`'s `CanvasLoginPane` branch: the instant
+            // `state.isCanvasConnected` flips true (which happens inside
+            // `CanvasLoginPane.connect()` BEFORE it calls `onConnected()` —
+            // i.e. before `canvasConnected()` even runs), `canvasStep`'s own
+            // `@ViewBuilder` switches from the `CanvasLoginPane` branch to
+            // the `connectedStep(...)` branch, which would tear down any
+            // `.sheet` modifier attached to the pane branch specifically
+            // before `showStayLoggedInOffer` even had a chance to present
+            // it. This level of the view tree survives that branch swap (and
+            // the `phase` change `advancePastCanvasStep` makes once the
+            // sheet closes) untouched, so the presentation is reliable
+            // regardless of which branch is on screen when it's triggered.
+            .sheet(isPresented: $showStayLoggedInOffer, onDismiss: advancePastCanvasStep) {
+                // `onDismiss` (not `onCancel`) is what actually advances the
+                // walk — it fires whether the student saved or tapped "not
+                // now", so both answers land on the same next step. The
+                // sheet's own "not now" button just closes it; there is
+                // nothing else for it to do here.
+                PennKeyCredentialsSheet(cancelLabel: "not now")
+                    .environmentObject(state)
+            }
     }
 
     @ViewBuilder
@@ -183,7 +210,29 @@ struct OnboardingView: View {
         .accessibilityHint("explore a demo dashboard without logging in")
     }
 
+    /// Called once Canvas is actually connected (cookies captured, the pane's
+    /// `onChange` fired `connect()` successfully). Before moving on, this is
+    /// the one-time hook for offering "stay signed in"
+    /// (`PennKeyCredentialsSheet`) — right after a real interactive login is
+    /// the one moment the student has just proven they know their PennKey
+    /// password and are already thinking about Canvas access, which makes it
+    /// the least intrusive place to ask, once, whether Smooth should
+    /// remember it. `AppState.hasOfferedStayLoggedIn` is what keeps this to
+    /// exactly once ever — Settings is the only way back after this.
     private func canvasConnected() {
+        if !state.stayLoggedInEnabled && !state.hasOfferedStayLoggedIn {
+            state.noteStayLoggedInOffered()
+            showStayLoggedInOffer = true
+            return
+        }
+        advancePastCanvasStep()
+    }
+
+    /// The actual "Canvas step is done" transition — pulled out of
+    /// `canvasConnected()` so both the ordinary path (offer already shown,
+    /// or feature already on) and the offer sheet's `onDismiss` (however the
+    /// student answered: saved, or "not now") land on the same next step.
+    private func advancePastCanvasStep() {
         if state.onboardingDestination == .canvas {
             state.completeOnboarding()
         } else {
@@ -640,7 +689,30 @@ private struct CanvasLoginPane: View {
         // starts) and cleared on disappear — there's no separate teardown
         // path for this pane beyond SwiftUI removing it from the tree
         // (`OnboardingView`'s `phase` switch), which `onDisappear` covers.
-        .onAppear { state.isCanvasLoginPaneActive = true }
+        .onAppear {
+            state.isCanvasLoginPaneActive = true
+            // "Stay signed in" visible-pane auto-fill (CLAUDE.md's "stay
+            // signed in" entry). Handed to the observer only when
+            // `AppState.canAutoLogin` says the feature is actually usable
+            // right now — off, missing credentials, or an unresolved prior
+            // rejection all mean this pane behaves exactly as it did before
+            // this feature existed, with the student typing their password
+            // in by hand as always. `.rejected` is the one outcome this pane
+            // reacts to; `.submitted` needs no handling here because success
+            // is already what `reachedSignedInDestination`'s own
+            // `onChange`/`connect()` path reports.
+            if state.canAutoLogin, let credentials = PennKeyCredentialStore.load() {
+                navObserver.autoLoginCredentials = credentials
+            }
+            navObserver.onAutoLoginOutcome = { event in
+                switch event {
+                case .submitted:
+                    break
+                case .rejected:
+                    state.noteAutoLoginRejected()
+                }
+            }
+        }
         .onDisappear { state.isCanvasLoginPaneActive = false }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)

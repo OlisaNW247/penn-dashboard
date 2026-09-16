@@ -47,6 +47,18 @@ struct CanvasSessionDeadStateTests {
         #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .abortedByLoginPane) == false)
     }
 
+    @Test("passwordRejected confirms the session dead — 'stay signed in'")
+    func passwordRejectedConfirmsDead() {
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .passwordRejected) == true)
+        #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .passwordRejected) == true)
+    }
+
+    @Test("needsDuo proves nothing about the Canvas session and leaves current unchanged")
+    func needsDuoLeavesCurrentUnchanged() {
+        #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .needsDuo) == true)
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .needsDuo) == false)
+    }
+
     // MARK: - renewalProvedSessionAlive(lastRefreshedBefore:lastRefreshedAfter:)
 
     private let someDate = Date(timeIntervalSince1970: 1_700_000_000)
