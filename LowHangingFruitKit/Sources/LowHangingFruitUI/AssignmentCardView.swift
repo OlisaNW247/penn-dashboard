@@ -33,42 +33,55 @@ struct AssignmentCardView: View {
 
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
+    @State private var exitScale: CGFloat = 1
     @State private var dragX: CGFloat = 0
     @State private var isExpanded = false
     @State private var isCompleting = false
-    @State private var completionBurst = false
+    @State private var paperScatter = false
+    @State private var isArmed = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let corner: CGFloat = 18
 
-    /// How far right the card has to travel to count as "done". Roughly a
-    /// thumb's width: far enough that a stray horizontal nudge while scrolling
-    /// doesn't reach it, short enough to be one comfortable motion.
-    private let completeThreshold: CGFloat = 96
+    /// A compact thumb nudge, rather than the old near-full-card pull. Fast
+    /// flicks can complete a little earlier through predicted-end translation.
+    private let completeThreshold: CGFloat = 68
 
     /// Past the threshold the card stops following the finger. Without a cap a
     /// long drag pulls the card off its own row and the reveal behind it reads
     /// as a second, empty card.
-    private let maxDrag: CGFloat = 132
+    private let maxDrag: CGFloat = 86
+
+    private var dragProgress: CGFloat {
+        min(max(dragX / completeThreshold, 0), 1)
+    }
 
     var body: some View {
         let now = Date()
         let state = item.state(now: now)
 
         return ZStack(alignment: .leading) {
-            completeReveal
             card(now: now)
                 .offset(x: dragX)
-                .scaleEffect(isCompleting && !reduceMotion ? 1.012 : 1)
-                .rotationEffect(.degrees(isCompleting && !reduceMotion ? -0.7 : 0))
+                // The card only lifts enough to separate from the page. The
+                // prior stretch/rotation treatment made a routine action feel
+                // rubbery and fought the quiet paper language of the dashboard.
+                .scaleEffect(exitScale * (1 - (0.003 * dragProgress)))
+                .offset(y: -1.5 * dragProgress)
+                .shadow(
+                    color: Color.smoothInk.opacity(Double(dragProgress) * 0.08),
+                    radius: 2 + (4 * dragProgress),
+                    x: 0,
+                    y: 2 + (2 * dragProgress)
+                )
         }
         .opacity(exitOpacity)
         .offset(y: exitOffset)
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: .leading) {
             if isCompleting && !reduceMotion {
-                completionBurstView
-                    .padding(.trailing, 22)
+                completionScatterView
+                    .padding(.leading, 24)
                     .allowsHitTesting(false)
             }
         }
@@ -238,24 +251,6 @@ struct AssignmentCardView: View {
 
     // MARK: Swipe to complete
 
-    /// The green field behind the card, uncovered as it slides. Its checkmark
-    /// only appears once the drag is far enough to be read as intent, so a small
-    /// nudge shows a hint of colour rather than promising an action it won't
-    /// take.
-    private var completeReveal: some View {
-        RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(Color.smoothTeal)
-            .overlay(alignment: .leading) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color.smoothInk)
-                    .padding(.leading, 20)
-                    .opacity(dragX >= completeThreshold ? 1 : 0.45)
-                    .scaleEffect(dragX >= completeThreshold ? 1.15 : 1)
-            }
-            .opacity(dragX > 1 ? 1 : 0)
-    }
-
     private func completeDrag(state: DueState) -> some Gesture {
         DragGesture(minimumDistance: 18, coordinateSpace: .local)
             .onChanged { value in
@@ -263,13 +258,21 @@ struct AssignmentCardView: View {
                 // every change (not just the first) keeps a diagonal drag from
                 // dragging the card sideways while the list scrolls under it.
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                dragX = min(max(0, value.translation.width), maxDrag)
+                let nextDrag = min(max(0, value.translation.width), maxDrag)
+                let nextArmed = nextDrag >= completeThreshold
+                if nextArmed && !isArmed { lhfHapticLight() }
+                isArmed = nextArmed
+                dragX = nextDrag
             }
-            .onEnded { _ in
-                if dragX >= completeThreshold {
+            .onEnded { value in
+                let horizontalFlick = value.predictedEndTranslation.width >= completeThreshold + 14
+                if isArmed || (dragX >= 42 && horizontalFlick) {
                     triggerComplete(state: state)
                 } else {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragX = 0 }
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                        dragX = 0
+                        isArmed = false
+                    }
                 }
             }
     }
@@ -281,79 +284,90 @@ struct AssignmentCardView: View {
 
         if reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) {
-                dragX = maxDrag + 40
+                dragX = maxDrag
                 exitOpacity = 0
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onComplete() }
             return
         }
 
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.58)) {
-            dragX = maxDrag
+        // One clean beat: let the card settle after the swipe, release a few
+        // pieces of the same paper used by the empty state, and make room for
+        // the next assignment. There is no label or confirmation icon.
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.78)) {
+            dragX = completeThreshold + 3
+            exitScale = 1.006
         }
         DispatchQueue.main.async {
-            withAnimation(.spring(response: 0.46, dampingFraction: 0.62)) {
-                completionBurst = true
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) {
+                paperScatter = true
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
-            withAnimation(.easeIn(duration: 0.28)) {
-                dragX = maxDrag + 56
-                exitOffset = -8
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.easeOut(duration: 0.22)) {
+                dragX = completeThreshold + 6
+                exitScale = 0.94
+                exitOffset = -6
                 exitOpacity = 0
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.58) { onComplete() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) { onComplete() }
     }
 
-    private var completionBurstView: some View {
+    /// Six small, geometric paper pieces echo the empty-dashboard celebration
+    /// without replaying its full confetti moment for every assignment.
+    private var completionScatterView: some View {
         ZStack {
-            Circle()
-                .stroke(Color.smoothTeal.opacity(0.48), lineWidth: 2)
-                .frame(width: 46, height: 46)
-                .scaleEffect(completionBurst ? 1.7 : 0.78)
-                .opacity(completionBurst ? 0 : 0.72)
-
-            Circle()
-                .fill(Color.smoothTeal)
-                .frame(width: 46, height: 46)
-                .shadow(color: Color.smoothTealInk.opacity(0.16), radius: 7, y: 3)
-
-            Image(systemName: "checkmark")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Color.smoothPaper)
-                .rotationEffect(.degrees(completionBurst ? 0 : -14))
-
-            ForEach(Array(Self.burstOffsets.enumerated()), id: \.offset) { index, offset in
-                Image(systemName: Self.burstSymbols[index])
-                    .font(.system(size: index.isMultiple(of: 3) ? 7 : 6, weight: .bold))
-                    .foregroundStyle(Self.burstColors[index])
-                    .offset(completionBurst ? offset : .zero)
-                    .rotationEffect(.degrees(completionBurst ? Double(index * 38) : 0))
-                    .opacity(completionBurst ? 0 : 1)
+            ForEach(Array(Self.scatterPieces.enumerated()), id: \.offset) { index, piece in
+                CompletionPaperPiece(shape: piece.shape)
+                    .foregroundStyle(piece.color)
+                    .offset(paperScatter ? piece.destination : .zero)
+                    .rotationEffect(.degrees(paperScatter ? piece.rotation : 0))
+                    .scaleEffect(paperScatter ? 1 : 0.2)
+                    .opacity(paperScatter ? 0 : piece.opacity)
+                    .animation(
+                        .easeOut(duration: 0.32).delay(Double(index) * 0.014),
+                        value: paperScatter
+                    )
             }
         }
-        .scaleEffect(completionBurst ? 1 : 0.62)
-        .opacity(completionBurst ? 1 : 0)
     }
 
-    private static let burstOffsets: [CGSize] = [
-        CGSize(width: -34, height: -24), CGSize(width: 0, height: -38),
-        CGSize(width: 34, height: -22), CGSize(width: 38, height: 18),
-        CGSize(width: 10, height: 40), CGSize(width: -28, height: 34),
-        CGSize(width: -42, height: 2), CGSize(width: 42, height: -4),
+    private static let scatterPieces: [CompletionPaper] = [
+        .init(destination: .init(width: -13, height: -24), rotation: -38, color: .smoothTomato, shape: .ticket, opacity: 0.9),
+        .init(destination: .init(width: 9, height: -31), rotation: 44, color: .smoothMarigold, shape: .dash, opacity: 0.86),
+        .init(destination: .init(width: 29, height: -17), rotation: -28, color: .smoothCobalt, shape: .dot, opacity: 0.82),
+        .init(destination: .init(width: 31, height: 12), rotation: 52, color: .smoothTeal, shape: .ticket, opacity: 0.88),
+        .init(destination: .init(width: 6, height: 28), rotation: -48, color: .smoothGrape, shape: .dash, opacity: 0.82),
+        .init(destination: .init(width: -18, height: 20), rotation: 30, color: .smoothLemon, shape: .dot, opacity: 0.86),
     ]
+}
 
-    private static let burstColors: [Color] = [
-        .smoothTomato, .smoothMarigold, .smoothLemon,
-        .smoothTeal, .smoothMarigold, .smoothCobalt,
-        .smoothGrape, .smoothTomato,
-    ]
+private struct CompletionPaper {
+    enum Shape { case ticket, dash, dot }
+    let destination: CGSize
+    let rotation: Double
+    let color: Color
+    let shape: Shape
+    let opacity: Double
+}
 
-    private static let burstSymbols = [
-        "circle.fill", "diamond.fill", "triangle.fill", "star.fill",
-        "diamond.fill", "circle.fill", "star.fill", "triangle.fill",
-    ]
+private struct CompletionPaperPiece: View {
+    let shape: CompletionPaper.Shape
+
+    var body: some View {
+        Group {
+            switch shape {
+            case .ticket:
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .frame(width: 10, height: 6)
+            case .dash:
+                Capsule().frame(width: 10, height: 3)
+            case .dot:
+                Circle().frame(width: 5, height: 5)
+            }
+        }
+    }
 }
 
 #if DEBUG
