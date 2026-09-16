@@ -1511,8 +1511,12 @@ final class AppState: ObservableObject {
     /// with a `nil` `expiresAt` (Canvas allows a null expiration for some
     /// account types — see `CanvasAccessTokenPolicy.isUsable`) reads as
     /// "never expires," the same treatment that case gets everywhere else in
-    /// this file.
-    static func tokenIsHealthyEnoughToSkipExpiryCheck(_ token: CanvasAccessToken?, now: Date) -> Bool {
+    /// this file. `nonisolated` because `AppState` is `@MainActor` and a static
+    /// on it inherits that isolation -- the first compile of v6 failed on a
+    /// plain test suite calling this (CLAUDE.md, the `decidedText` trap);
+    /// it reads nothing but its arguments, so it has no business being
+    /// isolated.
+    nonisolated static func tokenIsHealthyEnoughToSkipExpiryCheck(_ token: CanvasAccessToken?, now: Date) -> Bool {
         guard let token, CanvasAccessTokenPolicy.isUsable(token, now: now) else { return false }
         guard let expiresAt = token.expiresAt else { return true }
         return expiresAt.timeIntervalSince(now) > CanvasAccessTokenPolicy.renewalWindow
