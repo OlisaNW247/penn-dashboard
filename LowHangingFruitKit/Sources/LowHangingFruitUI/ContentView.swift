@@ -705,13 +705,28 @@ private struct SmoothTodoEmptyState: View {
     @State private var appeared = false
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             ZStack {
                 Circle()
                     .fill(Color.smoothLemon.opacity(0.16))
-                    .frame(width: 230, height: 230)
-                    .scaleEffect(appeared ? 1 : 0.72)
+                    .frame(width: 218, height: 218)
+                    .scaleEffect(appeared ? 1 : 0.78)
                     .opacity(appeared ? 1 : 0)
+
+                if !reduceMotion {
+                    ForEach(Array(Self.confetti.enumerated()), id: \.offset) { index, piece in
+                        EmptyStateConfettiPiece(piece: piece)
+                            .offset(appeared ? piece.destination : .zero)
+                            .rotationEffect(.degrees(appeared ? piece.rotation : 0))
+                            .scaleEffect(appeared ? 1 : 0.18)
+                            .opacity(appeared ? piece.opacity : 0)
+                            .animation(
+                                .spring(response: 0.62, dampingFraction: 0.68)
+                                    .delay(0.06 + (Double(index) * 0.028)),
+                                value: appeared
+                            )
+                    }
+                }
 
                 if let img = bundledImage("chill", ext: "jpg") {
                     Group {
@@ -730,9 +745,10 @@ private struct SmoothTodoEmptyState: View {
                                 .opacity(appeared ? 0.35 : 0)
                         }
                     }
-                    .frame(maxWidth: 250)
-                    .scaleEffect(appeared ? 1 : 0.9)
-                    .offset(y: appeared ? -4 : 12)
+                    .frame(maxWidth: 242)
+                    .scaleEffect(appeared ? 1 : 0.86)
+                    .offset(y: appeared ? -4 : 14)
+                    .animation(.spring(response: 0.68, dampingFraction: 0.76), value: appeared)
                     .accessibilityHidden(true)
                 }
             }
@@ -743,21 +759,74 @@ private struct SmoothTodoEmptyState: View {
                 .multilineTextAlignment(.center)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 8)
+                .animation(.easeOut(duration: 0.34).delay(0.12), value: appeared)
+
+            Text("nothing due this week")
+                .font(.lhfMono(10, weight: .semibold))
+                .tracking(0.9)
+                .foregroundStyle(Color.v2DateText)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 6)
+                .animation(.easeOut(duration: 0.32).delay(0.18), value: appeared)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("go enjoy life")
+        .accessibilityLabel("nothing due this week. go enjoy life")
         .onAppear {
             if reduceMotion {
                 appeared = true
             } else {
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.82)) {
+                // Defer one run-loop so every piece gets a real origin frame;
+                // otherwise SwiftUI may render the destination immediately.
+                DispatchQueue.main.async {
                     appeared = true
                 }
             }
         }
         .onDisappear { appeared = false }
+    }
+
+    private static let confetti: [EmptyStateConfetti] = [
+        .init(destination: .init(width: -92, height: -68), rotation: -54, color: .smoothTomato, shape: .ticket, opacity: 0.85),
+        .init(destination: .init(width: -50, height: -102), rotation: 34, color: .smoothMarigold, shape: .dash, opacity: 0.9),
+        .init(destination: .init(width: 4, height: -112), rotation: -18, color: .smoothCobalt, shape: .dot, opacity: 0.8),
+        .init(destination: .init(width: 62, height: -94), rotation: 58, color: .smoothGrape, shape: .ticket, opacity: 0.82),
+        .init(destination: .init(width: 102, height: -48), rotation: -38, color: .smoothTeal, shape: .dash, opacity: 0.9),
+        .init(destination: .init(width: 108, height: 18), rotation: 48, color: .smoothTomato, shape: .dot, opacity: 0.78),
+        .init(destination: .init(width: 82, height: 72), rotation: -62, color: .smoothLemon, shape: .ticket, opacity: 0.88),
+        .init(destination: .init(width: -78, height: 74), rotation: 46, color: .smoothCobalt, shape: .dash, opacity: 0.78),
+        .init(destination: .init(width: -108, height: 24), rotation: -28, color: .smoothGrape, shape: .dot, opacity: 0.8),
+    ]
+}
+
+/// Tiny deadline-colored paper pieces, shaped like the cards they celebrate
+/// clearing. Their irregular destinations keep the burst playful, not glossy.
+private struct EmptyStateConfetti {
+    enum Shape { case ticket, dash, dot }
+    let destination: CGSize
+    let rotation: Double
+    let color: Color
+    let shape: Shape
+    let opacity: Double
+}
+
+private struct EmptyStateConfettiPiece: View {
+    let piece: EmptyStateConfetti
+
+    var body: some View {
+        Group {
+            switch piece.shape {
+            case .ticket:
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .frame(width: 13, height: 8)
+            case .dash:
+                Capsule().frame(width: 13, height: 4)
+            case .dot:
+                Circle().frame(width: 7, height: 7)
+            }
+        }
+        .foregroundStyle(piece.color)
     }
 }
 
