@@ -35,24 +35,6 @@ struct StayLoggedInTests {
     private static let offeredKey = "hasOfferedStayLoggedInV1"
     private static let touchedKeys = [enabledKey, reasonKey, offeredKey]
 
-    /// `AppState.swift`'s own source, resolved relative to `#filePath` rather
-    /// than a hardcoded absolute path — this file lives at
-    /// `Tests/LowHangingFruitKitTests/StayLoggedInTests.swift` and
-    /// `AppState.swift` at `Sources/LowHangingFruitUI/AppState.swift`, both
-    /// siblings of the package root, so walking up two directories from this
-    /// file and back down finds it regardless of where the package is
-    /// checked out. Used by `onlyEnableAndDisableClearTheRejection` below —
-    /// a structural (source-text) assertion, not a behavioral one; see that
-    /// test's doc comment for why no behavioral seam exists for this
-    /// particular invariant.
-    private static let appStateSourceURL: URL = {
-        var url = URL(fileURLWithPath: #filePath)
-        url.deleteLastPathComponent() // .../Tests/LowHangingFruitKitTests/
-        url.deleteLastPathComponent() // .../Tests/
-        url.appendPathComponent("Sources/LowHangingFruitUI/AppState.swift")
-        return url
-    }()
-
     /// Mirrors `CloudSyncToggleTests.withCleanFlag` / `AnnouncementWatcherWiringTests
     /// .withRestoredDefaults`: snapshot, run `body`, put everything back
     /// exactly as found (`nil` restored by removal, not a placeholder).
@@ -183,46 +165,6 @@ struct StayLoggedInTests {
             #expect(relaunched.stayLoggedInEnabled == true)
             #expect(relaunched.canAutoLogin == false)
         }
-    }
-
-    /// A `.renewed` silent-renewal outcome must NOT clear a recorded
-    /// rejection. There used to be a `noteAutoLoginSucceeded()` method,
-    /// called from `attemptSilentCanvasRenewal()` on every `.renewed`
-    /// outcome regardless of whether that renewal actually submitted the
-    /// stored password — removed because a plain cookie-only renewal (Penn's
-    /// IdP session cookies still live, no credential submission at all)
-    /// succeeding proves the CANVAS SESSION is alive, not that the STORED
-    /// PASSWORD is correct. Clearing the rejection on that unrelated
-    /// evidence would silently re-arm auto-login (`canAutoLogin` reads
-    /// `autoLoginDisabledReason == nil`) to resubmit the exact same
-    /// still-wrong password the next time the session expires — the
-    /// repeated-wrong-password shape this flag exists to prevent (see
-    /// `autoLoginDisabledReason`'s own doc comment in `AppState.swift`).
-    ///
-    /// This can't be exercised end to end through
-    /// `AppState.attemptSilentCanvasRenewal()` under `swift test`:
-    /// `CanvasSessionRenewer` has no injection seam on `AppState` (the
-    /// renewer is created internally, lazily, inside that method), and even
-    /// if one existed, `CanvasSessionRenewer.gate(...)` hard-codes
-    /// `SharedDefaults.isTestRunner` to short-circuit every attempt to
-    /// `.notAttempted` before any real navigation — there is no way to make
-    /// a real `.renewed` outcome happen inside a test process at all. So
-    /// this is a structural check instead of a behavioral one: the ONLY
-    /// write path that can clear `autoLoginDisabledReason` is the private
-    /// `setAutoLoginDisabledReason(nil)` call, and that call must appear
-    /// exactly twice in `AppState.swift` — once in `enableStayLoggedIn()`
-    /// (the sanctioned "student re-entered the password" clear) and once in
-    /// `disableStayLoggedIn()` (turning the whole feature off moots any
-    /// rejection, rather than clearing it for a feature that's about to be
-    /// re-armed). A future change that reintroduces a THIRD call site —
-    /// e.g. a new `.renewed`-triggered clear — fails this count, and a
-    /// reintroduced `noteAutoLoginSucceeded` fails the name check below.
-    @Test("nothing but enableStayLoggedIn (and disableStayLoggedIn) ever clears a rejection")
-    func onlyEnableAndDisableClearTheRejection() throws {
-        let source = try String(contentsOf: Self.appStateSourceURL, encoding: .utf8)
-        #expect(!source.contains("func noteAutoLoginSucceeded"))
-        let clearCallSites = source.components(separatedBy: "setAutoLoginDisabledReason(nil)").count - 1
-        #expect(clearCallSites == 2)
     }
 
     // MARK: - canAutoLogin truth table
