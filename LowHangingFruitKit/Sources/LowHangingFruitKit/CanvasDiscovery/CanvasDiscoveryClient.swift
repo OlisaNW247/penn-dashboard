@@ -1,5 +1,24 @@
 import Foundation
 
+/// Scrapes the logged-in student's `/calendar` and `/dashboard` HTML pages
+/// (Canvas's calendar feed URL and course list aren't exposed by any JSON
+/// endpoint this Kit has found) — authenticated with `SessionCookieStore`
+/// cookies only, deliberately not accepting a `CanvasAccessToken` bearer
+/// token the way the other five Canvas clients in this Kit do.
+///
+/// This is the one Canvas client that scrapes the web UI rather than calling
+/// `/api/v1/...`, and Canvas's own `lib/authentication_methods.rb` only
+/// consults a bearer token when `api_request? || token_auth_allowed?` is
+/// true — neither holds for `/calendar` or `/dashboard`, so a `Bearer`
+/// header here is simply ignored, and with no session cookie attached the
+/// request lands on Canvas's login page instead. Threading `accessToken`
+/// through anyway (as every other client does) would mean silently
+/// swallowing that failure mode: a caller who trusted the parameter's
+/// presence here the way it trusts it elsewhere would get a request that
+/// looks credentialed and isn't. So this stays cookie-only, and is expected
+/// to fail if a caller ever has only a token and no cookies. In practice
+/// that's fine: discovery only ever runs right after a fresh login, when the
+/// session cookie is certainly still good.
 public struct CanvasDiscoveryClient: Sendable {
     public enum Error: Swift.Error, Sendable, LocalizedError {
         case http(status: Int, url: URL)

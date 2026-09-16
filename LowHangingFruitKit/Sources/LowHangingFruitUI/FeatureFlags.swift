@@ -36,4 +36,22 @@ enum FeatureFlags {
     /// install with no cookie session never shows the button regardless of
     /// this flag, which is what makes it safe to leave on.
     static let gradeWatcher = true
+
+    /// **Canvas personal access tokens are off.** The whole mint-at-login
+    /// path (`CanvasAccessTokenMinter`, `CanvasAccessTokenStore`, the
+    /// `accessToken:` parameter on every `/api/v1` client) was built on
+    /// 2026-09-16 so a student would log in once per semester instead of
+    /// once a day -- and the same day Olisa's own Canvas settings page
+    /// showed the "+ New Access Token" button disabled with "Your Canvas
+    /// administrators have chosen to limit your ability to generate your
+    /// own access token." That is Canvas's restrict-students-from-tokens
+    /// account setting, and it makes every mint a 403 for every Penn
+    /// student. Minting anyway would cost one doomed POST per login and
+    /// log a failure nobody can act on, so the call is gated here rather
+    /// than deleted: the code is correct, tested, and worth keeping for
+    /// the day Penn issues a developer key (the OAuth route the Canvas
+    /// Student app uses) or lifts the restriction. Everything downstream
+    /// of the mint is inert without a stored token, so with this false the
+    /// app behaves exactly as it did before the token work.
+    static let canvasAccessTokens = false
 }

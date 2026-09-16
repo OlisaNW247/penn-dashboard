@@ -1,7 +1,14 @@
 import Foundation
 
-/// Finds a course's syllabus on Canvas, cookie-authenticated the same way
-/// `CanvasGradesClient` and `CanvasDiscoveryClient` are.
+/// Finds a course's syllabus on Canvas, authenticated the same way
+/// `CanvasGradesClient` and `CanvasDiscoveryClient` are: `SessionCookieStore`
+/// cookies, or — when the caller has one — a `CanvasAccessToken` bearer token
+/// via `accessToken`, good for up to Canvas's 120-day student ceiling instead
+/// of the roughly one-day session cookies last; cookies remain the fallback
+/// otherwise. Only ever attached to Canvas's own host, same as the cookies
+/// were before it (see `shouldAttachCookies`/`fetch` below) — a syllabus PDF
+/// can live behind a pre-signed, non-Canvas download URL, and neither
+/// credential belongs on that request.
 ///
 /// Tries the cheap, structured sources first and stops as soon as one yields
 /// text with a parseable grading scheme, so the common case is a single extra
@@ -38,15 +45,18 @@ public struct CanvasSyllabusClient: Sendable {
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
+    private let accessToken: String?
 
     public init(
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        accessToken: String? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
+        self.accessToken = accessToken
     }
 
     /// Every syllabus-ish document found for a course, best source first.
@@ -172,10 +182,13 @@ public struct CanvasSyllabusClient: Sendable {
         var request = URLRequest(url: url)
         request.httpShouldHandleCookies = true
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // `shouldAttachCookies` is the guard that keeps a session cookie off
+        // a pre-signed, non-Canvas file-download URL; a bearer token needs
+        // the identical guard for the identical reason (Canvas's own token,
+        // not Canvas's business what an S3-style host does with it), so both
+        // credential kinds go through `CanvasAuth.apply` behind the same check.
         if shouldAttachCookies(to: url) {
-            for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-                request.setValue(value, forHTTPHeaderField: field)
-            }
+            CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
         }
 
         let (data, response) = try await session.data(for: request)

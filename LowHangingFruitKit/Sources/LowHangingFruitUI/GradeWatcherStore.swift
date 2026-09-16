@@ -200,11 +200,20 @@ final class GradeWatcherStore: ObservableObject {
         now: Date = Date()
     ) async {
         guard !isRefreshing else { return }
-        guard !cookies.isEmpty else {
+        // A usable Canvas access token (see `CanvasAccessTokenStore`)
+        // authenticates every fetch below on its own — `CanvasGradesClient`
+        // sends `Bearer <token>` and no cookies at all when one's present
+        // (`CanvasAuth.apply`) — so an empty cookie array alone no longer
+        // means "no session." Read once, up front, and reused below when
+        // building the client, so the two reads can't observe a token
+        // rejected mid-refresh (`AppState.noteCanvasAccessTokenRejected`)
+        // differently.
+        let bearerToken = CanvasAccessTokenStore.bearer(now: now)
+        guard !cookies.isEmpty || bearerToken != nil else {
             // Being "logged in" to the dashboard isn't enough: the assignment
             // list rides a cookieless ICS feed, while grades need a real Canvas
             // session. An account connected before this app stored Canvas
-            // cookies has none, so say what actually fixes it.
+            // cookies (or a token) has neither, so say what actually fixes it.
             error = "No saved Canvas session. Grades need a live Canvas login. the assignment list doesn\u{2019}t. Reconnect Canvas in Settings to enable grades."
             return
         }
@@ -230,11 +239,15 @@ final class GradeWatcherStore: ObservableObject {
         // so one instance is built here and captured by every child task
         // below instead of constructing one per course; there's nothing
         // course-specific in it that would require isolating separately.
-        let client = CanvasGradesClient(cookies: cookies) { rotated in
-            Task { @MainActor in
-                SessionCookieStore.merge(rotated, service: .canvas)
-            }
-        }
+        let client = CanvasGradesClient(
+            cookies: cookies,
+            refreshedCookieHandler: { rotated in
+                Task { @MainActor in
+                    SessionCookieStore.merge(rotated, service: .canvas)
+                }
+            },
+            accessToken: bearerToken
+        )
         var sawSessionExpired = false
         var lastFailure: Swift.Error?
         var fetchedAny = false

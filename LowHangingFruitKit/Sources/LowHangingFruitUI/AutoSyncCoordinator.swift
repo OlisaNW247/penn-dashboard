@@ -49,7 +49,16 @@ enum AutoSyncCoordinator {
             return
         }
         let cookies = await canvasCookies()
-        guard !cookies.isEmpty else { return }
+        // A usable Canvas access token authenticates every REST fetch below
+        // on its own (`CanvasAuth.apply` sends `Bearer <token>` and no
+        // cookies at all when one's present) — so an empty cookie array is
+        // no longer automatically "nothing to do here." Only bail when
+        // BOTH are missing. `CanvasDiscoveryClient` inside
+        // `refreshCourseIntel` below stays cookie-only regardless (it
+        // scrapes HTML pages a Bearer token is never honored on) and will
+        // simply no-op on an empty cookie array, same as it always has for
+        // a session with no cookies at all.
+        guard !cookies.isEmpty || state.hasCanvasCredentials else { return }
         await state.refreshGradeWatcher(cookies: cookies)
         // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md)
         // piggybacks on the same session rather than gathering its own —

@@ -1,8 +1,12 @@
 import Foundation
 
-/// Fetches Canvas course announcements, cookie-authenticated the same way
-/// `CanvasGradesClient` and `CanvasDiscoveryClient` are (self-scoped REST API,
-/// `SessionCookieStore` cookies — no OAuth available). Decodes into
+/// Fetches Canvas course announcements, authenticated the same way
+/// `CanvasGradesClient` and `CanvasDiscoveryClient` are (self-scoped REST API):
+/// `SessionCookieStore` cookies, or — when the caller has one — a
+/// `CanvasAccessToken` bearer token via `accessToken` (`CanvasAuth.apply`
+/// picks whichever is present). A token lasts up to Canvas's 120-day student
+/// ceiling instead of the roughly one-day session cookies do; cookies remain
+/// the fallback for a student who hasn't minted one. Decodes into
 /// `CanvasAnnouncement`, with HTML `message` bodies already flattened to plain
 /// text so callers (list rows, notification bodies) never touch HTML.
 ///
@@ -47,6 +51,7 @@ public final class CanvasAnnouncementsClient {
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
+    private let accessToken: String?
 
     /// Invoked with any cookies Canvas re-issued on a successfully decoded
     /// response page — see the matching comment on
@@ -61,12 +66,14 @@ public final class CanvasAnnouncementsClient {
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
         session: URLSession = .shared,
-        refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)? = nil
+        refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)? = nil,
+        accessToken: String? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
         self.refreshedCookieHandler = refreshedCookieHandler
+        self.accessToken = accessToken
     }
 
     // MARK: - Networked fetch
@@ -161,9 +168,7 @@ public final class CanvasAnnouncementsClient {
         // (docs/CANVAS_LOGIN_HARDENING.md item 2c).
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }

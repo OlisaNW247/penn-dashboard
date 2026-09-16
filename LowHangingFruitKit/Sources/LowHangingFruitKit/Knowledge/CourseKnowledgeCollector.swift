@@ -6,7 +6,9 @@ import Foundation
 /// assignment descriptions plus page bodies (`CanvasCourseContentClient`),
 /// then merge the lot into the on-device knowledge base.
 ///
-/// Every request reuses the student's saved Canvas session; nothing here
+/// Every request reuses the student's saved Canvas session, or a
+/// `CanvasAccessToken` bearer token when one is available (`accessToken`,
+/// forwarded unchanged to every client this collector builds); nothing here
 /// talks to anything but Canvas. Per-course failures are recorded, not
 /// thrown, so one course with a broken Modules page can't hide the rest. An
 /// expired session is the exception: it is thrown so the caller can stop
@@ -58,17 +60,25 @@ public struct CourseKnowledgeCollector: Sendable {
     private let cookies: [HTTPCookie]
     private let session: URLSession
     private let store: CourseKnowledgeStore
+    /// Forwarded, unchanged, to every Canvas client this collector builds
+    /// below — see `CanvasAuth.apply` for why a token wins over cookies when
+    /// both are present. `nil` (the pre-existing behavior) means every
+    /// request goes out cookie-authenticated, exactly as before this
+    /// parameter existed.
+    private let accessToken: String?
 
     public init(
         cookies: [HTTPCookie],
         store: CourseKnowledgeStore,
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        accessToken: String? = nil
     ) {
         self.cookies = cookies
         self.store = store
         self.baseURL = baseURL
         self.session = session
+        self.accessToken = accessToken
     }
 
     /// - Parameter fetchFully: Which courses to actually fetch from Canvas
@@ -98,7 +108,7 @@ public struct CourseKnowledgeCollector: Sendable {
         // Announcements come from one call for every course at once.
         let byCourse = Dictionary(uniqueKeysWithValues: courses.map { ($0.courseID, $0) })
         do {
-            let client = CanvasAnnouncementsClient(baseURL: baseURL, cookies: cookies, session: session)
+            let client = CanvasAnnouncementsClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
             let since = now.addingTimeInterval(-Double(Self.announcementLookbackDays) * 86_400)
             let announcements = try await client.fetchAnnouncements(courseIDs: courses.map(\.courseID), since: since)
             for announcement in announcements {
@@ -109,9 +119,9 @@ public struct CourseKnowledgeCollector: Sendable {
             errors.append("announcements: \(error.localizedDescription)")
         }
 
-        let content = CanvasCourseContentClient(baseURL: baseURL, cookies: cookies, session: session)
-        let syllabus = CanvasSyllabusClient(baseURL: baseURL, cookies: cookies, session: session)
-        let modules = CanvasModulesClient(baseURL: baseURL, cookies: cookies, session: session)
+        let content = CanvasCourseContentClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
+        let syllabus = CanvasSyllabusClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
+        let modules = CanvasModulesClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
 
         for course in courses {
             guard fetchFully == nil || fetchFully!.contains(course.courseID) else {

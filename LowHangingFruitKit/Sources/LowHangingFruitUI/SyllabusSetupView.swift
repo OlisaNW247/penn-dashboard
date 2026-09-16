@@ -465,12 +465,16 @@ struct SyllabusSetupView: View {
         }
 
         let cookies = await AutoSyncCoordinator.canvasCookies()
-        guard !cookies.isEmpty else {
+        let bearerToken = CanvasAccessTokenStore.bearer()
+        // A usable Canvas access token authenticates this fetch on its own
+        // (`CanvasAuth.apply`), so an empty cookie array alone no longer
+        // means "no session."
+        guard !cookies.isEmpty || bearerToken != nil else {
             stage = .failed("Grades need a live Canvas login to read your syllabus. Reconnect Canvas, then try again.")
             return
         }
 
-        let client = CanvasSyllabusClient(cookies: cookies)
+        let client = CanvasSyllabusClient(cookies: cookies, accessToken: bearerToken)
         do {
             let candidates = try await client.findCandidates(courseID: courseID)
             // First candidate that actually yields a scheme wins — a course

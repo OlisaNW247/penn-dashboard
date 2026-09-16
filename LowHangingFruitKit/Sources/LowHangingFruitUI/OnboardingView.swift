@@ -677,6 +677,89 @@ private struct CanvasLoginPane: View {
                     // would reopen the silent no-banner state the sticky
                     // flag exists to close.
                     state.noteCanvasLoginSessionCaptured()
+
+                    // Silently mint a Canvas personal access token from
+                    // inside this still-live, already-authenticated login
+                    // WebView, so the student doesn't have to do this again
+                    // for the token's lifetime (`CanvasAccessTokenPolicy
+                    // .lifetime`, Canvas's own ~120-day ceiling for a
+                    // student account — see `CanvasAccessToken.swift`'s doc
+                    // comment in the Kit). Three alternatives were
+                    // considered and rejected:
+                    //   - Storing the PennKey password: Penn's own policy
+                    //     plus Duo's second factor make a stored password
+                    //     useless for silent reauthentication — there is no
+                    //     way to drive a fresh login without a human tapping
+                    //     through Duo, so nothing would actually get
+                    //     automated by holding onto it.
+                    //   - Minting from inside `CanvasSessionRenewer`:
+                    //     deferred. That class's rule 1 is GET-only — no
+                    //     JavaScript that submits a form, no re-POST, ever —
+                    //     because a double-POSTed SAML form is the exact
+                    //     historical bug it exists to never repeat, and a
+                    //     token mint is a POST. Running the mint here
+                    //     instead, in the visible pane, is safe against that
+                    //     same rule for a different reason: this `fetch` is
+                    //     issued by the PAGE itself (see
+                    //     `CanvasAccessTokenMint.script`), not a
+                    //     `WKWebView.load`/form-submit navigation, so it
+                    //     cannot re-POST the SAML login form no matter when
+                    //     it runs — and it only ever runs once, right after
+                    //     a login the user just performed themselves, never
+                    //     unattended.
+                    //   - A process-wide "current Canvas credential"
+                    //     provider inside the Kit, so every client could
+                    //     reach for the token itself instead of taking it as
+                    //     a parameter: rejected by `CanvasAuth.apply`'s own
+                    //     doc comment in the Kit — hidden shared state read
+                    //     from more than one place at once is the exact
+                    //     shape of this repo's two pre-existing test flakes
+                    //     (CLAUDE.md, "Two known flakes"). `accessToken` is
+                    //     threaded explicitly from here down instead, the
+                    //     same way `cookies` already is.
+                    //
+                    // Gated on `needsMint` (not "mint every login"): a token
+                    // already minted this semester and nowhere near its
+                    // renewal window needs nothing from this login beyond
+                    // the cookies it already captured above. `navObserver
+                    // .webView` can be nil in principle (deallocated between
+                    // the login completing and this line running) — in that
+                    // case there is simply nothing to mint from and cookie
+                    // mode continues exactly as it does today.
+                    if FeatureFlags.canvasAccessTokens,
+                       let webView = navObserver.webView,
+                       CanvasAccessTokenPolicy.needsMint(existing: CanvasAccessTokenStore.load(), now: Date()) {
+                        let outgoing = CanvasAccessTokenStore.load()
+                        switch await CanvasAccessTokenMinter.mint(in: webView) {
+                        case let .success(token):
+                            state.noteCanvasAccessTokenMinted(token)
+                            if let outgoing {
+                                // Best-effort, detached so a slow/failed
+                                // revoke of the OLD token can never delay
+                                // reaching the dashboard — the new token is
+                                // already saved and in use by the time this
+                                // starts.
+                                Task.detached {
+                                    await CanvasAccessTokenMinter.revoke(outgoing)
+                                }
+                            }
+                        case let .failure(failure):
+                            let status: Int?
+                            switch failure {
+                            case let .httpStatus(code, _): status = code
+                            case .malformed: status = nil
+                            }
+                            // Canvas can refuse to mint outright (Penn is
+                            // known to gate student tokens off entirely,
+                            // 403) — logging the status and moving on is the
+                            // whole of the handling. The login above already
+                            // succeeded on cookies, and nothing about this
+                            // failure should be allowed to look like a
+                            // failed Canvas connection to the student.
+                            state.noteCanvasAccessTokenMintFailed(status: status)
+                        }
+                    }
+
                     onConnected()
                 }
             }
@@ -822,6 +905,12 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     // this instance alive; `WKWebView.navigationDelegate` is a weak reference.
     webView.navigationDelegate = navigationObserver
     navigationObserver.startURL = url
+    // Lets `CanvasLoginPane.connect()` reach this exact WebView after a
+    // successful login to run `CanvasAccessTokenMinter.mint(in:)` — see
+    // `LoginNavigationObserver.webView`'s doc comment. Harmless for the
+    // Gradescope pane, which shares this function but never reads the
+    // property back.
+    navigationObserver.webView = webView
     // One-line dispatch probe: WebKit delivers the response-policy callback
     // (the only source of HTTP statuses in the redirect log) purely based on
     // this respondsToSelector check. Its @objc exposure has silently failed

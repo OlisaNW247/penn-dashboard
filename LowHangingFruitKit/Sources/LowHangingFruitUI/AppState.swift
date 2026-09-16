@@ -1051,7 +1051,98 @@ final class AppState: ObservableObject {
     /// can recover it.
     var canUseGradeWatcher: Bool {
         if isUsingFixtureData { return true }
-        return !SessionCookieStore.load(service: .canvas).isEmpty || canvasSessionExpired
+        return hasCanvasCredentials || canvasSessionExpired
+    }
+
+    /// True when there's SOME Canvas credential this app could actually
+    /// authenticate a REST call with: a usable personal access token (see
+    /// `canvasAccessTokenOnFile`/`CanvasAccessTokenStore`) OR a persisted
+    /// cookie session. Before the access token existed, every one of this
+    /// property's callers (`canUseGradeWatcher` above,
+    /// `AutoSyncCoordinator.refreshCanvasGrades`, `GradeWatcherView`'s
+    /// refresh, `DiagnosticsReport`) hand-rolled its own
+    /// `!SessionCookieStore.load(service: .canvas).isEmpty` check; a token
+    /// that authenticates a fetch with an EMPTY cookie array (the case a
+    /// cookie-only-aged-out, still-tokened session is in) would have made
+    /// every one of those checks wrong on its own, and five copies of the
+    /// same fix is how they drift apart later. Deliberately says nothing
+    /// about fixture/preview mode — every caller that cares already
+    /// special-cases `isUsingFixtureData` itself (see `canUseGradeWatcher`
+    /// immediately above), so this stays a pure "is there a credential"
+    /// question.
+    var hasCanvasCredentials: Bool {
+        canvasAccessTokenBearer != nil || !SessionCookieStore.load(service: .canvas).isEmpty
+    }
+
+    /// The Canvas access token this instance should currently treat as on
+    /// file: the test seam (`forceCanvasAccessTokenForTesting`) when a test
+    /// has set one, otherwise whatever `CanvasAccessTokenStore` actually has
+    /// persisted in the real, process-wide Keychain item. Never filtered by
+    /// usability here — that's each caller's own job with its own `now`, so
+    /// this stays a plain, time-independent accessor.
+    private var canvasAccessTokenOnFile: CanvasAccessToken? {
+        forcedCanvasAccessTokenForTesting ?? CanvasAccessTokenStore.load()
+    }
+
+    /// The bearer secret to hand a Canvas client's `accessToken:` parameter
+    /// — `canvasAccessTokenOnFile`'s token when it's still usable as of now,
+    /// `nil` otherwise, in which case every client falls straight back to
+    /// cookies exactly as it did before this feature existed (see
+    /// `CanvasAuth.apply` in the Kit). Every Canvas client this file
+    /// constructs is threaded through this ONE property rather than each
+    /// call site reaching for `CanvasAccessTokenStore.bearer()` directly, so
+    /// the test seam above actually reaches this instance's real Canvas
+    /// fetches, not only the credential-presence checks above.
+    var canvasAccessTokenBearer: String? {
+        let now = Date()
+        guard let token = canvasAccessTokenOnFile, CanvasAccessTokenPolicy.isUsable(token, now: now) else { return nil }
+        return token.token
+    }
+
+    /// One privacy-safe line describing the Canvas access token on file —
+    /// `DiagnosticsReport`'s only window into this feature. Never the
+    /// secret itself (`CanvasAccessTokenStore`'s own doc comment: not even
+    /// at debug level) — only whether a usable one exists and, when it does
+    /// and carries a real expiry, how many days are left on it.
+    var canvasAccessTokenDiagnosticDescription: String {
+        let now = Date()
+        guard let token = canvasAccessTokenOnFile, CanvasAccessTokenPolicy.isUsable(token, now: now) else {
+            return "absent"
+        }
+        guard let expiresAt = token.expiresAt else {
+            // Canvas allows a null expiration for some account types
+            // (`CanvasAccessTokenPolicy.isUsable`'s doc comment) — there is
+            // no day count to report, but the token is very much present.
+            return "present (no expiry)"
+        }
+        let daysLeft = max(0, Int(expiresAt.timeIntervalSince(now) / 86_400))
+        return "present, \(daysLeft) days left"
+    }
+
+    /// Test seam mirroring `forceCanvasSessionConfirmedDeadForTesting()`
+    /// below exactly — see that property's doc comment for the
+    /// shared-`UserDefaults` leak (there) this avoids the Keychain
+    /// equivalent of (here): `nil` is the default and means "read
+    /// `CanvasAccessTokenStore`'s real, process-wide Keychain item as
+    /// normal"; production code never calls the setter below, so this is
+    /// inert outside tests.
+    private var forcedCanvasAccessTokenForTesting: CanvasAccessToken?
+
+    /// Test seam: makes `hasCanvasCredentials`, `canvasAccessTokenBearer`,
+    /// and `canvasSessionExpired`'s recompute behave as though `token` (or,
+    /// passed `nil`, "no token at all") were the persisted Canvas access
+    /// token — WITHOUT writing the real, process-wide Keychain item
+    /// `CanvasAccessTokenStore` owns. A real write here would repeat
+    /// exactly the bug `forceCanvasSessionConfirmedDeadForTesting()`'s doc
+    /// comment records for `UserDefaults.lhf` (CLAUDE.md's "Seeding a
+    /// persisted flag..." trap): Swift Testing runs suites concurrently by
+    /// default, so every OTHER `AppState` instance any concurrently-running
+    /// suite constructs in the same process would read the same real
+    /// Keychain item this test just wrote. A memory-only seam on this one
+    /// instance cannot leak across suites the way a real Keychain write
+    /// would.
+    func forceCanvasAccessTokenForTesting(_ token: CanvasAccessToken?) {
+        forcedCanvasAccessTokenForTesting = token
     }
 
     /// True when the dashboard is quietly missing a whole data source — the
@@ -1234,12 +1325,42 @@ final class AppState: ObservableObject {
     /// comment). Either input alone is enough to show the banner: a
     /// client-side-stale cookie set, OR a client-side-fresh one a real
     /// renewal attempt already proved dead against Penn's IdP.
+    ///
+    /// A healthy access token (see `tokenIsHealthyEnoughToSkipExpiryCheck`)
+    /// now short-circuits BOTH of those inputs to `false`: a token with
+    /// months left on it means the reconnect banner has nothing useful to
+    /// ask the student to do, since the very login that would clear it also
+    /// mints a fresh token, and the point of minting one at all is that the
+    /// student stops seeing this banner every time their COOKIE session
+    /// (which dies in about a day) ages out. Only once the token itself is
+    /// absent or has entered its own `renewalWindow` does this fall back to
+    /// the cookie-only rule above — so the banner still shows, once, in the
+    /// weeks before the token's ~120-day ceiling, same as it always has for
+    /// a cookie-only install.
     func refreshCanvasSessionExpiredState() {
         let wasExpired = canvasSessionExpired
-        canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas) || canvasSessionConfirmedDead
+        let now = Date()
+        if Self.tokenIsHealthyEnoughToSkipExpiryCheck(canvasAccessTokenOnFile, now: now) {
+            canvasSessionExpired = false
+        } else {
+            canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas) || canvasSessionConfirmedDead
+        }
         if canvasSessionExpired && !wasExpired {
             Task { await attemptSilentCanvasRenewal() }
         }
+    }
+
+    /// Pure decision behind the token short-circuit in
+    /// `refreshCanvasSessionExpiredState()` above — kept static/pure for the
+    /// same testability reason as `confirmedDeadAfterRenewal` below. A token
+    /// with a `nil` `expiresAt` (Canvas allows a null expiration for some
+    /// account types — see `CanvasAccessTokenPolicy.isUsable`) reads as
+    /// "never expires," the same treatment that case gets everywhere else in
+    /// this file.
+    static func tokenIsHealthyEnoughToSkipExpiryCheck(_ token: CanvasAccessToken?, now: Date) -> Bool {
+        guard let token, CanvasAccessTokenPolicy.isUsable(token, now: now) else { return false }
+        guard let expiresAt = token.expiresAt else { return true }
+        return expiresAt.timeIntervalSince(now) > CanvasAccessTokenPolicy.renewalWindow
     }
 
     // MARK: - Sticky dead-state pure decisions
@@ -1340,6 +1461,68 @@ final class AppState: ObservableObject {
     func noteCanvasLoginSessionCaptured() {
         setCanvasSessionConfirmedDead(false)
         refreshCanvasSessionExpiredState()
+    }
+
+    /// Persists a freshly minted Canvas access token
+    /// (`CanvasAccessTokenMinter.mint`, called from `CanvasLoginPane.connect()`
+    /// right after this same login captures cookies) and recomputes the
+    /// reconnect banner. A successful mint is proof-positive the cookie
+    /// session it rode in on was alive at that moment — the same reasoning
+    /// `noteCanvasLoginSessionCaptured()` above already applies to the
+    /// cookies themselves — so this clears any earlier "confirmed dead"
+    /// sticky record too, even though `connect()` already calls
+    /// `noteCanvasLoginSessionCaptured()` first; doing it again here is
+    /// harmless (both are simple idempotent writes) and keeps this method
+    /// correct on its own if a future caller ever invokes it without that
+    /// other call preceding it.
+    func noteCanvasAccessTokenMinted(_ token: CanvasAccessToken) {
+        CanvasAccessTokenStore.save(token)
+        setCanvasSessionConfirmedDead(false)
+        refreshCanvasSessionExpiredState()
+    }
+
+    /// Called when `CanvasAccessTokenMinter.mint` fails — Canvas can refuse
+    /// to mint a student token outright (Penn is known to gate this off at
+    /// the instance level, which comes back as a 403), or the reply can be
+    /// malformed, or the attempt can simply time out. Deliberately does
+    /// nothing beyond a status-only diagnostics line: the login this mint
+    /// rode in on already succeeded on cookies by the time this runs (see
+    /// `CanvasLoginPane.connect()`), and nothing here should make that look
+    /// like a failed Canvas connection. Reuses `LoginDiagnosticsLog` — the
+    /// existing host/path/status-only redirect log Settings' diagnostics
+    /// report already surfaces — rather than a separate `Logger` line, so
+    /// there is exactly one place a support conversation needs to look.
+    /// Never logs a token value, a `purpose`, or a Canvas error message —
+    /// only the HTTP status, matching every other entry in that log.
+    func noteCanvasAccessTokenMintFailed(status: Int?) {
+        LoginDiagnosticsLog.shared.record(
+            LoginRedirectLogEntry(
+                host: "canvas.upenn.edu",
+                path: "/api/v1/users/self/tokens",
+                status: status,
+                at: Date()
+            )
+        )
+    }
+
+    /// Called when a Canvas fetch that was authenticated with a bearer
+    /// token comes back 401 — see `refreshGradeWatcher`'s
+    /// `hadTokenBeforeRefresh` branch, the one place this is currently
+    /// wired up. Clears the token (real Keychain item, plus the in-memory
+    /// test seam so a test observes the same outcome without ever having
+    /// written the real one) and, deliberately, nothing else:
+    /// `canvasSessionConfirmedDead` is untouched and no silent renewal is
+    /// attempted, because a token being revoked or expired says nothing
+    /// about whether the COOKIE session that originally minted it is still
+    /// alive — treating it as cookie death would put the reconnect banner
+    /// up over a session that may be completely fine. The very next fetch
+    /// simply has no bearer token to send and falls back to cookies
+    /// (`CanvasAuth.apply`), same as an install that never minted one at
+    /// all; the next successful interactive login will mint a replacement
+    /// (`CanvasAccessTokenPolicy.needsMint` sees no usable token on file).
+    func noteCanvasAccessTokenRejected() {
+        CanvasAccessTokenStore.clear()
+        forcedCanvasAccessTokenForTesting = nil
     }
 
     func completeOnboarding() {
@@ -1521,6 +1704,24 @@ final class AppState: ObservableObject {
     /// of the other.
     func disconnectCanvas() {
         SessionCookieStore.remove(service: .canvas)
+        // Best-effort revoke BEFORE the local clear, not after: the revoke
+        // authenticates as the token itself (`Authorization: Bearer
+        // <token>` — see `CanvasAccessTokenMinter.revoke`), so it needs the
+        // secret still in hand. Detached so a slow or failed revoke can
+        // never delay the rest of this synchronous teardown; every error is
+        // swallowed there for the same reason. Worst case if it never lands:
+        // the token stays valid in Canvas's own records until it naturally
+        // expires (`CanvasAccessTokenPolicy.lifetime`) or the student
+        // removes it by hand under Canvas → Settings → Approved
+        // Integrations — never a security regression, since this device no
+        // longer has the secret to use it with either way.
+        if let outgoingToken = CanvasAccessTokenStore.load() {
+            Task.detached {
+                await CanvasAccessTokenMinter.revoke(outgoingToken)
+            }
+        }
+        CanvasAccessTokenStore.clear()
+        forcedCanvasAccessTokenForTesting = nil
         updateCanvasICSURL("")
         coursePreferences.clearAllCanvasCourseIDs()
         // Readings/silent-course detection (docs/READINGS_COURSES_PLAN.md) is
@@ -1771,6 +1972,9 @@ final class AppState: ObservableObject {
             return false
         }
 
+        // `CanvasDiscoveryClient` scrapes Canvas's HTML pages (/calendar,
+        // /dashboard) rather than the /api/ REST surface a Bearer token is
+        // honored on, so it stays cookie-only here — never `accessToken:`.
         let client = CanvasDiscoveryClient(cookies: cookies)
         do {
             let feedURL = try await client.discoverCalendarFeedURL()
@@ -1812,6 +2016,10 @@ final class AppState: ObservableObject {
         let courseIDs = canvasCourseIDs()
 
         do {
+            // Cookie-only — see the comment on `scanCanvasRequirements`'s
+            // sibling `CanvasDiscoveryClient` construction above: this
+            // client scrapes HTML pages, which a Bearer token is never
+            // honored on.
             let client = CanvasDiscoveryClient(cookies: cookies)
             canvasRequirementSuggestions = try await client.scan(courseIDs: courseIDs)
             setCanvasDiscoveryConnected(true)
@@ -1905,6 +2113,14 @@ final class AppState: ObservableObject {
         // course fetch (`GradeWatcherStore`'s own doc comment).
         let lastRefreshedBefore = gradeWatcher.lastRefreshed
 
+        // Captured BEFORE the refresh, not read again afterward: if this
+        // refresh's `.sessionExpired` outcome below turns out to be a
+        // rejected token, `noteCanvasAccessTokenRejected()` clears the very
+        // token this boolean is asking about, so reading it again after
+        // `gradeWatcher.refresh` returns would always find "no token" and
+        // misattribute the failure to cookies every time.
+        let hadTokenBeforeRefresh = canvasAccessTokenBearer != nil
+
         // Piggyback on Gradescope items this launch's throttled AutoSyncCoordinator
         // sync already fetched (docs/grades.md §4/§9) — never a second, unthrottled
         // Gradescope scrape just for the overlay.
@@ -1937,8 +2153,25 @@ final class AppState: ObservableObject {
         // `refreshCanvasSessionExpiredState()` trigger site since the
         // renewer's own cooldown/in-flight guards make redundant calls a
         // no-op.
+        //
+        // A bearer token was in use for this refresh (see
+        // `hadTokenBeforeRefresh` above): a session-expired outcome here
+        // means Canvas rejected/revoked the TOKEN, which says nothing about
+        // the cookie session's own health — so this branches away from the
+        // cookie-focused silent-renewal path entirely and just clears the
+        // token (`noteCanvasAccessTokenRejected`), letting the very next
+        // fetch fall back to cookies. Kicking off `attemptSilentCanvasRenewal()`
+        // here instead would burn `CanvasSessionRenewer`'s one-hour cooldown
+        // on an attempt that has no bearing on what actually failed, and —
+        // worse — a failed renewal attempt (`.timedOut`/`.landedOnLoginPage`)
+        // would mark the cookie session `canvasSessionConfirmedDead` for a
+        // session that was never implicated at all.
         if gradeWatcher.isSessionExpired {
-            Task { await attemptSilentCanvasRenewal() }
+            if hadTokenBeforeRefresh {
+                noteCanvasAccessTokenRejected()
+            } else {
+                Task { await attemptSilentCanvasRenewal() }
+            }
         }
     }
 
@@ -2016,6 +2249,9 @@ final class AppState: ObservableObject {
     func refreshCourseIntel(cookies: [HTTPCookie]) async {
         guard !isUsingFixtureData, !cookies.isEmpty else { return }
 
+        // Cookie-only — see the comment on `connectCanvas`'s
+        // `CanvasDiscoveryClient` construction: this client scrapes HTML
+        // pages, which a Bearer token is never honored on.
         let client = CanvasDiscoveryClient(cookies: cookies)
         // Backstop behind `CanvasCourseDiscoveryParser.currentEnrollmentLinks`'s
         // HTML-section split: that filter is best-effort page-shape scraping,
@@ -2088,7 +2324,7 @@ final class AppState: ObservableObject {
             // result, which still counts as "probed, found nothing") do we
             // fall back to the HTML scrape (`fetchModulesReadings`) that ran
             // here before, keeping that path's exact result semantics.
-            let modulesClient = CanvasModulesClient(cookies: cookies)
+            let modulesClient = CanvasModulesClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
             if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
                 courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
                 // Import is no longer consent-gated (the one-ask popup was
@@ -2175,7 +2411,7 @@ final class AppState: ObservableObject {
     /// sidesteps that distinction entirely: it only ever touches rows for
     /// the ids in the list it's given.
     private func importModuleReadings(courseKey: String, courseID: String, cookies: [HTTPCookie]) async -> Bool {
-        let modulesClient = CanvasModulesClient(cookies: cookies)
+        let modulesClient = CanvasModulesClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
         let items: [CanvasModulesClient.ModuleItem]
         do {
             items = try await modulesClient.fetchModuleItems(courseID: courseID)
@@ -2330,8 +2566,10 @@ final class AppState: ObservableObject {
         recordModuleImport("\(courseKey): on-decision import starting")
         Task { @MainActor in
             let cookies = await AutoSyncCoordinator.canvasCookies()
-            guard !cookies.isEmpty else {
-                recordModuleImport("\(courseKey): no canvas cookies")
+            // `importModuleReadings` authenticates via `canvasAccessTokenBearer`
+            // when cookies are empty, so a token-only session still gets here.
+            guard !cookies.isEmpty || hasCanvasCredentials else {
+                recordModuleImport("\(courseKey): no canvas cookies or token")
                 return
             }
             _ = await importModuleReadings(courseKey: courseKey, courseID: courseID, cookies: cookies)
@@ -2446,7 +2684,10 @@ final class AppState: ObservableObject {
         guard let store = assignmentStore else { return }
 
         let cookies = SessionCookieStore.load(service: .canvas)
-        guard !cookies.isEmpty else { return }
+        // A usable Canvas access token authenticates the
+        // `CanvasAnnouncementsClient` fetch below on its own, so an empty
+        // cookie array alone is no longer "nothing to sync with."
+        guard !cookies.isEmpty || hasCanvasCredentials else { return }
 
         // id -> code, filtered to the courses the class picker has selected —
         // exactly `selectedCanvasCourseIDs()`'s existing contract (Grade
@@ -2458,7 +2699,7 @@ final class AppState: ObservableObject {
         // Constructed locally, never stored on `self` — `CanvasAnnouncementsClient`
         // is deliberately not `Sendable` (see its type doc comment), so an
         // instance must not outlive this single call.
-        let client = CanvasAnnouncementsClient(cookies: cookies)
+        let client = CanvasAnnouncementsClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
         let fourteenDaysAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
         let fetched: [CanvasAnnouncement]
         do {

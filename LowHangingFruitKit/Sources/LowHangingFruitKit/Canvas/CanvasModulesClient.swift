@@ -1,8 +1,11 @@
 import Foundation
 
-/// Fetches a course's Modules-page items via Canvas's JSON API, cookie-
-/// authenticated the same way `CanvasGradesClient` is (self-scoped REST API,
-/// `SessionCookieStore` cookies — no OAuth available). This exists because the
+/// Fetches a course's Modules-page items via Canvas's JSON API, authenticated
+/// the same way `CanvasGradesClient` is (self-scoped REST API): `SessionCookieStore`
+/// cookies, or — when the caller has one — a `CanvasAccessToken` bearer token
+/// via `accessToken` (`CanvasAuth.apply` picks whichever is present), which
+/// outlives the roughly one-day session cookies do for up to Canvas's 120-day
+/// student ceiling; cookies remain the fallback otherwise. This exists because the
 /// HTML scrape (`CanvasModulesParser`) returned 0 items against real Penn
 /// markup; the JSON API is the robust source for a course's readings (see
 /// docs/READINGS_COURSES_PLAN.md). The HTML parser stays in place as a
@@ -82,15 +85,18 @@ public struct CanvasModulesClient: Sendable {
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
+    private let accessToken: String?
 
     public init(
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        accessToken: String? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
+        self.accessToken = accessToken
     }
 
     // MARK: - Networked fetch
@@ -227,9 +233,7 @@ public struct CanvasModulesClient: Sendable {
         // (docs/CANVAS_LOGIN_HARDENING.md item 2c).
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }

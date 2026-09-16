@@ -45,6 +45,12 @@ enum DiagnosticsReport {
         lines.append("Canvas connected (feed): \(state.isCanvasConnected)")
         lines.append("Canvas login session expired: \(state.canvasSessionExpired)")
         lines.append("Canvas connect path: \(canvasConnectPath(state: state))")
+        // Never the token value — `AppState.canvasAccessTokenDiagnosticDescription`
+        // reports presence and a day count only, the same "codes/counts
+        // only" discipline this whole report already applies to Canvas
+        // cookies (see the redirect log below, which is host/path/status
+        // only for the identical reason).
+        lines.append("Canvas token: \(state.canvasAccessTokenDiagnosticDescription)")
         lines.append("Gradescope connected: \(state.isGradescopeConnected)")
         lines.append("")
         lines.append("Recent login redirects (host/path/status only. no tokens or query strings):")
@@ -86,8 +92,12 @@ enum DiagnosticsReport {
     /// connected" otherwise.
     private static func canvasConnectPath(state: AppState) -> String {
         guard state.isCanvasConnected else { return "Not connected" }
-        let hasCookieSession = !SessionCookieStore.load(service: .canvas).isEmpty || state.canvasSessionExpired
-        return hasCookieSession ? "In-app login" : "Pasted calendar link"
+        // `hasCanvasCredentials` folds in a usable access token alongside
+        // the cookie check this line used to make alone — a session that's
+        // aged out of its cookies but still has months left on its token
+        // is still unmistakably "in-app login," not a pasted feed link.
+        let hasCookieOrTokenSession = state.hasCanvasCredentials || state.canvasSessionExpired
+        return hasCookieOrTokenSession ? "In-app login" : "Pasted calendar link"
     }
 
     private static func appVersionString() -> String {

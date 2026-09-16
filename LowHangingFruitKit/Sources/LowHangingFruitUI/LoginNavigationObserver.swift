@@ -71,6 +71,24 @@ final class LoginDiagnosticsLog: ObservableObject {
 ///   page on screen.
 @MainActor
 final class LoginNavigationObserver: NSObject, ObservableObject {
+    /// The live `WKWebView` this observer is the navigation delegate for,
+    /// set once by `makeWebView` right after construction. `weak` because
+    /// `WKWebView.navigationDelegate` is itself a weak reference the other
+    /// way (see `makeWebView`'s own comment) — this observer must never be
+    /// the thing keeping the WebView alive, only a way for a caller already
+    /// holding this `@StateObject` to reach the WebView it owns without the
+    /// pane needing its own separate `UIViewRepresentable`/`NSViewRepresentable`
+    /// coordinator seam just to do it.
+    ///
+    /// Exists for exactly one caller: `CanvasLoginPane.connect()`
+    /// (`OnboardingView.swift`), which needs the actual `WKWebView` instance
+    /// after a successful login to run `CanvasAccessTokenMinter.mint(in:)`
+    /// inside it — the mint has to execute as JavaScript in the page's own
+    /// already-authenticated session, which only the live WebView can offer.
+    /// Not `@Published`: nothing renders off this, same reasoning as
+    /// `startURL` below.
+    weak var webView: WKWebView?
+
     /// Plain-language message for a failed load (offline, DNS, timeout, …).
     /// `nil` once a subsequent navigation attempt starts.
     @Published private(set) var loadError: String?

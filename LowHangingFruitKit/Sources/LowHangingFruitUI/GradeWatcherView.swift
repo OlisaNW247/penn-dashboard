@@ -331,9 +331,10 @@ struct GradeWatcherView: View {
 
     // MARK: - Refresh
 
-    /// Grades are cookie-authed (docs/grades.md §1, §7). Canvas cookies are now
-    /// persisted the same way Gradescope's are (`SessionCookieStore`, captured
-    /// at connect time in `CanvasLoginPane.connect()`), gathered via the shared
+    /// Grades are cookie- or token-authed (docs/grades.md §1, §7 — now also
+    /// `CanvasAccessTokenStore`). Canvas cookies are persisted the same way
+    /// Gradescope's are (`SessionCookieStore`, captured at connect time in
+    /// `CanvasLoginPane.connect()`), gathered via the shared
     /// `AutoSyncCoordinator.canvasCookies()` (persisted set folded with whatever
     /// the in-app WebView session currently holds, live values winning on
     /// overlap) so this view and the launch-time refresh agree on one
@@ -343,14 +344,28 @@ struct GradeWatcherView: View {
     /// (`GradeWatcherStore.isSessionExpired`) do the surfacing.
     private func performRefresh() async {
         let cookies = await AutoSyncCoordinator.canvasCookies()
+        // Captured BEFORE the refresh: if a bearer token was in use and got
+        // rejected, `AppState.refreshGradeWatcher` already clears it
+        // (`noteCanvasAccessTokenRejected`) as part of this same call below,
+        // so reading `CanvasAccessTokenStore.bearer()` again afterward would
+        // always read "no token" and misattribute a token failure to these
+        // cookies — see the same reasoning in `AppState.refreshGradeWatcher`.
+        let hadTokenBeforeRefresh = state.canvasAccessTokenBearer != nil
         await state.refreshGradeWatcher(cookies: cookies)
         // Same session, separate axis — see AutoSyncCoordinator.refreshCanvasGrades.
         await state.refreshCourseIntel(cookies: cookies)
 
         if store.isSessionExpired {
-            let hadPersisted = !SessionCookieStore.load(service: .canvas).isEmpty
-            if hadPersisted {
-                SessionCookieStore.remove(service: .canvas)
+            if hadTokenBeforeRefresh {
+                // The failure almost certainly implicates the (now-cleared)
+                // access token, not this service's cookie session — purging
+                // cookies here would throw away a session the token failure
+                // never actually touched.
+            } else {
+                let hadPersisted = !SessionCookieStore.load(service: .canvas).isEmpty
+                if hadPersisted {
+                    SessionCookieStore.remove(service: .canvas)
+                }
             }
         }
     }

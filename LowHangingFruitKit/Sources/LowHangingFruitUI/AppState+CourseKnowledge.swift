@@ -198,9 +198,13 @@ extension AppState {
             recordCourseKnowledgeSkip(forced: force, reason: "not stale")
             return
         }
-        guard !cookies.isEmpty else {
+        // A usable Canvas access token authenticates every fetch
+        // `CourseKnowledgeCollector` makes on its own (`accessToken:`
+        // below), so an empty cookie array alone is no longer "nothing to
+        // sync with" — only bail when there's neither.
+        guard !cookies.isEmpty || hasCanvasCredentials else {
             courseKnowledgeNotice = "reconnect canvas to sync course materials."
-            recordCourseKnowledgeSkip(forced: force, reason: "no cookies")
+            recordCourseKnowledgeSkip(forced: force, reason: "no cookies or token")
             return
         }
 
@@ -235,7 +239,7 @@ extension AppState {
         }
 
         let store = CourseKnowledgeStore.default()
-        let collector = CourseKnowledgeCollector(cookies: cookies, store: store)
+        let collector = CourseKnowledgeCollector(cookies: cookies, store: store, accessToken: canvasAccessTokenBearer)
 
         guard let client = BackendServices.client else {
             // No backend configured: this phone is fully on-device, exactly

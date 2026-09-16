@@ -7,11 +7,15 @@ import Foundation
 /// `CanvasModulesClient`); `CourseKnowledgeCollector` uses those for their
 /// kinds and this one only for the gap.
 ///
-/// Cookie-authenticated the same way the other Canvas clients are: explicit
+/// Authenticated the same way the other Canvas clients are: explicit
 /// `Cookie` header, `httpShouldHandleCookies = false` (docs/
 /// CANVAS_LOGIN_HARDENING.md item 2c), XSSI prefix stripped, a login-page
 /// redirect surfaced as `sessionExpired`, pagination guarded to the same
-/// HTTPS host. Deliberately self-contained rather than sharing code with
+/// HTTPS host — or, when the caller has one, a `CanvasAccessToken` bearer
+/// token via `accessToken` (`CanvasAuth.apply` picks whichever is present),
+/// good for up to Canvas's 120-day student ceiling instead of the roughly
+/// one-day session cookies last; cookies remain the fallback otherwise.
+/// Deliberately self-contained rather than sharing code with
 /// `CanvasGradesClient` — the same stance that file documents.
 public struct CanvasCourseContentClient: Sendable {
     public enum Error: Swift.Error, Sendable, LocalizedError, Equatable {
@@ -36,15 +40,18 @@ public struct CanvasCourseContentClient: Sendable {
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
+    private let accessToken: String?
 
     public init(
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        accessToken: String? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
+        self.accessToken = accessToken
     }
 
     /// GET /api/v1/courses/:id/assignments?include[]=submission, every page.
@@ -109,9 +116,7 @@ public struct CanvasCourseContentClient: Sendable {
         var request = URLRequest(url: url)
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         if http.statusCode == 401 || http.statusCode == 403 { throw Error.sessionExpired }

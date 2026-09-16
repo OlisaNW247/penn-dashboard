@@ -1,8 +1,13 @@
 import Foundation
 
-/// Fetches Canvas assignment groups + the course weighting flag, cookie-
-/// authenticated the same way `CanvasDiscoveryClient` is (self-scoped REST API,
-/// `SessionCookieStore` cookies — no OAuth available). Decodes into the models
+/// Fetches Canvas assignment groups + the course weighting flag, authenticated
+/// the same way `CanvasDiscoveryClient` is (self-scoped REST API): either
+/// `SessionCookieStore` cookies, or — when one is available — a
+/// `CanvasAccessToken` bearer token, which is why callers may pass one as
+/// `accessToken` (`CanvasAuth.apply` picks whichever is present). A token
+/// outlives the roughly one-day Canvas session cookies do, for up to the
+/// 120 days Canvas allows a student account; cookies remain the fallback for
+/// everyone who hasn't minted one. Decodes into the models
 /// `GradeEngine.compute()` consumes (see docs/grades.md §1, §9).
 ///
 /// **One client, two concerns:** the `include[]=submission` payload also
@@ -41,6 +46,7 @@ public struct CanvasGradesClient: Sendable {
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
+    private let accessToken: String?
 
     /// Invoked with any cookies Canvas re-issued on a successfully decoded
     /// response page. Canvas runs sliding sessions — each authenticated
@@ -55,12 +61,14 @@ public struct CanvasGradesClient: Sendable {
         baseURL: URL = URL(string: "https://canvas.upenn.edu")!,
         cookies: [HTTPCookie],
         session: URLSession = .shared,
-        refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)? = nil
+        refreshedCookieHandler: (@Sendable ([HTTPCookie]) -> Void)? = nil,
+        accessToken: String? = nil
     ) {
         self.baseURL = baseURL
         self.cookies = cookies
         self.session = session
         self.refreshedCookieHandler = refreshedCookieHandler
+        self.accessToken = accessToken
     }
 
     // MARK: - Networked fetch
@@ -171,9 +179,7 @@ public struct CanvasGradesClient: Sendable {
         // (docs/CANVAS_LOGIN_HARDENING.md item 2c).
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
