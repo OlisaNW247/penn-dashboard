@@ -93,10 +93,18 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-`v6` is **uncompiled** as of this writing — two blind features (the gated
-Canvas access-token plumbing and stay-signed-in) on top of the verified
-1253/125 mark below; expect 1253 plus whatever new suites those add, and
-treat that as an expectation to check, not a result to report.
+Baseline on `v6`, verified on a Mac (2026-09-17): **1336 tests / 130 suites
+green** after the gated Canvas access-token plumbing and stay-signed-in
+(1,700 blind lines from three agents). Two first-compile fixes, both
+instructive: a `static func` on `@MainActor AppState` called from a
+nonisolated test suite (the `decidedText` trap again -- `nonisolated`),
+and a test that read `AppState.swift` off disk to count call sites,
+whose `#filePath` walk landed a directory short; it was deleted rather
+than repaired, since a test that greps the repo's own source proves
+nothing the code comment doesn't. The stay-signed-in path itself has NOT
+been exercised on a device against a real PennKey yet -- the count
+proves it compiles and its pure parts behave, not that Penn's form
+accepts the fill.
 
 Baseline on `v5`: **not yet verified** after reverting the preview-mode
 removal on 2026-09-16 (Apple's 2.1(a) rejection of build 8; known gap
