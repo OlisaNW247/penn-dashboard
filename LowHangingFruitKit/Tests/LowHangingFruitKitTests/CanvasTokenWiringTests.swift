@@ -211,11 +211,21 @@ struct CanvasTokenWiringTests {
             SessionCookieStore.clear()
         }
 
-        // No cookies on record at all, so `SessionCookieStore.isExpired`
-        // reads false (never-connected, not stale) — the only way
-        // `canvasSessionExpired` could read true after this is if
-        // `noteCanvasAccessTokenRejected` wrongly touched
-        // `canvasSessionConfirmedDead`.
+        // The first draft of this test asserted `!canvasSessionExpired`
+        // outright, on the reasoning "no cookies on record, so the cookie
+        // verdict is false". It failed once in the first few runs on a Mac:
+        // the cookie verdict reads the shared Keychain and the sticky
+        // confirmed-dead flag in `UserDefaults.lhf`, both of which other
+        // suites running alongside can leave non-empty (CLAUDE.md, the two
+        // known flakes have exactly this shape). What this test is actually
+        // about is narrower: rejecting a token must not CHANGE the cookie
+        // verdict. So measure that verdict with no token first, and assert
+        // the rejection lands back on the same value, whatever the shared
+        // state happens to hold this run.
+        state.forceCanvasAccessTokenForTesting(nil)
+        state.refreshCanvasSessionExpiredState()
+        let cookieVerdictWithoutToken = state.canvasSessionExpired
+
         state.forceCanvasAccessTokenForTesting(freshToken())
         state.refreshCanvasSessionExpiredState()
         #expect(!state.canvasSessionExpired)
@@ -226,6 +236,6 @@ struct CanvasTokenWiringTests {
         #expect(CanvasAccessTokenStore.load() == nil)
 
         state.refreshCanvasSessionExpiredState()
-        #expect(!state.canvasSessionExpired)
+        #expect(state.canvasSessionExpired == cookieVerdictWithoutToken)
     }
 }
