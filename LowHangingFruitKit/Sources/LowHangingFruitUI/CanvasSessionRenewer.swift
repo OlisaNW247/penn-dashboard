@@ -171,6 +171,31 @@ final class CanvasSessionRenewer {
     private var lastAttemptAt: Date?
     private var isInFlight = false
 
+    #if DEBUG
+    /// Owner-only test seam for the Settings "simulate canvas logout" button
+    /// (`AppState.simulateCanvasLogoutForTesting()`). Without this, testing
+    /// "stay signed in" end to end on a real phone means waiting for
+    /// Canvas's cookie to actually age out (about a day) or, worse, for
+    /// `cooldown` (1h) / `autoLoginCooldown` (6h) to lapse after any earlier
+    /// attempt this launch already made — the whole point of those throttles
+    /// being long is that a real background trigger should almost never fire
+    /// twice in a session, which is exactly what makes them useless for
+    /// deliberately firing twice on purpose. Resetting both (rather than
+    /// just `lastAttemptAt`) matters because a `.passwordRejected` outcome
+    /// from an earlier manual test would otherwise still be inside
+    /// `autoLoginCooldown` and `handleNonCanvasFinish` would silently treat
+    /// the next attempt as "no credentials" instead of actually resubmitting
+    /// the (freshly re-entered, or unchanged) stored password — see that
+    /// method's own comment on `credentialSubmissionAllowed`. Does not touch
+    /// `isInFlight`: an attempt that's genuinely still running should still
+    /// be treated as in flight, throttle reset or not. Compiles out of every
+    /// Release build.
+    func resetThrottlesForTesting() {
+        lastAttemptAt = nil
+        lastCredentialSubmissionAt = nil
+    }
+    #endif
+
     /// The in-flight attempt's WebView/delegate, retained here for the
     /// duration of `performAttempt()` and nowhere else. `WKWebView
     /// .navigationDelegate` is a WEAK property (same fact

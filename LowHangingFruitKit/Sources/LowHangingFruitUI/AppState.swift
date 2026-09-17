@@ -1587,7 +1587,21 @@ final class AppState: ObservableObject {
     /// renewer is deliberately kept free of any `AppState` dependency beyond
     /// the `isLoginPaneActive` closure it's constructed with.
     func attemptSilentCanvasRenewal() async {
-        guard !isUsingFixtureData else { return }
+        _ = await performSilentCanvasRenewal()
+    }
+
+    /// The actual body `attemptSilentCanvasRenewal()` always ran, factored
+    /// out so it can hand its `Outcome` back to a caller that wants one —
+    /// every production call site is fire-and-forget through the Void
+    /// wrapper above, unchanged; the only other caller is the DEBUG-only
+    /// `attemptSilentCanvasRenewalForTesting()` below, which exists purely
+    /// so the "simulate canvas logout" test button (SettingsPage.swift) can
+    /// report which `CanvasSessionRenewer.Outcome` case a real attempt
+    /// actually landed on instead of the button just going quiet the way a
+    /// production silent renewal is supposed to.
+    @discardableResult
+    private func performSilentCanvasRenewal() async -> CanvasSessionRenewer.Outcome {
+        guard !isUsingFixtureData else { return .notAttempted(reason: "fixture data (-LHFDemoData)") }
         let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(
             isLoginPaneActive: { [weak self] in
                 self?.isCanvasLoginPaneActive ?? false
@@ -1639,11 +1653,103 @@ final class AppState: ObservableObject {
         // one harmless extra bounce, never a loop.
         refreshCanvasSessionExpiredState()
 
-        guard outcome == .renewed else { return }
+        guard outcome == .renewed else { return outcome }
         let cookies = await AutoSyncCoordinator.canvasCookies()
-        guard !cookies.isEmpty else { return }
+        guard !cookies.isEmpty else { return outcome }
         await refreshGradeWatcher(cookies: cookies)
+        return outcome
     }
+
+    #if DEBUG
+    /// DEBUG-only twin of `attemptSilentCanvasRenewal()` that hands back the
+    /// `Outcome` the Void wrapper discards — see `performSilentCanvasRenewal()`'s
+    /// doc comment. The only caller is `simulateCanvasLogoutForTesting()`
+    /// below. Compiles out of every Release build.
+    func attemptSilentCanvasRenewalForTesting() async -> CanvasSessionRenewer.Outcome {
+        await performSilentCanvasRenewal()
+    }
+
+    /// Owner-only "simulate canvas logout" (CLAUDE.md's "stay signed in"
+    /// section) — the fastest way to exercise the whole silent-renewal path
+    /// on a real phone without waiting a day for Canvas's cookie to actually
+    /// age out or the IdP session with it. Kills the session ourselves, in
+    /// the shape a real month-later expiry actually takes:
+    ///
+    /// 1. Deletes the persisted Canvas cookie set (`SessionCookieStore`) —
+    ///    what a real cookie expiry leaves stale on its own.
+    /// 2. Purges the LOGIN WEBVIEW'S OWN cookie jar (`LoginDataStores.canvas`
+    ///    — the same persistent store `CanvasSessionRenewer.performAttempt()`
+    ///    replays against) for canvas.upenn.edu and idp.pennkey.upenn.edu,
+    ///    but deliberately NOT duosecurity.com: `WebsiteDataReset
+    ///    .purgeWebsiteData` filters whole `WKWebsiteDataRecord`s by eTLD+1
+    ///    (its own doc comment explains why "upenn" alone is the right
+    ///    needle rather than the full hostname), and duosecurity.com is a
+    ///    wholly separate record that a needle list without "duosecurity"
+    ///    can never match — so Duo's own "remember this device" cookie
+    ///    survives untouched. That is the realistic case worth testing: a
+    ///    month on, Penn's IdP session is long dead but Duo still recognizes
+    ///    the device, which is exactly what lets the stored password renew
+    ///    the session with no Duo prompt at all. `canvasLoginDomainHints`
+    ///    (used everywhere else in this file) is NOT reused here for exactly
+    ///    that reason — it includes "duosecurity" on purpose, for a
+    ///    fresh-login purge that SHOULD force a new Duo prompt, which is the
+    ///    opposite of what this button needs.
+    /// 3. Resets `CanvasSessionRenewer`'s own throttles
+    ///    (`resetThrottlesForTesting()`), which otherwise no-op every attempt
+    ///    but the first within the hour (`cooldown`) — a real background
+    ///    trigger is supposed to be this stingy; a deliberate manual test
+    ///    isn't.
+    ///
+    /// Deliberately does NOT touch `PennKeyCredentialStore` — the stored
+    /// password surviving the simulated logout is the entire point of this
+    /// button; wiping it too would just be `disableStayLoggedIn()` with
+    /// extra steps and would prove nothing about auto-fill.
+    ///
+    /// Runs the real silent-renewal attempt afterward
+    /// (`attemptSilentCanvasRenewalForTesting()`) and translates its
+    /// `Outcome` into the one-line strings `SettingsPage`'s DEBUG button
+    /// shows under itself.
+    ///
+    /// `isUsingFixtureData` is checked (inside `performSilentCanvasRenewal()`)
+    /// before this ever reaches `CanvasSessionRenewer` — true only under
+    /// `-LHFDemoData` or preview mode, which is not the real-device,
+    /// real-login case this button exists for, so this simply reports that
+    /// rather than pretending an attempt ran. Nothing else in the silent-
+    /// renewal path holds a real device back: `isCanvasLoginPaneActive` is
+    /// false whenever Settings itself is on screen (the login pane is a
+    /// different, mutually-exclusive part of the view tree), and
+    /// `SharedDefaults.isTestRunner` is only ever true under `swift test`.
+    func simulateCanvasLogoutForTesting() async -> String {
+        SessionCookieStore.remove(service: .canvas)
+        await WebsiteDataReset.purgeWebsiteData(
+            matchingDomainContains: ["upenn"],
+            in: LoginDataStores.canvas
+        )
+        canvasSessionRenewer?.resetThrottlesForTesting()
+        refreshCanvasSessionExpiredState()
+
+        let outcome = await attemptSilentCanvasRenewalForTesting()
+        switch outcome {
+        case .renewed:
+            let cookiesAreBack = !SessionCookieStore.load(service: .canvas).isEmpty
+            return cookiesAreBack
+                ? "renewed — signed back in with no taps (cookies confirmed back)"
+                : "renewed — but no cookies were found afterward (unexpected)"
+        case .needsDuo:
+            return "needsDuo — duo asked; the password was accepted"
+        case .passwordRejected:
+            return "passwordRejected — penn refused the stored password"
+        case .landedOnLoginPage:
+            return "landedOnLoginPage — no credentials were used (is stay signed in on?)"
+        case .timedOut:
+            return "timedOut"
+        case .abortedByLoginPane:
+            return "notAttempted: the visible login pane was open"
+        case .notAttempted(let reason):
+            return "notAttempted: \(reason)"
+        }
+    }
+    #endif
 
     /// Clears `canvasSessionConfirmedDead` after a fresh interactive Canvas
     /// login captures new session cookies (`CanvasLoginPane.connect()` in

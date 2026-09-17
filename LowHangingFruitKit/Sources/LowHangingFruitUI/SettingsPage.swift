@@ -35,6 +35,16 @@ struct SettingsPage: View {
     /// rejection.
     @State private var showStayLoggedInSheet = false
     @State private var didCopyDiagnostics = false
+    #if DEBUG
+    /// Drives the "simulate canvas logout" DEBUG row below — `nil` result
+    /// with `isRunning == false` is the row's resting state (never shown
+    /// yet this launch); `isRunning` shows a spinner in its place; a
+    /// non-nil result persists until the next tap, which resets it back to
+    /// `nil` before the new attempt starts so a stale result never lingers
+    /// alongside the fresh spinner.
+    @State private var isSimulatingCanvasLogout = false
+    @State private var simulateCanvasLogoutResult: String?
+    #endif
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -469,10 +479,67 @@ struct SettingsPage: View {
             } label: {
                 Label("report a problem", systemImage: "envelope")
             }
+            #if DEBUG
+            simulateCanvasLogoutRow
+            #endif
         } header: {
             SmoothSectionHeader("troubleshooting", accent: .smoothCobalt)
         }
     }
+
+    #if DEBUG
+    /// Owner-only "stay signed in" test seam (CLAUDE.md's "stay signed in"
+    /// section, and `AppState.simulateCanvasLogoutForTesting()`'s own doc
+    /// comment for the mechanism). Testing that feature against a REAL
+    /// expiry means waiting roughly a day for Canvas's cookie to age out;
+    /// this button kills the session on the spot so the owner can watch the
+    /// whole silent-renewal chain — cookie purge, IdP-session purge (Duo's
+    /// own cookie deliberately spared), throttle reset, renewal attempt —
+    /// run in one tap on a real phone with a real Canvas login. Compiles out
+    /// of every Release build; nothing here is reachable by a student.
+    @ViewBuilder
+    private var simulateCanvasLogoutRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                runSimulateCanvasLogout()
+            } label: {
+                if isSimulatingCanvasLogout {
+                    HStack {
+                        ProgressView()
+                        Text("simulating canvas logout…")
+                    }
+                } else {
+                    Label("simulate canvas logout", systemImage: "bolt.slash")
+                }
+            }
+            .disabled(isSimulatingCanvasLogout)
+
+            if let simulateCanvasLogoutResult, !isSimulatingCanvasLogout {
+                Text(simulateCanvasLogoutResult)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// A second tap while one attempt is still running is blocked by
+    /// `.disabled(isSimulatingCanvasLogout)` above, rather than by anything
+    /// in `AppState` — there's exactly one owner tapping this button, so a
+    /// UI-level guard is enough; `CanvasSessionRenewer`'s own `isInFlight`
+    /// guard (untouched by `resetThrottlesForTesting()`) would catch a
+    /// genuine race anyway. The stale result is cleared before the new
+    /// attempt starts, not after, so the row never shows an old string
+    /// under a fresh spinner.
+    private func runSimulateCanvasLogout() {
+        simulateCanvasLogoutResult = nil
+        isSimulatingCanvasLogout = true
+        Task {
+            let result = await state.simulateCanvasLogoutForTesting()
+            simulateCanvasLogoutResult = result
+            isSimulatingCanvasLogout = false
+        }
+    }
+    #endif
 
     private func copyDiagnostics() {
         let report = DiagnosticsReport.generate(state: state)
