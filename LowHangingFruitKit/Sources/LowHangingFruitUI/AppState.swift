@@ -1294,8 +1294,20 @@ final class AppState: ObservableObject {
     /// never drift from the in-memory value.
     private func setCanvasSessionConfirmedDead(_ value: Bool) {
         canvasSessionConfirmedDead = value
+        guard persistsConfirmedDeadFlag else { return }
         UserDefaults.lhf.set(value, forKey: Self.canvasSessionConfirmedDeadKey)
     }
+
+    /// Normally true. `noteRenewalOutcomeForTesting` flips it off for the
+    /// duration of one call so a test-driven `.needsDuo` (which marks the
+    /// session dead) never reaches the shared defaults domain. Persisting it
+    /// there is exactly the trap CLAUDE.md records under
+    /// `FirstLaunchHoldDashboardTests`: every `AppState.init` in every suite
+    /// running ALONGSIDE reads a dead session, and restoring the key on the
+    /// way out protects only the suites that run AFTER. On Olisa's Mac
+    /// (2026-09-21) that showed up as `SessionCookieStoreTests`' calendar-
+    /// link-only case failing in a full run and passing alone.
+    private var persistsConfirmedDeadFlag = true
 
     /// Test seam: flips the in-memory `canvasSessionConfirmedDead` WITHOUT
     /// the persisted copy, so a test can make `canvasSessionExpired` (and
@@ -1888,6 +1900,8 @@ final class AppState: ObservableObject {
     /// Not a parameter on any production call site; production always goes
     /// through `performSilentCanvasRenewal()`'s own `renewIfNeeded()` call.
     func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome) {
+        persistsConfirmedDeadFlag = false
+        defer { persistsConfirmedDeadFlag = true }
         applyRenewalOutcome(outcome)
     }
 
