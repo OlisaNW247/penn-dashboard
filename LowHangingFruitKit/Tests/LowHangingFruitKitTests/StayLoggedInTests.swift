@@ -32,8 +32,9 @@ import Testing
 struct StayLoggedInTests {
     private static let enabledKey = "stayLoggedInEnabledV1"
     private static let reasonKey = "autoLoginDisabledReasonV1"
+    private static let awaitingDuoKey = "autoLoginAwaitingDuoV1"
     private static let offeredKey = "hasOfferedStayLoggedInV1"
-    private static let touchedKeys = [enabledKey, reasonKey, offeredKey]
+    private static let touchedKeys = [enabledKey, reasonKey, awaitingDuoKey, offeredKey]
 
     /// Mirrors `CloudSyncToggleTests.withCleanFlag` / `AnnouncementWatcherWiringTests
     /// .withRestoredDefaults`: snapshot, run `body`, put everything back
@@ -250,6 +251,134 @@ struct StayLoggedInTests {
             #expect(state.stayLoggedInDiagnosticDescription.hasPrefix("on (disabled:"))
             #expect(!state.stayLoggedInDiagnosticDescription.contains("student"))
             #expect(!state.stayLoggedInDiagnosticDescription.contains("hunter2"))
+        }
+    }
+
+    // MARK: - .needsDuo → autoLoginAwaitingDuo (real-device finding, 2026-09-21)
+    //
+    // A real-device run of "simulate canvas logout" reported `.needsDuo`
+    // (the stored password was accepted, Duo asked) and the dashboard showed
+    // no reconnect banner and no Grade Watcher button — two bugs:
+    // `confirmedDeadAfterRenewal(.needsDuo)` returning `current` instead of
+    // `true` (covered in `CanvasSessionDeadStateTests`), and nothing latching
+    // the silent path shut, which would have let `CanvasSessionRenewer`
+    // resubmit the (correct!) password every `autoLoginCooldown` and push a
+    // fresh, unattended Duo prompt on a loop. `noteRenewalOutcomeForTesting(_:)`
+    // drives the exact same outcome-handling code
+    // `performSilentCanvasRenewal()` runs after a real attempt — see that
+    // seam's own doc comment for why `swift test` can't produce a genuine
+    // `.needsDuo` end to end.
+
+    @Test("a .needsDuo outcome latches autoLoginAwaitingDuo, confirms the session dead, but leaves the VISIBLE path armed")
+    func needsDuoLatchesAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            #expect(state.canAutoLogin == true)
+            #expect(state.canAutoLoginSilently == true)
+            #expect(state.autoLoginAwaitingDuo == false)
+
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+
+            // The silent path stands down...
+            #expect(state.autoLoginAwaitingDuo == true)
+            #expect(state.canAutoLoginSilently == false)
+            // ...but the visible pane (the student tapping the banner
+            // themselves) stays fully armed — `canAutoLogin` is unaffected.
+            #expect(state.canAutoLogin == true)
+            // And the reconnect banner/Grade Watcher availability signal
+            // actually fires — this is the other half of the real-device bug.
+            #expect(state.canvasSessionExpired == true)
+        }
+    }
+
+    @Test("autoLoginAwaitingDuo persists across a relaunch")
+    func awaitingDuoPersists() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.autoLoginAwaitingDuo == true)
+
+            let relaunched = AppState()
+            #expect(relaunched.autoLoginAwaitingDuo == true)
+            #expect(relaunched.canAutoLogin == true)
+            #expect(relaunched.canAutoLoginSilently == false)
+        }
+    }
+
+    @Test("noteCanvasLoginSessionCaptured clears the awaiting-Duo latch — a real login just answered it")
+    func realLoginClearsAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.canAutoLoginSilently == false)
+
+            state.noteCanvasLoginSessionCaptured()
+
+            #expect(state.autoLoginAwaitingDuo == false)
+            #expect(state.canAutoLogin == true)
+            #expect(state.canAutoLoginSilently == true)
+        }
+    }
+
+    @Test("enableStayLoggedIn clears a stale awaiting-Duo latch")
+    func enableStayLoggedInClearsAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.autoLoginAwaitingDuo == true)
+
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+
+            #expect(state.autoLoginAwaitingDuo == false)
+            #expect(state.canAutoLoginSilently == true)
+        }
+    }
+
+    @Test("disableStayLoggedIn clears the awaiting-Duo latch along with everything else")
+    func disableStayLoggedInClearsAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.autoLoginAwaitingDuo == true)
+
+            state.disableStayLoggedIn()
+
+            #expect(state.autoLoginAwaitingDuo == false)
+            #expect(state.canAutoLogin == false)
+            #expect(state.canAutoLoginSilently == false)
+        }
+    }
+
+    @Test("a .renewed outcome does not clear an existing awaiting-Duo latch")
+    func renewedDoesNotClearAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.autoLoginAwaitingDuo == true)
+
+            state.noteRenewalOutcomeForTesting(.renewed)
+
+            // A plain cookie-only renewal proves the Canvas session is
+            // alive, not that Duo has been answered — see
+            // `applyRenewalOutcome`'s doc comment.
+            #expect(state.autoLoginAwaitingDuo == true)
+            #expect(state.canAutoLoginSilently == false)
+        }
+    }
+
+    @Test("stayLoggedInDiagnosticDescription reports the awaiting-Duo state, never a rejection it doesn't have")
+    func diagnosticDescriptionReportsAwaitingDuo() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            #expect(state.stayLoggedInDiagnosticDescription == "on (awaiting duo)")
         }
     }
 }

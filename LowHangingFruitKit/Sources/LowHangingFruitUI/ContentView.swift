@@ -255,8 +255,20 @@ struct ContentView: View {
     /// it's exactly the repeated-wrong-password shape this feature exists to
     /// avoid); Profile is where they actually fix it
     /// (`PennKeyCredentialsSheet` via the "update password" button).
+    ///
+    /// Also branches on `state.autoLoginAwaitingDuo` (checked second, so a
+    /// rejection — the more actionable fact — always wins if both were
+    /// somehow set): the stored password was ACCEPTED and only Duo stands
+    /// between here and a live session, but the silent background path
+    /// stood down rather than push Duo again unattended (see
+    /// `AppState.canAutoLoginSilently`'s doc comment). Unlike the rejected
+    /// case, sending this student back into the login pane is exactly right
+    /// — the visible pane reads the looser `canAutoLogin`, so it fills the
+    /// form and lets Duo push right there, which is the one thing a silent
+    /// background attempt can never do for them.
     private var canvasSessionExpiredBanner: some View {
         let rejected = state.autoLoginDisabledReason != nil
+        let awaitingDuo = !rejected && state.autoLoginAwaitingDuo
         return Button {
             if rejected {
                 path.append(.settings)
@@ -268,9 +280,9 @@ struct ContentView: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(rejected ? "your stored pennkey password didn't work" : "your canvas login needs a refresh")
+                    Text(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo))
                         .font(.lhfSans(12, weight: .semibold))
-                    Text(rejected ? "update it in profile." : "reconnect to keep automatic submission tracking accurate.")
+                    Text(canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo))
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -285,10 +297,21 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            rejected
-                ? "your stored pennkey password didn't work. update it in profile."
-                : "your canvas login needs a refresh. reconnect canvas."
+            "\(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo)). "
+                + (rejected ? "update it in profile." : "reconnect canvas.")
         )
+    }
+
+    private func canvasSessionExpiredBannerTitle(rejected: Bool, awaitingDuo: Bool) -> String {
+        if rejected { return "your stored pennkey password didn't work" }
+        if awaitingDuo { return "tap to finish signing in — duo needs you" }
+        return "your canvas login needs a refresh"
+    }
+
+    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String {
+        if rejected { return "update it in profile." }
+        if awaitingDuo { return "your pennkey password went through; duo needs a tap to finish." }
+        return "reconnect to keep automatic submission tracking accurate."
     }
 
     // MARK: Header

@@ -52,9 +52,10 @@ enum DiagnosticsReport {
         // only for the identical reason).
         lines.append("Canvas token: \(state.canvasAccessTokenDiagnosticDescription)")
         // Never the PennKey username or password — `stayLoggedInDiagnosticDescription`
-        // reports only on/off and, when disabled, the same plain-language
-        // reason `AppState.autoLoginDisabledReason` already shows in
-        // Settings, never anything read from `PennKeyCredentialStore`.
+        // reports only on/off, "(disabled: <reason>)" when the password was
+        // rejected, or "(awaiting duo)" when the password worked but a
+        // silent renewal is standing down for a human to answer Duo, never
+        // anything read from `PennKeyCredentialStore`.
         lines.append("Stay signed in: \(state.stayLoggedInDiagnosticDescription)")
         lines.append("Gradescope connected: \(state.isGradescopeConnected)")
         lines.append("")

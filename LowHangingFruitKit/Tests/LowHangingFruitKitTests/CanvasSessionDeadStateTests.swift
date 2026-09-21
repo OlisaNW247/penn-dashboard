@@ -53,10 +53,14 @@ struct CanvasSessionDeadStateTests {
         #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .passwordRejected) == true)
     }
 
-    @Test("needsDuo proves nothing about the Canvas session and leaves current unchanged")
-    func needsDuoLeavesCurrentUnchanged() {
+    @Test("needsDuo confirms the session dead — the password worked, only Duo is missing, and only a human clears Duo")
+    func needsDuoConfirmsDead() {
+        // Real-device finding (2026-09-21): returning `current` here left
+        // `canvasSessionExpired` false and the reconnect banner hidden after
+        // a genuine Duo-gated logout — see `confirmedDeadAfterRenewal`'s doc
+        // comment for the full correction.
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .needsDuo) == true)
         #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .needsDuo) == true)
-        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .needsDuo) == false)
     }
 
     // MARK: - renewalProvedSessionAlive(lastRefreshedBefore:lastRefreshedAfter:)

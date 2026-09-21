@@ -557,6 +557,16 @@ final class AppState: ObservableObject {
     /// student has to either re-enter it (`enableStayLoggedIn` clears this)
     /// or turn the feature off.
     private static let autoLoginDisabledReasonKey = "autoLoginDisabledReasonV1"
+    /// Backs `autoLoginAwaitingDuo` — latched true the moment a silent
+    /// renewal's PennKey submission is ACCEPTED but the chain lands on Duo
+    /// instead of Canvas (`CanvasSessionRenewer.Outcome.needsDuo`): the
+    /// password is right, only a human tapping through Duo can finish the
+    /// job. Persisted (not just in-memory), same reasoning as
+    /// `autoLoginDisabledReasonKey` above — without this surviving a
+    /// relaunch, every `canvasSessionExpired` recompute in a fresh process
+    /// would silently retry the same background Duo push it already knows
+    /// needs a human, rather than waiting for one.
+    private static let autoLoginAwaitingDuoKey = "autoLoginAwaitingDuoV1"
     /// Backs `hasOfferedStayLoggedIn` — whether the one-time "want Smooth to
     /// remember your PennKey password?" offer has already been shown once,
     /// right after a successful interactive Canvas login
@@ -605,6 +615,7 @@ final class AppState: ObservableObject {
         // student explicitly turned it on through `PennKeyCredentialsSheet`.
         self.stayLoggedInEnabled = UserDefaults.lhf.bool(forKey: Self.stayLoggedInEnabledKey)
         self.autoLoginDisabledReason = UserDefaults.lhf.string(forKey: Self.autoLoginDisabledReasonKey)
+        self.autoLoginAwaitingDuo = UserDefaults.lhf.bool(forKey: Self.autoLoginAwaitingDuoKey)
         self.hasOfferedStayLoggedIn = UserDefaults.lhf.bool(forKey: Self.hasOfferedStayLoggedInKey)
         // Seeded here (not left at its `= []` default) so the dashboard's
         // "nothing to submit" caveat is correct on the very first frame of a
@@ -1336,6 +1347,21 @@ final class AppState: ObservableObject {
     /// cleared this on every `.renewed` outcome; removed for that reason.)
     @Published private(set) var autoLoginDisabledReason: String?
 
+    /// Latched true the moment a renewal's PennKey submission is ACCEPTED
+    /// but the chain lands on Duo instead of Canvas
+    /// (`CanvasSessionRenewer.Outcome.needsDuo`) — the password is right,
+    /// only a human tapping through Duo can finish signing in. Distinct from
+    /// `autoLoginDisabledReason`: that flag means "the password itself is
+    /// wrong, stop trying it"; this one means "the password is fine, but the
+    /// SILENT path can't get past Duo, so stop trying it silently" — the
+    /// student can still finish the job themselves through the visible login
+    /// pane, which is exactly what `canAutoLogin` (as opposed to
+    /// `canAutoLoginSilently`) staying true while this is set is for.
+    /// Cleared by `noteCanvasLoginSessionCaptured()` (a real login, through
+    /// Duo or otherwise, just completed), `enableStayLoggedIn()` and
+    /// `disableStayLoggedIn()` (both already reset every other auto-login
+    /// flag for the same reasons their own doc comments give).
+    @Published private(set) var autoLoginAwaitingDuo: Bool
     /// Whether the one-time post-login "want Smooth to remember your
     /// PennKey password?" offer (`OnboardingView.canvasConnected`) has
     /// already been shown. See `hasOfferedStayLoggedInKey`'s doc comment for
@@ -1347,25 +1373,51 @@ final class AppState: ObservableObject {
     /// being on with nothing in the Keychain is a state that should never
     /// happen in practice, but this is the one place that treats it exactly
     /// like "off" rather than trusting the toggle blindly), and no prior
-    /// attempt has been confirmed rejected. Every auto-login call site
-    /// (`LoginNavigationObserver`'s visible-pane fill, `CanvasSessionRenewer`'s
-    /// silent renewal) reads this — never the raw toggle — so a rejected
-    /// password can't keep being retried through some path that forgot to
-    /// check `autoLoginDisabledReason` on its own.
+    /// attempt has been confirmed rejected. This is the ONE check the
+    /// VISIBLE login pane uses (`LoginNavigationObserver`'s auto-fill) —
+    /// deliberately NOT gated on `autoLoginAwaitingDuo`, because a student
+    /// looking at the visible pane already tapped the reconnect banner
+    /// themselves, so filling the form and letting Duo push right there is
+    /// exactly what they asked for. The SILENT background path
+    /// (`CanvasSessionRenewer`) must NOT make that same judgment call
+    /// unattended — see `canAutoLoginSilently` below, which is what it
+    /// actually reads.
     var canAutoLogin: Bool {
         stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials && autoLoginDisabledReason == nil
     }
 
-    /// `DiagnosticsReport`'s one line for this feature — "off", "on", or
-    /// "on (disabled: <reason>)". Never the username, never the password,
-    /// never anything read from `PennKeyCredentialStore` beyond the fact
-    /// that it does or doesn't have something on file (folded into
-    /// `canAutoLogin`, not surfaced separately here since it adds nothing a
-    /// support conversation would act on).
+    /// The stricter check `CanvasSessionRenewer`'s SILENT, unattended path
+    /// reads instead of `canAutoLogin` — everything `canAutoLogin` already
+    /// requires, PLUS no pending `autoLoginAwaitingDuo` latch. Without this
+    /// split, a `.needsDuo` outcome (password accepted, Duo asked, nobody
+    /// was there to answer it) would leave `canAutoLogin` alone — it isn't a
+    /// rejection — and the renewer's own `autoLoginCooldown` (six hours)
+    /// would then resubmit the exact same still-correct password on its next
+    /// silent attempt, pushing a fresh Duo prompt to the student's phone
+    /// with nobody around to have asked for it, over and over, until they
+    /// happen to notice and act. `autoLoginAwaitingDuo` breaks that loop by
+    /// making the SILENT path stand down the moment Duo enters the picture,
+    /// while leaving the VISIBLE path (`canAutoLogin`, reconnect banner →
+    /// login pane) fully armed — the student tapping that banner is exactly
+    /// the human Duo was waiting for.
+    var canAutoLoginSilently: Bool {
+        canAutoLogin && !autoLoginAwaitingDuo
+    }
+
+    /// `DiagnosticsReport`'s one line for this feature — "off", "on", "on
+    /// (disabled: <reason>)", or "on (awaiting duo)". Never the username,
+    /// never the password, never anything read from `PennKeyCredentialStore`
+    /// beyond the fact that it does or doesn't have something on file
+    /// (folded into `canAutoLogin`, not surfaced separately here since it
+    /// adds nothing a support conversation would act on). A rejection takes
+    /// priority over an awaiting-Duo latch when (hypothetically) both were
+    /// somehow set, since a wrong password is the more actionable of the two
+    /// facts to lead with.
     var stayLoggedInDiagnosticDescription: String {
         guard stayLoggedInEnabled else { return "off" }
-        guard let reason = autoLoginDisabledReason else { return "on" }
-        return "on (disabled: \(reason))"
+        if let reason = autoLoginDisabledReason { return "on (disabled: \(reason))" }
+        if autoLoginAwaitingDuo { return "on (awaiting duo)" }
+        return "on"
     }
 
     /// Settings → "stay signed in", turned on. Called only after the student
@@ -1376,12 +1428,16 @@ final class AppState: ObservableObject {
     /// rejection: entering a (presumably corrected) password is the
     /// student's own signal that the old failure no longer applies, and is
     /// also how "update password" after a rejection re-arms the feature.
+    /// Also clears `autoLoginAwaitingDuo`: a fresh save is the student
+    /// actively re-engaging with this feature, so any stale "silent path is
+    /// standing down" latch from before should not survive it.
     func enableStayLoggedIn(username: String, password: String) {
         guard !username.isEmpty, !password.isEmpty else { return }
         PennKeyCredentialStore.save(username: username, password: password)
         stayLoggedInEnabled = true
         UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
         setAutoLoginDisabledReason(nil)
+        setAutoLoginAwaitingDuo(false)
     }
 
     /// Settings → "stay signed in", turned off — and the one path
@@ -1391,11 +1447,14 @@ final class AppState: ObservableObject {
     /// Clears the Keychain FIRST, then the flags, so a crash or termination
     /// mid-call can never leave the toggle reading false while the password
     /// is still sitting in the Keychain — the more dangerous of the two
-    /// possible inconsistent states.
+    /// possible inconsistent states. Also clears `autoLoginAwaitingDuo`:
+    /// there is no silent path left to stand down once the feature itself is
+    /// off.
     func disableStayLoggedIn() {
         PennKeyCredentialStore.clear()
         stayLoggedInEnabled = false
         UserDefaults.lhf.set(false, forKey: Self.stayLoggedInEnabledKey)
+        setAutoLoginAwaitingDuo(false)
         setAutoLoginDisabledReason(nil)
     }
 
@@ -1421,6 +1480,14 @@ final class AppState: ObservableObject {
         } else {
             UserDefaults.lhf.removeObject(forKey: Self.autoLoginDisabledReasonKey)
         }
+    }
+
+    /// Single write path for `autoLoginAwaitingDuo`, same "one place, never
+    /// drifts from the persisted copy" shape as `setAutoLoginDisabledReason`
+    /// above.
+    private func setAutoLoginAwaitingDuo(_ value: Bool) {
+        autoLoginAwaitingDuo = value
+        UserDefaults.lhf.set(value, forKey: Self.autoLoginAwaitingDuoKey)
     }
 
     /// Marks the one-time post-login offer as shown, whether the student
@@ -1538,24 +1605,36 @@ final class AppState: ObservableObject {
     /// instead of Duo/Canvas, which is just as much proof the session needs
     /// a real (human) login as the no-credentials case. `.renewed` is the
     /// opposite proof: the session is alive, so any prior "confirmed dead"
-    /// record is stale and gets cleared. `.needsDuo` proves nothing either
-    /// way about the CANVAS session specifically — the password worked well
-    /// enough to reach Duo, but whether a human is there to answer it is
-    /// unknown from here — so, like `.notAttempted`
+    /// record is stale and gets cleared.
+    ///
+    /// `.needsDuo` ALSO confirms the session dead, not merely "unchanged" —
+    /// a real-device run found this the hard way: the password was accepted
+    /// (proof the credential half of the login is fine) and the chain still
+    /// didn't reach Canvas, because only Duo stands between here and a live
+    /// session, and only the student can answer Duo. That is exactly as much
+    /// proof the CANVAS session needs a human as `.landedOnLoginPage` is —
+    /// the earlier reasoning here ("proves nothing either way about the
+    /// Canvas session") mixed up "is the stored password good" (a separate
+    /// question, tracked by `autoLoginDisabledReason`/`autoLoginAwaitingDuo`,
+    /// not this flag) with "is Canvas signed in right now" (this flag's only
+    /// job, answered by this outcome: no). Returning `current` here left
+    /// `canvasSessionExpired` false and the reconnect banner hidden after a
+    /// real Duo-gated logout, which also silently starved `canUseGradeWatcher`
+    /// (cookies-or-`canvasSessionExpired`) of the one signal that would have
+    /// kept its button showing. Only `.notAttempted`
     /// (cooldown/in-flight/pane-active/test-runner) and `.abortedByLoginPane`
-    /// (the attempt never actually reached the IdP), `current` passes through
-    /// unchanged rather than being reset to `false`, which would silently
-    /// drop real evidence gathered earlier.
+    /// (the attempt never actually reached the IdP) prove nothing either way
+    /// now, so `current` passes through unchanged for those two alone.
     static func confirmedDeadAfterRenewal(
         current: Bool,
         outcome: CanvasSessionRenewer.Outcome
     ) -> Bool {
         switch outcome {
-        case .timedOut, .landedOnLoginPage, .passwordRejected:
+        case .timedOut, .landedOnLoginPage, .passwordRejected, .needsDuo:
             return true
         case .renewed:
             return false
-        case .needsDuo, .abortedByLoginPane, .notAttempted:
+        case .abortedByLoginPane, .notAttempted:
             return current
         }
     }
@@ -1609,39 +1688,64 @@ final class AppState: ObservableObject {
             // A closure, not a stored reference to the credentials
             // themselves, so `CanvasSessionRenewer` never holds the secret
             // — it asks for it fresh on every attempt and only gets one back
-            // when `canAutoLogin` says the feature is actually usable right
-            // now (on, credentials on file, no unresolved rejection). This
-            // is also what makes a rejection stick: once
-            // `autoLoginDisabledReason` is set, `canAutoLogin` is false, this
-            // closure starts returning `nil`, and the renewer's own "GET-only
-            // unless credentials are offered" behavior falls back to
-            // exactly what it did before this feature existed.
+            // when `canAutoLoginSilently` says the UNATTENDED path is
+            // actually usable right now (on, credentials on file, no
+            // unresolved rejection, and — unlike the visible pane, which
+            // reads the looser `canAutoLogin` — no pending Duo latch). This
+            // is also what makes a rejection (or a Duo-gated logout) stick:
+            // once `autoLoginDisabledReason` or `autoLoginAwaitingDuo` is
+            // set, `canAutoLoginSilently` is false, this closure starts
+            // returning `nil`, and the renewer's own "GET-only unless
+            // credentials are offered" behavior falls back to exactly what
+            // it did before this feature existed.
             autoLogin: { [weak self] in
-                guard let self, self.canAutoLogin else { return nil }
+                guard let self, self.canAutoLoginSilently else { return nil }
                 return PennKeyCredentialStore.load()
             }
         )
         canvasSessionRenewer = renewer
 
         let outcome = await renewer.renewIfNeeded()
+        applyRenewalOutcome(outcome)
+
+        guard outcome == .renewed else { return outcome }
+        let cookies = await AutoSyncCoordinator.canvasCookies()
+        guard !cookies.isEmpty else { return outcome }
+        await refreshGradeWatcher(cookies: cookies)
+        return outcome
+    }
+
+    /// The side effects a `CanvasSessionRenewer.Outcome` — real or synthetic
+    /// — always applies, pulled out of `performSilentCanvasRenewal()` so
+    /// `noteRenewalOutcomeForTesting(_:)` below can drive the exact same code
+    /// a real attempt runs without needing a real network round trip.
+    private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome) {
         // Wired on EVERY outcome, not just `.renewed` — the whole point of
-        // the sticky dead-state fix is that a `.timedOut`/`.landedOnLoginPage`
-        // result (real proof the session is dead server-side) must reach
-        // `canvasSessionExpired` too, not just a successful renewal.
+        // the sticky dead-state fix is that a `.timedOut`/`.landedOnLoginPage`/
+        // `.needsDuo` result (real proof the session is dead server-side —
+        // see `confirmedDeadAfterRenewal`'s doc comment for why `.needsDuo`
+        // belongs in that group) must reach `canvasSessionExpired` too, not
+        // just a successful renewal.
         setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(current: canvasSessionConfirmedDead, outcome: outcome))
-        // `.passwordRejected` is ALSO evidence about the stored PennKey
-        // password specifically (as opposed to the Canvas session in
-        // general, which the line above already tracks) — see
-        // `autoLoginDisabledReason`'s doc comment for why a rejection latches
-        // until the student re-enters the password. `.renewed` is
-        // deliberately NOT wired to clear it here (or anywhere but
-        // `enableStayLoggedIn()`): a plain cookie-only renewal succeeding
-        // proves the Canvas session is alive, not that the stored password is
-        // correct, and clearing the rejection on that evidence would
-        // silently re-arm auto-login to resubmit the same still-wrong
-        // password later.
-        if outcome == .passwordRejected {
+        // `.passwordRejected` and `.needsDuo` are ALSO evidence about the
+        // stored PennKey password/silent-path specifically (as opposed to
+        // the Canvas session in general, which the line above already
+        // tracks) — see `autoLoginDisabledReason`'s and
+        // `autoLoginAwaitingDuo`'s own doc comments for why each latches
+        // until the student acts. `.renewed` is deliberately NOT wired to
+        // clear either one here (or anywhere but `enableStayLoggedIn()` /
+        // `noteCanvasLoginSessionCaptured()`): a plain cookie-only renewal
+        // succeeding proves the Canvas session is alive, not that the stored
+        // password is correct or that Duo has been answered, and clearing
+        // either latch on that unrelated evidence would silently re-arm the
+        // silent path to repeat the exact failure it just latched against.
+        switch outcome {
+        case .passwordRejected:
             noteAutoLoginRejected()
+        case .needsDuo:
+            setAutoLoginAwaitingDuo(true)
+        case .renewed, .landedOnLoginPage, .timedOut, .abortedByLoginPane, .notAttempted:
+            break
         }
         // Recomputes on both the dead and renewed paths so the banner
         // reflects whichever way this attempt cut. Note: if this call flips
@@ -1652,12 +1756,23 @@ final class AppState: ObservableObject {
         // `canvasSessionConfirmedDead` unchanged above, so this is exactly
         // one harmless extra bounce, never a loop.
         refreshCanvasSessionExpiredState()
+    }
 
-        guard outcome == .renewed else { return outcome }
-        let cookies = await AutoSyncCoordinator.canvasCookies()
-        guard !cookies.isEmpty else { return outcome }
-        await refreshGradeWatcher(cookies: cookies)
-        return outcome
+    /// Test seam: applies `applyRenewalOutcome(_:)` — the exact same code
+    /// `performSilentCanvasRenewal()` runs after a real attempt — to a
+    /// synthetic `Outcome`, without touching WebKit or the network.
+    /// `swift test` cannot drive a genuine `.needsDuo`/`.passwordRejected`
+    /// outcome end to end: `CanvasSessionRenewer.gate(...)` hard-codes
+    /// `SharedDefaults.isTestRunner` to short-circuit every attempt to
+    /// `.notAttempted` before any real navigation, by design (rule 5 of that
+    /// class's safety rules). This is how `StayLoggedInTests` proves the
+    /// `autoLoginAwaitingDuo` latch actually gets set by the same code the
+    /// real path calls, rather than merely asserting the UserDefaults
+    /// plumbing round-trips a value nothing production ever writes to it.
+    /// Not a parameter on any production call site; production always goes
+    /// through `performSilentCanvasRenewal()`'s own `renewIfNeeded()` call.
+    func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome) {
+        applyRenewalOutcome(outcome)
     }
 
     #if DEBUG
@@ -1760,8 +1875,15 @@ final class AppState: ObservableObject {
     /// Watcher refresh that actually fetches a course would clear it anyway
     /// via `renewalProvedSessionAlive`, but clearing it here means the
     /// banner doesn't flash stale-true for even that one extra cycle.
+    ///
+    /// Also clears `autoLoginAwaitingDuo`: a real login — through this exact
+    /// visible pane, Duo prompt and all — just completed, which is precisely
+    /// the human action that latch was waiting for. Leaving it set after
+    /// this would keep the SILENT path standing down indefinitely even
+    /// though there is nothing left for it to wait on.
     func noteCanvasLoginSessionCaptured() {
         setCanvasSessionConfirmedDead(false)
+        setAutoLoginAwaitingDuo(false)
         refreshCanvasSessionExpiredState()
     }
 
