@@ -631,6 +631,14 @@ struct SettingsPage: View {
         Text("smooth keeps your pennkey password in this phone's keychain and signs you back in when canvas logs you out. it never leaves the phone. tick \u{201c}remember this device\u{201d} at the duo step so duo doesn't ask either.")
             .font(.lhfSecondary(12))
             .foregroundStyle(Color.v2DateText)
+        // Only while the toggle is on — a student who hasn't turned this on
+        // has no reason to care how long Duo will keep skipping its own
+        // prompt, since nothing here is auto-filling anything for them yet.
+        if state.stayLoggedInEnabled, let duoSummary = state.duoRememberSummary {
+            Text(duoSummary)
+                .font(.lhfSecondary(12))
+                .foregroundStyle(Color.v2DateText)
+        }
         if let reason = state.autoLoginDisabledReason {
             Text(reason)
                 .font(.lhfSecondary(12))

@@ -392,6 +392,11 @@ struct ContentView: View {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         state.refreshCanvasSessionExpiredState()
+        // Cheap (one cookie-jar read, no network) — refreshed on the same
+        // launch/activation/5-minute cadence as everything else here so
+        // Settings' "stay signed in" footer and the diagnostics report never
+        // show a stale read of how long Duo will keep skipping its prompt.
+        await state.refreshDuoRememberSummary()
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         await announceGradeChanges()

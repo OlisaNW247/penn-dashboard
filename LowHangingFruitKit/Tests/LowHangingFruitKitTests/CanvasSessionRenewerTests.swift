@@ -201,4 +201,24 @@ struct CanvasSessionRenewerTests {
         let last = now.addingTimeInterval(-CanvasSessionRenewer.autoLoginCooldown - 1)
         #expect(CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: last, now: now))
     }
+
+    // MARK: - timeoutOutcome(finalURL:) — round 3, 2026-09-21: Duo no longer settles early
+
+    @Test("a timeout parked on Duo's host classifies as needsDuo")
+    func timeoutOutcomeOnDuo() {
+        let url = URL(string: "https://api-abc123.duosecurity.com/frame/web/v1/auth")
+        #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: url) == .needsDuo)
+    }
+
+    @Test("a timeout parked on the IdP login form host classifies as landedOnLoginPage, never passwordRejected")
+    func timeoutOutcomeOnLoginForm() {
+        let url = URL(string: "https://weblogin.pennkey.upenn.edu/idp/profile/SAML2/Redirect/SSO?execution=e1s1")
+        #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: url) == .landedOnLoginPage)
+    }
+
+    @Test("a timeout on any other host (or nil) classifies as timedOut")
+    func timeoutOutcomeElseIsTimedOut() {
+        #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: URL(string: "https://example.com")) == .timedOut)
+        #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: nil) == .timedOut)
+    }
 }

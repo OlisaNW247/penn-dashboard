@@ -74,11 +74,29 @@ final class CanvasSessionRenewer {
         case abortedByLoginPane
         case notAttempted(reason: String)
         /// A credential submission (this attempt's own, or one already in
-        /// flight from an earlier hop) landed on Duo's host and the chain
-        /// stayed there long enough to be observed as a settled page rather
-        /// than a transient redirect — Duo needs a human, which a silent
-        /// background attempt cannot supply. `AppState` treats this exactly
-        /// like every other non-`.renewed` outcome: silent, banner unchanged.
+        /// flight from an earlier hop) reached Duo's host and the whole 30s
+        /// attempt timed out still parked there — Duo needs a human, which a
+        /// silent background attempt cannot supply. `AppState` treats this
+        /// exactly like every other non-`.renewed` outcome: silent, banner
+        /// unchanged.
+        ///
+        /// Deliberately NOT decided the moment a Duo page is first observed
+        /// (`RenewalNavigationDelegate.didFinish` firing with the WebView on
+        /// Duo's host) — a real device (2026-09-21, round 3 of this feature)
+        /// proved that wrong. `didFinish` fires for Duo's OWN page load, a
+        /// complete navigation in its own right, BEFORE that page's
+        /// in-page JavaScript redirects back to weblogin and on to Canvas on
+        /// a "remembered this device" pass-through — a second, later
+        /// navigation nothing has seen yet at the moment the first
+        /// `didFinish` runs. Settling right there mistook a correct
+        /// password and a Duo hop seconds from completing on its own for
+        /// "Duo needs a human." `handleNonCanvasFinish` now always keeps
+        /// waiting on Duo's host; a pass-through settles as `.renewed` on
+        /// ITS OWN later `didFinish`, and only a Duo prompt still sitting
+        /// unanswered when the 30s hard timeout fires becomes `.needsDuo`
+        /// (`timeoutOutcome(finalURL:)`, classifying the timed-out signal by
+        /// where the WebView actually ended up instead of returning a bare
+        /// `.timedOut` regardless).
         case needsDuo
         /// This attempt actually submitted the stored PennKey password
         /// (`autoLogin` returned credentials) and the chain landed back on
@@ -351,6 +369,45 @@ final class CanvasSessionRenewer {
         return .other
     }
 
+    /// Pure decision behind classifying a `.timedOut` signal by the
+    /// WebView's final URL, rather than returning a bare `.timedOut`
+    /// regardless of where the chain actually stalled — the diagnostic gap
+    /// a real device (2026-09-21) exposed once `handleNonCanvasFinish`
+    /// stopped settling early on Duo (see `Outcome.needsDuo`'s doc comment):
+    /// a genuinely-stuck-at-Duo attempt now ALWAYS ends via this 30s
+    /// timeout, so a timeout that stayed a bare `.timedOut` would have
+    /// silently swallowed the exact case this whole feature exists to
+    /// surface as `.needsDuo`.
+    ///
+    /// Composed from the same host+path checks the non-timeout
+    /// classification below already uses (`PennKeyLoginForm.isDuo`/
+    /// `.isLoginForm`) — no second, competing host rule; `classifyFinalHost(_:)`
+    /// above is the coarser, `loginHostMarkers`-based classification used
+    /// elsewhere in this file and deliberately NOT reused here, since it
+    /// cannot distinguish Duo from the IdP login host on its own (both fall
+    /// under its one `.loginPage` case) and this function's whole point is
+    /// telling those two apart.
+    ///
+    /// Deliberately NEVER returns `.passwordRejected`, even when
+    /// `hasSubmittedCredentialsThisAttempt` is true: a timeout parked on the
+    /// IdP host could just as easily be the Duo hand-off/return page (see
+    /// `PennKeyLoginForm.PagePresence.noForm`'s doc comment) as a genuinely
+    /// re-rendered, rejected credential form, and only the DOM check in
+    /// `handleNonCanvasFinish` — which actually looks for the form and
+    /// settles the instant it finds one — is trustworthy enough to make that
+    /// call. A timeout means DOM check never got a chance to answer either
+    /// way, so the honest answer here is the plain "some login host, don't
+    /// know which page" reading, `.landedOnLoginPage`.
+    static func timeoutOutcome(finalURL: URL?) -> Outcome {
+        if PennKeyLoginForm.isDuo(finalURL) {
+            return .needsDuo
+        }
+        if PennKeyLoginForm.isLoginForm(finalURL) {
+            return .landedOnLoginPage
+        }
+        return .timedOut
+    }
+
     /// True for a canvas.upenn.edu cookie whose name marks it as an actual
     /// session credential (as opposed to, say, a CSRF token or an analytics
     /// cookie that also happens to live on that domain) — see
@@ -452,8 +509,15 @@ final class CanvasSessionRenewer {
         #endif
 
         if signal == .timedOut {
-            Self.logAttempt(host: webView.url?.host, status: "timed-out")
-            return .timedOut
+            let outcome = Self.timeoutOutcome(finalURL: webView.url)
+            let status: String
+            switch outcome {
+            case .needsDuo: status = "timed-out, parked on duo"
+            case .landedOnLoginPage: status = "timed-out, parked on login host"
+            default: status = "timed-out"
+            }
+            Self.logAttempt(host: webView.url?.host, status: status)
+            return outcome
         }
         if signal == .aborted {
             Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane")
@@ -531,19 +595,26 @@ final class CanvasSessionRenewer {
     /// `performAttempt`'s classification above actually reasons about.
     private func handleNonCanvasFinish(_ webView: WKWebView) async -> Bool {
         if PennKeyLoginForm.isDuo(webView.url) {
-            // A real, rendered page on Duo's host — either a prompt genuinely
-            // waiting for a human (the case this settles for) or, on a
-            // "remembered device," a page that's about to auto-continue on
-            // its own. There's no way to tell those apart from here without
-            // waiting to see whether anything else happens — but if this
-            // really is a transient hop, the auto-continue navigation that
-            // follows fires ITS OWN `didFinish`, which (if it reaches Canvas)
-            // signals `.finished` on the check above before this settled
-            // signal is even read by anyone, since `SettleWaiter.signal` only
-            // honors the FIRST call. So settling here costs nothing in the
-            // fast-remembered-device case and saves the full 30s timeout in
-            // the genuinely-stuck-at-Duo case.
-            return true
+            // NEVER settle here — a real device (2026-09-21, round 3) proved
+            // this wrong. The original reasoning was: "either a prompt
+            // genuinely waiting for a human, or a 'remembered device' page
+            // about to auto-continue on its own, and settling costs nothing
+            // in the fast case because the auto-continue's own `didFinish`
+            // would win the race to `.finished` first." That's false:
+            // `didFinish` fires for Duo's OWN page load (a real, complete
+            // navigation) before its in-page JavaScript redirects back to
+            // weblogin and on to Canvas — a SEPARATE, LATER navigation this
+            // delegate hasn't seen yet when THIS `didFinish` call runs. So
+            // settling here, on the very first Duo `didFinish`, wins the
+            // race every time on a remembered device, misreading a password
+            // that was correct and a Duo hop that was seconds from
+            // completing on its own as `.needsDuo`. Keep waiting instead:
+            // the later hop back to Canvas settles as `.renewed` on its own
+            // `didFinish` (the check above this method), and a GENUINELY
+            // stuck, unanswered Duo prompt still resolves via the 30s hard
+            // timeout, classified by `timeoutOutcome(finalURL:)` below
+            // rather than lost as a bare `.timedOut`.
+            return false
         }
 
         guard PennKeyLoginForm.isLoginForm(webView.url) else {

@@ -57,6 +57,10 @@ enum DiagnosticsReport {
         // silent renewal is standing down for a human to answer Duo, never
         // anything read from `PennKeyCredentialStore`.
         lines.append("Stay signed in: \(state.stayLoggedInDiagnosticDescription)")
+        // Cookie names and an expiry date only — never a cookie VALUE (Duo's
+        // actual trust token). See `AppState.duoRememberSummary(cookies:now:)`'s
+        // doc comment for the three shapes this can take.
+        lines.append("Duo: \(state.duoRememberSummary ?? "not checked yet")")
         lines.append("Gradescope connected: \(state.isGradescopeConnected)")
         lines.append("")
         lines.append("Recent login redirects (host/path/status only. no tokens or query strings):")

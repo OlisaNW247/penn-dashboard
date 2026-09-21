@@ -1498,6 +1498,112 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(true, forKey: Self.hasOfferedStayLoggedInKey)
     }
 
+    // MARK: - Duo remembered-device diagnostics
+
+    /// Plain-language read of how long Duo will keep skipping its own
+    /// prompt for this device — computed from a live Keychain-free cookie
+    /// read (`refreshDuoRememberSummary()`), never persisted, `nil` until
+    /// the first refresh completes (there's nothing stale worth showing
+    /// before that; a launch is fast enough that this fills in almost
+    /// immediately). Surfaced in `DiagnosticsReport`, under the "stay signed
+    /// in" toggle's footer in `SettingsPage` (only while the toggle is on),
+    /// and appended to the "simulate canvas logout" button's own output.
+    /// Never a cookie VALUE — see `duoRememberSummary(cookies:now:)`'s doc
+    /// comment for exactly what this does and doesn't read.
+    @Published private(set) var duoRememberSummary: String?
+
+    // `ISO8601DateFormatter`/`DateFormatter` aren't `Sendable`, but every use
+    // here is a simple stateless format call (no shared mutable
+    // configuration is ever written after init) — same reasoning
+    // `SessionCookieStore.isoFormatter`'s doc comment gives for the
+    // identical `nonisolated(unsafe)` shape. Pinned to UTC/`en_US_POSIX` so
+    // `duoRememberSummary(cookies:now:)` produces the exact same string
+    // regardless of the calling device's (or test machine's) local time
+    // zone — the same discipline this file's `AssistantContextDocument`
+    // trap (CLAUDE.md) argues for, applied here for test determinism rather
+    // than cache-prefix stability.
+    nonisolated(unsafe) private static let duoRememberDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
+
+    /// Pure decision behind `duoRememberSummary`'s three possible shapes —
+    /// `nonisolated` because `AppState` is `@MainActor` and a `static func`
+    /// on it inherits that isolation by default (the `decidedText`/
+    /// `tokenIsHealthyEnoughToSkipExpiryCheck` trap, CLAUDE.md), which would
+    /// make this uncallable from a plain synchronous `swift-testing` test.
+    /// It touches nothing but its own arguments and the stateless formatter
+    /// above, so it has no business being isolated.
+    ///
+    /// `cookies` is expected to be PRE-FILTERED to the `duosecurity` domain
+    /// by the caller (`refreshDuoRememberSummary()`) — this function doesn't
+    /// filter by domain itself, since that's a trivial one-line concern
+    /// separate from the actual logic worth unit-testing here (which
+    /// expiry, if any, to report). Reads only `cookie.name` and
+    /// `cookie.expiresDate`; a cookie's VALUE (Duo's actual trust token)
+    /// never appears in the string this returns, matching the same
+    /// never-a-cookie-value discipline `LoginRedirectLogEntry` and
+    /// `DiagnosticsReport` already hold elsewhere in this codebase.
+    ///
+    /// Three shapes, in order:
+    /// 1. `cookies` is empty — Duo has never (or no longer) left a
+    ///    remembered-device cookie in this store at all.
+    /// 2. At least one cookie has a real `expiresDate` — report the
+    ///    LATEST one (Duo's own remember-device cookie renews on reuse, so
+    ///    an older, now-superseded expiry could still be sitting alongside
+    ///    a fresher one) and how many days out it is, floored to whole days
+    ///    the same way `canvasAccessTokenDiagnosticDescription` already
+    ///    reports token age elsewhere in this file.
+    /// 3. `cookies` is non-empty but EVERY one is a true session cookie (no
+    ///    `expiresDate` — Duo can mint these too, and they say nothing about
+    ///    a remembered device since they die with the WebView process) —
+    ///    report the count so a reader knows Duo cookies exist but none of
+    ///    them mean "remembered," rather than this silently falling through
+    ///    to shape 1's "no cookie at all" claim, which would be false.
+    nonisolated static func duoRememberSummary(cookies: [HTTPCookie], now: Date) -> String {
+        guard !cookies.isEmpty else {
+            return "duo has no remembered-device cookie in the login store"
+        }
+        let withExpiry = cookies.compactMap { cookie -> (name: String, expires: Date)? in
+            guard let expires = cookie.expiresDate else { return nil }
+            return (cookie.name, expires)
+        }
+        guard let latest = withExpiry.max(by: { $0.expires < $1.expires }) else {
+            return "duo: \(cookies.count) session-only cookies, none with an expiry"
+        }
+        let daysLeft = max(0, Int(latest.expires.timeIntervalSince(now) / 86_400))
+        let dateString = duoRememberDateFormatter.string(from: latest.expires)
+        return "duo remembers this device until \(dateString) (cookie \(latest.name), \(daysLeft) days left)"
+    }
+
+    /// Recomputes `duoRememberSummary` from the persistent login WebView's
+    /// own cookie jar (`LoginDataStores.canvas`) — Duo's remembered-device
+    /// trust (the student's own "Yes, this is my device" answer, good for
+    /// about 30 days by Duo's own default) lives entirely in a cookie
+    /// there, not anywhere this app controls or persists itself. Read-only,
+    /// the same "never write into `LoginDataStores.canvas`" discipline
+    /// `CanvasSessionRenewer` already follows for this identical store.
+    ///
+    /// Called after every event that could plausibly change this: a
+    /// completed interactive login (`noteCanvasLoginSessionCaptured()`,
+    /// fire-and-forget — see that method's own comment on why), every
+    /// silent renewal outcome (`applyRenewalOutcome`, fire-and-forget for
+    /// the same reason — a `.needsDuo` or a `.renewed`-via-Duo-pass-through
+    /// attempt just touched this exact cookie), directly and awaited from
+    /// `simulateCanvasLogoutForTesting()` (so that button's own output is
+    /// never stale by even one fire-and-forget `Task`'s worth of a race),
+    /// and on app foreground (`ContentView.refresh()`).
+    func refreshDuoRememberSummary() async {
+        let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
+            LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
+        }
+        let duoCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("duosecurity") }
+        duoRememberSummary = Self.duoRememberSummary(cookies: duoCookies, now: Date())
+    }
+
     /// True while `CanvasLoginPane` (OnboardingView.swift) is on screen — set
     /// on its appear, cleared on its disappear. Not `@Published`: nothing
     /// renders off this, it exists purely as a guard `CanvasSessionRenewer`
@@ -1756,6 +1862,16 @@ final class AppState: ObservableObject {
         // `canvasSessionConfirmedDead` unchanged above, so this is exactly
         // one harmless extra bounce, never a loop.
         refreshCanvasSessionExpiredState()
+        // Fire-and-forget, same reasoning as `noteCanvasLoginSessionCaptured()`'s
+        // own comment: this method stays synchronous so
+        // `noteRenewalOutcomeForTesting(_:)` and its existing (synchronous)
+        // test suite don't need `async`/`await` threaded through them for a
+        // diagnostics-only value. A `.needsDuo` or a `.renewed`-via-Duo
+        // pass-through attempt is exactly the kind of event that could have
+        // just changed this cookie.
+        Task { @MainActor [weak self] in
+            await self?.refreshDuoRememberSummary()
+        }
     }
 
     /// Test seam: applies `applyRenewalOutcome(_:)` — the exact same code
@@ -1889,26 +2005,35 @@ final class AppState: ObservableObject {
             guard let page = canvasSessionRenewer?.lastSettledOrTimedOutURL else { return "" }
             return " — last page: \(page)"
         }
+        let message: String
         switch outcome {
         case .renewed:
             let cookiesAreBack = !SessionCookieStore.load(service: .canvas).isEmpty
-            return cookiesAreBack
+            message = cookiesAreBack
                 ? "renewed — signed back in with no taps (cookies confirmed back)"
                 : "renewed — but no cookies were found afterward (unexpected)"
         case .needsDuo:
-            return "needsDuo — duo asked; the password was accepted"
+            message = "needsDuo — duo asked; the password was accepted"
         case .passwordRejected:
-            return "passwordRejected — penn refused the stored password"
+            message = "passwordRejected — penn refused the stored password"
         case .landedOnLoginPage:
-            return "landedOnLoginPage — no credentials were used (is stay signed in on?)"
+            message = "landedOnLoginPage — no credentials were used (is stay signed in on?)"
                 + lastPageNote() + credentialOfferNote
         case .timedOut:
-            return "timedOut" + lastPageNote() + credentialOfferNote
+            message = "timedOut" + lastPageNote() + credentialOfferNote
         case .abortedByLoginPane:
-            return "notAttempted: the visible login pane was open"
+            message = "notAttempted: the visible login pane was open"
         case .notAttempted(let reason):
-            return "notAttempted: \(reason)"
+            message = "notAttempted: \(reason)"
         }
+        // Awaited directly here rather than relying on `applyRenewalOutcome`'s
+        // own fire-and-forget refresh (see that method's comment) — this
+        // button's whole purpose is showing the owner an up-to-date read
+        // right now, so it can't afford to race a detached `Task` that might
+        // not have finished by the time this string is built.
+        await refreshDuoRememberSummary()
+        let duoNote = duoRememberSummary ?? "duo: summary unavailable"
+        return message + " · " + duoNote
     }
     #endif
 
@@ -1927,10 +2052,24 @@ final class AppState: ObservableObject {
     /// the human action that latch was waiting for. Leaving it set after
     /// this would keep the SILENT path standing down indefinitely even
     /// though there is nothing left for it to wait on.
+    ///
+    /// Also fires a fire-and-forget refresh of `duoRememberSummary`: this
+    /// exact login just walked through (or skipped) a Duo prompt, so it's
+    /// the single most likely moment for that cookie's expiry to have
+    /// changed. Deliberately NOT `await`ed — this method stays synchronous
+    /// on purpose, since its one production call site
+    /// (`CanvasLoginPane.connect()`) and its tests would otherwise have to
+    /// thread `async`/`await` through for a diagnostics-only value nothing
+    /// here is gating real behavior on; a `Task` fire-and-forget (same shape
+    /// `refreshCanvasSessionExpiredState()` already uses for
+    /// `attemptSilentCanvasRenewal()`) is the lower-risk choice.
     func noteCanvasLoginSessionCaptured() {
         setCanvasSessionConfirmedDead(false)
         setAutoLoginAwaitingDuo(false)
         refreshCanvasSessionExpiredState()
+        Task { @MainActor [weak self] in
+            await self?.refreshDuoRememberSummary()
+        }
     }
 
     /// Persists a freshly minted Canvas access token
