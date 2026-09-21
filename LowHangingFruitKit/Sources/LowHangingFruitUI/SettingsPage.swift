@@ -162,6 +162,24 @@ struct SettingsPage: View {
             remindersSection
             iCloudSyncSection
 
+            // Debug builds only. `diagnosticsSection` below is where the
+            // simulate-logout row was first placed, but that section is
+            // defined and never put in this Form -- it fell out of the layout
+            // when profile and settings were merged into one page, and only
+            // its helpers (`copyDiagnostics`, `reportProblem`) are still
+            // reached from elsewhere. Olisa built v6 to his phone, scrolled
+            // to the bottom and found nothing, which is how that was noticed.
+            // So the row gets a section of its own here, in the one place a
+            // scrolling thumb actually arrives.
+            #if DEBUG
+            Section {
+                simulateCanvasLogoutRow
+            } header: {
+                SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothCobalt)
+            #endif
+
             #if os(macOS)
             onThisMacSection
             #endif
