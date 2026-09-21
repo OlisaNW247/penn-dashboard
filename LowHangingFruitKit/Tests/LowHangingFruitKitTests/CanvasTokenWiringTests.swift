@@ -30,12 +30,30 @@ import Testing
 /// blast radius is a suite mid-round-trip losing its own fixture, not a
 /// false green.
 ///
-/// Cookie-touching tests here (`.canvas` service) share
-/// `SessionCookieStoreTests`' Keychain item for the same reason that suite's
-/// own doc comment describes; `.serialized` keeps this suite's own tests
-/// from racing each other, though not the other suite — an accepted,
-/// pre-existing-shape risk, not one this file is positioned to close without
-/// undoing the two-separate-files split this task was given.
+/// The two `canvasSessionExpired` tests below used to write a stale cookie
+/// into the real `SessionCookieStore` Keychain item (`.canvas` service) to
+/// force `SessionCookieStore.isExpired(service: .canvas)` true, then clear
+/// it on the way out. That write, however briefly it lived, was visible to
+/// `SessionCookieStoreTests`' own `AppState.init` calls running
+/// concurrently in the same process — `.serialized` on THIS suite only
+/// keeps its own tests from racing each other, it does nothing to stop an
+/// unrelated, correctly-`.serialized` suite from racing it right back. That
+/// made `SessionCookieStoreTests`' "a calendar-link-only install … cannot
+/// use Grade Watcher" test fail deterministically in every full run on a
+/// real Mac (2026-09-21), passing alone every time — the tell that gave it
+/// away. Both tests now force `AppState.canvasSessionExpired`'s
+/// cookie-derived half in memory instead
+/// (`forceCanvasCookieSessionExpiredForTesting(_:)` — see its own doc
+/// comment for the full incident), so this file no longer writes that
+/// Keychain item at all.
+///
+/// The remaining `SessionCookieStore.clear()` calls elsewhere in this file
+/// (the plain `hasCanvasCredentials`/`canUseGradeWatcher`-from-token-alone
+/// tests) are a narrower, still-accepted risk: they only ever DELETE the
+/// shared item to guarantee "no cookies," never write a specific value a
+/// concurrent `SessionCookieStoreTests` assertion could read back wrong —
+/// the same shape CLAUDE.md's "Two known flakes" already documents as
+/// pre-existing and untouched.
 @Suite("Canvas token wiring", .serialized)
 struct CanvasTokenWiringTests {
     @MainActor
@@ -111,25 +129,23 @@ struct CanvasTokenWiringTests {
     @MainActor
     @Test("canvasSessionExpired is false with a healthy token, even while the cookie session is stale")
     func canvasSessionExpiredFalseWithHealthyToken() {
-        SessionCookieStore.clear()
         let state = makeState()
         defer {
             state.forceCanvasAccessTokenForTesting(nil)
-            SessionCookieStore.clear()
+            state.forceCanvasCookieSessionExpiredForTesting(nil)
         }
 
-        // A cookie set that's entirely stale — `SessionCookieStore.isExpired`
-        // would read true off this alone (see `SessionCookieStoreTests`).
-        let past = Date().addingTimeInterval(-3600)
-        let staleCookie = HTTPCookie(properties: [
-            .name: "sid",
-            .value: "v",
-            .domain: "canvas.upenn.edu",
-            .path: "/",
-            .expires: past,
-        ])!
-        SessionCookieStore.save([staleCookie], service: .canvas)
-        #expect(SessionCookieStore.isExpired(service: .canvas))
+        // Forced in-memory, per-instance, rather than a real
+        // `SessionCookieStore.save(...)` write to the shared, process-wide
+        // Keychain item: that write (a real cookie with a past `.expires`,
+        // exactly the shape below) is what made `SessionCookieStoreTests`
+        // fail deterministically in every full run on a real Mac
+        // (2026-09-21) — `.serialized` only ever protects a suite from its
+        // own tests, never from an unrelated suite (this one) writing the
+        // same Keychain item concurrently, `.serialized` or not. See
+        // `AppState.forceCanvasCookieSessionExpiredForTesting`'s doc
+        // comment for the full incident.
+        state.forceCanvasCookieSessionExpiredForTesting(true)
 
         // A token with 100 days left — comfortably outside
         // `CanvasAccessTokenPolicy.renewalWindow` (7 days) — should short-
@@ -143,22 +159,15 @@ struct CanvasTokenWiringTests {
     @MainActor
     @Test("canvasSessionExpired falls back to the cookie rule once the token is inside its own renewal window")
     func canvasSessionExpiredFallsBackNearTokenExpiry() {
-        SessionCookieStore.clear()
         let state = makeState()
         defer {
             state.forceCanvasAccessTokenForTesting(nil)
-            SessionCookieStore.clear()
+            state.forceCanvasCookieSessionExpiredForTesting(nil)
         }
 
-        let past = Date().addingTimeInterval(-3600)
-        let staleCookie = HTTPCookie(properties: [
-            .name: "sid",
-            .value: "v",
-            .domain: "canvas.upenn.edu",
-            .path: "/",
-            .expires: past,
-        ])!
-        SessionCookieStore.save([staleCookie], service: .canvas)
+        // Forced in-memory — see `canvasSessionExpiredFalseWithHealthyToken`
+        // just above for why this is no longer a real Keychain write.
+        state.forceCanvasCookieSessionExpiredForTesting(true)
 
         // 1 day left — inside the 7-day renewal window, so this is NOT
         // "healthy enough to skip the expiry check" and the stale cookie

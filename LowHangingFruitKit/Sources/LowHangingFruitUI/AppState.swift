@@ -1186,6 +1186,49 @@ final class AppState: ObservableObject {
         forcedCanvasAccessTokenForTesting = token
     }
 
+    /// Test seam mirroring `forcedCanvasAccessTokenForTesting` above exactly,
+    /// for the OTHER half of `refreshCanvasSessionExpiredState()`'s
+    /// Keychain-derived input: `SessionCookieStore.isExpired(service: .canvas)`.
+    /// `nil` is the default ("read the real, process-wide Keychain item as
+    /// normal"); production code never calls the setter below, so this is
+    /// inert outside tests.
+    private var cookieSessionExpiredOverrideForTesting: Bool?
+
+    /// Test seam: makes `canvasSessionExpired`'s recompute behave as though
+    /// `value` (or, passed `nil`, "read the real Keychain state") were
+    /// `SessionCookieStore.isExpired(service: .canvas)`'s answer — WITHOUT
+    /// writing the real, process-wide `SessionCookieStore` Keychain item.
+    ///
+    /// A real write here (`SessionCookieStore.save`/`.merge(_:service: .canvas)`
+    /// with a stale/fresh cookie, then `.clear()` on cleanup) is exactly the
+    /// bug `forceCanvasSessionConfirmedDeadForTesting()`'s doc comment
+    /// records for `UserDefaults.lhf` (CLAUDE.md's "Seeding a persisted flag
+    /// through `UserDefaults.lhf` in a test is not hermetic even with
+    /// backup-and-restore" trap, the `FirstLaunchHoldDashboardTests`
+    /// incident) — except worse, because Swift Testing's `.serialized` on
+    /// ONE suite only protects that suite's own tests from racing each
+    /// other; it does nothing to stop a DIFFERENT, unserialized suite from
+    /// writing the same shared Keychain item concurrently. That is exactly
+    /// what happened on Olisa's Mac, 2026-09-21:
+    /// `CanvasTokenWiringTests.swift` — itself `.serialized`, but for its
+    /// OWN tests, and with no reason to think of itself as touching this
+    /// item at all, since it exists to test access-token wiring — called
+    /// `SessionCookieStore.save([staleCookie], service: .canvas)` to set up
+    /// its own fixture, and every `AppState.init` in the
+    /// CONCURRENTLY-RUNNING, ALSO-`.serialized` `SessionCookieStoreTests`
+    /// suite that happened to construct inside that write's window read a
+    /// cookie session that looked expired, failing "a calendar-link-only
+    /// install … cannot use Grade Watcher" nondeterministically — every run
+    /// in the full suite, passing alone every time. Two suites can each be
+    /// internally `.serialized` and still race each other freely; that
+    /// attribute only ever protects a suite from its own tests, never from
+    /// a completely different suite it has no way to even know exists. A
+    /// memory-only seam on one instance cannot leak across suites the way a
+    /// real Keychain write — cleaned up or not — already proved it can.
+    func forceCanvasCookieSessionExpiredForTesting(_ value: Bool?) {
+        cookieSessionExpiredOverrideForTesting = value
+    }
+
     /// True when the dashboard is quietly missing a whole data source — the
     /// "half your work" warning this pair of properties exists to drive. Both
     /// gaps below are reachable even though onboarding requires Canvas before
@@ -1568,7 +1611,18 @@ final class AppState: ObservableObject {
     ///    an older, now-superseded expiry could still be sitting alongside
     ///    a fresher one) and how many days out it is, floored to whole days
     ///    the same way `canvasAccessTokenDiagnosticDescription` already
-    ///    reports token age elsewhere in this file.
+    ///    reports token age elsewhere in this file. Deliberately does NOT
+    ///    say Duo "remembers this device" until that date — a real phone
+    ///    (2026-09-21) showed this cookie living 399 days out, and the
+    ///    cookie's own lifetime (capped at 400 days by the browser, per the
+    ///    `Set-Cookie: Max-Age`/`Expires` ceiling every browser enforces) is
+    ///    NOT the same thing as Penn's actual remembered-device POLICY,
+    ///    which Duo enforces server-side and can lapse long before the
+    ///    cookie itself expires — the very case this whole feature exists
+    ///    to catch shows up as a `.needsDuo` outcome despite a
+    ///    still-unexpired cookie, not as this string going stale. The
+    ///    wording says exactly that, so a reader doesn't read a 399-day
+    ///    number as a promise this app can't back up.
     /// 3. `cookies` is non-empty but EVERY one is a true session cookie (no
     ///    `expiresDate` — Duo can mint these too, and they say nothing about
     ///    a remembered device since they die with the WebView process) —
@@ -1588,7 +1642,24 @@ final class AppState: ObservableObject {
         }
         let daysLeft = max(0, Int(latest.expires.timeIntervalSince(now) / 86_400))
         let dateString = duoRememberDateFormatter.string(from: latest.expires)
-        return "duo remembers this device until \(dateString) (cookie \(latest.name), \(daysLeft) days left)"
+        let displayName = duoCookieDisplayName(latest.name)
+        return "duo cookie \(displayName) lives until \(dateString) (\(daysLeft) days); "
+            + "penn's own remember window is shorter and shows up here as needsDuo when it lapses"
+    }
+
+    /// Truncates a Duo cookie name to everything before its first `|` plus
+    /// a trailing `…`, or the name unchanged if it has no `|` at all. Duo's
+    /// own remembered-device cookie names embed a per-device identifier
+    /// after that separator (a real one seen on-device, 2026-09-21:
+    /// `trc|DUTKR0NGCLJFQTDS0HKM|DAERLE1A5S4KKX9U2Q6M`) — this string ends
+    /// up in `DiagnosticsReport` and, from there, in "report a problem"
+    /// emails, so the identifier half never leaves this function. The
+    /// prefix before the first `|` (`trc` in the example above) is Duo's
+    /// own cookie-purpose tag, not a per-device secret, so it's the useful
+    /// part worth keeping.
+    nonisolated private static func duoCookieDisplayName(_ name: String) -> String {
+        guard let separator = name.firstIndex(of: "|") else { return name }
+        return String(name[name.startIndex...separator]) + "…"
     }
 
     /// Recomputes `duoRememberSummary` from the persistent login WebView's
@@ -1683,7 +1754,8 @@ final class AppState: ObservableObject {
         if Self.tokenIsHealthyEnoughToSkipExpiryCheck(canvasAccessTokenOnFile, now: now) {
             canvasSessionExpired = false
         } else {
-            canvasSessionExpired = SessionCookieStore.isExpired(service: .canvas) || canvasSessionConfirmedDead
+            let cookieSessionExpired = cookieSessionExpiredOverrideForTesting ?? SessionCookieStore.isExpired(service: .canvas)
+            canvasSessionExpired = cookieSessionExpired || canvasSessionConfirmedDead
         }
         if canvasSessionExpired && !wasExpired {
             Task { await attemptSilentCanvasRenewal() }

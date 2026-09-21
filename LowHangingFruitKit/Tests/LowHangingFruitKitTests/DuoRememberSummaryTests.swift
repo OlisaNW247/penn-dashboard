@@ -63,7 +63,8 @@ struct DuoRememberSummaryTests {
         ]
         let summary = AppState.duoRememberSummary(cookies: cookies, now: Self.reference)
         // 2027-01-15 + 29 days = 2027-02-13.
-        #expect(summary == "duo remembers this device until 2027-02-13 (cookie duo_remembered_device, 29 days left)")
+        #expect(summary == "duo cookie duo_remembered_device lives until 2027-02-13 (29 days); "
+            + "penn's own remember window is shorter and shows up here as needsDuo when it lapses")
     }
 
     @Test("a mix of session-only and expiring cookies reports the expiring one, ignoring the session-only ones for the date")
@@ -74,7 +75,8 @@ struct DuoRememberSummaryTests {
             cookie(name: "duo_remembered_device", expiresDate: later),
         ]
         let summary = AppState.duoRememberSummary(cookies: cookies, now: Self.reference)
-        #expect(summary == "duo remembers this device until 2027-01-20 (cookie duo_remembered_device, 5 days left)")
+        #expect(summary == "duo cookie duo_remembered_device lives until 2027-01-20 (5 days); "
+            + "penn's own remember window is shorter and shows up here as needsDuo when it lapses")
     }
 
     @Test("an expiry already in the past floors days left at zero, never negative")
@@ -82,11 +84,43 @@ struct DuoRememberSummaryTests {
         let past = Self.reference.addingTimeInterval(-86_400)
         let cookies = [cookie(name: "duo_expired", expiresDate: past)]
         let summary = AppState.duoRememberSummary(cookies: cookies, now: Self.reference)
-        // A literal `-1 days` substring check, not a bare "-1" check — the
+        // A literal `(-1 days)` substring check, not a bare "-1" check — the
         // formatted date itself (`2027-01-14`) legitimately contains a
         // hyphen immediately followed by a digit, which would make a bare
         // "-1" substring check a false positive here.
-        #expect(summary.contains("0 days left"))
-        #expect(!summary.contains("-1 days"))
+        #expect(summary.contains("(0 days)"))
+        #expect(!summary.contains("(-1 days)"))
+    }
+
+    // MARK: - Cookie name truncation (real-device finding, 2026-09-21)
+    //
+    // A real phone printed the full Duo cookie name in "simulate canvas
+    // logout"'s output — `trc|DUTKR0NGCLJFQTDS0HKM|DAERLE1A5S4KKX9U2Q6M` —
+    // which embeds a per-device identifier after the first `|` and ends up
+    // in `DiagnosticsReport`, and from there in "report a problem" emails.
+    // Only the prefix before the first `|` (Duo's own cookie-purpose tag,
+    // not a per-device secret) is worth keeping.
+
+    @Test("a cookie name containing | is truncated to the prefix before it, plus an ellipsis")
+    func cookieNameWithPipeIsTruncated() {
+        let cookies = [
+            cookie(
+                name: "trc|DUTKR0NGCLJFQTDS0HKM|DAERLE1A5S4KKX9U2Q6M",
+                expiresDate: Self.reference.addingTimeInterval(399 * 86_400)
+            ),
+        ]
+        let summary = AppState.duoRememberSummary(cookies: cookies, now: Self.reference)
+        #expect(summary.contains("duo cookie trc|… lives until"))
+        #expect(!summary.contains("DUTKR0NGCLJFQTDS0HKM"))
+        #expect(!summary.contains("DAERLE1A5S4KKX9U2Q6M"))
+    }
+
+    @Test("a cookie name with no | is reported unchanged")
+    func cookieNameWithoutPipeIsUnchanged() {
+        let cookies = [
+            cookie(name: "duo_remembered_device", expiresDate: Self.reference.addingTimeInterval(5 * 86_400)),
+        ]
+        let summary = AppState.duoRememberSummary(cookies: cookies, now: Self.reference)
+        #expect(summary.contains("duo cookie duo_remembered_device lives until"))
     }
 }
