@@ -794,10 +794,44 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     /// class's duplicate-POST guard and app-link guard's territory (see
     /// `PennKeyLoginForm`'s doc comment for the full argument that this
     /// cannot reopen the historical double-POST bug).
+    ///
+    /// `isLoginForm(url)` is only the cheap host+path pre-filter — "COULD
+    /// this page be the form." Real Shibboleth flows render more than one
+    /// page at that same host+path shape (the Duo hand-off page right after
+    /// a correct password, and the page Duo hands control back to before its
+    /// own auto-submitted POST — see `PennKeyLoginForm.PagePresence.noForm`'s
+    /// doc comment), so this evaluates `detectFormScript` FIRST to find out
+    /// whether the credential form is actually present before touching the
+    /// attempt counter at all. On-device 2026-09-21: without this check, one
+    /// of those non-credential pages read as "the form came back ⇒ the
+    /// password was rejected" even though the password was correct and Duo
+    /// was mid-flight.
     private func attemptAutoLoginIfNeeded(_ webView: WKWebView) {
         guard let credentials = autoLoginCredentials else { return }
         guard PennKeyLoginForm.isLoginForm(webView.url) else { return }
 
+        webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { [weak self] result, _ in
+            guard let self else { return }
+            switch PennKeyLoginForm.presence(from: result) {
+            case .noForm, .unknown:
+                // Not the credential form (the Duo hand-off/return page, or
+                // WebKit handed back something this script didn't expect) —
+                // leave the attempt counter untouched and keep watching for
+                // the next navigation.
+                break
+            case .form, .formError:
+                self.handleCredentialFormSighted(webView, credentials: credentials)
+            }
+        }
+    }
+
+    /// Called only once `attemptAutoLoginIfNeeded` has confirmed the
+    /// credential form is actually present on the page — everything below
+    /// is unchanged from before that check was added.
+    private func handleCredentialFormSighted(
+        _ webView: WKWebView,
+        credentials: (username: String, password: String)
+    ) {
         if autoLoginAttempts == 0 {
             autoLoginAttempts += 1
             let script = PennKeyLoginForm.fillAndSubmitScript(
@@ -814,12 +848,12 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         }
 
         if autoLoginAttempts == 1 {
-            // The login form finished loading a SECOND time after the one
-            // and only submission above — Shibboleth re-rendered its own
-            // credential form, which is exactly what it does for a wrong
-            // password. Bump past 1 immediately, before calling out, so this
-            // branch can only ever fire once per pane appearance no matter
-            // how many more times the login form happens to finish loading
+            // The credential form is ACTUALLY present a SECOND time after
+            // the one and only submission above — Shibboleth re-rendered its
+            // own credential form, which is exactly what it does for a
+            // wrong password. Bump past 1 immediately, before calling out,
+            // so this branch can only ever fire once per pane appearance no
+            // matter how many more times the form happens to be sighted
             // afterward (e.g. a student's own manual retry on the
             // re-rendered form) — this observer never submits again on its
             // own regardless.

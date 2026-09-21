@@ -180,6 +180,16 @@ struct SettingsPage: View {
             .smoothSectionBackground(.smoothCobalt)
             #endif
 
+            // `diagnosticsSection` ("copy diagnostics report" / "report a
+            // problem") has the exact same history as the DEBUG testing
+            // section right above it — defined, but never actually placed
+            // in this Form, so nobody scrolling a real phone could ever
+            // reach either the diagnostics copy button or the report-a-
+            // problem mail flow. Placed right after testing for the same
+            // reason testing was placed here: this is the one spot a
+            // scrolling thumb actually arrives.
+            diagnosticsSection
+
             #if os(macOS)
             onThisMacSection
             #endif
@@ -485,6 +495,12 @@ struct SettingsPage: View {
     /// meant to be pasted into a support message when Canvas login is stuck.
     /// Contains no credentials, cookie values, or the ICS feed URL/token —
     /// see `DiagnosticsReport`'s doc comment for exactly what's included.
+    ///
+    /// No longer also embeds `simulateCanvasLogoutRow` under `#if DEBUG` —
+    /// that was a leftover from before the "testing" section above got its
+    /// own home in the Form (see that section's own comment); with THIS
+    /// section now placed too, keeping both would show the same row twice
+    /// on the same page.
     private var diagnosticsSection: some View {
         Section {
             Button {
@@ -497,9 +513,6 @@ struct SettingsPage: View {
             } label: {
                 Label("report a problem", systemImage: "envelope")
             }
-            #if DEBUG
-            simulateCanvasLogoutRow
-            #endif
         } header: {
             SmoothSectionHeader("troubleshooting", accent: .smoothCobalt)
         }

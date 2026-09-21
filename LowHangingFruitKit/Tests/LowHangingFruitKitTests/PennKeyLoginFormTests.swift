@@ -126,4 +126,46 @@ struct PennKeyLoginFormTests {
     func outcomeGarbage() {
         #expect(PennKeyLoginForm.outcome(from: "something else") == .unknown)
     }
+
+    // MARK: - detectFormScript
+
+    @Test("detectFormScript looks for the j_password field")
+    func detectFormScriptContainsSelector() {
+        #expect(PennKeyLoginForm.detectFormScript.contains("j_password"))
+    }
+
+    @Test("detectFormScript checks for error text and error/alert classes")
+    func detectFormScriptContainsErrorDetection() {
+        #expect(PennKeyLoginForm.detectFormScript.contains("incorrect"))
+        #expect(PennKeyLoginForm.detectFormScript.contains("invalid"))
+        #expect(PennKeyLoginForm.detectFormScript.contains("error"))
+        #expect(PennKeyLoginForm.detectFormScript.contains("alert"))
+    }
+
+    // MARK: - presence(from:)
+
+    @Test("\"form\" maps to .form")
+    func presenceForm() {
+        #expect(PennKeyLoginForm.presence(from: "form") == .form)
+    }
+
+    @Test("\"form-error\" maps to .formError")
+    func presenceFormError() {
+        #expect(PennKeyLoginForm.presence(from: "form-error") == .formError)
+    }
+
+    @Test("\"no-form\" maps to .noForm")
+    func presenceNoForm() {
+        #expect(PennKeyLoginForm.presence(from: "no-form") == .noForm)
+    }
+
+    @Test("nil maps to .unknown")
+    func presenceNil() {
+        #expect(PennKeyLoginForm.presence(from: nil) == .unknown)
+    }
+
+    @Test("garbage maps to .unknown")
+    func presenceGarbage() {
+        #expect(PennKeyLoginForm.presence(from: "something else") == .unknown)
+    }
 }

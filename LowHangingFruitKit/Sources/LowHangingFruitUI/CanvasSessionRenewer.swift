@@ -194,6 +194,28 @@ final class CanvasSessionRenewer {
         lastAttemptAt = nil
         lastCredentialSubmissionAt = nil
     }
+
+    /// Host+path (never the query string, which can carry live SAML request
+    /// state) of wherever the WebView was sitting the moment the most recent
+    /// attempt settled or hit the hard timeout. Set once per attempt, right
+    /// after `waiter.wait()` resolves in `performAttempt()`, before anything
+    /// downstream can navigate further or the `defer` discards the WebView.
+    /// Surfaced by `AppState.simulateCanvasLogoutForTesting()` so a
+    /// `.timedOut`/`.landedOnLoginPage` result on a real device says WHERE
+    /// the chain actually stalled instead of just that it did — the
+    /// 2026-09-21 incident needed exactly this to even start diagnosing.
+    /// DEBUG-only, same reasoning as `resetThrottlesForTesting()` above.
+    private(set) var lastSettledOrTimedOutURL: String?
+
+    /// Pure formatting helper for `lastSettledOrTimedOutURL` — host+path
+    /// only, `nil` in, `nil` out (a `nil` URL, e.g. a WebView that never
+    /// navigated at all, has nothing to report). DEBUG-only alongside the
+    /// property it exists to fill in — kept out of Release builds rather
+    /// than left as unused dead weight there.
+    private static func hostPathString(_ url: URL?) -> String? {
+        guard let url, let host = url.host else { return nil }
+        return "\(host)\(url.path)"
+    }
     #endif
 
     /// The in-flight attempt's WebView/delegate, retained here for the
@@ -377,9 +399,11 @@ final class CanvasSessionRenewer {
             // keeps waiting for a further hop or the hard timeout — which,
             // with no credentials configured, is EVERY non-Canvas finish,
             // reproducing this class's pre-"stay signed in" behavior
-            // exactly (rule 1's doc comment).
+            // exactly (rule 1's doc comment). `async` because deciding
+            // requires evaluating `detectFormScript` in-page first — see
+            // `handleNonCanvasFinish`'s doc comment.
             onNonCanvasFinish: { [weak self] webView in
-                self?.handleNonCanvasFinish(webView) ?? false
+                await self?.handleNonCanvasFinish(webView) ?? false
             }
         )
         webView.navigationDelegate = delegate
@@ -422,6 +446,10 @@ final class CanvasSessionRenewer {
         }
         let signal = await waiter.wait()
         timeoutTask.cancel()
+
+        #if DEBUG
+        lastSettledOrTimedOutURL = Self.hostPathString(webView.url)
+        #endif
 
         if signal == .timedOut {
             Self.logAttempt(host: webView.url?.host, status: "timed-out")
@@ -479,15 +507,29 @@ final class CanvasSessionRenewer {
     /// Returns whether the wait should settle now (`true`) or keep waiting
     /// (`false`) — see the call site's doc comment for what each means.
     ///
-    /// This is the ONLY place `evaluateJavaScript` is ever called from this
-    /// class, and it runs at most once per attempt
-    /// (`hasSubmittedCredentialsThisAttempt`), which is rule 1's amendment
-    /// in this file's header doc comment. The result of the evaluation
-    /// itself is deliberately ignored (`completionHandler: nil`) — this
-    /// class doesn't need to know whether the submission "worked" in any
+    /// `async` because an IdP-host landing now evaluates `detectFormScript`
+    /// before deciding anything — `isLoginForm(url)` is only a cheap
+    /// host+path pre-filter, and Penn's real flow renders more than one page
+    /// at that exact host+path shape: the credential form itself, a Duo
+    /// hand-off page shown immediately after a correct password, and a page
+    /// Duo hands control back to before its own auto-submitted POST. Without
+    /// this check, either of the latter two reads as "the login form came
+    /// back" — which, on a real device (2026-09-21), produced `.timedOut`
+    /// AND a stale `.passwordRejected` from an EARLIER automatic attempt (the
+    /// student's password was correct and Duo was mid-flight the whole
+    /// time). See `PennKeyLoginForm.PagePresence.noForm`'s doc comment for
+    /// the full incident.
+    ///
+    /// This — plus the one `fillAndSubmitScript` call — are the only places
+    /// `evaluateJavaScript` is ever called from this class, and the
+    /// submission still runs at most once per attempt
+    /// (`hasSubmittedCredentialsThisAttempt`), which is rule 1's amendment in
+    /// this file's header doc comment. `fillAndSubmitScript`'s own result is
+    /// still deliberately ignored (`completionHandler: nil`) — this class
+    /// doesn't need to know whether the submission "worked" in any
     /// JavaScript sense; the navigation that follows (or doesn't) is what
     /// `performAttempt`'s classification above actually reasons about.
-    private func handleNonCanvasFinish(_ webView: WKWebView) -> Bool {
+    private func handleNonCanvasFinish(_ webView: WKWebView) async -> Bool {
         if PennKeyLoginForm.isDuo(webView.url) {
             // A real, rendered page on Duo's host — either a prompt genuinely
             // waiting for a human (the case this settles for) or, on a
@@ -512,20 +554,40 @@ final class CanvasSessionRenewer {
             return false
         }
 
+        let scriptResult = await withCheckedContinuation { (continuation: CheckedContinuation<Any?, Never>) in
+            webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { value, _ in
+                continuation.resume(returning: value)
+            }
+        }
+        switch PennKeyLoginForm.presence(from: scriptResult) {
+        case .noForm, .unknown:
+            // The IdP host, but NOT the credential form — the Duo hand-off
+            // page or the page Duo hands control back to, most likely (see
+            // this method's own doc comment). Keep waiting for a further
+            // hop or the hard timeout; the attempt counter and credential
+            // store are both untouched.
+            return false
+        case .form, .formError:
+            break
+        }
+
         if hasSubmittedCredentialsThisAttempt {
-            // Submitted once already this attempt, and the credential form
-            // is back — Shibboleth re-rendering its own login form is
-            // exactly what a wrong password looks like. Settle now; rule 1
-            // forbids a second submission regardless.
+            // The credential form is ACTUALLY present a second time after
+            // the one submission this attempt is allowed to make —
+            // Shibboleth re-rendering its own login form is exactly what a
+            // wrong password looks like. Settle now; rule 1 forbids a
+            // second submission regardless.
             return true
         }
 
         guard let credentials = autoLogin?() else {
             // No credentials to submit — either "stay signed in" is off, or
-            // `AppState.canAutoLogin` is currently false for some other
-            // reason (a prior rejection not yet cleared, credentials
-            // missing). Keep waiting; a login form that never advances
-            // times out silently via the 30s cap, same as always.
+            // `AppState.canAutoLoginSilently` is currently false for some
+            // other reason (a prior rejection or awaiting-Duo latch not yet
+            // cleared, credentials missing). Keep waiting; a login form that
+            // never advances times out silently via the 30s cap, same as
+            // always — byte-for-byte this class's behavior before
+            // `detectFormScript` existed.
             return false
         }
         guard Self.credentialSubmissionAllowed(lastSubmissionAt: lastCredentialSubmissionAt, now: Date()) else {
@@ -623,10 +685,13 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     /// does (submit the stored PennKey password into a freshly-seen login
     /// form, or recognize a Duo/rejected-login settle point) and why
     /// returning `false` here reproduces this class's original,
-    /// pre-"stay signed in" GET-only behavior exactly.
-    private let onNonCanvasFinish: (WKWebView) -> Bool
+    /// pre-"stay signed in" GET-only behavior exactly. `async` because
+    /// deciding requires an in-page `evaluateJavaScript` round trip
+    /// (`detectFormScript`) before this delegate can tell a real credential
+    /// form apart from a same-host, same-path Duo hand-off/return page.
+    private let onNonCanvasFinish: (WKWebView) async -> Bool
 
-    init(waiter: SettleWaiter, onNonCanvasFinish: @escaping (WKWebView) -> Bool) {
+    init(waiter: SettleWaiter, onNonCanvasFinish: @escaping (WKWebView) async -> Bool) {
         self.waiter = waiter
         self.onNonCanvasFinish = onNonCanvasFinish
     }
@@ -644,15 +709,28 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
         // as finished; everything else is handed to `onNonCanvasFinish`,
         // which recognizes the two OTHER settle-worthy landings this class
         // now knows about (Duo, and the login form after this attempt's own
-        // submission) and otherwise says "keep waiting" — a chain that truly
+        // submission — confirmed by actually querying the page, not just its
+        // URL) and otherwise says "keep waiting" — a chain that truly
         // dead-ends on some other page still settles via the hard timeout,
         // exactly as it always has.
+        //
+        // `onNonCanvasFinish` is `async`, and `didFinish` itself is a plain
+        // synchronous delegate callback, so the evaluation runs inside a
+        // `Task` — same `@MainActor`-bridge shape as the timeout `Task` in
+        // `performAttempt()`. `SettleWaiter.signal(_:)` is idempotent (only
+        // the FIRST call resumes anything), so it does not matter whether
+        // this `Task`, a later `didFinish` call, or the 30s timeout `Task`
+        // wins the race — whichever settles first is the only one that
+        // counts, and every later signal is a harmless no-op.
         if CanvasSessionRenewer.classifyFinalHost(webView.url?.host) == .canvas {
             waiter.signal(.finished)
             return
         }
-        if onNonCanvasFinish(webView) {
-            waiter.signal(.finished)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if await self.onNonCanvasFinish(webView) {
+                self.waiter.signal(.finished)
+            }
         }
     }
 

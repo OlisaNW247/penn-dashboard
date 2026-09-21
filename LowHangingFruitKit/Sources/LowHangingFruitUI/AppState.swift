@@ -1784,6 +1784,29 @@ final class AppState: ObservableObject {
         await performSilentCanvasRenewal()
     }
 
+    /// One of exactly four strings, matching `canAutoLoginSilently`'s own
+    /// four-way decision — used only to annotate
+    /// `simulateCanvasLogoutForTesting()`'s output with WHY the silent
+    /// renewer's `autoLogin` closure will or won't hand over the stored
+    /// password for this attempt, since "timedOut" alone gives no hint
+    /// whether that's because nothing was ever offered. Checked in the same
+    /// order `canAutoLoginSilently`/`canAutoLogin` are defined so this can
+    /// never disagree with what the real closure actually does.
+    private var credentialOfferDescriptionForTesting: String {
+        if canAutoLoginSilently { return "offered" }
+        if !stayLoggedInEnabled { return "not offered — toggle off" }
+        if autoLoginDisabledReason != nil { return "not offered — rejected" }
+        if autoLoginAwaitingDuo { return "not offered — awaiting duo" }
+        // Toggle on, no rejection, no Duo latch, yet `canAutoLoginSilently`
+        // is still false — only reachable if `PennKeyCredentialStore` has
+        // nothing on file despite the toggle being on, which
+        // `canAutoLogin`'s own doc comment already calls "a state that
+        // should never happen in practice." Folded into the same message as
+        // "toggle off" rather than inventing a fifth string for a case this
+        // button was never asked to distinguish.
+        return "not offered — toggle off"
+    }
+
     /// Owner-only "simulate canvas logout" (CLAUDE.md's "stay signed in"
     /// section) — the fastest way to exercise the whole silent-renewal path
     /// on a real phone without waiting a day for Canvas's cookie to actually
@@ -1843,7 +1866,29 @@ final class AppState: ObservableObject {
         canvasSessionRenewer?.resetThrottlesForTesting()
         refreshCanvasSessionExpiredState()
 
+        // Recorded BEFORE the attempt, matching what the renewer's own
+        // `autoLogin` closure will actually see/decide when it runs — the
+        // point of appending this to the message is to say WHY credentials
+        // were or weren't offered, and that answer has to reflect the state
+        // this attempt used, not whatever it happens to be by the time this
+        // string gets built (nothing here should change it, but recording
+        // it up front rather than after removes any doubt).
+        let credentialOfferNote = " (credentials: \(credentialOfferDescriptionForTesting))"
         let outcome = await attemptSilentCanvasRenewalForTesting()
+        // Host+path only, never the query string (which can carry live SAML
+        // request state) — see `CanvasSessionRenewer.lastSettledOrTimedOutURL`'s
+        // doc comment. Only appended for `.timedOut`/`.landedOnLoginPage`,
+        // the two outcomes that leave a real "where did it actually stop"
+        // question: `.renewed` succeeded, `.passwordRejected`/`.needsDuo`
+        // already name the page they landed on in their own fixed strings
+        // (and, structurally, only ever happen after credentials WERE
+        // offered — appending the credential note there would be
+        // redundant), and `.notAttempted`/`.abortedByLoginPane` never
+        // reached a page worth naming.
+        func lastPageNote() -> String {
+            guard let page = canvasSessionRenewer?.lastSettledOrTimedOutURL else { return "" }
+            return " — last page: \(page)"
+        }
         switch outcome {
         case .renewed:
             let cookiesAreBack = !SessionCookieStore.load(service: .canvas).isEmpty
@@ -1856,8 +1901,9 @@ final class AppState: ObservableObject {
             return "passwordRejected — penn refused the stored password"
         case .landedOnLoginPage:
             return "landedOnLoginPage — no credentials were used (is stay signed in on?)"
+                + lastPageNote() + credentialOfferNote
         case .timedOut:
-            return "timedOut"
+            return "timedOut" + lastPageNote() + credentialOfferNote
         case .abortedByLoginPane:
             return "notAttempted: the visible login pane was open"
         case .notAttempted(let reason):

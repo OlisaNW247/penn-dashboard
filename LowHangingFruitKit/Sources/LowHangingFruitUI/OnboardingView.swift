@@ -691,6 +691,20 @@ private struct CanvasLoginPane: View {
         // (`OnboardingView`'s `phase` switch), which `onDisappear` covers.
         .onAppear {
             state.isCanvasLoginPaneActive = true
+            // Belt-and-suspenders (2026-09-21 review): `navObserver` is a
+            // fresh `LoginNavigationObserver()` every time this pane gets a
+            // NEW identity in the view tree (each `restartOnboarding()` call
+            // swaps `RootView.mainContent`'s top-level branch from
+            // `ContentView` to a brand-new `OnboardingView`, and nothing in
+            // this file reuses the same pane instance across two separate
+            // login attempts today), so `autoLoginAttempts` already starts
+            // at 0 for every real attempt without this call. It's here
+            // anyway, cheap and idempotent on a fresh observer, in case that
+            // stops being true later — a stale attempt count of 1 carried
+            // over from a previous login would make the very FIRST real
+            // sighting of the credential form on a new attempt read as a
+            // rejection.
+            navObserver.reset()
             // "Stay signed in" visible-pane auto-fill (CLAUDE.md's "stay
             // signed in" entry). Handed to the observer only when
             // `AppState.canAutoLogin` says the feature is actually usable

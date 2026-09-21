@@ -83,6 +83,52 @@ public enum PennKeyLoginForm {
         return host == "canvas.upenn.edu" || host.hasSuffix(".canvas.upenn.edu")
     }
 
+    /// What `detectFormScript`'s evaluation resolved to — whether the
+    /// credential form is actually PRESENT on the current page, as opposed
+    /// to `isLoginForm(url)`'s cheap host+path pre-filter, which only says
+    /// the page COULD be on the IdP. See `detectFormScript`'s doc comment
+    /// for why the distinction matters.
+    public enum PagePresence: String, Sendable {
+        /// `input[name=j_password]` is on the page, with no visible error.
+        /// The first sighting this attempt: fill and submit. A second
+        /// sighting after a submission: the credential form re-rendered,
+        /// which is what a rejected password looks like even when Penn
+        /// doesn't manage to word the error the way `.formError` looks for.
+        case form
+        /// `input[name=j_password]` is on the page AND the page also shows
+        /// recognizable error text/styling. Treated identically to `.form`
+        /// by every caller (both mean "the credential form is here, decide
+        /// what to do with it") — kept as a separate case only so a caller
+        /// that wants the extra detail (a future diagnostics line, say) has
+        /// it, without those callers needing to special-case it today.
+        case formError = "form-error"
+        /// No `input[name=j_password]` anywhere on the page. This is the
+        /// case that matters most: Penn's flow renders MULTIPLE pages on
+        /// the IdP host under `/idp/` that are not the credential form at
+        /// all — the Duo hand-off page shown right after a correct password
+        /// (`execution=e1s2…`) and the page Duo returns control to before
+        /// its own auto-submitted POST back toward Canvas. `isLoginForm(url)`
+        /// alone cannot tell these apart from the real form (same host, same
+        /// `/idp/` path prefix), which is exactly what made a real Duo
+        /// hand-off/return page read as "the form loaded again ⇒ the
+        /// password was rejected" on a real device (2026-09-21) even though
+        /// the password was correct and Duo was mid-flight. `.noForm` means
+        /// "this isn't the form — keep going, don't touch the attempt
+        /// counter or the credential store."
+        case noForm = "no-form"
+        /// The evaluation result wasn't one of the three strings above —
+        /// treated exactly like `.noForm` by every caller: nothing to act
+        /// on, keep going.
+        case unknown
+    }
+
+    /// Maps `detectFormScript`'s raw `Any?` completion value to a
+    /// `PagePresence`, the same shape as `outcome(from:)` below.
+    public static func presence(from result: Any?) -> PagePresence {
+        guard let string = result as? String else { return .unknown }
+        return PagePresence(rawValue: string) ?? .unknown
+    }
+
     /// What `fillAndSubmitScript`'s evaluation resolved to.
     public enum Outcome: String, Sendable {
         /// The form was found, filled, and submitted for the first time this
@@ -132,6 +178,50 @@ public enum PennKeyLoginForm {
         }
         return literal
     }
+
+    /// Synchronous JS expression a caller evaluates on EVERY page load at an
+    /// IdP host (`isLoginForm(url)` true) BEFORE deciding anything —
+    /// specifically before treating a second sighting of "the IdP host" as
+    /// "the credential form came back, so the password was rejected."
+    ///
+    /// Real Shibboleth flows render more than one page under `/idp/` on the
+    /// same host: the credential form itself, a Duo hand-off page shown
+    /// immediately after a correct password is accepted (a real trace
+    /// showed `execution=e1s2…` there), and a page Duo hands control back to
+    /// before ITS OWN auto-submitted POST continues toward Canvas. All three
+    /// share the same host and the same `/idp/` path prefix, so
+    /// `isLoginForm(url)` — a cheap, URL-only pre-filter — cannot tell them
+    /// apart; only the page's actual DOM can. Confirmed as a real failure
+    /// mode on-device 2026-09-21: a correct password, Duo answered
+    /// successfully, and the reconnect banner STILL read "your stored
+    /// PennKey password didn't work," because the visible pane (and,
+    /// separately, a silent renewal attempt) read one of these
+    /// non-credential IdP pages as the form reappearing.
+    ///
+    /// This script answers exactly one question — does
+    /// `input[name="j_password"]` exist on the page right now — and, if so,
+    /// a second one purely for extra diagnostic color: does the page also
+    /// look like it's showing a credential error (visible text containing
+    /// "incorrect" or "invalid," or an element whose class contains "error"
+    /// or "alert"). Both `.form` and `.formError` mean the same thing to
+    /// every caller today ("the credential form is actually here — the
+    /// second sighting after a submission is the one that means
+    /// rejected"); `.formError` exists only so a future caller that wants
+    /// the extra color doesn't have to re-derive it.
+    public static let detectFormScript = """
+    (function() {
+      try {
+        if (!document.querySelector('input[name="j_password"]')) { return "no-form"; }
+        var bodyText = (document.body && (document.body.innerText || document.body.textContent)) || "";
+        var lower = bodyText.toLowerCase();
+        var hasErrorText = lower.indexOf("incorrect") !== -1 || lower.indexOf("invalid") !== -1;
+        var hasErrorElement = !!document.querySelector('[class*="error"], [class*="alert"]');
+        return (hasErrorText || hasErrorElement) ? "form-error" : "form";
+      } catch (e) {
+        return "no-form";
+      }
+    })();
+    """
 
     /// Builds the script a caller hands to `WKWebView.evaluateJavaScript` to
     /// fill and submit Penn's PennKey credential form.
