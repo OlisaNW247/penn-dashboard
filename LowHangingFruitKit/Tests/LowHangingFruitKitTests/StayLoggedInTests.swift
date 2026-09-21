@@ -34,7 +34,16 @@ struct StayLoggedInTests {
     private static let reasonKey = "autoLoginDisabledReasonV1"
     private static let awaitingDuoKey = "autoLoginAwaitingDuoV1"
     private static let offeredKey = "hasOfferedStayLoggedInV1"
-    private static let touchedKeys = [enabledKey, reasonKey, awaitingDuoKey, offeredKey]
+    /// Not a stay-signed-in key, but written by this suite all the same:
+    /// `noteRenewalOutcomeForTesting(.needsDuo)` goes through the real
+    /// `applyRenewalOutcome`, which persists the sticky confirmed-dead flag.
+    /// Left out of this list, that `true` outlived the run on disk and made
+    /// `SessionCookieStoreTests`' calendar-link-only case fail IN ISOLATION
+    /// on a real Mac (2026-09-21) -- a suite that CLAUDE.md records as
+    /// passing alone every time. The fix belongs here, in the polluting
+    /// suite, not in that assertion.
+    private static let confirmedDeadKey = "canvasSessionConfirmedDeadV1"
+    private static let touchedKeys = [enabledKey, reasonKey, awaitingDuoKey, offeredKey, confirmedDeadKey]
 
     /// Mirrors `CloudSyncToggleTests.withCleanFlag` / `AnnouncementWatcherWiringTests
     /// .withRestoredDefaults`: snapshot, run `body`, put everything back
