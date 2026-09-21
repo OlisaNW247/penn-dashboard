@@ -554,9 +554,14 @@ final class CanvasSessionRenewer {
             return false
         }
 
-        let scriptResult = await withCheckedContinuation { (continuation: CheckedContinuation<Any?, Never>) in
+        // The script returns a short string; narrow WebKit's `Any?` to
+        // `String?` INSIDE the completion handler, before it crosses the
+        // continuation. `Any?` is not `Sendable`, and the first Mac compile
+        // of this code stopped exactly here with "sending 'value' risks
+        // causing data races". A `String?` is `Sendable`, so it may cross.
+        let scriptResult = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { value, _ in
-                continuation.resume(returning: value)
+                continuation.resume(returning: value as? String)
             }
         }
         switch PennKeyLoginForm.presence(from: scriptResult) {
