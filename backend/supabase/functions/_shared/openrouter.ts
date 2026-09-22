@@ -36,10 +36,24 @@ export class UpstreamError extends Error {
 }
 
 /** The three event shapes a streaming completion can produce, reduced from
- *  OpenRouter's full per-chunk JSON to only what `ask/index.ts` acts on. */
+ *  OpenRouter's full per-chunk JSON to only what `ask/index.ts` acts on.
+ *  `reasoningTokens` on the `usage` event is only present at all when
+ *  OpenRouter's own chunk carried `usage.completion_tokens_details
+ *  .reasoning_tokens` -- omitted, not zero, when the field wasn't there,
+ *  so a caller can tell "no reasoning happened" apart from "this response
+ *  didn't report reasoning token counts at all" (some providers behind
+ *  OpenRouter don't). This is what lets `ask/index.ts` record how much of
+ *  a thinking model's output cap went to hidden reasoning versus visible
+ *  content -- the exact split the 2026-09-14 incident had no record of. */
 export type StreamEvent =
   | { type: "delta"; text: string }
-  | { type: "usage"; promptTokens: number; completionTokens: number; cachedTokens: number }
+  | {
+    type: "usage";
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
+    reasoningTokens?: number;
+  }
   | { type: "done" };
 
 export interface ChatCompletionStreamOptions {
@@ -54,12 +68,25 @@ export interface ChatCompletionStreamOptions {
   maxTokens: number;
   temperature?: number;
   /** OpenRouter's unified reasoning control -- forwarded verbatim as the
-   *  request body's `reasoning` field when present. `ask/index.ts` passes
-   *  `{ enabled: false }`; see the comment on `buildRequestBody` for why.
-   *  Omitted entirely (not just left `undefined` inside an object) when the
-   *  caller doesn't set it, which is what keeps the extract functions'
-   *  request body byte-for-byte unchanged. */
-  reasoning?: { enabled: boolean };
+   *  request body's `reasoning` field when present. Untyped past `unknown`
+   *  because the shape OpenRouter (or the provider behind it) will actually
+   *  accept is not yet known -- `{ enabled: false }` was rejected with a
+   *  400 on its first live call (see the comment on `buildRequestBody`) --
+   *  and `ask-canary` exists specifically to let a harness try other
+   *  shapes without a code change here every time. Omitted entirely (not
+   *  just left `undefined` inside an object) when the caller doesn't set
+   *  it, which is what keeps the extract functions' request body
+   *  byte-for-byte unchanged. */
+  reasoning?: unknown;
+  /** Forwarded verbatim as the request body's `provider` field, *replacing*
+   *  the `data_collection`/`allow_fallbacks`/`order` object `provider`
+   *  above would otherwise build, rather than merging with it -- only
+   *  `ask-canary` ever sets this, to let a harness try a different
+   *  provider routing shape against the identical prompt/model/messages
+   *  production `ask` would send. `undefined` (the default) leaves
+   *  `provider` built from `provider`/`ProviderPreferences` exactly as
+   *  before this field existed. */
+  providerOverride?: unknown;
   signal?: AbortSignal;
 }
 
@@ -94,6 +121,7 @@ export async function* chatCompletionStream(
     provider: options.provider,
     stream: true,
     reasoning: options.reasoning,
+    providerOverride: options.providerOverride,
   });
 
   const response = await requestWithFallback(
@@ -160,7 +188,8 @@ interface BuildRequestBodyOptions {
   provider?: ProviderPreferences;
   stream: boolean;
   responseFormat?: { type: string };
-  reasoning?: { enabled: boolean };
+  reasoning?: unknown;
+  providerOverride?: unknown;
 }
 
 /**
@@ -181,15 +210,26 @@ interface BuildRequestBodyOptions {
  * long enough prompt still exhausts it.
  */
 function buildRequestBody(options: BuildRequestBodyOptions): Record<string, unknown> {
-  const provider: Record<string, unknown> = {
-    data_collection: "deny",
-    allow_fallbacks: true,
-  };
-  // Only present when the caller actually configured an order -- an empty
-  // `order: []` is a different, and more restrictive, instruction to
-  // OpenRouter than simply not mentioning the field at all.
-  if (options.provider?.order && options.provider.order.length > 0) {
-    provider.order = options.provider.order;
+  // `providerOverride` (only ever set by `ask-canary`) replaces this whole
+  // computed object rather than merging with it -- a harness trying a
+  // different provider-routing shape wants exactly what it asked for, not
+  // that shape merged with defaults it may be specifically trying to rule
+  // out.
+  let provider: unknown;
+  if (options.providerOverride !== undefined) {
+    provider = options.providerOverride;
+  } else {
+    const computedProvider: Record<string, unknown> = {
+      data_collection: "deny",
+      allow_fallbacks: true,
+    };
+    // Only present when the caller actually configured an order -- an empty
+    // `order: []` is a different, and more restrictive, instruction to
+    // OpenRouter than simply not mentioning the field at all.
+    if (options.provider?.order && options.provider.order.length > 0) {
+      computedProvider.order = options.provider.order;
+    }
+    provider = computedProvider;
   }
 
   const body: Record<string, unknown> = {
@@ -211,8 +251,10 @@ function buildRequestBody(options: BuildRequestBodyOptions): Record<string, unkn
   if (options.responseFormat) {
     body.response_format = options.responseFormat;
   }
-  if (options.reasoning) {
-    body.reasoning = { enabled: options.reasoning.enabled };
+  if (options.reasoning !== undefined) {
+    // Forwarded verbatim -- see `ChatCompletionStreamOptions.reasoning`'s
+    // doc comment for why this is no longer typed as `{ enabled: boolean }`.
+    body.reasoning = options.reasoning;
   }
   return body;
 }
@@ -360,6 +402,12 @@ interface OpenRouterStreamChunk {
     prompt_tokens?: number;
     completion_tokens?: number;
     prompt_tokens_details?: { cached_tokens?: number };
+    /** Present on at least some OpenRouter providers/models (the thinking
+     *  models this file's other comments are all about) when a completion
+     *  spent output tokens on hidden reasoning -- see `StreamEvent`'s doc
+     *  comment above for why this only becomes a `reasoningTokens` field
+     *  on the yielded event when the source chunk actually carried it. */
+    completion_tokens_details?: { reasoning_tokens?: number };
   };
 }
 
@@ -418,11 +466,24 @@ async function* parseSSEStream(
         }
 
         if (chunk.usage) {
+          const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
+          // The conditional spread is what keeps `reasoningTokens` off the
+          // event entirely (not present as a key at all, not present-but-
+          // `undefined`) when the source chunk didn't carry it -- see
+          // `StreamEvent`'s doc comment on why "no reasoning" and "not
+          // reported" must stay distinguishable, and why this keeps the
+          // existing `openrouter.test.ts` assertions (which `deepEqual` a
+          // `usage` event against an object with no `reasoningTokens` key
+          // at all) unaffected. Building this as one literal, rather than a
+          // `let` variable mutated afterward, is also what lets it type-
+          // check against the `StreamEvent` union without a discriminant
+          // narrowing step this generator has no other reason to do.
           yield {
             type: "usage",
             promptTokens: chunk.usage.prompt_tokens ?? 0,
             completionTokens: chunk.usage.completion_tokens ?? 0,
             cachedTokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
+            ...(typeof reasoningTokens === "number" ? { reasoningTokens } : {}),
           };
         }
       }

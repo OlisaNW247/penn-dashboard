@@ -9,7 +9,17 @@
 // Nothing here ever logs the question, the context document, the excerpts,
 // or the model's answer -- only status codes and token counts, per the
 // module's brief and the same discipline `ClaudeAssistantResponder` already
-// holds itself to on the iOS side for exactly the same data.
+// holds itself to on the iOS side for exactly the same data. The
+// `ask_outcomes` row this file now writes on every path holds the same
+// discipline: `detail` is an error class/message, capped, never the
+// question or the answer (`_shared/outcomes.ts` enforces the cap itself,
+// belt-and-braces, rather than trusting every call site here to remember).
+//
+// The body of the handler is `handleAsk`, exported so `ask-canary/index.ts`
+// can serve the identical logic with `allowProbeOverrides: true` -- a
+// canary result is only useful if it predicts production, which means it
+// has to run through the exact same prompt-building, quota, and streaming
+// code, not a parallel reimplementation that could drift.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
@@ -19,6 +29,8 @@ import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from ".
 import { activityForSection, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
 import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
+import { applyContextTrim, extractProbeOverrides, readProbeTag } from "../_shared/probe.ts";
+import { classifyStreamOutcome, recordOutcome } from "../_shared/outcomes.ts";
 
 interface AskRequestBody {
   question: string;
@@ -63,28 +75,110 @@ function parseAskRequestBody(value: unknown): AskRequestBody | undefined {
 const MAX_TOKENS = 3000;
 const TEMPERATURE = 0.2;
 
-Deno.serve(async (req) => {
+/** Supabase Edge Runtime's background-task API: registering a promise here
+ *  tells the runtime to keep this isolate alive until the promise settles,
+ *  independent of whether the HTTP response has already finished streaming
+ *  to the client. Not part of the `Deno` namespace, so it isn't in the
+ *  standard type definitions this project checks against -- declared
+ *  ambiently here rather than pulled from a types package that may not
+ *  exist for it. See `scheduleBackground`'s comment for why this matters
+ *  and what the wrong fix looked like. */
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
+
+/**
+ * Fires `promise` without making the caller wait for it, registering it
+ * with `EdgeRuntime.waitUntil` when that's available so the isolate isn't
+ * torn down before it settles. This is the fix for a real bug: the
+ * previous version of this file `await`ed `recordUsage` *after*
+ * `yield done`, on the theory that the SSE response had already fully
+ * reached the client by then, so a slow write only delayed closing the
+ * stream. That reasoning doesn't hold on Supabase's Edge Runtime
+ * specifically -- once `_shared/sse.ts`'s `streamResponse` has nothing left
+ * to pull from this generator, the client can finish reading and the
+ * runtime is free to tear the isolate down, and there is no guarantee an
+ * `await` sitting after the generator's last `yield` gets to run before
+ * that happens. `EdgeRuntime.waitUntil` is Supabase's answer to exactly
+ * this. `recordUsage`/`recordOutcome` never throw (both hold themselves to
+ * the same fail-open discipline PROTOCOL.md's quota section describes), so
+ * there's nothing to catch here; the fallback branch (no `EdgeRuntime`, in
+ * a local `supabase functions serve` or any future runtime that doesn't
+ * provide it) is still correct because calling an async function already
+ * starts it running -- `scheduleBackground` not registering it with
+ * anything just means there's no isolate-lifetime guarantee beyond
+ * whatever the surrounding process already gives every other in-flight
+ * promise.
+ */
+function scheduleBackground(promise: Promise<unknown>): void {
+  if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
+    EdgeRuntime.waitUntil(promise);
+  }
+}
+
+export async function handleAsk(
+  req: Request,
+  options: { allowProbeOverrides: boolean },
+): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startedAt = Date.now();
+  // Independent of `allowProbeOverrides`: tagging an outcome row doesn't
+  // change how the request is served, so production `ask` honors it too --
+  // a harness pointed at production (rather than `ask-canary`) can still
+  // mark its own traffic. See `_shared/probe.ts`'s doc comment.
+  const probeTag = readProbeTag(req);
 
   try {
     const { userId, serviceClient } = await requireUser(req);
     const rawBody = await readJSON<unknown>(req);
     const body = parseAskRequestBody(rawBody);
+
+    // Only ever non-`undefined` when `options.allowProbeOverrides` is true
+    // (i.e. this is `ask-canary`, never production `ask`) -- see
+    // `_shared/probe.ts`'s `extractProbeOverrides`.
+    const probeOverrides = extractProbeOverrides(rawBody, options.allowProbeOverrides);
+    const model = probeOverrides?.model ?? Deno.env.get("LHF_MODEL") ?? "z-ai/glm-5.3-flash";
+    const fallbackModel = Deno.env.get("LHF_FALLBACK_MODEL") ?? "openai/gpt-5.6-luna";
+
     if (!body) {
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model,
+        outcome: "client_error",
+        detail: "malformed ask request",
+        latencyMs: Date.now() - startedAt,
+        probe: probeTag,
+      }));
       return errorResponse("bad_request", "malformed ask request", 400);
     }
 
     const quotaResponse = await checkAskQuota(serviceClient, userId);
-    if (quotaResponse) return quotaResponse;
+    if (quotaResponse) {
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model,
+        outcome: "quota",
+        latencyMs: Date.now() - startedAt,
+        probe: probeTag,
+      }));
+      return quotaResponse;
+    }
 
     const enrolledIDs = await loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
     const profiles = await loadCourseProfiles(serviceClient, enrolledIDs);
     const catalog = await loadCatalogCourses(serviceClient, enrolledIDs);
 
+    // `contextTrimChars` is the one override that lets a canary harness
+    // reproduce the 2026-09-14 "reasoning ate the whole cap" shape at a
+    // prompt size it picks, without needing a real 14.5k-token syllabus
+    // fixture lying around. A no-op (returns `contextDocument` unchanged)
+    // whenever the probe didn't ask for it, including in production, where
+    // `probeOverrides` itself is always `undefined`.
+    const contextDocument = applyContextTrim(body.contextDocument, probeOverrides?.contextTrimChars);
+
     const messages = buildMessages({
-      contextDocument: body.contextDocument,
+      contextDocument,
       catalog,
       profiles,
       history: body.history,
@@ -93,11 +187,17 @@ Deno.serve(async (req) => {
       askedAt: body.askedAt,
     });
 
-    const model = Deno.env.get("LHF_MODEL") ?? "z-ai/glm-5.3-flash";
-    const fallbackModel = Deno.env.get("LHF_FALLBACK_MODEL") ?? "openai/gpt-5.6-luna";
     const apiKey = Deno.env.get("OPENROUTER_API_KEY");
     if (!apiKey) {
       console.error("ask: OPENROUTER_API_KEY is not configured");
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model,
+        outcome: "upstream_error",
+        detail: "OPENROUTER_API_KEY is not configured",
+        latencyMs: Date.now() - startedAt,
+        probe: probeTag,
+      }));
       return errorResponse("upstream", "model backend is not configured", 502);
     }
 
@@ -108,8 +208,9 @@ Deno.serve(async (req) => {
       fallbackModel,
       messages,
       provider: providerFromEnv(),
-      maxTokens: MAX_TOKENS,
-      temperature: TEMPERATURE,
+      providerOverride: probeOverrides?.provider,
+      maxTokens: probeOverrides?.maxTokens ?? MAX_TOKENS,
+      temperature: probeOverrides?.temperature ?? TEMPERATURE,
       // `ask` answers from the context document and excerpts it was already
       // handed, not by reasoning the problem out -- and `model` is a
       // thinking model that otherwise spends output tokens on hidden
@@ -118,15 +219,19 @@ Deno.serve(async (req) => {
       // `max_tokens` cap and answered with nothing. The fix that shipped
       // the same day, `reasoning: { enabled: false }`, was rejected by
       // OpenRouter (or the provider behind it) with a 400 on the very
-      // first live call, so `reasoning` is not set here -- see
+      // first live call, so production `ask` still leaves `reasoning`
+      // unset here (`probeOverrides` is always `undefined` in production,
+      // so this is always `undefined` too) -- see
       // `_shared/openrouter.ts`'s `ChatCompletionStreamOptions.reasoning`
-      // and `buildRequestBody`, which still support the field and are
-      // still covered by tests, for when the rejection text (now captured
-      // by `requestWithFallback`/`readErrorBody`) says what shape the
-      // model will actually accept. Raising `MAX_TOKENS` to 3000 here is
-      // the interim measure so a prompt that reasons *and* answers has
-      // room for both; turning reasoning off again, once it can be done
-      // without a 400, is the intended end state, not this cap.
+      // and `buildRequestBody`, which forward whatever shape is given
+      // verbatim now, for `ask-canary` to try other shapes against without
+      // a code change here. Raising `MAX_TOKENS` to 3000 here is the
+      // interim measure so a prompt that reasons *and* answers has room
+      // for both; turning reasoning off again, once a shape is found that
+      // OpenRouter accepts, is the intended end state, not this cap --
+      // `ask_outcomes.reasoning_tokens` (recorded below) is what will show
+      // when that's actually needed anymore.
+      reasoning: probeOverrides?.reasoning,
     });
     const iterator = upstream[Symbol.asyncIterator]();
 
@@ -142,10 +247,23 @@ Deno.serve(async (req) => {
       first = await iterator.next();
     } catch (err) {
       logUpstreamFailure("before first chunk", err);
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model,
+        outcome: "upstream_error",
+        upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
+        detail: describeUpstreamError(err),
+        latencyMs: Date.now() - startedAt,
+        probe: probeTag,
+      }));
       return errorResponse("upstream", "the model backend failed", 502);
     }
 
-    return streamResponse(runAskStream(iterator, first, serviceClient, userId));
+    return streamResponse(runAskStream(iterator, first, serviceClient, userId, {
+      model,
+      startedAt,
+      probe: probeTag,
+    }));
   } catch (err) {
     if (err instanceof HttpError) {
       return errorResponse("unauthorized", err.message, err.status);
@@ -153,7 +271,22 @@ Deno.serve(async (req) => {
     console.error("ask: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);
   }
-});
+}
+
+// Guarded by `import.meta.main` rather than called unconditionally: this
+// file is also *imported* (for `handleAsk`) by `ask-canary/index.ts`, and
+// an unconditional `Deno.serve` call here would then run a second time
+// inside the canary function's own isolate the moment that import
+// executes -- two `Deno.serve()` calls with no explicit port both try to
+// bind the same default address, and the second one fails outright. Real
+// deployed `ask` (where this file *is* the entrypoint the runtime
+// executes directly) still calls this exactly as before -- `import.meta
+// .main` is `true` there and only there, so production behavior is
+// unchanged; the canary's own `Deno.serve` call in its own `index.ts` is
+// what actually serves that function.
+if (import.meta.main) {
+  Deno.serve((req) => handleAsk(req, { allowProbeOverrides: false }));
+}
 
 async function checkAskQuota(
   serviceClient: SupabaseClient,
@@ -319,6 +452,18 @@ function logUpstreamFailure(when: string, err: unknown): void {
   }
 }
 
+/** `err.message` when it's an `UpstreamError` (which already carries
+ *  OpenRouter's own rejection body, capped to 400 characters by
+ *  `_shared/openrouter.ts`'s `readErrorBody`), otherwise any other
+ *  `Error`'s message, otherwise its string form -- the same fallback chain
+ *  `loadCatalogCourses`/`loadCourseProfiles` already use for an unknown
+ *  thrown value. Feeds `ask_outcomes.detail`, which caps it again to 200
+ *  characters (`_shared/outcomes.ts`), so this never needs to know that
+ *  limit itself. */
+function describeUpstreamError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * The actual SSE body. Takes the already-fetched `first` result so the
  * caller above can inspect it (to decide 502-vs-stream) without this
@@ -329,28 +474,53 @@ async function* runAskStream(
   first: IteratorResult<StreamEvent>,
   serviceClient: SupabaseClient,
   userId: string,
+  telemetry: { model: string; startedAt: number; probe: string | null },
 ): AsyncGenerator<SSEEvent> {
   let promptTokens = 0;
   let completionTokens = 0;
   let cachedTokens = 0;
+  let reasoningTokens: number | undefined;
   let deltaCount = 0;
+  let contentChars = 0;
+  let firstDeltaMs: number | undefined;
   let current = first;
 
   try {
     while (!current.done) {
       const event = current.value;
       if (event.type === "delta") {
+        if (deltaCount === 0) {
+          firstDeltaMs = Date.now() - telemetry.startedAt;
+        }
         deltaCount += 1;
+        contentChars += event.text.length;
         yield { type: "delta", text: event.text };
       } else if (event.type === "usage") {
         promptTokens = event.promptTokens;
         completionTokens = event.completionTokens;
         cachedTokens = event.cachedTokens;
+        reasoningTokens = event.reasoningTokens;
       }
       current = await iterator.next();
     }
   } catch (err) {
     logUpstreamFailure("mid-stream", err);
+    scheduleBackground(recordOutcome(serviceClient, {
+      userId,
+      model: telemetry.model,
+      outcome: "upstream_error",
+      promptTokens,
+      completionTokens,
+      reasoningTokens,
+      cachedTokens,
+      contentChars,
+      deltaCount,
+      latencyMs: Date.now() - telemetry.startedAt,
+      firstDeltaMs,
+      upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
+      detail: describeUpstreamError(err),
+      probe: telemetry.probe,
+    }));
     yield { type: "error", code: "upstream", message: "the model backend failed" };
     return;
   }
@@ -361,19 +531,43 @@ async function* runAskStream(
   // `MAX_TOKENS` on reasoning alone -- this is the exact shape of the
   // 2026-09-14 incident, and worth knowing about the next time it
   // happens, rather than the student's empty answer being the only trace.
+  // It now also lands as an `empty` row in `ask_outcomes` below, so this
+  // log line is a live tail's warning, not the only record.
   if (deltaCount === 0) {
     console.warn(`ask: stream ended with no text; completion tokens ${completionTokens}`);
   }
 
-  yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
+  const outcome = classifyStreamOutcome({ contentChars, streamFailed: false });
+  const latencyMs = Date.now() - telemetry.startedAt;
 
-  // Recorded after the stream has already fully reached the student, and a
-  // failure to record is only ever logged, never surfaced -- the answer
-  // was already delivered and can't be un-sent, so the worst case here is
-  // one under-counted request against the quota, not a broken response.
-  // `recordUsage` carries its own deadline: this call runs inside the SSE
-  // generator's `for await` loop, so an unbounded stall here would hold
-  // the client's connection open long after the last byte it will ever
-  // receive has already gone out.
-  await recordUsage(serviceClient, userId, promptTokens, completionTokens);
+  // Scheduled as background work via `scheduleBackground`, and `done` is
+  // yielded *after* both calls are made -- not after either has settled.
+  // The previous version of this file `await`ed `recordUsage` after
+  // `yield done`; see `scheduleBackground`'s doc comment above for why
+  // that was the actual bug (Supabase's Edge Runtime is free to tear this
+  // isolate down as soon as the client has read everything this generator
+  // is ever going to produce, which can be before an `await` placed after
+  // the last `yield` ever runs) and why `EdgeRuntime.waitUntil` -- not
+  // simply moving these two calls earlier and awaiting them before
+  // `yield done` -- is the fix: awaiting them here would delay the
+  // student's `done` event, and therefore their answer finishing render,
+  // by however long two RPC round-trips take, for telemetry they get
+  // nothing from.
+  scheduleBackground(recordUsage(serviceClient, userId, promptTokens, completionTokens));
+  scheduleBackground(recordOutcome(serviceClient, {
+    userId,
+    model: telemetry.model,
+    outcome,
+    promptTokens,
+    completionTokens,
+    reasoningTokens,
+    cachedTokens,
+    contentChars,
+    deltaCount,
+    latencyMs,
+    firstDeltaMs,
+    probe: telemetry.probe,
+  }));
+
+  yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
 }

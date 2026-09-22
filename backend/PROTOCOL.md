@@ -180,6 +180,13 @@ Request:
   "history": [ { "role": "user" | "assistant", "content": string } ] } -- may be []
 ```
 
+A request may also carry an optional `x-lhf-probe` request header (at most
+40 characters, `[A-Za-z0-9-]` only) to tag the `ask_outcomes` row this
+request produces as belonging to a specific harness run rather than a real
+student's question -- honored by both `ask` and `ask-canary`, since tagging
+a row doesn't change how the request is served. A malformed or missing
+header just leaves the row untagged.
+
 Response is `text/event-stream`. Every event is one `data:` line of JSON:
 
 ```
@@ -230,6 +237,70 @@ timeout — about 5 s in front of PostgREST — during a stall of that hop
 (`ask: ask_usage_counts failed Gateway Timeout` in the function log; the
 logs showed Postgres idle and the RPC never slower than 23 ms), even
 though the RPC itself is two trivial lookups on a tiny table.
+
+**Outcome telemetry.** Every call to `ask` (and `ask-canary`, below) writes
+one `ask_outcomes` row via `record_ask_outcome`, classified as `answered`
+(any `delta` text reached the student), `empty` (the stream ended clean
+with zero characters -- the 2026-09-14 "reasoning ate the whole output cap"
+shape this table exists to catch happening again, unnoticed, a second
+time), `upstream_error` (the model backend failed, before or during
+streaming), `quota` (the 429 path) or `client_error` (a malformed request
+body); `timeout` is reserved in the schema for a future caller (such as a
+canary harness's own client-side deadline) and nothing in `ask/index.ts`
+produces it today. The row carries the model, token counts (including
+`reasoning_tokens` when OpenRouter's response reports one), content-length
+and delta-count counters, latency, and -- for a failure -- the upstream
+status and a capped error message, but never the question, the context
+document, the excerpts or the answer; `probe` carries the `x-lhf-probe` tag
+above, or is `null` for an ordinary request. Both this write and
+`record_ask_usage` are scheduled via Supabase Edge Runtime's
+`EdgeRuntime.waitUntil` rather than awaited before the SSE stream's `done`
+event is yielded (the SSE stream itself is always yielded last): awaiting
+either one first would hold up the student's answer for a database
+round-trip that has nothing to do with it, and the earlier code, which
+awaited `record_ask_usage` *after* `yield done`, had it backwards in the
+other direction -- on Supabase's Edge Runtime the isolate can be torn down
+as soon as the client has read the last SSE event, before an `await` placed
+after that generator's last `yield` is guaranteed to run at all,
+under-counting usage in a way nothing surfaced. `ask_outcomes` is written
+alongside `ask_usage` for exactly the same reason and the same fix applies
+to both. This table has no read policy for `anon`/`authenticated` at all
+(see `20260922090000_ask_outcomes.sql`) -- it is a system diagnostic, not
+something a student's own client ever reads back.
+
+## `ask-canary`
+
+A harness-only twin of `ask` (`ask-canary/index.ts`), serving the exact same
+`handleAsk` logic (`ask/index.ts`) with one difference: an optional
+`probe` object in the request body is honored, letting a harness try a
+different model, token cap, reasoning shape, provider order, or a
+truncated context document against the identical prompt-building and
+streaming code production `ask` runs, so a canary result actually predicts
+production instead of exercising a parallel implementation that could
+drift from it.
+
+```
+{ ...the same "ask" request body...,
+  "probe"?: { "model"?: string, "maxTokens"?: number, "reasoning"?: any,
+              "temperature"?: number, "provider"?: any,
+              "contextTrimChars"?: number } }
+```
+
+`model`, `maxTokens` and `temperature` replace `ask`'s own constants for
+this call only. `reasoning` and `provider` are forwarded verbatim as
+OpenRouter's `reasoning`/`provider` request fields respectively -- `provider`
+*replaces* the `data_collection`/`allow_fallbacks`/`order` object `ask`
+would otherwise send, rather than merging with it. `contextTrimChars`
+truncates `contextDocument` to that many characters before the prompt is
+built, which is what lets a harness reproduce the 2026-09-14 "reasoning ate
+the whole output cap" failure at a chosen prompt size without a real
+14.5k-token syllabus fixture on hand. A `probe` field sent to production
+`ask` (rather than `ask-canary`) is silently ignored, never a 400 -- a
+client that happens to send one, or a future harness pointed at the wrong
+URL, isn't punished for it. This function still enforces the same quota and
+still writes `ask_outcomes` rows (tag a run with the `x-lhf-probe` header
+above to tell it apart from real traffic); it is an overridable door, not
+an unmetered one.
 
 ## Catalog
 
