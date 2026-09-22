@@ -207,15 +207,51 @@ keyed by site label (see "Catalog" below), for `courseIDs` → history → user
 turn `Current date: …\n\n{excerpts}\n\nQUESTION: {question}`.
 
 `ask` answers from the context and excerpts it was already handed, not by
-reasoning the problem out, and the default model is a thinking model that
-otherwise spends output tokens on hidden reasoning before emitting any
-answer text at all on a large enough prompt. The intended fix is
-OpenRouter's `reasoning: { enabled: false }` switch, but the first live
-call after turning it on was rejected with a 400 from OpenRouter (or the
-provider behind it) — the shape it wants is not yet known. Reasoning
-control is pending that; in the meantime the output cap (`MAX_TOKENS`) is
-3000, raised from 1200, so a prompt that reasons and then answers has room
-for both.
+reasoning the problem out. The default model was `z-ai/glm-5.3-flash`, a
+thinking model that, with `reasoning` left unset, spends output tokens on
+hidden reasoning before emitting any answer text at all on a large enough
+prompt — the 2026-09-14 incident below. `reasoning: { effort: "low" }`
+(OpenRouter's `{ enabled: false }` is rejected with a 400 by this model;
+`effort: "low"` is accepted) cut that model's reasoning spend from ~300
+tokens to ~6, but 2026-09-22 canary runs against the live function found it
+does not fix the model's real failure mode: 30 timed probes still saw 12
+take over 8s to first delta and one take 66s, several of them with *zero*
+reported reasoning tokens — the tail is provider time-to-first-token, not
+thinking, and no `reasoning` setting touches a queueing delay on
+OpenRouter's or the provider's side.
+
+**The primary model and the hedge.** The default primary model is now
+`openai/gpt-4.1-mini` (`LHF_MODEL` still overrides it) — not a thinking
+model, no `reasoning` field on its request at all, and 10/10 canary probes
+answered correctly about dates between 1.9s and 3.0s to first delta. The
+default fallback model is `z-ai/glm-5.3-flash` (`LHF_ASK_FALLBACK_MODEL`
+overrides it), with `reasoning: { effort: "low" }` (`_shared/fallback.ts`'s
+`reasoningFor`, applied to any model whose id starts with `z-ai/`,
+primary or fallback). Rather than waiting the primary out and only then
+trying the fallback, `ask` hedges: if the primary hasn't produced a content
+delta within `HEDGE_AFTER_MS` (5s), the fallback is started *concurrently*,
+and whichever model produces the first content delta wins — the other is
+aborted immediately, and once either has produced content the race is over
+for good (no switching mid-answer). A primary that fails outright or
+exhausts its whole stream with zero content *before* the hedge would even
+fire skips straight to the fallback alone, sequentially, since there is
+nothing left to race. Either way this all happens before the SSE response
+is ever committed to the client — a 502 is still only possible if *both*
+models come up with nothing. The whole race (primary alone, or primary and
+fallback together) is bounded by `TOTAL_BUDGET_MS` (45s, well inside the
+phone's own 60s `URLSession` timeout); once a winner is streaming, there is
+no further time limit here. `MAX_TOKENS` stays 3000, raised from the
+original 1200, so an answer with low- or no-effort reasoning has headroom
+to spare. Models tried and rejected along the way on correctness rather
+than latency: Gemini Flash/Flash-Lite, `glm-4.5-air` and `deepseek-v3.1`
+answered fast but got a plain "what's due tomorrow?" wrong.
+
+`ask_outcomes.detail` records which of these happened: absent for the
+ordinary case (the primary answered on its own), `"hedged at <ms>ms; winner
+<model>"` when the race was actually run, and `"fallback from <primary>
+after <empty|upstream_error>"` when the fallback ran alone because the
+primary never made it to the hedge. `ask_outcomes.model` is whichever model
+actually produced the streamed answer, not necessarily the primary.
 
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month
@@ -283,23 +319,34 @@ drift from it.
 { ...the same "ask" request body...,
   "probe"?: { "model"?: string, "maxTokens"?: number, "reasoning"?: any,
               "temperature"?: number, "provider"?: any,
-              "contextTrimChars"?: number } }
+              "contextTrimChars"?: number, "fallbackModel"?: string,
+              "disableFallback"?: boolean, "hedgeAfterMs"?: number } }
 ```
 
 `model`, `maxTokens` and `temperature` replace `ask`'s own constants for
 this call only. `reasoning` and `provider` are forwarded verbatim as
 OpenRouter's `reasoning`/`provider` request fields respectively -- `provider`
 *replaces* the `data_collection`/`allow_fallbacks`/`order` object `ask`
-would otherwise send, rather than merging with it. `contextTrimChars`
-truncates `contextDocument` to that many characters before the prompt is
-built, which is what lets a harness reproduce the 2026-09-14 "reasoning ate
-the whole output cap" failure at a chosen prompt size without a real
-14.5k-token syllabus fixture on hand. A `probe` field sent to production
-`ask` (rather than `ask-canary`) is silently ignored, never a 400 -- a
-client that happens to send one, or a future harness pointed at the wrong
-URL, isn't punished for it. This function still enforces the same quota and
-still writes `ask_outcomes` rows (tag a run with the `x-lhf-probe` header
-above to tell it apart from real traffic); it is an overridable door, not
+would otherwise send, rather than merging with it; `reasoning` overrides
+only the *primary* candidate's reasoning shape (the fallback candidate
+always gets `reasoningFor`'s automatic choice -- point `model`, not
+`fallbackModel`, at it to probe its own reasoning shape instead).
+`contextTrimChars` truncates `contextDocument` to that many characters
+before the prompt is built, which is what lets a harness reproduce the
+2026-09-14 "reasoning ate the whole output cap" failure at a chosen prompt
+size without a real 14.5k-token syllabus fixture on hand. `fallbackModel`
+overrides the model `ask` races/falls back to (e.g. pairing it with a
+bogus `model` forces the primary to fail immediately and proves the
+fallback alone can answer); `disableFallback` turns off both the fallback
+*and* the hedge for this call, so a harness can measure the primary model
+by itself; `hedgeAfterMs` overrides how long the primary gets before the
+fallback starts racing it, e.g. a near-zero value to exercise the race path
+deterministically. A `probe` field sent to production `ask` (rather than
+`ask-canary`) is silently ignored, never a 400 -- a client that happens to
+send one, or a future harness pointed at the wrong URL, isn't punished for
+it. This function still enforces the same quota and still writes
+`ask_outcomes` rows (tag a run with the `x-lhf-probe` header above to tell
+it apart from real traffic); it is an overridable door, not
 an unmetered one.
 
 ## Catalog
@@ -660,7 +707,7 @@ Response `{ "deleted": true }`.
 chat-completions endpoint (`https://openrouter.ai/api/v1/chat/completions`)
 with `provider: { "data_collection": "deny", "allow_fallbacks": true }` and,
 when `LHF_PROVIDER_ORDER` is set, `provider.order` from that comma list.
-Fallback model on upstream failure: `LHF_FALLBACK_MODEL`, default
+Fallback model on upstream failure: `LHF_ASK_FALLBACK_MODEL`, default
 `openai/gpt-5.6-luna`. `OPENROUTER_API_KEY` is a function secret, never in
 the repo, never in the app.
 

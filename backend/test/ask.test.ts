@@ -53,6 +53,9 @@ Deno.test("extractProbeOverrides: reads every field when allowed", () => {
       temperature: 0.7,
       provider: { order: ["x"] },
       contextTrimChars: 1000,
+      fallbackModel: "some/other-fallback",
+      disableFallback: true,
+      hedgeAfterMs: 2500,
     },
   };
   const overrides = extractProbeOverrides(body, true);
@@ -63,7 +66,21 @@ Deno.test("extractProbeOverrides: reads every field when allowed", () => {
     temperature: 0.7,
     provider: { order: ["x"] },
     contextTrimChars: 1000,
+    fallbackModel: "some/other-fallback",
+    disableFallback: true,
+    hedgeAfterMs: 2500,
   });
+});
+
+Deno.test("extractProbeOverrides: drops malformed fallback/hedge fields", () => {
+  const body = {
+    probe: {
+      fallbackModel: 12345, // wrong type -- dropped
+      disableFallback: "yes", // wrong type -- dropped
+      hedgeAfterMs: -1, // negative -- dropped
+    },
+  };
+  assert.deepEqual(extractProbeOverrides(body, true), {});
 });
 
 Deno.test("extractProbeOverrides: drops malformed fields instead of failing the whole probe", () => {

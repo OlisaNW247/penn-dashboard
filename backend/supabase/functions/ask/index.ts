@@ -31,6 +31,13 @@ import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_share
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
 import { applyContextTrim, extractProbeOverrides, readProbeTag } from "../_shared/probe.ts";
 import { classifyStreamOutcome, recordOutcome } from "../_shared/outcomes.ts";
+import {
+  outcomeDetailForFallback,
+  outcomeDetailForHedgeWin,
+  reasoningFor,
+  remainingBudget,
+  shouldStartHedge,
+} from "../_shared/fallback.ts";
 
 interface AskRequestBody {
   question: string;
@@ -74,6 +81,55 @@ function parseAskRequestBody(value: unknown): AskRequestBody | undefined {
 
 const MAX_TOKENS = 3000;
 const TEMPERATURE = 0.2;
+
+/**
+ * `ask`'s default model was `z-ai/glm-5.3-flash`, an always-thinking model,
+ * with `reasoning` left unset -- the 2026-09-14 incident (this file's
+ * `ask_outcomes` telemetry exists because of it): on a real syllabus-sized
+ * prompt it spent the whole `MAX_TOKENS` cap on hidden reasoning and
+ * answered with nothing. `reasoning: { effort: "low" }` (this file briefly
+ * carried that alone, keyed off `_shared/fallback.ts`'s `reasoningFor`) cut
+ * the reasoning spend from ~300 tokens to ~6, but 2026-09-22 canary runs
+ * against the live function found it doesn't touch the actual failure
+ * mode: 30 timed probes still saw 12 take over 8s to first delta and one
+ * take 66s, and several of the slow ones reported *zero* reasoning tokens
+ * -- meaning the tail is provider time-to-first-token, not thinking, and no
+ * `reasoning` setting fixes a queueing delay on OpenRouter's or the
+ * provider's side. The owner's rule from those numbers is "never more than
+ * a 10 second wait," which a `reasoning` tweak alone cannot promise.
+ *
+ * What's here instead: `openai/gpt-4.1-mini` is the default *primary*
+ * model -- 10/10 canary probes between 1.9s and 3.0s to first delta,
+ * correct about dates, no `reasoning` field at all (it isn't a thinking
+ * model and has no use for one) -- and `z-ai/glm-5.3-flash` (still with
+ * low-effort reasoning; see `reasoningFor`) is the *fallback*,
+ * started **concurrently**, not after waiting the primary out, the moment
+ * `HEDGE_AFTER_MS` passes with no content from the primary yet
+ * (`runHedgedRace`, below). Whichever model produces the first content
+ * delta wins and the other is aborted; a primary that fails or empties
+ * outright before the hedge would even fire skips straight to the
+ * fallback alone, with no race to run. Two things tried and rejected along
+ * the way: cheaper/faster models (Gemini Flash/Flash-Lite, `glm-4.5-air`,
+ * `deepseek-v3.1`) answered quickly but got a plain "what's due tomorrow?"
+ * wrong, which rules them out on correctness rather than latency; and a
+ * bare "wait a fixed timeout, then retry against a different model"
+ * (this file's first version of this fix) only *adds* the timeout to the
+ * student's wait instead of covering it, which a concurrent race does not.
+ * `MAX_TOKENS` stays 3000: the fallback's answer, with low- or no-effort
+ * reasoning, needs a few hundred of it, not the full cap the original
+ * incident exhausted.
+ */
+const HEDGE_AFTER_MS = 5_000;
+
+/** The phone's `URLSession` gives up on `ask` at 60s; this is the backend's
+ *  own tighter budget on the pre-stream race in `runHedgedRace` (the
+ *  primary alone, or the primary and the hedge together) so a race that
+ *  never resolves still leaves this function time to answer with a plain
+ *  502 rather than being cut off by the client with nothing said at all.
+ *  It does not bound a stream that has already started -- once a winner is
+ *  found and `runAskStream` is generating the response, there is no
+ *  further time limit here beyond the client's own 60s. */
+const TOTAL_BUDGET_MS = 45_000;
 
 /** Supabase Edge Runtime's background-task API: registering a promise here
  *  tells the runtime to keep this isolate alive until the promise settles,
@@ -138,8 +194,22 @@ export async function handleAsk(
     // (i.e. this is `ask-canary`, never production `ask`) -- see
     // `_shared/probe.ts`'s `extractProbeOverrides`.
     const probeOverrides = extractProbeOverrides(rawBody, options.allowProbeOverrides);
-    const model = probeOverrides?.model ?? Deno.env.get("LHF_MODEL") ?? "z-ai/glm-5.3-flash";
-    const fallbackModel = Deno.env.get("LHF_FALLBACK_MODEL") ?? "openai/gpt-5.6-luna";
+    const model = probeOverrides?.model ?? Deno.env.get("LHF_MODEL") ?? "openai/gpt-4.1-mini";
+    // `resolvedFallbackModel`/`fallbackDisabled`/`hedgeAfterMs` are resolved
+    // once here so both branches of `runHedgedRace` (the immediate
+    // sequential fallback when the primary fails or empties before the
+    // hedge would fire, and the concurrent race once it does) agree on the
+    // same model, the same on/off switch and the same timing -- computing
+    // any of these twice risked a canary override landing in one path but
+    // not the other.
+    const resolvedFallbackModel = probeOverrides?.fallbackModel ?? Deno.env.get("LHF_ASK_FALLBACK_MODEL") ??
+      "z-ai/glm-5.3-flash";
+    // `probe.disableFallback` also turns off the hedge, not just the
+    // sequential fallback -- a harness measuring the primary model alone
+    // needs neither a second model finishing the job for it nor one racing
+    // it partway through.
+    const fallbackDisabled = probeOverrides?.disableFallback ?? false;
+    const hedgeAfterMs = probeOverrides?.hedgeAfterMs ?? HEDGE_AFTER_MS;
 
     if (!body) {
       scheduleBackground(recordOutcome(serviceClient, {
@@ -201,68 +271,61 @@ export async function handleAsk(
       return errorResponse("upstream", "model backend is not configured", 502);
     }
 
-    const upstream = chatCompletionStream({
+    // One shared builder for every model this request might call (the
+    // primary, and the fallback whether it runs sequentially or hedged),
+    // so the only things that ever differ between them are `forModel`,
+    // `forReasoning` and `signal` -- never `messages`, `maxTokens`,
+    // `temperature` or provider routing, which must stay identical for a
+    // fallback or hedge-won answer to be trustworthy in the same way the
+    // primary's would have been.
+    const buildStreamOptions = (forModel: string, forReasoning: unknown, signal: AbortSignal) => ({
       fetchImpl: fetch,
       apiKey,
-      model,
-      fallbackModel,
+      model: forModel,
       messages,
       provider: providerFromEnv(),
       providerOverride: probeOverrides?.provider,
       maxTokens: probeOverrides?.maxTokens ?? MAX_TOKENS,
       temperature: probeOverrides?.temperature ?? TEMPERATURE,
-      // `ask` answers from the context document and excerpts it was already
-      // handed, not by reasoning the problem out -- and `model` is a
-      // thinking model that otherwise spends output tokens on hidden
-      // `delta.reasoning` before ever emitting `delta.content`. On
-      // 2026-09-14 a real 14.5k-token prompt reasoned until the then-1200
-      // `max_tokens` cap and answered with nothing. The fix that shipped
-      // the same day, `reasoning: { enabled: false }`, was rejected by
-      // OpenRouter (or the provider behind it) with a 400 on the very
-      // first live call, so production `ask` still leaves `reasoning`
-      // unset here (`probeOverrides` is always `undefined` in production,
-      // so this is always `undefined` too) -- see
-      // `_shared/openrouter.ts`'s `ChatCompletionStreamOptions.reasoning`
-      // and `buildRequestBody`, which forward whatever shape is given
-      // verbatim now, for `ask-canary` to try other shapes against without
-      // a code change here. Raising `MAX_TOKENS` to 3000 here is the
-      // interim measure so a prompt that reasons *and* answers has room
-      // for both; turning reasoning off again, once a shape is found that
-      // OpenRouter accepts, is the intended end state, not this cap --
-      // `ask_outcomes.reasoning_tokens` (recorded below) is what will show
-      // when that's actually needed anymore.
-      reasoning: probeOverrides?.reasoning,
+      reasoning: forReasoning,
+      signal,
     });
-    const iterator = upstream[Symbol.asyncIterator]();
 
-    // Pull the first chunk *before* committing to a streaming response.
-    // PROTOCOL.md draws the line at whether any `delta` has reached the
-    // student yet: an upstream failure before that point is a plain 502
-    // JSON response, and only a failure after streaming has begun becomes
-    // a mid-stream `error` event. Fetching one item here is what lets this
-    // handler tell the two cases apart -- once `streamResponse` is called,
-    // the HTTP status and headers are already committed.
-    let first: IteratorResult<StreamEvent>;
-    try {
-      first = await iterator.next();
-    } catch (err) {
-      logUpstreamFailure("before first chunk", err);
+    // `probeOverrides?.reasoning` only ever overrides the *primary*
+    // candidate's reasoning shape -- there is no equivalent field for the
+    // fallback candidate specifically, since `reasoningFor` already gives
+    // it the one shape that was actually measured (see the long comment on
+    // `HEDGE_AFTER_MS` above), and a canary wanting to test the fallback
+    // model's own reasoning shape can do that directly by pointing `model`
+    // (not `fallbackModel`) at it.
+    const race = await runHedgedRace({
+      buildStreamOptions,
+      primary: { model, reasoning: probeOverrides?.reasoning ?? reasoningFor(model) },
+      fallback: fallbackDisabled ? undefined : { model: resolvedFallbackModel, reasoning: reasoningFor(resolvedFallbackModel) },
+      hedgeAfterMs,
+      totalBudgetMs: TOTAL_BUDGET_MS,
+      startedAt,
+    });
+
+    if (!race.ok) {
+      logUpstreamFailure("before first chunk (race)", race.failure.cause);
       scheduleBackground(recordOutcome(serviceClient, {
         userId,
-        model,
+        model: race.failure.model,
         outcome: "upstream_error",
-        upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
-        detail: describeUpstreamError(err),
+        upstreamStatus: race.failure.upstreamStatus,
+        detail: race.failure.detail,
         latencyMs: Date.now() - startedAt,
         probe: probeTag,
       }));
       return errorResponse("upstream", "the model backend failed", 502);
     }
 
-    return streamResponse(runAskStream(iterator, first, serviceClient, userId, {
-      model,
+    return streamResponse(runAskStream(race.winner.iterator, race.winner.first, serviceClient, userId, {
+      model: race.winner.model,
       startedAt,
       probe: probeTag,
+      outcomeDetail: race.winner.detail,
     }));
   } catch (err) {
     if (err instanceof HttpError) {
@@ -466,15 +529,27 @@ function describeUpstreamError(err: unknown): string {
 
 /**
  * The actual SSE body. Takes the already-fetched `first` result so the
- * caller above can inspect it (to decide 502-vs-stream) without this
- * generator re-requesting it and silently dropping a chunk.
+ * caller above (`runHedgedRace`, by way of `handleAsk`) can inspect it to
+ * decide 502-vs-stream without this generator re-requesting it and
+ * silently dropping a chunk. `first` is always a content `delta` now --
+ * `runHedgedRace` never hands back a winner that hasn't produced one, so
+ * the whole "stream ran clean but said nothing" (`empty`) case is resolved
+ * *before* this generator ever runs, not inside it -- the `deltaCount === 0`
+ * check below is left in as a defensive belt-and-braces for a future caller
+ * that changes what it hands in, but under `runHedgedRace` it should never
+ * actually fire. `telemetry.outcomeDetail`, when set, is `runHedgedRace`'s
+ * account of how
+ * this particular stream was chosen (a hedge win, or a sequential fallback
+ * after the primary failed or emptied) -- `undefined` for the ordinary case
+ * of the primary winning outright, so an unremarkable request's outcome row
+ * looks exactly as it did before any of this existed.
  */
 async function* runAskStream(
   iterator: AsyncIterator<StreamEvent>,
   first: IteratorResult<StreamEvent>,
   serviceClient: SupabaseClient,
   userId: string,
-  telemetry: { model: string; startedAt: number; probe: string | null },
+  telemetry: { model: string; startedAt: number; probe: string | null; outcomeDetail?: string },
 ): AsyncGenerator<SSEEvent> {
   let promptTokens = 0;
   let completionTokens = 0;
@@ -518,23 +593,28 @@ async function* runAskStream(
       latencyMs: Date.now() - telemetry.startedAt,
       firstDeltaMs,
       upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
-      detail: describeUpstreamError(err),
+      // A mid-stream failure after content had already reached the student
+      // (`contentChars > 0`, guaranteed here since `first` is always a
+      // delta) is never eligible for a fallback -- the race is long over by
+      // the time this generator is even running -- so `outcomeDetail` is
+      // folded in only to say *how this stream was chosen*, never to try
+      // another model now.
+      detail: telemetry.outcomeDetail
+        ? `${telemetry.outcomeDetail}; then upstream_error: ${describeUpstreamError(err)}`.slice(0, 200)
+        : describeUpstreamError(err),
       probe: telemetry.probe,
     }));
     yield { type: "error", code: "upstream", message: "the model backend failed" };
     return;
   }
 
-  // Reasoning is not turned off for `ask` right now (see the call site
-  // above), so `completionTokens` nonzero while `deltaCount` is zero can
-  // still happen if a prompt is large enough to exhaust the raised
-  // `MAX_TOKENS` on reasoning alone -- this is the exact shape of the
-  // 2026-09-14 incident, and worth knowing about the next time it
-  // happens, rather than the student's empty answer being the only trace.
-  // It now also lands as an `empty` row in `ask_outcomes` below, so this
-  // log line is a live tail's warning, not the only record.
+  // `first` is always a content delta (see this function's doc comment), so
+  // `deltaCount` is at least 1 by construction and this branch should be
+  // unreachable in practice -- left as a defensive check, and worth an
+  // alarmed log rather than a silent pass, exactly because reaching it
+  // would mean the guarantee above stopped holding somewhere upstream.
   if (deltaCount === 0) {
-    console.warn(`ask: stream ended with no text; completion tokens ${completionTokens}`);
+    console.warn(`ask: stream ended with no text despite a delta first-event; completion tokens ${completionTokens}`);
   }
 
   const outcome = classifyStreamOutcome({ contentChars, streamFailed: false });
@@ -566,8 +646,262 @@ async function* runAskStream(
     deltaCount,
     latencyMs,
     firstDeltaMs,
+    detail: telemetry.outcomeDetail,
     probe: telemetry.probe,
   }));
 
   yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
+}
+
+// ---------------------------------------------------------------------
+// The hedged race
+// ---------------------------------------------------------------------
+
+interface RaceCandidate {
+  model: string;
+  reasoning: unknown;
+}
+
+interface RaceWinner {
+  model: string;
+  iterator: AsyncIterator<StreamEvent>;
+  first: IteratorResult<StreamEvent>;
+  /** `outcomeDetailForHedgeWin`/`outcomeDetailForFallback`'s output, or
+   *  `undefined` when the primary answered on its own with no race and no
+   *  fallback ever started -- the ordinary case, which should leave
+   *  `ask_outcomes.detail` exactly as unremarkable as it was before any of
+   *  this existed. */
+  detail?: string;
+}
+
+interface RaceFailure {
+  /** Whichever model actually ran last -- the fallback's, if one was ever
+   *  started, since it is the model that had the last word on this
+   *  request; the primary's alone otherwise. Neither model "produced the
+   *  answer" in this branch (there is none), but `ask_outcomes.model` has
+   *  no third option to mean that, and the last model tried is closer to
+   *  the truth than the one this request started with. */
+  model: string;
+  detail: string;
+  upstreamStatus?: number;
+  cause: unknown;
+}
+
+/** One participant in the race: an already-started model call, its own
+ *  `AbortController` (so the loser can be cancelled the instant a winner is
+ *  found, or every participant cancelled once `totalBudgetMs` runs out),
+ *  and whichever `.next()` call is currently outstanding for it. `pending`
+ *  is `null` exactly when this racer has been removed from the race --
+ *  either it produced the winning delta (moot, the race is over) or it
+ *  exhausted (a clean end or a thrown error) with nothing to show. */
+interface Racer {
+  name: "primary" | "fallback";
+  model: string;
+  abort: AbortController;
+  iterator: AsyncIterator<StreamEvent>;
+  pending: Promise<IteratorResult<StreamEvent>> | null;
+  /** Set once this racer exhausts, so a caller building `RaceFailure`'s
+   *  detail after the whole race comes up empty can describe *how* each
+   *  side failed without re-deriving it from scratch. */
+  outcome?: { failed: true; err: unknown } | { failed: false };
+}
+
+function armNext(racer: Racer): void {
+  racer.pending = racer.iterator.next();
+}
+
+function describeRacerOutcome(outcome: Racer["outcome"]): string {
+  if (!outcome) return "not attempted";
+  return outcome.failed ? `upstream_error: ${describeUpstreamError(outcome.err)}` : "empty";
+}
+
+/**
+ * Runs `primary`, and -- unless `fallback` is `undefined` (the canary's
+ * `probe.disableFallback`) -- `fallback` too, either sequentially (the
+ * moment `primary` fails or exhausts with no content, before the hedge
+ * would even have fired) or concurrently (the moment `hedgeAfterMs` passes
+ * with `primary` still silent), and resolves once either produces a
+ * content delta or both have nothing left to try. This is the entire
+ * "which model actually answers" decision for one request; `handleAsk`
+ * only has to turn the result into a 502 or a call to `runAskStream`.
+ *
+ * Every `.next()` call across both racers is raced with `Promise.race`
+ * against a one-shot hedge timer (armed only while `fallback` hasn't
+ * started yet) and, from the moment either racer starts, against nothing
+ * else time-wise -- the *overall* `totalBudgetMs` ceiling is a separate
+ * timer that aborts whichever racers are still active when it fires, so a
+ * primary that neither answers nor ever cleanly ends (a stalled connection
+ * OpenRouter never closes) cannot hold this function open past that point.
+ * A `usage`/`done`-typed `StreamEvent` from a racer is not a win -- only a
+ * `delta` is -- so such events just re-arm that racer's `.next()` and the
+ * race continues.
+ */
+async function runHedgedRace(options: {
+  buildStreamOptions: (model: string, reasoning: unknown, signal: AbortSignal) => Parameters<typeof chatCompletionStream>[0];
+  primary: RaceCandidate;
+  fallback: RaceCandidate | undefined;
+  hedgeAfterMs: number;
+  totalBudgetMs: number;
+  startedAt: number;
+}): Promise<{ ok: true; winner: RaceWinner } | { ok: false; failure: RaceFailure }> {
+  const { buildStreamOptions, primary, fallback, hedgeAfterMs, totalBudgetMs, startedAt } = options;
+
+  const allRacers: Racer[] = [];
+
+  function startRacer(name: "primary" | "fallback", candidate: RaceCandidate): Racer {
+    const abort = new AbortController();
+    const upstream = chatCompletionStream(buildStreamOptions(candidate.model, candidate.reasoning, abort.signal));
+    const racer: Racer = {
+      name,
+      model: candidate.model,
+      abort,
+      iterator: upstream[Symbol.asyncIterator](),
+      pending: null,
+    };
+    armNext(racer);
+    allRacers.push(racer);
+    return racer;
+  }
+
+  // The overall ceiling: aborts every racer still active when it fires,
+  // independent of the hedge. Cleared once the race concludes one way or
+  // the other so it never fires against a request that's already moved on
+  // to streaming a winner's answer.
+  const totalBudgetTimer = setTimeout(() => {
+    for (const racer of allRacers) {
+      if (racer.pending) racer.abort.abort();
+    }
+  }, remainingBudget(startedAt, Date.now(), totalBudgetMs));
+
+  const primaryRacer = startRacer("primary", primary);
+  let fallbackRacer: Racer | undefined;
+  let hedgeTimerID: number | undefined;
+  let hedgeSignal: Promise<"hedge"> | undefined;
+  if (fallback) {
+    hedgeSignal = new Promise((resolve) => {
+      hedgeTimerID = setTimeout(() => resolve("hedge"), hedgeAfterMs);
+    });
+  }
+
+  // Tracks *why* the fallback started, for `RaceWinner.detail` below --
+  // "the hedge timer fired while the primary was still active" reads very
+  // differently to a canary than "the primary had already failed or
+  // emptied," even though both go through this same `startRacer` call.
+  let fallbackStartedViaHedge = false;
+
+  function maybeStartFallbackNow(viaHedge: boolean): void {
+    if (!fallback || fallbackRacer) return;
+    if (hedgeTimerID !== undefined) clearTimeout(hedgeTimerID);
+    hedgeSignal = undefined;
+    fallbackStartedViaHedge = viaHedge;
+    fallbackRacer = startRacer("fallback", fallback);
+    // `startRacer` only arms the racer's own `.next()` and records it in
+    // `allRacers` (for the total-budget abort sweep and the post-race
+    // failure report); it does not know about `active`, the set the race
+    // loop below actually polls, so without this the fallback would run a
+    // real request to completion with nothing ever reading its output.
+    active = [...active, fallbackRacer];
+  }
+
+  let active: Racer[] = [primaryRacer];
+
+  try {
+    while (active.length > 0) {
+      const racerEntries = active.map((racer) =>
+        racer.pending!.then((value) => ({ tag: "racer" as const, racer, ok: true as const, value }))
+          .catch((err) => ({ tag: "racer" as const, racer, ok: false as const, err }))
+      );
+      const raceEntries: Array<Promise<
+        | { tag: "racer"; racer: Racer; ok: true; value: IteratorResult<StreamEvent> }
+        | { tag: "racer"; racer: Racer; ok: false; err: unknown }
+        | { tag: "hedge" }
+      >> = [...racerEntries];
+      if (hedgeSignal) raceEntries.push(hedgeSignal.then(() => ({ tag: "hedge" as const })));
+
+      const settled = await Promise.race(raceEntries);
+
+      if (settled.tag === "hedge") {
+        // Re-check with the pure predicate rather than trusting the timer
+        // callback alone -- by the time this microtask runs, `active`
+        // could already be down to just the fallback (the primary
+        // exhausted and `maybeStartFallbackNow` already ran) or the loop
+        // could already be about to exit with a winner; `shouldStartHedge`
+        // is the single place that decides "no delta yet" for both this
+        // and the timer callback itself.
+        if (shouldStartHedge({ firstDeltaAt: undefined, now: Date.now(), startedAt, hedgeAfterMs })) {
+          maybeStartFallbackNow(true);
+        }
+        continue;
+      }
+
+      const { racer } = settled;
+      if (!settled.ok) {
+        racer.pending = null;
+        racer.outcome = { failed: true, err: settled.err };
+        active = active.filter((r) => r !== racer);
+        if (racer.name === "primary") maybeStartFallbackNow(false);
+        continue;
+      }
+
+      if (settled.value.done) {
+        racer.pending = null;
+        racer.outcome = { failed: false };
+        active = active.filter((r) => r !== racer);
+        if (racer.name === "primary") maybeStartFallbackNow(false);
+        continue;
+      }
+
+      const event = settled.value.value;
+      if (event.type === "delta") {
+        for (const other of allRacers) {
+          if (other !== racer && other.pending) other.abort.abort();
+        }
+        // Three shapes for `detail`: the ordinary case (no fallback ever
+        // started -- the primary answered on its own, `undefined`, nothing
+        // remarkable to record); a genuine hedge win (the fallback started
+        // because the timer fired while the primary was still active, and
+        // either model could have been the one to answer -- `racer.model`
+        // says which); and a sequential fallback (the fallback only started
+        // because the primary had already failed or emptied outright, so
+        // there was never actually a race to describe).
+        const detail = !fallbackRacer
+          ? undefined
+          : fallbackStartedViaHedge
+          ? outcomeDetailForHedgeWin(hedgeAfterMs, racer.model)
+          : outcomeDetailForFallback(primary.model, primaryRacer.outcome?.failed ? "upstream_error" : "empty");
+        return {
+          ok: true,
+          winner: { model: racer.model, iterator: racer.iterator, first: settled.value, detail },
+        };
+      }
+
+      // `usage` or `done`-typed `StreamEvent` -- not a win, keep racing.
+      armNext(racer);
+    }
+  } finally {
+    clearTimeout(totalBudgetTimer);
+    if (hedgeTimerID !== undefined) clearTimeout(hedgeTimerID);
+  }
+
+  // Every racer that ever started exhausted with nothing. `fallback`
+  // configured-but-never-started can't happen here -- the loop only exits
+  // once `active` is empty, and the primary exhausting always calls
+  // `maybeStartFallbackNow` first when a fallback is configured.
+  const failedModel = fallbackRacer?.model ?? primaryRacer.model;
+  const detail = fallback
+    ? `primary ${primary.model} ${describeRacerOutcome(primaryRacer.outcome)}; fallback ${fallback.model} ${
+      describeRacerOutcome(fallbackRacer?.outcome)
+    }`.slice(0, 200)
+    : describeRacerOutcome(primaryRacer.outcome);
+  const failureCause = fallbackRacer?.outcome?.failed
+    ? fallbackRacer.outcome.err
+    : primaryRacer.outcome?.failed
+    ? primaryRacer.outcome.err
+    : undefined;
+  const upstreamStatus = failureCause instanceof UpstreamError ? failureCause.status : undefined;
+
+  return {
+    ok: false,
+    failure: { model: failedModel, detail, upstreamStatus, cause: failureCause },
+  };
 }

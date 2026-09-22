@@ -27,7 +27,7 @@ function usageAndExit(message) {
   if (message) console.error(message);
   console.error(
     "Usage: node backend/scripts/ask-probe.mjs --slug <slug> --runs <n> --set <exam|policy|short|mixed> " +
-      "[--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--tag mytag]",
+      "[--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--probe '<json>'] [--tag mytag]",
   );
   process.exit(1);
 }
@@ -58,6 +58,12 @@ function parseArgs(argv) {
         break;
       case "--trim":
         opts.trim = Number.parseInt(next(), 10);
+        break;
+      case "--probe":
+        // Raw JSON merged into the canary's `probe` object -- the escape
+        // hatch for fields this script has no dedicated flag for
+        // (fallbackModel, disableFallback, hedgeAfterMs, provider...).
+        opts.probeExtra = JSON.parse(next());
         break;
       case "--tag":
         opts.tag = next();
@@ -225,7 +231,7 @@ function questionForRun(set, runIndex) {
   return pool[runIndex % pool.length];
 }
 
-function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning }) {
+function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, probeExtra }) {
   let contextDocument = buildContextDocument(55000);
   if (Number.isInteger(trim)) contextDocument = contextDocument.slice(0, trim);
 
@@ -242,6 +248,7 @@ function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning }) 
   if (model !== undefined) probe.model = model;
   if (maxTokens !== undefined) probe.maxTokens = maxTokens;
   if (reasoning !== undefined) probe.reasoning = reasoning;
+  if (probeExtra !== undefined) Object.assign(probe, probeExtra);
   if (Object.keys(probe).length > 0) body.probe = probe;
 
   return body;
@@ -354,6 +361,7 @@ async function main() {
       trim: opts.trim,
       model: opts.model,
       maxTokens: opts.maxTokens,
+      probeExtra: opts.probeExtra,
       reasoning: opts.reasoning,
     });
 

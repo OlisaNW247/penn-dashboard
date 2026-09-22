@@ -193,21 +193,30 @@ interface BuildRequestBodyOptions {
 }
 
 /**
- * `z-ai/glm-5.3-flash`, `ask`'s model, is a thinking model: unless told
- * otherwise it spends output tokens on a `delta.reasoning` stream before it
- * ever emits `delta.content` (OpenRouter forwards both; `parseSSEStream`
- * above only reads the latter). Against a real 14.5k-token prompt of full
- * syllabi (2026-09-14, a phone asking "when's my next exam?") the model
- * reasoned until `max_tokens` was exhausted and produced zero content --
- * 35s of streaming, a 200, and nothing the student could read. Synthetic
- * test prompts of the same size reason briefly and still answer, which is
- * why this shipped unnoticed. `ask` answers from context it was already
- * handed, not from working the problem out itself, so it has no use for
- * reasoning output; `reasoning: { enabled: false }` is OpenRouter's
- * unified switch for turning it off (the JSON-mode extract functions never
- * set it, so their request body is unaffected). The wrong fix is raising
- * `MAX_TOKENS`: it only makes the failure rarer and the bill bigger, and a
- * long enough prompt still exhausts it.
+ * `z-ai/glm-5.3-flash` -- once `ask`'s only model, now its hedge/fallback
+ * (see `ask/index.ts`'s long comment on `HEDGE_AFTER_MS`) -- is a thinking
+ * model: unless told otherwise it spends output tokens on a
+ * `delta.reasoning` stream before it ever emits `delta.content` (OpenRouter
+ * forwards both; `parseSSEStream` above only reads the latter). Against a
+ * real 14.5k-token prompt of full syllabi (2026-09-14, a phone asking
+ * "when's my next exam?") the model reasoned until `max_tokens` was
+ * exhausted and produced zero content -- 35s of streaming, a 200, and
+ * nothing the student could read. Synthetic test prompts of the same size
+ * reason briefly and still answer, which is why this shipped unnoticed.
+ * `reasoning: { enabled: false }` -- OpenRouter's unified switch for turning
+ * reasoning off outright -- was rejected with a 400 on its first live call
+ * and is not used; `reasoning: { effort: "low" }` (`_shared/fallback.ts`'s
+ * `reasoningFor`, applied only to `z-ai/` models) is accepted and cuts the
+ * reasoning spend to a handful of tokens, but 2026-09-22 canary runs found
+ * it does not fix this model's real problem -- a long tail of slow
+ * *provider* responses unrelated to reasoning at all -- which is why `ask`
+ * no longer waits this model out alone: `openai/gpt-4.1-mini`, which sends
+ * no `reasoning` field here at all, is the primary now, and this model is
+ * raced in only once the primary has gone quiet for `HEDGE_AFTER_MS`. The
+ * JSON-mode extract functions never set `reasoning`, so their request body
+ * is unaffected by any of this. The wrong fix, still, is raising
+ * `MAX_TOKENS` alone: it only makes the empty-answer failure rarer and the
+ * bill bigger, and a long enough prompt still exhausts it.
  */
 function buildRequestBody(options: BuildRequestBodyOptions): Record<string, unknown> {
   // `providerOverride` (only ever set by `ask-canary`) replaces this whole

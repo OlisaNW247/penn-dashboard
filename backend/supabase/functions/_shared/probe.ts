@@ -33,6 +33,23 @@ export interface AskProbeOverrides {
    *  `providerOverride`. */
   provider?: unknown;
   contextTrimChars?: number;
+  /** Overrides `ask/index.ts`'s default fallback model (`LHF_FALLBACK_MODEL`
+   *  or `z-ai/glm-5.3-flash`) for this call only -- lets a harness point
+   *  `model` at a bogus id to force the primary to fail before any content,
+   *  then confirm this fallback model is what actually answers, without
+   *  waiting on env configuration or touching production traffic. */
+  fallbackModel?: string;
+  /** Skips both the fallback and the hedge race entirely for this call, so
+   *  a harness can measure the primary model alone -- e.g. to reproduce the
+   *  pre-hedge `empty`/`upstream_error` shape without a second model
+   *  answering underneath it and masking the result. */
+  disableFallback?: boolean;
+  /** Overrides `ask/index.ts`'s `HEDGE_AFTER_MS` (how long the primary gets
+   *  before the fallback starts racing it) for this call only -- lets a
+   *  harness force the hedge to fire near-immediately (a small value) to
+   *  exercise the race path deterministically, or push it out to confirm
+   *  the primary alone would have answered in time. */
+  hedgeAfterMs?: number;
 }
 
 /**
@@ -66,6 +83,15 @@ export function extractProbeOverrides(rawBody: unknown, allowed: boolean): AskPr
   }
   if (typeof p.contextTrimChars === "number" && Number.isFinite(p.contextTrimChars) && p.contextTrimChars >= 0) {
     overrides.contextTrimChars = Math.floor(p.contextTrimChars);
+  }
+  if (typeof p.fallbackModel === "string" && p.fallbackModel.length > 0) {
+    overrides.fallbackModel = p.fallbackModel;
+  }
+  if (typeof p.disableFallback === "boolean") {
+    overrides.disableFallback = p.disableFallback;
+  }
+  if (typeof p.hedgeAfterMs === "number" && Number.isFinite(p.hedgeAfterMs) && p.hedgeAfterMs >= 0) {
+    overrides.hedgeAfterMs = Math.floor(p.hedgeAfterMs);
   }
   return overrides;
 }
