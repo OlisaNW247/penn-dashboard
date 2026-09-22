@@ -230,7 +230,11 @@ final class CanvasSessionRenewer {
     /// navigated at all, has nothing to report). DEBUG-only alongside the
     /// property it exists to fill in — kept out of Release builds rather
     /// than left as unused dead weight there.
-    private static func hostPathString(_ url: URL?) -> String? {
+    ///
+    /// Not `private`: the "probe ed discussion" diagnostic
+    /// (`EdDiscussionProbe.swift`, also DEBUG-only) reports hop hosts+paths
+    /// in exactly this shape and reuses this rather than duplicating it.
+    static func hostPathString(_ url: URL?) -> String? {
         guard let url, let host = url.host else { return nil }
         return "\(host)\(url.path)"
     }
@@ -708,8 +712,11 @@ final class CanvasSessionRenewer {
 /// (a leaked-continuation runtime warning/crash). Every code path that could
 /// settle the wait calls `signal(_:)` unconditionally; the guard inside is
 /// what makes calling it more than once safe.
+// Not `private`: the "probe ed discussion" diagnostic (`EdDiscussionProbe`
+// in EdDiscussionProbe.swift, also DEBUG-only) shares this exact
+// resumed-once settle signal rather than duplicating it.
 @MainActor
-private final class SettleWaiter {
+final class SettleWaiter {
     enum Signal {
         case finished
         case failed

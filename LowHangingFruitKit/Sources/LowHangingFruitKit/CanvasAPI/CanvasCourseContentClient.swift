@@ -84,6 +84,20 @@ public struct CanvasCourseContentClient: Sendable {
         return pages
     }
 
+    /// GET /api/v1/courses/:id/tabs — the course navigation menu, every
+    /// page. `include[]=external` asks Canvas to also report LTI tools that
+    /// would otherwise come back with no `html_url` at all. This is the only
+    /// endpoint that lists a tool placed in course navigation but never
+    /// linked from inside a module — see `CanvasCourseTab`'s doc comment for
+    /// why `CourseKnowledgeCollector`'s existing module scan misses it.
+    public func tabs(courseID: String) async throws -> [CanvasCourseTab] {
+        let url = api("courses/\(courseID)/tabs", query: [
+            ("include[]", "external"),
+            ("per_page", "100"),
+        ])
+        return try await getAllPages(url)
+    }
+
     // MARK: - HTTP
 
     private func api(_ path: String, query: [(String, String)] = []) -> URL {

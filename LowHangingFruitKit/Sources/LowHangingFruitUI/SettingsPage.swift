@@ -44,6 +44,11 @@ struct SettingsPage: View {
     /// alongside the fresh spinner.
     @State private var isSimulatingCanvasLogout = false
     @State private var simulateCanvasLogoutResult: String?
+    /// Same resting/running/result shape as the pair above, for the
+    /// "probe ed discussion" row (`AppState.probeEdDiscussionForTesting()`).
+    @State private var isProbingEdDiscussion = false
+    @State private var probeEdDiscussionResult: String?
+    @State private var didCopyProbeEdDiscussionResult = false
     #endif
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
@@ -174,6 +179,7 @@ struct SettingsPage: View {
             #if DEBUG
             Section {
                 simulateCanvasLogoutRow
+                probeEdDiscussionRow
             } header: {
                 SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
             }
@@ -569,6 +575,79 @@ struct SettingsPage: View {
             simulateCanvasLogoutResult = result
             isSimulatingCanvasLogout = false
         }
+    }
+
+    /// Owner-only "probe ed discussion" row (CLAUDE.md's own name for this
+    /// diagnostic) — see `AppState.probeEdDiscussionForTesting()`'s doc
+    /// comment for what it actually does and the privacy rule it's built
+    /// under (names only, never a storage/cookie value). Same
+    /// resting/running/result shape as `simulateCanvasLogoutRow` above, plus
+    /// a small "copy" button: the full report (per-course tab list, hop
+    /// list, storage/cookie key names) is long enough that reading it off a
+    /// phone screen is awkward, so `.textSelection(.enabled)` alone isn't
+    /// enough to get it somewhere more useful.
+    @ViewBuilder
+    private var probeEdDiscussionRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                runProbeEdDiscussion()
+            } label: {
+                if isProbingEdDiscussion {
+                    HStack {
+                        ProgressView()
+                        Text("probing ed discussion…")
+                    }
+                } else {
+                    Label("probe ed discussion", systemImage: "bubble.left.and.text.bubble.right")
+                }
+            }
+            .disabled(isProbingEdDiscussion)
+
+            if let probeEdDiscussionResult, !isProbingEdDiscussion {
+                Text(probeEdDiscussionResult)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                Button {
+                    copyProbeEdDiscussionResult()
+                } label: {
+                    Label(
+                        didCopyProbeEdDiscussionResult ? "copied" : "copy probe result",
+                        systemImage: didCopyProbeEdDiscussionResult ? "checkmark" : "doc.on.doc"
+                    )
+                }
+                .font(.lhfSecondary(12))
+            }
+        }
+    }
+
+    /// Same single-flight guard as `runSimulateCanvasLogout` above, and the
+    /// same reason for clearing the stale result before the new attempt
+    /// starts rather than after.
+    private func runProbeEdDiscussion() {
+        probeEdDiscussionResult = nil
+        didCopyProbeEdDiscussionResult = false
+        isProbingEdDiscussion = true
+        Task {
+            let result = await state.probeEdDiscussionForTesting()
+            probeEdDiscussionResult = result
+            isProbingEdDiscussion = false
+        }
+    }
+
+    /// Exactly `copyDiagnostics()`'s cross-platform pasteboard code below,
+    /// applied to this row's own result string instead of a full
+    /// diagnostics report.
+    private func copyProbeEdDiscussionResult() {
+        guard let probeEdDiscussionResult else { return }
+        #if canImport(UIKit)
+        UIPasteboard.general.string = probeEdDiscussionResult
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(probeEdDiscussionResult, forType: .string)
+        #endif
+        didCopyProbeEdDiscussionResult = true
     }
     #endif
 

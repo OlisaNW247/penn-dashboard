@@ -2121,6 +2121,73 @@ final class AppState: ObservableObject {
         let duoNote = duoRememberSummary ?? "duo: summary unavailable"
         return message + " · " + duoNote
     }
+
+    /// Owner-only "probe ed discussion" diagnostic (CLAUDE.md names this
+    /// task exactly that): answers whether opening a Canvas course's "Ed
+    /// Discussion" navigation tool (an LTI launch) inside the app's own
+    /// Canvas `WKWebView` actually lands on Ed, signed in. First lists, per
+    /// course this app has a cached Canvas id for, whether that course's
+    /// navigation (`CanvasCourseContentClient.tabs`) carries an Ed tool at
+    /// all (`EdTabFinder.edTab`) — itself a finding if the answer is "no
+    /// course has one" or a fetch fails, which is why this returns early in
+    /// that case rather than always trying to launch something. Then
+    /// launches the FIRST course with an Ed tab (one launch is enough to
+    /// answer the yes/no question this diagnostic exists for; trying every
+    /// course's tool would just be N tabs' worth of real logins for no
+    /// additional signal) in a hidden WebView (`EdDiscussionProbe`) and
+    /// appends its report.
+    ///
+    /// Never reads, stores, prints or forwards a storage/cookie VALUE, a
+    /// token, or anything from the student's own academic content — see
+    /// `EdProbeScript`'s doc comment for the privacy rule this whole task is
+    /// built under. Compiles out of every Release build; the only caller is
+    /// `SettingsPage`'s DEBUG "probe ed discussion" row.
+    func probeEdDiscussionForTesting() async -> String {
+        let cookies = SessionCookieStore.load(service: .canvas)
+        guard !cookies.isEmpty else {
+            return "no canvas cookies — connect canvas first"
+        }
+
+        let client = CanvasCourseContentClient(cookies: cookies)
+        var perCourseLines: [String] = []
+        var firstEdTab: (code: String, tab: CanvasCourseTab)?
+        for (code, id) in canvasCourseIDsByCode.sorted(by: { $0.key < $1.key }) {
+            do {
+                let tabs = try await client.tabs(courseID: id)
+                if let edTab = EdTabFinder.edTab(in: tabs) {
+                    perCourseLines.append("\(code): ed tab \"\(edTab.label)\" (\(edTab.type ?? "unknown type"))")
+                    if firstEdTab == nil {
+                        firstEdTab = (code, edTab)
+                    }
+                } else {
+                    let labels = tabs.map(\.label).joined(separator: ", ")
+                    perCourseLines.append("\(code): no ed tab (\(tabs.count) tabs: \(labels))")
+                }
+            } catch {
+                perCourseLines.append("\(code): tabs failed: \(error.localizedDescription)")
+            }
+        }
+
+        // No course has an Ed tab at all — that IS the finding; nothing left
+        // to launch.
+        guard let firstEdTab else {
+            return perCourseLines.joined(separator: "\n")
+        }
+
+        let canvasBase = URL(string: "https://canvas.upenn.edu")!
+        guard let launchURL = EdTabFinder.launchURL(for: firstEdTab.tab, canvasBase: canvasBase) else {
+            return (perCourseLines + ["", "\(firstEdTab.code)'s ed tab has no usable launch URL"]).joined(separator: "\n")
+        }
+
+        let launchHostPath = CanvasSessionRenewer.hostPathString(launchURL) ?? launchURL.absoluteString
+        let probeResult = await EdDiscussionProbe().run(launchURL: launchURL)
+
+        var lines = perCourseLines
+        lines.append("")
+        lines.append("launched: \(firstEdTab.code) via \(launchHostPath)")
+        lines.append(probeResult)
+        return lines.joined(separator: "\n")
+    }
     #endif
 
     /// Clears `canvasSessionConfirmedDead` after a fresh interactive Canvas
