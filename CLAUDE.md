@@ -216,7 +216,7 @@ sites; each site's documents are labelled by the registrar's activity for its
 section). All of it was written without a compiler; the one first-run compile
 error so far was a raw string closed early by a `"#` inside `href="#"`
 (double the delimiter). The backend
-is deployed to the live Supabase project with all six functions; the live
+is deployed to the live Supabase project with all seven functions (six plus `ask-canary`); the live
 path is still exercised only by hand on a device, never by `swift test`
 (`BackendServices.client` is nil under tests).
 
@@ -330,6 +330,37 @@ them; only a future release can. And local builds are `2.0.0`, above any floor
 that is safe to publish, so the wall never appears in normal development: to see
 it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
 end to end) or pass `-LHFForceUpdateWall`.
+
+### ask: the model, the hedge, and the loop that tunes them
+
+`backend/supabase/functions/ask/index.ts` streams the answer. Primary
+model `openai/gpt-4.1-mini` (`LHF_MODEL`), no reasoning field; if it has
+produced no content delta by 5 s, `z-ai/glm-5.3-flash` at
+`reasoning.effort: low` (`LHF_ASK_FALLBACK_MODEL`) starts alongside and
+whichever streams first wins, the other aborted; a primary that fails
+or ends empty before any content hands over outright; once content has
+flowed nothing switches. Olisa's rule: never more than a ten-second
+wait. Every request writes one row to `ask_outcomes` -- outcome, tokens
+including reasoning, chars, deltas, first-delta and total latency,
+pre-race and race time, the model that answered and why (`detail`), and
+a `probe` tag for synthetic traffic -- never the question or answer.
+The pre-race reads (auth, quota, enrolment, profiles, catalog) are
+timed (`ask: timing {...}` in the function log), overlapped, and capped:
+quota fails open at 1.5 s, auth at 3 s.
+
+`ask-canary` serves the same `handleAsk` with probe overrides on
+(`probe: { model, maxTokens, reasoning, provider, contextTrimChars,
+fallbackModel, disableFallback, hedgeAfterMs }`), so a candidate change
+is measured before it touches `ask`. The loop runs from any Node 22
+shell with the Management API token: `node
+backend/scripts/deploy-function.mjs ask-canary --also ask` deploys,
+`node backend/scripts/ask-probe.mjs --slug ask-canary --runs 20 --set
+mixed --tag <tag>` fires 14k-token syllabus prompts and exits non-zero
+on any empty or errored run, and a `select ... from ask_outcomes where
+probe = '<tag>'` through `POST /v1/projects/<ref>/database/query` reads
+the result. Deploying `ask` itself is a production change and needs a
+person's go. The 2026-09-22 promotion was 55/55 on the canary (first
+word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
 
 ### Stay signed in
 
@@ -571,11 +602,17 @@ device" for 30 days, is roughly monthly in practice).
   1200`, and `pg_stat_statements` showing the quota RPC never slow (it was
   the first suspect). `reasoning: { enabled: false }` was rejected by
   OpenRouter with 400 on its first live call and the 400 body was not
-  logged then (it is now, `ask: upstream failure detail`); the interim is
-  `MAX_TOKENS = 3000` with no reasoning field, and the client's
-  `BackendAssistantResponder` hands an empty `done` to the on-device
-  answerer. Raising the cap alone is not the end state: a long enough
-  prompt still hits it.
+  logged then (it is now, `ask: upstream failure detail`) -- because `glm-5.3-flash` is an
+  always-thinking model; OpenRouter rejects every attempt to disable it.
+  Resolved 2026-09-22 by measurement on `ask-canary` (see the ask section
+  under Architecture): `reasoning: { effort: "low" }` cuts its thinking to
+  ~6 tokens but a third of requests still took 8-66 s to the first word
+  with zero reasoning tokens -- provider time-to-first-token, which no
+  parameter reaches -- so the primary is now `openai/gpt-4.1-mini`
+  (1.9-3.0 s every time, and right about "tomorrow" where the cheaper
+  models were wrong) with `glm-5.3-flash` at low effort as a five-second
+  hedge. The client's `BackendAssistantResponder` still hands an empty
+  `done` to the on-device answerer as the last resort.
 - **A 504 from `/rest/v1` can be the API gateway, not Postgres.** The
   2026-09-13 20:47 "database stall" was `sb_gateway_version: 2` timing out
   after ~5 s (`origin_time: 5126`, 29-byte body
@@ -584,11 +621,17 @@ device" for 30 days, is roughly monthly in practice).
   blaming the database, pull `edge_logs` for the request id and read
   `origin_time`, then `pg_stat_statements` for the query; the management
   API's `logs.all` returns nothing for windows wider than a few minutes,
-  so query narrow windows. Also from that day: `record_ask_usage` is
-  awaited after `yield done` in `ask/index.ts`, so the app has already
-  closed the connection and the isolate never sees the reply; the RPC
-  lands (the row count rises) but every ask logs a false "exceeded 4000ms
-  deadline, one request will go under-counted". Not yet fixed.
+  so query narrow windows. Also from that day, a misdiagnosis worth
+  keeping: every ask logged "record_ask_usage exceeded 4000ms deadline"
+  while the row still landed, and this file blamed the write running
+  after `yield done`. Measured on 2026-09-22, the write lands in 125-440
+  ms; the warning came from the timeout promise's own `setTimeout`, which
+  nothing cleared when the request won the race, and
+  `EdgeRuntime.waitUntil` kept the isolate alive long enough for it to
+  fire. Fixed by clearing that timer in `finally` (`quota.ts`,
+  `outcomes.ts`). The tell that should have caught it sooner: the warning
+  fired on every request at exactly the deadline, never at a
+  request-shaped time.
 - **A recycled Canvas site carries the previous year's due dates, and one
   of them can define the whole term.** `GradeCountPredictor.term(for:)`
   anchored the term on the earliest due date across a course's items, and
