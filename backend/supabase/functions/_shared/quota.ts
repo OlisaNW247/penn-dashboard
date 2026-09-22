@@ -145,12 +145,25 @@ export type UsageLookup =
   | { ok: true; counts: UsageCounts }
   | { ok: false; reason: "timeout" | "error"; message: string };
 
-const DEFAULT_QUOTA_DEADLINE_MS = 4000;
+/** `recordUsage`'s deadline: a write, never awaited by the client (it runs
+ *  fire-and-forget inside `ask`'s SSE generator via `EdgeRuntime.waitUntil`),
+ *  so it can afford to stay close to the ~5s API-gateway timeout that caused
+ *  the 2026-09-13 incident without costing the student anything. */
+const DEFAULT_RECORD_DEADLINE_MS = 4000;
+
+/** `lookupUsageCounts`'s deadline: unlike `recordUsage` this one sits on the
+ *  critical path -- `ask/index.ts` awaits it before it can start the model
+ *  race -- so 2026-09-22's per-step timing work (measured pre-race time up
+ *  to 2.6s on a live canary) cut it from the original 4000ms to 1500ms. The
+ *  lookup already fails OPEN (`quotaDecision`), so a slow counter costs at
+ *  most one under-counted request, never a lost feature; the phone would
+ *  rather get an answer than a precisely-counted one.
+ */
+const DEFAULT_LOOKUP_DEADLINE_MS = 1500;
 
 /**
- * Reads `ask_usage_counts` with a hard client-side deadline (default 4s,
- * just under the ~5 s API-gateway timeout that caused the 2026-09-13
- * incident, so this deadline wins). Never throws -- a timeout or a Postgres error is reported back
+ * Reads `ask_usage_counts` with a hard client-side deadline (default 1.5s;
+ * see `DEFAULT_LOOKUP_DEADLINE_MS`). Never throws -- a timeout or a Postgres error is reported back
  * as a value, not thrown, so every caller can fail OPEN (proceed as if the
  * counts were zero) rather than propagate a 502 for a lookup that has
  * nothing to do with whether the student is actually over quota.
@@ -161,12 +174,18 @@ const DEFAULT_QUOTA_DEADLINE_MS = 4000;
  * after this function has already returned a timeout to its caller), and a
  * plain `setTimeout` raced against the request as a belt-and-braces
  * fallback in case a given builder -- or, in tests, a fake one -- doesn't
- * honor the signal.
+ * honor the signal. That second timer's id is kept and cleared in `finally`
+ * alongside the abort timer -- see `recordUsage`'s comment on the same
+ * pattern below for why an uncleared one is a real bug, not just untidy:
+ * without this, a request that wins the race leaves the timeout's own timer
+ * running for the rest of `deadlineMs`, doing nothing here (its `resolve()`
+ * is a harmless no-op against an already-settled `Promise.race`) but still
+ * holding the isolate's event loop open for that long for no reason.
  */
 export async function lookupUsageCounts(
   serviceClient: RPCClientLike,
   userId: string,
-  deadlineMs = DEFAULT_QUOTA_DEADLINE_MS,
+  deadlineMs = DEFAULT_LOOKUP_DEADLINE_MS,
 ): Promise<UsageLookup> {
   const controller = new AbortController();
   const abortTimer = setTimeout(() => controller.abort(), deadlineMs);
@@ -195,8 +214,9 @@ export async function lookupUsageCounts(
     }
   })();
 
+  let warnTimer: number | undefined;
   const timeout = new Promise<UsageLookup>((resolve) => {
-    setTimeout(() => {
+    warnTimer = setTimeout(() => {
       resolve({ ok: false, reason: "timeout", message: `ask_usage_counts exceeded ${deadlineMs}ms deadline` });
     }, deadlineMs);
   });
@@ -205,6 +225,7 @@ export async function lookupUsageCounts(
     return await Promise.race([request, timeout]);
   } finally {
     clearTimeout(abortTimer);
+    clearTimeout(warnTimer);
   }
 }
 
@@ -239,31 +260,44 @@ export function quotaDecision(
 }
 
 /**
- * Records one request against `ask_usage` with the same hard deadline
- * `lookupUsageCounts` uses, and never throws: every existing call site
- * already treats a `record_ask_usage` failure as log-and-continue (the
- * answer has either already been decided or already been delivered by the
- * time this runs), so a stall here should degrade the same way a lookup
- * stall does -- one under-counted request, never a delayed or broken
- * response. The wrong fix would be leaving this call unbounded on the
- * theory that "it's already fire-and-forget, so a slow RPC doesn't matter"
- * -- in `ask/index.ts` this runs *inside* the SSE generator, after the
- * `done` event, and the generator's `for await` loop does not close the
- * response stream until this call settles, so an unbounded stall here
- * would hold a client's connection open long after every byte it's ever
- * going to get has already been sent.
+ * Records one request against `ask_usage` with its own hard deadline
+ * (default 4s; see `DEFAULT_RECORD_DEADLINE_MS`), and never throws: every
+ * existing call site already treats a `record_ask_usage` failure as
+ * log-and-continue (the answer has either already been decided or already
+ * been delivered by the time this runs), so a stall here should degrade the
+ * same way a lookup stall does -- one under-counted request, never a
+ * delayed or broken response. The wrong fix would be leaving this call
+ * unbounded on the theory that "it's already fire-and-forget, so a slow RPC
+ * doesn't matter" -- in `ask/index.ts` this runs *inside* the SSE
+ * generator, after the `done` event, and the generator's `for await` loop
+ * does not close the response stream until this call settles, so an
+ * unbounded stall here would hold a client's connection open long after
+ * every byte it's ever going to get has already been sent.
+ *
+ * The "exceeded deadline" warning below used to fire on *every* request,
+ * regardless of whether the write actually landed in time -- 2026-09-22's
+ * canary timing work found `record_ask_usage` and `record_ask_outcome`
+ * succeeding in 125-440ms (see the `console.log` in the `try` block) while
+ * this warning logged anyway, ~4s later, on every single one. The bug was
+ * that only `abortTimer` was ever cleared in `finally`; the warning's own
+ * `setTimeout` kept running even after `request` had already won the race
+ * and the isolate was kept alive regardless by `EdgeRuntime.waitUntil`, so
+ * the stale timer fired and logged a lie every time. `warnTimer` is now
+ * kept and cleared alongside `abortTimer`, so if this warning fires now, it
+ * means what it says: the write really did not return inside `deadlineMs`.
  */
 export async function recordUsage(
   serviceClient: RPCClientLike,
   userId: string,
   promptTokens: number,
   completionTokens: number,
-  deadlineMs = DEFAULT_QUOTA_DEADLINE_MS,
+  deadlineMs = DEFAULT_RECORD_DEADLINE_MS,
 ): Promise<void> {
   const controller = new AbortController();
   const abortTimer = setTimeout(() => controller.abort(), deadlineMs);
 
   const request = (async (): Promise<void> => {
+    const t0 = Date.now();
     try {
       const { error } = await serviceClient
         .rpc("record_ask_usage", {
@@ -274,6 +308,11 @@ export async function recordUsage(
         .abortSignal(controller.signal);
       if (error) {
         console.warn("quota: record_ask_usage failed, one request will go under-counted:", error.message);
+      } else {
+        // Timing of the successful round-trip, so the "exceeded deadline"
+        // warning below can be read against how long the write really took
+        // when it did land.
+        console.log(`quota: record_ask_usage ok in ${Date.now() - t0}ms`);
       }
     } catch (err) {
       console.warn(
@@ -283,8 +322,9 @@ export async function recordUsage(
     }
   })();
 
+  let warnTimer: number | undefined;
   const timeout = new Promise<void>((resolve) => {
-    setTimeout(() => {
+    warnTimer = setTimeout(() => {
       console.warn(`quota: record_ask_usage exceeded ${deadlineMs}ms deadline, one request will go under-counted`);
       resolve();
     }, deadlineMs);
@@ -294,5 +334,6 @@ export async function recordUsage(
     await Promise.race([request, timeout]);
   } finally {
     clearTimeout(abortTimer);
+    clearTimeout(warnTimer);
   }
 }

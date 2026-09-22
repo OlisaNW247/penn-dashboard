@@ -73,6 +73,17 @@ export interface RecordOutcomeInput {
    *  any of those, and this one specifically must never be handed one. */
   detail?: string;
   probe?: string | null;
+  /** `ask/index.ts`'s `timing.preRace` -- wall-clock time from the start of
+   *  the request to the moment the model race begins (auth, body parsing,
+   *  the quota check, and loading enrollment/profiles/catalog). Undefined
+   *  for any outcome recorded before that point is reached (a malformed
+   *  request, a quota rejection, a missing API key), since there is no
+   *  meaningful number yet. */
+  preRaceMs?: number;
+  /** `ask/index.ts`'s `timing.race` -- wall-clock time spent in
+   *  `runHedgedRace` itself, from the first model call to a winning delta
+   *  or a failure. Undefined whenever the request never reached the race. */
+  raceMs?: number;
 }
 
 /** Minimal shape of a service-role Supabase client this module needs --
@@ -93,6 +104,16 @@ const MAX_DETAIL_CHARS = 200;
  * never be able to make the request itself slower or less reliable. A
  * timeout or a database error is logged and dropped, one missing outcome
  * row, nothing more.
+ *
+ * The "exceeded deadline" warning below used to fire on every request
+ * regardless of how fast the write actually landed, because only
+ * `abortTimer` was cleared in `finally` -- the warning's own `setTimeout`
+ * kept ticking even after `request` won the race, and `EdgeRuntime
+ * .waitUntil` kept the isolate alive long enough for it to fire anyway (see
+ * `quota.ts`'s `recordUsage`, which had the identical bug, for the full
+ * incident writeup). `warnTimer` is now kept and cleared alongside
+ * `abortTimer`, so this warning firing now means what it says: the write
+ * really did not return inside `deadlineMs`.
  */
 export async function recordOutcome(
   serviceClient: RPCClientLike,
@@ -103,6 +124,7 @@ export async function recordOutcome(
   const abortTimer = setTimeout(() => controller.abort(), deadlineMs);
 
   const request = (async (): Promise<void> => {
+    const t0 = Date.now();
     try {
       const { error } = await serviceClient
         .rpc("record_ask_outcome", {
@@ -120,18 +142,23 @@ export async function recordOutcome(
           p_upstream_status: input.upstreamStatus ?? null,
           p_detail: input.detail ? input.detail.slice(0, MAX_DETAIL_CHARS) : null,
           p_probe: input.probe ?? null,
+          p_pre_race_ms: input.preRaceMs ?? null,
+          p_race_ms: input.raceMs ?? null,
         })
         .abortSignal(controller.signal);
       if (error) {
         console.warn("ask: record_ask_outcome failed:", error.message);
+      } else {
+        console.log(`ask: record_ask_outcome ok in ${Date.now() - t0}ms`);
       }
     } catch (err) {
       console.warn("ask: record_ask_outcome failed:", err instanceof Error ? err.message : String(err));
     }
   })();
 
+  let warnTimer: number | undefined;
   const timeout = new Promise<void>((resolve) => {
-    setTimeout(() => {
+    warnTimer = setTimeout(() => {
       console.warn(`ask: record_ask_outcome exceeded ${deadlineMs}ms deadline`);
       resolve();
     }, deadlineMs);
@@ -141,5 +168,6 @@ export async function recordOutcome(
     await Promise.race([request, timeout]);
   } finally {
     clearTimeout(abortTimer);
+    clearTimeout(warnTimer);
   }
 }

@@ -185,9 +185,50 @@ export async function handleAsk(
   // mark its own traffic. See `_shared/probe.ts`'s doc comment.
   const probeTag = readProbeTag(req);
 
+  // Per-step wall-clock timing, logged once per request. Added 2026-09-22
+  // when a 50-run soak on the canary had one request take 10.2 s to its
+  // first delta with the hedge never firing -- the hedge timer only
+  // watches the model call, so the time had gone into the database reads
+  // before it, and nothing measured them. Declared here, immediately after
+  // `startedAt`, rather than further down past the quota check, so `auth`
+  // and `parse` -- the two steps that run before this file has even seen
+  // the request body -- can be timed too. Milliseconds only.
+  const timing: Record<string, number> = {};
+  const timed = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+    const t0 = Date.now();
+    try {
+      return await work();
+    } finally {
+      timing[label] = Date.now() - t0;
+    }
+  };
+
+  // `requireUser` (`_shared/auth.ts`) has no deadline of its own -- it
+  // awaits GoTrue's `auth.getUser()` unbounded -- and its contract is
+  // shared by five other edge functions (delete-account, discover-websites,
+  // extract-announcement, extract-profile, map-categories, sync), so it is
+  // not changed here; a 3s client-side race around the call, local to this
+  // file, gets `ask` the same "never hang forever on auth" guarantee
+  // without touching what those other five functions rely on. If
+  // `requireUser` does eventually settle after the race has already timed
+  // out, its result (or its own thrown `HttpError`) is simply discarded --
+  // `.catch(() => {})` below exists only to keep that late settlement from
+  // surfacing as an unhandled promise rejection in the isolate's logs.
+  const AUTH_TIMEOUT_MS = 3000;
+  const withAuthTimeout = <T>(promise: Promise<T>): Promise<T> => {
+    let timer: number | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        promise.catch(() => {});
+        reject(new HttpError(401, "unauthorized", `auth check exceeded ${AUTH_TIMEOUT_MS}ms deadline`));
+      }, AUTH_TIMEOUT_MS);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  };
+
   try {
-    const { userId, serviceClient } = await requireUser(req);
-    const rawBody = await readJSON<unknown>(req);
+    const { userId, serviceClient } = await timed("auth", () => withAuthTimeout(requireUser(req)));
+    const rawBody = await timed("parse", () => readJSON<unknown>(req));
     const body = parseAskRequestBody(rawBody);
 
     // Only ever non-`undefined` when `options.allowProbeOverrides` is true
@@ -223,7 +264,18 @@ export async function handleAsk(
       return errorResponse("bad_request", "malformed ask request", 400);
     }
 
-    const quotaResponse = await checkAskQuota(serviceClient, userId);
+    // The quota check and loading which of the request's `courseIDs` this
+    // user is actually enrolled in are independent of each other -- neither
+    // reads anything the other writes -- so they run concurrently rather
+    // than back-to-back. This does not change the early-return semantics: a
+    // 429 from `checkAskQuota` is still returned regardless of what
+    // `loadEnrolledCourseIDs` came back with (its result is simply unused
+    // and discarded on that path, a small wasted read rather than a
+    // correctness risk).
+    const [quotaResponse, enrolledIDs] = await Promise.all([
+      timed("quota", () => checkAskQuota(serviceClient, userId)),
+      timed("enrolled", () => loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs)),
+    ]);
     if (quotaResponse) {
       scheduleBackground(recordOutcome(serviceClient, {
         userId,
@@ -235,9 +287,13 @@ export async function handleAsk(
       return quotaResponse;
     }
 
-    const enrolledIDs = await loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
-    const profiles = await loadCourseProfiles(serviceClient, enrolledIDs);
-    const catalog = await loadCatalogCourses(serviceClient, enrolledIDs);
+    // Same reasoning as above: `loadCourseProfiles` and `loadCatalogCourses`
+    // both depend only on `enrolledIDs`, not on each other, so they also run
+    // concurrently.
+    const [profiles, catalog] = await Promise.all([
+      timed("profiles", () => loadCourseProfiles(serviceClient, enrolledIDs)),
+      timed("catalog", () => loadCatalogCourses(serviceClient, enrolledIDs)),
+    ]);
 
     // `contextTrimChars` is the one override that lets a canary harness
     // reproduce the 2026-09-14 "reasoning ate the whole cap" shape at a
@@ -298,6 +354,8 @@ export async function handleAsk(
     // `HEDGE_AFTER_MS` above), and a canary wanting to test the fallback
     // model's own reasoning shape can do that directly by pointing `model`
     // (not `fallbackModel`) at it.
+    const raceStartedAt = Date.now();
+    timing.preRace = raceStartedAt - startedAt;
     const race = await runHedgedRace({
       buildStreamOptions,
       primary: { model, reasoning: probeOverrides?.reasoning ?? reasoningFor(model) },
@@ -307,6 +365,8 @@ export async function handleAsk(
       startedAt,
     });
 
+    timing.race = Date.now() - raceStartedAt;
+    console.log(`ask: timing ${JSON.stringify(timing)}`);
     if (!race.ok) {
       logUpstreamFailure("before first chunk (race)", race.failure.cause);
       scheduleBackground(recordOutcome(serviceClient, {
@@ -317,6 +377,8 @@ export async function handleAsk(
         detail: race.failure.detail,
         latencyMs: Date.now() - startedAt,
         probe: probeTag,
+        preRaceMs: timing.preRace,
+        raceMs: timing.race,
       }));
       return errorResponse("upstream", "the model backend failed", 502);
     }
@@ -326,6 +388,8 @@ export async function handleAsk(
       startedAt,
       probe: probeTag,
       outcomeDetail: race.winner.detail,
+      preRaceMs: timing.preRace,
+      raceMs: timing.race,
     }));
   } catch (err) {
     if (err instanceof HttpError) {
@@ -549,7 +613,14 @@ async function* runAskStream(
   first: IteratorResult<StreamEvent>,
   serviceClient: SupabaseClient,
   userId: string,
-  telemetry: { model: string; startedAt: number; probe: string | null; outcomeDetail?: string },
+  telemetry: {
+    model: string;
+    startedAt: number;
+    probe: string | null;
+    outcomeDetail?: string;
+    preRaceMs?: number;
+    raceMs?: number;
+  },
 ): AsyncGenerator<SSEEvent> {
   let promptTokens = 0;
   let completionTokens = 0;
@@ -603,6 +674,8 @@ async function* runAskStream(
         ? `${telemetry.outcomeDetail}; then upstream_error: ${describeUpstreamError(err)}`.slice(0, 200)
         : describeUpstreamError(err),
       probe: telemetry.probe,
+      preRaceMs: telemetry.preRaceMs,
+      raceMs: telemetry.raceMs,
     }));
     yield { type: "error", code: "upstream", message: "the model backend failed" };
     return;
@@ -648,6 +721,8 @@ async function* runAskStream(
     firstDeltaMs,
     detail: telemetry.outcomeDetail,
     probe: telemetry.probe,
+    preRaceMs: telemetry.preRaceMs,
+    raceMs: telemetry.raceMs,
   }));
 
   yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
