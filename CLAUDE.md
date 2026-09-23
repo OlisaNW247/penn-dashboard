@@ -93,7 +93,24 @@ screen instead of tapping through to it on every rebuild:
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v6`, verified on a Mac (2026-09-17): **1336 tests / 130 suites
+Baseline on `v6`, verified on a Mac (2026-09-23): **1371 tests / 136 suites
+green** in 2.3 s after the Ed Discussion recon probe (11 tests, 5 suites,
+`docs/ED_DISCUSSION.md`) and the stale-cookie test fix; compiled first
+time. The same session found a third flake, worse than the two below: the
+full run hung twice in a row, once for two hours, then passed twice
+without a code change. Every pure test finished in 0.15 s and everything
+still in flight was main-actor code (AppState inits, the Keychain
+stores), so it looks like a main-thread deadlock, and it is NOT the
+Keychain prompt (the Keychain suites pass alone in under a second). Not
+pinned down. When it recurs, do not guess: while it hangs, from a second
+terminal `sample $(pgrep -f LowHangingFruitKitPackageTests | head -1) 3
+-file /tmp/sample.txt` and read the main thread's stack. Two lessons
+from the diagnosis: `swift test 2>&1 | grep` fully buffers the runner's
+stdout, so the last line printed is not where it stopped (use `script -q
+/tmp/log swift test` for a pty), and `--filter` matches Swift type names
+(`SessionCookieStoreTests`), never the quoted display names.
+
+Before that, verified on a Mac (2026-09-17): **1336 tests / 130 suites
 green** after the gated Canvas access-token plumbing and stay-signed-in
 (1,700 blind lines from three agents). Two first-compile fixes, both
 instructive: a `static func` on `@MainActor AppState` called from a
