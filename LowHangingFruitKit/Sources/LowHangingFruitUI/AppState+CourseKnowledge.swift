@@ -239,11 +239,22 @@ extension AppState {
         }
 
         let store = CourseKnowledgeStore.default()
-        let collector = CourseKnowledgeCollector(cookies: cookies, store: store, accessToken: canvasAccessTokenBearer)
+        let collector = CourseKnowledgeCollector(
+            cookies: cookies,
+            store: store,
+            baseURL: canvasBaseURL,
+            accessToken: canvasAccessTokenBearer
+        )
 
-        guard let client = BackendServices.client else {
-            // No backend configured: this phone is fully on-device, exactly
-            // as it always was. Fetch every course fully from Canvas.
+        // The current shared-course backend keys rows by Penn's numeric
+        // Canvas course id and enriches them through Penn Labs. Until that
+        // schema is namespaced by Canvas origin, non-Penn installations stay
+        // fully on-device; this prevents two schools' identical numeric ids
+        // from ever pooling documents together.
+        guard canvasInstallation.id == CanvasInstallation.penn.id,
+              let client = BackendServices.client else {
+            // No safe shared backend is available for this installation, so
+            // this phone stays fully on-device. Fetch every course from Canvas.
             // `trace.manifestSucceeded` stays `false` — there was never a
             // manifest to succeed or fail — and `coursesToFetch` is every
             // course, since there's no manifest-derived plan to shrink it.

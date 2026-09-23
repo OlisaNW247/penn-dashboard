@@ -1,19 +1,18 @@
-const STORAGE_KEY = "smooth-prototype-assignments-v2";
+const STORAGE_KEY = "locust-prototype-assignments-v4";
 
 const palette = {
-  tomato: "#F07256",
-  marigold: "#F7A844",
-  lemon: "#F5D353",
-  teal: "#40B3A5",
-  cobalt: "#699AE7",
-  grape: "#AF85F0",
+  overdue: "#FF4B3A",
+  today: "#FF9F1C",
+  tomorrow: "#F5D90A",
+  later: "#1DCBB8",
+  done: "#DCE0E0",
 };
 
 const seedTasks = [
   { id: "fnar-review", course: "FNAR 3230", title: "Sketchbook review", offsetHours: -96 },
   { id: "cis-pset-5", course: "CIS 1210", title: "PSet 5: graph algorithms", offsetHours: -48 },
   { id: "econ-pset-3", course: "ECON 1", title: "Problem set 3", offsetHours: 5 },
-  { id: "mgmt-reading-7", course: "MGMT 1010", title: "Reading response 7", offsetHours: 9 },
+  { id: "mgmt-reading-7", course: "MGMT 1010", title: "Reading response 7", offsetHours: 30 },
   { id: "meam-lab-4", course: "MEAM 1010", title: "Lab report 4", weekday: 0 },
   { id: "cis-pset-6", course: "CIS 1210", title: "PSet 6: hashing", weekday: 1 },
   { id: "econ-midterm", course: "ECON 1", title: "Midterm study guide", weekday: 2 },
@@ -30,9 +29,24 @@ const menu = document.querySelector("#prototypeMenu");
 const menuButton = document.querySelector("#openMenu");
 const toast = document.querySelector("#toast");
 
-let activeFilter = "week";
+let activeFilter = "todo";
 let assignments = loadAssignments();
 let toastTimer;
+
+function updateTimeLabels() {
+  const now = new Date();
+  document.querySelector("#statusTime").textContent = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(now);
+  document.querySelector("#dateLabel").textContent = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+  const hour = now.getHours();
+  document.querySelector("#dayPeriod").textContent = hour < 12 ? "morning." : hour < 18 ? "afternoon." : "evening.";
+}
 
 function seededAssignments() {
   const now = Date.now();
@@ -75,26 +89,31 @@ function dueMeta(assignment) {
 
   if (diffHours < 0) {
     const daysLate = Math.max(1, Math.round(Math.abs(diffHours) / 24));
-    return { group: "overdue", color: "tomato", value: `${daysLate}d`, qualifier: "late", rank: 0 };
+    return { group: "overdue", color: "overdue", value: `${daysLate}d`, qualifier: "late", rank: 0 };
   }
 
-  if (diffHours <= 24) {
+  if (dayDiff === 0) {
     return {
       group: "today",
-      color: diffHours <= 7 ? "marigold" : "lemon",
+      color: "today",
       value: `${Math.max(1, Math.round(diffHours))}h`,
-      qualifier: "",
+      qualifier: "left",
       rank: 1,
     };
   }
 
-  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(due);
-  let color = "grape";
-  if (due.getDay() === 0 || due.getDay() === 6) color = "teal";
-  else if (due.getDay() === 1) color = "teal";
-  else if (due.getDay() === 2) color = "cobalt";
+  if (dayDiff === 1) {
+    return {
+      group: "tomorrow",
+      color: "tomorrow",
+      value: new Intl.DateTimeFormat("en-US", { hour: "numeric" }).format(due),
+      qualifier: "tomorrow",
+      rank: 2,
+    };
+  }
 
-  return { group: "week", color, value: weekday, qualifier: "", rank: 2 };
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(due);
+  return { group: "later", color: "later", value: weekday, qualifier: "", rank: 3 };
 }
 
 function calendarDayDifference(from, to) {
@@ -105,8 +124,8 @@ function calendarDayDifference(from, to) {
 
 function visibleAssignments() {
   if (activeFilter === "done") return assignments.filter((item) => item.done);
-  if (activeFilter === "week") {
-    return assignments.filter((item) => !item.done && calendarDayDifference(new Date(), new Date(item.dueAt)) <= 7);
+  if (activeFilter === "todo") {
+    return assignments.filter((item) => !item.done && calendarDayDifference(new Date(), new Date(item.dueAt)) <= 1);
   }
   return assignments.filter((item) => !item.done);
 }
@@ -118,24 +137,23 @@ function render() {
     : [
         { key: "overdue", label: "Overdue", tasks: visible.filter((item) => dueMeta(item).group === "overdue") },
         { key: "today", label: "Today", tasks: visible.filter((item) => dueMeta(item).group === "today") },
-        { key: "week", label: activeFilter === "all" ? "Coming up" : "Rest of week", tasks: visible.filter((item) => dueMeta(item).group === "week") },
+        { key: "tomorrow", label: "Tomorrow", tasks: visible.filter((item) => dueMeta(item).group === "tomorrow") },
+        { key: "later", label: "Later", tasks: visible.filter((item) => dueMeta(item).group === "later") },
       ];
 
   const populated = groups.filter((group) => group.tasks.length > 0);
   if (!populated.length) {
     const copy = activeFilter === "done"
       ? ["Nothing finished yet", "Tap an assignment and it’ll land here."]
-      : ["You’re all smooth", "No assignments in this view."];
+      : ["Clear runway", "Nothing needs you in this view."];
     list.innerHTML = `<div class="empty-state"><strong>${copy[0]}</strong><span>${copy[1]}</span></div>`;
   } else {
     list.innerHTML = populated.map(groupTemplate).join("");
   }
 
-  const leftThisWeek = assignments.filter((item) => {
-    const meta = dueMeta(item);
-    return !item.done && meta.group !== "overdue" && calendarDayDifference(new Date(), new Date(item.dueAt)) <= 7;
-  }).length;
-  document.querySelector("#weekCount").textContent = leftThisWeek;
+  const todoCount = assignments.filter((item) => !item.done && calendarDayDifference(new Date(), new Date(item.dueAt)) <= 1).length;
+  document.querySelector("#todoCount").textContent = todoCount;
+  document.querySelector(".focus-signal").hidden = activeFilter !== "todo";
   bindTaskCards();
 }
 
@@ -153,7 +171,8 @@ function taskTemplate(task) {
   const meta = dueMeta(task);
   const qualifier = meta.qualifier ? `<small>${meta.qualifier}</small>` : "";
   return `
-    <article class="task-card${task.done ? " done" : ""}" data-id="${escapeHTML(task.id)}" style="--fill:${palette[meta.color]}" role="button" tabindex="0" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${escapeHTML(task.title)}" aria-pressed="${task.done}">
+    <article class="task-card${task.done ? " done" : ""}" data-id="${escapeHTML(task.id)}" style="--status:${palette[task.done ? "done" : meta.color]}" role="button" tabindex="0" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${escapeHTML(task.title)}" aria-pressed="${task.done}">
+      <span class="completion-dot" aria-hidden="true"></span>
       <div class="task-copy">
         <span class="course-code">${escapeHTML(task.course)}</span>
         <h3 class="task-title">${escapeHTML(task.title)}</h3>
@@ -276,9 +295,9 @@ form.addEventListener("submit", (event) => {
   saveAssignments();
   form.reset();
   closeSheet();
-  activeFilter = "all";
+  activeFilter = calendarDayDifference(new Date(), new Date(dueAt)) <= 1 ? "todo" : "all";
   tabs.forEach((tab) => {
-    const active = tab.dataset.filter === "all";
+    const active = tab.dataset.filter === activeFilter;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-pressed", String(active));
   });
@@ -290,4 +309,5 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !addSheet.hidden) closeSheet();
 });
 
+updateTimeLabels();
 render();

@@ -47,6 +47,7 @@ struct CoursePreferencesTests {
         #expect(store.isSelected("CIS 1200"))
         #expect(!store.isDeleted("CIS 1200"))
         #expect(store.notificationsEnabled("CIS 1200"))
+        #expect(store.announcementAssignmentsOnDashboard("CIS 1200"))
         #expect(!store.isArchived("CIS 1200"))
         #expect(store.canvasCourseID(for: "CIS 1200") == nil)
 
@@ -95,6 +96,7 @@ struct CoursePreferencesTests {
         store.setCanvasCourseID("CIS 1600", "1234567")
         store.setNotificationsEnabled("CIS 2400", false)
         store.setLeadOffsets("CIS 2400", [.d7])
+        store.setAnnouncementAssignmentsOnDashboard("PHYS 0151", false)
         store.setArchivedTerm("CIS 1100", Term(year: 2026, season: .spring))
 
         // A separate instance, as a relaunch would build.
@@ -104,6 +106,7 @@ struct CoursePreferencesTests {
         #expect(reloaded.canvasCourseID(for: "CIS 1600") == "1234567")
         #expect(!reloaded.notificationsEnabled("CIS 2400"))
         #expect(reloaded.leadOffsets(for: "CIS 2400") == [.d7])
+        #expect(!reloaded.announcementAssignmentsOnDashboard("PHYS 0151"))
         #expect(reloaded.archivedTerm(for: "CIS 1100") == Term(year: 2026, season: .spring))
         #expect(reloaded.isArchived("CIS 1100"))
     }

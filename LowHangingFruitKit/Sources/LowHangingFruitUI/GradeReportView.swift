@@ -135,6 +135,7 @@ struct GradeReportView: View {
                 store: store,
                 courseID: courseID,
                 courseName: courseName,
+                canvasBaseURL: state.canvasBaseURL,
                 syncedSyllabusText: state.courseKnowledge.syllabusText(forCourseID: courseID)
             )
         }

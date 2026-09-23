@@ -65,6 +65,86 @@ public enum ExtractedTaskKind: String, Sendable, Codable, Hashable {
     case preparation
 }
 
+/// One shared vocabulary for deciding whether announcement language belongs
+/// on the owed-work dashboard or in the quieter announcement-finds inbox.
+/// Extractors and persisted-row placement both call this type so a backend
+/// guess cannot permanently disagree with the on-device heuristic.
+public enum AnnouncementTaskClassifier {
+    /// `midterm`, `mid term`, and `mid-term` are the same noun in professor
+    /// prose. Keeping that tolerance inside the shared classifier prevents
+    /// one spelling from reaching the dashboard while another becomes a find.
+    private static let assessmentNoun = #"(?:quiz(?:zes)?|tests?|assessments?|exams?|mid[\s-]*terms?|prelims?|finals?)"#
+    private static let assessmentOrAssignmentNoun = #"(?:"# + assessmentNoun + #"|survey|poll|form|assignment|problem\s+set|pset|homework|hw|lab\s+report|essay|paper|project)"#
+
+    private static let informationalPatterns = [
+        #"\b(slides|notes|recording|lecture video|handout|solutions|grades|scores|feedback)\b.{0,40}?\b(posted|uploaded|available|up|out|released|online)\b"#,
+        #"\broom change\b"#,
+        #"\blocation change\b"#,
+        #"\boffice hours\b.{0,20}?\b(moved|changed|cancel\w*)\b"#,
+        #"\bclass\b.{0,10}?\bcancel\w*\b"#,
+        #"\bno class\b"#,
+        #"\breminder:\s*(no|there is no)\b"#,
+    ]
+
+    public static func isInformational(_ text: String) -> Bool {
+        informationalPatterns.contains { matches($0, in: text) }
+    }
+
+    /// Classification hierarchy is intentional:
+    ///
+    /// 1. A practice-modified assessment is preparation even when introduced
+    ///    by "take" ("take the practice mid term").
+    /// 2. Any recognized assessment noun is submission: announcement titles
+    ///    are often just "Quiz 2" or "Mid term 1" with no imperative verb.
+    /// 3. Explicit transfer verbs (submit/upload/turn in…) are submission and
+    ///    outrank generic prep language ("review and submit Problem Set 2").
+    /// 4. Preparation/reference verbs remain finds when no assessment is named.
+    /// 5. Ambiguous actions (take/complete/sit) require a recognized work noun;
+    ///    "take a seat" never qualifies.
+    /// 6. A recognized work noun explicitly described as due is submission.
+    /// 7. Informational or unknown prose returns nil rather than inventing debt.
+    public static func taskKind(in text: String) -> ExtractedTaskKind? {
+        let lower = text.lowercased()
+        if isInformational(lower) { return nil }
+
+        let practiceAssessment = #"\bpractice\b.{0,40}\b"# + assessmentNoun + #"\b"#
+        if matches(practiceAssessment, in: lower) { return .preparation }
+
+        if matches(#"\b"# + assessmentNoun + #"\b"#, in: lower) { return .submission }
+
+        // Deliberately excludes past-tense "submitted"/"uploaded" and the
+        // noun "submission": this tier describes an instruction to transfer
+        // work, not a status report. The outer extractor separately requires
+        // student-directed language; dashboard placement also runs the
+        // informational guard above before reaching this rule.
+        let explicitTransfer = #"\b(submit|submits|submitting|upload|uploads|uploading)\b|\bturn\s+in\b|\bhand\s+in\b|\bfill\s+out\b"#
+        if matches(explicitTransfer, in: lower) { return .submission }
+
+        let preparationCue = #"\b(review|study|bring|read|watch|prepare|print|skim)\w*\b|\blook\s+over\b"#
+        if matches(preparationCue, in: lower) { return .preparation }
+        if matches(#"\bfinish\w*\b"#, in: lower),
+           matches(#"\b(reading|chapter|ch|pages|pp|article|book)\b"#, in: lower) {
+            return .preparation
+        }
+
+        let ambiguousAction = #"\b(complete\w*|take|sit)\b"#
+        if matches(ambiguousAction, in: lower),
+           matches(#"\b"# + assessmentOrAssignmentNoun + #"\b"#, in: lower) {
+            return .submission
+        }
+
+        if matches(#"\bdue\b"#, in: lower),
+           matches(#"\b"# + assessmentOrAssignmentNoun + #"\b"#, in: lower) {
+            return .submission
+        }
+        return nil
+    }
+
+    private static func matches(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
 /// A candidate assignment an extractor believes an announcement describes.
 ///
 /// Deliberately *not* `Assignment` — this is a proposal, not a ledger row.

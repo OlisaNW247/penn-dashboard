@@ -9,7 +9,7 @@ import LowHangingFruitKit
 /// ## The one design problem this screen has
 ///
 /// Every class starts out **inheriting** the global reminder times from
-/// Profile → Preferences. That is what makes the global control worth having:
+/// Profile → Reminders. That is what makes the global control worth having:
 /// a student sets "1 day and 1 hour before" once, and six classes follow it
 /// without anyone configuring six classes. `CoursePreferences.leadOffsets` is
 /// optional for exactly this reason, and `nil` — inherit — is the state almost
@@ -34,8 +34,8 @@ import LowHangingFruitKit
 ///    seeds the override from the current global so the student starts from
 ///    where they already were rather than from nothing.
 /// 3. **While inheriting, the lead times are not controls.** They render as a
-///    flat, dimmed, non-tappable read-out tied to Profile's preferences.
-///    Nothing on screen looks settable unless setting it
+///    flat, dimmed, non-tappable read-out with the words "from Profile →
+///    Reminders" underneath. Nothing on screen looks settable unless setting it
 ///    is what it does. That is the whole point — a disabled-looking toggle still
 ///    reads as *this class's* toggle, so there are no toggles here at all until
 ///    the student asks for them.
@@ -64,6 +64,14 @@ struct ProfileNotificationsSection: View {
 
     var body: some View {
         Section {
+            if state.canvasInstallation.id == CanvasInstallation.penn.id,
+               BackendServices.client != nil {
+                Toggle("ai assist", isOn: Binding(
+                    get: { state.announcementAIEnabled },
+                    set: { state.setAnnouncementAIEnabled($0) }
+                ))
+            }
+
             if !scheduler.isEnabled {
                 remindersOffNotice
             }
@@ -156,6 +164,12 @@ struct ProfileNotificationsSection: View {
 
     @ViewBuilder
     private func courseControls(_ course: String) -> some View {
+        Toggle("announcements on dashboard", isOn: Binding(
+            get: { preferences.announcementAssignmentsOnDashboard(course) },
+            set: { state.setAnnouncementAssignmentsOnDashboard(course, $0) }
+        ))
+        .font(.lhfSecondary(14))
+
         Toggle("reminders for this class", isOn: Binding(
             get: { preferences.notificationsEnabled(course) },
             set: { newValue in
@@ -216,7 +230,7 @@ struct ProfileNotificationsSection: View {
                 // student asked to customise them — the opposite of what
                 // "customise" means — and they would have to rebuild a selection
                 // they had never chosen to lose. Turning it back on stores `nil`,
-                // which resumes following Profile preferences rather than freezing today's
+                // which resumes following Profile rather than freezing today's
                 // value.
                 preferences.setLeadOffsets(course, useDefaults ? nil : scheduler.leadOffsets)
                 scheduler.rescheduleAfterPreferenceChange()
@@ -251,7 +265,7 @@ struct ProfileNotificationsSection: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("inherited reminder times: \(offsetList(scheduler.leadOffsets)). set in profile preferences. this class follows them.")
+        .accessibilityLabel("inherited reminder times: \(offsetList(scheduler.leadOffsets)). set in profile, reminders. this class follows them.")
     }
 
     @ViewBuilder
@@ -327,7 +341,7 @@ struct ProfileNotificationsSection: View {
 
         if effective.isEmpty {
             return inheriting
-                ? "No default reminder times are set.\(nothingToSubmit)"
+                ? "No reminder times are set in Profile.\(nothingToSubmit)"
                 : "No reminder times.\(nothingToSubmit)"
         }
         let times = offsetList(effective)

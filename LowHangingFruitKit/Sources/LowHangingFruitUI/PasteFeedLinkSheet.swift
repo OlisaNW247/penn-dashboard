@@ -4,8 +4,8 @@ import LowHangingFruitKit
 /// "Paste your Canvas calendar link" — a first-class fallback to the
 /// WKWebView login (docs/CANVAS_LOGIN_HARDENING.md item 3b), reachable from
 /// both onboarding and Settings. Canvas → Calendar → "Calendar Feed" gives
-/// every student this exact link without needing to pass Penn SSO inside the
-/// app at all, so it's the one path that keeps working even while the
+/// every student this exact link without needing to pass their school's SSO
+/// inside the app at all, so it's the one path that keeps working even while the
 /// embedded-login "Stale Request" bug is being chased down.
 ///
 /// Copy here is deliberately honest about scope: this covers the app's
@@ -26,7 +26,7 @@ struct PasteFeedLinkSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("https://canvas.upenn.edu/feeds/calendars/...", text: $draft)
+                    TextField("\(state.canvasInstallation.host)/feeds/calendars/...", text: $draft)
                         #if os(iOS)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -35,7 +35,7 @@ struct PasteFeedLinkSheet: View {
                 } header: {
                     SmoothSectionHeader("canvas calendar link", accent: .smoothTeal)
                 } footer: {
-                    Text("these steps are for the desktop canvas site — calendar feed isn't available in the canvas app or on a phone browser, so grab the link from a computer. on canvas.upenn.edu: calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given — a webcal:// link works too.")
+                    Text("these steps are for the desktop canvas site — calendar feed isn't available in the canvas app or on a phone browser, so grab the link from a computer. on \(state.canvasInstallation.host): calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given — a webcal:// link works too.")
                         .font(.lhfSecondary(12))
                         .foregroundStyle(Color.v2DateText)
                 }

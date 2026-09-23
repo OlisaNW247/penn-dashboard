@@ -86,6 +86,126 @@ public enum AssignmentDeduplicator {
         return jaccardSimilarity(Set(tokensA), Set(tokensB)) >= similarTitleThreshold
     }
 
+    /// Announcement prose often wraps the real assignment title in an
+    /// imperative ("Take Quiz 2", "Please submit Homework 3"). Comparing
+    /// that prose with a structured Canvas title using the ordinary fuzzy
+    /// tier would require two due dates, even though the directive itself is
+    /// strong evidence and announcements frequently omit the timestamp.
+    ///
+    /// Only the announcement side loses a small, leading directive. This is
+    /// intentionally not general title normalization: stripping words from
+    /// both sides would make genuinely different structured assignments more
+    /// likely to collapse. The same 21-day contradiction guard as an exact
+    /// title match still applies whenever both dates are known.
+    public static func isLikelyAnnouncementDuplicate(
+        announcementTitle: String,
+        announcementDue: Date?,
+        existingTitle: String,
+        existingDue: Date?
+    ) -> Bool {
+        let announcementTokens = announcementCoreTokens(announcementTitle)
+        let existingTokens = normalize(existingTitle)
+        guard !announcementTokens.isEmpty, !existingTokens.isEmpty else { return false }
+
+        if announcementTokens == existingTokens {
+            return announcementDatesDoNotContradict(announcementDue, existingDue)
+        }
+
+        // Assessment identity is stronger than surrounding prose. Canvas can
+        // decorate the official title with a chapter, section, or course code
+        // while the announcement simply says "Take Quiz 2". If both sides
+        // name the same high-confidence assessment kind and primary ordinal,
+        // that is one assessment even when either timestamp is absent.
+        // Practice/retake/makeup variants remain distinct from the ordinary
+        // sitting (and from each other) unless both titles carry the same
+        // modifier set.
+        if let announcementIdentity = assessmentIdentity(in: announcementTokens),
+           let existingIdentity = assessmentIdentity(in: existingTokens),
+           assessmentKindCount(in: announcementTokens) == 1,
+           announcementIdentity == existingIdentity {
+            return announcementDatesDoNotContradict(announcementDue, existingDue)
+        }
+
+        // The extractor can preserve the sentence tail even when its leading
+        // imperative has been removed: "Take Quiz 2 on Canvas by Friday"
+        // becomes [quiz, 2, on, canvas, by, friday]. A structured Canvas title
+        // [quiz, 2] is still the same work. This prefix tier is deliberately
+        // limited to NUMBERED structured titles; allowing an unnumbered title
+        // such as "Quiz" or "Midterm" to absorb every announcement beginning
+        // with that generic word would recreate the false-merge problem this
+        // type is designed to avoid. A second assignment noun or number in the
+        // tail also refuses the match ("Quiz 2 and Quiz 3").
+        let trailingTokens = announcementTokens.dropFirst(existingTokens.count)
+        let tailStartsWithStructuredTitle = announcementTokens.starts(with: existingTokens)
+        let structuredTitleIsNumbered = existingTokens.contains { Int($0) != nil }
+        let tailIntroducesAnotherWorkItem = trailingTokens.contains { token in
+            Int(token) != nil || ["quiz", "exam", "midterm", "test", "hw", "lab", "project", "assignment"].contains(token)
+        }
+        if tailStartsWithStructuredTitle,
+           structuredTitleIsNumbered,
+           !trailingTokens.isEmpty,
+           !tailIntroducesAnotherWorkItem {
+            return announcementDatesDoNotContradict(announcementDue, existingDue)
+        }
+
+        return isLikelyDuplicate(
+            titleA: announcementTitle,
+            dueA: announcementDue,
+            titleB: existingTitle,
+            dueB: existingDue
+        )
+    }
+
+    private static func announcementDatesDoNotContradict(_ announcementDue: Date?, _ existingDue: Date?) -> Bool {
+        guard let announcementDue, let existingDue else { return true }
+        return abs(announcementDue.timeIntervalSince(existingDue)) <= sameTitleMaxDueGap
+    }
+
+    private struct AssessmentIdentity: Equatable {
+        let kind: String
+        let ordinal: Int
+        let modifiers: Set<String>
+    }
+
+    /// A directive that names two assessments (for example, "Take Quiz 2
+    /// and Quiz 3") must not collapse onto either structured assignment.
+    /// Keep the identity shortcut restricted to announcements with one clear
+    /// assessment reference; the more conservative prefix rules below can
+    /// then reject ambiguous tails as well.
+    private static func assessmentKindCount(in tokens: [String]) -> Int {
+        let kinds = Set([
+            "quiz", "quizzes", "test", "tests", "assessment", "assessments",
+            "exam", "exams", "midterm", "midterms", "prelim", "prelims",
+            "final", "finals",
+        ])
+        return tokens.reduce(into: 0) { count, token in
+            if kinds.contains(token) { count += 1 }
+        }
+    }
+
+    private static func assessmentIdentity(in tokens: [String]) -> AssessmentIdentity? {
+        let kinds: [String: String] = [
+            "quiz": "quiz", "quizzes": "quiz",
+            "test": "test", "tests": "test",
+            "assessment": "assessment", "assessments": "assessment",
+            "exam": "exam", "exams": "exam",
+            "midterm": "midterm", "midterms": "midterm",
+            "prelim": "prelim", "prelims": "prelim",
+            "final": "final", "finals": "final",
+        ]
+        guard let kindIndex = tokens.firstIndex(where: { kinds[$0] != nil }),
+              let ordinalToken = tokens[kindIndex...].first(where: { Int($0) != nil }),
+              let ordinal = Int(ordinalToken),
+              let kind = kinds[tokens[kindIndex]]
+        else { return nil }
+        let reservedModifiers = Set(["practice", "retake", "makeup"])
+        return AssessmentIdentity(
+            kind: kind,
+            ordinal: ordinal,
+            modifiers: Set(tokens).intersection(reservedModifiers)
+        )
+    }
+
     // MARK: - Course-scoped, 1:1 pairing
 
     /// Finds the best conservative 1:1 pairing between `canvasItems` and
@@ -516,6 +636,7 @@ public enum AssignmentDeduplicator {
         // Phrase-level collapses before word-splitting, so multi-word phrases
         // line up with their single-word abbreviations.
         s = s.replacingOccurrences(of: #"\bproblem\s+sets?\b"#, with: "hw", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\bmid\s+terms?\b"#, with: "midterm", options: .regularExpression)
         s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
 
@@ -526,6 +647,26 @@ public enum AssignmentDeduplicator {
             tokens.append(contentsOf: splitLetterDigitRuns(String(word)))
         }
         return tokens.map(canonicalize)
+    }
+
+    private static func announcementCoreTokens(_ raw: String) -> [String] {
+        var tokens = normalize(raw)
+        let leadIn = Set(["please", "remember", "reminder", "you", "must", "should", "need", "needs", "to"])
+        while let first = tokens.first, leadIn.contains(first) {
+            tokens.removeFirst()
+        }
+
+        if tokens.starts(with: ["turn", "in"]) || tokens.starts(with: ["hand", "in"]) {
+            tokens.removeFirst(2)
+        } else if let first = tokens.first,
+                  ["take", "complete", "submit", "upload", "do"].contains(first) {
+            tokens.removeFirst()
+        }
+
+        while let first = tokens.first, ["the", "your", "a", "an"].contains(first) {
+            tokens.removeFirst()
+        }
+        return tokens
     }
 
     /// Splits a token like "hw3" into ["hw", "3"] at the letter/digit
@@ -555,6 +696,7 @@ public enum AssignmentDeduplicator {
         if let intValue = Int(token) { return String(intValue) }
         switch token {
         case "hw", "homework", "ps", "pset", "psets": return "hw"
+        case "midterm", "midterms": return "midterm"
         case "lab", "labs": return "lab"
         case "project", "projects", "proj": return "project"
         default: return token

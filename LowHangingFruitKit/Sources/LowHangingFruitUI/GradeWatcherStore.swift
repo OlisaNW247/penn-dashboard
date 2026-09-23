@@ -195,6 +195,7 @@ final class GradeWatcherStore: ObservableObject {
     /// a student could never explain.
     func refresh(
         courseIDs: [String: String],
+        baseURL: URL = CanvasInstallation.penn.baseURL,
         cookies: [HTTPCookie],
         gradescopeItems: [Assignment] = [],
         now: Date = Date()
@@ -240,6 +241,7 @@ final class GradeWatcherStore: ObservableObject {
         // below instead of constructing one per course; there's nothing
         // course-specific in it that would require isolating separately.
         let client = CanvasGradesClient(
+            baseURL: baseURL,
             cookies: cookies,
             refreshedCookieHandler: { rotated in
                 Task { @MainActor in

@@ -143,7 +143,7 @@ struct MenuBarPanel: View {
     private var upcoming: [Assignment] {
         (state.assignments + state.laterAssignments)
             .filter { $0.dueAt != nil }
-            .sorted { $0.dueAt! < $1.dueAt! }
+            .sorted(by: Assignment.isOrderedByDueDate)
             .prefix(Self.maxRows)
             .map { $0 }
     }

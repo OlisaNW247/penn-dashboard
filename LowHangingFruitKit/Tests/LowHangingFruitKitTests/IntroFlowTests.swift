@@ -18,7 +18,8 @@ struct IntroFlowTests {
     private static let introKey = "hasSeenIntro"
     private static let onboardedKey = "hasCompletedOnboarding"
     private static let previewKey = "isPreviewMode"
-    private static let touchedKeys = [introKey, onboardedKey, previewKey]
+    private static let userNameKey = "userName"
+    private static let touchedKeys = [introKey, onboardedKey, previewKey, userNameKey]
 
     /// Runs `body` against a known set of persisted flags, then puts the user's
     /// real values back. `seenIntro: nil` removes the key outright — the state
@@ -88,6 +89,21 @@ struct IntroFlowTests {
             #expect(state.needsOnboarding)
             // And it survives a relaunch.
             #expect(!makeState().needsIntro)
+        }
+    }
+
+    @Test("the optional intro name is trimmed, persisted, and can be skipped")
+    func optionalNamePersists() {
+        withFlags {
+            let state = makeState()
+            state.updateName("  Marco  ")
+
+            #expect(state.userName == "Marco")
+            #expect(makeState().userName == "Marco")
+
+            // An empty field is the explicit skip path and remains valid.
+            state.updateName("   ")
+            #expect(state.userName.isEmpty)
         }
     }
 

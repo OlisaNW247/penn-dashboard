@@ -26,6 +26,22 @@ struct DashItem: Identifiable, Equatable {
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
 
+    /// Chronological order with a stable arbitrary tie-break. Feed refreshes
+    /// are free to return equal-time rows in any order; the assignment id is
+    /// not a priority signal, but it keeps those cards from swapping places.
+    static func isOrderedByDueDate(_ lhs: DashItem, _ rhs: DashItem) -> Bool {
+        switch (lhs.due, rhs.due) {
+        case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
+            return lhsDate < rhsDate
+        case (nil, .some):
+            return false
+        case (.some, nil):
+            return true
+        default:
+            return lhs.id < rhs.id
+        }
+    }
+
     /// Whether the card should state "nothing to submit" — the single display
     /// predicate the caveat now uses, covering both Canvas's own
     /// no-submission assignments AND readings/events, which the owner's
@@ -263,13 +279,10 @@ final class DashboardViewModel: ObservableObject {
         }
 
         // Overdue: most-overdue first. Everything else: soonest first.
-        let byDueAscending: (DashItem, DashItem) -> Bool = { a, b in
-            (a.due ?? .distantFuture) < (b.due ?? .distantFuture)
-        }
-        overdue.sort(by: byDueAscending)
-        today.sort(by: byDueAscending)
-        rest.sort(by: byDueAscending)
-        later.sort(by: byDueAscending)
+        overdue.sort(by: DashItem.isOrderedByDueDate)
+        today.sort(by: DashItem.isOrderedByDueDate)
+        rest.sort(by: DashItem.isOrderedByDueDate)
+        later.sort(by: DashItem.isOrderedByDueDate)
 
         var sections: [DashSection] = []
         if includeOverdue && !overdue.isEmpty {
@@ -303,8 +316,10 @@ final class DashboardViewModel: ObservableObject {
         let semesterStart = Term(date: now).startDate()
 
         func placed(_ item: DashItem) -> Date? { item.completedAt ?? item.due }
-        let newestFirst: (DashItem, DashItem) -> Bool = {
-            (placed($0) ?? .distantPast) > (placed($1) ?? .distantPast)
+        let newestFirst: (DashItem, DashItem) -> Bool = { lhs, rhs in
+            let lhsDate = placed(lhs) ?? .distantPast
+            let rhsDate = placed(rhs) ?? .distantPast
+            return lhsDate == rhsDate ? lhs.id < rhs.id : lhsDate > rhsDate
         }
 
         let thisWeek = completed

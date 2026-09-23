@@ -17,17 +17,19 @@ struct ProfileTabTests {
 
     // MARK: The route set
 
-    /// Profile and settings are pushed routes off the dashboard's own stack,
-    /// which is what makes the dashboard the app's one root.
+    /// Profile is the sole account-and-preferences route off the dashboard's
+    /// own stack, which is what keeps the dashboard the app's one root.
     ///
     /// This looks like a test of an enum, and it is, deliberately. Several
-    /// The old Settings route stays distinct only so existing screenshot flags
-    /// remain stable; both values now resolve to the combined Profile page.
-    @Test("the legacy settings screenshot route remains hashable")
+    /// workstreams render into Profile, and the cheapest way for one of them to
+    /// quietly change the app's shape is to make Profile a sheet, or a tab, or
+    /// a second stack. Routes being `Hashable` and distinct is also what stops
+    /// A single route prevents Profile and Settings from diverging into two
+    /// live copies of the same controls again.
+    @Test("profile is the sole account-and-preferences route")
     func routeSet() {
-        let routes: Set<ContentView.DashRoute> = [.settings, .profile, .grades]
-        #expect(routes.count == 3)
-        #expect(ContentView.DashRoute.profile != ContentView.DashRoute.settings)
+        let routes: Set<ContentView.DashRoute> = [.profile, .grades]
+        #expect(routes.count == 2)
         // The per-course report carries its identity, so two different courses
         // are two different destinations rather than one reused screen.
         #expect(ContentView.DashRoute.report(courseID: "1", courseName: "a")

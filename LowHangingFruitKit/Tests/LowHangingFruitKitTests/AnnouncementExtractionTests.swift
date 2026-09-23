@@ -329,7 +329,7 @@ struct AnnouncementExtractionTests {
         let results = try await extractor(meetings: Self.classFixtureMeetings())
             .extract(from: announcement(body: body, title: "Exam"), now: Self.classFixtureNow())
         #expect(results.count == 1)
-        #expect(results.first?.kind == .preparation)
+        #expect(results.first?.kind == .submission)
         #expect(results.first?.dueAt == Self.time(year: 2026, month: 9, day: 8, hour: 10, minute: 15))
     }
 
@@ -489,6 +489,34 @@ struct AnnouncementExtractionTests {
     @Test("taskKind is .submission for an unconditional submission verb")
     func taskKindSubmissionVerb() {
         #expect(HeuristicAnnouncementExtractor.taskKind(of: "Submit the essay by Friday") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Submit by Friday") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Review and submit Problem Set 2 by Friday") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Your submission is available Friday") == nil)
+    }
+
+    @Test("taskKind treats taking a midterm as a submission obligation")
+    func taskKindTakeMidterm() {
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take midterm 1 by Thursday") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take mid term 1 by Thursday") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take mid-term 1 by Thursday") == .submission)
+    }
+
+    @Test("bare assessment titles are submission work")
+    func taskKindBareAssessments() {
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Quiz 2") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Test 1") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Assessment 3") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Mid term 1") == .submission)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Quiz grades posted") == nil)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Survey results") == nil)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take the survey") == .submission)
+    }
+
+    @Test("practice-modified midterm stays preparation even after take")
+    func taskKindPracticeMidterm() {
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take the practice mid term by Thursday") == .preparation)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Practice mid term by Thursday") == .preparation)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Take the practice test") == .preparation)
     }
 
     @Test("taskKind is .preparation for an unconditional preparation verb")
@@ -504,5 +532,6 @@ struct AnnouncementExtractionTests {
     @Test("taskKind is nil when neither a recognized verb nor \"due\" is present")
     func taskKindNilWithNoVerbOrDue() {
         #expect(HeuristicAnnouncementExtractor.taskKind(of: "The lecture was interesting today") == nil)
+        #expect(HeuristicAnnouncementExtractor.taskKind(of: "Assignment overview") == nil)
     }
 }

@@ -107,6 +107,14 @@ struct CanvasSessionRenewerTests {
         #expect(CanvasSessionRenewer.classifyFinalHost("CANVAS.UPENN.EDU") == .canvas)
     }
 
+    @Test("a selected non-Penn Canvas host classifies as canvas")
+    func classifiesSelectedCanvasHost() {
+        #expect(CanvasSessionRenewer.classifyFinalHost(
+            "canvas.harvard.edu",
+            canvasHost: "canvas.harvard.edu"
+        ) == .canvas)
+    }
+
     @Test("idp.pennkey.upenn.edu classifies as a login page")
     func classifiesPennKeyIdPHost() {
         #expect(CanvasSessionRenewer.classifyFinalHost("idp.pennkey.upenn.edu") == .loginPage)

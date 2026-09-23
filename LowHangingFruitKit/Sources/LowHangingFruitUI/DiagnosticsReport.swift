@@ -42,6 +42,7 @@ enum DiagnosticsReport {
         lines.append("Device: \(deviceModelString())")
         lines.append("OS version: \(osVersionString())")
         lines.append("")
+        lines.append("Canvas installation: \(state.canvasInstallation.name) (\(state.canvasInstallation.host))")
         lines.append("Canvas connected (feed): \(state.isCanvasConnected)")
         lines.append("Canvas login session expired: \(state.canvasSessionExpired)")
         lines.append("Canvas connect path: \(canvasConnectPath(state: state))")

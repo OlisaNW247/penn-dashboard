@@ -177,9 +177,90 @@ struct AnnouncementWatcherWiringTests {
         #expect(filtered.contains { $0.sourceID == "a3" })
     }
 
+    @Test("announcement duplicate filtering canonicalizes raw and formatted course labels")
+    func filteringAnnouncementDuplicatesCanonicalizesCourseLabels() {
+        let existing = Assignment(
+            source: .canvas, sourceID: "quiz-2", kind: .quiz,
+            course: "CIS 1200", title: "Quiz 2", dueAt: Date(), url: nil
+        )
+        let announcement = Assignment(
+            source: .canvasAnnouncement, sourceID: "announcement-quiz-2", kind: .assignment,
+            course: "CIS-1200-001 202630 Programming Languages",
+            title: "Take Quiz 2 on Canvas by Friday", dueAt: nil, url: nil
+        )
+
+        #expect(AppState.announcementCoursesMatch(announcement.course, existing.course))
+        #expect(AppState.announcementCoursesMatch("PHYS 0151", "PHYS 151"))
+        #expect(AppState.filteringAnnouncementDuplicates([announcement], against: [existing]).isEmpty)
+    }
+
+    @Test("per-course announcement toggle changes dashboard promotion but never the announcements page")
+    func perCourseAnnouncementToggleOnlyChangesDashboard() {
+        withRestoredDefaults {
+            UserDefaults.lhf.set(2, forKey: Self.extractionVersionKey)
+            let store = try! AssignmentStore(inMemory: true)
+            store.upsert([Assignment(
+                source: .canvasAnnouncement,
+                sourceID: "announcement-assessment-3",
+                kind: .assignment,
+                course: "PHYS 0151",
+                title: "Assessment 3",
+                dueAt: Date().addingTimeInterval(3_600),
+                url: nil
+            )])
+
+            let state = AppState(assignmentStore: store)
+            let originalPreference = state.coursePreferences
+                .announcementAssignmentsOnDashboard("PHYS 0151")
+            defer {
+                state.setAnnouncementAssignmentsOnDashboard("PHYS 0151", originalPreference)
+            }
+            // This preference is intentionally persistent; make the test's
+            // starting state explicit so a prior run that toggled it off
+            // cannot leak into this assertion.
+            state.setAnnouncementAssignmentsOnDashboard("PHYS 0151", true)
+            #expect((state.assignments + state.laterAssignments + state.assessments)
+                .contains { $0.sourceID == "announcement-assessment-3" })
+            #expect(state.announcementPageItems.contains { $0.sourceID == "announcement-assessment-3" })
+
+            state.setAnnouncementAssignmentsOnDashboard("PHYS 0151", false)
+
+            #expect(!(state.assignments + state.laterAssignments + state.assessments)
+                .contains { $0.sourceID == "announcement-assessment-3" })
+            #expect(state.announcementPageItems.contains { $0.sourceID == "announcement-assessment-3" })
+        }
+    }
+
+    @Test("announcement routing keeps direct assessments on the dashboard and moves preparation or materials to finds")
+    func announcementRoutingSeparatesOwedWorkFromFinds() {
+        func placement(_ title: String, kind: Assignment.Kind = .assignment) -> AppState.AnnouncementDashboardPlacement {
+            AppState.announcementDashboardPlacement(for: Assignment(
+                source: .canvasAnnouncement, sourceID: title, kind: kind,
+                course: "CIS 1200", title: title, dueAt: nil, url: nil
+            ))
+        }
+
+        #expect(placement("Take midterm 1") == .main)
+        #expect(placement("Take mid term 1 by Thursday") == .main)
+        #expect(placement("Take mid-term 1 by Thursday") == .main)
+        #expect(placement("Take the practice mid term by Thursday") == .find)
+        #expect(placement("Practice midterm") == .find)
+        #expect(placement("Practice mid term") == .find)
+        #expect(placement("Review p sets") == .find)
+        #expect(placement("Bring Arches cover paper") == .find)
+        #expect(placement("Read chapter 4", kind: .event) == .find)
+        #expect(placement("Slides have been posted", kind: .assignment) == .find)
+        #expect(placement("Quiz 2", kind: .event) == .main)
+        #expect(placement("Test 1", kind: .event) == .main)
+        #expect(placement("Assessment 3", kind: .event) == .main)
+        #expect(placement("Mid term 1", kind: .event) == .main)
+        #expect(placement("Take the practice test", kind: .assignment) == .find)
+        #expect(placement("Quiz grades posted", kind: .assignment) == .find)
+    }
+
     // MARK: - Item 5: ledger partition guarantee + dashboard visibility
 
-    @Test("upserted .canvasAnnouncement rows appear in the dashboard buckets and survive a .canvas-source reconcile")
+    @Test("preparation announcement rows surface only in finds and survive a .canvas-source reconcile")
     func announcementRowsSurviveCanvasReconcileAndSurfaceOnDashboard() {
         withRestoredDefaults {
             // Pinned to the current repair version so `AppState.init`'s
@@ -211,7 +292,8 @@ struct AnnouncementWatcherWiringTests {
 
             let state = AppState(assignmentStore: store)
             let dashboardItems = state.assignments + state.laterAssignments + state.assessments
-            #expect(dashboardItems.contains { $0.title == "Bring a signed permission form" })
+            #expect(!dashboardItems.contains { $0.title == "Bring a signed permission form" })
+            #expect(state.announcementFinds.contains { $0.title == "Bring a signed permission form" })
 
             // A `.canvas`-source reconcile for the same course must not disturb
             // the `.canvasAnnouncement` row — `reconcile` partitions existing
@@ -225,6 +307,46 @@ struct AnnouncementWatcherWiringTests {
 
             let announcementRowsAfter = store.assignments(source: .canvasAnnouncement)
             #expect(announcementRowsAfter.contains { $0.sourceID == "announcement-9001-0" })
+        }
+    }
+
+    @Test("a structured assignment arriving after an announcement removes the announcement twin on rebuild")
+    func lateStructuredAssignmentSuppressesAnnouncementTwin() {
+        withRestoredDefaults {
+            UserDefaults.lhf.set(2, forKey: Self.extractionVersionKey)
+            let store = try! AssignmentStore(inMemory: true)
+            let course = "CIS 1200"
+            store.upsert([Assignment(
+                source: .canvasAnnouncement,
+                sourceID: "announcement-quiz-2",
+                kind: .assignment,
+                course: "CIS-1200-001 202630 Programming Languages",
+                title: "Take Quiz 2 on Canvas by Friday",
+                dueAt: nil,
+                url: nil
+            )])
+
+            let state = AppState(assignmentStore: store)
+            #expect((state.assignments + state.laterAssignments + state.assessments)
+                .contains { $0.source == .canvasAnnouncement && $0.title == "Take Quiz 2 on Canvas by Friday" })
+            let announcementItem = state.announcementItems.first { $0.sourceID == "announcement-quiz-2" }!
+            state.markCompleted(announcementItem)
+
+            state.canvasItems = [Assignment(
+                source: .canvas,
+                sourceID: "quiz-2",
+                kind: .quiz,
+                course: course,
+                title: "Quiz 2",
+                dueAt: Date().addingTimeInterval(3600),
+                url: nil
+            )]
+            state.setCourse(course, selected: true)
+
+            #expect(state.mergedCoursework.contains { $0.source == .canvas && $0.title == "Quiz 2" })
+            #expect(!state.mergedCoursework.contains { $0.source == .canvasAnnouncement })
+            #expect(!state.announcementFinds.contains { $0.sourceID == "announcement-quiz-2" })
+            #expect(state.isCompleted(state.canvasItems[0]))
         }
     }
 

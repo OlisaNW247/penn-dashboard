@@ -119,6 +119,90 @@ struct AssignmentDeduplicatorTests {
         ))
     }
 
+    @Test("announcement directive is ignored when the structured assignment title matches, even if one date is absent")
+    func announcementDirectiveMatchesWithoutBothDates() {
+        #expect(AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Please remember to take Quiz 2",
+            announcementDue: nil,
+            existingTitle: "Quiz 2",
+            existingDue: Self.now
+        ))
+    }
+
+    @Test("numbered structured title matches an announcement directive with trailing platform and deadline wording")
+    func announcementNumberedPrefixMatchesTrailingWording() {
+        #expect(AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take Quiz 2 on Canvas by Friday",
+            announcementDue: nil,
+            existingTitle: "Quiz 2",
+            existingDue: Self.now
+        ))
+        #expect(AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take mid term 1 by Thursday",
+            announcementDue: nil,
+            existingTitle: "Midterm 1",
+            existingDue: Self.now
+        ))
+    }
+
+    @Test("assessment identity matches PHYS Quiz 2 despite official course and section suffixes")
+    func announcementAssessmentIdentityMatchesStructuredSuffixes() {
+        #expect(AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take Quiz 2",
+            announcementDue: nil,
+            existingTitle: "Quiz 2 — Chapter 4",
+            existingDue: Self.now
+        ))
+        #expect(AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take Quiz 2 on Canvas by Friday",
+            announcementDue: nil,
+            existingTitle: "PHYS Quiz 2 Section 201",
+            existingDue: Self.now
+        ))
+    }
+
+    @Test("assessment identity keeps practice, retake, and makeup variants distinct")
+    func announcementAssessmentIdentityReservesVariantModifiers() {
+        for variant in ["Practice Quiz 2", "Retake Quiz 2", "Makeup Quiz 2"] {
+            #expect(!AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                announcementTitle: variant,
+                announcementDue: nil,
+                existingTitle: "Quiz 2 — Chapter 4",
+                existingDue: Self.now
+            ))
+        }
+    }
+
+    @Test("unnumbered structured titles do not use announcement prefix matching")
+    func announcementUnnumberedPrefixDoesNotMatch() {
+        #expect(!AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take the midterm practice version by Friday",
+            announcementDue: nil,
+            existingTitle: "Midterm",
+            existingDue: Self.now
+        ))
+    }
+
+    @Test("numbered prefix does not swallow a tail naming another assignment")
+    func announcementNumberedPrefixRefusesSecondAssignment() {
+        #expect(!AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take Quiz 2 and Quiz 3",
+            announcementDue: nil,
+            existingTitle: "Quiz 2",
+            existingDue: Self.now
+        ))
+    }
+
+    @Test("announcement directive match still refuses contradictory dates")
+    func announcementDirectiveRefusesContradictoryDates() {
+        #expect(!AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: "Take Quiz 2",
+            announcementDue: Self.now,
+            existingTitle: "Quiz 2",
+            existingDue: Self.now.addingTimeInterval(30 * 86_400)
+        ))
+    }
+
     // MARK: - matchPairs: course scoping + 1:1 assignment
 
     @Test("same-titled items in different courses never match")

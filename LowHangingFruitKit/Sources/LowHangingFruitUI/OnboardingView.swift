@@ -20,8 +20,8 @@ import os
 /// the one connection that actually matters, so an optional step could look
 /// exactly as urgent as the required one. It is now a straight line — one
 /// step, one screen, one ask instead of a checklist a student re-reads after
-/// every pane. The first setup screen now goes directly from the intro to
-/// Penn's Canvas sign-in. If
+/// every pane. The first setup screen now asks for the student's institution,
+/// then opens that institution's Canvas sign-in. If
 /// a future change needs the old "see everything, do it in any order" shape
 /// back, that is a deliberate reversion, not a bug fix — write down why,
 /// the way this comment does.
@@ -41,18 +41,22 @@ struct OnboardingView: View {
     /// `RootCore` that owns the one scheduler for the rest of the app's
     /// lifetime (see `RootView.swift`), not a locally-owned `@StateObject`.
     @EnvironmentObject var scheduler: NotificationScheduler
-    @State private var phase: Phase = .canvasLogin
+    @State private var phase: Phase = .schoolSelection
     /// Presents `PennKeyCredentialsSheet` once, right after a successful
     /// interactive Canvas login — see `canvasConnected()`'s doc comment for
     /// the "why here" and `AppState.hasOfferedStayLoggedIn` for why this
     /// never fires a second time.
     @State private var showStayLoggedInOffer = false
+    @State private var schoolSearch = ""
+    @State private var customCanvasAddress = ""
+    @State private var customAddressError: String?
 
     /// One case per screen in the linear walk, plus the per-course walk that
     /// can follow it. Order here is the order a student walks them in; there
     /// is no case for "the hub" any more; see this type's doc comment for
     /// what used to live there.
     private enum Phase: Hashable {
+        case schoolSelection
         case canvasLogin
         case gradescopeLogin
         case reminders
@@ -62,9 +66,9 @@ struct OnboardingView: View {
         #if DEBUG
         let initialPhase: Phase = ProcessInfo.processInfo.arguments.contains("-LHFRemindersOnboardingHarness")
             ? .reminders
-            : (destination == .gradescope ? .gradescopeLogin : .canvasLogin)
+            : (destination == .gradescope ? .gradescopeLogin : .schoolSelection)
         #else
-        let initialPhase: Phase = destination == .gradescope ? .gradescopeLogin : .canvasLogin
+        let initialPhase: Phase = destination == .gradescope ? .gradescopeLogin : .schoolSelection
         #endif
         _phase = State(initialValue: initialPhase)
     }
@@ -118,6 +122,8 @@ struct OnboardingView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch phase {
+        case .schoolSelection:
+            schoolSelectionStep
         case .canvasLogin:
             canvasStep
         case .gradescopeLogin:
@@ -145,6 +151,116 @@ struct OnboardingView: View {
 
     // MARK: - Connect Canvas (required, not skippable)
 
+    private var matchingSchools: [CanvasInstallation] {
+        let query = schoolSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return CanvasInstallation.verifiedSchools }
+        return CanvasInstallation.verifiedSchools.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.host.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var schoolSelectionStep: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Where do you use Canvas?")
+                            .font(.lhfSerif(34))
+                            .foregroundStyle(Color.v2Ink)
+                        Text("Choose a verified school, or enter the Canvas address your school gave you.")
+                            .font(.lhfSans(14))
+                            .foregroundStyle(Color.v2DateText)
+                    }
+
+                    TextField("Search schools", text: $schoolSearch)
+                        .font(.lhfSans(16, weight: .medium))
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 52)
+                        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                    VStack(spacing: 8) {
+                        ForEach(matchingSchools) { school in
+                            schoolButton(school)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        SmoothSectionHeader("another school", accent: .smoothTeal)
+                        TextField("canvas.school.edu", text: $customCanvasAddress)
+                            .font(.lhfSans(15, weight: .medium))
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            #endif
+                            .autocorrectionDisabled()
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 52)
+                            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                        if let customAddressError {
+                            Text(customAddressError)
+                                .font(.lhfSans(12))
+                                .foregroundStyle(Color.v2SpineRed)
+                        }
+
+                        Button("Continue with this address", action: chooseCustomCanvas)
+                            .font(.lhfSans(14, weight: .semibold))
+                            .foregroundStyle(Color.v2ToggleActiveTx)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(Color.v2Ink))
+                            .buttonStyle(.plain)
+                            .disabled(customCanvasAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.v2Bg.ignoresSafeArea())
+    }
+
+    private func schoolButton(_ school: CanvasInstallation) -> some View {
+        Button {
+            lhfHapticLight()
+            state.selectCanvasInstallation(school)
+            phase = .canvasLogin
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(school.name)
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(Color.v2Ink)
+                    Text(school.host)
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.v2DateText)
+                }
+                Spacer()
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(Color.v2SpineGreen)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 58)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("opens this school's Canvas sign-in")
+    }
+
+    private func chooseCustomCanvas() {
+        guard let installation = CanvasInstallation.custom(address: customCanvasAddress) else {
+            customAddressError = "Enter a public HTTPS Canvas address, such as canvas.school.edu."
+            return
+        }
+        customAddressError = nil
+        state.selectCanvasInstallation(installation)
+        phase = .canvasLogin
+    }
+
     /// Canvas is the only required step. If it's already connected — the
     /// student stepped forward once and then used the back chevron on a
     /// later step to glance backward — this shows a plain confirmation
@@ -163,10 +279,13 @@ struct OnboardingView: View {
                 onContinue: { phase = .gradescopeLogin }
             )
         } else {
-            CanvasLoginPane(onConnected: canvasConnected)
+            CanvasLoginPane(installation: state.canvasInstallation, onConnected: canvasConnected)
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
-                loginHeader(title: "Connect Canvas")
+                loginHeader(
+                    title: "Sign in to \(state.canvasInstallation.name)",
+                    onBack: { phase = .schoolSelection }
+                )
             }
             // The reviewer's door, restored here after a regression
             // (`358bc5f`) deleted it along with the old checklist's name
@@ -485,11 +604,21 @@ struct OnboardingView: View {
 
     private func loginHeader(
         title: String,
+        onBack: (() -> Void)? = nil,
         skip: (label: String, action: () -> Void)? = nil
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
+            if let onBack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.v2Ink)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("choose another school")
+            }
             Text(title)
-                .font(.lhfSerif(34))
+                .font(.lhfSerif(onBack == nil ? 34 : 24))
                 .foregroundStyle(Color.v2Ink)
 
             Spacer(minLength: 0)
@@ -634,21 +763,31 @@ struct OnboardingView: View {
 /// syncs Canvas, and scans for requirements in one step.
 private struct CanvasLoginPane: View {
     @EnvironmentObject private var state: AppState
+    let installation: CanvasInstallation
     let onConnected: () -> Void
 
     @State private var isReadingCookies = false
     @State private var isPurging = true
-    @StateObject private var navObserver: LoginNavigationObserver = {
+    @State private var message: String?
+    @StateObject private var navObserver: LoginNavigationObserver
+
+    init(installation: CanvasInstallation, onConnected: @escaping () -> Void) {
+        self.installation = installation
+        self.onConnected = onConnected
         let observer = LoginNavigationObserver()
-        observer.signedInHostMarker = "canvas.upenn.edu"
-        // Canvas Student claims universal links for canvas.upenn.edu, which
+        observer.signedInHostMarker = installation.host
+        // Canvas Student can claim universal links for the Canvas host, which
         // hijacks the SAML return hop away from this WebView on a device
         // that has it installed — see `appLinkGuardHost`'s doc comment.
         // Gradescope's pane below leaves this `nil`: no Gradescope iOS app
         // claims those links, so there is nothing to guard against there.
-        observer.appLinkGuardHost = "canvas.upenn.edu"
-        return observer
-    }()
+        observer.appLinkGuardHost = installation.host
+        // Avoid treating an institution's public landing page as a completed
+        // login. Normal SSO flows auto-connect after leaving and returning;
+        // Canvas-local/guest logins use the explicit "finished" button below.
+        observer.signedInRequiresForeignHost = true
+        _navObserver = StateObject(wrappedValue: observer)
+    }
 
     var body: some View {
         Group {
@@ -660,12 +799,31 @@ private struct CanvasLoginPane: View {
                     Spacer()
                 }
             } else {
-                LoginWebView(
-                    url: URL(string: "https://canvas.upenn.edu/login/saml")!,
-                    store: LoginDataStores.canvas,
-                    navigationObserver: navObserver
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    if let message {
+                        Text(message)
+                            .font(.lhfSans(12, weight: .medium))
+                            .foregroundStyle(Color.smoothTomatoInk)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.smoothTomato.opacity(0.13))
+                    }
+                    LoginWebView(
+                        url: installation.loginURL,
+                        store: LoginDataStores.canvas,
+                        navigationObserver: navObserver
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    Button("I've finished signing in", action: connect)
+                        .font(.lhfSans(14, weight: .semibold))
+                        .foregroundStyle(Color.v2ToggleActiveTx)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Color.v2Ink)
+                        .buttonStyle(.plain)
+                }
             }
         }
         .background(Color.v2Bg.ignoresSafeArea())
@@ -676,7 +834,7 @@ private struct CanvasLoginPane: View {
         }
         .task {
             await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: AppState.canvasLoginDomainHints,
+                matchingDomainContains: installation.websiteDataDomainHints,
                 in: LoginDataStores.canvas
             )
             isPurging = false
@@ -735,6 +893,7 @@ private struct CanvasLoginPane: View {
 
     private func connect() {
         guard !isReadingCookies else { return }
+        message = nil
         isReadingCookies = true
         // Must read from the SAME store instance the WebView above was
         // configured with (`LoginDataStores.canvas`), not `.default()` — see
@@ -745,7 +904,10 @@ private struct CanvasLoginPane: View {
             // (Keychain, same treatment as Gradescope's) so Grade Watcher's
             // cookie-authed refresh survives relaunches — `WKWebsiteDataStore`
             // drops session cookies like Canvas's/Penn SSO's between launches.
-            let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
+            let canvasCookies = cookies.filter { cookie in
+                let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                return installation.host == domain || installation.host.hasSuffix("." + domain)
+            }
             SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
                 isReadingCookies = false
@@ -812,7 +974,8 @@ private struct CanvasLoginPane: View {
                     // the login completing and this line running) — in that
                     // case there is simply nothing to mint from and cookie
                     // mode continues exactly as it does today.
-                    if FeatureFlags.canvasAccessTokens,
+                    if installation.id == CanvasInstallation.penn.id,
+                       FeatureFlags.canvasAccessTokens,
                        let webView = navObserver.webView,
                        CanvasAccessTokenPolicy.needsMint(existing: CanvasAccessTokenStore.load(), now: Date()) {
                         let outgoing = CanvasAccessTokenStore.load()
@@ -847,6 +1010,12 @@ private struct CanvasLoginPane: View {
                     }
 
                     onConnected()
+                } else {
+                    // A custom host can commit its landing page before a
+                    // session exists. Return to the WebView instead of
+                    // leaving the pane behind an endless progress spinner.
+                    message = state.error ?? "That address did not produce a usable Canvas session. Finish signing in or choose another school."
+                    navObserver.reset()
                 }
             }
         }

@@ -122,11 +122,7 @@ public struct GradescopeClient: Sendable {
     }
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {
-        switch (a.dueAt, b.dueAt) {
-        case let (lhs?, rhs?): return lhs < rhs
-        case (nil, _):         return false
-        case (_, nil):         return true
-        }
+        Assignment.isOrderedByDueDate(a, b)
     }
 }
 

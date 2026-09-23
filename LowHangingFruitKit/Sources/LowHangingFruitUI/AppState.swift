@@ -75,6 +75,14 @@ final class AppState: ObservableObject {
     /// announcement-derived task actually reaches the dashboard buckets
     /// instead of sitting in the ledger unseen.
     @Published private(set) var announcementItems: [Assignment] = []
+    /// Every currently relevant extracted announcement mention, including
+    /// dashboard candidates and copies suppressed by structured coursework.
+    /// The dedicated announcements page reads this undeduplicated collection.
+    @Published private(set) var announcementPageItems: [Assignment] = []
+    /// Useful preparation and reference tasks found in announcements, kept
+    /// outside the owed-work dashboard. These remain ledger-backed through
+    /// `announcementItems`; this is only the current, de-duplicated view.
+    @Published private(set) var announcementFinds: [Assignment] = []
     /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
     /// incomplete buckets below are filtered out of, but kept whole so callers
     /// that need completed work (the Done tab) see one item per assignment
@@ -103,6 +111,11 @@ final class AppState: ObservableObject {
     @Published var lastGradescopeSync: Date?
 
     @Published private(set) var canvasICSURL: String
+    /// The Canvas installation every cookie-authenticated request and link is
+    /// rooted at. Existing installs migrate to Penn; new users choose this on
+    /// the first setup screen before any login WebView is created.
+    @Published private(set) var canvasInstallation: CanvasInstallation
+    @Published private(set) var hasChosenCanvasInstallation: Bool
     /// Everything the user has ticked off. **Derived, not persisted** — this is
     /// a read model rebuilt from the ledger's rows (`AssignmentStore
     /// .completionRecord()`) after every mutation and at launch. It used to be
@@ -171,20 +184,9 @@ final class AppState: ObservableObject {
     /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
     @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
 
-    /// Settings → "watch announcements". Default **true**, absent-key-means-on
-    /// (see `announcementWatcherEnabledKey`'s doc comment): fetching
-    /// announcements piggybacks on the exact same Canvas cookie session every
-    /// other sync in this file already uses, and on the default heuristic
-    /// extraction path nothing ever leaves the device — there's no new
-    /// privacy surface to opt into, unlike `announcementAIEnabled` below. The
-    /// off switch exists purely for a student who finds a false-positive
-    /// extraction (a wrong "due Friday" from an announcement that wasn't
-    /// really about a deadline) noisier than useful, not because the feature
-    /// needs permission to run.
-    @Published private(set) var announcementWatcherEnabled: Bool
-    /// Settings → "ai assist", nested under the watcher toggle. Default
+    /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
-    /// `announcementWatcherEnabled` just above: it runs under LHF's own
+    /// on: it runs under LHF's own
     /// OpenRouter key (`BackendAnnouncementExtractor`, `PROTOCOL.md`'s
     /// `extract-announcement`), costs a fraction of a cent per call, and is
     /// the more accurate of the two backends at telling a real deadline
@@ -200,6 +202,11 @@ final class AppState: ObservableObject {
     /// — with no backend, or with this off, the free on-device heuristic
     /// backend (`HeuristicAnnouncementExtractor`) runs instead, exactly as
     /// it always has.
+    /// Legacy compatibility preference. Announcement syncing intentionally no
+    /// longer consults this value: all announcements are collected for the
+    /// announcements page, while each course's dashboard promotion is
+    /// controlled by `CoursePreferences.announcementAssignmentsOnDashboard`.
+    @Published private(set) var announcementWatcherEnabled: Bool
     @Published private(set) var announcementAIEnabled: Bool
     /// Announcement ids `syncAnnouncements()` has already run through an
     /// extractor, successfully or with zero results — never re-parsed. This
@@ -477,11 +484,6 @@ final class AppState: ObservableObject {
     /// device, not a student preference, so there is nothing here worth
     /// syncing and no harm in two devices disagreeing about it for a while.
     private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
-    /// Backs `announcementWatcherEnabled`. Absent-key means on — see that
-    /// property's doc comment — so this is read with `object(forKey:) as?
-    /// Bool ?? true`, the same idiom `NotificationScheduler.turnedInEnabled`
-    /// uses for its own default-on switch, never `UserDefaults.bool(forKey:)`
-    /// (which can't distinguish "never set" from "explicitly set to false").
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -541,6 +543,8 @@ final class AppState: ObservableObject {
     /// reasoning as `cloudSyncEnabledKey` above: this is per-device session
     /// state, not a preference that makes sense synced to another device.
     private static let canvasSessionConfirmedDeadKey = "canvasSessionConfirmedDeadV1"
+    private static let canvasInstallationKey = "canvasInstallationV1"
+    private static let canvasInstallationChosenKey = "canvasInstallationChosenV1"
 
     /// Backs `stayLoggedInEnabled` — the "stay signed in" auto-login toggle
     /// (Settings → account). Off by default, same "explicit opt-in, not a
@@ -589,7 +593,19 @@ final class AppState: ObservableObject {
         // URL is itself a bearer credential, since Canvas embeds a per-user
         // token directly in it. `ICSFeedURLStore.load()` transparently migrates
         // a pre-existing UserDefaults value in and deletes the original.
-        self.canvasICSURL = ICSFeedURLStore.load()
+        let loadedCanvasICSURL = ICSFeedURLStore.load()
+        self.canvasICSURL = loadedCanvasICSURL
+        if let data = UserDefaults.lhf.data(forKey: Self.canvasInstallationKey),
+           let saved = try? JSONDecoder().decode(CanvasInstallation.self, from: data) {
+            self.canvasInstallation = saved
+        } else {
+            // Migration for every build that predated school selection: Penn
+            // was the only possible Canvas origin, so preserving it is exact.
+            self.canvasInstallation = .penn
+        }
+        self.hasChosenCanvasInstallation = UserDefaults.lhf.bool(forKey: Self.canvasInstallationChosenKey)
+            || !loadedCanvasICSURL.isEmpty
+            || !SessionCookieStore.load(service: .canvas).isEmpty
         self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
@@ -1073,7 +1089,7 @@ final class AppState: ObservableObject {
     /// True when there's an actual Canvas login session for Grade Watcher's
     /// cookie-authenticated REST calls to use. Deliberately NOT
     /// `isCanvasConnected` (`!canvasICSURL.isEmpty`): that's true for BOTH
-    /// Canvas connection paths — the in-app Penn SSO login, which captures the
+    /// Canvas connection paths — the in-app institutional login, which captures the
     /// cookie session Grade Watcher needs, AND a manually pasted calendar feed
     /// link (docs/CANVAS_LOGIN_HARDENING.md item 3b), which carries no cookies
     /// at all — so it can't tell the one path Grade Watcher can work on apart
@@ -1081,7 +1097,7 @@ final class AppState: ObservableObject {
     ///
     /// Fixture/preview mode short-circuits to true because Grade Watcher runs
     /// entirely off bundled sample data there, never the network, and preview
-    /// is the only way through the app for someone who can't pass Penn SSO —
+    /// is the only way through the app for someone who can't pass school SSO —
     /// notably an App Store reviewer (see `isUsingFixtureData`).
     ///
     /// `canvasSessionExpired` also counts as available — the same
@@ -1872,6 +1888,7 @@ final class AppState: ObservableObject {
     private func performSilentCanvasRenewal() async -> CanvasSessionRenewer.Outcome {
         guard !isUsingFixtureData else { return .notAttempted(reason: "fixture data (-LHFDemoData)") }
         let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(
+            installation: canvasInstallation,
             isLoginPaneActive: { [weak self] in
                 self?.isCanvasLoginPaneActive ?? false
             },
@@ -2306,15 +2323,17 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
-    // MARK: - Announcement watcher (Settings → "announcement watcher")
+    // MARK: - Announcement extraction
 
-    /// Settings → "watch announcements".
+    /// Retained so existing preferences and older callers remain compatible.
+    /// This no longer stops announcement collection or controls dashboard
+    /// placement; the latter is now configured independently for each course.
     func setAnnouncementWatcherEnabled(_ enabled: Bool) {
         announcementWatcherEnabled = enabled
         UserDefaults.lhf.set(enabled, forKey: Self.announcementWatcherEnabledKey)
     }
 
-    /// Settings → "ai assist", nested under the watcher toggle.
+    /// Settings → "ai assist".
     func setAnnouncementAIEnabled(_ enabled: Bool) {
         announcementAIEnabled = enabled
         UserDefaults.lhf.set(enabled, forKey: Self.announcementAIEnabledKey)
@@ -2418,6 +2437,28 @@ final class AppState: ObservableObject {
         completeOnboarding()
     }
 
+    /// Selects the institution that owns the Canvas session. Switching an
+    /// already-configured account first removes all state derived from the old
+    /// installation so numeric course ids and cookies can never cross schools.
+    func selectCanvasInstallation(_ installation: CanvasInstallation) {
+        guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
+        if installation != canvasInstallation,
+           (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
+            disconnectCanvas()
+        }
+        canvasInstallation = installation
+        hasChosenCanvasInstallation = true
+        if let data = try? JSONEncoder().encode(installation) {
+            UserDefaults.lhf.set(data, forKey: Self.canvasInstallationKey)
+        }
+        UserDefaults.lhf.set(true, forKey: Self.canvasInstallationChosenKey)
+        // A renewer owns the origin it was constructed with. Never carry its
+        // cooldown or WebView across an institution change.
+        canvasSessionRenewer = nil
+    }
+
+    var canvasBaseURL: URL { canvasInstallation.baseURL }
+
     /// Sets the Canvas calendar feed URL — either captured automatically from
     /// a login (`connectCanvas`) or pasted by hand (docs/CANVAS_LOGIN_HARDENING.md
     /// item 3b, "Paste your Canvas calendar link"). Canvas's own "Calendar
@@ -2465,6 +2506,7 @@ final class AppState: ObservableObject {
     /// SSO) — so disconnecting one service never silently signs the user out
     /// of the other.
     func disconnectCanvas() {
+        let websiteDataHints = canvasInstallation.websiteDataDomainHints
         // Disconnecting Canvas is the student saying "forget my Canvas" —
         // the stored PennKey password goes with it. Called first, ahead of
         // everything else below: there's no ordering hazard to protect
@@ -2566,7 +2608,7 @@ final class AppState: ObservableObject {
         // docs/CANVAS_LOGIN_DIAGNOSIS.md H1/H2).
         Task {
             await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: Self.canvasLoginDomainHints,
+                matchingDomainContains: websiteDataHints,
                 in: LoginDataStores.canvas
             )
         }
@@ -2605,7 +2647,7 @@ final class AppState: ObservableObject {
     /// upenn.edu) are what actually match real records. Shared by the
     /// pre-login purge in `OnboardingView`'s login panes and the
     /// post-disconnect purge above so both stay in sync.
-    static let canvasLoginDomainHints = ["upenn", "duosecurity", "instructure"]
+    static let canvasLoginDomainHints = CanvasInstallation.penn.websiteDataDomainHints
 
     /// Onboarding's "Trouble connecting? Reset login data" escape hatch. Wipes
     /// every trace of a stuck/stale login: the live `WKWebsiteDataStore`
@@ -2744,7 +2786,7 @@ final class AppState: ObservableObject {
         // `CanvasDiscoveryClient` scrapes Canvas's HTML pages (/calendar,
         // /dashboard) rather than the /api/ REST surface a Bearer token is
         // honored on, so it stays cookie-only here — never `accessToken:`.
-        let client = CanvasDiscoveryClient(cookies: cookies)
+        let client = CanvasDiscoveryClient(baseURL: canvasBaseURL, cookies: cookies)
         do {
             let feedURL = try await client.discoverCalendarFeedURL()
             updateCanvasICSURL(feedURL.absoluteString)
@@ -2789,7 +2831,7 @@ final class AppState: ObservableObject {
             // sibling `CanvasDiscoveryClient` construction above: this
             // client scrapes HTML pages, which a Bearer token is never
             // honored on.
-            let client = CanvasDiscoveryClient(cookies: cookies)
+            let client = CanvasDiscoveryClient(baseURL: canvasBaseURL, cookies: cookies)
             canvasRequirementSuggestions = try await client.scan(courseIDs: courseIDs)
             setCanvasDiscoveryConnected(true)
             syncNotice = canvasRequirementSuggestions.isEmpty ? "Canvas Scan connected. No recurring syllabus or announcement requirements found yet." : nil
@@ -2895,6 +2937,7 @@ final class AppState: ObservableObject {
         // Gradescope scrape just for the overlay.
         await gradeWatcher.refresh(
             courseIDs: selectedCanvasCourseIDs(),
+            baseURL: canvasBaseURL,
             cookies: cookies,
             gradescopeItems: isGradescopeConnected ? gradescopeItems : []
         )
@@ -3021,7 +3064,7 @@ final class AppState: ObservableObject {
         // Cookie-only — see the comment on `connectCanvas`'s
         // `CanvasDiscoveryClient` construction: this client scrapes HTML
         // pages, which a Bearer token is never honored on.
-        let client = CanvasDiscoveryClient(cookies: cookies)
+        let client = CanvasDiscoveryClient(baseURL: canvasBaseURL, cookies: cookies)
         // Backstop behind `CanvasCourseDiscoveryParser.currentEnrollmentLinks`'s
         // HTML-section split: that filter is best-effort page-shape scraping,
         // so anything that leaks through (a redesign quietly renames the
@@ -3093,7 +3136,11 @@ final class AppState: ObservableObject {
             // result, which still counts as "probed, found nothing") do we
             // fall back to the HTML scrape (`fetchModulesReadings`) that ran
             // here before, keeping that path's exact result semantics.
-            let modulesClient = CanvasModulesClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
+            let modulesClient = CanvasModulesClient(
+                baseURL: canvasBaseURL,
+                cookies: cookies,
+                accessToken: canvasAccessTokenBearer
+            )
             if let items = try? await modulesClient.fetchModuleItems(courseID: course.id) {
                 courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
                 // Import is no longer consent-gated (the one-ask popup was
@@ -3180,7 +3227,11 @@ final class AppState: ObservableObject {
     /// sidesteps that distinction entirely: it only ever touches rows for
     /// the ids in the list it's given.
     private func importModuleReadings(courseKey: String, courseID: String, cookies: [HTTPCookie]) async -> Bool {
-        let modulesClient = CanvasModulesClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
+        let modulesClient = CanvasModulesClient(
+            baseURL: canvasBaseURL,
+            cookies: cookies,
+            accessToken: canvasAccessTokenBearer
+        )
         let items: [CanvasModulesClient.ModuleItem]
         do {
             items = try await modulesClient.fetchModuleItems(courseID: courseID)
@@ -3239,7 +3290,12 @@ final class AppState: ObservableObject {
         }
 
         let readings = overlaidItems.map { item in
-            Self.moduleReadingAssignment(item: item, courseKey: courseKey, courseID: courseID)
+            Self.moduleReadingAssignment(
+                item: item,
+                courseKey: courseKey,
+                courseID: courseID,
+                baseURL: canvasBaseURL
+            )
         }
         if let store = assignmentStore {
             store.upsert(readings)
@@ -3281,11 +3337,12 @@ final class AppState: ObservableObject {
     static func moduleReadingAssignment(
         item: CanvasModulesClient.ModuleItem,
         courseKey: String,
-        courseID: String
+        courseID: String,
+        baseURL: URL = CanvasInstallation.penn.baseURL
     ) -> Assignment {
         let url: URL?
         if item.typeRaw == "Assignment", let contentID = item.contentID {
-            url = URL(string: "https://canvas.upenn.edu/courses/\(courseID)/assignments/\(contentID)")
+            url = baseURL.appendingPathComponent("courses/\(courseID)/assignments/\(contentID)")
         } else {
             url = nil
         }
@@ -3423,14 +3480,87 @@ final class AppState: ObservableObject {
         _ candidates: [Assignment],
         against existing: [Assignment]
     ) -> [Assignment] {
-        candidates.filter { candidate in
-            !existing.contains { other in
-                other.course == candidate.course &&
-                    AssignmentDeduplicator.isLikelyDuplicate(
-                        titleA: candidate.title, dueA: candidate.dueAt,
-                        titleB: other.title, dueB: other.dueAt
+        var comparisonPool = existing
+        var survivors: [Assignment] = []
+        for candidate in candidates {
+            let isDuplicate = comparisonPool.contains { other in
+                announcementCoursesMatch(candidate.course, other.course) &&
+                    AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                        announcementTitle: candidate.title,
+                        announcementDue: candidate.dueAt,
+                        existingTitle: other.title,
+                        existingDue: other.dueAt
                     )
             }
+            if !isDuplicate {
+                survivors.append(candidate)
+                comparisonPool.append(candidate)
+            }
+        }
+        return survivors
+    }
+
+    /// Announcement rows can be keyed by a raw Canvas descriptor while the
+    /// ICS assignment beside them already carries the cleaned course code.
+    /// CourseCode is the app's identity boundary, so de-duplication must use
+    /// that same canonical form rather than requiring byte-identical labels.
+    /// The fallback behavior remains conservative: unparseable labels only
+    /// match when their trimmed text matches case-insensitively.
+    static func announcementCoursesMatch(_ lhs: String, _ rhs: String) -> Bool {
+        announcementCourseIdentity(lhs) == announcementCourseIdentity(rhs)
+    }
+
+    /// Course preference/dedup identity. Penn descriptors sometimes spell the
+    /// same catalog number with or without leading zeroes (`PHYS 0151` vs
+    /// `PHYS 151`). Department stays in the key, so different subjects never
+    /// collide merely because their numbers match.
+    static func announcementCourseIdentity(_ raw: String) -> String {
+        let parsed = CourseCode.parse(raw).code
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        let parts = parsed.split(separator: " ")
+        guard parts.count == 2,
+              parts[0].allSatisfy({ $0.isLetter }),
+              let number = Int(parts[1])
+        else { return parsed }
+        return "\(parts[0]) \(number)"
+    }
+
+    private func announcementAssignmentsOnDashboard(for rawCourse: String) -> Bool {
+        let identity = Self.announcementCourseIdentity(rawCourse)
+        if let configuredKey = coursePreferences.configuredCourseKeys.first(where: {
+            Self.announcementCourseIdentity($0) == identity
+        }) {
+            return coursePreferences.announcementAssignmentsOnDashboard(configuredKey)
+        }
+        return coursePreferences.announcementAssignmentsOnDashboard(CourseCode.parse(rawCourse).code)
+    }
+
+    enum AnnouncementDashboardPlacement: Equatable {
+        case main
+        case find
+    }
+
+    /// The dashboard is a debt list, not a transcript of every useful thing a
+    /// professor mentioned. Preparation/reference language therefore routes
+    /// to the quieter announcement-finds inbox even if an older backend model
+    /// persisted it as `.assignment`. A direct "take" instruction for an
+    /// assessment remains owed work. Keeping this decision at rebuild time is
+    /// what repairs old ledger rows without deleting or rewriting them.
+    static func announcementDashboardPlacement(for item: Assignment) -> AnnouncementDashboardPlacement {
+        if AnnouncementTaskClassifier.isInformational(item.title) {
+            return .find
+        }
+        switch AnnouncementTaskClassifier.taskKind(in: item.title) {
+        case .some(.submission):
+            return .main
+        case .some(.preparation):
+            return .find
+        case nil:
+            // Preserve a backend's structured answer for unknown wording, but
+            // never let known informational/preparation prose inherit a stale
+            // `.assignment` classification from an older extraction.
+            return item.kind == .event ? .find : .main
         }
     }
 
@@ -3449,7 +3579,6 @@ final class AppState: ObservableObject {
     /// that ARE.
     func syncAnnouncements() async {
         guard !isUsingFixtureData else { return }
-        guard announcementWatcherEnabled else { return }
         guard let store = assignmentStore else { return }
 
         let cookies = SessionCookieStore.load(service: .canvas)
@@ -3468,7 +3597,11 @@ final class AppState: ObservableObject {
         // Constructed locally, never stored on `self` — `CanvasAnnouncementsClient`
         // is deliberately not `Sendable` (see its type doc comment), so an
         // instance must not outlive this single call.
-        let client = CanvasAnnouncementsClient(cookies: cookies, accessToken: canvasAccessTokenBearer)
+        let client = CanvasAnnouncementsClient(
+            baseURL: canvasBaseURL,
+            cookies: cookies,
+            accessToken: canvasAccessTokenBearer
+        )
         let fourteenDaysAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
         let fetched: [CanvasAnnouncement]
         do {
@@ -3488,12 +3621,6 @@ final class AppState: ObservableObject {
         guard !unprocessed.isEmpty else { return }
 
         let now = Date()
-        // Current dashboard pool to dedupe fresh candidates against — the
-        // same three buckets `ModuleReadingImportTests.allDashboardItems`
-        // reads, i.e. everything the student can already see, not just
-        // `canvasItems` (a candidate must not duplicate a Gradescope item or
-        // a manual task either).
-        let currentDashboardItems = assignments + laterAssignments + assessments
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
 
@@ -3549,6 +3676,7 @@ final class AppState: ObservableObject {
             let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
             let extractor: any AnnouncementAssignmentExtractor
             if announcementAIEnabled,
+               canvasInstallation.id == CanvasInstallation.penn.id,
                let client = BackendServices.client,
                HeuristicAnnouncementExtractor.mightContainTask(
                    title: announcement.title, body: announcement.message
@@ -3573,10 +3701,10 @@ final class AppState: ObservableObject {
             let candidates = Self.announcementAssignments(
                 from: extracted, announcement: announcement, courseCode: courseCode
             )
-            let deduped = Self.filteringAnnouncementDuplicates(
-                candidates, against: currentDashboardItems + collected
-            )
-            collected.append(contentsOf: deduped)
+            // Keep every extraction on the ledger. Duplicate suppression is a
+            // dashboard presentation rule; the announcements page remains a
+            // complete, inspectable inbox even when official coursework wins.
+            collected.append(contentsOf: candidates)
             // Marked processed even when extraction yielded zero results —
             // per the method's own doc comment on `processedAnnouncementIDs`,
             // "extracted, found nothing actionable" is a completed parse, not
@@ -4194,6 +4322,13 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Controls only promotion onto the owed-work dashboard. The underlying
+    /// extracted rows remain visible on the announcements page.
+    func setAnnouncementAssignmentsOnDashboard(_ course: String, _ enabled: Bool) {
+        coursePreferences.setAnnouncementAssignmentsOnDashboard(course, enabled)
+        rebuildDashboardItems()
+    }
+
     /// Courses to render in the Profile classes list — every known course minus
     /// deleted ones and minus the ones a semester rollover took off the roster.
     /// (Hidden-but-not-deleted courses still appear here, toggled off.)
@@ -4803,7 +4938,38 @@ final class AppState: ObservableObject {
         for pair in collapse.collapses {
             carryCompletion(from: pair.moduleID, to: pair.canvasID)
         }
-        let canvasPool = collapse.canvasItems + collapse.moduleItems + announcementItems
+        let structuredCanvasItems = collapse.canvasItems + collapse.moduleItems
+        let realItems = structuredCanvasItems + gradescopeItems + manualItems
+        // Suppression is a presentation collapse, so it carries the same
+        // ledger invariant as the Canvas/Modules collapses above: if the user
+        // completed the announcement-shaped copy before the structured row
+        // arrived, that work must follow the surviving identity.
+        for announcementItem in announcementItems {
+            if let survivor = realItems.first(where: { other in
+                Self.announcementCoursesMatch(announcementItem.course, other.course)
+                    && AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                        announcementTitle: announcementItem.title,
+                        announcementDue: announcementItem.dueAt,
+                        existingTitle: other.title,
+                        existingDue: other.dueAt
+                    )
+            }) {
+                carryCompletion(from: announcementItem.id, to: survivor.id)
+            }
+        }
+        let mainAnnouncementItems = Self.filteringAnnouncementDuplicates(
+            announcementItems.filter {
+                Self.announcementDashboardPlacement(for: $0) == .main
+                    && announcementAssignmentsOnDashboard(for: $0.course)
+            },
+            against: realItems
+        )
+        let secondaryAnnouncementItems = Self.filteringAnnouncementDuplicates(
+            announcementItems.filter { Self.announcementDashboardPlacement(for: $0) == .find },
+            against: realItems + mainAnnouncementItems
+        )
+
+        let canvasPool = structuredCanvasItems + mainAnnouncementItems
         let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
@@ -4846,6 +5012,25 @@ final class AppState: ObservableObject {
         for key in coursePreferences.archivedCourseKeys {
             archivedCourseTerms[key] = coursePreferences.archivedTerm(for: key)
         }
+        let isVisibleAnnouncement: (Assignment) -> Bool = { item in
+            !self.isCompleted(item)
+                && !Self.isTooOld(item, now: now)
+                && self.isCourseSelected(item.course)
+                && !Self.isExpiredEvent(item, now: now)
+                && !self.archivedAssignmentIDs.contains(item.id)
+                && Self.withinTermCap(
+                    item,
+                    now: now,
+                    archivedTerms: archivedTermSet,
+                    archivedCourseTerms: archivedCourseTerms
+                )
+        }
+        announcementPageItems = announcementItems
+            .filter(isVisibleAnnouncement)
+            .sorted(by: Self.byDueDate)
+        announcementFinds = secondaryAnnouncementItems
+            .filter(isVisibleAnnouncement)
+            .sorted(by: Self.byDueDate)
         let incomplete = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
@@ -5000,7 +5185,7 @@ final class AppState: ObservableObject {
     private func publishWidgetSnapshot() {
         let nextDue = (assignments + assessments + laterAssignments)
             .filter { $0.dueAt != nil }
-            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+            .sorted(by: Assignment.isOrderedByDueDate)
             .prefix(5)
             .map { WidgetItem(title: $0.title, course: $0.course, dueAt: $0.dueAt) }
         WidgetSnapshotStore.write(WidgetSnapshot(items: Array(nextDue), generatedAt: Date()))
@@ -5654,7 +5839,7 @@ final class AppState: ObservableObject {
                     courseID: id,
                     code: code,
                     name: name,
-                    url: URL(string: "https://canvas.upenn.edu/courses/\(id)"),
+                    url: canvasBaseURL.appendingPathComponent("courses/\(id)"),
                     section: CourseCode.parse(name).section
                 )
             }
@@ -5814,10 +5999,6 @@ final class AppState: ObservableObject {
     }
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {
-        switch (a.dueAt, b.dueAt) {
-        case let (lhs?, rhs?): return lhs < rhs
-        case (nil, _):         return false   // nil dates sort to the end
-        case (_, nil):         return true
-        }
+        Assignment.isOrderedByDueDate(a, b)
     }
 }

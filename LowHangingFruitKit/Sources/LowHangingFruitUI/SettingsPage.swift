@@ -35,6 +35,7 @@ struct SettingsPage: View {
     /// rejection.
     @State private var showStayLoggedInSheet = false
     @State private var didCopyDiagnostics = false
+    @State private var confirmingBackendDataDeletion = false
     #if DEBUG
     /// Drives the "simulate canvas logout" DEBUG row below — `nil` result
     /// with `isRunning == false` is the row's resting state (never shown
@@ -131,8 +132,6 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothTeal)
 
-            announcementWatcherSection
-
             Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
@@ -149,67 +148,10 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothCobalt)
 
-            Section {
-                Button {
-                    showRecurring = true
-                } label: {
-                    Label("add recurring task", systemImage: "calendar.badge.plus")
-                }
-            } header: {
-                SmoothSectionHeader("tasks", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothLemon)
-
-            ProfileSemesterSection(placement: .addClass)
-            ProfileClassesSection()
-            ProfileNotificationsSection()
-
             remindersSection
+            ProfileClassesSection { showRecurring = true }
+            ProfileNotificationsSection()
             iCloudSyncSection
-
-            // Debug builds only. `diagnosticsSection` below is where the
-            // simulate-logout row was first placed, but that section is
-            // defined and never put in this Form -- it fell out of the layout
-            // when profile and settings were merged into one page, and only
-            // its helpers (`copyDiagnostics`, `reportProblem`) are still
-            // reached from elsewhere. Olisa built v6 to his phone, scrolled
-            // to the bottom and found nothing, which is how that was noticed.
-            // So the row gets a section of its own here, in the one place a
-            // scrolling thumb actually arrives.
-            #if DEBUG
-            Section {
-                simulateCanvasLogoutRow
-                probeEdDiscussionRow
-            } header: {
-                SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothCobalt)
-            #endif
-
-            // `diagnosticsSection` ("copy diagnostics report" / "report a
-            // problem") has the exact same history as the DEBUG testing
-            // section right above it — defined, but never actually placed
-            // in this Form, so nobody scrolling a real phone could ever
-            // reach either the diagnostics copy button or the report-a-
-            // problem mail flow. Placed right after testing for the same
-            // reason testing was placed here: this is the one spot a
-            // scrolling thumb actually arrives.
-            diagnosticsSection
-
-            #if os(macOS)
-            onThisMacSection
-            #endif
-
-            ProfileSemesterSection(placement: .previousSemesters)
-
-            if let notice = state.syncNotice ?? state.error {
-                Section {
-                    Label(notice, systemImage: "exclamationmark.triangle")
-                        .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.smoothMarigoldInk)
-                }
-                .smoothSectionBackground(.smoothMarigold)
-            }
         }
         .formStyle(.grouped)
         .font(.lhfSecondary(15))
@@ -237,6 +179,18 @@ struct SettingsPage: View {
                 },
                 secondaryButton: .cancel()
             )
+        }
+        .confirmationDialog(
+            "delete my class data from lhf's server?",
+            isPresented: $confirmingBackendDataDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("delete", role: .destructive) {
+                Task { _ = await state.deleteBackendData() }
+            }
+            Button("cancel", role: .cancel) {}
+        } message: {
+            Text("This removes your enrollment and shared course-material rows from LHF's server. Your assignments, completions and settings on this device stay.")
         }
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
@@ -459,10 +413,84 @@ struct SettingsPage: View {
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2DateText)
             }
+
+            HStack(spacing: 8) {
+                if state.isCourseKnowledgeSyncing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
+                        .foregroundStyle(state.courseKnowledge.isEmpty ? Color.v2DateText : Color.v2SpineGreen)
+                }
+                Text("course materials")
+                Spacer()
+                Text(courseKnowledgeSummary)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
+            }
+
+            if let notice = state.courseKnowledgeNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.smoothMarigoldInk)
+            }
+
+            if BackendServices.client != nil {
+                Button("delete my class data from lhf's server", role: .destructive) {
+                    confirmingBackendDataDeletion = true
+                }
+            }
+
+            #if os(macOS)
+            Toggle("open at login", isOn: Binding(
+                get: {
+                    _ = loginItemRefreshNonce
+                    return SMAppService.mainApp.status == .enabled
+                },
+                set: { newValue in
+                    if newValue {
+                        try? SMAppService.mainApp.register()
+                    } else {
+                        try? SMAppService.mainApp.unregister()
+                    }
+                    loginItemRefreshNonce += 1
+                }
+            ))
+            #endif
+
+            if let notice = state.syncNotice ?? state.error {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.smoothMarigoldInk)
+            }
+
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label(didCopyDiagnostics ? "copied" : "copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+            }
+            Button {
+                reportProblem()
+            } label: {
+                Label("report a problem", systemImage: "envelope")
+            }
+
+            #if DEBUG
+            simulateCanvasLogoutRow
+            probeEdDiscussionRow
+            #endif
         } header: {
-            SmoothSectionHeader("icloud sync", accent: .smoothCobalt)
+            SmoothSectionHeader("sync", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothCobalt)
+    }
+
+    private var courseKnowledgeSummary: String {
+        let knowledge = state.courseKnowledge
+        guard let synced = knowledge.lastSyncedAt else { return "not synced" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        let when = formatter.localizedString(for: synced, relativeTo: Date())
+        return "\(knowledge.documents.count) items · \(knowledge.courses.count) courses · \(when)"
     }
 
     // MARK: On this Mac

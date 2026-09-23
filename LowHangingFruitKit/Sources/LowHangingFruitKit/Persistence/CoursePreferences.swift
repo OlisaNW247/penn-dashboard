@@ -109,6 +109,12 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
     /// own gate on this field.
     public var nothingToSubmitEnabled: Bool
 
+    /// Whether qualifying tasks extracted from this course's announcements
+    /// join the owed-work dashboard. The announcement inbox is independent of
+    /// this preference: every extracted mention remains inspectable there.
+    /// Default-on preserves the behavior of builds that predate the setting.
+    public var announcementAssignmentsOnDashboard: Bool
+
     /// The term this course was archived into by semester rollover; `nil` means
     /// it is still active. A `Term` rather than a `Bool` so the Done history can
     /// group archived work by semester, and so a rollover that fires twice in
@@ -150,6 +156,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         notificationsEnabled: Bool = true,
         leadOffsets: Set<LeadOffset>? = nil,
         nothingToSubmitEnabled: Bool = true,
+        announcementAssignmentsOnDashboard: Bool = true,
         archivedTerm: Term? = nil,
         isManuallyAdded: Bool = false
     ) {
@@ -161,6 +168,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         self.notificationsEnabled = notificationsEnabled
         self.leadOffsets = leadOffsets
         self.nothingToSubmitEnabled = nothingToSubmitEnabled
+        self.announcementAssignmentsOnDashboard = announcementAssignmentsOnDashboard
         self.archivedTerm = archivedTerm
         self.isManuallyAdded = isManuallyAdded
     }
@@ -229,6 +237,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         case courseKey, displayName, isVisible, isDeleted, canvasCourseID
         case notificationsEnabled, leadOffsets, recurringEnabled, archivedTerm
         case isManuallyAdded, noSubmissionRemindersEnabled, nothingToSubmitEnabled
+        case announcementAssignmentsOnDashboard
     }
 
     public init(from decoder: any Decoder) throws {
@@ -263,6 +272,10 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
             let oldNoSubmission = try c.decodeIfPresent(Bool.self, forKey: .noSubmissionRemindersEnabled) ?? true
             self.nothingToSubmitEnabled = oldRecurring && oldNoSubmission
         }
+        self.announcementAssignmentsOnDashboard = try c.decodeIfPresent(
+            Bool.self,
+            forKey: .announcementAssignmentsOnDashboard
+        ) ?? true
         self.archivedTerm = try c.decodeIfPresent(Term.self, forKey: .archivedTerm)
         self.isManuallyAdded = try c.decodeIfPresent(Bool.self, forKey: .isManuallyAdded) ?? false
 
@@ -292,6 +305,7 @@ public struct CoursePreferences: Codable, Sendable, Hashable, Identifiable {
         // only the merged field, so the fold in `init(from:)` only ever runs
         // once, on the first decode of a blob from before this change.
         try c.encode(nothingToSubmitEnabled, forKey: .nothingToSubmitEnabled)
+        try c.encode(announcementAssignmentsOnDashboard, forKey: .announcementAssignmentsOnDashboard)
         try c.encodeIfPresent(archivedTerm, forKey: .archivedTerm)
         try c.encode(isManuallyAdded, forKey: .isManuallyAdded)
         // Sorted so the encoded blob is byte-stable across runs — `Set`'s
@@ -395,6 +409,9 @@ public final class CoursePreferencesStore: ObservableObject {
     }
     public func nothingToSubmitEnabled(_ courseKey: String) -> Bool {
         preferences(for: courseKey).nothingToSubmitEnabled
+    }
+    public func announcementAssignmentsOnDashboard(_ courseKey: String) -> Bool {
+        preferences(for: courseKey).announcementAssignmentsOnDashboard
     }
     /// `nil` means this course inherits the global lead times — see
     /// `CoursePreferences.leadOffsets`. Prefer `effectiveLeadOffsets(for:global:)`.
@@ -518,6 +535,12 @@ public final class CoursePreferencesStore: ObservableObject {
     /// reason.
     public func setNothingToSubmitEnabled(_ courseKey: String, _ enabled: Bool) {
         update(courseKey) { $0.nothingToSubmitEnabled = enabled }
+    }
+
+    /// Store-level write. UI callers should use AppState's setter so the
+    /// dashboard is rebuilt immediately after the preference changes.
+    public func setAnnouncementAssignmentsOnDashboard(_ courseKey: String, _ enabled: Bool) {
+        update(courseKey) { $0.announcementAssignmentsOnDashboard = enabled }
     }
 
     /// Files the course under a term (rollover) or brings it back (`nil`).

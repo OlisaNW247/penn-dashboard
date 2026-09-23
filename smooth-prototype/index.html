@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#FBF2DF" />
+    <meta name="theme-color" content="#F5F7F7" />
     <meta
       name="description"
-      content="Smooth assignment tracker — interactive retro-pop design prototype"
+      content="Locust assignment tracker — interactive design prototype"
     />
-    <title>Smooth — assignment tracker prototype</title>
+    <title>Locust — assignment tracker prototype</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="stage">
-      <section class="phone" aria-label="Smooth mobile app prototype">
+      <section class="phone" aria-label="Locust mobile app prototype">
         <header class="status-bar" aria-label="Phone status">
           <time id="statusTime">9:41</time>
           <div class="dynamic-island" aria-hidden="true"></div>
@@ -27,28 +27,37 @@
         <div class="app-shell">
           <header class="app-header">
             <div>
-              <h1>Smooth <span id="dayName">Friday</span></h1>
-              <p><span id="dateLabel">July 3</span> · <span id="weekCount">6</span> left this week</p>
+              <span class="brand-kicker">LOCUST / FOCUS</span>
+              <h1>Good <span id="dayPeriod">afternoon.</span></h1>
+              <p><span id="dateLabel">Friday, September 11</span></p>
             </div>
             <div class="header-actions">
               <button class="round-button add-button" id="openAdd" type="button" aria-label="Add assignment">+</button>
-              <button class="round-button menu-button" id="openMenu" type="button" aria-label="Open prototype menu" aria-expanded="false">≡</button>
+              <button class="round-button menu-button" id="openMenu" type="button" aria-label="Open prototype menu" aria-expanded="false"><span></span><span></span></button>
             </div>
           </header>
 
           <aside class="prototype-menu" id="prototypeMenu" hidden>
             <div>
               <strong>Prototype mode</strong>
-              <span>Your changes stay in this browser.</span>
+              <span>Changes stay in this browser.</span>
             </div>
             <button type="button" id="resetData">Reset</button>
           </aside>
 
           <nav class="segments" aria-label="Assignment filters">
-            <button class="segment active" type="button" data-filter="week" aria-pressed="true">This week</button>
+            <button class="segment active" type="button" data-filter="todo" aria-pressed="true">Todo</button>
             <button class="segment" type="button" data-filter="all" aria-pressed="false">All</button>
             <button class="segment" type="button" data-filter="done" aria-pressed="false">Done</button>
           </nav>
+
+          <section class="focus-signal" aria-label="48 hour workload">
+            <div class="signal-copy">
+              <span>Next 48 hours</span>
+              <strong><span id="todoCount">4</span><span class="need-copy">things need you</span></strong>
+            </div>
+            <div class="signal-track" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          </section>
 
           <div class="assignment-list" id="assignmentList" aria-live="polite"></div>
         </div>
@@ -78,7 +87,7 @@
         <label>
           <span>Due date</span>
           <input id="dueInput" name="due" type="datetime-local" required />
-          <small>Smooth assigns the color from this date.</small>
+          <small>Locust assigns urgency from this date.</small>
         </label>
         <button class="save-button" type="submit">Add assignment</button>
       </form>

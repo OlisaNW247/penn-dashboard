@@ -138,13 +138,16 @@ final class CanvasSessionRenewer {
     /// leave a silent background attempt running indefinitely.
     static let timeout: TimeInterval = 30
 
-    private static let canvasURL = URL(string: "https://canvas.upenn.edu/")!
+    private let installation: CanvasInstallation
 
     /// Case-insensitive substrings of an IdP/login host — Penn's actual SAML
     /// chain hops through `idp.pennkey.upenn.edu`; `weblogin`/`duosecurity`
     /// are included for the same reason `AppState.canvasLoginDomainHints`
     /// covers `duosecurity` — Duo's own domain if a 2FA prompt is reached.
-    private static let loginHostMarkers = ["pennkey", "idp", "weblogin", "duosecurity"]
+    private static let loginHostMarkers = [
+        "pennkey", "idp", "login", "sso", "weblogin", "duosecurity",
+        "okta", "microsoftonline", "shibboleth",
+    ]
 
     /// Canvas's own session cookie names, matched as a case-insensitive
     /// substring of the cookie's `name` — `canvas_session` is Canvas's own
@@ -277,9 +280,11 @@ final class CanvasSessionRenewer {
     }
 
     init(
+        installation: CanvasInstallation = .penn,
         isLoginPaneActive: @escaping () -> Bool,
         autoLogin: (() -> (username: String, password: String)?)? = nil
     ) {
+        self.installation = installation
         self.isLoginPaneActive = isLoginPaneActive
         self.autoLogin = autoLogin
     }
@@ -361,14 +366,17 @@ final class CanvasSessionRenewer {
         return now.timeIntervalSince(lastSubmissionAt) >= autoLoginCooldown
     }
 
-    static func classifyFinalHost(_ host: String?) -> HostClassification {
+    static func classifyFinalHost(
+        _ host: String?,
+        canvasHost: String = CanvasInstallation.penn.host
+    ) -> HostClassification {
         guard let host, !host.isEmpty else { return .other }
         let lower = host.lowercased()
+        if lower == canvasHost.lowercased() {
+            return .canvas
+        }
         if loginHostMarkers.contains(where: lower.contains) {
             return .loginPage
-        }
-        if lower == "canvas.upenn.edu" {
-            return .canvas
         }
         return .other
     }
@@ -416,8 +424,13 @@ final class CanvasSessionRenewer {
     /// session credential (as opposed to, say, a CSRF token or an analytics
     /// cookie that also happens to live on that domain) — see
     /// `sessionCookieNameMarkers`'s doc comment for what the two names mean.
-    static func isCanvasSessionCookie(_ cookie: HTTPCookie) -> Bool {
-        guard cookie.domain.localizedCaseInsensitiveContains("canvas") else { return false }
+    static func isCanvasSessionCookie(
+        _ cookie: HTTPCookie,
+        canvasHost: String = CanvasInstallation.penn.host
+    ) -> Bool {
+        let cookieDomain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let expectedHost = canvasHost.lowercased()
+        guard expectedHost == cookieDomain || expectedHost.hasSuffix("." + cookieDomain) else { return false }
         let name = cookie.name.lowercased()
         return sessionCookieNameMarkers.contains { name.contains($0) }
     }
@@ -454,6 +467,7 @@ final class CanvasSessionRenewer {
         let waiter = SettleWaiter()
         let delegate = RenewalNavigationDelegate(
             waiter: waiter,
+            canvasHost: installation.host,
             // Called for every `didFinish` that did NOT land on Canvas.
             // Returning `true` tells the delegate to settle the wait now
             // (classified below, once `waiter.wait()` returns); `false`
@@ -488,7 +502,7 @@ final class CanvasSessionRenewer {
         // attempt — rule 1 above / docs/CANVAS_LOGIN_HARDENING.md group 3a's
         // "never re-post, never reload on failure." If this doesn't resolve
         // to a live Canvas session on its own, the attempt simply fails.
-        webView.load(URLRequest(url: Self.canvasURL))
+        webView.load(URLRequest(url: installation.baseURL))
 
         // Races the navigation settling against a hard 30s timeout. Both
         // paths call `waiter.signal(_:)`, which is idempotent (see
@@ -529,7 +543,7 @@ final class CanvasSessionRenewer {
         }
 
         let finalHost = webView.url?.host
-        guard Self.classifyFinalHost(finalHost) == .canvas else {
+        guard Self.classifyFinalHost(finalHost, canvasHost: installation.host) == .canvas else {
             // Distinguish the three ways this can end besides Canvas —
             // order matters: the password-rejected check must come first,
             // since a login-form landing after a submission this attempt
@@ -556,8 +570,8 @@ final class CanvasSessionRenewer {
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
-        let canvasCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
-        guard canvasCookies.contains(where: Self.isCanvasSessionCookie) else {
+        let canvasCookies = cookies.filter { Self.cookie($0, belongsTo: installation.host) }
+        guard canvasCookies.contains(where: { Self.isCanvasSessionCookie($0, canvasHost: installation.host) }) else {
             // Landed back on canvas.upenn.edu but minted no recognizable
             // session cookie — e.g. an anonymous/public page. Treat the same
             // as landing on a login page: nothing to harvest.
@@ -701,6 +715,12 @@ final class CanvasSessionRenewer {
             )
         )
     }
+
+    private static func cookie(_ cookie: HTTPCookie, belongsTo host: String) -> Bool {
+        let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let host = host.lowercased()
+        return host == domain || host.hasSuffix("." + domain)
+    }
 }
 
 /// Exactly-once-resumable settle signal shared between the timeout `Task` and
@@ -763,6 +783,7 @@ final class SettleWaiter {
 @MainActor
 private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     private let waiter: SettleWaiter
+    private let canvasHost: String
     /// Consulted for every `didFinish` that isn't a Canvas landing — see
     /// `CanvasSessionRenewer.handleNonCanvasFinish`'s doc comment for what it
     /// does (submit the stored PennKey password into a freshly-seen login
@@ -774,8 +795,13 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     /// form apart from a same-host, same-path Duo hand-off/return page.
     private let onNonCanvasFinish: (WKWebView) async -> Bool
 
-    init(waiter: SettleWaiter, onNonCanvasFinish: @escaping (WKWebView) async -> Bool) {
+    init(
+        waiter: SettleWaiter,
+        canvasHost: String,
+        onNonCanvasFinish: @escaping (WKWebView) async -> Bool
+    ) {
         self.waiter = waiter
+        self.canvasHost = canvasHost
         self.onNonCanvasFinish = onNonCanvasFinish
     }
 
@@ -805,7 +831,7 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
         // this `Task`, a later `didFinish` call, or the 30s timeout `Task`
         // wins the race — whichever settles first is the only one that
         // counts, and every later signal is a harmless no-op.
-        if CanvasSessionRenewer.classifyFinalHost(webView.url?.host) == .canvas {
+        if CanvasSessionRenewer.classifyFinalHost(webView.url?.host, canvasHost: canvasHost) == .canvas {
             waiter.signal(.finished)
             return
         }

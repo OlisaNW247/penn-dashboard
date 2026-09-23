@@ -38,11 +38,16 @@ import LowHangingFruitKit
 /// `ProfileNotificationsSection`'s.
 struct ProfileClassesSection: View {
     @EnvironmentObject var state: AppState
+    private let addRecurringTask: () -> Void
 
     /// Non-nil while the rename prompt is up; holds the course *code* being
     /// renamed (never the display name, which is what's being edited).
     @State private var renamingCourse: String?
     @State private var renameDraft = ""
+
+    init(addRecurringTask: @escaping () -> Void = {}) {
+        self.addRecurringTask = addRecurringTask
+    }
 
     var body: some View {
         Section {
@@ -59,6 +64,23 @@ struct ProfileClassesSection: View {
                 if !deletedCourses.isEmpty {
                     deletedClassesRow(deletedCourses)
                 }
+            }
+
+            if FeatureFlags.gradeWatcher {
+                if state.canUseGradeWatcher {
+                    NavigationLink {
+                        GradeWatcherView(store: state.gradeWatcher)
+                    } label: {
+                        Label("grade watcher", systemImage: "chart.bar.fill")
+                    }
+                } else {
+                    Label("grade watcher", systemImage: "chart.bar.fill")
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+
+            Button(action: addRecurringTask) {
+                Label("add recurring task", systemImage: "calendar.badge.plus")
             }
         } header: {
             SmoothSectionHeader("classes", accent: .smoothTeal)

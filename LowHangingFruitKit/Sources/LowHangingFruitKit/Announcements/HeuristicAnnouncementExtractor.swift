@@ -179,21 +179,8 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     /// motivated this rewrite.
     public static func isLikelyInformational(title: String, body: String) -> Bool {
         let firstSentence = splitSentences(body).first ?? body
-        return matchesInformationalPattern(title) || matchesInformationalPattern(firstSentence)
-    }
-
-    private static let informationalPatterns: [String] = [
-        #"\b(slides|notes|recording|lecture video|handout|solutions|grades|scores|feedback)\b.{0,40}?\b(posted|uploaded|available|up|out|released|online)\b"#,
-        #"\broom change\b"#,
-        #"\blocation change\b"#,
-        #"\boffice hours\b.{0,20}?\b(moved|changed|cancel\w*)\b"#,
-        #"\bclass\b.{0,10}?\bcancel\w*\b"#,
-        #"\bno class\b"#,
-        #"\breminder:\s*(no|there is no)\b"#,
-    ]
-
-    private static func matchesInformationalPattern(_ text: String) -> Bool {
-        informationalPatterns.contains { regexMatches($0, in: text) }
+        return AnnouncementTaskClassifier.isInformational(title)
+            || AnnouncementTaskClassifier.isInformational(firstSentence)
     }
 
     // MARK: - Task kind (submission vs. preparation) and the verb gate
@@ -204,68 +191,7 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     /// — see this file's header comment — where the old code had it as a
     /// bare stem match.
     static func taskKind(of sentence: String) -> ExtractedTaskKind? {
-        let lower = sentence.lowercased()
-        if let kind = explicitVerbKind(lower) { return kind }
-        // No listed verb, but the sentence still says something is "due" —
-        // "Homework 2 is due Friday at 11:59pm" never uses an imperative verb
-        // at all, yet is as unambiguous a submission as this extractor will
-        // ever see. `\bdue\b` naturally excludes "overdue" (no word boundary
-        // between the 'r' and the 'd'), so a professor mentioning a
-        // previously-missed, already-overdue item doesn't get a fresh one
-        // minted from the same word.
-        if regexMatches(#"\bdue\b"#, in: lower) { return .submission }
-        return nil
-    }
-
-    private static func explicitVerbKind(_ lower: String) -> ExtractedTaskKind? {
-        if isSubmissionVerb(lower) { return .submission }
-        if isPreparationVerb(lower) { return .preparation }
-        return nil
-    }
-
-    /// `submit`, `turn in`, `hand in`, `upload`, `fill out` are unconditional
-    /// — there is no context in which "please submit the essay" isn't about
-    /// handing something in. `complete` and `take` are gated on a nearby
-    /// coursework noun (`complete the dishes` isn't a pset; `take a seat`
-    /// isn't a quiz) — the same reasoning as the old code's verb+cue AND,
-    /// applied one level down to a single ambiguous verb instead of the
-    /// whole sentence.
-    private static func isSubmissionVerb(_ lower: String) -> Bool {
-        if regexMatches(#"\bsubmit\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bturn\s+in\b"#, in: lower) { return true }
-        if regexMatches(#"\bhand\s+in\b"#, in: lower) { return true }
-        if regexMatches(#"\bupload\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bfill\s+out\b"#, in: lower) { return true }
-        if regexMatches(#"\bcomplete\w*\b"#, in: lower),
-           regexMatches(#"\b(quiz|survey|form|assignment|problem set|pset|homework|hw|lab report)\b"#, in: lower) {
-            return true
-        }
-        if regexMatches(#"\btake\b"#, in: lower),
-           regexMatches(#"\b(quiz|survey|poll)\b"#, in: lower) {
-            return true
-        }
-        return false
-    }
-
-    /// `finish` is gated the same way `complete` is above ("finish your
-    /// coffee" isn't a reading assignment); everything else here has nothing
-    /// to submit even when unconditional, which is the entire point of
-    /// `ExtractedTaskKind.preparation` existing.
-    private static func isPreparationVerb(_ lower: String) -> Bool {
-        if regexMatches(#"\bread\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bfinish\w*\b"#, in: lower),
-           regexMatches(#"\b(reading|chapter|ch|pages|pp|article|book)\b"#, in: lower) {
-            return true
-        }
-        if regexMatches(#"\breview\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bwatch\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bprepare\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bbring\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bstudy\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\blook\s+over\b"#, in: lower) { return true }
-        if regexMatches(#"\bskim\w*\b"#, in: lower) { return true }
-        if regexMatches(#"\bprint\w*\b"#, in: lower) { return true }
-        return false
+        AnnouncementTaskClassifier.taskKind(in: sentence)
     }
 
     /// Every verb stem/phrase recognized above, combined into one
@@ -281,7 +207,7 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     /// depends on directedness).
     private static let actionVerbAlternation: String = {
         let stems = [
-            "submit", "upload", "complete", "take", "read", "finish",
+            "submit", "upload", "complete", "take", "sit", "read", "finish",
             "review", "watch", "prepare", "bring", "study", "skim", "print",
         ].map { NSRegularExpression.escapedPattern(for: $0) + "\\w*" }
         let phrases = ["turn\\s+in", "hand\\s+in", "fill\\s+out", "look\\s+over"]

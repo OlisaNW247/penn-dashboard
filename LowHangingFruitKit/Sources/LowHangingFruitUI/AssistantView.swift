@@ -125,6 +125,7 @@ struct AssistantView: View {
         knowledge: CourseKnowledgeBase = .empty,
         work: [WorkItem] = [],
         userName: String = "",
+        allowBackend: Bool = true,
         preferScripted: Bool = false
     ) {
         self.courseCodes = courseCodes
@@ -133,7 +134,7 @@ struct AssistantView: View {
         self.work = work
         self.userName = userName
         let responder: AssistantResponder
-        if !preferScripted, let client = BackendServices.client, !(knowledge.isEmpty && work.isEmpty) {
+        if allowBackend, !preferScripted, let client = BackendServices.client, !(knowledge.isEmpty && work.isEmpty) {
             responder = BackendAssistantResponder(client: client, fallback: OnDeviceAssistantResponder())
         } else if preferScripted || (knowledge.isEmpty && work.isEmpty) {
             responder = ScriptedAssistantResponder()

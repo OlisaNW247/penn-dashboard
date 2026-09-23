@@ -11,6 +11,32 @@ struct DashboardFilterTests {
                    course: course, title: title, dueAt: Date(), url: nil)
     }
 
+    @Test("equal due times keep a deterministic card order")
+    func equalDueTimesAreStable() {
+        let due = Date(timeIntervalSince1970: 1_800_000_000)
+        func dashItem(id: String) -> DashItem {
+            DashItem(
+                assignment: Assignment(
+                    source: .canvas,
+                    sourceID: id,
+                    kind: .assignment,
+                    course: "CIS 1200",
+                    title: id,
+                    dueAt: due,
+                    url: nil
+                ),
+                dueOverride: nil,
+                isCompleted: false,
+                completedAt: nil
+            )
+        }
+
+        let ordered = [dashItem(id: "third"), dashItem(id: "first"), dashItem(id: "second")]
+            .sorted(by: DashItem.isOrderedByDueDate)
+
+        #expect(ordered.map(\.assignment.sourceID) == ["first", "second", "third"])
+    }
+
     @Test("course-less holidays are never treated as assessments")
     func holidaysAreNotAssessments() {
         // The exact shape that leaked onto the dashboard before the fix.

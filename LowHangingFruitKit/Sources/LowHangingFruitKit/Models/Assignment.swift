@@ -51,6 +51,26 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     /// Stable identity across sources: (source, sourceID).
     public var id: String { "\(source.rawValue):\(sourceID)" }
 
+    /// Orders assignments chronologically, with a deterministic identity
+    /// tie-break for items that share a due time (or are both undated).
+    ///
+    /// Swift's sort is not stable, so comparing only `dueAt` lets equal-time
+    /// assignments trade places whenever a refreshed feed arrives in a
+    /// different order. The id is intentionally arbitrary but durable: the
+    /// student sees one consistent order without us inventing extra priority.
+    public static func isOrderedByDueDate(_ lhs: Assignment, _ rhs: Assignment) -> Bool {
+        switch (lhs.dueAt, rhs.dueAt) {
+        case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
+            return lhsDate < rhsDate
+        case (nil, .some):
+            return false
+        case (.some, nil):
+            return true
+        default:
+            return lhs.id < rhs.id
+        }
+    }
+
     public let source: Source
     public let sourceID: String
     public let kind: Kind

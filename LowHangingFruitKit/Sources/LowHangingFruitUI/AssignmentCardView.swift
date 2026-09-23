@@ -140,9 +140,10 @@ struct AssignmentCardView: View {
                 Text(item.assignment.title)
                     .font(.lhfAssignmentTitle(20))
                     .foregroundStyle(Color.smoothInk)
-                    .lineLimit(1)
+                    .lineLimit(isExpanded ? nil : 1)
                     .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: isExpanded)
 
                 // Visible on the collapsed card, not only once expanded — a
                 // student scanning the list needs to know "nothing to turn in
@@ -196,22 +197,11 @@ struct AssignmentCardView: View {
     /// is what they are most likely to want and costs nothing when collapsed.
     private func expandedDetail(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(Color.smoothInk.opacity(0.22))
-                .frame(height: 1)
-                .padding(.top, 12)
-
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("due")
-                        .font(.lhfAssignmentTitle(9))
-                        .tracking(0.5)
-                        .foregroundStyle(Color.smoothInk.opacity(0.68))
-                    Text(fullDueText(item.due))
-                        .font(.lhfAssignmentTitle(12.5))
-                        .foregroundStyle(Color.smoothInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(fullDueText(item.due))
+                    .font(.lhfAssignmentTitle(12.5))
+                    .foregroundStyle(Color.smoothInk)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 8)
 
@@ -228,13 +218,14 @@ struct AssignmentCardView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("edit due date")
             }
+            .padding(.top, 10)
 
             // The collapsed tag says *that*; this says *why*, in the one
             // moment the student has actually asked about this assignment.
             // Same predicate as the collapsed tag — see
             // `DashItem.showsNothingToSubmit`.
             if item.showsNothingToSubmit {
-                Text("canvas expects nothing to be submitted for this — attend, read, or do it on paper.")
+                Text("nothing to submit")
                     .font(.lhfAssignmentTitle(11.5))
                     .foregroundStyle(Color.smoothInk.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)

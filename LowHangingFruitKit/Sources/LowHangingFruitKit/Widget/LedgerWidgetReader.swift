@@ -80,7 +80,7 @@ public enum LedgerWidgetReader {
         // merged chain grew to nine links and the Swift 6 type-checker gave
         // up on it ("unable to type-check this expression in reasonable
         // time"). Same predicates, same order, explicit types throughout.
-        var candidates: [(due: Date, item: WidgetItem)] = []
+        var candidates: [(id: String, due: Date, item: WidgetItem)] = []
         for row in rows {
             // Completion-only rows are bookkeeping, not assignments: they carry
             // no trustworthy title or due date and must never reach the widget.
@@ -105,11 +105,13 @@ public enum LedgerWidgetReader {
             let display = nameOverrides[row.course]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let course = (display?.isEmpty == false) ? display! : row.course
-            candidates.append((due, WidgetItem(title: row.title, course: course, dueAt: due)))
+            candidates.append((row.id, due, WidgetItem(title: row.title, course: course, dueAt: due)))
         }
 
         let items: [WidgetItem] = candidates
-            .sorted { $0.due < $1.due }
+            .sorted { lhs, rhs in
+                lhs.due == rhs.due ? lhs.id < rhs.id : lhs.due < rhs.due
+            }
             .prefix(maxItems)
             .map(\.item)
 

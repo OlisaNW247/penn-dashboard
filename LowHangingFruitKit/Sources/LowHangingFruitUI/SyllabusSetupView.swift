@@ -16,6 +16,7 @@ struct SyllabusSetupView: View {
     @ObservedObject var store: GradeWatcherStore
     let courseID: String
     let courseName: String
+    var canvasBaseURL: URL = CanvasInstallation.penn.baseURL
     /// This course's syllabus prose, already synced on-device
     /// (`CourseKnowledgeBase.syllabusText(forCourseID:)`) — passed in from
     /// `GradeReportView`, which has `AppState` access, rather than this view
@@ -474,7 +475,11 @@ struct SyllabusSetupView: View {
             return
         }
 
-        let client = CanvasSyllabusClient(cookies: cookies, accessToken: bearerToken)
+        let client = CanvasSyllabusClient(
+            baseURL: canvasBaseURL,
+            cookies: cookies,
+            accessToken: bearerToken
+        )
         do {
             let candidates = try await client.findCandidates(courseID: courseID)
             // First candidate that actually yields a scheme wins — a course

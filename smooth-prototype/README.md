@@ -1,6 +1,6 @@
-# Smooth prototype
+# Locust prototype
 
-A dependency-free HTML/CSS/JavaScript tester for the Smooth visual redesign. It is intentionally isolated from the production SwiftUI app.
+A dependency-free HTML/CSS/JavaScript tester for the Locust visual redesign. It is intentionally isolated from the production SwiftUI app.
 
 ## Run
 
@@ -14,7 +14,7 @@ Then open `http://localhost:4173`.
 
 ## Included interactions
 
-- This week, All, and Done filters
+- Todo (Today + Tomorrow), All, and Done filters
 - Whole-card completion with animated removal
 - Done-state strikethrough and 55% opacity
 - Add-assignment sheet with automatic due-date color assignment

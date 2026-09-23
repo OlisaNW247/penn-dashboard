@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
     @State private var showAddSheet = false
+    @State private var showAnnouncementFinds = false
     /// The pushed pages behind the header actions. A path rather than separate
     /// booleans keeps the screenshot seams deterministic.
     @State private var path: [DashRoute] = []
@@ -26,10 +27,7 @@ struct ContentView: View {
     /// (or, in DEBUG, seeded straight to the report for screenshots) without
     /// walking through the cards.
     ///
-    /// `.settings` remains as a compatibility route for the existing screenshot
-    /// flag, but resolves to the same combined Profile page as `.profile`.
     enum DashRoute: Hashable {
-        case settings
         case profile
         case grades
         case report(courseID: String, courseName: String)
@@ -71,18 +69,20 @@ struct ContentView: View {
                             .padding(.top, 10)
                     }
 
-                    HStack(spacing: 10) {
+                    HStack(alignment: .center, spacing: 8) {
                         SegmentedToggle(selection: $filter)
                         addInlineButton
+                        if !state.announcementPageItems.isEmpty {
+                            announcementFindsButton
+                        }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 4)
+                    .padding(.top, 14)
 
                     ScrollView {
                         listContent
                             .padding(.horizontal, 20)
-                            .padding(.top, 12)
+                            .padding(.top, 8)
                             .padding(.bottom, 40)
                             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
                     }
@@ -93,12 +93,8 @@ struct ContentView: View {
             .background(Color.smoothPaper.ignoresSafeArea())
             .navigationDestination(for: DashRoute.self) { route in
                 switch route {
-                case .settings:
-                    SettingsPage()
-                        .environmentObject(state)
-                        .environmentObject(scheduler)
                 case .profile:
-                    SettingsPage()
+                    ProfileView()
                         .environmentObject(state)
                         .environmentObject(scheduler)
                 case .assistant:
@@ -111,7 +107,8 @@ struct ContentView: View {
                         contextDocument: state.assistantContextDocument(),
                         knowledge: state.assistantKnowledge,
                         work: state.assistantWorkItems(),
-                        userName: state.userName
+                        userName: state.userName,
+                        allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id
                     )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
@@ -133,7 +130,7 @@ struct ContentView: View {
                 state.loadSampleData()
                 vm.loadSampleData()
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
-                if args.contains("-LHFShowSettings") { path = [.settings] }
+                if args.contains("-LHFShowSettings") { path = [.profile] }
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
@@ -187,6 +184,9 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
+        .sheet(isPresented: $showAnnouncementFinds) {
+            AnnouncementFindsView(items: state.announcementPageItems)
+        }
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
         // was removed 2026-08-27 (docs/decisions.md): readings now import
@@ -232,6 +232,29 @@ struct ContentView: View {
         .help("add assignment or recurring task")
     }
 
+    private var announcementFindsButton: some View {
+        Button { showAnnouncementFinds = true } label: {
+            Image(systemName: "megaphone.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.smoothGrapeInk)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color.smoothGrape.opacity(0.24)))
+                .contentShape(Circle())
+                .overlay(alignment: .topTrailing) {
+                    Text("\(state.announcementPageItems.count)")
+                        .font(.lhfMono(8, weight: .semibold))
+                        .foregroundStyle(Color.smoothPaper)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(Circle().fill(Color.smoothGrapeInk))
+                        .offset(x: 3, y: -3)
+                        .accessibilityHidden(true)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(state.announcementPageItems.count) announcements")
+        .help("announcements")
+    }
+
     /// Reschedule due-date reminders from the current (override-aware) items.
     private func rescheduleNotifications() {
         guard scheduler.isEnabled else { return }
@@ -271,7 +294,7 @@ struct ContentView: View {
         let awaitingDuo = !rejected && state.autoLoginAwaitingDuo
         return Button {
             if rejected {
-                path.append(.settings)
+                path.append(.profile)
             } else {
                 state.restartOnboarding(for: .canvas)
             }
@@ -676,6 +699,78 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         return f.string(from: date)
+    }
+}
+
+private struct AnnouncementFindsView: View {
+    let items: [Assignment]
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.courseNameOverrides) private var courseNameOverrides
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if items.isEmpty {
+                        Text("no announcements")
+                            .font(.lhfSecondary(14))
+                            .foregroundStyle(Color.smoothMuted)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 36)
+                    } else {
+                        ForEach(items) { item in
+                            row(for: item)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color.smoothPaper.ignoresSafeArea())
+            .navigationTitle("announcements")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(for item: Assignment) -> some View {
+        let content = HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(item.displayCourse(overrides: courseNameOverrides).uppercased())
+                    .font(.lhfMono(9.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.smoothTomatoInk)
+                Text(item.title)
+                    .font(.lhfAssignmentTitle(17))
+                    .foregroundStyle(Color.smoothInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let dueAt = item.dueAt {
+                    Text(dueAt.formatted(date: .abbreviated, time: .shortened).lowercased())
+                        .font(.lhfMono(10))
+                        .foregroundStyle(Color.smoothMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if item.url != nil {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+        }
+        .padding(14)
+        .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+        if let url = item.url {
+            Link(destination: url) { content }
+                .buttonStyle(.plain)
+                .accessibilityHint("opens the original announcement")
+        } else {
+            content
+        }
     }
 }
 
