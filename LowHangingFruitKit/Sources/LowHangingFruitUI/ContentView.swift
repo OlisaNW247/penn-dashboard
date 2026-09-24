@@ -40,6 +40,11 @@ struct ContentView: View {
     /// activation covers the "I just opened the app" case.
     private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
+    /// Both halves of the dashboard title use this one compact base size.
+    /// Keeping it as a shared token prevents the weekday from reading like a
+    /// subtitle (or the wordmark like a logo pasted beside the real title).
+    static let dashboardTitlePointSize: CGFloat = 27
+
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
         #if DEBUG
@@ -236,16 +241,16 @@ struct ContentView: View {
         Button { showAnnouncementFinds = true } label: {
             Image(systemName: "megaphone.fill")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothGrapeInk)
+                .foregroundStyle(Color.smoothAnnouncementAccent)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothGrape.opacity(0.24)))
+                .background(Circle().fill(Color.smoothAnnouncementFill))
                 .contentShape(Circle())
                 .overlay(alignment: .topTrailing) {
                     Text("\(state.announcementPageItems.count)")
                         .font(.lhfMono(8, weight: .semibold))
                         .foregroundStyle(Color.smoothPaper)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(Circle().fill(Color.smoothGrapeInk))
+                        .background(Circle().fill(Color.smoothAnnouncementAccent))
                         .offset(x: 3, y: -3)
                         .accessibilityHidden(true)
                 }
@@ -345,7 +350,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Smooth")
-                        .font(.lhfWordmark(32))
+                        .font(.lhfWordmark(Self.dashboardTitlePointSize))
                         .overlay(alignment: .bottomLeading) {
                             SmoothSquiggle()
                                 .stroke(
@@ -367,7 +372,7 @@ struct ContentView: View {
                                 .offset(y: 6)
                         }
                     Text(" \(Self.weekdayText(Date()))")
-                        .font(.lhfHeaderTitle(32))
+                        .font(.lhfHeaderTitle(Self.dashboardTitlePointSize))
                 }
                 .foregroundStyle(Color.smoothInk)
                 .lineLimit(1)
@@ -726,6 +731,7 @@ private struct AnnouncementFindsView: View {
                 .padding(20)
             }
             .background(Color.smoothPaper.ignoresSafeArea())
+            .tint(Color.smoothAnnouncementAccent)
             .navigationTitle("announcements")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -742,7 +748,7 @@ private struct AnnouncementFindsView: View {
                 Text(item.displayCourse(overrides: courseNameOverrides).uppercased())
                     .font(.lhfMono(9.5, weight: .semibold))
                     .tracking(1.1)
-                    .foregroundStyle(Color.smoothTomatoInk)
+                    .foregroundStyle(Color.smoothAnnouncementAccent)
                 Text(item.title)
                     .font(.lhfAssignmentTitle(17))
                     .foregroundStyle(Color.smoothInk)

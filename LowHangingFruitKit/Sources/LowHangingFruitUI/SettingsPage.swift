@@ -197,31 +197,6 @@ struct SettingsPage: View {
         .frame(minWidth: 360, minHeight: 420)
     }
 
-    private func preferenceLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.lhfMono(10, weight: .semibold))
-            .tracking(0.45)
-            .foregroundStyle(Color.smoothTeal)
-            .textCase(.uppercase)
-    }
-
-    @ViewBuilder
-    private var cloudSyncStatus: some View {
-        if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
-            Text("Takes effect after you quit and reopen Smooth.")
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.v2DateText)
-        } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
-            Text(reason)
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.smoothTomatoInk)
-        } else if state.cloudSyncEnabled {
-            Text("Sync is on. Changes appear on your other devices within a minute or two.")
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.v2DateText)
-        }
-    }
-
     // MARK: Storage
 
     /// What the durable ledger is actually holding. This exists because the
@@ -401,17 +376,13 @@ struct SettingsPage: View {
             // otherwise a student who just turned sync on would see "Sync is
             // on" immediately, which isn't true until they relaunch.
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
-                Text("Takes effect after you quit and reopen Smooth.")
+                Text("restart Smooth to apply")
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2DateText)
             } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
                 Text(reason)
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.smoothTomatoInk)
-            } else if state.cloudSyncEnabled {
-                Text("Sync is on. Changes appear on your other devices within a minute or two.")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.v2DateText)
             }
 
             HStack(spacing: 8) {
@@ -463,21 +434,23 @@ struct SettingsPage: View {
                     .foregroundStyle(Color.smoothMarigoldInk)
             }
 
-            Button {
-                copyDiagnostics()
-            } label: {
-                Label(didCopyDiagnostics ? "copied" : "copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
-            }
-            Button {
-                reportProblem()
-            } label: {
-                Label("report a problem", systemImage: "envelope")
-            }
+            DisclosureGroup("troubleshooting") {
+                Button {
+                    copyDiagnostics()
+                } label: {
+                    Label(didCopyDiagnostics ? "copied" : "copy diagnostics", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
+                }
+                Button {
+                    reportProblem()
+                } label: {
+                    Label("report a problem", systemImage: "envelope")
+                }
 
-            #if DEBUG
-            simulateCanvasLogoutRow
-            probeEdDiscussionRow
-            #endif
+                #if DEBUG
+                simulateCanvasLogoutRow
+                probeEdDiscussionRow
+                #endif
+            }
         } header: {
             SmoothSectionHeader("sync", accent: .smoothCobalt)
         }
@@ -735,9 +708,7 @@ struct SettingsPage: View {
                 }
             }
         ))
-        Text("smooth keeps your pennkey password in this phone's keychain and signs you back in when canvas logs you out. it never leaves the phone. tick \u{201c}remember this device\u{201d} at the duo step so duo doesn't ask either.")
-            .font(.lhfSecondary(12))
-            .foregroundStyle(Color.v2DateText)
+        .accessibilityHint("stores your PennKey password in this phone's keychain so Smooth can sign back in; it never leaves this phone")
         // Only while the toggle is on — a student who hasn't turned this on
         // has no reason to care how long Duo will keep skipping its own
         // prompt, since nothing here is auto-filling anything for them yet.

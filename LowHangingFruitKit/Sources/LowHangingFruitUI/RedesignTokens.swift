@@ -31,6 +31,12 @@ extension Color {
     static let smoothCobalt   = Color(hex: 0x699AE7)
     static let smoothGrape    = Color(hex: 0xAF85F0)
 
+    // Announcements are a source, not an urgency. Their marine accent stays
+    // outside both the deadline ramp and the tomato add-calendar action, so a
+    // dashboard scan never mistakes one quick action for the other.
+    static let smoothAnnouncementAccent = Color.dynamic(light: 0x087D86, dark: 0x69DCE3)
+    static let smoothAnnouncementFill   = Color.dynamic(light: 0xD9F0F1, dark: 0x17363D)
+
     // Dark companions for text placed on each pastel urgency field.
     static let smoothTomatoInk   = Color.dynamic(light: 0xB63B23, dark: 0xF59A85)
     static let smoothMarigoldInk = Color.dynamic(light: 0x985700, dark: 0xFBCB75)
