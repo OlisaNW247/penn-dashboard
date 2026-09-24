@@ -385,32 +385,6 @@ struct SettingsPage: View {
                     .foregroundStyle(Color.smoothTomatoInk)
             }
 
-            HStack(spacing: 8) {
-                if state.isCourseKnowledgeSyncing {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: state.courseKnowledge.isEmpty ? "circle" : "checkmark.circle.fill")
-                        .foregroundStyle(state.courseKnowledge.isEmpty ? Color.v2DateText : Color.v2SpineGreen)
-                }
-                Text("course materials")
-                Spacer()
-                Text(courseKnowledgeSummary)
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.v2DateText)
-            }
-
-            if let notice = state.courseKnowledgeNotice {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.smoothMarigoldInk)
-            }
-
-            if BackendServices.client != nil {
-                Button("delete my class data from lhf's server", role: .destructive) {
-                    confirmingBackendDataDeletion = true
-                }
-            }
-
             #if os(macOS)
             Toggle("open at login", isOn: Binding(
                 get: {
@@ -440,10 +414,13 @@ struct SettingsPage: View {
                 } label: {
                     Label(didCopyDiagnostics ? "copied" : "copy diagnostics", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
                 }
-                Button {
-                    reportProblem()
-                } label: {
-                    Label("report a problem", systemImage: "envelope")
+                // Out of the way on purpose, but never gone: docs/PRIVACY.md
+                // promises students this button, and dropping a promised
+                // control is the 49441ac mistake (CLAUDE.md, ai assist).
+                if BackendServices.client != nil {
+                    Button("delete my class data from lhf's server", role: .destructive) {
+                        confirmingBackendDataDeletion = true
+                    }
                 }
 
                 #if DEBUG
@@ -455,15 +432,6 @@ struct SettingsPage: View {
             SmoothSectionHeader("sync", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothCobalt)
-    }
-
-    private var courseKnowledgeSummary: String {
-        let knowledge = state.courseKnowledge
-        guard let synced = knowledge.lastSyncedAt else { return "not synced" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        let when = formatter.localizedString(for: synced, relativeTo: Date())
-        return "\(knowledge.documents.count) items · \(knowledge.courses.count) courses · \(when)"
     }
 
     // MARK: On this Mac
@@ -497,33 +465,6 @@ struct SettingsPage: View {
         .smoothSectionBackground(.smoothTeal)
     }
     #endif
-
-    /// Copyable diagnostics report (docs/CANVAS_LOGIN_HARDENING.md item 3e) —
-    /// meant to be pasted into a support message when Canvas login is stuck.
-    /// Contains no credentials, cookie values, or the ICS feed URL/token —
-    /// see `DiagnosticsReport`'s doc comment for exactly what's included.
-    ///
-    /// No longer also embeds `simulateCanvasLogoutRow` under `#if DEBUG` —
-    /// that was a leftover from before the "testing" section above got its
-    /// own home in the Form (see that section's own comment); with THIS
-    /// section now placed too, keeping both would show the same row twice
-    /// on the same page.
-    private var diagnosticsSection: some View {
-        Section {
-            Button {
-                copyDiagnostics()
-            } label: {
-                Label(didCopyDiagnostics ? "copied" : "copy diagnostics report", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
-            }
-            Button {
-                reportProblem()
-            } label: {
-                Label("report a problem", systemImage: "envelope")
-            }
-        } header: {
-            SmoothSectionHeader("troubleshooting", accent: .smoothCobalt)
-        }
-    }
 
     #if DEBUG
     /// Owner-only "stay signed in" test seam (CLAUDE.md's "stay signed in"
@@ -661,11 +602,6 @@ struct SettingsPage: View {
         NSPasteboard.general.setString(report, forType: .string)
         #endif
         didCopyDiagnostics = true
-    }
-
-    private func reportProblem() {
-        let report = DiagnosticsReport.generate(state: state)
-        SupportContact.openReportMail(diagnostics: report)
     }
 
     private func openSystemNotificationSettings() {

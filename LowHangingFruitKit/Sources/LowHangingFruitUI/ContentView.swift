@@ -722,6 +722,16 @@ private struct AnnouncementFindsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    // The same shape cluster Profile and Grade Watcher open
+                    // with, so this sheet reads as one of the app's pages
+                    // rather than a bare system list.
+                    SmoothFormHeader(
+                        title: "Announcements",
+                        accent: .smoothAnnouncementAccent,
+                        spark: .smoothCobalt
+                    )
+                    .padding(.bottom, 4)
+
                     if items.isEmpty {
                         Text("no announcements")
                             .font(.lhfSecondary(14))
@@ -738,7 +748,10 @@ private struct AnnouncementFindsView: View {
             }
             .background(Color.smoothPaper.ignoresSafeArea())
             .tint(Color.smoothAnnouncementAccent)
-            .navigationTitle("announcements")
+            .navigationTitle("")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("done") { dismiss() }
@@ -749,7 +762,13 @@ private struct AnnouncementFindsView: View {
 
     @ViewBuilder
     private func row(for item: Assignment) -> some View {
-        let content = HStack(spacing: 10) {
+        let content = HStack(spacing: 12) {
+            Capsule()
+                .fill(Color.smoothAnnouncementAccent)
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.displayCourse(overrides: courseNameOverrides).uppercased())
                     .font(.lhfMono(9.5, weight: .semibold))

@@ -220,17 +220,9 @@ struct AssignmentCardView: View {
             }
             .padding(.top, 10)
 
-            // The collapsed tag says *that*; this says *why*, in the one
-            // moment the student has actually asked about this assignment.
-            // Same predicate as the collapsed tag — see
-            // `DashItem.showsNothingToSubmit`.
-            if item.showsNothingToSubmit {
-                Text("nothing to submit")
-                    .font(.lhfAssignmentTitle(11.5))
-                    .foregroundStyle(Color.smoothInk.opacity(0.68))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 8)
-            }
+            // No second "nothing to submit" here: the collapsed caveat line
+            // stays visible when the card opens, so repeating it below the
+            // date printed the same words twice on one card.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
