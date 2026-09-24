@@ -4,6 +4,17 @@ import Testing
 
 @Suite("Gradescope scraping")
 struct GradescopeTests {
+
+    @Test("only authentication responses require a Gradescope reconnect")
+    func reconnectClassification() {
+        let url = URL(string: "https://www.gradescope.com/account")!
+        #expect(GradescopeClient.Error.notLoggedIn.requiresReauthentication)
+        #expect(GradescopeClient.Error.http(status: 401, url: url).requiresReauthentication)
+        #expect(GradescopeClient.Error.http(status: 403, url: url).requiresReauthentication)
+        #expect(!GradescopeClient.Error.http(status: 500, url: url).requiresReauthentication)
+        #expect(!GradescopeClient.Error.notHTTP.requiresReauthentication)
+        #expect(!GradescopeClient.Error.invalidResponseEncoding.requiresReauthentication)
+    }
     @Test("discovers course links from account page")
     func discoversCourses() throws {
         let html = """

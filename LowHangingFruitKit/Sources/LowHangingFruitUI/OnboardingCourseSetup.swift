@@ -696,7 +696,7 @@ struct OnboardingCourseSetupPane: View {
             return
         }
 
-        let cookies = await AutoSyncCoordinator.canvasCookies()
+        let cookies = await AutoSyncCoordinator.canvasCookies(forHost: state.canvasInstallation.host)
         switch OnboardingCourseSetup.suggestionPlan(
             isUsingFixtureData: false,
             hasCanvasSession: !cookies.isEmpty

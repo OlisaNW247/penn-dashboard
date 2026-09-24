@@ -343,7 +343,7 @@ struct GradeWatcherView: View {
     /// dead cookies, and let the existing stale banner
     /// (`GradeWatcherStore.isSessionExpired`) do the surfacing.
     private func performRefresh() async {
-        let cookies = await AutoSyncCoordinator.canvasCookies()
+        let cookies = await AutoSyncCoordinator.canvasCookies(forHost: state.canvasInstallation.host)
         // Captured BEFORE the refresh: if a bearer token was in use and got
         // rejected, `AppState.refreshGradeWatcher` already clears it
         // (`noteCanvasAccessTokenRejected`) as part of this same call below,

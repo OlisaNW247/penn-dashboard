@@ -176,11 +176,13 @@ neither ever handles the feed URL's value, only host/path/status of the
 *login* pane's own requests.
 
 **3d. `canvasSessionExpired`, distinct from `isCanvasConnected`.**
-New `AppState.canvasSessionExpired` (published, read-only), derived from
-`SessionCookieStore.isExpired(service: .canvas)` — true only when a Canvas
-cookie session was captured at some point and every persisted entry has
-since aged out, as opposed to never having had one. Recomputed on launch,
-after connect/disconnect, and on the dashboard's periodic refresh
+New `AppState.canvasSessionExpired` (published, read-only), derived from an
+explicit cookie expiry or the sticky server-rejection signal — true only when
+a Canvas cookie session was captured at some point and is known dead, as
+opposed to never having had one. Session-only cookies have no client-visible
+expiry and remain eligible until Canvas rejects them; an arbitrary local age
+must not discard a still-valid login. Recomputed on launch, after
+connect/disconnect, and on the dashboard's periodic refresh
 (`ContentView.refresh()`). Deliberately orthogonal to `isCanvasConnected`
 (`!canvasICSURL.isEmpty`): a feed-only (paste-link) user, or one whose feed
 is still syncing fine, is never nagged — they never captured a cookie

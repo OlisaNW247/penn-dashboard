@@ -49,13 +49,11 @@ enum SessionCookieStore {
     /// (name, domain, path); everything else is kept. Cookies whose
     /// expiresDate is already past are dropped rather than stored — a
     /// Set-Cookie with a past expiry is the server deleting that cookie.
-    /// Saving also refreshes the store's own staleness clock (see
-    /// `sessionCookieMaxAge`), which is the point: a session that keeps
-    /// getting used keeps reading as fresh. Canvas's sliding sessions
-    /// re-mint the session cookie on every authenticated response
+    /// Canvas's sliding sessions re-mint the session cookie on authenticated
+    /// responses
     /// (`CanvasGradesClient.refreshedCookieHandler`), so a caller that wires
-    /// that handler up to this merge is what turns "ages out from login"
-    /// into "stays alive as long as the app is actually used."
+    /// that handler up to this merge keeps the most recent server-issued
+    /// value available across relaunches.
     static func merge(_ fresh: [HTTPCookie], service: Service) {
         guard !fresh.isEmpty else { return }
         // Never touch the developer's real Keychain item under `swift
@@ -90,31 +88,29 @@ enum SessionCookieStore {
         return result
     }
 
-    /// Loads `service`'s persisted cookies, dropping any that are stale: a
-    /// cookie carrying a real, past `expiresDate` (from `Set-Cookie: ...;
-    /// Expires=` or `Max-Age=`), or one with no expiry at all (a true session
-    /// cookie — Penn SSO's and Canvas's are both this kind) that's older than
-    /// `sessionCookieMaxAge` since it was captured. Without this, a
-    /// session-only cookie captured at connect time would be replayed as a
-    /// live session forever, regardless of whether the server-side session
-    /// died hours or weeks ago — exactly the mechanism behind
-    /// docs/CANVAS_LOGIN_DIAGNOSIS.md's H1/H2.
+    /// Loads `service`'s persisted cookies, dropping only cookies whose
+    /// server-supplied expiry is in the past. A true session cookie has no
+    /// client-visible expiry; imposing our own 24-hour deadline used to throw
+    /// away sessions that Canvas or Gradescope still accepted, guaranteeing
+    /// avoidable reconnects after a day away from the app. Keep those cookies
+    /// until the service rejects them. The authenticated clients already turn
+    /// that rejection into the existing reconnect/silent-renewal path, so the
+    /// server — not an invented local clock — remains the authority.
     static func load(service: Service) -> [HTTPCookie] {
         let now = Date()
         return loadDicts(service: service).compactMap { entry -> HTTPCookie? in
             guard let cookie = cookie(from: entry) else { return nil }
-            if let expiresString = entry["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
-                return expires > now ? cookie : nil
-            }
-            if let capturedString = entry["capturedAt"], let captured = isoFormatter.date(from: capturedString) {
-                return now.timeIntervalSince(captured) < sessionCookieMaxAge ? cookie : nil
-            }
-            // No expiry and no capture timestamp recorded (data written before
-            // this staleness tracking existed) — treat as expired rather than
-            // eternal, forcing a fresh login instead of silently replaying an
-            // untraceable cookie of unknown age.
-            return nil
+            let expiresAt = entry["expiresDate"].flatMap(isoFormatter.date(from:))
+            return shouldRetain(expiresAt: expiresAt, now: now) ? cookie : nil
         }
+    }
+
+    /// Pure retention rule behind `load(service:)`, exposed internally so
+    /// tests can pin the important distinction without modifying the shared
+    /// Keychain: an explicit server expiry is authoritative; absence of one
+    /// is not evidence that the session died.
+    static func shouldRetain(expiresAt: Date?, now: Date) -> Bool {
+        expiresAt.map { $0 > now } ?? true
     }
 
     /// Every service's persisted cookies, folded together. Only for read
@@ -135,13 +131,6 @@ enum SessionCookieStore {
     static func isExpired(service: Service) -> Bool {
         !loadDicts(service: service).isEmpty && load(service: service).isEmpty
     }
-
-    /// How long a true session cookie (no server-supplied expiry) is trusted
-    /// after capture before it's treated as dead and dropped rather than
-    /// replayed. Penn SSO/Canvas sessions don't survive this long in
-    /// practice; this is a safety bound, not an attempt to model their real
-    /// server-side timeout.
-    private static let sessionCookieMaxAge: TimeInterval = 24 * 60 * 60
 
     // `ISO8601DateFormatter` isn't `Sendable`, but every use here is a simple
     // stateless format/parse call (no shared mutable configuration is ever

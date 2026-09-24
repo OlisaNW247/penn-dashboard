@@ -54,4 +54,13 @@ enum FeatureFlags {
     /// of the mint is inert without a stored token, so with this false the
     /// app behaves exactly as it did before the token work.
     static let canvasAccessTokens = false
+
+    /// Evaluates a token-store read only while the experiment is enabled.
+    /// Keeping the guard around the closure (rather than around its result)
+    /// is load-bearing: Keychain reads are synchronous and must not happen at
+    /// launch for a feature that cannot work for Penn students.
+    static func canvasAccessTokenValue<T>(_ load: () -> T?) -> T? {
+        guard canvasAccessTokens else { return nil }
+        return load()
+    }
 }

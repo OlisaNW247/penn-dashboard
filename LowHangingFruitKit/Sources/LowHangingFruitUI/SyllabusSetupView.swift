@@ -465,8 +465,8 @@ struct SyllabusSetupView: View {
             return
         }
 
-        let cookies = await AutoSyncCoordinator.canvasCookies()
-        let bearerToken = CanvasAccessTokenStore.bearer()
+        let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasBaseURL.host ?? CanvasInstallation.penn.host)
+        let bearerToken = FeatureFlags.canvasAccessTokenValue { CanvasAccessTokenStore.bearer() }
         // A usable Canvas access token authenticates this fetch on its own
         // (`CanvasAuth.apply`), so an empty cookie array alone no longer
         // means "no session."

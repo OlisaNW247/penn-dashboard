@@ -19,6 +19,21 @@ public struct GradescopeClient: Sendable {
                 return "Gradescope needs you to log in again."
             }
         }
+
+        /// Only these failures prove the saved Gradescope session is dead.
+        /// Offline errors, timeouts, 5xx responses and unreadable pages are
+        /// refresh failures, not reasons to discard connection state and ask
+        /// the student to authenticate again.
+        public var requiresReauthentication: Bool {
+            switch self {
+            case .notLoggedIn:
+                return true
+            case let .http(status, _):
+                return status == 401 || status == 403
+            case .notHTTP, .invalidResponseEncoding:
+                return false
+            }
+        }
     }
 
     private let baseURL: URL

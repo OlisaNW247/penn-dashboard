@@ -4,9 +4,10 @@ import WebKit
 
 /// Silent Canvas session renewal — Layer 2 of the session-longevity work.
 ///
-/// When `AppState.canvasSessionExpired` goes true (the Keychain-persisted
-/// Canvas cookie session has aged out — docs/CANVAS_LOGIN_HARDENING.md item
-/// 3d), the user's only recourse used to be the "needs a refresh" banner,
+/// When `AppState.canvasSessionExpired` goes true (the server rejected the
+/// Keychain-persisted Canvas session, or an explicit cookie expiry passed —
+/// docs/CANVAS_LOGIN_HARDENING.md item 3d), the user's only recourse used to
+/// be the "needs a refresh" banner,
 /// which sends them through the full in-app PennKey/Duo WebView. Often that's
 /// unnecessary: Penn's IdP (`idp.pennkey.upenn.edu`) and Duo keep their own,
 /// separately-lived session cookies in `LoginDataStores.canvas` — the same
@@ -196,7 +197,7 @@ final class CanvasSessionRenewer {
     /// Owner-only test seam for the Settings "simulate canvas logout" button
     /// (`AppState.simulateCanvasLogoutForTesting()`). Without this, testing
     /// "stay signed in" end to end on a real phone means waiting for
-    /// Canvas's cookie to actually age out (about a day) or, worse, for
+    /// Canvas to actually reject its cookie session or, worse, for
     /// `cooldown` (1h) / `autoLoginCooldown` (6h) to lapse after any earlier
     /// attempt this launch already made — the whole point of those throttles
     /// being long is that a real background trigger should almost never fire

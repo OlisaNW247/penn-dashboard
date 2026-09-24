@@ -209,7 +209,15 @@ final class GradeWatcherStore: ObservableObject {
         // building the client, so the two reads can't observe a token
         // rejected mid-refresh (`AppState.noteCanvasAccessTokenRejected`)
         // differently.
-        let bearerToken = CanvasAccessTokenStore.bearer(now: now)
+        // Penn currently blocks student-created access tokens, so the
+        // feature flag is false in shipping builds. Do not touch its Keychain
+        // item at all while disabled: this refresh is launch-driven, and an
+        // unnecessary synchronous Keychain read here has previously stalled
+        // the test runner's main actor. Cookie auth remains the complete live
+        // path until the feature is deliberately re-enabled.
+        let bearerToken = FeatureFlags.canvasAccessTokenValue {
+            CanvasAccessTokenStore.bearer(now: now)
+        }
         guard !cookies.isEmpty || bearerToken != nil else {
             // Being "logged in" to the dashboard isn't enough: the assignment
             // list rides a cookieless ICS feed, while grades need a real Canvas

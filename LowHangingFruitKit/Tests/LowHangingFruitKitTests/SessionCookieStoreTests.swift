@@ -5,10 +5,10 @@ import Testing
 
 /// `SessionCookieStore` persists login cookies to the Keychain so a session
 /// survives relaunch (see docs/CANVAS_LOGIN_DIAGNOSIS.md). These pin down the
-/// expiry/staleness behavior added there: a cookie with a real, past
-/// `expiresDate` — or a session-only cookie (no expiry at all) captured too
-/// long ago — must never be handed back by `load()` and silently replayed
-/// into a fresh login attempt. They also pin down the per-service isolation
+/// expiry behavior added there: a cookie with a real, past `expiresDate`
+/// must never be handed back by `load()`, while a session cookie with no
+/// server-supplied expiry stays available until the service rejects it.
+/// They also pin down the per-service isolation
 /// added in docs/CANVAS_LOGIN_HARDENING.md item 2e: Canvas and Gradescope
 /// cookies are stored under separate Keychain items now, keyed by service,
 /// not by a domain-substring guess — so a purge of one service can never

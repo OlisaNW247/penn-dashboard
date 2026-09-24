@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 import WebKit
 
 /// Re-syncs cookie-authenticated sources on launch and activation, using the
@@ -48,7 +49,7 @@ enum AutoSyncCoordinator {
            now.timeIntervalSince(last) < canvasGradesMinInterval {
             return
         }
-        let cookies = await canvasCookies()
+        let cookies = await canvasCookies(forHost: state.canvasInstallation.host)
         // A usable Canvas access token authenticates every REST fetch below
         // on its own (`CanvasAuth.apply` sends `Bearer <token>` and no
         // cookies at all when one's present) — so an empty cookie array is
@@ -106,13 +107,23 @@ enum AutoSyncCoordinator {
     /// only ever read from, never written back to. Shared by this
     /// coordinator's launch-time grades refresh and `GradeWatcherView`'s own
     /// refresh, so both callers agree on one cookie-gathering implementation.
-    static func canvasCookies() async -> [HTTPCookie] {
+    static func canvasCookies(forHost canvasHost: String = CanvasInstallation.penn.host) async -> [HTTPCookie] {
         let live: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
         let persisted = SessionCookieStore.load(service: .canvas)
         let liveKeys = Set(live.map { "\($0.name)|\($0.domain)|\($0.path)" })
         let merged = persisted.filter { !liveKeys.contains("\($0.name)|\($0.domain)|\($0.path)") } + live
-        return merged.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
+        return merged.filter { cookie($0, belongsTo: canvasHost) }
+    }
+
+    /// Canvas installations are not required to put the word "canvas" in
+    /// their hostname (Columbia uses `courseworks.columbia.edu`, for example).
+    /// Match normal cookie-domain semantics against the selected installation
+    /// instead of guessing from a product-name substring.
+    nonisolated static func cookie(_ cookie: HTTPCookie, belongsTo host: String) -> Bool {
+        let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let host = host.lowercased()
+        return host == domain || host.hasSuffix("." + domain)
     }
 }

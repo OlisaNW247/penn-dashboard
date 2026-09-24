@@ -56,6 +56,18 @@ import Testing
 /// pre-existing and untouched.
 @Suite("Canvas token wiring", .serialized)
 struct CanvasTokenWiringTests {
+
+    @Test("disabled access-token feature does not evaluate its Keychain loader")
+    func disabledFeatureSkipsTokenLoader() {
+        var didRead = false
+        let value: CanvasAccessToken? = FeatureFlags.canvasAccessTokenValue {
+            didRead = true
+            return freshToken()
+        }
+
+        #expect(value == nil)
+        #expect(!didRead)
+    }
     @MainActor
     private func makeState() -> AppState {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))

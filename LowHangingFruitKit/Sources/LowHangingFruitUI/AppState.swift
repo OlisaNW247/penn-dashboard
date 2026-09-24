@@ -1138,7 +1138,8 @@ final class AppState: ObservableObject {
     /// usability here — that's each caller's own job with its own `now`, so
     /// this stays a plain, time-independent accessor.
     private var canvasAccessTokenOnFile: CanvasAccessToken? {
-        forcedCanvasAccessTokenForTesting ?? CanvasAccessTokenStore.load()
+        if let forcedCanvasAccessTokenForTesting { return forcedCanvasAccessTokenForTesting }
+        return FeatureFlags.canvasAccessTokenValue { CanvasAccessTokenStore.load() }
     }
 
     /// The bearer secret to hand a Canvas client's `accessToken:` parameter
@@ -1750,7 +1751,7 @@ final class AppState: ObservableObject {
     /// ORs in `canvasSessionConfirmedDead` alongside the Keychain check — the
     /// sticky, server-side-proven half of the flag (see that property's doc
     /// comment). Either input alone is enough to show the banner: a
-    /// client-side-stale cookie set, OR a client-side-fresh one a real
+    /// explicitly expired cookie set, OR a client-side-live one a real
     /// renewal attempt already proved dead against Penn's IdP.
     ///
     /// A healthy access token (see `tokenIsHealthyEnoughToSkipExpiryCheck`)
@@ -1758,8 +1759,8 @@ final class AppState: ObservableObject {
     /// months left on it means the reconnect banner has nothing useful to
     /// ask the student to do, since the very login that would clear it also
     /// mints a fresh token, and the point of minting one at all is that the
-    /// student stops seeing this banner every time their COOKIE session
-    /// (which dies in about a day) ages out. Only once the token itself is
+    /// student stops seeing this banner whenever their cookie session is
+    /// rejected. Only once the token itself is
     /// absent or has entered its own `renewalWindow` does this fall back to
     /// the cookie-only rule above — so the banner still shows, once, in the
     /// weeks before the token's ~120-day ceiling, same as it always has for
@@ -1916,7 +1917,7 @@ final class AppState: ObservableObject {
         applyRenewalOutcome(outcome)
 
         guard outcome == .renewed else { return outcome }
-        let cookies = await AutoSyncCoordinator.canvasCookies()
+        let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
         guard !cookies.isEmpty else { return outcome }
         await refreshGradeWatcher(cookies: cookies)
         return outcome
@@ -2856,8 +2857,9 @@ final class AppState: ObservableObject {
     }
 
     /// Scrapes the user's Gradescope assignments using the captured login cookies
-    /// and folds them into the dashboard. Cookie sessions expire server-side; on
-    /// failure we mark Gradescope disconnected so the UI can prompt a reconnect.
+    /// and folds them into the dashboard. Only a response that proves the
+    /// session is rejected marks Gradescope disconnected; an offline/temporary
+    /// failure keeps the session and retries on the next normal refresh.
     func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool) async {
         // Reentrancy guard: the 5-min loop and a scene-activation can both fire a
         // sync; without this they'd run two full scrapes concurrently. The check
@@ -2890,8 +2892,11 @@ final class AppState: ObservableObject {
             setGradescopeConnected(true)
             rebuildDashboardItems()
         } catch {
-            setGradescopeConnected(false)
-            let message = "Gradescope needs you to reconnect."
+            let needsLogin = (error as? GradescopeClient.Error)?.requiresReauthentication == true
+            if needsLogin { setGradescopeConnected(false) }
+            let message = needsLogin
+                ? "Gradescope needs you to reconnect."
+                : "Gradescope couldn\u{2019}t refresh right now."
             if reportErrors {
                 self.error = "\(message) \(error.localizedDescription)"
             } else {
@@ -3391,7 +3396,7 @@ final class AppState: ObservableObject {
 
         recordModuleImport("\(courseKey): on-decision import starting")
         Task { @MainActor in
-            let cookies = await AutoSyncCoordinator.canvasCookies()
+            let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
             // `importModuleReadings` authenticates via `canvasAccessTokenBearer`
             // when cookies are empty, so a token-only session still gets here.
             guard !cookies.isEmpty || hasCanvasCredentials else {

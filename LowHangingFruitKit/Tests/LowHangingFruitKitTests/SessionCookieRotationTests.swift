@@ -78,6 +78,42 @@ struct SessionCookieRotationTests {
         #expect(merged.first?.value == "synthetic-old")
     }
 
+    // MARK: - Retention and installation host matching
+
+    @Test("A session cookie with no server expiry remains eligible after an arbitrary local age")
+    func sessionCookieWithoutExpiryIsRetained() {
+        let farFuture = Date(timeIntervalSince1970: 4_000_000_000)
+        #expect(SessionCookieStore.shouldRetain(expiresAt: nil, now: farFuture))
+    }
+
+    @Test("An explicit server expiry remains authoritative")
+    func explicitExpiryIsAuthoritative() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        #expect(SessionCookieStore.shouldRetain(expiresAt: now.addingTimeInterval(1), now: now))
+        #expect(!SessionCookieStore.shouldRetain(expiresAt: now.addingTimeInterval(-1), now: now))
+    }
+
+    @Test("Canvas cookie matching honors selected hosts that do not contain the word canvas")
+    func selectedInstallationHostMatches() {
+        let courseworks = cookie(
+            name: "canvas_session",
+            value: "synthetic",
+            domain: ".columbia.edu"
+        )
+        #expect(AutoSyncCoordinator.cookie(courseworks, belongsTo: "courseworks.columbia.edu"))
+        #expect(!AutoSyncCoordinator.cookie(courseworks, belongsTo: "canvas.upenn.edu"))
+    }
+
+    @Test("A sibling-domain cookie is not sent to the selected Canvas installation")
+    func siblingDomainDoesNotMatch() {
+        let sibling = cookie(
+            name: "canvas_session",
+            value: "synthetic",
+            domain: "other.columbia.edu"
+        )
+        #expect(!AutoSyncCoordinator.cookie(sibling, belongsTo: "courseworks.columbia.edu"))
+    }
+
     // MARK: - CanvasGradesClient.responseCookies(from:requestURL:)
 
     private let requestURL = URL(string: "https://canvas.upenn.edu/api/v1/courses/12345/assignment_groups")!
