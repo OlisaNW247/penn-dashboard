@@ -40,10 +40,10 @@ struct ContentView: View {
     /// activation covers the "I just opened the app" case.
     private static let autoRefreshInterval: UInt64 = 5 * 60 * 1_000_000_000
 
-    /// Both halves of the dashboard title use this one compact base size.
-    /// Keeping it as a shared token prevents the weekday from reading like a
-    /// subtitle (or the wordmark like a logo pasted beside the real title).
-    static let dashboardTitlePointSize: CGFloat = 27
+    /// Lockstep sizes for the whole dashboard title. `ViewThatFits` chooses
+    /// one candidate for the complete wordmark-plus-weekday group, so the two
+    /// faces can never scale independently when header space gets tight.
+    static let dashboardTitlePointSizes: [CGFloat] = [27, 24, 21, 18]
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -348,37 +348,13 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("Smooth")
-                        .font(.lhfWordmark(Self.dashboardTitlePointSize))
-                        .overlay(alignment: .bottomLeading) {
-                            SmoothSquiggle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
-                                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                                )
-                                // No fixed width: the overlay takes the
-                                // wordmark's rendered width, which is what
-                                // `minimumScaleFactor` below actually drew
-                                // once "Wednesday" or "Saturday" forces the
-                                // row to shrink. A 122pt squiggle under a
-                                // shrunken "Smooth" ran into the weekday;
-                                // under a full-size one it stopped short.
-                                .frame(height: 6)
-                                .offset(y: 6)
-                        }
-                    Text(" \(Self.weekdayText(Date()))")
-                        .font(.lhfHeaderTitle(Self.dashboardTitlePointSize))
+                ViewThatFits(in: .horizontal) {
+                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[0])
+                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[1])
+                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[2])
+                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[3])
                 }
-                .foregroundStyle(Color.smoothInk)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
                 .layoutPriority(1)
-                .accessibilityElement(children: .combine)
                 .frame(height: 48, alignment: .center)
 
                 Text(Self.dateText(Date()))
@@ -395,6 +371,36 @@ struct ContentView: View {
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
             }
         }
+    }
+
+    /// One indivisible title candidate. The faces keep their established
+    /// italic/upright character, while both receive the exact same selected
+    /// point size and the underline remains scoped to the wordmark alone.
+    private func headerTitle(weekday: String, pointSize: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("Smooth")
+                .font(.lhfWordmark(pointSize))
+                .overlay(alignment: .bottomLeading) {
+                    SmoothSquiggle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(height: 6)
+                        .offset(y: 6)
+                }
+
+            Text(" \(weekday)")
+                .font(.lhfHeaderTitle(pointSize))
+        }
+        .foregroundStyle(Color.smoothInk)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .combine)
     }
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {

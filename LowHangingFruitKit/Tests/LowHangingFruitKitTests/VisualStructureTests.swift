@@ -7,13 +7,20 @@ import Testing
 @MainActor
 @Suite("V7 visual structure")
 struct VisualStructureTests {
-    @Test("dashboard title shares one compact size token")
+    @Test("dashboard title chooses one lockstep responsive size")
     func balancedDashboardTitle() throws {
-        #expect(ContentView.dashboardTitlePointSize == 27)
+        #expect(ContentView.dashboardTitlePointSizes == [27, 24, 21, 18])
 
         let source = try uiSource("ContentView.swift")
-        #expect(source.contains(".font(.lhfWordmark(Self.dashboardTitlePointSize))"))
-        #expect(source.contains(".font(.lhfHeaderTitle(Self.dashboardTitlePointSize))"))
+        #expect(source.contains("ViewThatFits(in: .horizontal)"))
+        #expect(source.contains("private func headerTitle(weekday: String, pointSize: CGFloat)"))
+        #expect(source.contains(".font(.lhfWordmark(pointSize))"))
+        #expect(source.contains(".font(.lhfHeaderTitle(pointSize))"))
+
+        let headerStart = try #require(source.range(of: "// MARK: Header"))
+        let headerEnd = try #require(source.range(of: "private func navButton", range: headerStart.upperBound..<source.endIndex))
+        let header = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
+        #expect(!header.contains("minimumScaleFactor"))
     }
 
     @Test("profile sections stay unified, ordered, and concise")
