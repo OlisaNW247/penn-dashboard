@@ -30,7 +30,7 @@ struct RecurringTaskSheet: View {
             Form {
                 Section {
                     TextField("title", text: $title)
-                    TextField("course", text: $course)
+                    CoursePicker(course: $course, allowsNone: false)
                 }
                 .smoothSectionBackground(.smoothLemon)
 

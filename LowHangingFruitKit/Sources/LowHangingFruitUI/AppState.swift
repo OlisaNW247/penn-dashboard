@@ -4578,6 +4578,15 @@ final class AppState: ObservableObject {
         refreshArchiveState(now: now)
     }
 
+    /// `recurringTasks` with any classless task filed under the class its
+    /// title names (`RecurringTask.adoptingCourse`). Every reader that turns
+    /// tasks into dashboard or assistant items goes through this, so the
+    /// two can't disagree about which class a task belongs to.
+    var effectiveRecurringTasks: [RecurringTask] {
+        let knownCourses = allCourseCodes()
+        return recurringTasks.map { $0.adoptingCourse(from: knownCourses) }
+    }
+
     func addRecurringTask(_ task: RecurringTask) {
         recurringTasks.append(task)
         persistRecurringTasks()
@@ -4861,7 +4870,7 @@ final class AppState: ObservableObject {
     private func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
         refreshArchiveState(now: now)
-        let recurringAssignments = recurringTasks.flatMap { $0.upcomingAssignments() }
+        let recurringAssignments = effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
         let manualItems = manualAssignments.map { $0.asAssignment() }
         // Canvas contributes graded assignments plus anything that reads as an
         // assessment (quizzes/exams), plus — for any course the student

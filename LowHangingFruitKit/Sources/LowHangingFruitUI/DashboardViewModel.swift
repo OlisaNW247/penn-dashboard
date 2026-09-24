@@ -105,14 +105,6 @@ enum DashFilter: String, CaseIterable, Identifiable {
         case .done:     return "prev"
         }
     }
-
-    var systemImage: String {
-        switch self {
-        case .thisWeek: return "checklist"
-        case .all:      return "tray.full"
-        case .done:     return "clock.arrow.circlepath"
-        }
-    }
 }
 
 // MARK: – Section model
@@ -379,35 +371,6 @@ final class DashboardViewModel: ObservableObject {
         let f = DateFormatter()
         f.dateFormat = format
         return f.string(from: date)
-    }
-
-    // MARK: Derived — dice pick
-
-    /// The pool the dashboard's dice button draws from: for each class, the
-    /// one unfinished assignment due soonest within `horizon`. One per class
-    /// so the pick spreads across courses rather than landing on whichever
-    /// class posts the most small items; soonest per class so what it
-    /// hands you is the thing that class actually wants next. Overdue work
-    /// is left out — the dashboard already shouts about that, and a random
-    /// suggestion should be something you can get ahead on.
-    func pickCandidates(now: Date = Date()) -> [DashItem] {
-        Self.pickCandidates(from: items, now: now)
-    }
-
-    nonisolated static func pickCandidates(
-        from items: [DashItem],
-        now: Date,
-        horizon: TimeInterval = 14 * 86_400
-    ) -> [DashItem] {
-        let upcoming = items
-            .filter { item in
-                guard !item.isCompleted, let due = item.due else { return false }
-                return due >= now && due <= now.addingTimeInterval(horizon)
-            }
-            .sorted(by: DashItem.isOrderedByDueDate)
-
-        var seenCourses = Set<String>()
-        return upcoming.filter { seenCourses.insert($0.assignment.course).inserted }
     }
 
     // MARK: Derived — weekly progress ring

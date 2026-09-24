@@ -25,7 +25,7 @@ struct AddAssignmentSheet: View {
             Form {
                 Section {
                     TextField("title", text: $title)
-                    TextField("course (optional)", text: $course)
+                    CoursePicker(course: $course, allowsNone: true)
                 }
                 .smoothSectionBackground(.smoothLemon)
 

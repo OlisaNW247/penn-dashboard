@@ -162,7 +162,7 @@ extension AppState {
     /// the two paths agree on what exists.
     func assistantWorkItems() -> [WorkItem] {
         let pool = canvasItems + gradescopeItems + moduleReadingItems + announcementItems
-            + recurringTasks.flatMap { $0.upcomingAssignments() }
+            + effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
             + manualAssignments.map { $0.asAssignment() }
         var seen: Set<String> = []
         return pool.compactMap { assignment in

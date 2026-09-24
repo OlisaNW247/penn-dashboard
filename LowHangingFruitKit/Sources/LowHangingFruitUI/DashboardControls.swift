@@ -2,37 +2,26 @@ import SwiftUI
 import LowHangingFruitKit
 
 /// The dashboard's view switch: todo · all · prev, always visible, with a
-/// highlight that slides to the one you're on.
-///
-/// History, because it has changed twice in a day. It began as a
-/// full-width three-way segmented control, which left no room beside it.
-/// A "todo ▾" menu freed the room but hid the other two views behind a tap,
-/// so switching views took two taps and nothing on screen said they
-/// existed. This keeps the menu's width budget and the segmented control's
-/// one-tap directness: each segment is only as wide as its word. On a
-/// screen too narrow for it next to the buttons (large Dynamic Type, a
-/// small phone), `ViewThatFits` falls back to the menu rather than
-/// truncating.
+/// highlight that slides to the one you're on. It takes every point of the
+/// row the buttons to its right don't need — the widest, easiest target on
+/// the screen for the thing students do most — and the buttons sit flush
+/// right. (It was briefly a "todo ▾" menu, which hid two of the three
+/// views behind an extra tap; the dice button that shared this row lives
+/// on in the `v8-dice-toggle` branch.)
 struct DashViewPicker: View {
     @Binding var selection: DashFilter
     @Namespace private var indicator
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            segments
-            menu
-        }
-    }
-
-    private var segments: some View {
         HStack(spacing: 0) {
             ForEach(DashFilter.allCases) { filter in
                 let isActive = filter == selection
                 Text(filter.label)
                     .font(.lhfSans(14, weight: isActive ? .semibold : .medium))
                     .foregroundStyle(isActive ? Color.smoothInk : Color.smoothMuted)
-                    .fixedSize()
-                    .padding(.horizontal, 12)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
                     .frame(height: 32)
                     .background {
                         if isActive {
@@ -49,35 +38,9 @@ struct DashViewPicker: View {
             }
         }
         .padding(3)
+        .frame(maxWidth: .infinity)
         .background(Color.smoothSurface.opacity(0.58), in: Capsule())
         .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
-        .fixedSize()
-    }
-
-    private var menu: some View {
-        Menu {
-            ForEach(DashFilter.allCases) { filter in
-                Button { select(filter) } label: {
-                    Label(filter.label, systemImage: filter == selection ? "checkmark" : filter.systemImage)
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(selection.label)
-                    .font(.lhfSans(15, weight: .semibold))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .foregroundStyle(Color.smoothInk)
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(Color.smoothSurface.opacity(0.58), in: Capsule())
-            .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .accessibilityLabel("showing \(selection.label)")
     }
 
     private func select(_ filter: DashFilter) {

@@ -20,7 +20,6 @@ struct ContentView: View {
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
     /// after opening has marked everything seen.
     @State private var announcementNewIDs: Set<String> = []
-    @State private var showPick = false
     /// `Assignment.course` key of the class the list is narrowed to, or nil.
     @State private var classFilter: String?
     /// The pushed pages behind the header actions. A path rather than separate
@@ -83,10 +82,8 @@ struct ContentView: View {
 
                     HStack(alignment: .center, spacing: 8) {
                         DashViewPicker(selection: $filter)
-                        Spacer(minLength: 4)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter)
                         addInlineButton
-                        pickButton
                         if !state.announcementPageItems.isEmpty {
                             announcementFindsButton
                         }
@@ -217,9 +214,6 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
-        .sheet(isPresented: $showPick) {
-            PickAssignmentSheet(candidates: vm.pickCandidates().filter(matchesClassFilter))
-        }
         .sheet(isPresented: $showAnnouncementFinds) {
             AnnouncementFindsView(items: state.announcementPageItems, newIDs: announcementNewIDs)
         }
@@ -279,25 +273,6 @@ struct ContentView: View {
         readState.markAllSeen(items)
         seenAnnouncementIDs = readState.seenIDs
         showAnnouncementFinds = true
-    }
-
-    /// Dice — one random next assignment from your classes
-    /// (`PickAssignmentSheet`), for when the list is long and you just
-    /// want to be told where to start.
-    private var pickButton: some View {
-        Button {
-            lhfHapticLight()
-            showPick = true
-        } label: {
-            DashCircleIcon(
-                systemName: "dice.fill",
-                foreground: Color.smoothGrape,
-                fill: Color.smoothGrape.opacity(0.18)
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("pick an assignment for me")
-        .help("pick an assignment for me")
     }
 
     private var announcementFindsButton: some View {
@@ -536,16 +511,13 @@ struct ContentView: View {
 
     // MARK: Class filter
 
-    /// Every class with something on the dashboard, done or not, so "prev"
-    /// can be narrowed to a class whose work is all finished.
+    /// The same class list Profile shows (`visibleCourseCodes`), not just
+    /// classes that currently have cards: a class with nothing due this
+    /// week — CIS 3990 on a real phone, 2026-09-24 — is still one you'd
+    /// want to filter to, if only to see that it's clear.
     private var filterableCourses: [(key: String, name: String)] {
-        var seen = Set<String>()
-        return vm.items
-            .compactMap { item -> (key: String, name: String)? in
-                let key = item.assignment.course
-                guard !key.isEmpty, seen.insert(key).inserted else { return nil }
-                return (key, item.assignment.displayCourse(overrides: state.courseNameOverrides))
-            }
+        state.visibleCourseCodes()
+            .map { (key: $0, name: state.courseDisplayName($0)) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 

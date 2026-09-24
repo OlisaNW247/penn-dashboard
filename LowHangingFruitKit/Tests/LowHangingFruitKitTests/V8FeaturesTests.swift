@@ -3,8 +3,8 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// The v8-features additions: unread announcement tracking and the dice
-/// pick pool. Every test that persists uses its
+/// The v8-features additions: unread announcement tracking and filing a
+/// classless recurring task under the class its title names. Every test that persists uses its
 /// own scratch `UserDefaults` suite — CLAUDE.md's shared-defaults trap.
 @MainActor
 @Suite("v8 features")
@@ -17,11 +17,6 @@ struct V8FeaturesTests {
     private func assignment(_ id: String, course: String, due: Date?) -> Assignment {
         Assignment(source: .canvas, sourceID: id, kind: .assignment,
                    course: course, title: id, dueAt: due, url: nil)
-    }
-
-    private func dashItem(_ id: String, course: String, due: Date?, done: Bool = false) -> DashItem {
-        DashItem(assignment: assignment(id, course: course, due: due),
-                 dueOverride: nil, isCompleted: done, completedAt: done ? due : nil)
     }
 
     // MARK: Announcements
@@ -57,24 +52,26 @@ struct V8FeaturesTests {
         #expect(readState.seenIDs == [current.id])
     }
 
-    // MARK: dice pick
+    // MARK: Recurring tasks with no class
 
-    @Test("the pick pool is the soonest unfinished item per class, upcoming only, inside the horizon")
-    func pickCandidates() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let day: TimeInterval = 86_400
-        let items = [
-            dashItem("cis-soon", course: "CIS 1200", due: now.addingTimeInterval(1 * day)),
-            dashItem("cis-later", course: "CIS 1200", due: now.addingTimeInterval(3 * day)),
-            dashItem("phys-overdue", course: "PHYS 0151", due: now.addingTimeInterval(-1 * day)),
-            dashItem("phys-next", course: "PHYS 0151", due: now.addingTimeInterval(2 * day)),
-            dashItem("econ-done", course: "ECON 0100", due: now.addingTimeInterval(1 * day), done: true),
-            dashItem("math-far", course: "MATH 1400", due: now.addingTimeInterval(30 * day)),
-            dashItem("undated", course: "WRIT 0020", due: nil),
-        ]
-
-        let ids = DashboardViewModel.pickCandidates(from: items, now: now).map(\.assignment.sourceID)
-
-        #expect(ids == ["cis-soon", "phys-next"])
+    private func task(title: String, course: String) -> RecurringTask {
+        RecurringTask(title: title, course: course, weekday: 3, hour: 23, minute: 59,
+                      startDate: Date(timeIntervalSince1970: 1_800_000_000), endDate: nil, origin: .manual)
     }
+
+    @Test("a classless recurring task is filed under the one class its title names, ignoring case and spacing")
+    func classlessTaskAdoptsCourseFromTitle() {
+        let known = ["CIS 2620", "CIS 3990", "PHYS 0151"]
+        #expect(task(title: "Cis 3990 recurring lab", course: "").adoptingCourse(from: known).course == "CIS 3990")
+        #expect(task(title: "cis3990 lab", course: "").adoptingCourse(from: known).course == "CIS 3990")
+    }
+
+    @Test("a recurring task keeps its own class, and stays classless when the title names none or two")
+    func adoptionNeverOverridesOrGuesses() {
+        let known = ["CIS 2620", "CIS 3990"]
+        #expect(task(title: "CIS 3990 lab", course: "CIS 2620").adoptingCourse(from: known).course == "CIS 2620")
+        #expect(task(title: "weekly reading", course: "").adoptingCourse(from: known).course == "")
+        #expect(task(title: "CIS 2620 + CIS 3990 study group", course: "").adoptingCourse(from: known).course == "")
+    }
+
 }

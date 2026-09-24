@@ -52,6 +52,33 @@ struct RecurringTask: Codable, Hashable, Identifiable {
         self.evidence = evidence
     }
 
+    /// A task saved with no course, adopted by the one known class whose
+    /// code appears in its title ("Cis 3990 recurring lab" → `CIS 3990`).
+    ///
+    /// The add sheet's course field was optional free text, so a student
+    /// who named the class in the title and skipped the field got a task
+    /// that belonged to no class: it never showed under that class and the
+    /// class filter could not find it (found on a real phone, 2026-09-24).
+    /// The sheets now pick from the class list, but tasks already saved
+    /// that way are repaired here rather than by rewriting stored data —
+    /// applied on every rebuild, so it also follows a class the student
+    /// adds later. Matching ignores case and spacing ("cis3990", "CIS 3990")
+    /// and gives up when the title names two classes, since a guess there
+    /// could file the work under the wrong one.
+    func adoptingCourse(from knownCourses: [String]) -> RecurringTask {
+        guard course.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return self }
+        let squash: (String) -> String = { $0.uppercased().filter { !$0.isWhitespace && $0 != "-" } }
+        let haystack = squash(title)
+        let matches = knownCourses.filter { code in
+            let needle = squash(code)
+            return !needle.isEmpty && haystack.contains(needle)
+        }
+        guard matches.count == 1 else { return self }
+        var adopted = self
+        adopted.course = matches[0]
+        return adopted
+    }
+
     func upcomingAssignments(from now: Date = Date(), weeksAhead: Int = 10) -> [Assignment] {
         let calendar = Calendar.current
         let horizon = calendar.date(byAdding: .day, value: weeksAhead * 7, to: now) ?? now
