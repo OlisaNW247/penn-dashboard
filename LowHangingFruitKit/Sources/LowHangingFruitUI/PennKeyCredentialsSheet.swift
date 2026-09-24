@@ -55,6 +55,12 @@ struct PennKeyCredentialsSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    lockHeader
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
+
+                Section {
                     // Empty title + `.labelsHidden()`, not a literal title
                     // string: on macOS a `TextField`'s title renders as a
                     // leading label in its own column (the columns form
@@ -70,14 +76,16 @@ struct PennKeyCredentialsSheet: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.asciiCapable)
+                        .textContentType(.username)
                         #endif
                         .autocorrectionDisabled()
                     SecureField("", text: $password, prompt: Text("password"))
                         .labelsHidden()
-                } header: {
-                    SmoothSectionHeader("pennkey", accent: .smoothCobalt)
+                        #if os(iOS)
+                        .textContentType(.password)
+                        #endif
                 } footer: {
-                    Text("smooth keeps this in this phone's keychain and uses it only to sign you back into canvas when your session expires. it never leaves the phone. tick \u{201c}remember this device\u{201d} at the duo step so duo doesn't ask either.")
+                    Label("only ever sent to penn's login page", systemImage: "checkmark.shield")
                         .font(.lhfSecondary(12))
                         .foregroundStyle(Color.v2DateText)
                 }
@@ -87,7 +95,7 @@ struct PennKeyCredentialsSheet: View {
             .font(.lhfSecondary(15))
             .foregroundStyle(Color.smoothInk)
             .smoothFormChrome(accent: .smoothCobalt)
-            .navigationTitle("stay signed in")
+            .navigationTitle("")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -108,6 +116,31 @@ struct PennKeyCredentialsSheet: View {
             }
         }
         .lhfSheetTheme()
+    }
+
+    /// The lock and one short line replace a paragraph of footer copy that
+    /// made this read like an unexplained pop-up asking for a password. The
+    /// promise that matters is the one a student can check: it stays in
+    /// this phone's Keychain (`PennKeyCredentialStore`, this-device-only).
+    private var lockHeader: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Color.smoothCobalt)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Color.smoothCobalt.opacity(0.14)))
+                .accessibilityHidden(true)
+            Text("stay signed in to canvas")
+                .font(.lhfSerif(22))
+                .foregroundStyle(Color.smoothInk)
+            Text("encrypted in this phone\u{2019}s keychain. never sent to smooth.")
+                .font(.lhfSecondary(13))
+                .foregroundStyle(Color.v2DateText)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
     }
 
     private func save() {

@@ -378,21 +378,7 @@ struct ContentView: View {
     /// point size and the underline remains scoped to the wordmark alone.
     private func headerTitle(weekday: String, pointSize: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text("Smooth")
-                .font(.lhfWordmark(pointSize))
-                .overlay(alignment: .bottomLeading) {
-                    SmoothSquiggle()
-                        .stroke(
-                            LinearGradient(
-                                colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                        )
-                        .frame(height: 6)
-                        .offset(y: 6)
-                }
+            SmoothWordmark(pointSize: pointSize)
 
             Text(" \(weekday)")
                 .font(.lhfHeaderTitle(pointSize))
@@ -805,20 +791,100 @@ private struct AnnouncementFindsView: View {
     }
 }
 
+/// The "Smooth" wordmark and its squiggle. A tap sets the squiggle rolling
+/// like a wave for a moment and sweeps a highlight across the letters — a
+/// small reward for poking the logo, nothing more, so it does no work and
+/// skips itself entirely under Reduce Motion.
+private struct SmoothWordmark: View {
+    let pointSize: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var wavePhase: CGFloat = 0
+    @State private var waveLift: CGFloat = 1
+    @State private var shine: CGFloat = 0
+    @State private var isPlaying = false
+
+    var body: some View {
+        Text("Smooth")
+            .font(.lhfWordmark(pointSize))
+            .overlay { shineOverlay }
+            .overlay(alignment: .bottomLeading) {
+                SmoothSquiggle(phase: wavePhase, lift: waveLift)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(height: 6)
+                    .offset(y: 6)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: play)
+    }
+
+    /// A soft white band masked to the glyphs, so only the letters catch
+    /// the light; parked off the leading edge until a tap sweeps it across.
+    private var shineOverlay: some View {
+        GeometryReader { geo in
+            let band = geo.size.width * 0.45
+            LinearGradient(
+                colors: [.white.opacity(0), .white.opacity(0.85), .white.opacity(0)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: band)
+            .offset(x: -band + shine * (geo.size.width + band))
+        }
+        .mask(Text("Smooth").font(.lhfWordmark(pointSize)))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func play() {
+        guard !reduceMotion, !isPlaying else { return }
+        isPlaying = true
+        lhfHapticLight()
+        shine = 0
+        withAnimation(.easeInOut(duration: 0.9)) { shine = 1 }
+        withAnimation(.easeOut(duration: 0.25)) { waveLift = 1.8 }
+        withAnimation(.linear(duration: 1.6)) { wavePhase += .pi * 4 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { waveLift = 1 }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+            shine = 0
+            isPlaying = false
+        }
+    }
+}
+
 /// A compact three-wave underline with a hand-drawn rhythm. It is drawn into
 /// whatever width the overlay hands it — the rendered width of the Roobert
 /// "Smooth" wordmark, scaled or not — so it always ends where the word ends
-/// and never reaches the weekday.
+/// and never reaches the weekday. `phase` shifts the wave along its length
+/// and `lift` scales its height; both animate, which is what makes the tap
+/// read as a travelling wave instead of a redraw.
 private struct SmoothSquiggle: Shape {
+    var phase: CGFloat = 0
+    var lift: CGFloat = 1
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(phase, lift) }
+        set { phase = newValue.first; lift = newValue.second }
+    }
+
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let amplitude = rect.height * 0.32
-        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        let amplitude = rect.height * 0.32 * lift
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY + sin(phase) * amplitude))
 
         for step in 1...48 {
             let progress = CGFloat(step) / 48
             let x = rect.minX + rect.width * progress
-            let y = rect.midY + sin(progress * .pi * 6) * amplitude
+            let y = rect.midY + sin(progress * .pi * 6 + phase) * amplitude
             path.addLine(to: CGPoint(x: x, y: y))
         }
         return path

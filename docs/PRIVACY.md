@@ -36,11 +36,12 @@ stored.
 ## Stay signed in (optional)
 
 Canvas signs you out from time to time, and normally reconnecting means going
-through PennKey (and often Duo) again. Since 2026-09-16 you can turn on
-**"stay signed in"** (Settings → account, or the one-time offer shown right
-after your first Canvas login) so the app can do that reconnecting for you.
+through PennKey (and often Duo) again. Since 2026-09-16 the app can do that
+reconnecting for you: after you sign in to Canvas it offers to remember your
+PennKey password (**"stay signed in"**).
 
-- **Off by default.** Nothing changes unless you turn it on.
+- **Nothing is stored unless you save it.** The offer can be skipped with
+  "not now"; it comes back the next time you sign in to Canvas by hand.
 - **What is stored:** the PennKey username and password you type into the
   app's own sheet for this purpose — not anything captured from Canvas's or
   PennKey's own login page.
@@ -63,8 +64,8 @@ after your first Canvas login) so the app can do that reconnecting for you.
   usual reason — the app disables the feature and shows a banner telling you
   to update it in Profile. It does not keep retrying, so it can't be the
   reason a PennKey gets locked.
-- **How to delete it:** turn the toggle off, or disconnect Canvas. Either one
-  removes the stored password from the Keychain immediately.
+- **How to delete it:** disconnect Canvas (Profile → accounts). That removes
+  the stored password from the Keychain immediately.
 
 A caution worth stating plainly: Penn's Acceptable Use Policy asks students
 not to share their PennKey password with anyone. This feature stores that

@@ -10,9 +10,14 @@ struct SmoothFormHeader: View {
 
     var body: some View {
         HStack(spacing: 16) {
+            // One line always: "Announcements" at 32pt beside the 78pt
+            // shape cluster wrapped onto two lines on a phone.
             Text(title)
                 .font(.lhfSerif(32))
                 .foregroundStyle(Color.smoothInk)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .layoutPriority(1)
 
             Spacer(minLength: 12)
 

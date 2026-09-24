@@ -336,10 +336,14 @@ struct OnboardingView: View {
     /// the one moment the student has just proven they know their PennKey
     /// password and are already thinking about Canvas access, which makes it
     /// the least intrusive place to ask, once, whether Smooth should
-    /// remember it. `AppState.hasOfferedStayLoggedIn` is what keeps this to
-    /// exactly once ever — Settings is the only way back after this.
+    /// remember it. Offered after EVERY interactive login until a password
+    /// is saved, not once ever: Settings no longer has a "stay signed in"
+    /// toggle (2026-09-24), so a one-time offer would leave a student who
+    /// tapped "not now" with no way back. An interactive login only happens
+    /// when the session died with nothing stored, which is exactly when the
+    /// offer is worth repeating.
     private func canvasConnected() {
-        if !state.stayLoggedInEnabled && !state.hasOfferedStayLoggedIn {
+        if !state.stayLoggedInEnabled {
             state.noteStayLoggedInOffered()
             showStayLoggedInOffer = true
             return

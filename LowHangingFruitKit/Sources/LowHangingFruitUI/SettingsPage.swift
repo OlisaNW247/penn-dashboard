@@ -630,43 +630,16 @@ struct SettingsPage: View {
 #endif
     }
 
-    /// "Stay signed in" — the owner's decision (CLAUDE.md's "stay signed in"
-    /// entry) to optionally store the student's PennKey password and use it
-    /// to sign back into Canvas automatically. Off by default; lives inside
-    /// the "accounts" section, right below the Canvas/Gradescope rows, since
-    /// it's a property of the Canvas login specifically, not a general
-    /// preference.
-    ///
-    /// Turning the toggle ON does NOT itself call
-    /// `AppState.enableStayLoggedIn` — it only opens
-    /// `PennKeyCredentialsSheet`, whose own "save" button is the one thing
-    /// that actually turns the feature on (see that binding's `set` below).
-    /// Turning it OFF calls `AppState.disableStayLoggedIn()` immediately,
-    /// with no confirmation — unlike disconnecting a whole account, this
-    /// only throws away a locally-stored password copy the student can
-    /// re-enter in a few seconds, so the same "are you sure" friction that
-    /// `disconnecting` guards elsewhere in this file isn't warranted here.
+    /// "Stay signed in" repair row, inside the "accounts" section. The
+    /// password itself is only ever entered in `PennKeyCredentialsSheet`,
+    /// offered after an interactive Canvas login; this row appears only when
+    /// Penn rejected the stored password and auto-login switched itself off.
     @ViewBuilder
     private var stayLoggedInRows: some View {
-        Toggle("stay signed in", isOn: Binding(
-            get: { state.stayLoggedInEnabled },
-            set: { newValue in
-                if newValue {
-                    showStayLoggedInSheet = true
-                } else {
-                    state.disableStayLoggedIn()
-                }
-            }
-        ))
-        .accessibilityHint("stores your PennKey password in this phone's keychain so Smooth can sign back in; it never leaves this phone")
-        // Only while the toggle is on — a student who hasn't turned this on
-        // has no reason to care how long Duo will keep skipping its own
-        // prompt, since nothing here is auto-filling anything for them yet.
-        if state.stayLoggedInEnabled, let duoSummary = state.duoRememberSummary {
-            Text(duoSummary)
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.v2DateText)
-        }
+        // No on/off toggle any more (owner's call, 2026-09-24): staying
+        // signed in is simply how Smooth works once a password has been
+        // saved from the sign-in offer. What remains is the repair path —
+        // without it a rejected password could never be re-entered.
         if let reason = state.autoLoginDisabledReason {
             Text(reason)
                 .font(.lhfSecondary(12))
