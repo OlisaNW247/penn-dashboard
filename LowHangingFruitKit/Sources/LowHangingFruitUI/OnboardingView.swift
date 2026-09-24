@@ -476,7 +476,7 @@ struct OnboardingView: View {
                 alignment: .leading,
                 spacing: 10
             ) {
-                ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                ForEach(NotificationScheduler.LeadOffset.offered) { offset in
                     leadTimePill(offset)
                 }
             }

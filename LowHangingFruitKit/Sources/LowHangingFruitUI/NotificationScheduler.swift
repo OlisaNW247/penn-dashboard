@@ -442,7 +442,8 @@ final class NotificationScheduler: ObservableObject {
             // must not fall back to the global. Both cases are handled by
             // `effectiveLeadOffsets`, and the empty one simply produces no
             // candidates below.
-            for offset in prefs.effectiveLeadOffsets(for: course, global: leadOffsets) {
+            for offset in prefs.effectiveLeadOffsets(for: course, global: leadOffsets)
+            where LeadOffset.offered.contains(offset) {
                 let fire = due.addingTimeInterval(-Double(offset.rawValue))
                 guard fire > now else { continue }
                 byCourse[course, default: []]

@@ -67,7 +67,7 @@ struct VisualStructureTests {
         #expect(source.contains("@State private var backendDataDeletionError: String?"))
         #expect(source.contains("if !(await state.deleteBackendData())"))
         #expect(source.contains("if let backendDataDeletionError"))
-        #expect(source.contains("check your connection and try again"))
+        #expect(source.contains("check your connection, then reconnect and disconnect again"))
         #expect(!source.contains("private var courseKnowledgeSummary"))
         #expect(!source.contains("if let notice = state.courseKnowledgeNotice"))
     }

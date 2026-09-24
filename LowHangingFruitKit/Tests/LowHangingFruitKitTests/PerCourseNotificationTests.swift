@@ -79,10 +79,26 @@ struct PerCourseNotificationTests {
 
             // The student widens the global setting. An inheriting class follows
             // it — nothing about the class was touched.
-            scheduler.setOffset(.d7, on: true)
+            scheduler.setOffset(.d2, on: true)
             #expect(offsets(of: scheduler.plannedRequests(from: items, now: now, preferences: prefs))
-                    == [.h1, .h24, .d7])
+                    == [.h1, .h24, .d2])
             #expect(prefs.leadOffsets(for: "CIS 1200") == nil)
+        }
+    }
+
+    @Test("\"1 week before\" no longer fires, even from a set saved while it was offered")
+    func weekBeforeIsRetired() {
+        withFixture(global: [.h24, .d7]) { scheduler, prefs, now in
+            let items = [
+                assignment("CIS 1200", "a", due: now + 10 * .day),
+                assignment("MATH 1400", "b", due: now + 10 * .day),
+            ]
+            prefs.setLeadOffsets("CIS 1200", [.d7, .d2])
+
+            let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
+            #expect(offsets(of: requests, forCourse: "CIS 1200", in: items) == [.d2])
+            #expect(offsets(of: requests, forCourse: "MATH 1400", in: items) == [.h24])
+            #expect(!LeadOffset.offered.contains(.d7))
         }
     }
 
@@ -93,10 +109,10 @@ struct PerCourseNotificationTests {
                 assignment("CIS 1200", "a", due: now + 10 * .day),
                 assignment("MATH 1400", "b", due: now + 10 * .day),
             ]
-            prefs.setLeadOffsets("CIS 1200", [.d7])
+            prefs.setLeadOffsets("CIS 1200", [.d2])
 
             let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
-            #expect(offsets(of: requests, forCourse: "CIS 1200", in: items) == [.d7])
+            #expect(offsets(of: requests, forCourse: "CIS 1200", in: items) == [.d2])
             #expect(offsets(of: requests, forCourse: "MATH 1400", in: items) == [.h1, .h24])
         }
     }

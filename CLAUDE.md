@@ -43,8 +43,9 @@ launch, which `docs/PRIVACY.md` promises students can switch off, so it
 was restored on 2026-09-15 with the default left on; the daily digest,
 removed in the same merge, did not come back) routed the same way, and
 only for announcements a cheap on-device gate judges could carry a task. Neither questions nor answers are stored — only
-per-user daily request counts and token totals. Settings has a button to delete
-a student's enrollment/usage rows and anonymous account from the backend.
+per-user daily request counts and token totals. Disconnecting Canvas in Settings also deletes
+a student's enrollment/usage rows and anonymous account from the backend (the
+standalone delete button went on 2026-09-24; `docs/PRIVACY.md` promises it).
 Offline, over quota, or with the backend unreachable, ask answers on-device as
 before: `OnDeviceAssistantResponder` computes exact answers from the dashboard's
 items, retrieves policy and content answers from the course materials the app

@@ -181,9 +181,10 @@ and API access.
 
 ## Deleting your data
 
-Settings has a **"Delete my class data from LHF's server"** button. It deletes
-your enrollment records, your usage counters, and the anonymous account itself
-from our server. It does not delete the shared course material other students
+**Disconnecting Canvas** (Profile → accounts → canvas) deletes your class data
+from our server along with your login on the device: your enrollment records,
+your usage counters, and the anonymous account itself. The confirmation says
+so before you tap it. It does not delete the shared course material other students
 are still using, because that material was never yours alone — it's the same
 syllabus and assignment pages every enrolled student can already see on
 Canvas. Deleting the app also removes everything stored on your device,

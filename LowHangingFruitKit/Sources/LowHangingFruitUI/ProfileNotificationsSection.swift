@@ -250,7 +250,7 @@ struct ProfileNotificationsSection: View {
     /// while a class is inheriting there are no toggles at all.
     private var inheritedLeadTimes: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+            ForEach(NotificationScheduler.LeadOffset.offered) { offset in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: scheduler.leadOffsets.contains(offset)
                           ? "checkmark.circle.fill" : "circle")
@@ -272,7 +272,7 @@ struct ProfileNotificationsSection: View {
     private func overriddenLeadTimes(_ course: String) -> some View {
         let chosen = preferences.leadOffsets(for: course) ?? []
 
-        ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+        ForEach(NotificationScheduler.LeadOffset.offered) { offset in
             Toggle(offset.label, isOn: Binding(
                 get: { chosen.contains(offset) },
                 set: { isOn in
@@ -353,7 +353,7 @@ struct ProfileNotificationsSection: View {
     /// so the vocabulary stays defined in exactly one place (the Kit) rather
     /// than being restated here and drifting from the toggles it describes.
     private func offsetList(_ offsets: Set<NotificationScheduler.LeadOffset>) -> String {
-        NotificationScheduler.LeadOffset.allCases
+        NotificationScheduler.LeadOffset.offered
             .filter { offsets.contains($0) }
             .map { $0.label.replacingOccurrences(of: " before", with: "") }
             .joined(separator: ", ")

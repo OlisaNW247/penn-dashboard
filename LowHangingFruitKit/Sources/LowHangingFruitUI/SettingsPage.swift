@@ -34,26 +34,9 @@ struct SettingsPage: View {
     /// `stayLoggedInRows`) and by its "update password" button after a
     /// rejection.
     @State private var showStayLoggedInSheet = false
-    @State private var didCopyDiagnostics = false
-    @State private var confirmingBackendDataDeletion = false
-    /// Feedback for the destructive backend-delete action only. General
-    /// course-material sync status deliberately stays out of this compact page.
+    /// Shown under the accounts rows when the server-side delete that
+    /// disconnecting Canvas triggers didn't go through.
     @State private var backendDataDeletionError: String?
-    #if DEBUG
-    /// Drives the "simulate canvas logout" DEBUG row below — `nil` result
-    /// with `isRunning == false` is the row's resting state (never shown
-    /// yet this launch); `isRunning` shows a spinner in its place; a
-    /// non-nil result persists until the next tap, which resets it back to
-    /// `nil` before the new attempt starts so a stale result never lingers
-    /// alongside the fresh spinner.
-    @State private var isSimulatingCanvasLogout = false
-    @State private var simulateCanvasLogoutResult: String?
-    /// Same resting/running/result shape as the pair above, for the
-    /// "probe ed discussion" row (`AppState.probeEdDiscussionForTesting()`).
-    @State private var isProbingEdDiscussion = false
-    @State private var probeEdDiscussionResult: String?
-    @State private var didCopyProbeEdDiscussionResult = false
-    #endif
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -68,7 +51,7 @@ struct SettingsPage: View {
         var message: String {
             switch self {
             case .canvas:
-                return "Removes your saved Canvas login and calendar feed from this device, along with your synced assignments and grades. Your own tasks, completions and reminders stay. You'll need to sign in to Canvas again to reconnect."
+                return "Removes your Canvas login, saved PennKey password and synced assignments and grades from this device, and deletes your class data from Smooth's server. Your own tasks, completions and reminders stay."
             case .gradescope:
                 return "Removes your saved Gradescope login from this device, along with anything synced from it. Canvas stays connected."
             }
@@ -129,6 +112,11 @@ struct SettingsPage: View {
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
                     stayLoggedInRows
+                    if let backendDataDeletionError {
+                        Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.smoothTomatoInk)
+                    }
                 }
             } header: {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
@@ -176,29 +164,15 @@ struct SettingsPage: View {
                 message: Text(target.message),
                 primaryButton: .destructive(Text("disconnect")) {
                     switch target {
-                    case .canvas:     state.disconnectCanvas()
-                    case .gradescope: state.disconnectGradescope()
+                    case .canvas:
+                        state.disconnectCanvas()
+                        deleteServerData()
+                    case .gradescope:
+                        state.disconnectGradescope()
                     }
                 },
                 secondaryButton: .cancel()
             )
-        }
-        .confirmationDialog(
-            "delete my class data from lhf's server?",
-            isPresented: $confirmingBackendDataDeletion,
-            titleVisibility: .visible
-        ) {
-            Button("delete", role: .destructive) {
-                backendDataDeletionError = nil
-                Task {
-                    if !(await state.deleteBackendData()) {
-                        backendDataDeletionError = "couldn't delete your data. check your connection and try again."
-                    }
-                }
-            }
-            Button("cancel", role: .cancel) {}
-        } message: {
-            Text("This removes your enrollment and shared course-material rows from LHF's server. Your assignments, completions and settings on this device stay.")
         }
         .task { await scheduler.refreshAuthStatus() }
         .lhfSheetTheme()
@@ -228,7 +202,7 @@ struct SettingsPage: View {
                         .foregroundStyle(Color.v2DateText)
                     Button("open settings") { openSystemNotificationSettings() }
                 } else {
-                    ForEach(NotificationScheduler.LeadOffset.allCases) { offset in
+                    ForEach(NotificationScheduler.LeadOffset.offered) { offset in
                         Toggle(offset.label, isOn: Binding(
                             get: { scheduler.leadOffsets.contains(offset) },
                             set: { scheduler.setOffset(offset, on: $0) }
@@ -301,175 +275,26 @@ struct SettingsPage: View {
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.smoothMarigoldInk)
             }
-
-            DisclosureGroup("troubleshooting") {
-                Button {
-                    copyDiagnostics()
-                } label: {
-                    Label(didCopyDiagnostics ? "copied" : "copy diagnostics", systemImage: didCopyDiagnostics ? "checkmark" : "doc.on.doc")
-                }
-                // Out of the way on purpose, but never gone: docs/PRIVACY.md
-                // promises students this button, and dropping a promised
-                // control is the 49441ac mistake (CLAUDE.md, ai assist).
-                if BackendServices.client != nil {
-                    Button("delete my class data from lhf's server", role: .destructive) {
-                        backendDataDeletionError = nil
-                        confirmingBackendDataDeletion = true
-                    }
-                    if let backendDataDeletionError {
-                        Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
-                            .font(.lhfSecondary(12))
-                            .foregroundStyle(Color.smoothTomatoInk)
-                    }
-                }
-
-                #if DEBUG
-                simulateCanvasLogoutRow
-                probeEdDiscussionRow
-                #endif
-            }
         } header: {
             SmoothSectionHeader("sync", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothCobalt)
     }
 
-    #if DEBUG
-    /// Owner-only "stay signed in" test seam (CLAUDE.md's "stay signed in"
-    /// section, and `AppState.simulateCanvasLogoutForTesting()`'s own doc
-    /// comment for the mechanism). Testing that feature against a REAL
-    /// expiry means waiting roughly a day for Canvas's cookie to age out;
-    /// this button kills the session on the spot so the owner can watch the
-    /// whole silent-renewal chain — cookie purge, IdP-session purge (Duo's
-    /// own cookie deliberately spared), throttle reset, renewal attempt —
-    /// run in one tap on a real phone with a real Canvas login. Compiles out
-    /// of every Release build; nothing here is reachable by a student.
-    @ViewBuilder
-    private var simulateCanvasLogoutRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                runSimulateCanvasLogout()
-            } label: {
-                if isSimulatingCanvasLogout {
-                    HStack {
-                        ProgressView()
-                        Text("simulating canvas logout…")
-                    }
-                } else {
-                    Label("simulate canvas logout", systemImage: "bolt.slash")
-                }
-            }
-            .disabled(isSimulatingCanvasLogout)
-
-            if let simulateCanvasLogoutResult, !isSimulatingCanvasLogout {
-                Text(simulateCanvasLogoutResult)
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    /// A second tap while one attempt is still running is blocked by
-    /// `.disabled(isSimulatingCanvasLogout)` above, rather than by anything
-    /// in `AppState` — there's exactly one owner tapping this button, so a
-    /// UI-level guard is enough; `CanvasSessionRenewer`'s own `isInFlight`
-    /// guard (untouched by `resetThrottlesForTesting()`) would catch a
-    /// genuine race anyway. The stale result is cleared before the new
-    /// attempt starts, not after, so the row never shows an old string
-    /// under a fresh spinner.
-    private func runSimulateCanvasLogout() {
-        simulateCanvasLogoutResult = nil
-        isSimulatingCanvasLogout = true
+    /// "Delete my class data" used to be its own button (under
+    /// troubleshooting, which is gone). It now rides on disconnecting
+    /// Canvas: the student who takes their Canvas login off the device is
+    /// the student who wants their server rows gone too, and docs/PRIVACY.md
+    /// says so. A failure is reported here rather than swallowed, since
+    /// the disconnect itself has already happened by then.
+    private func deleteServerData() {
+        guard BackendServices.client != nil else { return }
+        backendDataDeletionError = nil
         Task {
-            let result = await state.simulateCanvasLogoutForTesting()
-            simulateCanvasLogoutResult = result
-            isSimulatingCanvasLogout = false
-        }
-    }
-
-    /// Owner-only "probe ed discussion" row (CLAUDE.md's own name for this
-    /// diagnostic) — see `AppState.probeEdDiscussionForTesting()`'s doc
-    /// comment for what it actually does and the privacy rule it's built
-    /// under (names only, never a storage/cookie value). Same
-    /// resting/running/result shape as `simulateCanvasLogoutRow` above, plus
-    /// a small "copy" button: the full report (per-course tab list, hop
-    /// list, storage/cookie key names) is long enough that reading it off a
-    /// phone screen is awkward, so `.textSelection(.enabled)` alone isn't
-    /// enough to get it somewhere more useful.
-    @ViewBuilder
-    private var probeEdDiscussionRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                runProbeEdDiscussion()
-            } label: {
-                if isProbingEdDiscussion {
-                    HStack {
-                        ProgressView()
-                        Text("probing ed discussion…")
-                    }
-                } else {
-                    Label("probe ed discussion", systemImage: "bubble.left.and.text.bubble.right")
-                }
-            }
-            .disabled(isProbingEdDiscussion)
-
-            if let probeEdDiscussionResult, !isProbingEdDiscussion {
-                Text(probeEdDiscussionResult)
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                Button {
-                    copyProbeEdDiscussionResult()
-                } label: {
-                    Label(
-                        didCopyProbeEdDiscussionResult ? "copied" : "copy probe result",
-                        systemImage: didCopyProbeEdDiscussionResult ? "checkmark" : "doc.on.doc"
-                    )
-                }
-                .font(.lhfSecondary(12))
+            if !(await state.deleteBackendData()) {
+                backendDataDeletionError = "couldn't delete your data from smooth's server. check your connection, then reconnect and disconnect again."
             }
         }
-    }
-
-    /// Same single-flight guard as `runSimulateCanvasLogout` above, and the
-    /// same reason for clearing the stale result before the new attempt
-    /// starts rather than after.
-    private func runProbeEdDiscussion() {
-        probeEdDiscussionResult = nil
-        didCopyProbeEdDiscussionResult = false
-        isProbingEdDiscussion = true
-        Task {
-            let result = await state.probeEdDiscussionForTesting()
-            probeEdDiscussionResult = result
-            isProbingEdDiscussion = false
-        }
-    }
-
-    /// Exactly `copyDiagnostics()`'s cross-platform pasteboard code below,
-    /// applied to this row's own result string instead of a full
-    /// diagnostics report.
-    private func copyProbeEdDiscussionResult() {
-        guard let probeEdDiscussionResult else { return }
-        #if canImport(UIKit)
-        UIPasteboard.general.string = probeEdDiscussionResult
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(probeEdDiscussionResult, forType: .string)
-        #endif
-        didCopyProbeEdDiscussionResult = true
-    }
-    #endif
-
-    private func copyDiagnostics() {
-        let report = DiagnosticsReport.generate(state: state)
-        #if canImport(UIKit)
-        UIPasteboard.general.string = report
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(report, forType: .string)
-        #endif
-        didCopyDiagnostics = true
     }
 
     private func openSystemNotificationSettings() {

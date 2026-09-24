@@ -66,18 +66,9 @@ struct ProfileClassesSection: View {
                 }
             }
 
-            if FeatureFlags.gradeWatcher {
-                if state.canUseGradeWatcher {
-                    NavigationLink {
-                        GradeWatcherView(store: state.gradeWatcher)
-                    } label: {
-                        Label("grade watcher", systemImage: "chart.bar.fill")
-                    }
-                } else {
-                    Label("grade watcher", systemImage: "chart.bar.fill")
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
+            // No "grade watcher" row here: the dashboard header's grades
+            // button is the one way in, and a second copy in Settings
+            // was a link to a page the student could already see.
 
             Button(action: addRecurringTask) {
                 Label("add recurring task", systemImage: "calendar.badge.plus")

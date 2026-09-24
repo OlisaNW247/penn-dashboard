@@ -65,4 +65,12 @@ public enum LeadOffset: Int, CaseIterable, Identifiable, Codable, Sendable, Hash
     /// contexts where no scheduler has been constructed — a Profile screen
     /// rendering a course row before reminders have ever been enabled, for one.
     public static let defaults: Set<LeadOffset> = [.h24, .h1]
+
+    /// The lead times a student can choose, and the only ones that fire.
+    /// `.d7` ("1 week before") was taken out of Settings on 2026-09-24 as
+    /// clutter — a week out is the dashboard's job, not a notification's.
+    /// The case itself stays (raw values are frozen, see above, and saved
+    /// sets may still hold it), but the scheduler skips it, since a
+    /// student who had it on could no longer see the switch to turn it off.
+    public static let offered: [LeadOffset] = [.h1, .h3, .h24, .d2]
 }
