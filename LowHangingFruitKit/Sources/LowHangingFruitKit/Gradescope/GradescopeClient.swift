@@ -53,9 +53,6 @@ public struct GradescopeClient: Sendable {
     public func fetchAssignments() async throws -> [Assignment] {
         let accountURL = baseURL.appendingPathComponent("account")
         let accountHTML = try await fetchHTML(accountURL)
-        guard !GradescopeHTMLParser.isLoginPage(accountHTML) else {
-            throw Error.notLoggedIn
-        }
         let result = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
 
         if result.courses.isEmpty {
@@ -101,6 +98,11 @@ public struct GradescopeClient: Sendable {
                 } else {
                     refined.append(assignment)
                 }
+            } catch let error as Error where error.requiresReauthentication {
+                // A session can expire after the account/course requests
+                // succeeded. Never downgrade that proof to "detail status
+                // unavailable" or the app will keep a dead session forever.
+                throw error
             } catch {
                 refined.append(assignment)
             }
@@ -132,6 +134,12 @@ public struct GradescopeClient: Sendable {
         }
         guard let html = String(data: data, encoding: .utf8) else {
             throw Error.invalidResponseEncoding
+        }
+        // Gradescope commonly redirects an expired request to a 200 login
+        // page. Check every HTML response, not just `/account`: expiry can
+        // happen between the account, course and assignment-detail requests.
+        guard !GradescopeHTMLParser.isLoginPage(html) else {
+            throw Error.notLoggedIn
         }
         return html
     }

@@ -68,6 +68,18 @@ struct CanvasTokenWiringTests {
         #expect(value == nil)
         #expect(!didRead)
     }
+
+    @Test("Canvas disconnect token lookup stays lazy while the feature is disabled")
+    func disconnectSkipsTokenLoader() {
+        var didRead = false
+        let value = AppState.canvasAccessTokenForDisconnect {
+            didRead = true
+            return freshToken()
+        }
+
+        #expect(value == nil)
+        #expect(!didRead)
+    }
     @MainActor
     private func makeState() -> AppState {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))

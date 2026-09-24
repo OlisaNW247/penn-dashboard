@@ -62,9 +62,30 @@ enum SessionCookieStore {
         // macOS test run resolves real on-device state without the
         // entitlement that would otherwise gate it).
         guard !SharedDefaults.isTestRunner else { return }
+        persistMerged(fresh, service: service)
+    }
+
+    /// Store-level seam for the serialized Keychain suite. Production calls
+    /// remain guarded from touching a developer's real Keychain under
+    /// `swift test`; this explicit entry point lets one integration test prove
+    /// the persisted blob is actually removed when the server deletes its
+    /// final cookie, rather than merely proving the pure array merge.
+    static func mergeForTesting(_ fresh: [HTTPCookie], service: Service) {
+        precondition(SharedDefaults.isTestRunner)
+        guard !fresh.isEmpty else { return }
+        persistMerged(fresh, service: service)
+    }
+
+    private static func persistMerged(_ fresh: [HTTPCookie], service: Service) {
         let existing = load(service: service)
         let combined = merged(existing: existing, fresh: fresh)
-        guard !combined.isEmpty else { return }
+        guard !combined.isEmpty else {
+            // The server expired/deleted the last cookie. Leaving the old
+            // Keychain blob in place resurrects the exact no-expiry cookie it
+            // just invalidated on the next load.
+            remove(service: service)
+            return
+        }
         save(combined, service: service)
     }
 

@@ -2,8 +2,46 @@ import Foundation
 import Testing
 @testable import LowHangingFruitKit
 
-@Suite("Gradescope scraping")
+@Suite("Gradescope scraping", .serialized)
 struct GradescopeTests {
+
+    private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+        nonisolated(unsafe) static var handler: ((URLRequest) throws -> (Int, String))?
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            do {
+                guard let handler = Self.handler else {
+                    throw URLError(.badServerResponse)
+                }
+                let (status, body) = try handler(request)
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: status,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "text/html; charset=utf-8"]
+                )!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(body.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+
+        override func stopLoading() {}
+    }
+
+    private func stubSession(
+        _ handler: @escaping (URLRequest) throws -> (Int, String)
+    ) -> URLSession {
+        StubURLProtocol.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
 
     @Test("only authentication responses require a Gradescope reconnect")
     func reconnectClassification() {
@@ -14,6 +52,79 @@ struct GradescopeTests {
         #expect(!GradescopeClient.Error.http(status: 500, url: url).requiresReauthentication)
         #expect(!GradescopeClient.Error.notHTTP.requiresReauthentication)
         #expect(!GradescopeClient.Error.invalidResponseEncoding.requiresReauthentication)
+    }
+
+    @Test("a login page reached after the account request still expires the session")
+    func courseLoginPageRequiresReconnect() async throws {
+        let account = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/123">CIS 5050</a>
+          </div>
+        </div>
+        """
+        let login = "<html><h1>Log in to Gradescope</h1><label>Password</label><input type='password'></html>"
+        let session = stubSession { request in
+            request.url?.path == "/account" ? (200, account) : (200, login)
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        do {
+            _ = try await client.fetchAssignments()
+            Issue.record("expected the course-page login redirect to require reauthentication")
+        } catch let error as GradescopeClient.Error {
+            #expect(error.requiresReauthentication)
+            if case .notLoggedIn = error {} else {
+                Issue.record("expected notLoggedIn, got \(error)")
+            }
+        }
+    }
+
+    @Test(
+        "assignment-detail authentication failures propagate instead of being swallowed",
+        arguments: [401, 403]
+    )
+    func detailAuthenticationFailurePropagates(status: Int) async throws {
+        let account = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/123">CIS 5050</a>
+          </div>
+        </div>
+        """
+        let course = """
+        <table><tr>
+          <td><a href="/courses/123/assignments/456">Homework 1</a></td>
+          <td>Sep 30, 2026 11:59 PM</td>
+          <td>Not Submitted</td>
+        </tr></table>
+        """
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, account)
+            case "/courses/123": (200, course)
+            case "/courses/123/assignments/456": (status, "unauthorized")
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        do {
+            _ = try await client.fetchAssignments()
+            Issue.record("expected the detail-page \(status) to require reauthentication")
+        } catch let error as GradescopeClient.Error {
+            #expect(error.requiresReauthentication)
+            if case let .http(actualStatus, url) = error {
+                #expect(actualStatus == status)
+                #expect(url.path == "/courses/123/assignments/456")
+            } else {
+                Issue.record("expected HTTP 401, got \(error)")
+            }
+        }
     }
     @Test("discovers course links from account page")
     func discoversCourses() throws {

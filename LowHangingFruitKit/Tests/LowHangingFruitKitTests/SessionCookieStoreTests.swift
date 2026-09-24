@@ -79,6 +79,25 @@ struct SessionCookieStoreTests {
         }
     }
 
+    @Test("Merging a server deletion for the final cookie removes the persisted Keychain value")
+    func finalCookieDeletionDoesNotResurrectPersistedValue() {
+        withCleanStore {
+            SessionCookieStore.save(
+                [cookie(name: "canvas_session", domain: "canvas.upenn.edu")],
+                service: .canvas
+            )
+            let deletion = cookie(
+                name: "canvas_session",
+                domain: "canvas.upenn.edu",
+                expiresDate: Date().addingTimeInterval(-60)
+            )
+
+            SessionCookieStore.mergeForTesting([deletion], service: .canvas)
+
+            #expect(SessionCookieStore.load(service: .canvas).isEmpty)
+        }
+    }
+
     @Test("clear() removes every service's cookies")
     func clearRemovesEverything() {
         withCleanStore {

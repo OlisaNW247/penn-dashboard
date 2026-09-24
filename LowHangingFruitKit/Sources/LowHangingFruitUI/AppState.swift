@@ -2527,7 +2527,7 @@ final class AppState: ObservableObject {
         // removes it by hand under Canvas → Settings → Approved
         // Integrations — never a security regression, since this device no
         // longer has the secret to use it with either way.
-        if let outgoingToken = CanvasAccessTokenStore.load() {
+        if let outgoingToken = Self.canvasAccessTokenForDisconnect({ CanvasAccessTokenStore.load() }) {
             Task.detached {
                 await CanvasAccessTokenMinter.revoke(outgoingToken)
             }
@@ -2613,6 +2613,15 @@ final class AppState: ObservableObject {
                 in: LoginDataStores.canvas
             )
         }
+    }
+
+    /// Lazy decision used by `disconnectCanvas`: when the token experiment is
+    /// disabled, even an explicit disconnect must not synchronously query its
+    /// dormant Keychain item. Local clearing remains unconditional.
+    nonisolated static func canvasAccessTokenForDisconnect(
+        _ load: () -> CanvasAccessToken?
+    ) -> CanvasAccessToken? {
+        FeatureFlags.canvasAccessTokenValue(load)
     }
 
     /// Signs out of Gradescope: purges its cookies and everything scraped with
