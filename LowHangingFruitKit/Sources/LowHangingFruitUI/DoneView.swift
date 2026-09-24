@@ -85,33 +85,11 @@ struct DoneView: View {
     }
 
     private func earlierToggle(count: Int) -> some View {
-        Button {
-            lhfHapticLight()
+        DisclosureRow(title: "earlier this semester", count: count, isOpen: showsEarlier) {
             withAnimation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)) {
                 showsEarlier.toggle()
             }
-        } label: {
-            HStack(spacing: 8) {
-                Text("earlier this semester")
-                    .font(.lhfMono(11, weight: .semibold))
-                    .tracking(0.4)
-                Text("\(count)")
-                    .font(.lhfMono(11, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .rotationEffect(.degrees(showsEarlier ? 180 : 0))
-            }
-            .foregroundStyle(Color.smoothInk)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Capsule().fill(Color.smoothInk.opacity(0.06)))
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("earlier this semester, \(count) done")
-        .accessibilityHint(showsEarlier ? "hides earlier work" : "shows earlier work")
     }
 }
 

@@ -21,6 +21,8 @@ struct ContentView: View {
     /// after opening has marked everything seen.
     @State private var announcementNewIDs: Set<String> = []
     @State private var showPick = false
+    /// `Assignment.course` key of the class the list is narrowed to, or nil.
+    @State private var classFilter: String?
     /// The pushed pages behind the header actions. A path rather than separate
     /// booleans keeps the screenshot seams deterministic.
     @State private var path: [DashRoute] = []
@@ -80,7 +82,9 @@ struct ContentView: View {
                     }
 
                     HStack(alignment: .center, spacing: 8) {
-                        SegmentedToggle(selection: $filter)
+                        DashViewPicker(selection: $filter)
+                        Spacer(minLength: 4)
+                        ClassFilterMenu(courses: filterableCourses, selection: $classFilter)
                         addInlineButton
                         pickButton
                         if !state.announcementPageItems.isEmpty {
@@ -89,6 +93,18 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
+
+                    if let classFilter {
+                        ClassFilterChip(name: courseDisplayName(classFilter)) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                                self.classFilter = nil
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
                     ScrollView {
                         listContent
@@ -196,7 +212,7 @@ struct ContentView: View {
                 .environmentObject(state)
         }
         .sheet(isPresented: $showPick) {
-            PickAssignmentSheet(candidates: vm.pickCandidates())
+            PickAssignmentSheet(candidates: vm.pickCandidates().filter(matchesClassFilter))
         }
         .sheet(isPresented: $showAnnouncementFinds) {
             AnnouncementFindsView(items: state.announcementPageItems, newIDs: announcementNewIDs)
@@ -267,12 +283,11 @@ struct ContentView: View {
             lhfHapticLight()
             showPick = true
         } label: {
-            Image(systemName: "questionmark")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Color.smoothGrape)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothGrape.opacity(0.18)))
-                .contentShape(Circle())
+            DashCircleIcon(
+                systemName: "dice.fill",
+                foreground: Color.smoothGrape,
+                fill: Color.smoothGrape.opacity(0.18)
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel("pick an assignment for me")
@@ -494,14 +509,38 @@ struct ContentView: View {
 
     // MARK: List
 
+    /// todo and all are one page (v8-features): the todo list exactly as
+    /// before, then an "all assignments" row that opens the rest of the
+    /// term in place — the same move Done makes with "earlier this
+    /// semester". Picking "all" from the view menu is simply this page with
+    /// the row open, which is why the row's toggle writes `filter` rather
+    /// than a separate flag: the menu and the row can never disagree.
     @ViewBuilder
     private var listContent: some View {
         switch filter {
-        case .thisWeek: timeline(sections: vm.todoSections(), showsTodoEmptyState: true)
-        case .all:      timeline(sections: vm.allSections())
+        case .thisWeek, .all:
+            let todo = filteredByClass(vm.todoSections())
+            let rest = Self.sections(filteredByClass(vm.allSections()), excluding: todo)
+            let restCount = rest.reduce(0) { $0 + $1.items.count }
+            VStack(alignment: .leading, spacing: 18) {
+                timeline(sections: todo, showsTodoEmptyState: true)
+
+                if restCount > 0 {
+                    DisclosureRow(title: "all assignments", count: restCount, isOpen: filter == .all) {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                            filter = filter == .all ? .thisWeek : .all
+                        }
+                    }
+
+                    if filter == .all {
+                        timeline(sections: rest)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+            }
         case .done:
             DoneView(
-                sections: vm.doneSections(),
+                sections: filteredByClass(vm.doneSections()),
                 weeklyDone: vm.weeklyProgress().done,
                 onUncomplete: { item in
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -510,6 +549,50 @@ struct ContentView: View {
                     rescheduleNotifications()
                 }
             )
+        }
+    }
+
+    // MARK: Class filter
+
+    /// Every class with something on the dashboard, done or not, so "prev"
+    /// can be narrowed to a class whose work is all finished.
+    private var filterableCourses: [(key: String, name: String)] {
+        var seen = Set<String>()
+        return vm.items
+            .compactMap { item -> (key: String, name: String)? in
+                let key = item.assignment.course
+                guard !key.isEmpty, seen.insert(key).inserted else { return nil }
+                return (key, item.assignment.displayCourse(overrides: state.courseNameOverrides))
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func courseDisplayName(_ key: String) -> String {
+        filterableCourses.first { $0.key == key }?.name ?? key
+    }
+
+    private func matchesClassFilter(_ item: DashItem) -> Bool {
+        classFilter.map { item.assignment.course == $0 } ?? true
+    }
+
+    private func filteredByClass(_ sections: [DashSection]) -> [DashSection] {
+        guard classFilter != nil else { return sections }
+        return sections.compactMap { section in
+            var section = section
+            section.items = section.items.filter(matchesClassFilter)
+            return section.items.isEmpty ? nil : section
+        }
+    }
+
+    /// The "all" list minus anything todo already shows — todo covers the
+    /// next two days, which "all" also starts with, and the same card twice
+    /// on one page would read as two assignments.
+    nonisolated static func sections(_ sections: [DashSection], excluding shown: [DashSection]) -> [DashSection] {
+        let shownIDs = Set(shown.flatMap { $0.items.map(\.id) })
+        return sections.compactMap { section in
+            var section = section
+            section.items = section.items.filter { !shownIDs.contains($0.id) }
+            return section.items.isEmpty ? nil : section
         }
     }
 

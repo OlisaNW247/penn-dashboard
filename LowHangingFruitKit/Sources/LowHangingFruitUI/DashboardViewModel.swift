@@ -94,6 +94,25 @@ enum DashFilter: String, CaseIterable, Identifiable {
     case all      = "all"
     case done     = "done"
     var id: String { rawValue }
+
+    /// What the dashboard's view menu says. "prev" rather than "done":
+    /// beside "todo" and "all" it reads as the third place in time, and
+    /// "done" alone read like a button that would mark something done.
+    var label: String {
+        switch self {
+        case .thisWeek: return "todo"
+        case .all:      return "all"
+        case .done:     return "prev"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .thisWeek: return "checklist"
+        case .all:      return "tray.full"
+        case .done:     return "clock.arrow.circlepath"
+        }
+    }
 }
 
 // MARK: – Section model

@@ -101,4 +101,24 @@ struct V8FeaturesTests {
 
         #expect(ids == ["cis-soon", "phys-next"])
     }
+
+    // MARK: todo + "all assignments"
+
+    @Test("the all-assignments list never repeats a card the todo list above it already shows")
+    func allListExcludesTodoCards() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = dashItem("a", course: "CIS 1200", due: now.addingTimeInterval(3_600))
+        let b = dashItem("b", course: "CIS 1200", due: now.addingTimeInterval(5 * 86_400))
+        let todo = [DashSection(id: "today", label: "today", labelColor: .v2SectionMuted, items: [a])]
+        let all = [
+            DashSection(id: "today", label: "today", labelColor: .v2SectionMuted, items: [a]),
+            DashSection(id: "rest", label: "this week", labelColor: .v2SectionMuted, items: [b]),
+        ]
+
+        let rest = ContentView.sections(all, excluding: todo)
+
+        #expect(rest.map(\.id) == ["rest"])
+        #expect(rest.flatMap(\.items).map(\.id) == [b.id])
+    }
+
 }
