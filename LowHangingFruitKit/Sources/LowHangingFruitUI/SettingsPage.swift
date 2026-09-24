@@ -36,6 +36,9 @@ struct SettingsPage: View {
     @State private var showStayLoggedInSheet = false
     @State private var didCopyDiagnostics = false
     @State private var confirmingBackendDataDeletion = false
+    /// Feedback for the destructive backend-delete action only. General
+    /// course-material sync status deliberately stays out of this compact page.
+    @State private var backendDataDeletionError: String?
     #if DEBUG
     /// Drives the "simulate canvas logout" DEBUG row below — `nil` result
     /// with `isRunning == false` is the row's resting state (never shown
@@ -186,7 +189,12 @@ struct SettingsPage: View {
             titleVisibility: .visible
         ) {
             Button("delete", role: .destructive) {
-                Task { _ = await state.deleteBackendData() }
+                backendDataDeletionError = nil
+                Task {
+                    if !(await state.deleteBackendData()) {
+                        backendDataDeletionError = "couldn't delete your data. check your connection and try again."
+                    }
+                }
             }
             Button("cancel", role: .cancel) {}
         } message: {
@@ -419,7 +427,13 @@ struct SettingsPage: View {
                 // control is the 49441ac mistake (CLAUDE.md, ai assist).
                 if BackendServices.client != nil {
                     Button("delete my class data from lhf's server", role: .destructive) {
+                        backendDataDeletionError = nil
                         confirmingBackendDataDeletion = true
+                    }
+                    if let backendDataDeletionError {
+                        Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.smoothTomatoInk)
                     }
                 }
 

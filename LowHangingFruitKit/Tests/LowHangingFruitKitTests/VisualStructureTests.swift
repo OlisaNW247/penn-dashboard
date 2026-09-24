@@ -60,6 +60,18 @@ struct VisualStructureTests {
         #expect(!announcements.contains("smoothGrape"))
     }
 
+    @Test("backend deletion failure is visible without restoring sync clutter")
+    func backendDeletionFeedback() throws {
+        let source = try uiSource("SettingsPage.swift")
+
+        #expect(source.contains("@State private var backendDataDeletionError: String?"))
+        #expect(source.contains("if !(await state.deleteBackendData())"))
+        #expect(source.contains("if let backendDataDeletionError"))
+        #expect(source.contains("check your connection and try again"))
+        #expect(!source.contains("private var courseKnowledgeSummary"))
+        #expect(!source.contains("if let notice = state.courseKnowledgeNotice"))
+    }
+
     private func uiSource(_ filename: String) throws -> String {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
