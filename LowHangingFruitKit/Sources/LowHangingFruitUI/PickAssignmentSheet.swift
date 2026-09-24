@@ -1,11 +1,13 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The dashboard's "?" button: when the list is long and nothing is on fire,
+/// The dashboard's dice button: when the list is long and nothing is on fire,
 /// hand the student one thing to start on, picked at random from the next
-/// assignment in each class (`DashboardViewModel.pickCandidates`). "another"
-/// rerolls without repeating the current pick; nothing is marked, moved or
-/// scheduled — it is a nudge, not a planner.
+/// assignment in each class (`DashboardViewModel.pickCandidates`). Every
+/// roll is a different assignment from the one before — tapping the die
+/// rerolls, and opening the sheet again skips whatever it showed last
+/// time (`lastPickID`). Nothing is marked, moved or scheduled; it is a
+/// nudge, not a planner.
 struct PickAssignmentSheet: View {
     let candidates: [DashItem]
 
@@ -16,15 +18,25 @@ struct PickAssignmentSheet: View {
     @State private var pick: DashItem?
     @State private var diceTurns: Double = 0
 
+    /// Survives the sheet closing, so the dashboard's dice never opens on
+    /// the same assignment twice in a row. In memory only: a repeat after a
+    /// relaunch costs nothing.
+    @MainActor private static var lastPickID: String?
+
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "dice.fill")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(Color.smoothGrape)
-                .frame(width: 58, height: 58)
-                .background(Circle().fill(Color.smoothGrape.opacity(0.16)))
-                .rotationEffect(.degrees(diceTurns))
-                .accessibilityHidden(true)
+            Button(action: reroll) {
+                Image(systemName: "dice.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(Color.smoothGrape)
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(Color.smoothGrape.opacity(0.16)))
+                    .rotationEffect(.degrees(diceTurns))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(candidates.count < 2 && pick != nil)
+            .accessibilityLabel("roll again")
 
             if let pick {
                 VStack(spacing: 8) {
@@ -59,30 +71,26 @@ struct PickAssignmentSheet: View {
                     .foregroundStyle(Color.smoothInk)
             }
 
-            HStack(spacing: 10) {
-                if candidates.count > 1 {
-                    Button("another") { reroll() }
-                        .buttonStyle(.bordered)
-                }
-                Button(pick == nil ? "ok" : "on it") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-            }
-            .font(.lhfSecondary(15, weight: .semibold))
-            .tint(Color.smoothGrape)
+            Button(pick == nil ? "ok" : "on it") { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .font(.lhfSecondary(15, weight: .semibold))
+                .tint(Color.smoothGrape)
         }
         .padding(.horizontal, 24)
         .padding(.top, 28)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .background(Color.smoothPaper.ignoresSafeArea())
-        .presentationDetents([.height(380)])
+        .presentationDetents([.height(360)])
         .presentationDragIndicator(.visible)
         .onAppear { if pick == nil { reroll() } }
     }
 
     private func reroll() {
-        let others = candidates.filter { $0.id != pick?.id }
+        let previous = pick?.id ?? Self.lastPickID
+        let others = candidates.filter { $0.id != previous }
         guard let next = others.randomElement() ?? candidates.randomElement() else { return }
+        Self.lastPickID = next.id
         lhfHapticLight()
         withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.75)) {
             pick = next

@@ -3,8 +3,8 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// The v8-features additions: unread announcement tracking, the per-card
-/// steps prototype, and the "?" pick pool. Every test that persists uses its
+/// The v8-features additions: unread announcement tracking and the dice
+/// pick pool. Every test that persists uses its
 /// own scratch `UserDefaults` suite — CLAUDE.md's shared-defaults trap.
 @MainActor
 @Suite("v8 features")
@@ -57,31 +57,7 @@ struct V8FeaturesTests {
         #expect(readState.seenIDs == [current.id])
     }
 
-    // MARK: Steps
-
-    @Test("steps add, toggle, remove and survive a fresh store on the same defaults")
-    func stepsRoundTrip() throws {
-        let (defaults, name) = scratchDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-        let store = AssignmentStepsStore(defaults: defaults)
-
-        store.add("outline", to: "hw1")
-        store.add("  draft  ", to: "hw1")
-        store.add("   ", to: "hw1")
-        #expect(store.steps(for: "hw1").map(\.title) == ["outline", "draft"])
-
-        let outline = try #require(store.steps(for: "hw1").first)
-        store.toggle(outline.id, in: "hw1")
-        #expect(AssignmentStepsStore.progress(store.steps(for: "hw1")) == (1, 2))
-
-        let reloaded = AssignmentStepsStore(defaults: defaults)
-        #expect(reloaded.steps(for: "hw1") == store.steps(for: "hw1"))
-
-        for step in reloaded.steps(for: "hw1") { reloaded.remove(step.id, from: "hw1") }
-        #expect(reloaded.stepsByAssignment["hw1"] == nil)
-    }
-
-    // MARK: "?" pick
+    // MARK: dice pick
 
     @Test("the pick pool is the soonest unfinished item per class, upcoming only, inside the horizon")
     func pickCandidates() {
@@ -101,24 +77,4 @@ struct V8FeaturesTests {
 
         #expect(ids == ["cis-soon", "phys-next"])
     }
-
-    // MARK: todo + "all assignments"
-
-    @Test("the all-assignments list never repeats a card the todo list above it already shows")
-    func allListExcludesTodoCards() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let a = dashItem("a", course: "CIS 1200", due: now.addingTimeInterval(3_600))
-        let b = dashItem("b", course: "CIS 1200", due: now.addingTimeInterval(5 * 86_400))
-        let todo = [DashSection(id: "today", label: "today", labelColor: .v2SectionMuted, items: [a])]
-        let all = [
-            DashSection(id: "today", label: "today", labelColor: .v2SectionMuted, items: [a]),
-            DashSection(id: "rest", label: "this week", labelColor: .v2SectionMuted, items: [b]),
-        ]
-
-        let rest = ContentView.sections(all, excluding: todo)
-
-        #expect(rest.map(\.id) == ["rest"])
-        #expect(rest.flatMap(\.items).map(\.id) == [b.id])
-    }
-
 }

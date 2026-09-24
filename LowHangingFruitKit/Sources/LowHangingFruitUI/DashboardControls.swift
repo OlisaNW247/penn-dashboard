@@ -1,36 +1,70 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The dashboard's view switch: a compact "todo ▾" chip that opens a menu of
-/// todo / all / prev. It replaced a full-width three-way segmented control
-/// (v8-features, 2026-09-24) for two reasons. "all" stopped being a page of
-/// its own — it is the todo page with its "all assignments" row opened (see
-/// `ContentView.listContent`) — so three equal segments overstated three
-/// equal destinations. And the row's width is better spent on the class
-/// filter, add, pick and announcement buttons beside it.
+/// The dashboard's view switch: todo · all · prev, always visible, with a
+/// highlight that slides to the one you're on.
+///
+/// History, because it has changed twice in a day. It began as a
+/// full-width three-way segmented control, which left no room beside it.
+/// A "todo ▾" menu freed the room but hid the other two views behind a tap,
+/// so switching views took two taps and nothing on screen said they
+/// existed. This keeps the menu's width budget and the segmented control's
+/// one-tap directness: each segment is only as wide as its word. On a
+/// screen too narrow for it next to the buttons (large Dynamic Type, a
+/// small phone), `ViewThatFits` falls back to the menu rather than
+/// truncating.
 struct DashViewPicker: View {
     @Binding var selection: DashFilter
+    @Namespace private var indicator
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            segments
+            menu
+        }
+    }
+
+    private var segments: some View {
+        HStack(spacing: 0) {
+            ForEach(DashFilter.allCases) { filter in
+                let isActive = filter == selection
+                Text(filter.label)
+                    .font(.lhfSans(14, weight: isActive ? .semibold : .medium))
+                    .foregroundStyle(isActive ? Color.smoothInk : Color.smoothMuted)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background {
+                        if isActive {
+                            Capsule()
+                                .fill(Color.smoothRule.opacity(0.72))
+                                .matchedGeometryEffect(id: "active", in: indicator)
+                        }
+                    }
+                    .contentShape(Capsule())
+                    .onTapGesture { select(filter) }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(filter.label)
+                    .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(3)
+        .background(Color.smoothSurface.opacity(0.58), in: Capsule())
+        .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
+        .fixedSize()
+    }
+
+    private var menu: some View {
         Menu {
             ForEach(DashFilter.allCases) { filter in
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                        selection = filter
-                    }
-                } label: {
-                    if filter == selection {
-                        Label(filter.label, systemImage: "checkmark")
-                    } else {
-                        Label(filter.label, systemImage: filter.systemImage)
-                    }
+                Button { select(filter) } label: {
+                    Label(filter.label, systemImage: filter == selection ? "checkmark" : filter.systemImage)
                 }
             }
         } label: {
             HStack(spacing: 6) {
                 Text(selection.label)
                     .font(.lhfSans(15, weight: .semibold))
-                    .contentTransition(.opacity)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
             }
@@ -44,7 +78,14 @@ struct DashViewPicker: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel("showing \(selection.label)")
-        .accessibilityHint("choose todo, all, or previous work")
+    }
+
+    private func select(_ filter: DashFilter) {
+        guard filter != selection else { return }
+        lhfHapticLight()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            selection = filter
+        }
     }
 }
 
@@ -135,9 +176,8 @@ struct DashCircleIcon: View {
     }
 }
 
-/// The "open in place" row Done uses for "earlier this semester" and the
-/// todo page uses for "all assignments": a title, a count, a chevron that
-/// turns. One component so the two reads of "there's more below" match.
+/// The "open in place" row prev uses for "earlier this semester": a title,
+/// a count, a chevron that turns.
 struct DisclosureRow: View {
     let title: String
     let count: Int

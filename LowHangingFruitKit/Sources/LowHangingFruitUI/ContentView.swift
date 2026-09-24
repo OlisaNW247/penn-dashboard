@@ -106,13 +106,19 @@ struct ContentView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
+                    // Runs under the home indicator to the bottom edge of the
+                    // screen rather than stopping at the safe area, so the
+                    // list uses the whole page; the bottom padding is what
+                    // keeps the last card clear of the ask button and the
+                    // home indicator once scrolled to the end.
                     ScrollView {
                         listContent
                             .padding(.horizontal, 20)
                             .padding(.top, 8)
-                            .padding(.bottom, 40)
+                            .padding(.bottom, 112)
                             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.items)
                     }
+                    .ignoresSafeArea(edges: .bottom)
                 }
 
                 assistantButton
@@ -275,7 +281,7 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
-    /// "?" — one random next assignment from your classes
+    /// Dice — one random next assignment from your classes
     /// (`PickAssignmentSheet`), for when the list is long and you just
     /// want to be told where to start.
     private var pickButton: some View {
@@ -509,35 +515,11 @@ struct ContentView: View {
 
     // MARK: List
 
-    /// todo and all are one page (v8-features): the todo list exactly as
-    /// before, then an "all assignments" row that opens the rest of the
-    /// term in place — the same move Done makes with "earlier this
-    /// semester". Picking "all" from the view menu is simply this page with
-    /// the row open, which is why the row's toggle writes `filter` rather
-    /// than a separate flag: the menu and the row can never disagree.
     @ViewBuilder
     private var listContent: some View {
         switch filter {
-        case .thisWeek, .all:
-            let todo = filteredByClass(vm.todoSections())
-            let rest = Self.sections(filteredByClass(vm.allSections()), excluding: todo)
-            let restCount = rest.reduce(0) { $0 + $1.items.count }
-            VStack(alignment: .leading, spacing: 18) {
-                timeline(sections: todo, showsTodoEmptyState: true)
-
-                if restCount > 0 {
-                    DisclosureRow(title: "all assignments", count: restCount, isOpen: filter == .all) {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                            filter = filter == .all ? .thisWeek : .all
-                        }
-                    }
-
-                    if filter == .all {
-                        timeline(sections: rest)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-            }
+        case .thisWeek: timeline(sections: filteredByClass(vm.todoSections()), showsTodoEmptyState: true)
+        case .all:      timeline(sections: filteredByClass(vm.allSections()))
         case .done:
             DoneView(
                 sections: filteredByClass(vm.doneSections()),
@@ -580,18 +562,6 @@ struct ContentView: View {
         return sections.compactMap { section in
             var section = section
             section.items = section.items.filter(matchesClassFilter)
-            return section.items.isEmpty ? nil : section
-        }
-    }
-
-    /// The "all" list minus anything todo already shows — todo covers the
-    /// next two days, which "all" also starts with, and the same card twice
-    /// on one page would read as two assignments.
-    nonisolated static func sections(_ sections: [DashSection], excluding shown: [DashSection]) -> [DashSection] {
-        let shownIDs = Set(shown.flatMap { $0.items.map(\.id) })
-        return sections.compactMap { section in
-            var section = section
-            section.items = section.items.filter { !shownIDs.contains($0.id) }
             return section.items.isEmpty ? nil : section
         }
     }

@@ -381,9 +381,9 @@ final class DashboardViewModel: ObservableObject {
         return f.string(from: date)
     }
 
-    // MARK: Derived — "?" pick
+    // MARK: Derived — dice pick
 
-    /// The pool the dashboard's "?" button draws from: for each class, the
+    /// The pool the dashboard's dice button draws from: for each class, the
     /// one unfinished assignment due soonest within `horizon`. One per class
     /// so the pick spreads across courses rather than landing on whichever
     /// class posts the most small items; soonest per class so what it
