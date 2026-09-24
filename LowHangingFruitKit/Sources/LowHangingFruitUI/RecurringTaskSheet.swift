@@ -113,7 +113,9 @@ struct RecurringTaskSheet: View {
             hour: components.hour ?? 23,
             minute: components.minute ?? 59,
             startDate: startDate,
-            endDate: hasEndDate ? endDate : nil,
+            // Keep the persisted schedule valid even if the start date was
+            // moved past an end date that had already been selected.
+            endDate: hasEndDate ? max(endDate, startDate) : nil,
             origin: .manual
         ))
         dismiss()
