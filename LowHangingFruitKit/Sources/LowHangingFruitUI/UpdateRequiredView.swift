@@ -104,8 +104,8 @@ struct UpdateRequiredView: View {
         .accessibilityAddTraits(.isModal)
     }
 
-    /// Same `#if canImport(UIKit)` / `#elseif canImport(AppKit)` split as
-    /// `SupportContact.openReportMail` — the only cross-platform way to open
+    /// The `#if canImport(UIKit)` / `#elseif canImport(AppKit)` split
+    /// the rest of the app uses — the only cross-platform way to open
     /// an external URL from a library target that ships on both iOS and
     /// macOS.
     private func openAppStore(_ url: URL) {

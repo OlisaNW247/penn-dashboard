@@ -39,6 +39,9 @@ struct AssignmentCardView: View {
     @State private var isCompleting = false
     @State private var paperScatter = false
     @State private var isArmed = false
+    @ObservedObject private var stepsStore = AssignmentStepsStore.shared
+    @State private var isAddingStep = false
+    @State private var newStepTitle = ""
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -162,6 +165,15 @@ struct AssignmentCardView: View {
                         .font(.lhfSecondary(9, weight: .semibold))
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
+
+                // The only trace steps leave on a collapsed card: a thin
+                // segmented bar, and only once the student has added some.
+                // The dashboard is already full; a card with no steps looks
+                // exactly as it did before.
+                if !steps.isEmpty && !isExpanded {
+                    StepProgressBar(steps: steps)
+                        .padding(.top, 2)
+                }
             }
 
             Spacer(minLength: 8)
@@ -220,11 +232,90 @@ struct AssignmentCardView: View {
             }
             .padding(.top, 10)
 
+            stepsSection
+
             // No second "nothing to submit" here: the collapsed caveat line
             // stays visible when the card opens, so repeating it below the
             // date printed the same words twice on one card.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    // MARK: Steps (prototype — see `AssignmentStepsStore`)
+
+    private var steps: [AssignmentStep] { stepsStore.steps(for: item.id) }
+
+    /// Buttons, not a tap gesture: the card's own tap toggles expansion, and
+    /// a Button claims its touch before that gesture sees it (the same
+    /// reason "edit date" above works inside the expanded card). The new
+    /// step is typed into an alert rather than an inline field for the same
+    /// reason — a text field inside a view that also expands on tap is a
+    /// fight over the first touch this card does not need to have.
+    private var stepsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(steps) { step in
+                HStack(spacing: 10) {
+                    Button {
+                        lhfHapticLight()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            stepsStore.toggle(step.id, in: item.id)
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: step.isDone ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text(step.title)
+                                .font(.lhfAssignmentTitle(13))
+                                .strikethrough(step.isDone, color: Color.smoothInk)
+                                .opacity(step.isDone ? 0.55 : 1)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .foregroundStyle(Color.smoothInk)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(step.title), \(step.isDone ? "done" : "not done")")
+
+                    Spacer(minLength: 4)
+
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            stepsStore.remove(step.id, from: item.id)
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.smoothInk.opacity(0.45))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("remove step \(step.title)")
+                }
+            }
+
+            Button {
+                newStepTitle = ""
+                isAddingStep = true
+            } label: {
+                Label(steps.isEmpty ? "break into steps" : "add step", systemImage: "plus")
+                    .font(.lhfAssignmentTitle(12))
+                    .foregroundStyle(Color.smoothInk.opacity(0.75))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, steps.isEmpty ? 0 : 2)
+        }
+        .padding(.top, 10)
+        .alert("add a step", isPresented: $isAddingStep) {
+            TextField("e.g. outline", text: $newStepTitle)
+            Button("add") {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    stepsStore.add(newStepTitle, to: item.id)
+                }
+            }
+            Button("cancel", role: .cancel) {}
+        }
     }
 
     private func fullDueText(_ due: Date?) -> String {
@@ -324,6 +415,31 @@ struct AssignmentCardView: View {
         .init(destination: .init(width: 6, height: 28), rotation: -48, color: .smoothGrape, shape: .dash, opacity: 0.82),
         .init(destination: .init(width: -18, height: 20), rotation: 30, color: .smoothLemon, shape: .dot, opacity: 0.86),
     ]
+}
+
+/// One segment per step, filled when done — the collapsed card's whole view
+/// of a student's steps. Capped at ten segments so a long list still fits.
+private struct StepProgressBar: View {
+    let steps: [AssignmentStep]
+
+    var body: some View {
+        let progress = AssignmentStepsStore.progress(steps)
+        HStack(spacing: 6) {
+            HStack(spacing: 3) {
+                ForEach(Array(steps.prefix(10).enumerated()), id: \.offset) { _, step in
+                    Capsule()
+                        .fill(Color.smoothInk.opacity(step.isDone ? 0.75 : 0.16))
+                        .frame(height: 3)
+                }
+            }
+            .frame(maxWidth: 90)
+            Text("\(progress.done)/\(progress.total)")
+                .font(.lhfMono(8.5, weight: .semibold))
+                .foregroundStyle(Color.smoothInk.opacity(0.68))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(progress.done) of \(progress.total) steps done")
+    }
 }
 
 private struct CompletionPaper {

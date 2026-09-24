@@ -16,6 +16,11 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
+    @State private var seenAnnouncementIDs = AnnouncementReadState().seenIDs
+    /// Frozen when the megaphone sheet opens, so rows can still say "new"
+    /// after opening has marked everything seen.
+    @State private var announcementNewIDs: Set<String> = []
+    @State private var showPick = false
     /// The pushed pages behind the header actions. A path rather than separate
     /// booleans keeps the screenshot seams deterministic.
     @State private var path: [DashRoute] = []
@@ -77,6 +82,7 @@ struct ContentView: View {
                     HStack(alignment: .center, spacing: 8) {
                         SegmentedToggle(selection: $filter)
                         addInlineButton
+                        pickButton
                         if !state.announcementPageItems.isEmpty {
                             announcementFindsButton
                         }
@@ -189,8 +195,11 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
+        .sheet(isPresented: $showPick) {
+            PickAssignmentSheet(candidates: vm.pickCandidates())
+        }
         .sheet(isPresented: $showAnnouncementFinds) {
-            AnnouncementFindsView(items: state.announcementPageItems)
+            AnnouncementFindsView(items: state.announcementPageItems, newIDs: announcementNewIDs)
         }
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
@@ -237,26 +246,65 @@ struct ContentView: View {
         .help("add assignment or recurring task")
     }
 
+    private var unreadAnnouncementCount: Int {
+        AnnouncementReadState.unread(state.announcementPageItems, seen: seenAnnouncementIDs).count
+    }
+
+    private func openAnnouncements() {
+        let items = state.announcementPageItems
+        announcementNewIDs = Set(AnnouncementReadState.unread(items, seen: seenAnnouncementIDs).map(\.id))
+        let readState = AnnouncementReadState()
+        readState.markAllSeen(items)
+        seenAnnouncementIDs = readState.seenIDs
+        showAnnouncementFinds = true
+    }
+
+    /// "?" — one random next assignment from your classes
+    /// (`PickAssignmentSheet`), for when the list is long and you just
+    /// want to be told where to start.
+    private var pickButton: some View {
+        Button {
+            lhfHapticLight()
+            showPick = true
+        } label: {
+            Image(systemName: "questionmark")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.smoothGrape)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color.smoothGrape.opacity(0.18)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("pick an assignment for me")
+        .help("pick an assignment for me")
+    }
+
     private var announcementFindsButton: some View {
-        Button { showAnnouncementFinds = true } label: {
+        Button { openAnnouncements() } label: {
             Image(systemName: "megaphone.fill")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.smoothAnnouncementAccent)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothAnnouncementFill))
                 .contentShape(Circle())
+                // Unread only: the total never went down, so after the first
+                // week it said nothing. No badge at all once everything's
+                // been seen.
                 .overlay(alignment: .topTrailing) {
-                    Text("\(state.announcementPageItems.count)")
-                        .font(.lhfMono(8, weight: .semibold))
-                        .foregroundStyle(Color.smoothPaper)
-                        .frame(minWidth: 14, minHeight: 14)
-                        .background(Circle().fill(Color.smoothAnnouncementAccent))
-                        .offset(x: 3, y: -3)
-                        .accessibilityHidden(true)
+                    if unreadAnnouncementCount > 0 {
+                        Text("\(unreadAnnouncementCount)")
+                            .font(.lhfMono(8, weight: .semibold))
+                            .foregroundStyle(Color.smoothPaper)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(Circle().fill(Color.smoothTomato))
+                            .offset(x: 3, y: -3)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityHidden(true)
+                    }
                 }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(state.announcementPageItems.count) announcements")
+        .accessibilityLabel(unreadAnnouncementCount > 0 ? "announcements, \(unreadAnnouncementCount) new" : "announcements")
         .help("announcements")
     }
 
@@ -696,98 +744,6 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         return f.string(from: date)
-    }
-}
-
-private struct AnnouncementFindsView: View {
-    let items: [Assignment]
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.courseNameOverrides) private var courseNameOverrides
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    // The same shape cluster Profile and Grade Watcher open
-                    // with, so this sheet reads as one of the app's pages
-                    // rather than a bare system list.
-                    SmoothFormHeader(
-                        title: "Announcements",
-                        accent: .smoothAnnouncementAccent,
-                        spark: .smoothCobalt
-                    )
-                    .padding(.bottom, 4)
-
-                    if items.isEmpty {
-                        Text("no announcements")
-                            .font(.lhfSecondary(14))
-                            .foregroundStyle(Color.smoothMuted)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 36)
-                    } else {
-                        ForEach(items) { item in
-                            row(for: item)
-                        }
-                    }
-                }
-                .padding(20)
-            }
-            .background(Color.smoothPaper.ignoresSafeArea())
-            .tint(Color.smoothAnnouncementAccent)
-            .navigationTitle("")
-#if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func row(for item: Assignment) -> some View {
-        let content = HStack(spacing: 12) {
-            Capsule()
-                .fill(Color.smoothAnnouncementAccent)
-                .frame(width: 4)
-                .frame(maxHeight: .infinity)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.displayCourse(overrides: courseNameOverrides).uppercased())
-                    .font(.lhfMono(9.5, weight: .semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.smoothAnnouncementAccent)
-                Text(item.title)
-                    .font(.lhfAssignmentTitle(17))
-                    .foregroundStyle(Color.smoothInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let dueAt = item.dueAt {
-                    Text(dueAt.formatted(date: .abbreviated, time: .shortened).lowercased())
-                        .font(.lhfMono(10))
-                        .foregroundStyle(Color.smoothMuted)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if item.url != nil {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
-            }
-        }
-        .padding(14)
-        .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-        if let url = item.url {
-            Link(destination: url) { content }
-                .buttonStyle(.plain)
-                .accessibilityHint("opens the original announcement")
-        } else {
-            content
-        }
     }
 }
 
