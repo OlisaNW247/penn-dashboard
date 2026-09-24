@@ -86,7 +86,22 @@ enum SessionCookieStore {
             remove(service: service)
             return
         }
-        save(combined, service: service)
+        // `combined` is already the complete authoritative snapshot. Calling
+        // `save` here would merge it into the old blob a second time, which
+        // resurrects any cookie the fresh response just deleted whenever a
+        // different cookie remains alive.
+        replace(with: combined, service: service)
+    }
+
+    /// Replaces one service's persisted cookie snapshot exactly. Normal
+    /// login capture continues to use additive `save`; only the rotation path
+    /// calls this after it has already performed its own merge/deletion logic.
+    private static func replace(with cookies: [HTTPCookie], service: Service) {
+        guard !cookies.isEmpty else {
+            remove(service: service)
+            return
+        }
+        write(cookies.map(dict(from:)), service: service)
     }
 
     /// Pure merge logic behind `merge(_:service:)`: an incoming cookie

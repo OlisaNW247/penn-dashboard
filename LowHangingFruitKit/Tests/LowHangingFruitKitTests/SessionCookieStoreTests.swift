@@ -98,6 +98,30 @@ struct SessionCookieStoreTests {
         }
     }
 
+    @Test("Deleting one cookie replaces the persisted snapshot without resurrecting it beside a live sibling")
+    func partialCookieDeletionDoesNotResurrectRemovedValue() {
+        withCleanStore {
+            SessionCookieStore.save(
+                [
+                    cookie(name: "canvas_session", domain: "canvas.upenn.edu"),
+                    cookie(name: "csrf", domain: "canvas.upenn.edu"),
+                ],
+                service: .canvas
+            )
+            let deletion = cookie(
+                name: "canvas_session",
+                domain: "canvas.upenn.edu",
+                expiresDate: Date().addingTimeInterval(-60)
+            )
+
+            SessionCookieStore.mergeForTesting([deletion], service: .canvas)
+
+            let loaded = SessionCookieStore.load(service: .canvas)
+            #expect(!loaded.contains { $0.name == "canvas_session" })
+            #expect(loaded.contains { $0.name == "csrf" })
+        }
+    }
+
     @Test("clear() removes every service's cookies")
     func clearRemovesEverything() {
         withCleanStore {
