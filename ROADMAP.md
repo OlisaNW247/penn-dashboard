@@ -64,7 +64,7 @@ Roughly in priority order.
 
 ## Later: quality and tech debt
 
-- **`AppState` is ~5,800 lines.** Split along the seams it already has
+- **`AppState` is ~6,000 lines.** Split along the seams it already has
   (sync, dashboard buckets, sessions, recurring/manual work).
 - **Source-grepping tests.** `VisualStructureTests` asserts on the text of
   `SettingsPage.swift`. `CLAUDE.md` already records why a test that greps
