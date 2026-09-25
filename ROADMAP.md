@@ -29,7 +29,7 @@ These block shipping, or would make shipping risky.
   Something in that work made a cross-suite race much more likely.
 - **Pin down the full-run test hang.** A parallel `swift test` still
   sometimes freezes on the main thread inside `SecItemCopyMatching` (sampled
-  2026-09-23 and 2026-09-25). `swift test --no-parallel` is the workaround.
+  2026-09-23; hit again 2026-09-24). `swift test --no-parallel` is the workaround.
   `fac110d` removed one trigger, the gated access-token read; there is at
   least one more.
 - **Walk the onboarding per-course setup on a device** with a real Canvas
