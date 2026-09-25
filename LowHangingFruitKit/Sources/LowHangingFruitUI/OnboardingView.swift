@@ -342,8 +342,14 @@ struct OnboardingView: View {
     /// tapped "not now" with no way back. An interactive login only happens
     /// when the session died with nothing stored, which is exactly when the
     /// offer is worth repeating.
+    ///
+    /// Penn only. The sheet asks for a PennKey and `PennKeyLoginForm` only
+    /// knows Penn's identity provider; since other schools can sign in
+    /// (`CanvasInstallation.verifiedSchools`, 2026-09-23) a Yale student was
+    /// being asked for a PennKey after every Canvas login.
     private func canvasConnected() {
-        if !state.stayLoggedInEnabled {
+        if !state.stayLoggedInEnabled,
+           state.canvasInstallation.id == CanvasInstallation.penn.id {
             state.noteStayLoggedInOffered()
             showStayLoggedInOffer = true
             return

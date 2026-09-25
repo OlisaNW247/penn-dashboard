@@ -1,81 +1,206 @@
-# LHF (Low Hanging Fruit)
+# LHF (Low Hanging Fruit), shipped as **Smooth**
 
-A personal academic dashboard for Penn students. Reads the student's own **Canvas**
-calendar feed and **Gradescope**, merges them into one chronological "what's due
-next" list, tracks grades, and sends local reminders. SwiftUI, iPhone-first, also
-builds for macOS from the same source. **The student's own data is on-device by
-default** — grades, completions, submission state, the work list, the student's
-name, and Canvas/Gradescope cookies never leave the phone. Since 2026-09-16 a
-student can opt in to "stay signed in", which stores their PennKey password in
-the Keychain to re-fill Penn's login form; off by default; see
-`PennKeyCredentialStore`. There is no analytics, tracking, or third-party SDK.
-Since 2026-09-12 the product's user-facing name is
-**Smooth** (it was **Locust** from 2026-09-09; display names and copy only —
-bundle ids, module names, app-group names and defaults keys keep their LHF
-names), with Marco's Smooth visual language throughout: a white paper ground
-with tomato/marigold/lemon/teal/cobalt/grape accents, the S app mark, and
-bundled type registered at runtime by `SmoothFontRegistry`
-(`RedesignTokens.swift`): Satoshi (Fontshare FFL), Inter, Familjen Grotesk
-and Space Mono (all SIL OFL, licence files beside them in `Resources/`), and
-Roobert SemiBold for the dashboard title — a commercial face from Displaay,
-cleared for shipping on 2026-09-15 under a personal agreement Olisa holds.
-There is deliberately no licence file in the repo, so a future reader will
-not find one: the agreement is Olisa's to produce if it is ever asked for. On launch the app fetches a
-public update-policy file (`update-manifest` branch) that can require an
-update — identifier-free, fail-open, see `Update/`.
+## Start here: every session reads this file, and updates it before it ends
 
-That said, the app is no longer backendless. LHF runs a small Supabase project
-(Postgres + Edge Functions; see `backend/PROTOCOL.md`) that every install talks
-to via an anonymous account created on first launch — no email, no password, no
-name. Two things go through it: course materials (syllabus, course pages,
-modules, assignment descriptions, announcements) fetched from Canvas with the
-student's own login are uploaded and pooled per Canvas course, so classmates
-share one copy and a new student gets the course instantly (sync is automatic —
-after Canvas connect, then on the existing refresh loop, hourly staleness; no
-manual sync, no user-entered API key); and questions to **ask** (the screen
-itself is titled **"the tree"**) are sent to the backend with the on-device
-context document and matched excerpts, answered by an AI model via OpenRouter
-under LHF's own key (default `z-ai/glm-5.3-flash`, with OpenRouter's
-data-collection-deny flag), with the Announcement Watcher's AI assist
-(on by default since 2026-09-08, and a student can turn it off in
-Settings — 49441ac dropped that toggle and forced the flag on at every
-launch, which `docs/PRIVACY.md` promises students can switch off, so it
-was restored on 2026-09-15 with the default left on; the daily digest,
-removed in the same merge, did not come back) routed the same way, and
-only for announcements a cheap on-device gate judges could carry a task. Neither questions nor answers are stored — only
-per-user daily request counts and token totals. Disconnecting Canvas in Settings also deletes
-a student's enrollment/usage rows and anonymous account from the backend (the
-standalone delete button went on 2026-09-24; `docs/PRIVACY.md` promises it).
-Offline, over quota, or with the backend unreachable, ask answers on-device as
-before: `OnDeviceAssistantResponder` computes exact answers from the dashboard's
-items, retrieves policy and content answers from the course materials the app
-syncs (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
-macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Say it this way — "the student's own data stays
+This file and `ROADMAP.md` are the project's memory. Sessions don't remember
+each other; these two files are how the next one knows what this one did.
+
+**At the start of a session:** read this file top to bottom, then
+`ROADMAP.md`. Treat both as claims to re-check rather than facts: when a
+line here disagrees with the code, the code wins, and fixing the line is
+part of the job. The release number below has been stale before.
+
+**Before a session ends (or before the last commit of a piece of work),
+update them.** What goes where:
+
+| Changed | Update |
+|---|---|
+| What the app does (a screen, a setting, a feature added or removed) | **What the app does**, below, and **Done recently** in `ROADMAP.md` |
+| The test count after a verified run | **Test baseline** (count, date, branch, how it was run) |
+| A new or merged branch; a new ship line | **Branches** |
+| A bug that looked like something else, or a fix whose wrong version was tempting | a new entry in **Traps that have already bitten** |
+| Something still unverified on a device, or known broken | **Known gaps**, and **Now** in `ROADMAP.md` if it blocks a release |
+| A privacy-relevant behaviour (what leaves the phone, how to delete it) | the intro below **and** `docs/PRIVACY.md`, in the same commit |
+| A plan, idea, or experiment set aside | `ROADMAP.md` (**Next**, **Later**, or **Tried and parked**) |
+
+Keep the register: prose that says *why*, dated when a fact can go stale
+(`2026-09-24`, never "yesterday"). Replace a stale line; don't append a
+contradiction beside it. Commit these files with the change they describe,
+not in a separate "docs" commit later.
+
+---
+
+A personal academic dashboard for college students. It reads the student's
+own **Canvas** (calendar feed plus their signed-in session) and
+**Gradescope**, merges them into one chronological "what's due" list, tracks
+grades, and sends local reminders. SwiftUI, iPhone-first, and it also builds
+for macOS from the same source. The user-facing name is **Smooth** (since
+2026-09-12; it was **Locust** from 2026-09-09). Display names and copy only:
+bundle ids, module names, App Group names and defaults keys keep their LHF
+names.
+
+**Schools.** Built for Penn, and since 2026-09-23 it also signs in to the
+Canvas of Brown, Columbia, Cornell, Dartmouth, Harvard, Princeton and Yale,
+or any HTTPS Canvas address a student types in
+(`CanvasInstallation.verifiedSchools` / `.custom(address:)`). Everything
+server-side is Penn-only for now: pooled course materials, the server path
+of ask, the announcement AI assist, and "stay signed in" (PennKey).
+Non-Penn installs run fully on-device, because the backend keys course
+material by numeric Canvas course id, and two schools' ids would collide.
+
+**Privacy posture; say it this way.** "The student's own data stays
 on-device; course material is pooled server-side; ask has an on-device
-fallback" — rather than flatly "everything is on-device" (stopped being true on
-`assistant-ui`) or "no server" (stopped being true adding the backend).
+fallback." Grades, completions, submission state, the work list, the
+student's name, and Canvas/Gradescope cookies never leave the phone. The
+PennKey password, if the student saves it, stays in this phone's Keychain
+and only ever goes to Penn's login page. There is no analytics, tracking,
+or third-party SDK. Don't say "everything is on-device" (untrue since
+`assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
+is the student-facing version and must change in the same commit as any
+behaviour it describes.
 
-Live on the App Store: **1.2.1** (App Store id `6783911002`, released
-2026-09-04 — re-confirmed by Olisa on the store page 2026-09-15; this line
-has been stale before, re-check rather than trust it). The 2.x numbers in
-this file's history never reached the store: builds were uploaded to App
-Store Connect from `v3.5` and `v5` but none was ever released, so the
-uploaded-vs-live numbering drifted apart. `v5` is therefore stamped
-**3.0.0 (build 9)**, chosen on 2026-09-15 to end the confusion rather than
-to mean anything about the diff — the next release is simply 3.0.0 over a
-live 1.2.1. `v5` carries the backend, the Locust
-onboarding and the update gate on top.
+**The backend.** A small Supabase project (Postgres plus Edge Functions;
+`backend/PROTOCOL.md` is the contract). Every Penn install talks to it
+through an anonymous account created on first launch: no email, no
+password, no name. Two things go through it:
+- **Course materials.** Syllabus, course pages, modules, assignment
+  descriptions and announcements are fetched from Canvas with the student's
+  own login, then pooled per Canvas course so classmates share one copy.
+  Sync is automatic: after Canvas connects, then on the refresh loop with
+  hourly staleness. There is no manual sync.
+- **ask** ("the tree"). Questions go to the backend with the on-device
+  context document and matched excerpts, and are answered by a model via
+  OpenRouter under LHF's own key (see the ask section below). The
+  Announcement Watcher's AI assist is routed the same way, only for
+  announcements that an on-device gate judges could carry a task. It is on
+  by default, and a student can turn it off under Profile → notifications,
+  which `docs/PRIVACY.md` promises. Neither questions nor answers are
+  stored, only per-user daily request counts and token totals.
+
+Disconnecting Canvas deletes the student's enrollment/usage rows and
+anonymous account from the backend. Since 2026-09-24 there is no separate
+delete button; the disconnect confirmation says so. Offline, over quota, or
+with the backend unreachable, ask answers on-device:
+`OnDeviceAssistantResponder` computes exact answers from the dashboard's
+items, retrieves policy and content answers from synced course materials
+(`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
+macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
+(`OnDeviceLanguageModel`). Eight Edge Functions live in
+`backend/supabase/functions/`: `ask`, `ask-canary`, `delete-account`,
+`discover-websites`, `extract-announcement`, `extract-profile`,
+`map-categories`, `sync`.
+
+**Visual language.** Marco's Smooth design: a white paper ground with
+tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
+mode, the S app mark, and bundled type registered at runtime by
+`SmoothFontRegistry` (`RedesignTokens.swift`):
+- Satoshi (Fontshare FFL).
+- Inter, Familjen Grotesk and Space Mono (all SIL OFL, licence files beside
+  them in `Resources/`).
+- Roobert SemiBold for the dashboard title: a commercial face from
+  Displaay, cleared for shipping on 2026-09-15 under a personal agreement
+  Olisa holds. There is deliberately no licence file in the repo; the
+  agreement is Olisa's to produce if it is ever asked for.
+
+**Release state.** Live on the App Store: **1.2.1** (App Store id
+`6783911002`, released 2026-09-04; re-confirmed by Olisa on the store page
+2026-09-15). This line has been stale before, so re-check it rather than
+trust it. `project.yml` stamps **3.0.0 (build 9)**. Builds 7–9 of 3.0.0
+were uploaded from `v5` and none was released (build 8 was rejected under
+2.1(a), see Known gaps). The next release is 3.0.0 or later, built from
+`V7`. On launch the app fetches a public update-policy file that can
+require an update (`Update/`, below).
+
+## What the app does
+
+Screen by screen, as of 2026-09-25 on `V7`. Keep this current. It is the
+fastest way for a new session to know what exists.
+
+- **Onboarding.** A three-beat intro (`MissionIntroView`), then
+  `OnboardingView`'s walk:
+  1. school
+  2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo)
+  3. Gradescope login (optional)
+  4. reminders
+  5. a per-course setup walk (`OnboardingCourseSetup`)
+
+  "Just exploring? preview with sample data" on the first pane is preview
+  mode, App Review's only way in (see Known gaps). A student can instead
+  paste a Canvas calendar link (`PasteFeedLinkSheet`); that install gets
+  the feed but no session, so no Grade Watcher.
+- **Dashboard** (`ContentView`):
+  - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
+    ripples its squiggle and sweeps a shine across it. A grades button
+    (when Grade Watcher is usable) and a profile button sit beside it.
+  - **Banners.** A sync error, and a Canvas "needs a refresh" banner when
+    the session is dead.
+  - **Control row.** A full-width **todo · all · prev** switch
+    (`DashViewPicker`), then a **class filter** menu (narrows all three
+    views, with a clearable chip under the row), **+** (the add sheet: a
+    one-off or weekly assignment, class picked from the class list), and
+    the **megaphone**. The megaphone opens the announcement finds sheet;
+    its badge counts only unread finds, and rows unread when opened are
+    tagged NEW (`AnnouncementReadState`).
+  - **todo**: overdue plus the next two days.
+  - **all**: future work through the term.
+  - **prev** (`DoneView`): leads with "N down this week", shows this week's
+    finished work, and opens "earlier this semester" in place.
+  - **Cards.** Tap a card to open it (full date, "edit date"); swipe right
+    to complete it, with a small paper-scatter animation. A floating
+    button opens **ask**.
+- **Grade Watcher** (`GradeWatcherView`). Per-course grades from Canvas's
+  API with the student's session:
+  - syllabus categories (`GradeCategoryMap`, editable in
+    `GradeCategoryMapEditor`, with a server-suggested mapping)
+  - a "decided" syllabus prediction (`GradeCountPredictor`)
+  - per-item/category/course overrides with provenance
+  - a "how this is calculated" panel
+  - the grade report (`GradeReportView`)
+
+  `docs/grades.md` is the design record.
+- **ask / "the tree"** (`AssistantView`). A chat about your classes: the
+  server path for Penn, with the on-device responder as fallback.
+- **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
+  1. your name
+  2. accounts (Canvas and Gradescope connect/disconnect; "update password"
+     only when Penn rejected a saved PennKey password)
+  3. appearance (system / light / dark)
+  4. reminders (on/off; 1 hour, 3 hours, 1 day, 2 days; "turned in"
+     confirmations)
+  5. classes (rename, hide, delete/restore; "add recurring task")
+  6. notifications (per-class reminders, lead times, announcements on
+     dashboard, items with nothing to submit, the announcement "ai assist"
+     opt-out)
+  7. sync (iCloud sync, off by default; on macOS, open at login)
+
+  Semester rollover and "add a class" live in `ProfileSemesterSection`.
+- **Background.** A 5-minute refresh loop while open, `BGAppRefreshTask` in
+  the background (`BackgroundRefresh.swift`), silent Canvas session renewal
+  (`CanvasSessionRenewer`, plus the saved PennKey password where
+  available), grade-change and "turned in" notifications.
+- **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
+  medium; lock-screen inline, rectangular, and circular ("N due" within 24
+  hours).
+- **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
+  alive (`LHFScenes.swift`) and open-at-login.
 
 ## Commands
 
 ```bash
 # Tests — the primary gate. Runs on the macOS host.
 cd LowHangingFruitKit && swift test
+# If a parallel run hangs (see Test baseline), this is the reliable form:
+cd LowHangingFruitKit && swift test --no-parallel
 
-# iOS build
+# iOS build (simulator)
 xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
   -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+
+# iOS build to a connected phone, then install and launch
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug \
+  -destination 'id=<device UDID from -showdestinations>' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <CoreDevice id from `xcrun devicectl list devices`> <path>/Smooth.app
+xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangingfruit
 
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
@@ -85,182 +210,85 @@ cd backend && deno task test
 cd backend && deno task check
 ```
 
+`xcrun devicectl` launch fails with `FBSOpenApplicationServiceErrorDomain
+error 1` when the phone is locked; the install still succeeded. The built
+product is `Smooth.app` (see the macOS naming trap below).
+
 `-LHFDemoData` (DEBUG only) seeds the bundled sample courses so the app is
 usable without a real Canvas session, and pairs with `-LHFShowSettings`,
-`-LHFShowGrades`, `-LHFShowReport` or `-LHFShowAssistant` to land directly on a
-screen instead of tapping through to it on every rebuild:
+`-LHFShowGrades`, `-LHFShowReport`, `-LHFShowAssistant`, `-LHFTabAll` or
+`-LHFTabDone` to land directly on a screen:
 
 ```bash
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
-Baseline on `v6`, verified on a Mac (2026-09-23): **1371 tests / 136 suites
-green** in 2.3 s after the Ed Discussion recon probe (11 tests, 5 suites,
-`docs/ED_DISCUSSION.md`) and the stale-cookie test fix; compiled first
-time. The same session found a third flake, worse than the two below: the
-full run hung twice in a row, once for two hours, then passed twice
-without a code change. Every pure test finished in 0.15 s and everything
-still in flight was main-actor code (AppState inits, the Keychain
-stores), so it looks like a main-thread deadlock, and it is NOT the
-Keychain prompt (the Keychain suites pass alone in under a second). Not
-pinned down. When it recurs, do not guess: while it hangs, from a second
-terminal `sample $(pgrep -f LowHangingFruitKitPackageTests | head -1) 3
--file /tmp/sample.txt` and read the main thread's stack. Two lessons
-from the diagnosis: `swift test 2>&1 | grep` fully buffers the runner's
-stdout, so the last line printed is not where it stopped (use `script -q
-/tmp/log swift test` for a pty), and `--filter` matches Swift type names
-(`SessionCookieStoreTests`), never the quoted display names.
+## Test baseline
 
-Before that, verified on a Mac (2026-09-17): **1336 tests / 130 suites
-green** after the gated Canvas access-token plumbing and stay-signed-in
-(1,700 blind lines from three agents). Two first-compile fixes, both
-instructive: a `static func` on `@MainActor AppState` called from a
-nonisolated test suite (the `decidedText` trap again -- `nonisolated`),
-and a test that read `AppState.swift` off disk to count call sites,
-whose `#filePath` walk landed a directory short; it was deleted rather
-than repaired, since a test that greps the repo's own source proves
-nothing the code comment doesn't. The stay-signed-in path itself has NOT
-been exercised on a device against a real PennKey yet -- the count
-proves it compiles and its pure parts behave, not that Penn's form
-accepts the fill.
+**Current: 1412 tests / 139 suites, all green, on `V7` (2026-09-24,
+`swift test --no-parallel`, on a Mac).** Hold the rule: a change that lowers
+the count has lost work. Investigate rather than accept it, and when a
+count drops on purpose (a feature removed with its tests), say which tests
+and why in the commit.
 
-Baseline on `v5`: **not yet verified** after reverting the preview-mode
-removal on 2026-09-16 (Apple's 2.1(a) rejection of build 8; known gap
-below). The revert is a clean `git revert 3ace7f0` — no file it restores
-was touched in between — so the expectation is the pre-removal mark of
-1253/125, and a lower count means the revert lost something. The same
-day, uncompiled, the Mac build was renamed to Smooth (trap below).
-Before that, verified on a Mac (2026-09-15): **1241 tests / 123 suites
-green** (Deno **324**) after removing preview mode: twelve
-tests deleted, four reworked to seed state through the real assignment path,
-and two suites gone with the files that held them — that accounts for the
-whole drop from 1252, and none of it is lost coverage of surviving
-behaviour. Earlier the same day, 1252/125 after dropping the "week W of T" label from the
-grade card and the explanation panel (Olisa's call — the student knows
-what week it is, and `term` is inferred rather than known; one test
-fewer because two `statusText` cases collapsed into one, which is the
-whole of the drop from 1253). Earlier the same day, 1253/125 after the submission prep for **3.0.0 (build 7)**:
-the announcement watcher's "ai assist" opt-out restored (49441ac had
-forced both flags on and dropped the toggles, which `docs/PRIVACY.md`
-promises students can switch off — compiled first time), and the
-recycled-Canvas-site term fix (trap below; the first version of that fix
-failed its own new test on the first compile and the rule, not the
-fixture, was wrong). Earlier the same day, 1250/125 after the second merge of Marco's
-`codex/fire-dark-mode` (a2b66bc at 49441ac: profile and settings on one
-screen, Grade Watcher compacted, the daily digest removed with its three
-tests — the only reason the count fell from 1253, checked, not accepted
-blind — AI assist forced on, the wordmark squiggle extended and lowered)
-plus 3aebb63, the squiggle sized to the rendered width of "Smooth" so it
-fits on every weekday (Marco's ask; blind, compiled first time). Earlier
-the same day, 1253/125 after the first merge of that branch
-(00f24cc: the "after sunset" dark mode in `RedesignTokens.swift`, the
-rebuilt three-beat Smooth intro with `MissionIntroView`, simplified
-Settings, the `-LHFFullOnboardingReview` launch flag; 13 commits, 9 UI
-and docs files, no file touched on both sides, compiled first time;
-`docs/DARK_MODE_HANDOFF.md` and `docs/SMOOTH_INTRO_AND_APP_POLISH_HANDOFF.md`
-are his notes — intro and onboarding were deliberately not restyled for
-dark). Same count earlier that day after the empty-answer fix for ask (trap below: the
-thinking model spent the whole output cap reasoning; the cap is 3000 for
-now, the client answers on-device when a stream ends with no text, and
-`ask-trace` counts what the stream delivered) and `ExamDetector` (the
-on-device "next exam" answer no longer names a holiday titled "no exams";
-one first-run failure, the detector's word list had widened the exam
-filter to quizzes, fixed in c81afd4; the second run tripped the
-`SessionCookieStoreTests` flake, the third was clean). Both verified on a
-real phone the same day. Before that, 1250/123 on 2026-09-12 after the ask fix for the sentence-embedding asset
-(`SentenceEmbeddingProvider`, trap below; one first-run compile error, an
-`NSLock` call inside an async task body, and one fixture with no matching
-passage). Earlier the same day, 1244/122 after the Smooth merge, compiled first time. Marco's
-`codex/redesign-v5` (43 commits, 72 files) merged with no textual
-conflicts; the only file both sides touched was `OnboardingView.swift`,
-and the six leftover "locust" copy strings became "smooth". The first two
-runs after the merge each tripped one of the two known flakes below and
-nothing Marco's change could touch; the third was clean.
+Known problems, all pre-existing:
+- **Full-run hang.** A parallel `swift test` sometimes stops forever with
+  the main thread inside `SecItemCopyMatching` →
+  `ItemImpl::checkIntegrity` (the legacy macOS file keychain). It is not a
+  Keychain prompt; no SecurityAgent is running. Sampled 2026-09-23 through
+  `CanvasAccessTokenStore.load()`; `fac110d` gated that read behind
+  `FeatureFlags.canvasAccessTokenValue`, and it still recurred on
+  2026-09-24 in the Keychain suites. `--no-parallel` has never hung. When
+  it recurs, sample it from a second terminal before killing it:
+  `sample $(pgrep -f LowHangingFruitKitPackageTests | head -1) 3 -file /tmp/sample.txt`.
+- **`SessionCookieStoreTests` "a calendar-link-only install … cannot use
+  Grade Watcher"** reads `canvasSessionExpired` as true. It passes alone
+  and in `--no-parallel` runs, but fails most parallel full runs since the
+  session-persistence commits (`fac110d`..`99609c0`, 2026-09-24); before
+  them it was about one run in ten. A cross-suite race over process-wide
+  state that hasn't been pinned down.
+- **`CourseContentDashboardTests`** ("flipping a content decision never
+  changes `canvasCourseIDsByCode`…") races another suite over shared
+  `UserDefaults`, perhaps one run in four. See the shared-`UserDefaults`
+  trap: the fix belongs in the polluting suite, not the assertion.
 
-Earlier the same day, 1244/122 (plus 4 XCTest scheduler tests) after the login WebView's
-universal-link guard (`LoginNavigationObserver.appLinkGuardHost`, the
-Canvas Student trap below; one first-run compile error, a non-optional
-`sourceFrame`). Earlier the same day, 1230/121 after "decided" became a syllabus
-prediction (`GradeCountPredictor`, docs/grades.md §16: every category gets
-a count with a source, attendance is decided by time elapsed, the
-"semester share unknown" caveat is gone) and the grade card and report
-were cut down to numbers and tables (three tap levels; a copy-budget
-test holds the text helpers to six words). 2,400 blind lines from two
-concurrent agents that compiled first time; the five first-run failures
-were stale test premises and a due-exactly-now fixture race with the
-first-launch hold. Before that, 1193/119 on
-2026-09-11 after the app learned to ask the
-deployed `map-categories` function for a suggested category mapping and
-offer it in the categories editor as "use it / not now" (docs/grades.md
-§15.8; 1,500 blind lines, compiled first time). Before that, 1170/117 on
-2026-09-10 after Grade Watcher round 3
-(docs/grades.md §15: the category map -- every course's Canvas groups and
-items are regrouped into syllabus categories by `GradeCategoryMap` /
-`GradeRegrouper`, attendance items and zero-point placeholders are
-classified out by `GradeItemClassifier`, the student edits the map in
-`GradeCategoryMapEditor`, and the deployed `map-categories` function can
-propose one; Deno 308, 320 after the fail-open quota lookup, 324 after the reasoning/error-body work). Round 3 was 3,400 blind lines and needed four
-fix commits to go green: two memberwise-init/argument-order compile
-errors, a main-actor trap in a View static called from a test (trap
-below), and one real logic bug plus one test-pollution bug (trap below)
-that the first full run exposed together. Before that, 1104/109 the same
-day after Grade Watcher round 2 (the
-server's syllabus extraction and the registrar's components reach Grade
-Watcher: suggested schemes, automatic exclusion of a zero-credit or
-pass/fail site via `GradeSiteExclusion`, syllabus reuse from the synced
-materials; Deno 278). Before that, 1068/105 after Grade Watcher round 1
-(docs/grades.md §14: semester-aware "decided", per-item/category/course
-overrides with provenance, the "how this is calculated" panel, site labels;
-1,400 blind lines that compiled first time). Before that, 1032/101 the same
-day after the first-launch hold
-(`AppState.isCanvasSubmissionVerified` — overdue Canvas work in a course
-never yet checked against Canvas waits in `awaitingCanvasCheck` behind a
-"checking canvas" notice instead of reading as owed), Grade Watcher fetching
-three courses at a time, and the "from announcements" card caveat. That sat
-on the 1020/98 mark of 2026-09-09, after merging Marco's `onboarding-walk`
-(the Locust intro and walk, the update gate and its 33 tests) onto the
-976/95 mark of earlier that day. That 976/95 was up from
-937/92 the day before, after
-the Canvas assignment id learned to come from the ICS URL fragment (see the
-trap below — this is what made a section-override assignment show once and
-read as submitted on a real phone, the first real-device fix of a submission
-bug), module-imported rows learned their id too, and three collapses now
-fold the same assignment's listings into one dashboard item
-(`AssignmentDeduplicator.collapseCanvasOverrides`, `.collapseCanvasDuplicates`,
-and the Gradescope pairing; title fallback in `SubmissionMatcher`).
-The 937 mark covered the course-websites layer, the Announcement Watcher
-rewrite, and multi-site course identity (a code can now be several Canvas
-sites; each site's documents are labelled by the registrar's activity for its
-section). All of it was written without a compiler; the one first-run compile
-error so far was a raw string closed early by a `"#` inside `href="#"`
-(double the delimiter). The backend
-is deployed to the live Supabase project with all seven functions (six plus `ask-canary`); the live
-path is still exercised only by hand on a device, never by `swift test`
-(`BackendServices.client` is nil under tests).
+Two lessons from diagnosing the hang: `swift test 2>&1 | grep` fully
+buffers the runner's stdout, so the last line printed is not where it
+stopped (use `script -q /tmp/log swift test` for a pty); and `--filter`
+matches Swift type names (`SessionCookieStoreTests`, or
+`SessionCookieStoreTests.testName` with multiple `--filter` flags), never
+the quoted display names.
 
-Earlier on `v5`: 853/90 (2026-09-07, registrar catalog + component
-tagging); 838/89 (2026-09-07, the backend change); 804/87 (2026-09-06, the
-merge of `v3.5` and the ask knowledge engine).
+History (newest first; each verified on a Mac). The notes say what moved
+the count, so a later drop can be traced:
+- 1412/139 `V7`, 2026-09-24: Settings trimmed, "1 week before" retired
+  (one new test, two moved from `.d7` to `.d2`).
+- 1411/139, 2026-09-24: class-filter and recurring-task course adoption.
+  Dice and steps prototypes removed with their tests.
+- 1407/138, 2026-09-24: session persistence (`fac110d`..`99609c0`), 12 new.
+- 1395/138, 2026-09-23, on `V7-polish`.
+- 1371/136 `v6`, 2026-09-23: Ed Discussion recon probe
+  (`docs/ED_DISCUSSION.md`).
+- 1336/130, 2026-09-17: gated Canvas access tokens and stay-signed-in.
+- 1253/125 `v5`: expected after reverting the preview-mode removal on
+  2026-09-16 (build 9). Not re-verified on `v5` itself.
+- 1241/123, 2026-09-15: preview mode removed, 12 tests deleted with it
+  (reverted next day).
+- Earlier marks:
+  - 1252/125 and 1253/125 (2026-09-15)
+  - 1250/123 and 1244/122 (2026-09-12, the Smooth merge)
+  - 1230/121 and 1193/119 (2026-09-11)
+  - 1170/117, 1104/109 and 1068/105 (Grade Watcher rounds 1–3, 2026-09-10)
+  - 1032/101 and 1020/98 (2026-09-09)
+  - 976/95, 937/92, 853/90, 838/89 and 804/87 (early `v5`)
+  - 736/76 and 769/78 (`assistant-ui`)
+  - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
+  - 456/40 (`v4`)
+- Deno: 324 at the last recorded run (2026-09-15). Re-run
+  `deno task test` before trusting it.
 
-Earlier: `assistant-ui`, verified on a Mac (2026-09-02), **736 tests / 76
-suites green** (plus 4 XCTest scheduler tests), up from 693/70 on `v6` — itself
-verified on a Mac the same day, closing out v6's uncompiled Announcement Watcher
-work; `assistant-ui` later reached **769/78** on 2026-09-07 after the update
-gate added 33 tests and 2 suites. Earlier marks for reference: 608/61 on the
-v3.5+v4 merge, 517/55 on final
-`v3.5`, 456/40 on pre-merge `v4`. Hold the rule: a change that lowers the test
-count has lost work — investigate rather than accept it.
-
-Two known flakes, pre-existing and untouched. `CourseContentDashboardTests`
-("flipping a content decision never changes `canvasCourseIDsByCode`…") races
-another suite over shared `UserDefaults` and fails perhaps one run in four.
-`SessionCookieStoreTests` ("a calendar-link-only install … cannot use Grade
-Watcher") reads `canvasSessionExpired` as true perhaps one run in ten; it
-passes alone every time (`swift test --filter SessionCookieStoreTests`), no
-other suite writes the Keychain item, and the reader is `AppState.init`
-racing something process-wide that has not been pinned down. Both pass in
-isolation. See the shared-`UserDefaults` trap below — the fix belongs in the
-polluting suite, not in the assertion.
+Nothing under `backend/` is exercised by `swift test`, and the live backend
+path has only ever been exercised by hand on a device.
 
 ## Layout
 
@@ -273,6 +301,7 @@ polluting suite, not in the assertion.
 | `LHFWidget/` | Home/Lock Screen widget extension — a **separate process** |
 | `backend/` | The Supabase project: SQL migrations, Edge Functions, `PROTOCOL.md` (the contract the app and server are both written against) |
 | `docs/` | Design docs and plain-language explainers |
+| `ROADMAP.md` | The plan: release blockers, next features, parked experiments. Read with this file at the start of every session. |
 | `smooth-prototype/` | Marco's dependency-free HTML/CSS/JS tester for the Smooth redesign. Isolated from the app; `python3 -m http.server 4173 --directory smooth-prototype`. |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
@@ -344,7 +373,7 @@ button leads to a version that still fails the check, and everyone is stuck. The
 
 Two things that surprise people. The gate cannot reach builds that shipped
 without it — 1.2.1 and earlier never fetch the manifest, so no floor retires
-them; only a future release can. And local builds are `2.0.0`, above any floor
+them; only a future release can. And local builds are `3.0.0` (`project.yml`), above any floor
 that is safe to publish, so the wall never appears in normal development: to see
 it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
 end to end) or pass `-LHFForceUpdateWall`.
@@ -380,28 +409,44 @@ the result. Deploying `ask` itself is a production change and needs a
 person's go. The 2026-09-22 promotion was 55/55 on the canary (first
 word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
 
-### Stay signed in
+### Stay signed in (Penn only)
 
-An optional, off-by-default alternative to re-doing PennKey (and sometimes
-Duo) every time Canvas signs the student out. `PennKeyLoginForm` (Kit, pure)
-recognizes the identity provider's login form and knows how to fill it;
-`PennKeyCredentialStore` holds the username and password the student types
-into the app's own sheet in the Keychain, this-device-only, never synced.
-When the visible reconnect pane or the background `CanvasSessionRenewer`
-hits an expired session, the fill happens through the same seam:
-`LoginNavigationObserver` auto-fills and submits the identity provider's form
-in the visible pane, and the renewer does the equivalent with one JavaScript
-submission of that same IdP credential form per attempt — never more than
-one, and never the SAML response form the browser posts back to Canvas
-afterward, because that second form is exactly what the login WebView's
-universal-link guard already has to rebuild by hand (see the Canvas Student
-trap below); resubmitting it from here would double-POST it. One rejected
-password disables the feature outright rather than retrying, so a typo or a
-changed password can't lock the PennKey account. Duo is a hard boundary: the
-stored credential only ever reaches the identity provider's password field,
-never a Duo prompt, so a student enrolled in Duo still completes that step
-themselves every time Duo actually asks (which, with Duo's own "remember this
-device" for 30 days, is roughly monthly in practice).
+Canvas signs students out from time to time, and reconnecting means PennKey
+(and often Duo) again. Stay signed in removes that: the app saves the
+student's PennKey username and password and re-fills Penn's login form
+itself.
+
+- **How it turns on.** There is no toggle (removed 2026-09-24, owner's
+  call: everyone should stay signed in). After every *interactive* Canvas
+  login at Penn, while no password is saved, `OnboardingView.canvasConnected`
+  offers `PennKeyCredentialsSheet`. The sheet shows a lock, one line
+  ("encrypted in this phone's keychain. never sent to smooth."), and the two
+  fields. "Not now" is always available; nothing is stored unless the
+  student saves. The offer is gated on `CanvasInstallation.penn`: the sheet
+  asks for a PennKey, and other schools must never see it.
+- **Where it lives.** `PennKeyLoginForm` (Kit, pure) recognizes the
+  identity provider's form and knows how to fill it.
+  `PennKeyCredentialStore` keeps the credentials in the Keychain,
+  this-device-only, never synced.
+- **How it's used.** When the visible reconnect pane or the background
+  `CanvasSessionRenewer` hits an expired session, the fill happens through
+  one seam. `LoginNavigationObserver` auto-fills and submits the IdP form
+  in the visible pane. The renewer does the equivalent with one JavaScript
+  submission of that same IdP credential form per attempt, never more than
+  one. It never resubmits the SAML response form the browser posts back to
+  Canvas afterward: that form is exactly what the login WebView's
+  universal-link guard already has to rebuild by hand (see the Canvas
+  Student trap below), and resubmitting it would double-POST it.
+- **Failure handling.** One rejected password disables auto-login outright
+  rather than retrying, so a typo or a changed password can't lock the
+  PennKey account; Profile → accounts then shows "update password".
+- **Duo is a hard boundary.** The stored credential only ever reaches the
+  IdP's password field, never a Duo prompt. A student enrolled in Duo still
+  completes that step themselves whenever Duo asks (with Duo's own "remember
+  this device" for 30 days, roughly monthly).
+- **Removal.** Disconnecting Canvas deletes the saved password.
+- **Not yet verified.** It has not been exercised on a device against a
+  real PennKey (Known gaps).
 
 ## Traps that have already bitten
 
@@ -432,8 +477,11 @@ device" for 30 days, is roughly monthly in practice).
 - **`UserDefaults(suiteName:)` succeeds for any string**, entitlement or not. The
   real test for a usable App Group is asking `FileManager` for the container.
 - **Without the App Group entitlement the ledger degrades to memory** and the app
-  looks completely normal until a relaunch loses everything. Settings → Storage
-  exists to surface this.
+  looks completely normal until a relaunch loses everything. A "storage"
+  section in Settings used to surface this; it dropped out of the page in a
+  Settings merge before `V7` and its dead code was deleted on 2026-09-24,
+  so today **nothing warns the student** (only the iCloud sync row, and only
+  while sync is on). See Known gaps.
 - **`AVAudioSession` is never configured by default**, and `AVPlayer` then
   activates it as `.soloAmbient`, which stops the user's music. `SplashView` sets
   `.ambient` + `.mixWithOthers`. The splash clips have **no audio track** — if
@@ -706,51 +754,68 @@ device" for 30 days, is roughly monthly in practice).
 
 ## Branches
 
+`V7` is the line; everything current is on it. The rest is history, kept
+because some of it holds work that exists nowhere else.
+
 | Branch | What |
 |---|---|
-| `main` | Old — 1.0.0 App Store prep. Not the ship line. |
-| `origin/v2.5` | Former ship line, 1.1.1 build 3. Grade Watcher gated off. |
-| `v3` | Grade Watcher un-gated, grade report, syllabus, the SwiftData ledger |
-| `v3.5` | v3 plus readings-only courses, iCloud Tier 2, background refresh, Mac tier, session renewal. Carries the **uploaded** 2.0.1 build 6 (and the shipped 2.0.0 build 5 before it). |
-| `v4` | v3 plus integration + Profile tab, per-course reminders, semester rollover |
-| `claude/v4-github-repo-kvu0e0` | **v3.5 + v4 merged** — v4's UI over v3.5's engine. 2.0.0 build 5. |
-| `v6` | **Current line as of 2026-09-16.** `v5` (3.0.0 build 9) plus the gated Canvas access-token plumbing (off via `FeatureFlags.canvasAccessTokens`) and the stay-signed-in feature. The old `v6` — Grade Watcher back on, the Announcement Watcher, the Mac build lane — lives on in `v5` via `assistant-ui`; this row's ref was replaced, not extended. |
-| `assistant-ui` | v6 plus **ask** — the class-context chat, its Claude backend, and "the tree" screen it lives on. 736/76. Marco's UI work; folded into `v5`. Later also carries the update gate (769/78). |
-| `onboarding-walk` | Marco's Locust rename, three-page intro, five-step onboarding walk, and the update gate turned on. Merged into `v5` 2026-09-09. |
-| `update-gate` | The update gate alone, independently mergeable. |
-| `codex/redesign-v5` | Marco's **Smooth** redesign: the palette, the bundled type, the S mark and icon, restyled dashboard, sheets, profile, settings, widget, intro and update wall; launch splash removed. Branched from `v5` at the round 3 fixes; merged into `v5` 2026-09-12. |
-| `codex/fire-dark-mode` | Marco's Smooth dark mode ("after sunset"), the rebuilt three-beat intro, profile and settings merged into one screen, Grade Watcher compacted, the daily digest removed, AI assist always on. Merged into `v5` 2026-09-14 twice (00f24cc at 03ababd, a2b66bc at 49441ac). |
+| `V7` | **Current line (2026-09-23 onward).** Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in. New work branches from here, and lands back here. |
+| `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
+| `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
-| `v5` | **App Store submission line** (rebuilt 2026-09-06; the current feature line is `v6`, below). `assistant-ui` + `v3.5` (2.0.1 build 6) + the ask knowledge engine: on-device course materials, the no-key responder, retrieved excerpts for the Claude backend; now also carries the Supabase backend (`backend/`) — anonymous accounts, pooled course-material sync, and ask's OpenRouter-backed server path, with the on-device responder as fallback, plus Marco's Locust intro/onboarding walk and the update gate (merged 2026-09-09 from `onboarding-walk`). New work goes here. 3.0.0 build 9 is the App Store submission line; feature work moved to `v6`. |
-| `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else |
+| `v6` | The line from 2026-09-16 to 2026-09-23: `v5` plus the gated Canvas access-token plumbing and stay-signed-in. In `V7`. |
+| `v5` | The **App Store submission line** that uploaded 3.0.0 builds 7–9 (2026-09-06 to 2026-09-16): `assistant-ui` + `v3.5` + the ask knowledge engine, the backend, the Locust onboarding, the update gate, the Smooth redesign and dark mode. In `V7`. |
+| `codex/redesign-v5`, `codex/fire-dark-mode`, `codex/smooth-header-layout`, `codex/assignment-pop-empty-celebration` | Marco's design branches (Smooth redesign, "after sunset" dark mode, header and completion polish); `docs/DARK_MODE_HANDOFF.md` and `docs/SMOOTH_INTRO_AND_APP_POLISH_HANDOFF.md` are his notes. Merged into `v5`. |
+| `assistant-ui`, `onboarding-walk`, `update-gate` | ask and "the tree"; the Locust intro and onboarding walk; the update gate alone. All folded into `v5`. |
+| `v3.5`, `v4`, `v3`, `claude/v4-github-repo-kvu0e0` | The 2.x era: the SwiftData ledger, Grade Watcher, readings-only courses, iCloud Tier 2, background refresh, the Mac tier, per-course reminders, semester rollover. Carried uploaded (never live) 2.0.x builds. In `v5`. |
+| `origin/v2.5` | Former ship line, 1.1.1 build 3, Grade Watcher gated off. |
+| `main` | Old: 1.0.0 App Store prep. Not the ship line. |
+| `v2.75` | Unmerged macOS sidebar/landscape work that exists nowhere else. |
+
+`claude/*` branches on the remote are agent working branches from August;
+none is a ship line.
 
 ## Known gaps
 
-- **Nothing has ever been tested against real Canvas or Gradescope data.** Every
-  grade, submission and syllabus path is proven against fixtures only. This is the
-  highest-value verification outstanding.
-- **The `LedgerSchemaV1` migration has never opened a real pre-existing on-disk
-  store.** v4 runs four migrations in one launch; the failure mode is a silent
-  fallback to an empty ledger.
-- **CloudKit sync is opt-in and default-off** (Settings → "icloud sync",
-  docs/LAPTOP_INTEGRATION_PLAN.md Tier 2). The schema is CloudKit-eligible —
-  every property on `StoredAssignment` carries a default — and every store
+- **Nothing has ever been tested against real Canvas or Gradescope data.**
+  Every grade, submission and syllabus path is proven against fixtures
+  only. This is the highest-value verification outstanding.
+- **Stay signed in has never met a real PennKey.** It compiles and its pure
+  parts are tested; whether Penn's form accepts the fill is unproven.
+- **Non-Penn schools have only been exercised by tests.** The seven verified
+  installations and the custom-address path have never been signed into on a
+  device.
+- **The `LedgerSchemaV1` migration has never opened a real pre-existing
+  on-disk store.** v4 runs four migrations in one launch; the failure mode
+  is a silent fallback to an empty ledger.
+- **A non-persistent ledger is invisible.** If the App Group container is
+  missing, `AssignmentStore` runs in memory and nothing on screen says so
+  (see the App Group trap). Needs a small warning, somewhere a student
+  would see it, whenever `assignmentStore.isPersistent` is false or saves
+  are failing.
+- **CloudKit sync is opt-in and default-off** (Profile → sync,
+  docs/LAPTOP_INTEGRATION_PLAN.md Tier 2). The schema is CloudKit-eligible:
+  every property on `StoredAssignment` carries a default, and every store
   pins `cloudKitDatabase: .none` unless the toggle was on at launch. The
   sync path has had little real-device soak time; treat it as Phase A.
-- The onboarding per-course walk is covered by tests but has never been walked on
-  a device (it needs a real Canvas session).
+- **The onboarding per-course walk** is covered by tests but has never been
+  walked on a device (it needs a real Canvas session).
+- **Recurring tasks can't be edited or deleted** from anywhere in the app.
+  A task saved without a class is filed under the class its title names
+  (`RecurringTask.adoptingCourse`), but anything else wrong with a saved
+  task is permanent until this exists (`ROADMAP.md` → Next).
 - **Preview mode is App Review's only way in, and it was removed once.** The
-  only sign-in is PennKey, which nobody outside Penn can be issued, so the
-  "just exploring? preview with sample data" link on the intro's first pane
-  (and again at the foot of the Connect Canvas step) is the whole of the
-  reviewer's path — Apple's 2.1(a) note says a video is not enough and a
-  "demonstration mode" is. It was removed at Olisa's instruction on
+  only sign-in at Penn is PennKey, which nobody outside Penn can be issued,
+  so the "just exploring? preview with sample data" link on the intro's
+  first pane (and again at the foot of the Connect Canvas step) is the whole
+  of the reviewer's path. Apple's 2.1(a) note says a video is not enough and
+  a "demonstration mode" is. It was removed at Olisa's instruction on
   2026-09-15 (3ace7f0), build 8 went up without it, and Apple rejected that
   build under 2.1(a) on 2026-09-16 (submission 067299d2…). The removal was
   reverted the same day for build 9. Do not remove it again, and do not
   gate it behind `#if DEBUG`: the DEBUG `-LHFDemoData` seam is a different
-  thing — a launch argument compiled out of release, for
-  `capture-screenshots.sh` and the demo video — and it does not help a
+  thing (a launch argument compiled out of release, for
+  `capture-screenshots.sh` and the demo video) and it does not help a
   reviewer.
 
 ## Overseer / doer split
