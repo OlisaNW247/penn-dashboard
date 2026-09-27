@@ -1046,10 +1046,19 @@ private struct CanvasLoginPane: View {
                     }
 
                     onConnected()
-                } else {
+                } else if installation.id != CanvasInstallation.penn.id {
                     // A custom host can commit its landing page before a
                     // session exists. Return to the WebView instead of
                     // leaving the pane behind an endless progress spinner.
+                    //
+                    // Never at Penn, where a failed connect stays the silent
+                    // no-op it was at 39b2fff, the build that has kept a real
+                    // phone signed in. `navObserver.reset()` zeroes
+                    // `autoLoginAttempts`, the counter that holds the saved
+                    // PennKey password to one auto-submission per pane
+                    // appearance; resetting it while Penn's pane is still
+                    // mid-Duo would let a re-rendered credential form be
+                    // auto-filled a second time.
                     message = state.error ?? "That address did not produce a usable Canvas session. Finish signing in or choose another school."
                     navObserver.reset()
                 }
