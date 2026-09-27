@@ -874,6 +874,18 @@ final class AppState: ObservableObject {
         }
         #endif
 
+        #if DEBUG
+        // `-LHFAgeCanvasSession`: rewrites every persisted Canvas cookie's
+        // `capturedAt` to 25 hours ago before the check below ever runs, so a
+        // debug launch can exercise the real 24h renewal trigger
+        // deterministically instead of waiting a real day for a session to
+        // age past `SessionCookieStore`'s own staleness bound. No-op under
+        // `swift test` — see `ageCanvasSessionForTesting`'s own guard.
+        if ProcessInfo.processInfo.arguments.contains("-LHFAgeCanvasSession") {
+            SessionCookieStore.ageCanvasSessionForTesting()
+        }
+        #endif
+
         refreshCanvasSessionExpiredState()
 
         // Seeds Grade Watcher's automatic-exclusion set and shared-syllabus
@@ -1775,6 +1787,9 @@ final class AppState: ObservableObject {
             canvasSessionExpired = cookieSessionExpired || canvasSessionConfirmedDead
         }
         if canvasSessionExpired && !wasExpired {
+            #if DEBUG
+            DebugRenewalLog.record("canvasSessionExpired false -> true, triggering silent renewal")
+            #endif
             Task { await attemptSilentCanvasRenewal() }
         }
     }
@@ -1887,7 +1902,12 @@ final class AppState: ObservableObject {
     /// production silent renewal is supposed to.
     @discardableResult
     private func performSilentCanvasRenewal() async -> CanvasSessionRenewer.Outcome {
-        guard !isUsingFixtureData else { return .notAttempted(reason: "fixture data (-LHFDemoData)") }
+        guard !isUsingFixtureData else {
+            #if DEBUG
+            DebugRenewalLog.record("requested, skipped: fixture data (-LHFDemoData)")
+            #endif
+            return .notAttempted(reason: "fixture data (-LHFDemoData)")
+        }
         let renewer = canvasSessionRenewer ?? CanvasSessionRenewer(
             installation: canvasInstallation,
             isLoginPaneActive: { [weak self] in

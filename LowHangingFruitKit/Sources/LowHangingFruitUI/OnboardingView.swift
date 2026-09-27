@@ -799,6 +799,22 @@ private struct CanvasLoginPane: View {
         _navObserver = StateObject(wrappedValue: observer)
     }
 
+    /// Penn loads 39b2fff's own literal starting URL, verbatim — that build
+    /// went straight at the SAML entry point rather than Canvas's bare
+    /// origin, and that exact starting point is part of what a real phone
+    /// has run unchanged for a week. Every other installation is newer than
+    /// that build and never had a hand-picked SAML path to begin with
+    /// (Cornell's login even starts on a different HOST —
+    /// `CanvasInstallation.verifiedSchools`), so it starts at
+    /// `installation.loginURL`, the origin multi-school sign-in already
+    /// resolves per school, and lets that school's own Canvas redirect to
+    /// whatever its SSO actually needs.
+    private var startURL: URL {
+        installation.id == CanvasInstallation.penn.id
+            ? URL(string: "https://canvas.upenn.edu/login/saml")!
+            : installation.loginURL
+    }
+
     var body: some View {
         Group {
             if isPurging || isReadingCookies || navObserver.reachedSignedInDestination {
@@ -820,7 +836,7 @@ private struct CanvasLoginPane: View {
                             .background(Color.smoothTomato.opacity(0.13))
                     }
                     LoginWebView(
-                        url: installation.loginURL,
+                        url: startURL,
                         store: LoginDataStores.canvas,
                         navigationObserver: navObserver
                     )
@@ -914,10 +930,20 @@ private struct CanvasLoginPane: View {
             // (Keychain, same treatment as Gradescope's) so Grade Watcher's
             // cookie-authed refresh survives relaunches — `WKWebsiteDataStore`
             // drops session cookies like Canvas's/Penn SSO's between launches.
-            let canvasCookies = cookies.filter { cookie in
-                let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                return installation.host == domain || installation.host.hasSuffix("." + domain)
-            }
+            // Penn's capture filter is 39b2fff's own literal substring check,
+            // verbatim, since that build's capture is the byte-for-byte
+            // behavior a real phone has run for a week — see
+            // `CanvasSessionRenewer.isCanvasSessionCookie`'s doc comment for
+            // the same reasoning applied to the renewer's own harvest. Every
+            // other installation is newer than that build and never ran this
+            // rule in the field, so it keeps the host-aware match multi-school
+            // sign-in shipped with.
+            let canvasCookies = installation.id == CanvasInstallation.penn.id
+                ? cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas.upenn.edu") }
+                : cookies.filter { cookie in
+                    let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                    return installation.host == domain || installation.host.hasSuffix("." + domain)
+                }
             SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
                 isReadingCookies = false

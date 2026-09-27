@@ -78,20 +78,9 @@ struct SessionCookieRotationTests {
         #expect(merged.first?.value == "synthetic-old")
     }
 
-    // MARK: - Retention and installation host matching
-
-    @Test("A session cookie with no server expiry remains eligible after an arbitrary local age")
-    func sessionCookieWithoutExpiryIsRetained() {
-        let farFuture = Date(timeIntervalSince1970: 4_000_000_000)
-        #expect(SessionCookieStore.shouldRetain(expiresAt: nil, now: farFuture))
-    }
-
-    @Test("An explicit server expiry remains authoritative")
-    func explicitExpiryIsAuthoritative() {
-        let now = Date(timeIntervalSince1970: 2_000_000_000)
-        #expect(SessionCookieStore.shouldRetain(expiresAt: now.addingTimeInterval(1), now: now))
-        #expect(!SessionCookieStore.shouldRetain(expiresAt: now.addingTimeInterval(-1), now: now))
-    }
+    // MARK: - Installation host matching (non-Penn only — see SessionCookieStoreTests
+    // for the 24h/no-expiry retention rule `load(service:)` uses for every service,
+    // Penn included, restored to 39b2fff's behavior)
 
     @Test("Canvas cookie matching honors selected hosts that do not contain the word canvas")
     func selectedInstallationHostMatches() {

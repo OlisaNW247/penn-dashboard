@@ -107,6 +107,15 @@ enum AutoSyncCoordinator {
     /// only ever read from, never written back to. Shared by this
     /// coordinator's launch-time grades refresh and `GradeWatcherView`'s own
     /// refresh, so both callers agree on one cookie-gathering implementation.
+    ///
+    /// Penn keeps the original substring filter (`domain contains "canvas"`)
+    /// verbatim rather than the generalized `cookie(_:belongsTo:)` match
+    /// below, matching the session behaviour a co-owner's phone has run
+    /// unchanged for a week (39b2fff): this function's only job at Penn is
+    /// producing exactly the cookie set that build gathers, byte for byte.
+    /// Non-Penn installations didn't exist at 39b2fff and never know
+    /// "canvas" is even in their hostname (Columbia's is
+    /// `courseworks.columbia.edu`), so they use the newer, host-aware match.
     static func canvasCookies(forHost canvasHost: String = CanvasInstallation.penn.host) async -> [HTTPCookie] {
         let live: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
@@ -114,6 +123,9 @@ enum AutoSyncCoordinator {
         let persisted = SessionCookieStore.load(service: .canvas)
         let liveKeys = Set(live.map { "\($0.name)|\($0.domain)|\($0.path)" })
         let merged = persisted.filter { !liveKeys.contains("\($0.name)|\($0.domain)|\($0.path)") } + live
+        if canvasHost == CanvasInstallation.penn.host {
+            return merged.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
+        }
         return merged.filter { cookie($0, belongsTo: canvasHost) }
     }
 

@@ -4,10 +4,9 @@ import WebKit
 
 /// Silent Canvas session renewal — Layer 2 of the session-longevity work.
 ///
-/// When `AppState.canvasSessionExpired` goes true (the server rejected the
-/// Keychain-persisted Canvas session, or an explicit cookie expiry passed —
-/// docs/CANVAS_LOGIN_HARDENING.md item 3d), the user's only recourse used to
-/// be the "needs a refresh" banner,
+/// When `AppState.canvasSessionExpired` goes true (the Keychain-persisted
+/// Canvas cookie session has aged out — docs/CANVAS_LOGIN_HARDENING.md item
+/// 3d), the user's only recourse used to be the "needs a refresh" banner,
 /// which sends them through the full in-app PennKey/Duo WebView. Often that's
 /// unnecessary: Penn's IdP (`idp.pennkey.upenn.edu`) and Duo keep their own,
 /// separately-lived session cookies in `LoginDataStores.canvas` — the same
@@ -145,7 +144,21 @@ final class CanvasSessionRenewer {
     /// chain hops through `idp.pennkey.upenn.edu`; `weblogin`/`duosecurity`
     /// are included for the same reason `AppState.canvasLoginDomainHints`
     /// covers `duosecurity` — Duo's own domain if a 2FA prompt is reached.
-    private static let loginHostMarkers = [
+    /// This exact four-item list, checked BEFORE the canvas-host equality
+    /// test in `classifyFinalHost` below, is what 39b2fff ran unchanged on a
+    /// real phone for a week — kept verbatim for Penn rather than folded
+    /// into the wider list below, since Penn is the one installation this
+    /// list has actual field evidence for.
+    private static let loginHostMarkers = ["pennkey", "idp", "weblogin", "duosecurity"]
+
+    /// Non-Penn login-host markers: wider (Okta/Shibboleth/Microsoft schools
+    /// among the seven verified non-Penn installations use these), and
+    /// checked AFTER the canvas-host equality test rather than before, since
+    /// those schools' own hostnames vary too much (Columbia's
+    /// `courseworks.columbia.edu`, for instance) to trust marker-first
+    /// ordering the way Penn's fixed `canvas.upenn.edu` can. Never used for
+    /// Penn — see `classifyFinalHost`'s branch on `canvasHost`.
+    private static let extendedLoginHostMarkers = [
         "pennkey", "idp", "login", "sso", "weblogin", "duosecurity",
         "okta", "microsoftonline", "shibboleth",
     ]
@@ -197,7 +210,7 @@ final class CanvasSessionRenewer {
     /// Owner-only test seam for the Settings "simulate canvas logout" button
     /// (`AppState.simulateCanvasLogoutForTesting()`). Without this, testing
     /// "stay signed in" end to end on a real phone means waiting for
-    /// Canvas to actually reject its cookie session or, worse, for
+    /// Canvas's cookie to actually age out (about a day) or, worse, for
     /// `cooldown` (1h) / `autoLoginCooldown` (6h) to lapse after any earlier
     /// attempt this launch already made — the whole point of those throttles
     /// being long is that a real background trigger should almost never fire
@@ -304,8 +317,14 @@ final class CanvasSessionRenewer {
             paneActive: isLoginPaneActive(),
             isTestRunner: SharedDefaults.isTestRunner
         ) {
+            #if DEBUG
+            DebugRenewalLog.record("requested, skipped: \(gated)")
+            #endif
             return gated
         }
+        #if DEBUG
+        DebugRenewalLog.record("requested, proceeding")
+        #endif
 
         // Recorded BEFORE the WebView ever navigates: a crash, a hang, or
         // the 30s timeout below still consumes this window's cooldown slot,
@@ -367,16 +386,34 @@ final class CanvasSessionRenewer {
         return now.timeIntervalSince(lastSubmissionAt) >= autoLoginCooldown
     }
 
+    /// Penn's order — login-host markers checked BEFORE the exact
+    /// canvas-host match — is 39b2fff's, unchanged: that build hard-coded
+    /// `canvas.upenn.edu` and never had a `canvasHost` parameter to check
+    /// first, and that exact order has run on a real phone for a week
+    /// without a spurious sign-out. Every non-Penn installation is newer
+    /// than 39b2fff and never ran that order in the field, so it gets the
+    /// opposite order (canvas-host match first) and the wider marker list
+    /// that shipped alongside multi-school sign-in.
     static func classifyFinalHost(
         _ host: String?,
         canvasHost: String = CanvasInstallation.penn.host
     ) -> HostClassification {
         guard let host, !host.isEmpty else { return .other }
         let lower = host.lowercased()
-        if lower == canvasHost.lowercased() {
+        let expectedHost = canvasHost.lowercased()
+        guard expectedHost != CanvasInstallation.penn.host else {
+            if loginHostMarkers.contains(where: lower.contains) {
+                return .loginPage
+            }
+            if lower == expectedHost {
+                return .canvas
+            }
+            return .other
+        }
+        if lower == expectedHost {
             return .canvas
         }
-        if loginHostMarkers.contains(where: lower.contains) {
+        if extendedLoginHostMarkers.contains(where: lower.contains) {
             return .loginPage
         }
         return .other
@@ -425,13 +462,24 @@ final class CanvasSessionRenewer {
     /// session credential (as opposed to, say, a CSRF token or an analytics
     /// cookie that also happens to live on that domain) — see
     /// `sessionCookieNameMarkers`'s doc comment for what the two names mean.
+    /// Penn matches 39b2fff's own rule verbatim — any cookie whose domain
+    /// contains "canvas" (case insensitive) — since that build's harvest has
+    /// run unchanged on a real phone for a week. Non-Penn installations
+    /// didn't exist at 39b2fff, and a substring match would miss them
+    /// anyway (Columbia's `courseworks.columbia.edu` never contains
+    /// "canvas"), so they instead match the cookie's domain against the
+    /// specific installation host, same as `AutoSyncCoordinator.cookie(_:belongsTo:)`.
     static func isCanvasSessionCookie(
         _ cookie: HTTPCookie,
         canvasHost: String = CanvasInstallation.penn.host
     ) -> Bool {
-        let cookieDomain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
         let expectedHost = canvasHost.lowercased()
-        guard expectedHost == cookieDomain || expectedHost.hasSuffix("." + cookieDomain) else { return false }
+        if expectedHost == CanvasInstallation.penn.host {
+            guard cookie.domain.localizedCaseInsensitiveContains("canvas") else { return false }
+        } else {
+            let cookieDomain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            guard expectedHost == cookieDomain || expectedHost.hasSuffix("." + cookieDomain) else { return false }
+        }
         let name = cookie.name.lowercased()
         return sessionCookieNameMarkers.contains { name.contains($0) }
     }
@@ -535,11 +583,11 @@ final class CanvasSessionRenewer {
             case .landedOnLoginPage: status = "timed-out, parked on login host"
             default: status = "timed-out"
             }
-            Self.logAttempt(host: webView.url?.host, status: status)
+            Self.logAttempt(host: webView.url?.host, status: status, outcome: outcome)
             return outcome
         }
         if signal == .aborted {
-            Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane")
+            Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane", outcome: .abortedByLoginPane)
             return .abortedByLoginPane
         }
 
@@ -551,18 +599,18 @@ final class CanvasSessionRenewer {
             // actually made is strictly more informative than the generic
             // "landed on login" catch-all below.
             if hasSubmittedCredentialsThisAttempt, PennKeyLoginForm.isLoginForm(webView.url) {
-                Self.logAttempt(host: finalHost, status: "password-rejected")
+                Self.logAttempt(host: finalHost, status: "password-rejected", outcome: .passwordRejected)
                 return .passwordRejected
             }
             if PennKeyLoginForm.isDuo(webView.url) {
-                Self.logAttempt(host: finalHost, status: "needs-duo")
+                Self.logAttempt(host: finalHost, status: "needs-duo", outcome: .needsDuo)
                 return .needsDuo
             }
             // Covers both the documented login-host case AND anything else
             // unrecognized (mid-redirect, a host neither list expects) —
             // either way, no session was confirmed, so behave identically:
             // give up silently and let the existing banner do its job.
-            Self.logAttempt(host: finalHost, status: "landed-on-login")
+            Self.logAttempt(host: finalHost, status: "landed-on-login", outcome: .landedOnLoginPage)
             return .landedOnLoginPage
         }
 
@@ -571,17 +619,22 @@ final class CanvasSessionRenewer {
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
-        let canvasCookies = cookies.filter { Self.cookie($0, belongsTo: installation.host) }
+        // Penn's harvest filter is 39b2fff's own domain-substring check,
+        // verbatim — see `isCanvasSessionCookie`'s doc comment for why.
+        // Non-Penn installations use the host-aware match instead.
+        let canvasCookies = installation.host == CanvasInstallation.penn.host
+            ? cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
+            : cookies.filter { Self.cookie($0, belongsTo: installation.host) }
         guard canvasCookies.contains(where: { Self.isCanvasSessionCookie($0, canvasHost: installation.host) }) else {
             // Landed back on canvas.upenn.edu but minted no recognizable
             // session cookie — e.g. an anonymous/public page. Treat the same
             // as landing on a login page: nothing to harvest.
-            Self.logAttempt(host: finalHost, status: "no-session-cookie")
+            Self.logAttempt(host: finalHost, status: "no-session-cookie", outcome: .landedOnLoginPage)
             return .landedOnLoginPage
         }
 
         SessionCookieStore.merge(canvasCookies, service: .canvas)
-        Self.logAttempt(host: finalHost, status: "renewed")
+        Self.logAttempt(host: finalHost, status: "renewed", outcome: .renewed)
         return .renewed
     }
 
@@ -706,7 +759,7 @@ final class CanvasSessionRenewer {
     /// One `LoginDiagnosticsLog` entry per real attempt (rule 6 above) — host
     /// and a short status word only, never a cookie name or value. Attempts
     /// are already capped by `cooldown`, so this can't turn into log spam.
-    private static func logAttempt(host: String?, status: String) {
+    private static func logAttempt(host: String?, status: String, outcome: Outcome) {
         LoginDiagnosticsLog.shared.record(
             LoginRedirectLogEntry(
                 host: host ?? "(no host)",
@@ -715,6 +768,9 @@ final class CanvasSessionRenewer {
                 at: Date()
             )
         )
+        #if DEBUG
+        DebugRenewalLog.record("attempt \(status) -> \(outcome)")
+        #endif
     }
 
     private static func cookie(_ cookie: HTTPCookie, belongsTo host: String) -> Bool {
