@@ -37,6 +37,21 @@ struct SettingsPage: View {
     /// Shown under the accounts rows when the server-side delete that
     /// disconnecting Canvas triggers didn't go through.
     @State private var backendDataDeletionError: String?
+    #if DEBUG
+    /// Drives the "simulate canvas logout" DEBUG row below — `nil` result
+    /// with `isRunning == false` is the row's resting state (never shown
+    /// yet this launch); `isRunning` shows a spinner in its place; a
+    /// non-nil result persists until the next tap, which resets it back to
+    /// `nil` before the new attempt starts so a stale result never lingers
+    /// alongside the fresh spinner.
+    @State private var isSimulatingCanvasLogout = false
+    @State private var simulateCanvasLogoutResult: String?
+    /// Same resting/running/result shape as the pair above, for the
+    /// "probe ed discussion" row (`AppState.probeEdDiscussionForTesting()`).
+    @State private var isProbingEdDiscussion = false
+    @State private var probeEdDiscussionResult: String?
+    @State private var didCopyProbeEdDiscussionResult = false
+    #endif
     #if os(macOS)
     /// Bumped after every `SMAppService` register/unregister call so the
     /// toggle below re-reads `.status` — that call doesn't publish anything
@@ -143,6 +158,21 @@ struct SettingsPage: View {
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
+
+            // Debug builds only. The troubleshooting section was removed from
+            // Settings on purpose so students never see it, but these two rows
+            // compile out of every Release build and are the owner's only way
+            // to run the Ed Discussion recon probe (docs/ED_DISCUSSION.md,
+            // phase 0) and the silent-renewal simulation on a real device.
+            #if DEBUG
+            Section {
+                simulateCanvasLogoutRow
+                probeEdDiscussionRow
+            } header: {
+                SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothCobalt)
+            #endif
         }
         .formStyle(.grouped)
         .font(.lhfSecondary(15))
@@ -367,4 +397,131 @@ struct SettingsPage: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(connected ? "double tap to disconnect" : "double tap to connect")
     }
+
+    #if DEBUG
+    /// Owner-only "stay signed in" test seam (CLAUDE.md's "stay signed in"
+    /// section, and `AppState.simulateCanvasLogoutForTesting()`'s own doc
+    /// comment for the mechanism). Testing that feature against a REAL
+    /// expiry means waiting roughly a day for Canvas's cookie to age out;
+    /// this button kills the session on the spot so the owner can watch the
+    /// whole silent-renewal chain — cookie purge, IdP-session purge (Duo's
+    /// own cookie deliberately spared), throttle reset, renewal attempt —
+    /// run in one tap on a real phone with a real Canvas login. Compiles out
+    /// of every Release build; nothing here is reachable by a student.
+    @ViewBuilder
+    private var simulateCanvasLogoutRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                runSimulateCanvasLogout()
+            } label: {
+                if isSimulatingCanvasLogout {
+                    HStack {
+                        ProgressView()
+                        Text("simulating canvas logout…")
+                    }
+                } else {
+                    Label("simulate canvas logout", systemImage: "bolt.slash")
+                }
+            }
+            .disabled(isSimulatingCanvasLogout)
+
+            if let simulateCanvasLogoutResult, !isSimulatingCanvasLogout {
+                Text(simulateCanvasLogoutResult)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// A second tap while one attempt is still running is blocked by
+    /// `.disabled(isSimulatingCanvasLogout)` above, rather than by anything
+    /// in `AppState` — there's exactly one owner tapping this button, so a
+    /// UI-level guard is enough; `CanvasSessionRenewer`'s own `isInFlight`
+    /// guard (untouched by `resetThrottlesForTesting()`) would catch a
+    /// genuine race anyway. The stale result is cleared before the new
+    /// attempt starts, not after, so the row never shows an old string
+    /// under a fresh spinner.
+    private func runSimulateCanvasLogout() {
+        simulateCanvasLogoutResult = nil
+        isSimulatingCanvasLogout = true
+        Task {
+            let result = await state.simulateCanvasLogoutForTesting()
+            simulateCanvasLogoutResult = result
+            isSimulatingCanvasLogout = false
+        }
+    }
+
+    /// Owner-only "probe ed discussion" row (CLAUDE.md's own name for this
+    /// diagnostic) — see `AppState.probeEdDiscussionForTesting()`'s doc
+    /// comment for what it actually does and the privacy rule it's built
+    /// under (names only, never a storage/cookie value). Same
+    /// resting/running/result shape as `simulateCanvasLogoutRow` above, plus
+    /// a small "copy" button: the full report (per-course tab list, hop
+    /// list, storage/cookie key names) is long enough that reading it off a
+    /// phone screen is awkward, so `.textSelection(.enabled)` alone isn't
+    /// enough to get it somewhere more useful.
+    @ViewBuilder
+    private var probeEdDiscussionRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                runProbeEdDiscussion()
+            } label: {
+                if isProbingEdDiscussion {
+                    HStack {
+                        ProgressView()
+                        Text("probing ed discussion…")
+                    }
+                } else {
+                    Label("probe ed discussion", systemImage: "bubble.left.and.text.bubble.right")
+                }
+            }
+            .disabled(isProbingEdDiscussion)
+
+            if let probeEdDiscussionResult, !isProbingEdDiscussion {
+                Text(probeEdDiscussionResult)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                Button {
+                    copyProbeEdDiscussionResult()
+                } label: {
+                    Label(
+                        didCopyProbeEdDiscussionResult ? "copied" : "copy probe result",
+                        systemImage: didCopyProbeEdDiscussionResult ? "checkmark" : "doc.on.doc"
+                    )
+                }
+                .font(.lhfSecondary(12))
+            }
+        }
+    }
+
+    /// Same single-flight guard as `runSimulateCanvasLogout` above, and the
+    /// same reason for clearing the stale result before the new attempt
+    /// starts rather than after.
+    private func runProbeEdDiscussion() {
+        probeEdDiscussionResult = nil
+        didCopyProbeEdDiscussionResult = false
+        isProbingEdDiscussion = true
+        Task {
+            let result = await state.probeEdDiscussionForTesting()
+            probeEdDiscussionResult = result
+            isProbingEdDiscussion = false
+        }
+    }
+
+    /// Copies this row's own result string to the pasteboard. The old
+    /// `copyDiagnostics()` this mirrored no longer exists on this page;
+    /// the UIKit / AppKit branches are unchanged.
+    private func copyProbeEdDiscussionResult() {
+        guard let probeEdDiscussionResult else { return }
+        #if canImport(UIKit)
+        UIPasteboard.general.string = probeEdDiscussionResult
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(probeEdDiscussionResult, forType: .string)
+        #endif
+        didCopyProbeEdDiscussionResult = true
+    }
+    #endif
 }
