@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 import LowHangingFruitKit
 
 // The widget extension can't import LowHangingFruitUI (see project.yml), so
@@ -11,23 +12,33 @@ extension Color {
         let b = Double( hex        & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
     }
+
+    /// A color that resolves to `light` or `dark` hex based on the active
+    /// interface style at draw time. A trimmed duplicate of
+    /// `Color.dynamic(light:dark:)` in RedesignTokens.swift — the widget
+    /// extension can't import LowHangingFruitUI (see project.yml) to reach
+    /// that one directly, but a widget's `.containerBackground` and text
+    /// need the same trait-collection-backed provider so system dark mode
+    /// doesn't have to be threaded through every view by hand.
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(Color(hex: dark)) : UIColor(Color(hex: light))
+        })
+    }
 }
 
 /// The app's Smooth palette, scoped to what the widget needs. Kept in one
 /// place so the Home Screen views read as calm and consistent with the main
 /// app.
 ///
-/// These are the *light-mode* values of `v2Bg`/`v2Ink`/`v2DateText` in
-/// RedesignTokens.swift (paper/ink/muted). The widget extension can't import
-/// LowHangingFruitUI (see project.yml), so it can't reach `Color.dynamic` or
-/// the app's dark-mode partners either — and this file never had a dark
-/// appearance of its own before this change (the old hexes were flat
-/// constants too), so this keeps that parity rather than bolting on a new
-/// light/dark system for three colors.
+/// These mirror `v2Bg`/`v2Ink`/`v2DateText` (paper/ink/muted) in
+/// RedesignTokens.swift, light and dark. The widget extension can't import
+/// LowHangingFruitUI (see project.yml), so the hex pairs are duplicated here
+/// rather than shared — keep them in step by hand if the app's tokens move.
 private enum Palette {
-    static let paper = Color(hex: 0xFFFFFF)
-    static let ink = Color(hex: 0x1B1714)
-    static let courseGrey = Color(hex: 0x7C7060)
+    static let paper = Color.dynamic(light: 0xFFFFFF, dark: 0x0B1020)
+    static let ink = Color.dynamic(light: 0x1B1714, dark: 0xF8F1E5)
+    static let courseGrey = Color.dynamic(light: 0x7C7060, dark: 0xAEB8CF)
 }
 
 struct NextDueEntryView: View {
@@ -35,20 +46,27 @@ struct NextDueEntryView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            SmallView(item: entry.snapshot.items.first)
-        case .systemMedium:
-            MediumView(items: Array(entry.snapshot.items.prefix(3)))
-        case .accessoryInline:
-            InlineView(item: entry.snapshot.items.first)
-        case .accessoryCircular:
-            CircularView(items: entry.snapshot.items)
-        case .accessoryRectangular:
-            RectangularView(items: Array(entry.snapshot.items.prefix(2)))
-        default:
-            SmallView(item: entry.snapshot.items.first)
+        Group {
+            switch family {
+            case .systemSmall:
+                SmallView(item: entry.snapshot.items.first)
+            case .systemMedium:
+                MediumView(items: Array(entry.snapshot.items.prefix(3)))
+            case .accessoryInline:
+                InlineView(item: entry.snapshot.items.first)
+            case .accessoryCircular:
+                CircularView(items: entry.snapshot.items)
+            case .accessoryRectangular:
+                RectangularView(items: Array(entry.snapshot.items.prefix(2)))
+            default:
+                SmallView(item: entry.snapshot.items.first)
+            }
         }
+        // A widget's frame is fixed by the system, unlike a screen the app
+        // can scroll, so past `.xxLarge` the Small/Medium layouts would
+        // clip or overlap rather than reflow. `lineLimit`/
+        // `minimumScaleFactor` on individual labels handle the rest.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }
 
@@ -90,7 +108,7 @@ private struct SmallView: View {
             let urgency = WidgetUrgency(due: item.dueAt)
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.course.uppercased())
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced).weight(.semibold))
                     .tracking(0.8)
                     // The darker ink partner, not the flat course grey — this
                     // sits on the pastel tint below, mirroring the Smooth
@@ -98,13 +116,13 @@ private struct SmallView: View {
                     // colored to the urgency's ink shade.
                     .foregroundStyle(Color(hex: urgency.inkHex))
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(2)
                 Spacer(minLength: 0)
                 if let due = item.dueAt {
                     Text(due, style: .relative)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(.system(.caption, design: .monospaced).weight(.medium))
                         .foregroundStyle(Color(hex: urgency.spineHex))
                 }
             }
@@ -114,7 +132,7 @@ private struct SmallView: View {
             VStack {
                 Spacer()
                 Text("all clear")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(.system(.footnote, design: .rounded).weight(.medium))
                     .foregroundStyle(Palette.courseGrey)
                 Spacer()
             }
@@ -150,7 +168,7 @@ private struct MediumView: View {
         VStack {
             Spacer()
             Text("nothing due. you're caught up.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(.footnote, design: .rounded).weight(.medium))
                 .foregroundStyle(Palette.courseGrey)
             Spacer()
         }
@@ -171,16 +189,16 @@ private struct NextDueRow: View {
                 .fill(Color(hex: urgency.spineHex))
                 .frame(width: 6, height: 6)
             Text(item.course)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced).weight(.semibold))
                 .foregroundStyle(Color(hex: urgency.inkHex))
             Text(item.title)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(.footnote, design: .rounded).weight(.medium))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
             Spacer(minLength: 4)
             if let due = item.dueAt {
                 Text(due, style: .relative)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced).weight(.medium))
                     .foregroundStyle(Color(hex: urgency.spineHex))
             }
         }
@@ -237,13 +255,13 @@ private struct CircularView: View {
             if dueWithin24h > 0 {
                 VStack(spacing: 0) {
                     Text("\(dueWithin24h)")
-                        .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        .font(.system(.title3, design: .monospaced).weight(.bold))
                     Text("due")
-                        .font(.system(size: 9, design: .rounded))
+                        .font(.system(.caption2, design: .rounded))
                 }
             } else {
                 Image(systemName: "tray")
-                    .font(.system(size: 18))
+                    .font(.system(.title2))
             }
         }
     }
@@ -260,17 +278,17 @@ private struct RectangularView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let first = items.first {
                     firstLine(for: first)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(.footnote, design: .rounded).weight(.semibold))
                         .lineLimit(1)
                     if items.count > 1 {
                         Text(items[1].title)
-                            .font(.system(size: 12, design: .rounded))
+                            .font(.system(.caption, design: .rounded))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 } else {
                     Text("all clear")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(.footnote, design: .rounded).weight(.semibold))
                 }
             }
             .padding(.horizontal, 8)

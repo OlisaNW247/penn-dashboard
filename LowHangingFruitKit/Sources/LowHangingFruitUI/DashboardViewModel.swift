@@ -367,9 +367,23 @@ final class DashboardViewModel: ObservableObject {
         return sections
     }
 
+    /// Keyed by format string rather than one cache per caller, since this is
+    /// called with a handful of distinct patterns ("EEE", "MMM d", ...).
+    /// `DashboardViewModel` is `@MainActor`, so static members are too — this
+    /// dictionary is only ever touched from one thread, same reasoning as
+    /// `ContentView`'s cached header formatters.
+    private static var formatterCache: [String: DateFormatter] = [:]
+
     private static func string(_ date: Date, _ format: String) -> String {
-        let f = DateFormatter()
-        f.dateFormat = format
+        let f: DateFormatter
+        if let cached = formatterCache[format] {
+            f = cached
+        } else {
+            f = DateFormatter()
+            f.dateFormat = format
+            formatterCache[format] = f
+        }
+        f.timeZone = .current
         return f.string(from: date)
     }
 

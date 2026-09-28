@@ -105,10 +105,10 @@ mode, the S app mark, and bundled type registered at runtime by
 **Release state.** Live on the App Store: **1.2.1** (App Store id
 `6783911002`, released 2026-09-04; re-confirmed by Olisa on the store page
 2026-09-15). This line has been stale before, so re-check it rather than
-trust it. `project.yml` stamps **3.0.0 (build 9)**. Builds 7–9 of 3.0.0
+trust it. `project.yml` stamps **3.0.0 (build 10)**. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
-2.1(a), see Known gaps). The next release is 3.0.0 or later, built from
-`V7`. On launch the app fetches a public update-policy file that can
+2.1(a), see Known gaps). Build 10 is the first from `V7` (2026-09-27, with
+Olisa's session logic restored; see the 24-hour trap). On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
 ## What the app does
@@ -137,7 +137,8 @@ fastest way for a new session to know what exists.
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
-    one-off or weekly assignment, class picked from the class list), and
+    one-off or weekly assignment, class picked from a grid of per-class
+    coloured chips, `CoursePicker`), and
     the **megaphone**. The megaphone opens the announcement finds sheet;
     its badge counts only unread finds, and rows unread when opened are
     tagged NEW (`AnnouncementReadState`).
@@ -223,9 +224,28 @@ usable without a real Canvas session, and pairs with `-LHFShowSettings`,
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
+`-LHFAgeCanvasSession` (DEBUG only) backdates the saved Canvas cookies'
+`capturedAt` by 25 hours before launch, so the real renew-on-open path runs
+now instead of tomorrow. Every silent-renewal step in a DEBUG build is
+printed as an `LHF-RENEW` line and kept in `UserDefaults.lhf`
+`debugRenewalLogV1` (last 50: time, app state, status; never a cookie, URL
+or credential). Watch it live on a tethered phone (the `--` matters, or
+devicectl eats the flag):
+
+```bash
+xcrun devicectl device process launch --console --terminate-existing --device <CoreDevice id> com.lhf.lowhangingfruit -- -LHFAgeCanvasSession
+```
+
+After the fact, read it (and the session flags) straight off the phone,
+read-only, from the App Group plist:
+
+```bash
+xcrun devicectl device copy from --device <CoreDevice id> --domain-type appGroupDataContainer --domain-identifier group.com.lhf.lowhangingfruit --source Library/Preferences/group.com.lhf.lowhangingfruit.plist --destination /tmp/lhf.plist
+```
+
 ## Test baseline
 
-**Current: 1412 tests / 139 suites, all green, on `V7` (2026-09-24,
+**Current: 1411 tests / 140 suites, all green, on `V7` (2026-09-27,
 `swift test --no-parallel`, on a Mac).** Hold the rule: a change that lowers
 the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
@@ -261,6 +281,15 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 1411/140 `V7`, 2026-09-27: Olisa's 24-hour cookie rule restored
+  (`df759f8`, `a16ea07`). Four tests removed on purpose because they pinned
+  the "keep cookies forever" rule that was reverted:
+  `SessionCookieRotationTests.sessionCookieWithoutExpiryIsRetained` and
+  `.explicitExpiryIsAuthoritative`, and `SessionCookieStoreTests`'
+  `finalCookieDeletionDoesNotResurrectPersistedValue` and
+  `partialCookieDeletionDoesNotResurrectRemovedValue`.
+- 1415/140 `V7`, 2026-09-25: `CourseAccentTests` (stable per-class
+  colour) with the class-chip picker.
 - 1412/139 `V7`, 2026-09-24: Settings trimmed, "1 week before" retired
   (one new test, two moved from `.d7` to `.d2`).
 - 1411/139, 2026-09-24: class-filter and recurring-task course adoption.
@@ -444,9 +473,18 @@ itself.
   IdP's password field, never a Duo prompt. A student enrolled in Duo still
   completes that step themselves whenever Duo asks (with Duo's own "remember
   this device" for 30 days, roughly monthly).
+- **When it runs.** Whenever the saved Canvas cookie is more than 24 hours
+  past its last save (`SessionCookieStore.load`), on launch, on returning
+  to the foreground, or on a background wake, and on a Grade Watcher 401.
+  Every successful pass through Duo re-issues Duo's 30-day
+  `browsertrust` cookie, so a student who opens the app at least monthly
+  should never see Duo again.
 - **Removal.** Disconnecting Canvas deletes the saved password.
-- **Not yet verified.** It has not been exercised on a device against a
-  real PennKey (Known gaps).
+- **Verified on a device, 2026-09-27, in the foreground.** On Marco's
+  phone, with a real PennKey and Duo, `-LHFAgeCanvasSession` renewed in 8
+  seconds, hands-free, and Duo re-issued its trust. Olisa's phone renewed
+  the same way on its own that afternoon. A renewal during a *background*
+  wake has never been observed; `debugRenewalLogV1` will show one.
 
 ## Traps that have already bitten
 
@@ -524,6 +562,13 @@ itself.
   The current date belongs in the user message, after the `cache_control`
   breakpoint. Verify with `usage.cache_read_input_tokens`; a persistent zero
   means something upstream is varying.
+- **Inverting black-on-white artwork for dark mode makes a negative.**
+  The "chill" Buddha was drawn in dark mode with `.colorInvert()` +
+  `.blendMode(.screen)`, which lights the shadows and darkens the face.
+  Dark mode now draws `chill-dark.png` (the enclosed paper kept, ink and
+  border-reachable paper transparent, flood-filled as below) as a template
+  tinted light blue (`smoothCobaltInk`). Likewise the pastel accents are fills, never text:
+  use their `…Ink` partners (`courseAccentInk(for:)`) for type.
 - **Knocking a flat background out of artwork is a flood fill, not a colour
   key.** `Resources/persimmon.png` is the app logo with its cream plate
   removed, and the obvious approach — make every cream pixel transparent —
@@ -735,6 +780,28 @@ itself.
   login page's DOM to synthesize a token is the fix that was considered and
   rejected — it defeats the whole point of a scoped, revocable token by
   handing the app a full credential anyway.
+- **The 24-hour cookie rule is what keeps a student signed in; removing it
+  signed Marco out.** `fac110d` (2026-09-24) dropped
+  `SessionCookieStore.load()`'s rule that treats a no-expiry Canvas cookie
+  as dead 24 hours after its last save. The reasoning looked sound: the
+  server, not a local clock, should decide when a session is dead, so keep
+  the cookie until Canvas rejects it. But that rule is the *trigger*: it is
+  what flips `canvasSessionExpired` and runs `CanvasSessionRenewer` on the
+  next open, while the app is on screen and the hidden WebView runs at full
+  speed. Without it the renewer only ran after a Grade Watcher 401, and on
+  2026-09-26 one such attempt on Marco's phone filled the saved password
+  and then sat on Duo until the 30 s timeout. That read as `.needsDuo`,
+  latched `autoLoginAwaitingDuoV1` and `canvasSessionConfirmedDeadV1`, and
+  showed the reconnect banner. Olisa's phone, still on a 2026-09-21 build
+  with the rule, never signed out. The tells, read off the phones with
+  `devicectl`: the two flags true on one phone and false on the other,
+  and Duo's `browsertrust` cookie re-issued at each successful renewal.
+  Restored for Penn byte for byte from `39b2fff` (`df759f8`), including
+  the connect pane's `login/saml` start URL and cookie filters, and the
+  failed-connect no-op (`a16ea07`). The wrong fixes: trusting the server
+  and dropping the clock, as above; and a foreground-only guard on the
+  renewer, which was considered and declined on 2026-09-27 because Olisa's
+  exact logic is the version proven on a phone.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -760,6 +827,7 @@ because some of it holds work that exists nowhere else.
 | Branch | What |
 |---|---|
 | `V7` | **Current line (2026-09-23 onward).** Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in. New work branches from here, and lands back here. |
+| `v7-olisa-session` | Olisa's `39b2fff` session logic restored for Penn (2026-09-27). Fast-forwarded into `V7`; safe to delete, along with its worktree `../penn-dashboard-session`. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
@@ -780,8 +848,10 @@ none is a ship line.
 - **Nothing has ever been tested against real Canvas or Gradescope data.**
   Every grade, submission and syllabus path is proven against fixtures
   only. This is the highest-value verification outstanding.
-- **Stay signed in has never met a real PennKey.** It compiles and its pure
-  parts are tested; whether Penn's form accepts the fill is unproven.
+- **Stay signed in is proven in the foreground only.** A real PennKey and
+  Duo renewed silently on two phones on 2026-09-27. A renewal during a
+  background wake has never been observed; if a student is ever signed out
+  again, read `debugRenewalLogV1` off a DEBUG build before redesigning.
 - **Non-Penn schools have only been exercised by tests.** The seven verified
   installations and the custom-address path have never been signed into on a
   device.

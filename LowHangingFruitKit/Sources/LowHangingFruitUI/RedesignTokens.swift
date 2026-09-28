@@ -7,6 +7,21 @@ import UIKit
 import AppKit
 #endif
 
+// MARK: – Hex colors
+//
+// Moved here on 2026-09-25 from `DesignSystem.swift`, the pre-Smooth palette
+// file, when that file was deleted as dead code: this initializer was the one
+// piece of it everything else still used.
+
+extension Color {
+    init(hex: UInt32) {
+        let r = Double((hex >> 16) & 0xFF) / 255
+        let g = Double((hex >>  8) & 0xFF) / 255
+        let b = Double( hex        & 0xFF) / 255
+        self.init(red: r, green: g, blue: b)
+    }
+}
+
 // MARK: – Smooth palette
 //
 // The dashboard's color is semantic: every assignment is filled from a
@@ -389,6 +404,47 @@ func smoothTaskTextAccent(_ due: Date?, now: Date = Date()) -> Color {
 /// pass: still airy, but with enough hue to group deadlines at a glance.
 func smoothTaskFill(_ due: Date?, now: Date = Date()) -> Color {
     smoothTaskAccent(due, now: now).opacity(0.26)
+}
+
+/// The six urgency hues, reused as a stable per-course palette so a chip
+/// (`CoursePicker`, `ClassFilterMenu`) reads the same color for the same
+/// class every time. There is no existing per-course color mapping to
+/// reuse — dashboard cards are tinted by deadline urgency, not by class —
+/// so this derives one deterministically from the course code.
+private let smoothCourseAccentPalette: [Color] = [
+    .smoothTomato, .smoothMarigold, .smoothLemon, .smoothTeal, .smoothCobalt, .smoothGrape,
+]
+
+/// A stable index into `smoothCourseAccentPalette` for a course code.
+/// `String.hashValue` is randomized per process (Swift salts it for
+/// hash-flooding resistance), so a class's chip color would change every
+/// launch; this is a plain FNV-1a over the UTF-8 bytes, which is the same
+/// every time for the same string.
+func courseAccentIndex(for code: String) -> Int {
+    var hash: UInt64 = 0xcbf29ce484222325
+    for byte in code.utf8 {
+        hash ^= UInt64(byte)
+        hash = hash &* 0x100000001b3
+    }
+    return Int(hash % UInt64(smoothCourseAccentPalette.count))
+}
+
+/// The stable accent for a course code, used anywhere a class needs its own
+/// color rather than a deadline-driven one.
+func courseAccent(for code: String) -> Color {
+    smoothCourseAccentPalette[courseAccentIndex(for: code)]
+}
+
+/// The readable text companion for `courseAccent(for:)`. The pastel accents
+/// are fills, not text colors: lemon or marigold type on white paper, or white
+/// type on a lemon chip, is close to invisible. Each pastel already has a
+/// dark-enough `…Ink` partner (light and dark mode), so text uses that.
+func courseAccentInk(for code: String) -> Color {
+    let inks: [Color] = [
+        .smoothTomatoInk, .smoothMarigoldInk, .smoothLemonInk,
+        .smoothTealInk, .smoothCobaltInk, .smoothGrapeInk,
+    ]
+    return inks[courseAccentIndex(for: code)]
 }
 
 struct SmoothDueValue {

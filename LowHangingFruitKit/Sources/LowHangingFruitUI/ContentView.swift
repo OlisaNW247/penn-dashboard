@@ -1,6 +1,26 @@
 import SwiftUI
 import LowHangingFruitKit
 
+/// The dark-mode half of the "chill" illustration (see the doc comment on
+/// `ContentView.chillArtwork`), factored to file scope so `ContentView`'s
+/// empty state and the unrelated `SmoothTodoEmptyState` type further down
+/// this file can't drift out of sync on how the asset is tinted and masked.
+@ViewBuilder
+func chillDarkArtwork(opacity: Double) -> some View {
+    if let img = bundledImage("chill-dark", ext: "png") {
+        img
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            // Only ever drawn after sunset, so this is the dark value of
+            // cobalt ink (0xA8C4F5): a pale moonlight blue, the owner's pick
+            // over cream on 2026-09-25.
+            .foregroundStyle(Color.smoothCobaltInk)
+            .opacity(opacity)
+            .accessibilityHidden(true)
+    }
+}
+
 /// Redesigned root screen: header (wordmark + date + weekly ring), a three-way
 /// segmented toggle, and a timeline/done list. All data is read through
 /// `DashboardViewModel`, which layers on top of the untouched `AppState`.
@@ -82,7 +102,7 @@ struct ContentView: View {
 
                     HStack(alignment: .center, spacing: 8) {
                         DashViewPicker(selection: $filter)
-                        ClassFilterMenu(courses: filterableCourses, selection: $classFilter)
+                        ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
                         addInlineButton
                         if !state.announcementPageItems.isEmpty {
                             announcementFindsButton
@@ -390,18 +410,20 @@ struct ContentView: View {
 
     /// The original v5 hierarchy, with Smooth's visual identity layered on top.
     private var header: some View {
-        HStack(alignment: .top) {
+        let now = Date()
+        let weekday = Self.weekdayText(now)
+        return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {
-                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[0])
-                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[1])
-                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[2])
-                    headerTitle(weekday: Self.weekdayText(Date()), pointSize: Self.dashboardTitlePointSizes[3])
+                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[0])
+                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[1])
+                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[2])
+                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[3])
                 }
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
 
-                Text(Self.dateText(Date()))
+                Text(Self.dateText(now))
                     .font(.lhfMono(14, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
             }
@@ -523,6 +545,16 @@ struct ContentView: View {
 
     private func courseDisplayName(_ key: String) -> String {
         filterableCourses.first { $0.key == key }?.name ?? key
+    }
+
+    /// Open (not-yet-done) item counts per class, straight off the pool the
+    /// dashboard already loaded — no new fetch, just a group-by over
+    /// `vm.items` for the "PHYS 151 · 3" line in the class filter menu.
+    private var openCountsByCourse: [String: Int] {
+        vm.items.reduce(into: [:]) { counts, item in
+            guard !item.isCompleted else { return }
+            counts[item.assignment.course, default: 0] += 1
+        }
     }
 
     private func matchesClassFilter(_ item: DashItem) -> Bool {
@@ -651,29 +683,35 @@ struct ContentView: View {
     }
 
     /// The source illustration is black ink on white paper. Multiply makes
-    /// that paper disappear in light mode; in dark mode, invert + screen does
-    /// the equivalent job and turns the drawing into quiet moonlit linework.
+    /// that paper disappear in light mode, which is the whole trick there.
+    ///
+    /// Dark mode used to do `.colorInvert().blendMode(.screen)`, which reads
+    /// as the obvious dual of multiply but is not one: inverting a
+    /// black-ink-on-white drawing doesn't turn it into "cream ink on navy",
+    /// it produces a photographic *negative* — the face (paper, bright)
+    /// inverts to near-black and the ink (headphones, shadows) inverts to
+    /// near-white, so the drawing reads as backwards: a dark face glowing
+    /// out of pale headphones. `chillDarkArtwork` is a separately generated
+    /// asset (`chill-dark.png`, built by flood-filling the paper from the
+    /// image border so only the *enclosed* paper — the face, the headphone
+    /// highlights — survives as opaque; everything reachable from the edge,
+    /// paper and ink alike, is transparent) applied as a template tinted
+    /// light blue (`Color.smoothCobaltInk`), so the lit areas read as moonlight
+    /// and the navy `smoothPaper` ground shows through as the shadow, with
+    /// no surrounding white rectangle to key out.
     @ViewBuilder
     private func chillArtwork(maxWidth: CGFloat, opacity: Double) -> some View {
-        if let img = bundledImage("chill", ext: "jpg") {
-            if colorScheme == .dark {
-                img
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: maxWidth)
-                    .colorInvert()
-                    .blendMode(.screen)
-                    .opacity(opacity * 0.72)
-                    .accessibilityHidden(true)
-            } else {
-                img
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: maxWidth)
-                    .blendMode(.multiply)
-                    .opacity(opacity)
-                    .accessibilityHidden(true)
-            }
+        if colorScheme == .dark {
+            chillDarkArtwork(opacity: opacity * 0.72)
+                .frame(maxWidth: maxWidth)
+        } else if let img = bundledImage("chill", ext: "jpg") {
+            img
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: maxWidth)
+                .blendMode(.multiply)
+                .opacity(opacity)
+                .accessibilityHidden(true)
         }
     }
 
@@ -759,16 +797,36 @@ struct ContentView: View {
 
     // MARK: Date
 
-    private static func weekdayText(_ date: Date) -> String {
+    /// Cached rather than built per call: `DateFormatter` construction is
+    /// expensive and this ran up to four times per header render (once per
+    /// `ViewThatFits` candidate). Static members on a `View` are MainActor-
+    /// isolated (see the CLAUDE.md trap on this), same as `body` itself, so a
+    /// mutable `DateFormatter` here is only ever touched from one thread —
+    /// no lock or `nonisolated(unsafe)` needed. `timeZone` is set per call,
+    /// not baked in at creation, so a timezone change mid-session (travel,
+    /// DST) is still reflected; only the locale is fixed at first use, which
+    /// matches `DateFormatter`'s own default behaviour since iOS never
+    /// changes locale without a relaunch.
+    private static let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "EEEE"
-        return f.string(from: date)
+        return f
+    }()
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    private static func weekdayText(_ date: Date) -> String {
+        weekdayFormatter.timeZone = .current
+        return weekdayFormatter.string(from: date)
     }
 
     private static func dateText(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f.string(from: date)
+        dateFormatter.timeZone = .current
+        return dateFormatter.string(from: date)
     }
 }
 
@@ -880,8 +938,13 @@ private struct SmoothTodoEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             ZStack {
+                // Lemon on the navy ground read as a muddy yellow halo behind
+                // the moonlit art; after sunset the disc is cobalt, matching
+                // the art's pale-blue tint (owner's call, 2026-09-25).
                 Circle()
-                    .fill(Color.smoothLemon.opacity(0.16))
+                    .fill(colorScheme == .dark
+                          ? Color.smoothCobalt.opacity(0.18)
+                          : Color.smoothLemon.opacity(0.16))
                     .frame(width: 218, height: 218)
                     .scaleEffect(appeared ? 1 : 0.78)
                     .opacity(appeared ? 1 : 0)
@@ -901,29 +964,22 @@ private struct SmoothTodoEmptyState: View {
                     }
                 }
 
-                if let img = bundledImage("chill", ext: "jpg") {
-                    Group {
-                        if colorScheme == .dark {
-                            img
-                                .resizable()
-                                .scaledToFit()
-                                .colorInvert()
-                                .blendMode(.screen)
-                                .opacity(appeared ? 0.25 : 0)
-                        } else {
-                            img
-                                .resizable()
-                                .scaledToFit()
-                                .blendMode(.multiply)
-                                .opacity(appeared ? 0.35 : 0)
-                        }
+                Group {
+                    if colorScheme == .dark {
+                        chillDarkArtwork(opacity: appeared ? 0.4 : 0)
+                    } else if let img = bundledImage("chill", ext: "jpg") {
+                        img
+                            .resizable()
+                            .scaledToFit()
+                            .blendMode(.multiply)
+                            .opacity(appeared ? 0.35 : 0)
                     }
-                    .frame(maxWidth: 242)
-                    .scaleEffect(appeared ? 1 : 0.86)
-                    .offset(y: appeared ? -4 : 14)
-                    .animation(.spring(response: 0.68, dampingFraction: 0.76), value: appeared)
-                    .accessibilityHidden(true)
                 }
+                .frame(maxWidth: 242)
+                .scaleEffect(appeared ? 1 : 0.86)
+                .offset(y: appeared ? -4 : 14)
+                .animation(.spring(response: 0.68, dampingFraction: 0.76), value: appeared)
+                .accessibilityHidden(true)
             }
 
             Text("go enjoy life")

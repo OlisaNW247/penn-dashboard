@@ -30,7 +30,18 @@ struct DashViewPicker: View {
                                 .matchedGeometryEffect(id: "active", in: indicator)
                         }
                     }
-                    .contentShape(Capsule())
+                    // Visual capsule stays 32pt tall (Marco's call); the tap
+                    // target reaches the 44pt minimum by padding out to 44,
+                    // capturing that as the hit shape, then padding back in
+                    // by the same amount so the reported layout size — and
+                    // therefore the row's height and every sibling's
+                    // position — is unchanged. (`contentShape` fixes the hit
+                    // region to the view's bounds at the point it's applied,
+                    // before the negative padding shrinks what's reported
+                    // to the parent for layout.)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -6)
                     .onTapGesture { select(filter) }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(filter.label)
@@ -61,6 +72,10 @@ struct ClassFilterMenu: View {
     /// (course key, display name), already sorted by the caller.
     let courses: [(key: String, name: String)]
     @Binding var selection: String?
+    /// Open-item count per course key, for the "PHYS 151 · 3" line. Optional
+    /// and defaults empty: a caller with no cheap way to count just gets the
+    /// plain name back, same as before.
+    var counts: [String: Int] = [:]
 
     var body: some View {
         Menu {
@@ -78,10 +93,20 @@ struct ClassFilterMenu: View {
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) { selection = course.key }
                 } label: {
+                    // A colored dot per class via `Label`'s image slot. iOS
+                    // renders an SF Symbol's own fill in a Menu row (it isn't
+                    // forced to the menu's monochrome tint the way a text
+                    // label is), so this is the one place in the picker that
+                    // can show the accent without a custom row.
                     if selection == course.key {
-                        Label(course.name, systemImage: "checkmark")
+                        Label(menuTitle(course), systemImage: "checkmark")
                     } else {
-                        Text(course.name)
+                        Label {
+                            Text(menuTitle(course))
+                        } icon: {
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(courseAccent(for: course.key))
+                        }
                     }
                 }
             }
@@ -95,6 +120,11 @@ struct ClassFilterMenu: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel(selection.map { "filtered to \($0)" } ?? "filter by class")
+    }
+
+    private func menuTitle(_ course: (key: String, name: String)) -> String {
+        guard let count = counts[course.key] else { return course.name }
+        return "\(course.name) · \(count)"
     }
 }
 
@@ -135,7 +165,11 @@ struct DashCircleIcon: View {
             .foregroundStyle(foreground)
             .frame(width: 38, height: 38)
             .background(Circle().fill(fill))
-            .contentShape(Circle())
+            // Drawn circle stays 38pt; the hit region is a 44pt circle
+            // (inset by -3 on all sides = +6 diameter) so it reaches the
+            // minimum without widening the frame the control row lays out
+            // — that would nudge every sibling in the row's HStack.
+            .contentShape(Circle().inset(by: -3))
     }
 }
 
