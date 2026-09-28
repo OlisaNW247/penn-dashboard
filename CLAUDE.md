@@ -105,10 +105,15 @@ mode, the S app mark, and bundled type registered at runtime by
 **Release state.** Live on the App Store: **1.2.1** (App Store id
 `6783911002`, released 2026-09-04; re-confirmed by Olisa on the store page
 2026-09-15). This line has been stale before, so re-check it rather than
-trust it. `project.yml` stamps **3.0.0 (build 10)**. Builds 7–9 of 3.0.0
+trust it. `project.yml` stamps **3.0.0 (build 11)**. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
-2.1(a), see Known gaps). Build 10 is the first from `V7` (2026-09-27, with
-Olisa's session logic restored; see the 24-hour trap). On launch the app fetches a public update-policy file that can
+2.1(a), see Known gaps). A build 10 was already on App Store Connect when
+V7 tried to use that number on 2026-09-27; this file never recorded who
+uploaded it or from which branch, so ask Olisa before assuming. Build 11
+is the first from `V7` (2026-09-27, with Olisa's session logic restored;
+see the 24-hour trap). App Store Connect refuses an upload whose build
+number is not higher than every build it has seen, so check there, not
+here, before picking the next one. On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
 ## What the app does
