@@ -1,5 +1,48 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
+## As pasted for 3.0.0 (11), 2026-09-27
+
+App Store Connect caps Notes at 4,000 characters, and the long version
+further down is well over that and partly stale (the old stay-signed-in
+toggle, the old tab names, the removed server-delete button). This is
+exactly what was saved on the 3.0.0 version:
+
+```text
+HOW TO REVIEW WITHOUT A SCHOOL LOGIN
+Re: Guideline 2.1(a), submission 067299d2 (build 8). This build includes the demonstration mode your note asked for.
+
+Sign-in uses each university's own Canvas single sign-on (at Penn: PennKey plus Duo). Only the university can issue those accounts, so we can't provide a demo login. You don't need one:
+
+On the first screen, tap "just exploring? preview with sample data". The same link is at the bottom of the Connect Canvas screen. It loads a fully populated demo with sample classes. No account or network is needed, and it stays across relaunches.
+
+Everything is reachable from the demo:
+1. Dashboard: the todo / all / prev switch. Swipe a card right to complete it; tap it for details. The class filter, + (add a task) and the megaphone (announcement finds) sit above the list.
+2. Grades: the grades button in the header. Per-class grades grouped into syllabus categories, plus a grade report.
+3. Ask: the "ask about your classes" button. Plain-English questions about your classes; in the demo it answers on the device from sample course material.
+4. Profile: the person button in the header. Name, accounts, appearance, reminders, classes, notifications, sync.
+5. Widget: "Next Due" on the Home or Lock Screen.
+
+WHAT IT DOES
+A personal dashboard for university students. It reads the student's own Canvas deadlines (their calendar feed and signed-in session) and, optionally, Gradescope, and shows one "what's due next" list with local reminders and grades.
+
+PRIVACY AND NETWORKING
+- Grades, completions, the work list, the student's name and login cookies stay on the device (cookies in the Keychain, this device only).
+- At Penn, our small backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements) per Canvas course, and answers "ask" questions through an AI model via OpenRouter. Questions and answers are not stored, only daily request counts. The announcement "ai assist" is on by default and can be turned off in Profile > notifications. Each install uses an anonymous account (no email, password or name); disconnecting Canvas deletes it and its data on our server.
+- No analytics, tracking, ads or third-party SDKs.
+
+STAY SIGNED IN (PENN ONLY)
+After a student signs in to Canvas at Penn, the app offers to save their PennKey username and password in the device Keychain (this device only, never uploaded), so it can refill Penn's own login page when Canvas signs them out. "Not now" is always available, and nothing is stored unless they save. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off rather than retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
+
+THIRD-PARTY SERVICES (5.2.2)
+Smooth is an independent client for services the student already has an account with. It uses their own credentials to show only their own data, and is not affiliated with Instructure (Canvas), Turnitin (Gradescope) or any university.
+```
+
+What's New, as saved: "Smooth now stays signed in to Canvas. If Canvas
+logs you out, the app quietly reconnects on its own. Also new: class
+colours when adding tasks and filtering, and a dark mode for the widget."
+
+## Long-form background (2026-09-16, build 9; not pasteable as is)
+
 _Last updated: 2026-09-16 (3.0.0, build 9). Add a contact name and email before
 pasting._
 

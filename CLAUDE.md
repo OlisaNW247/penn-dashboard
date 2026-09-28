@@ -107,13 +107,27 @@ mode, the S app mark, and bundled type registered at runtime by
 2026-09-15). This line has been stale before, so re-check it rather than
 trust it. `project.yml` stamps **3.0.0 (build 11)**. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
-2.1(a), see Known gaps). A build 10 was already on App Store Connect when
-V7 tried to use that number on 2026-09-27; this file never recorded who
-uploaded it or from which branch, so ask Olisa before assuming. Build 11
-is the first from `V7` (2026-09-27, with Olisa's session logic restored;
-see the 24-hour trap). App Store Connect refuses an upload whose build
-number is not higher than every build it has seen, so check there, not
-here, before picking the next one. On launch the app fetches a public update-policy file that can
+2.1(a), see Known gaps). Build 10 was uploaded 2026-09-16 at 9:54 AM,
+from before stay-signed-in existed, and attached to that rejected
+submission but never resubmitted. Build 11 is the first from `V7`
+(uploaded 2026-09-27, with Olisa's session logic restored; see the
+24-hour trap). App Store Connect refuses an upload whose build number is
+not higher than every build it has seen, so check TestFlight → Builds
+there, not this file, before picking the next one.
+
+App Store Connect, as left on 2026-09-27 (re-check it): the app is
+"Smooth For Students", team Stem Forward Co., whose Account Holder is
+Olisa's Apple ID. The updated Apple Developer Program License Agreement
+was accepted that day with Olisa's OK; until the Account Holder accepts a
+new one, Apple blocks every submission. The iOS version record was
+renamed 2.0.0 → 3.0.0, and its What's New and review notes were saved
+(the notes as pasted are at the top of `docs/appstore/REVIEW_NOTES.md`).
+Marco was finishing by hand: remove 3.0.0 from the old rejected
+submission `067299d2…`, swap build 10 for 11, then Add for Review →
+Submit. Whether he submitted is not recorded here. The version is set to
+release automatically once approved; raise the `update-manifest` floor
+only after 3.0.0 is actually downloadable. macOS 1.0 shows "Ready for
+Distribution" there (reviewed 2026-08-30), whatever older docs say. On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
 ## What the app does
@@ -247,6 +261,28 @@ read-only, from the App Group plist:
 ```bash
 xcrun devicectl device copy from --device <CoreDevice id> --domain-type appGroupDataContainer --domain-identifier group.com.lhf.lowhangingfruit --source Library/Preferences/group.com.lhf.lowhangingfruit.plist --destination /tmp/lhf.plist
 ```
+
+Crash reports come off the phone the same way (`--domain-type
+systemCrashLogs`, files named `Smooth-<date>.ips`; list them with
+`xcrun devicectl device info files --device <id> --domain-type systemCrashLogs`).
+An `.ips` is one JSON header line plus a JSON body: read the thread with
+`"triggered": true`. Reading someone else's phone needs it paired in
+Xcode → Devices and Simulators first; Finder's "Trust" alone is not
+enough for `devicectl`.
+
+Release upload (2026-09-27, the path that worked; do **not** run
+`xcodegen generate` first, whatever `docs/appstore/CHECKLIST.md` used to
+say, and bump `CURRENT_PROJECT_VERSION` by hand in both `project.yml` and
+`project.pbxproj`):
+
+```bash
+xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Release -destination 'generic/platform=iOS' -archivePath build/Smooth.xcarchive -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath build/Smooth.xcarchive -exportPath build/export -exportOptionsPlist docs/appstore/ExportOptions.plist -allowProvisioningUpdates
+```
+
+The export step uploads straight to App Store Connect, using the Apple
+account signed into Xcode. Submitting for review is a separate, manual
+step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
@@ -479,8 +515,11 @@ itself.
   completes that step themselves whenever Duo asks (with Duo's own "remember
   this device" for 30 days, roughly monthly).
 - **When it runs.** Whenever the saved Canvas cookie is more than 24 hours
-  past its last save (`SessionCookieStore.load`), on launch, on returning
-  to the foreground, or on a background wake, and on a Grade Watcher 401.
+  past its last save (`SessionCookieStore.load`), on launch or on returning
+  to the foreground, and on a Grade Watcher 401. The code would also run
+  it on a background wake, but every background wake crashes before doing
+  anything (see the background-refresh trap), so in practice it only ever
+  runs with the app open.
   Every successful pass through Duo re-issues Duo's 30-day
   `browsertrust` cookie, so a student who opens the app at least monthly
   should never see Duo again.
@@ -489,7 +528,8 @@ itself.
   phone, with a real PennKey and Duo, `-LHFAgeCanvasSession` renewed in 8
   seconds, hands-free, and Duo re-issued its trust. Olisa's phone renewed
   the same way on its own that afternoon. A renewal during a *background*
-  wake has never been observed; `debugRenewalLogV1` will show one.
+  wake has never happened on any phone, because background wakes crash
+  first.
 
 ## Traps that have already bitten
 
@@ -803,10 +843,27 @@ itself.
   and Duo's `browsertrust` cookie re-issued at each successful renewal.
   Restored for Penn byte for byte from `39b2fff` (`df759f8`), including
   the connect pane's `login/saml` start URL and cookie filters, and the
-  failed-connect no-op (`a16ea07`). The wrong fixes: trusting the server
-  and dropping the clock, as above; and a foreground-only guard on the
-  renewer, which was considered and declined on 2026-09-27 because Olisa's
-  exact logic is the version proven on a phone.
+  failed-connect no-op (`a16ea07`). The wrong fix: trusting the server
+  and dropping the clock, as above. Because background wakes crash (next
+  trap), the 2026-09-26 failure was a renewal with the app open, not a
+  background stall; whether Duo's trust had lapsed or its page was just
+  slow that day is unknown.
+- **Every background refresh has crashed since 2026-08-24, invisibly.**
+  `LHFBackgroundRefresh.register()` hands `BGTaskScheduler` a launch
+  handler with `using: nil`, so iOS runs it on its own background queue.
+  The closure inherits main-actor isolation, and Swift 6 checks that at
+  run time, so the app dies on entry (`SIGTRAP`, `_dispatch_assert_queue_fail`,
+  thread queue `com.apple.BGTaskScheduler (com.lhf.lowhangingfruit.refresh)`)
+  before any work happens. It is the same trap as the `decidedText` entry
+  above. Nobody sees it, because the app is closed at the time. The tell
+  is the `.ips` reports on the phone (`Smooth-<date>.ips` under
+  `systemCrashLogs`, five on Marco's phone from 2026-09-24 to 09-27). The
+  consequence that matters: "Olisa's proven logic" has only ever been
+  renew-on-open; no background refresh or background re-login has ever
+  run. The wrong fix is to fix the crash alone. That turns on background
+  re-logins, the one path never tested, whose hidden WebView may stall on
+  Duo and latch `needs Duo`. Fix it together with a foreground-only guard
+  on `CanvasSessionRenewer` (`ROADMAP.md` → Now).
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -831,8 +888,7 @@ because some of it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `V7` | **Current line (2026-09-23 onward).** Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in. New work branches from here, and lands back here. |
-| `v7-olisa-session` | Olisa's `39b2fff` session logic restored for Penn (2026-09-27). Fast-forwarded into `V7`; safe to delete, along with its worktree `../penn-dashboard-session`. |
+| `V7` | **Current line (2026-09-23 onward).** Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
@@ -854,9 +910,12 @@ none is a ship line.
   Every grade, submission and syllabus path is proven against fixtures
   only. This is the highest-value verification outstanding.
 - **Stay signed in is proven in the foreground only.** A real PennKey and
-  Duo renewed silently on two phones on 2026-09-27. A renewal during a
-  background wake has never been observed; if a student is ever signed out
-  again, read `debugRenewalLogV1` off a DEBUG build before redesigning.
+  Duo renewed silently on two phones on 2026-09-27. If a student is ever
+  signed out again, read `debugRenewalLogV1` off a DEBUG build before
+  redesigning.
+- **Background refresh does nothing: it crashes on every wake** (see the
+  background-refresh trap). Shipped that way in 3.0.0 (11) on purpose,
+  because fixing it alone would switch on untested background re-logins.
 - **Non-Penn schools have only been exercised by tests.** The seven verified
   installations and the custom-address path have never been signed into on a
   device.

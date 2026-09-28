@@ -181,15 +181,26 @@ entering preview mode only seeded on the *next* launch.
 
 ## Archive & upload — ⬜
 
+iOS: no `xcodegen generate` (it strips Info.plist content; see CLAUDE.md).
+Bump `CURRENT_PROJECT_VERSION` by hand in `project.yml` and
+`project.pbxproj` to one above the highest build in TestFlight. The export
+step uploads directly (`destination: upload` in `ExportOptions.plist`).
+This is the path used for 3.0.0 (11) on 2026-09-27:
+
 ```sh
-xcodegen generate
 xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
   -configuration Release -destination 'generic/platform=iOS' \
-  -archivePath build/LHF.xcarchive -allowProvisioningUpdates archive
+  -archivePath build/Smooth.xcarchive -allowProvisioningUpdates archive
 
-xcodebuild -exportArchive -archivePath build/LHF.xcarchive \
-  -exportPath build/export -exportOptionsPlist ExportOptions.plist
+xcodebuild -exportArchive -archivePath build/Smooth.xcarchive \
+  -exportPath build/export -exportOptionsPlist docs/appstore/ExportOptions.plist \
+  -allowProvisioningUpdates
 ```
+
+Before submitting: the team's Account Holder must have accepted any
+updated Apple Developer Program License Agreement (App Store Connect shows
+a yellow banner otherwise, and blocks submission). The App Store version
+number must match the build's version (3.0.0).
 
 - ⬜ Validate in Organizer → Distribute App → App Store Connect
 - ⬜ TestFlight smoke test on a real device: onboarding → login → dashboard →
