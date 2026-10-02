@@ -14,7 +14,7 @@
  *  than required. */
 export interface ProfileSourceDocument {
   id: string;
-  kind: "home" | "syllabus" | "assignment" | "announcement" | "module" | "page" | "website";
+  kind: "home" | "syllabus" | "assignment" | "announcement" | "module" | "page" | "website" | "ed";
   title: string;
   text: string;
   content_hash: string;
@@ -119,6 +119,10 @@ export function selectProfileInput(
   docs: ProfileSourceDocument[],
   maxChars: number,
 ): string {
+  // Kinds absent from this map (announcement, assignment, module, `ed`)
+  // are never profile input: the `.filter` below admits only the four kinds
+  // listed, so an Ed Discussion post can't reach the sort with an undefined
+  // priority.
   const priority: Record<string, number> = { syllabus: 0, website: 1, home: 2, page: 3 };
 
   const ordered = docs

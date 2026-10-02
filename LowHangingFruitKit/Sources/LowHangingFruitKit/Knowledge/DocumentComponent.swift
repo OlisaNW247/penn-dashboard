@@ -130,11 +130,12 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
     /// an assignment called "Lab 3" mentions a component without proving
     /// the course is graded in two parts; the first version of this check
     /// counted them and labelled every CIS 2400 answer "[lecture]" on the
-    /// strength of one rescheduled recitation.
+    /// strength of one rescheduled recitation. An Ed Discussion post is
+    /// chatter of the same sort, so it is excluded with them.
     public static func courseIsSplit(_ documents: [CourseDocument]) -> Bool {
         documents.contains { document in
             switch document.kind {
-            case .announcement, .assignment: return false
+            case .announcement, .ed, .assignment: return false
             case .syllabus, .home, .page, .module, .website: break
             }
             switch classify(title: document.title, text: document.text) {

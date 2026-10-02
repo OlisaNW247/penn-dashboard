@@ -40,6 +40,17 @@ Deno.test("selectProfileInput ignores documents of kinds outside syllabus/home/p
   assert.ok(input.includes("syllabus text"));
 });
 
+Deno.test("selectProfileInput never includes an ed document, even alone", () => {
+  const ed = doc({ id: "ed:1:9", kind: "ed", title: "Pinned", text: "ed post should not appear" });
+  assert.equal(selectProfileInput([ed], 100000), "");
+  const input = selectProfileInput(
+    [ed, doc({ id: "s1", kind: "syllabus", text: "syllabus text" })],
+    100000,
+  );
+  assert.ok(!input.includes("ed post should not appear"));
+  assert.ok(input.includes("syllabus text"));
+});
+
 Deno.test("selectProfileInput stops at a document boundary rather than truncating mid-document", () => {
   const docs = [
     doc({ id: "s1", kind: "syllabus", text: "x".repeat(50) }),

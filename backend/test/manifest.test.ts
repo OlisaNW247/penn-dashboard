@@ -73,6 +73,15 @@ Deno.test("validateDocument accepts a well-formed document", () => {
   assertEquals(doc.kind, "syllabus");
 });
 
+Deno.test("validateDocument accepts kind ed", () => {
+  const doc = validateDocument(
+    validDocumentInput({ kind: "ed", id: "ed:100:8675309", sourceID: "8675309" }),
+  );
+  assertEquals(doc.kind, "ed");
+  assertEquals(doc.id, "ed:100:8675309");
+  assertEquals(doc.sourceID, "8675309");
+});
+
 Deno.test("validateDocument rejects an id that doesn't match kind:courseID:sourceID", () => {
   assertThrows(
     () => validateDocument(validDocumentInput({ id: "syllabus:999:1" })),

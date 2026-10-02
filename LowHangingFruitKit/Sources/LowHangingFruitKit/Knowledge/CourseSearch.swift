@@ -170,7 +170,11 @@ public struct CourseSearch: Sendable {
         case .syllabus:
             let policyWords = ["policy", "late", "grading", "grade", "attendance", "office hours", "textbook", "exam", "midterm", "final", "weight", "percent", "curve", "extension", "collaboration", "honor", "absence"]
             return policyWords.contains(where: q.contains) ? 1.35 : 1.1
-        case .announcement:
+        // An Ed Discussion announcement or pinned staff post is the same
+        // kind of signal as a Canvas announcement: short, recent, and
+        // usually the newest word on a deadline or a change. So it shares
+        // the announcement weighting rather than the neutral one.
+        case .announcement, .ed:
             let recentWords = ["announce", "announcement", "said", "posted", "update", "news", "cancel", "reschedul", "moved", "change"]
             return recentWords.contains(where: q.contains) ? 1.4 : 1.0
         case .assignment: return 1.05

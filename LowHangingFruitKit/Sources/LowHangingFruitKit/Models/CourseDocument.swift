@@ -16,6 +16,16 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         /// syllabus) — discovered and fetched server-side (see
         /// `backend/PROTOCOL.md`'s `discover-websites`), not by this client.
         case website
+        /// An Ed Discussion post: only course announcements, pinned threads
+        /// and staff posts, never a student's post, so a classmate's
+        /// question can't end up pooled for the whole course. `sourceID` is
+        /// the Ed thread id and `text` is plain text converted from Ed's
+        /// XML body. The author's name is never carried, on the document or
+        /// in the text, because staff posts are pooled across a course and
+        /// a name is not something the answer needs. Content like
+        /// `announcement`, and never profile or syllabus input (see
+        /// `docs/ED_DISCUSSION.md`, `backend/PROTOCOL.md`).
+        case ed
 
         /// Human label used in source cards ("From the CIS 2400 syllabus").
         public var label: String {
@@ -27,6 +37,7 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
             case .module:       return "module"
             case .page:         return "page"
             case .website:      return "course website"
+            case .ed:           return "ed discussion"
             }
         }
     }

@@ -4,14 +4,18 @@
 // and so `sync/index.ts` stays a thin wiring layer around it: parse the
 // request, call into here, call into db.ts, respond.
 
-/** The seven document kinds the protocol recognizes. Anything else is a
+/** The eight document kinds the protocol recognizes. Anything else is a
  * bug on the client (a new kind must be added here and in the migration's
  * CHECK constraint together, never just one side). `website` is the one
  * kind never uploaded by the client at all -- it is written directly by
  * `discover-websites/index.ts` for a course's own crawled site (see
  * PROTOCOL.md's course-website section) -- but it still has to be a
  * recognized `DocumentKind` here so a `website` row reads back through
- * `documentRowToWire`/the manifest diff exactly like any other document. */
+ * `documentRowToWire`/the manifest diff exactly like any other document.
+ * `ed` (Ed Discussion announcements, pinned threads and staff posts, see
+ * docs/ED_DISCUSSION.md) is uploaded by the client like `announcement`,
+ * is content only, and is never profile input (`PROFILE_RELEVANT_KINDS`
+ * below and `selectProfileInput` in profile.ts both leave it out). */
 export type DocumentKind =
   | "home"
   | "syllabus"
@@ -19,7 +23,8 @@ export type DocumentKind =
   | "announcement"
   | "module"
   | "page"
-  | "website";
+  | "website"
+  | "ed";
 
 const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "home",
@@ -29,6 +34,7 @@ const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "module",
   "page",
   "website",
+  "ed",
 ];
 
 function isDocumentKind(value: unknown): value is DocumentKind {

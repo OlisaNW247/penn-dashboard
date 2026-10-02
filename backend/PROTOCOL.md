@@ -77,10 +77,19 @@ server-side for `ask`) and reads that component's `credits` to decide
 whether the site it's looking at is the credit-bearing "class" or an
 attached zero-credit component.
 
-`kind` is one of `home | syllabus | assignment | announcement | module | page | website`.
+`kind` is one of `home | syllabus | assignment | announcement | module | page | website | ed`.
 `id` is always `"{kind}:{courseID}:{sourceID}"`, computed by the client for
 every kind except `website`, which the server computes itself (see "Course
 websites" below) since a crawled page has no Canvas id to key on.
+
+`ed` is an Ed Discussion post (see `docs/ED_DISCUSSION.md`). `sourceID` is the
+Ed thread id, so `id` is `"ed:{courseID}:{threadID}"`, and `courseID` is still
+the Canvas course id the thread's Ed course was matched to. `text` is plain text
+converted from Ed's XML body. Author names are never included, in `text` or
+anywhere else. Only announcements, pinned threads and staff posts are
+uploaded; a student's post never becomes a document. `ed` is content like
+`announcement`: it is never profile or syllabus input, and it does not make a
+course's profile stale.
 
 `CourseSummaryWire.section` is the Canvas SIS section number for *this
 Canvas course site* (e.g. `"401"`), at most 8 characters matching
