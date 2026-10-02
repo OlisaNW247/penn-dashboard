@@ -126,6 +126,18 @@ struct SettingsPage: View {
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
+                    // Read-only on purpose: Ed is signed in through the
+                    // Canvas login with nothing for the student to do, so a
+                    // button here would have nothing to press. Penn only,
+                    // since ingestion is (`refreshCourseKnowledge`).
+                    if FeatureFlags.edDiscussion && state.canvasInstallation.id == CanvasInstallation.penn.id {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("ed discussion", systemImage: "bubble.left.and.text.bubble.right")
+                            Text(state.edDiscussionStatus ?? "checks your classes' ed pages after canvas syncs")
+                                .font(.lhfSecondary(12))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     stayLoggedInRows
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")

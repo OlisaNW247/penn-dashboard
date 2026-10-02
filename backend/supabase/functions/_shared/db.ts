@@ -200,10 +200,21 @@ export async function selectLiveDocumentsForCourses(
  * enough to call once per fully-synced course in the upload step without
  * pulling every document's full text along for the ride. */
 export async function selectLiveDocumentIDsForCourse(client: SupabaseClient, courseID: string): Promise<string[]> {
+  // `ed` documents are excluded on purpose, so the complete-set rule in
+  // the upload step can never mark them gone. A course's Canvas material
+  // is the same for every enrolled student, so one student's full fetch
+  // is authoritative for the whole pool; its Ed board is not: a student
+  // who has not joined Ed yet, or whose Canvas site lacks the Ed tab,
+  // legitimately uploads a fully-synced course with zero `ed` ids, and
+  // treating that as "every Ed thread was deleted" would erase what their
+  // classmates pooled. The cost is that an Ed thread deleted on Ed stays
+  // pooled until a dedicated Ed sync signal exists (PROTOCOL.md, "Ed
+  // Discussion documents"). Clients still drop them locally.
   const { data, error } = await client
     .from("course_documents")
     .select("id")
     .eq("course_id", courseID)
+    .neq("kind", "ed")
     .is("gone_at", null);
   if (error) throw error;
   return (data ?? []).map((row) => (row as { id: string }).id);

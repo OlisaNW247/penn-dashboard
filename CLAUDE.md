@@ -67,7 +67,16 @@ password, no name. Two things go through it:
   descriptions and announcements are fetched from Canvas with the student's
   own login, then pooled per Canvas course so classmates share one copy.
   Sync is automatic: after Canvas connects, then on the refresh loop with
-  hourly staleness. There is no manual sync.
+  hourly staleness. There is no manual sync. Since 2026-10-02 (`v8`, not
+  yet verified on a device) the same sync also reads **Ed Discussion** for
+  any class whose Canvas site has an Ed tool: the app performs the tool's
+  LTI launch in a hidden WebView on the student's Canvas session, keeps
+  the Ed cookies in the Keychain (`SessionCookieStore.Service.ed`), reads
+  the board with `EdClient`, and keeps only announcements, pinned threads
+  and staff posts (`EdThreadFilter`) as documents of kind `ed`. Student,
+  private and anonymous posts never leave the phone; no author is ever
+  named. `docs/ED_DISCUSSION.md` is the design record;
+  `FeatureFlags.edDiscussion` is the kill switch.
 - **ask** ("the tree"). Questions go to the backend with the on-device
   context document and matched excerpts, and are answered by a model via
   OpenRouter under LHF's own key (see the ask section below). The
@@ -183,7 +192,8 @@ fastest way for a new session to know what exists.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
-     only when Penn rejected a saved PennKey password)
+     only when Penn rejected a saved PennKey password; a read-only "ed
+     discussion" status line at Penn, since there is nothing to connect)
   3. appearance (system / light / dark)
   4. reminders (on/off; 1 hour, 3 hours, 1 day, 2 days; "turned in"
      confirmations)
@@ -888,7 +898,8 @@ because some of it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `V7` | **Current line (2026-09-23 onward).** Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
+| `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Blind until compiled. |
+| `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
@@ -906,6 +917,14 @@ none is a ship line.
 
 ## Known gaps
 
+- **Ed Discussion ingestion has never run on a device** (`v8`, 2026-10-02,
+  ~2,000 blind lines across six commits). The one real unknown is whether
+  the LTI launch leaves Ed's session in cookies, which `EdClient` assumes,
+  or in a stored token, for which `EdAuth.token` exists but nothing fills
+  it. The DEBUG "probe ed discussion" row in Profile answers that in one
+  tap and its paste decides whether any change is needed. Until then the
+  feature fails soft: every error is a note in the sync trace and the
+  Settings status line, never a thrown error.
 - **Nothing has ever been tested against real Canvas or Gradescope data.**
   Every grade, submission and syllabus path is proven against fixtures
   only. This is the highest-value verification outstanding.

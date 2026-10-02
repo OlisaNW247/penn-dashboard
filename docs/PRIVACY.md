@@ -94,6 +94,17 @@ on-device alone:
   connect Canvas, then again on the app's normal hourly refresh if a course's
   material is stale. There's no manual sync button and nothing to type in.
 
+  **Ed Discussion, for classes that use it (Penn, since 2026-10-02).** If a
+  class's Canvas site has an "Ed Discussion" tool, the app opens it the way
+  you would, signed in through your own Canvas session, and reads the
+  class's Ed board. It keeps only the posts that are course material:
+  announcements, pinned posts, and posts written by the instructor or TAs.
+  Student posts and questions, private posts, and anonymous posts never
+  leave your phone, and no author's name is ever recorded. The kept posts
+  are pooled per class exactly like a syllabus. You never type an Ed
+  password or token; the Ed session the app receives is stored in this
+  phone's Keychain like your Canvas session and deleted with it.
+
   **What is never included:** your grades, completions, submission state, your
   work list, your name, or anything else specific to you. Only the shared,
   public-to-the-class content described above. The only other request the app
@@ -183,7 +194,8 @@ and API access.
 
 **Disconnecting Canvas** (Profile → accounts → canvas) deletes your class data
 from our server along with your login on the device: your enrollment records,
-your usage counters, and the anonymous account itself. The confirmation says
+your usage counters, and the anonymous account itself, and it removes the
+Ed Discussion session from this phone. The confirmation says
 so before you tap it. It does not delete the shared course material other students
 are still using, because that material was never yours alone — it's the same
 syllabus and assignment pages every enrolled student can already see on

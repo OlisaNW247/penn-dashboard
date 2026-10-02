@@ -1,7 +1,27 @@
 # Ed Discussion → pooled course material
 
-Written 2026-09-22. Branch: `v6`. Status: **phase 0 (recon probe) built
-blind, not compiled; nothing ingested yet.**
+Written 2026-09-22. Branch: `v8` (cut from `V7` 2026-10-02). Status:
+**phase 1 built on 2026-10-02, blind, across six commits; nothing has run
+on a device yet.** The cookie transport is assumed; the phase 0 probe's
+paste (still outstanding) confirms or corrects it. What exists:
+
+| Piece | Where |
+|---|---|
+| kind `ed` on both sides of the wire | `CourseDocument.Kind.ed`, migration `20261002090000_ed_kind.sql`, `_shared/manifest.ts`, `PROTOCOL.md` |
+| wire models, XML → text, filter, matcher, builder | `Kit/Ed/EdWire.swift`, `EdDocumentText.swift`, `EdThreadFilter.swift`, `EdCourseMatcher.swift`, `EdDocumentBuilder.swift` |
+| HTTP client and document ingestion | `Kit/Ed/EdClient.swift` (cookie or `x-token` auth), `EdIngestion.swift` |
+| hidden-WebView LTI launch, cookie capture | `UI/EdSessionLauncher.swift`, Keychain slot `SessionCookieStore.Service.ed` (never aged by the 24 h Canvas rule) |
+| orchestration inside the course-material sync | `UI/EdDiscussionCoordinator.swift`, called from `AppState+CourseKnowledge.swift` before the backend upload on both paths |
+| status for the student | read-only "ed discussion" row in Profile → accounts (Penn only) |
+| kill switch | `FeatureFlags.edDiscussion` |
+
+Two things learned building it. `CourseKnowledgeBase.merge` and the Canvas
+collector both treat a course's documents as a complete set, so an Ed
+merge must pass the course's existing non-Ed documents alongside the new
+ones, and prior `ed` documents must be restored after every collector
+run or an unreachable Ed would erase them (and report them gone to the
+server). And `CourseSummary` carries no term, so the matcher's term comes
+from `CourseCode.parse(name).term`, falling back to code-only.
 
 ## What Olisa asked for
 

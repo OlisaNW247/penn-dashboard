@@ -334,6 +334,19 @@ final class AppState: ObservableObject {
     @Published var courseKnowledge: CourseKnowledgeBase
     @Published var isCourseKnowledgeSyncing = false
     @Published var courseKnowledgeNotice: String?
+    /// One line for Settings → accounts → "ed discussion": what the last Ed
+    /// sync did ("connected: CIS 2400", "no classes use ed discussion", ...).
+    /// `nil` until a sync has run this launch. Not `private(set)` because the
+    /// sync that writes it lives in `AppState+CourseKnowledge.swift`, and
+    /// `private` is file-scoped (the same reason `courseKnowledgeNotice`
+    /// above is not). Set only by `mergeEdDiscussion`, cleared on Canvas
+    /// disconnect.
+    @Published var edDiscussionStatus: String?
+    /// Lazily created and reused so the launcher's in-flight and
+    /// 30-minute throttle state persist across syncs (a fresh coordinator per
+    /// sync would forget it and relaunch every five minutes). Internal
+    /// rather than `private` for the same file-scope reason as above.
+    lazy var edDiscussionCoordinator = EdDiscussionCoordinator()
     /// The most recent `refreshCourseKnowledge()` run's diagnostic trace,
     /// this launch only (never persisted) — see `CourseKnowledgeSyncTrace`
     /// and `AppState.courseKnowledgeSyncDiagnosticLines` in
@@ -2536,6 +2549,15 @@ final class AppState: ObservableObject {
         // simplest to get out of the way immediately.
         disableStayLoggedIn()
         SessionCookieStore.remove(service: .canvas)
+        // The Ed session exists only as a child of the Canvas login (the LTI
+        // launch minted it), so it goes with it, along with the caches that
+        // describe this Canvas account's courses. A user-initiated
+        // disconnect only: `simulateCanvasLogoutForTesting` also removes
+        // `.canvas` but is a session-death rehearsal, not a sign-out.
+        SessionCookieStore.remove(service: .ed)
+        EdDiscussionCoordinator.clearCaches()
+        edDiscussionCoordinator.resetThrottle()
+        edDiscussionStatus = nil
         // Best-effort revoke BEFORE the local clear, not after: the revoke
         // authenticates as the token itself (`Authorization: Bearer
         // <token>` — see `CanvasAccessTokenMinter.revoke`), so it needs the
@@ -2627,9 +2649,11 @@ final class AppState: ObservableObject {
         // WKWebsiteDataStore session survives disconnect and gets presented
         // to a "Reconnect" attempt later in the same app process (see
         // docs/CANVAS_LOGIN_DIAGNOSIS.md H1/H2).
+        // "edstem" too: the Ed launch ran in this same store, and an Ed
+        // cookie left behind would be presented to the next account's launch.
         Task {
             await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: websiteDataHints,
+                matchingDomainContains: websiteDataHints + ["edstem"],
                 in: LoginDataStores.canvas
             )
         }

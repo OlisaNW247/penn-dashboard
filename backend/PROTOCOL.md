@@ -89,7 +89,14 @@ converted from Ed's XML body. Author names are never included, in `text` or
 anywhere else. Only announcements, pinned threads and staff posts are
 uploaded; a student's post never becomes a document. `ed` is content like
 `announcement`: it is never profile or syllabus input, and it does not make a
-course's profile stale.
+course's profile stale. One more exception: the upload step's complete-set
+rule (Step 2 below, "sets `gone_at` on live docs of a fully-synced course
+whose id is absent from `documentIDs`") skips `ed` documents. A fully
+fetched Canvas course is the same for every enrolled student, but its Ed
+board is not: a student not yet on Ed, or without the Ed tab, legitimately
+reports a fully-synced course with no `ed` ids, and that must not erase
+classmates' pooled threads. So `ed` rows are only ever upserted; a thread
+deleted on Ed stays pooled until an Ed-specific sync signal exists.
 
 `CourseSummaryWire.section` is the Canvas SIS section number for *this
 Canvas course site* (e.g. `"401"`), at most 8 characters matching

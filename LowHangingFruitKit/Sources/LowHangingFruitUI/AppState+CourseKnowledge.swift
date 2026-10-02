@@ -238,6 +238,13 @@ extension AppState {
             lastCourseKnowledgeSyncTrace = trace
         }
 
+        // The collector merges each course it re-fetches with itself as the
+        // complete set, so it drops that course's `.ed` documents (it has no
+        // idea Ed exists). Taken here, in both paths below, so
+        // `mergeEdDiscussion` can put back what an unreachable Ed would
+        // otherwise have cost the student.
+        var priorEdDocuments = courseKnowledge.documents.filter { $0.kind == .ed }
+
         let store = CourseKnowledgeStore.default()
         let collector = CourseKnowledgeCollector(
             cookies: cookies,
@@ -261,11 +268,21 @@ extension AppState {
             trace.coursesToFetch = trace.courseIDs
             do {
                 let report = try await collector.run(courses: courses, fetchFully: nil)
-                courseKnowledge = report.knowledge
+                // Ed documents join here, before anything reads the
+                // knowledge base. On-device ask uses them too, so this path
+                // needs them even though it never uploads.
+                let ed = await mergeEdDiscussion(
+                    into: report.knowledge,
+                    prior: priorEdDocuments,
+                    courses: courses,
+                    cookies: cookies,
+                    store: store
+                )
+                courseKnowledge = ed.knowledge
                 pushGradeWatcherFacts()
                 markCourseKnowledgeSyncVersion()
                 trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
-                trace.collectorErrors = report.errors
+                trace.collectorErrors = report.errors + ed.notes
                 if report.syncedCourses == 0 {
                     courseKnowledgeNotice = "couldn't read course materials from canvas. \(report.errors.first ?? "")"
                 } else if !report.errors.isEmpty {
@@ -328,15 +345,33 @@ extension AppState {
         // on disk before this sync began.
         try? store.save(withDownloads)
         courseKnowledge = withDownloads
+        // Re-taken after the manifest's downloads: another student's phone
+        // may have pooled Ed threads for a course this phone has none for,
+        // and those are as worth restoring as the ones read locally.
+        priorEdDocuments = withDownloads.documents.filter { $0.kind == .ed }
         pushGradeWatcherFacts()
 
         do {
             let report = try await collector.run(courses: courses, fetchFully: Set(plan.coursesToFetch.map(\.courseID)))
-            courseKnowledge = report.knowledge
+            // Ed documents join here, BEFORE `SyncPlanner.uploads` below
+            // reads `courseKnowledge`: the upload sends every local document
+            // the server lacks, and its `fullySyncedCourses` lists each
+            // course's current document ids, which the server treats as the
+            // complete set (backend/PROTOCOL.md). Merged after the upload,
+            // a freshly fetched course would be reported without its Ed
+            // threads and the server would mark them gone.
+            let ed = await mergeEdDiscussion(
+                into: report.knowledge,
+                prior: priorEdDocuments,
+                courses: courses,
+                cookies: cookies,
+                store: store
+            )
+            courseKnowledge = ed.knowledge
             pushGradeWatcherFacts()
             markCourseKnowledgeSyncVersion()
             trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
-            trace.collectorErrors = report.errors
+            trace.collectorErrors = report.errors + ed.notes
             if !report.errors.isEmpty {
                 courseKnowledgeNotice = "synced \(report.fullyFetchedCourseIDs.count) courses; some pages were skipped."
             } else if manifestSucceeded {
@@ -396,6 +431,43 @@ extension AppState {
             courseKnowledgeNotice = error.localizedDescription
             trace.collectorErrors.append(error.localizedDescription)
         }
+    }
+
+    /// Adds Ed Discussion documents to what the Canvas collector just
+    /// produced, and returns the result with the Ed sync's notes (prefixed
+    /// "ed: ") for the trace. Never throws. Inert unless the flag is on, the
+    /// install is Penn's (the backend pools by Canvas course id, which two
+    /// schools would share) and this is not a test run (the sync opens a
+    /// WebView and the Keychain).
+    ///
+    /// Saves to the store only when something changed, so a run where Ed
+    /// contributed nothing writes nothing extra.
+    private func mergeEdDiscussion(
+        into collected: CourseKnowledgeBase,
+        prior: [CourseDocument],
+        courses: [CourseSummary],
+        cookies: [HTTPCookie],
+        store: CourseKnowledgeStore
+    ) async -> (knowledge: CourseKnowledgeBase, notes: [String]) {
+        guard FeatureFlags.edDiscussion,
+              canvasInstallation.id == CanvasInstallation.penn.id,
+              !SharedDefaults.isTestRunner
+        else { return (collected, []) }
+
+        var knowledge = collected
+        let edReport = await edDiscussionCoordinator.sync(
+            courses: courses,
+            canvasCookies: cookies,
+            canvasBase: canvasBaseURL,
+            knowledge: &knowledge,
+            priorEdDocuments: prior,
+            now: Date()
+        )
+        edDiscussionStatus = edReport.statusLine
+        if knowledge != collected {
+            try? store.save(knowledge)
+        }
+        return (knowledge, edReport.notes.map { "ed: " + $0 })
     }
 
     /// Records a run that never reached the collector — a guard turned it

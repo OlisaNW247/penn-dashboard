@@ -55,6 +55,30 @@ enum FeatureFlags {
     /// app behaves exactly as it did before the token work.
     static let canvasAccessTokens = false
 
+    /// **Ed Discussion ingestion is on.** Olisa's call: classes that run
+    /// their Q&A on Ed (the instructor's pinned posts and announcements
+    /// often carry the policy that never reaches the syllabus) should feed
+    /// ask without the student doing anything. `EdDiscussionCoordinator`
+    /// finds each course's "Ed Discussion" nav tool, performs its LTI launch
+    /// in a hidden WebView on the Canvas session the app already holds, and
+    /// reads Ed's API with the cookies that launch produced. On is a
+    /// decision, not a verification: the next step is proving it on his own
+    /// phone (`docs/ED_DISCUSSION.md`), and nothing here has yet run against
+    /// real Canvas or Ed data.
+    ///
+    /// Penn-only at runtime, independent of this flag: the backend pools
+    /// course material by numeric Canvas course id, which two schools would
+    /// share (see `refreshCourseKnowledge`), so every call site also checks
+    /// `canvasInstallation.id == CanvasInstallation.penn.id`.
+    ///
+    /// **This is the kill switch.** Ed's API is private and undocumented; if
+    /// Ed changes it and the sync starts failing or misbehaving, flipping
+    /// this to `false` removes the whole path (the launch, the fetch, the
+    /// Settings row) without touching anything the Canvas sync does. Ed
+    /// documents already stored stay in the knowledge base until the next
+    /// Canvas resync of their course drops them.
+    static let edDiscussion = true
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at

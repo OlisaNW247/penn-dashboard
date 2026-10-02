@@ -24,6 +24,21 @@ enum SessionCookieStore {
     enum Service: String, CaseIterable {
         case canvas
         case gradescope
+        /// Ed Discussion's session (`us.edstem.org`), captured by
+        /// `EdSessionLauncher` from the hidden LTI launch on the Canvas
+        /// WebView. Same Keychain home as the others: device-bound
+        /// (`AfterFirstUnlockThisDeviceOnly`), never synced, deleted with a
+        /// Canvas disconnect (`AppState.disconnectCanvas`) because it exists
+        /// only as a child of the Canvas login. Its own item, so removing it
+        /// (a 401 from Ed) can never touch a Canvas or Gradescope session.
+        ///
+        /// **It does not carry the 24-hour no-expiry rule** (see
+        /// `maxAge(for:)`): that rule is the *trigger* for Canvas's silent
+        /// renewal, which is a thing the app can do. Nothing here can renew
+        /// an Ed session except relaunching through Canvas, and Ed's own 401
+        /// is the authoritative signal for that, so an Ed cookie is trusted
+        /// until Ed says otherwise.
+        case ed
     }
 
     private static func service(for s: Service) -> String {
@@ -107,7 +122,7 @@ enum SessionCookieStore {
                 return expires > now ? cookie : nil
             }
             if let capturedString = entry["capturedAt"], let captured = isoFormatter.date(from: capturedString) {
-                return now.timeIntervalSince(captured) < sessionCookieMaxAge ? cookie : nil
+                return isStale(capturedAt: captured, now: now, service: service) ? nil : cookie
             }
             // No expiry and no capture timestamp recorded (data written before
             // this staleness tracking existed) — treat as expired rather than
@@ -142,6 +157,29 @@ enum SessionCookieStore {
     /// practice; this is a safety bound, not an attempt to model their real
     /// server-side timeout.
     private static let sessionCookieMaxAge: TimeInterval = 24 * 60 * 60
+
+    /// The no-expiry trust window for `service`, or `nil` for a service that
+    /// has none. Canvas and Gradescope keep exactly the rule they had
+    /// (`sessionCookieMaxAge`); Ed has no clock at all. The wrong version of
+    /// adding `.ed` is letting it inherit the 24 hours by falling through
+    /// `load(service:)` unchanged: the Ed session would silently die a day
+    /// after every launch, and unlike Canvas nothing renews it on the next
+    /// open except a fresh LTI launch the coordinator only makes when the
+    /// store comes back empty or Ed answers 401.
+    static func maxAge(for service: Service) -> TimeInterval? {
+        switch service {
+        case .canvas, .gradescope: return sessionCookieMaxAge
+        case .ed: return nil
+        }
+    }
+
+    /// Pure staleness rule behind `load(service:)` for a cookie with no
+    /// server-supplied expiry, split out so a test can age a cookie without
+    /// touching the Keychain.
+    static func isStale(capturedAt: Date, now: Date, service: Service) -> Bool {
+        guard let limit = maxAge(for: service) else { return false }
+        return now.timeIntervalSince(capturedAt) >= limit
+    }
 
     // `ISO8601DateFormatter` isn't `Sendable`, but every use here is a simple
     // stateless format/parse call (no shared mutable configuration is ever
