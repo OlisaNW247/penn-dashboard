@@ -7,11 +7,11 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-09-25, on `V7`.
+Last updated 2026-10-08, on `V7`.
 
-Live on the App Store: **1.2.1**. Uploaded but never released: **3.0.0
-(builds 7–9)** from `v5`. The next release is 3.0.0 or later, built from
-`V7`.
+Live on the App Store: **3.0.0 (build 11)**, from `V7`, since 2026-09-28.
+The next release is 3.0.1, built from `V7`, and its job is the sign-in
+fixes at the top of Now.
 
 ---
 
@@ -19,11 +19,28 @@ Live on the App Store: **1.2.1**. Uploaded but never released: **3.0.0
 
 These block shipping, or would make shipping risky.
 
-- **Finish submitting 3.0.0 (11).** Uploaded and set up in App Store
-  Connect on 2026-09-27 (`CLAUDE.md` → Release state); the last clicks
-  (remove 3.0.0 from the old rejected submission, swap build 10 for 11,
-  Add for Review → Submit) were Marco's to do. Check its status there.
-  After approval and release, raise the `update-manifest` floor to 3.0.0.
+- **Make staying signed in bulletproof (3.0.1).** On 2026-10-08 the live
+  build was still asking Marco to refresh: sometimes the banner cleared by
+  itself, sometimes it stayed. Diagnosed on his phone the same day
+  (`CLAUDE.md` → Known gaps, and the analytics-cookie trap). Three pieces,
+  each verified on a real phone with `-LHFSessionDiagnostics`,
+  `-LHFAgeCanvasSession` and `debugRenewalLogV1` before it counts as done:
+  1. **The 24-hour trigger.** Decide "expired" by whether a fresh Canvas
+     session cookie is left, so a saved analytics cookie cannot switch the
+     rule off. Proven cause; smallest fix.
+  2. **Verdicts and the banner.** A silent attempt that never got an
+     answer (no network, the 30-second cap away from a login wall, the app
+     left mid-attempt) must not be recorded as signed out; it retries on
+     the next open. The banner appears only when a person is needed, and
+     never while an attempt is running. This changes logic that was copied
+     from Olisa's proven build, and bounds how often the saved password
+     may be resubmitted, so the plan needs Marco's sign-off first.
+  3. **The reconnect pane.** Tapping the banner must not delete Duo's
+     remembered device, and the saved password must fill by itself there
+     (Marco reports typing it by hand; not yet reproduced).
+- **Raise the `update-manifest` floor to 3.0.1 once it is downloadable.**
+  3.0.0 is live but the floor is still 1.2.1. Skip 3.0.0 as a floor: it
+  would force everyone onto the build with the sign-in bug.
 - **Fix the background-refresh crash, with a foreground-only re-login.**
   Every `BGAppRefreshTask` wake has crashed on entry since 2026-08-24
   (`CLAUDE.md` → the background-refresh trap), so background refresh has
@@ -138,6 +155,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-08.** Found why the live build keeps asking for a refresh
+  (see Now). DEBUG builds gain `-LHFSessionDiagnostics`, a launch-time
+  readout of the saved password flag and saved Canvas cookies (names and
+  dates only). No behaviour changed.
+- **2026-09-28.** 3.0.0 (11) approved and released on the App Store.
 - **2026-09-27.** Stay signed in works like Olisa's phone again: the
   24-hour cookie rule and Penn's cookie handling restored byte for byte
   from `39b2fff`, so the app re-logs in on open after a day away (PennKey

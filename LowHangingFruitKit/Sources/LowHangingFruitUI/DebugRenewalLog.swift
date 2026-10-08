@@ -70,4 +70,36 @@ enum DebugRenewalLog {
     // documents for its own shared instance.
     nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 }
+
+/// `-LHFSessionDiagnostics`: a snapshot of what the silent re-login has to
+/// work with on this phone, taken at launch before anything else touches it.
+/// Printed as `LHF-DIAG` lines and kept in `UserDefaults.lhf`
+/// `debugSessionDiagnosticsV1` so it can be read back off a tethered phone
+/// with `devicectl`, the same way `debugRenewalLogV1` is.
+///
+/// It answers the two questions the renewal log cannot (2026-10-08, a phone
+/// that kept asking for a refresh while its flags all read healthy): is a
+/// PennKey password actually on file behind `stayLoggedInEnabledV1`, and
+/// does the persisted Canvas cookie set hold anything that keeps the 24h
+/// rule from ever tripping. Booleans, cookie names, domains and dates only;
+/// never a cookie value, the username or the password.
+@MainActor
+enum DebugSessionDiagnostics {
+    private static let key = "debugSessionDiagnosticsV1"
+
+    static func recordIfRequested() {
+        guard !SharedDefaults.isTestRunner,
+              ProcessInfo.processInfo.arguments.contains("-LHFSessionDiagnostics")
+        else { return }
+        let entries = SessionCookieStore.debugEntrySummaries(service: .canvas)
+        var lines = [
+            "taken \(ISO8601DateFormatter().string(from: Date()))",
+            "pennkey password on file: \(PennKeyCredentialStore.hasCredentials)",
+            "canvas cookies persisted: \(entries.count), still fresh: \(SessionCookieStore.load(service: .canvas).count), isExpired: \(SessionCookieStore.isExpired(service: .canvas))",
+        ]
+        lines.append(contentsOf: entries)
+        lines.forEach { print("LHF-DIAG \($0)") }
+        UserDefaults.lhf.set(lines, forKey: key)
+    }
+}
 #endif
