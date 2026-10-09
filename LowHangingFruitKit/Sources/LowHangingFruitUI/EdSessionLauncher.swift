@@ -45,6 +45,9 @@ final class EdSessionLauncher {
         case timedOut(finalPage: String)
         /// Another launch is in flight, or one ran less than 30 minutes ago.
         case throttled
+        /// The Keychain holds no Canvas cookies, so there is nothing to
+        /// present to Canvas; nothing was loaded.
+        case noCanvasSession
     }
 
     /// Mirrors `EdDiscussionProbe.settleAfterLandingOnEd`: Ed's single-page
@@ -79,6 +82,10 @@ final class EdSessionLauncher {
         if !force, let lastLaunchAt, Date().timeIntervalSince(lastLaunchAt) < Self.minimumInterval {
             return .throttled
         }
+        // Checked before the throttle clock starts: a launch that never
+        // loaded anything must not cost the next real attempt 30 minutes.
+        let canvasCookies = SessionCookieStore.load(service: .canvas)
+        guard !canvasCookies.isEmpty else { return .noCanvasSession }
         isLaunching = true
         lastLaunchAt = Date()
         defer { isLaunching = false }
@@ -100,6 +107,21 @@ final class EdSessionLauncher {
             activeWebView = nil
             activeDelegate = nil
             activeWaiter = nil
+        }
+
+        // Present the Keychain's Canvas session to the WebView before it
+        // loads anything. The probe's first real-phone run (2026-10-09)
+        // showed a fresh hidden WebView on `LoginDataStores.canvas` ends at
+        // `weblogin.pennkey.upenn.edu` ("Penn WebLogin"): the app's session
+        // lives in the Keychain and is attached to URLSession requests by
+        // hand, and WebKit drops session cookies between launches, so
+        // Canvas sees no session and redirects to the identity provider.
+        // The wrong fix is running `CanvasSessionRenewer` first: it walks
+        // the IdP with the stored password and would push Duo whenever
+        // trust is absent, while the Keychain session is already valid
+        // (the `/tabs` calls just before a launch prove it).
+        for cookie in canvasCookies {
+            await LoginDataStores.canvas.httpCookieStore.setCookie(cookie)
         }
 
         // GET-only, exactly one `load`: the probe's discipline, for the

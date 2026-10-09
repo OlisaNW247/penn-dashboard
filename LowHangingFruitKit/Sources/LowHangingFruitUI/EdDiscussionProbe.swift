@@ -72,6 +72,28 @@ final class EdDiscussionProbe {
             activeWaiter = nil
         }
 
+        // Present the Keychain's Canvas session to the WebView before it
+        // loads anything. The first real-phone run of this probe
+        // (2026-10-09) loaded the tool's launch URL
+        // (`canvas.upenn.edu/courses/<id>/external_tools/<tool>`) and the
+        // only navigation that finished was
+        // `weblogin.pennkey.upenn.edu/idp/profile/SAML2/Redirect/SSO`,
+        // "Penn WebLogin": Canvas bounced the WebView to the identity
+        // provider because its cookie jar held no live Canvas session. The
+        // app's session lives in the Keychain
+        // (`SessionCookieStore.load(service: .canvas)`) and is attached to
+        // URLSession requests by hand, and WebKit drops session cookies
+        // between launches, so a fresh hidden WebView looks signed out.
+        // The wrong fix is running `CanvasSessionRenewer` first: it walks
+        // the IdP with the stored password and would push Duo whenever
+        // trust is absent, while the Keychain session is already valid (the
+        // `/tabs` calls seconds earlier proved it). `setCookie` here only
+        // copies what the app already holds; it submits no credential.
+        let canvasCookies = SessionCookieStore.load(service: .canvas)
+        for cookie in canvasCookies {
+            await LoginDataStores.canvas.httpCookieStore.setCookie(cookie)
+        }
+
         // GET-only, exactly one `load` call — same discipline
         // `CanvasSessionRenewer` documents for its own single load, for the
         // same reason: this probe must never itself cause a second
@@ -97,8 +119,18 @@ final class EdDiscussionProbe {
         let nativeWhoAmILine = await Self.nativeWhoAmI(using: edCookies)
 
         var lines: [String] = []
+        lines.append("injected canvas cookies: \(canvasCookies.count)")
         lines.append("hops: \(delegate.hops.isEmpty ? "(none)" : delegate.hops.joined(separator: " → "))")
         lines.append("final: \(finalPage)")
+        // `webView.url` is read again here (after the wait) so the verdict
+        // matches `final:` above; host and path were already the only parts
+        // printed.
+        let finalURL = webView.url
+        if EdHosts.isEd(finalURL) {
+            lines.append("landed on ed")
+        } else if PennKeyLoginForm.isLoginForm(finalURL) {
+            lines.append("landed on the penn login form: the canvas session was not accepted (or ed itself requires penn sso)")
+        }
         lines.append(reportText)
         lines.append("ed cookies (names only): \(cookieLines.isEmpty ? "(none)" : cookieLines.joined(separator: ", "))")
         lines.append(nativeWhoAmILine)
@@ -313,6 +345,15 @@ private final class EdProbeNavigationDelegate: NSObject, WKNavigationDelegate {
         self.waiter = waiter
     }
 
+    /// Every redirect hop the chain makes, so the paste shows the whole route
+    /// between Canvas, Ed and the identity provider, not only the pages that
+    /// finished loading. Host and path only (`hostPathString`), never the
+    /// query, which carries SAML and LTI tokens. `→` marks a navigation about
+    /// to start, `⇢` a server redirect already received.
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        hops.append("⇢ \(CanvasSessionRenewer.hostPathString(webView.url) ?? "(no host)")")
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         hops.append(CanvasSessionRenewer.hostPathString(webView.url) ?? "(no host)")
         guard !hasSeenEd, EdHosts.isEd(webView.url) else { return }
@@ -345,6 +386,7 @@ private final class EdProbeNavigationDelegate: NSObject, WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
+        hops.append("→ \(CanvasSessionRenewer.hostPathString(navigationAction.request.url) ?? "(no host)")")
         decisionHandler(.allow)
     }
 

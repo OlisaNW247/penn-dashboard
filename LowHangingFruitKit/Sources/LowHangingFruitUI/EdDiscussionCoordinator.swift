@@ -442,6 +442,8 @@ final class EdDiscussionCoordinator {
             notes.append("ed launch timed out at \(finalPage)")
         case .throttled:
             notes.append("ed launch skipped (one ran recently)")
+        case .noCanvasSession:
+            notes.append("no canvas session to launch ed with")
         }
         return nil
     }
