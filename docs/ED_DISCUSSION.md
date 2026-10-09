@@ -10,10 +10,17 @@ paste (still outstanding) confirms or corrects it. What exists:
 | kind `ed` on both sides of the wire | `CourseDocument.Kind.ed`, migration `20261002090000_ed_kind.sql`, `_shared/manifest.ts`, `PROTOCOL.md` |
 | wire models, XML → text, filter, matcher, builder | `Kit/Ed/EdWire.swift`, `EdDocumentText.swift`, `EdThreadFilter.swift`, `EdCourseMatcher.swift`, `EdDocumentBuilder.swift` |
 | HTTP client and document ingestion | `Kit/Ed/EdClient.swift` (cookie or `x-token` auth), `EdIngestion.swift` |
-| hidden-WebView LTI launch, cookie capture | `UI/EdSessionLauncher.swift`, Keychain slot `SessionCookieStore.Service.ed` (never aged by the 24 h Canvas rule) |
+| hidden-WebView LTI launch, session capture | `UI/EdSessionLauncher.swift`. The session is a `localStorage` token (`authToken`, else `authToken:us`) read after landing and kept in `UI/EdSessionTokenStore.swift` (Keychain, this-device-only, deleted on Canvas disconnect); any `edstem` cookies still go to `SessionCookieStore.Service.ed` (never aged by the 24 h Canvas rule) as a fallback. Not yet re-run on a device since the change |
 | orchestration inside the course-material sync | `UI/EdDiscussionCoordinator.swift`, called from `AppState+CourseKnowledge.swift` before the backend upload on both paths |
 | status for the student | read-only "ed discussion" row in Profile → accounts (Penn only) |
 | kill switch | `FeatureFlags.edDiscussion` |
+
+2026-10-09 probe results, real phone: a fresh hidden WebView ends at Penn
+WebLogin unless the Keychain's Canvas cookies are injected into it first;
+once they are, the launch lands on `edstem.org/us/courses/<id>/discussion`,
+where Ed's session is a token in `localStorage` (`authToken`,
+`authToken:us`), not a cookie (`document.cookie` empty, a cookie-only
+`GET /api/user` is 401), so `EdClient` uses `EdAuth.token`.
 
 Two things learned building it. `CourseKnowledgeBase.merge` and the Canvas
 collector both treat a course's documents as a complete set, so an Ed

@@ -70,9 +70,13 @@ password, no name. Two things go through it:
   hourly staleness. There is no manual sync. Since 2026-10-02 (`v8`, not
   yet verified on a device) the same sync also reads **Ed Discussion** for
   any class whose Canvas site has an Ed tool: the app performs the tool's
-  LTI launch in a hidden WebView on the student's Canvas session, keeps
-  the Ed cookies in the Keychain (`SessionCookieStore.Service.ed`), reads
-  the board with `EdClient`, and keeps only announcements, pinned threads
+  LTI launch in a hidden WebView (with the Keychain's Canvas cookies
+  injected first, or the launch bounces to Penn WebLogin), reads Ed's
+  session token out of the landed page's `localStorage` (since
+  2026-10-09; Ed keeps no session cookie) into the Keychain
+  (`EdSessionTokenStore`, with any Ed cookies in
+  `SessionCookieStore.Service.ed` as a fallback), reads the board with
+  `EdClient` (`x-token`), and keeps only announcements, pinned threads
   and staff posts (`EdThreadFilter`) as documents of kind `ed`. Student,
   private and anonymous posts never leave the phone; no author is ever
   named. `docs/ED_DISCUSSION.md` is the design record;
@@ -951,14 +955,18 @@ none is a ship line.
 
 ## Known gaps
 
-- **Ed Discussion ingestion has never run on a device** (`v8`, 2026-10-02,
-  ~2,000 blind lines across six commits). The one real unknown is whether
-  the LTI launch leaves Ed's session in cookies, which `EdClient` assumes,
-  or in a stored token, for which `EdAuth.token` exists but nothing fills
-  it. The DEBUG "probe ed discussion" row in Profile answers that in one
-  tap and its paste decides whether any change is needed. Until then the
-  feature fails soft: every error is a note in the sync trace and the
-  Settings status line, never a thrown error.
+- **Ed Discussion ingestion has not completed a sync on a device** (`v8`,
+  2026-10-02, blind). The DEBUG "probe ed discussion" row settled the one
+  real unknown on 2026-10-09 on Olisa's phone: the launch lands on Ed only
+  once the Keychain's Canvas cookies are injected into the hidden WebView,
+  and Ed's session is a `localStorage` token (`authToken`), not a cookie
+  (a cookie-only `GET /api/user` is 401). The token path
+  (`EdSessionTokenStore`, `EdAuth.token`) was wired that day and has not
+  yet been compiled or re-probed; the probe's `native whoAmI (token)`
+  line is the check. The server still rejects kind `ed` until migration
+  `20261002090000_ed_kind.sql` is applied and `sync` redeployed. The
+  feature fails soft throughout: every error is a note in the sync trace
+  and the Settings status line, never a thrown error.
 - **Nothing has ever been tested against real Canvas or Gradescope data.**
   Every grade, submission and syllabus path is proven against fixtures
   only. This is the highest-value verification outstanding.

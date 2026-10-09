@@ -144,10 +144,12 @@ final class EdDiscussionCoordinator {
         // store is empty because this coordinator removed a dead session
         // (`edSessionDroppedV1`): the 30-minute launch throttle is there to
         // stop a broken launch repeating, and must not also delay the one
-        // launch that replaces a session Ed just ended.
-        var edCookies = SessionCookieStore.load(service: .ed)
-        var cookiesAreFromStore = !edCookies.isEmpty
-        if edCookies.isEmpty {
+        // launch that replaces a session Ed just ended. The stored session
+        // is token-first (`EdSessionTokenStore`, Ed's localStorage
+        // `authToken`), with the Ed cookies as the fallback.
+        var edAuth = Self.authentication(token: EdSessionTokenStore.load(), cookies: SessionCookieStore.load(service: .ed))
+        var sessionIsFromStore = edAuth != nil
+        if edAuth == nil {
             let force = UserDefaults.lhf.bool(forKey: Self.sessionDroppedKey)
             guard let launched = await launchAndStore(url: firstLaunchURL, force: force, notes: &report.notes) else {
                 // A forced launch has now run (or failed); the flag's job is
@@ -156,8 +158,10 @@ final class EdDiscussionCoordinator {
                 report.statusLine = "couldn't sign in to ed discussion"
                 return unknown(report)
             }
-            edCookies = launched
+            edAuth = launched
         }
+        // Both branches above leave a session or return.
+        guard var auth = edAuth else { return unknown(report) }
 
         // 3. Who am I. A 401 on a STORED session means it died: drop it,
         // launch once more past the throttle, and retry once. A 401 on
@@ -165,10 +169,10 @@ final class EdDiscussionCoordinator {
         // launch back to back would not change Ed's answer.
         let userResponse: EdUserResponse
         do {
-            userResponse = try await EdClient(auth: .cookies(edCookies)).user()
+            userResponse = try await EdClient(auth: auth).user()
         } catch EdClient.Error.sessionExpired {
-            SessionCookieStore.remove(service: .ed)
-            guard cookiesAreFromStore else {
+            Self.dropStoredSession()
+            guard sessionIsFromStore else {
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.notes.append("ed rejected a fresh launch session")
                 report.statusLine = "couldn't sign in to ed discussion"
@@ -179,12 +183,12 @@ final class EdDiscussionCoordinator {
                 report.statusLine = "couldn't sign in to ed discussion"
                 return unknown(report)
             }
-            edCookies = relaunched
-            cookiesAreFromStore = false
+            auth = relaunched
+            sessionIsFromStore = false
             do {
-                userResponse = try await EdClient(auth: .cookies(edCookies)).user()
+                userResponse = try await EdClient(auth: auth).user()
             } catch {
-                SessionCookieStore.remove(service: .ed)
+                Self.dropStoredSession()
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.notes.append("ed rejected the new session: \(Self.describe(error))")
                 report.statusLine = "couldn't sign in to ed discussion"
@@ -215,7 +219,7 @@ final class EdDiscussionCoordinator {
         )
 
         // 5 and 6. Fetch, convert, merge.
-        let client = EdClient(auth: .cookies(edCookies))
+        let client = EdClient(auth: auth)
         var matchedTargetIDs = Set<String>()
         var readIDs = Set<String>()
         var signedOutMidRun = false
@@ -242,8 +246,8 @@ final class EdDiscussionCoordinator {
                 // The marker (set only for a session that came from the
                 // store, never one launched this run) lets that next launch
                 // bypass the throttle.
-                SessionCookieStore.remove(service: .ed)
-                if cookiesAreFromStore {
+                Self.dropStoredSession()
+                if sessionIsFromStore {
                     UserDefaults.lhf.set(true, forKey: Self.sessionDroppedKey)
                 }
                 report.notes.append("ed ended the session while reading \(match.canvasCourseCode)")
@@ -361,6 +365,31 @@ final class EdDiscussionCoordinator {
         UserDefaults.lhf.removeObject(forKey: launchURLKey)
         UserDefaults.lhf.removeObject(forKey: tabCheckedAtKey)
         UserDefaults.lhf.removeObject(forKey: sessionDroppedKey)
+        // The Ed session token is a child of the Canvas login too. Doing it
+        // here is what lets a Canvas disconnect delete it without
+        // `AppState.disconnectCanvas` knowing the store exists. (That method
+        // removes the Ed cookies itself with `SessionCookieStore.remove`.)
+        EdSessionTokenStore.remove()
+    }
+
+    /// The `EdAuth` to use for a stored or freshly captured session, or nil
+    /// when there is nothing: the token if there is a non-empty one, else the
+    /// cookies if any, else nothing. Token-first because that is what Ed's
+    /// web client actually uses (2026-10-09 probe); the cookie path stays as
+    /// a fallback at no cost.
+    nonisolated static func authentication(token: String?, cookies: [HTTPCookie]) -> EdAuth? {
+        if let token, !token.isEmpty { return .token(token) }
+        if !cookies.isEmpty { return .cookies(cookies) }
+        return nil
+    }
+
+    /// Forgets the whole stored Ed session, token and cookies together. A
+    /// 401 means Ed ended the session, and leaving either half behind would
+    /// make the next sync reuse it (token-first, so a surviving token would
+    /// shadow the relaunch's new cookies).
+    nonisolated private static func dropStoredSession() {
+        EdSessionTokenStore.remove()
+        SessionCookieStore.remove(service: .ed)
     }
 
     /// Removes the `.ed` documents of `courseIDs`, leaving every other kind.
@@ -425,18 +454,23 @@ final class EdDiscussionCoordinator {
         return urlStrings.compactMapValues { URL(string: $0) }
     }
 
-    /// Steps 2 and 3's launch: runs the launcher and saves what it captured.
-    /// `nil` (with a note) when no usable Ed cookie came out.
-    private func launchAndStore(url: URL, force: Bool, notes: inout [String]) async -> [HTTPCookie]? {
+    /// Steps 2 and 3's launch: runs the launcher and saves what it captured
+    /// (the token to `EdSessionTokenStore`, any Ed cookies to
+    /// `SessionCookieStore.Service.ed`). `nil` (with a note) when no usable
+    /// session came out. Never puts the token in a note.
+    private func launchAndStore(url: URL, force: Bool, notes: inout [String]) async -> EdAuth? {
         switch await launcher.launch(url: url, force: force) {
-        case let .landed(cookies, _):
-            guard !cookies.isEmpty else {
-                notes.append("ed launch returned no cookies")
+        case let .landed(session, _):
+            guard let auth = Self.authentication(token: session.token, cookies: session.cookies) else {
+                notes.append("ed launch returned no session")
                 return nil
             }
-            SessionCookieStore.save(cookies, service: .ed)
-            return cookies
-        case let .noEdCookies(finalPage):
+            if let token = session.token, !token.isEmpty {
+                EdSessionTokenStore.save(token)
+            }
+            SessionCookieStore.save(session.cookies, service: .ed)
+            return auth
+        case let .noEdSession(finalPage):
             notes.append("ed launch ended without a session at \(finalPage)")
         case let .timedOut(finalPage):
             notes.append("ed launch timed out at \(finalPage)")

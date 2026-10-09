@@ -482,6 +482,7 @@ struct SettingsPage: View {
                     Label("simulate canvas logout", systemImage: "bolt.slash")
                 }
             }
+            .buttonStyle(.borderless)
             .disabled(isSimulatingCanvasLogout)
 
             if let simulateCanvasLogoutResult, !isSimulatingCanvasLogout {
@@ -534,6 +535,7 @@ struct SettingsPage: View {
                     Label("probe ed discussion", systemImage: "bubble.left.and.text.bubble.right")
                 }
             }
+            .buttonStyle(.borderless)
             .disabled(isProbingEdDiscussion)
 
             if let probeEdDiscussionResult, !isProbingEdDiscussion {
@@ -550,6 +552,7 @@ struct SettingsPage: View {
                         systemImage: didCopyProbeEdDiscussionResult ? "checkmark" : "doc.on.doc"
                     )
                 }
+                .buttonStyle(.borderless)
                 .font(.lhfSecondary(12))
             }
         }

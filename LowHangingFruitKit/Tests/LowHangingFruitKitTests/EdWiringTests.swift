@@ -22,6 +22,54 @@ struct EdWiringTests {
         #expect(FeatureFlags.edDiscussion == true)
     }
 
+    @Test("the Ed session token store is inert under the test runner")
+    func tokenStoreIsInertUnderTests() {
+        // `SessionCookieStore.merge` writes nothing under `isTestRunner`, and
+        // `EdSessionTokenStore` goes further: save, load and remove are all
+        // no-ops, because an unsandboxed macOS run would otherwise read and
+        // delete the developer's real Ed token. So this pins the guard, not a
+        // Keychain round trip, and touches no real Keychain item.
+        #expect(SharedDefaults.isTestRunner)
+        EdSessionTokenStore.save("x")
+        #expect(EdSessionTokenStore.hasToken == false)
+        #expect(EdSessionTokenStore.load() == nil)
+        EdSessionTokenStore.remove()
+        #expect(EdSessionTokenStore.hasToken == false)
+    }
+
+    @Test("a stored or launched Ed session is token-first, cookies second, else nil")
+    func authenticationPrefersToken() throws {
+        let cookie = try #require(HTTPCookie(properties: [
+            .name: "state", .value: "v", .domain: "us.edstem.org", .path: "/",
+        ]))
+
+        if case .token(let value)? = EdDiscussionCoordinator.authentication(token: "t", cookies: [cookie]) {
+            #expect(value == "t")
+        } else {
+            Issue.record("a token should win over cookies")
+        }
+        if case .cookies(let cookies)? = EdDiscussionCoordinator.authentication(token: nil, cookies: [cookie]) {
+            #expect(cookies.count == 1)
+        } else {
+            Issue.record("cookies should be the fallback when there is no token")
+        }
+        // An empty token string is not a token.
+        if case .cookies? = EdDiscussionCoordinator.authentication(token: "", cookies: [cookie]) {
+        } else {
+            Issue.record("an empty token should fall back to cookies")
+        }
+        #expect(EdDiscussionCoordinator.authentication(token: nil, cookies: []) == nil)
+        #expect(EdDiscussionCoordinator.authentication(token: "", cookies: []) == nil)
+    }
+
+    @Test("EdSession's description never contains the token")
+    func sessionDescriptionRedactsToken() {
+        let session = EdSessionLauncher.EdSession(token: "super-secret-token", cookies: [])
+        #expect(!session.description.contains("super-secret-token"))
+        #expect(!"\(session)".contains("super-secret-token"))
+        #expect(session.description.contains("present"))
+    }
+
     @Test("SessionCookieStore.Service.allCases contains .ed")
     func edServiceIsInAllCases() {
         #expect(SessionCookieStore.Service.allCases.contains(.ed))

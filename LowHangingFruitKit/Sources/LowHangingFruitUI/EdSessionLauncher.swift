@@ -3,8 +3,9 @@ import WebKit
 import LowHangingFruitKit
 
 /// Performs a Canvas course's "Ed Discussion" LTI launch in a hidden
-/// `WKWebView` and hands back the Ed session cookies it produced, so
-/// `EdClient` can read Ed's API natively with them (`docs/ED_DISCUSSION.md`).
+/// `WKWebView` and hands back the Ed session it produced (the `authToken`
+/// from Ed's `localStorage`, plus any Ed cookies), so `EdClient` can read
+/// Ed's API natively with it (`docs/ED_DISCUSSION.md`).
 ///
 /// **Why a WebView at all.** Ed has no API key and no sign-in the app can
 /// drive: the only way a student is "logged in" to Ed is that Canvas's LTI
@@ -24,10 +25,18 @@ import LowHangingFruitKit
 /// lift the probe out of `#if DEBUG`: that puts a report-formatting
 /// diagnostic, which reads page storage names, into every shipping build.
 ///
-/// **Privacy.** Only the cookies come out, filtered to a domain containing
-/// `edstem`, and the caller stores them in the Keychain. Nothing here logs a
-/// cookie value, a URL query string or a page body; `finalPage` is host and
-/// path only.
+/// **Why a token and not just cookies.** The 2026-10-09 real-phone probe
+/// showed Ed's web client keeps its session in `localStorage` (`authToken`),
+/// `document.cookie` is empty, and a cookie-only `GET /api/user` is a 401. So
+/// after the page settles on an Ed host this reads `authToken` (falling back
+/// to `authToken:us`) with `callAsyncJavaScript`, and still harvests any
+/// `edstem` cookies as a fallback that costs nothing.
+///
+/// **Privacy.** The token and the cookies leave this file only through the
+/// returned `Outcome`; the caller stores them in the Keychain. Nothing here
+/// logs, prints or interpolates a token, a cookie value, a URL query string
+/// or a page body; `finalPage` is host and path only, and `EdSession`'s
+/// description redacts the token.
 ///
 /// **Throttling.** One launch in flight at a time, and at most one per 30
 /// minutes unless `force`: a launch is a full redirect chain through Canvas
@@ -35,12 +44,27 @@ import LowHangingFruitKit
 /// and a broken launch must not turn into a retry storm against Canvas.
 @MainActor
 final class EdSessionLauncher {
+    /// What a landing produced. Either half may be empty, never both (that is
+    /// `Outcome.noEdSession`). `description` is redacted so that no string
+    /// interpolation or `print` of an outcome can ever reveal the token.
+    struct EdSession: Sendable, CustomStringConvertible {
+        /// Ed's `authToken` from `localStorage`; the session `EdClient` uses.
+        let token: String?
+        /// Cookies on an `edstem` domain; empty on the 2026-10-09 phone.
+        let cookies: [HTTPCookie]
+
+        var description: String {
+            "EdSession(token: \(token == nil ? "absent" : "present"), cookies: \(cookies.count))"
+        }
+    }
+
     enum Outcome: Sendable {
-        /// The chain landed on Ed and the store holds Ed cookies.
-        case landed(cookies: [HTTPCookie], finalPage: String)
-        /// The chain settled but no cookie on an `edstem` domain exists:
-        /// most likely Canvas bounced the launch to its own login page.
-        case noEdCookies(finalPage: String)
+        /// The chain landed on Ed and produced a token and/or Ed cookies.
+        case landed(session: EdSession, finalPage: String)
+        /// The chain settled but there is neither a token nor a cookie on an
+        /// `edstem` domain: most likely Canvas bounced the launch to its own
+        /// login page.
+        case noEdSession(finalPage: String)
         /// The 40 s hard timeout fired before the WebView settled on Ed.
         case timedOut(finalPage: String)
         /// Another launch is in flight, or one ran less than 30 minutes ago.
@@ -141,17 +165,58 @@ final class EdSessionLauncher {
             return .timedOut(finalPage: finalPage)
         }
 
+        // Ed's session is a token in the page's localStorage, so it is read
+        // first and only while the WebView is on an Ed host.
+        let token = await Self.readAuthToken(from: webView)
+
         // Read-only harvest from the same persistent store the WebView just
         // navigated in, as the probe does. `getAllCookies` is the
         // completion-handler form wrapped in a continuation, the pattern
-        // the probe and the renewer both use.
+        // the probe and the renewer both use. Kept as a fallback: on the
+        // 2026-10-09 phone it held only an OIDC `state` cookie.
         let allCookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
         let edCookies = allCookies.filter { $0.domain.localizedCaseInsensitiveContains("edstem") }
-        return edCookies.isEmpty
-            ? .noEdCookies(finalPage: finalPage)
-            : .landed(cookies: edCookies, finalPage: finalPage)
+        if token == nil && edCookies.isEmpty {
+            return .noEdSession(finalPage: finalPage)
+        }
+        return .landed(session: EdSession(token: token, cookies: edCookies), finalPage: finalPage)
+    }
+
+    /// Reads Ed's session token out of the page's `localStorage`:
+    /// `authToken`, else `authToken:us` (both keys were present on the
+    /// 2026-10-09 phone). `nil` when the WebView is not on an Ed host (so
+    /// Canvas's or the identity provider's storage is never read), when
+    /// neither key exists, when the value is empty, or when the script fails.
+    ///
+    /// Uses the completion-handler form of `callAsyncJavaScript` in the
+    /// `.page` world, exactly as `EdDiscussionProbe.formattedReport` does
+    /// (the page world is where Ed's own client wrote its storage), and
+    /// narrows the `Result<Any, Error>` to a `String?` inside the handler:
+    /// `Any` must not cross the continuation. The value is returned to the
+    /// caller and nowhere else; no failure path puts it, or the script's
+    /// error text, into a string.
+    ///
+    /// Internal rather than private so the DEBUG probe reports on the very
+    /// script that ships.
+    static func readAuthToken(from webView: WKWebView) async -> String? {
+        guard EdHosts.isEd(webView.url) else { return nil }
+        let value: String? = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            webView.callAsyncJavaScript(
+                #"return localStorage.getItem("authToken") || localStorage.getItem("authToken:us");"#,
+                arguments: [:],
+                in: nil,
+                in: .page
+            ) { result in
+                if case let .success(raw) = result, let string = raw as? String, !string.isEmpty {
+                    continuation.resume(returning: string)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+        return value
     }
 
     /// Host and path only, never the query string. A private twin of

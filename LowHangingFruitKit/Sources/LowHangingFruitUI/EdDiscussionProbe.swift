@@ -117,6 +117,13 @@ final class EdDiscussionProbe {
         let edCookies = await Self.edCookies()
         let cookieLines = Self.edCookieLines(from: edCookies)
         let nativeWhoAmILine = await Self.nativeWhoAmI(using: edCookies)
+        // Ed keeps its session in localStorage (2026-10-09), so the same
+        // script the launcher ships is run here. Only its length leaves this
+        // scope; the value is discarded after the whoAmI request below.
+        let authToken = await EdSessionLauncher.readAuthToken(from: webView)
+        let tokenLine = authToken.map { "ed auth token in localStorage: present (\($0.count) chars)" }
+            ?? "ed auth token in localStorage: absent"
+        let tokenWhoAmILine = await Self.nativeWhoAmI(token: authToken)
 
         var lines: [String] = []
         lines.append("injected canvas cookies: \(canvasCookies.count)")
@@ -132,8 +139,10 @@ final class EdDiscussionProbe {
             lines.append("landed on the penn login form: the canvas session was not accepted (or ed itself requires penn sso)")
         }
         lines.append(reportText)
+        lines.append(tokenLine)
         lines.append("ed cookies (names only): \(cookieLines.isEmpty ? "(none)" : cookieLines.joined(separator: ", "))")
         lines.append(nativeWhoAmILine)
+        lines.append(tokenWhoAmILine)
         return lines.joined(separator: "\n")
     }
 
@@ -301,6 +310,31 @@ final class EdDiscussionProbe {
             return "native whoAmI: status=\(http.statusCode) courses=\(courses.count)"
         } catch {
             return "native whoAmI: error: \(error.localizedDescription)"
+        }
+    }
+
+    /// The token twin of `nativeWhoAmI(using:)`: the same `GET /user`, made
+    /// by the real `EdClient` with `EdAuth.token` (the `x-token` header), so
+    /// the paste proves the token path works end to end, not just that a
+    /// token exists. Reports a status and a course count only; never the
+    /// token, a header or a body. `EdClient` folds 401 and 403 (and an HTML
+    /// login page on a 2xx) into `sessionExpired`, so those read as
+    /// `401/403`.
+    private static func nativeWhoAmI(token: String?) async -> String {
+        guard let token, !token.isEmpty else {
+            return "native whoAmI (token): skipped (no token)"
+        }
+        do {
+            let response = try await EdClient(auth: .token(token)).user()
+            return "native whoAmI (token): status=200 courses=\(response.courses.count)"
+        } catch EdClient.Error.sessionExpired {
+            return "native whoAmI (token): status=401/403 courses=n/a"
+        } catch EdClient.Error.http(let status) {
+            return "native whoAmI (token): status=\(status) courses=n/a"
+        } catch EdClient.Error.invalidJSON {
+            return "native whoAmI (token): status=2xx courses=unparsed"
+        } catch {
+            return "native whoAmI (token): error: \(error.localizedDescription)"
         }
     }
 
