@@ -130,7 +130,10 @@ extension AppState {
     ///   only way to get first-run diagnostic visibility into a course
     ///   already sitting server-side with `last_full_sync_at` null
     ///   (2026-09-09).
-    static let courseKnowledgeSyncVersion = 3
+    ///   4: the sync now also reads Ed Discussion (`mergeEdDiscussion`),
+    ///   and a device that synced within the hour would otherwise not try
+    ///   Ed until the window lapsed (2026-10-09).
+    static let courseKnowledgeSyncVersion = 4
     private static let courseKnowledgeSyncVersionKey = "courseKnowledgeSyncVersionV1"
 
     var courseKnowledgeIsStale: Bool {
