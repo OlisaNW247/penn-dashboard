@@ -354,22 +354,106 @@ struct SettingsPage: View {
 
     /// The pure text behind `signInHealthRows`, split out so a test can pin
     /// the wording and the "nothing secret on screen" rule without a Keychain
-    /// or an `AppState`. Inputs are already-summarised strings
-    /// (`AppState.duoRememberSummary`, `lastSilentRenewalSummary`), never
-    /// cookies, URLs or credentials, so no line here can carry one.
+    /// or an `AppState`. Inputs are booleans, one date and the persisted
+    /// renewal summary (outcome word, time, context), never cookies, URLs or
+    /// credentials, so no line here can carry one. `locale` and `timeZone`
+    /// are parameters only so a test can fix them; the app passes the
+    /// student's own.
+    ///
+    /// The Duo line is left out until the first cookie read has finished
+    /// (`hasReadDuo`): before that there is nothing to report, and "not
+    /// trusted yet" would be a claim the app hasn't checked.
     nonisolated static func healthLines(passwordSaved: Bool,
-                                        duoSummary: String?,
-                                        lastRenewal: String?) -> [String] {
+                                        passwordRejected: Bool,
+                                        awaitingDuo: Bool,
+                                        hasReadDuo: Bool,
+                                        duoTrustExpiry: Date?,
+                                        lastRenewalSummary: String?,
+                                        locale: Locale = .current,
+                                        timeZone: TimeZone = .current) -> [String] {
         var lines: [String] = []
-        lines.append(passwordSaved
-            ? "pennkey password saved \u{2014} smooth signs in for you"
-            : "no pennkey password saved \u{2014} you'll sign in by hand when canvas logs you out")
-        lines.append(duoSummary
-            ?? "duo: not trusted yet \u{2014} tap yes, this is my device next time duo asks")
-        if let lastRenewal {
-            lines.append("last silent sign-in: \(lastRenewal)")
+        lines.append(passwordLine(saved: passwordSaved,
+                                  rejected: passwordRejected,
+                                  awaitingDuo: awaitingDuo))
+        if let duo = duoLine(hasRead: hasReadDuo, expiry: duoTrustExpiry) {
+            lines.append(duo)
+        }
+        if let renewal = lastRenewalLine(fromSummary: lastRenewalSummary,
+                                         locale: locale,
+                                         timeZone: timeZone) {
+            lines.append(renewal)
         }
         return lines
+    }
+
+    /// The password line. Having a password in the Keychain is not the same as
+    /// it working: after Penn rejects it (the "update password" banner) or
+    /// while Duo is waiting on the student, "smooth signs in for you" would be
+    /// untrue, so those two states say what is actually going on. Rejection
+    /// wins when both are set, since it is the one the student has to act on
+    /// first. Both only matter when a password is saved at all.
+    nonisolated static func passwordLine(saved: Bool, rejected: Bool, awaitingDuo: Bool) -> String {
+        guard saved else {
+            return "no pennkey password saved \u{2014} you'll sign in by hand when canvas logs you out"
+        }
+        if rejected {
+            return "pennkey password saved \u{2014} penn rejected it, update it below"
+        }
+        if awaitingDuo {
+            return "pennkey password saved \u{2014} duo needs you to sign in once"
+        }
+        return "pennkey password saved \u{2014} smooth signs in for you"
+    }
+
+    /// The Duo line, or `nil` before the first cookie read. `expiry` is only
+    /// used as "a live Duo cookie exists", which is the trusted / not trusted
+    /// decision. No date is shown on purpose: the cookie's own expiry is
+    /// about 399 days out, but Penn's remember window is about 30 days and
+    /// is enforced server-side, so printing the cookie date would promise
+    /// trust more than a year too long.
+    nonisolated static func duoLine(hasRead: Bool, expiry: Date?) -> String? {
+        guard hasRead else { return nil }
+        guard expiry != nil else {
+            return "duo: not trusted yet \u{2014} tap yes, this is my device next time duo asks"
+        }
+        return "duo remembers this phone \u{2014} penn asks again about every 30 days"
+    }
+
+    /// The last-sign-in line, rendered from the persisted summary
+    /// ("<outcome> \u{00B7} <yyyy-MM-dd HH:mm> \u{00B7} <foreground|background>",
+    /// see `AppState.renewalSummary`) so the stored format stays what the
+    /// retry policy parses. The raw case name ("landedOnLoginPage") means
+    /// nothing to a student, so it is mapped to plain words, and the stored
+    /// POSIX timestamp is re-parsed and shown in the student's own locale.
+    /// `nil` when there is no summary or its outcome is unrecognised; a
+    /// missing or unreadable time or context just drops that part rather than
+    /// hiding the outcome.
+    nonisolated static func lastRenewalLine(fromSummary summary: String?,
+                                            locale: Locale,
+                                            timeZone: TimeZone) -> String? {
+        guard let summary, let kind = AppState.renewalOutcomeKind(fromSummary: summary) else {
+            return nil
+        }
+        let fields = summary.components(separatedBy: " \u{00B7} ")
+        var line = "last silent sign-in: \(AppState.plainRenewalDescription(kind: kind))"
+        if fields.count > 1 {
+            let parser = DateFormatter()
+            parser.locale = Locale(identifier: "en_US_POSIX")
+            parser.timeZone = timeZone
+            parser.dateFormat = "yyyy-MM-dd HH:mm"
+            if let date = parser.date(from: fields[1]) {
+                let display = DateFormatter()
+                display.locale = locale
+                display.timeZone = timeZone
+                display.dateStyle = .medium
+                display.timeStyle = .short
+                line += ", \(display.string(from: date))"
+            }
+        }
+        if fields.count > 2, let context = AppState.RenewalContext(rawValue: fields[2]) {
+            line += context == .background ? " (in the background)" : " (foreground)"
+        }
+        return line
     }
 
     /// Read-only sign-in health under the Canvas row (Penn only, shown while
@@ -381,14 +465,18 @@ struct SettingsPage: View {
     /// (docs/SIGNOUT_INVESTIGATION.md). No buttons and no secrets: the
     /// summaries are outcome words and times, never a cookie value, URL or
     /// credential. The rejected-password case keeps its own "update
-    /// password" row (`stayLoggedInRows`).
+    /// password" row (`stayLoggedInRows`), and the password line here says
+    /// the same thing in one clause so the two never disagree.
     @ViewBuilder
     private var signInHealthRows: some View {
         if state.isCanvasConnected && state.canvasInstallation.id == CanvasInstallation.penn.id {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Self.healthLines(passwordSaved: state.isPennKeyPasswordSaved,
-                                         duoSummary: state.duoRememberSummary,
-                                         lastRenewal: state.lastSilentRenewalSummary),
+                                         passwordRejected: state.autoLoginDisabledReason != nil,
+                                         awaitingDuo: state.autoLoginAwaitingDuo,
+                                         hasReadDuo: state.hasRefreshedDuoSummary,
+                                         duoTrustExpiry: state.duoTrustExpiry,
+                                         lastRenewalSummary: state.lastSilentRenewalSummary),
                         id: \.self) { line in
                     Text(line)
                         .font(.lhfSecondary(12))

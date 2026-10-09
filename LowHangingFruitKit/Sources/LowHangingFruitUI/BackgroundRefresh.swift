@@ -187,6 +187,24 @@ public enum LHFBackgroundRefresh {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
 
+        // The renewal `AppState.init` (expired cookie) or the grade refresh
+        // above (a 401) started is a separate task nothing else awaits, so
+        // without this the wake told iOS it was done while the renewal was
+        // still running, in a process about to be suspended. It has to come
+        // AFTER `refreshCanvasGrades`, which can itself start one. Each
+        // attempt is already bounded by `CanvasSessionRenewer
+        // .backgroundTimeout`, so there is no timer here; the whole of
+        // `run()` is bounded by cancellation instead: the expiration handler
+        // cancels `work`, and `onCancel` then tears the renewer down so the
+        // await returns promptly rather than sitting out the rest of the 20 s
+        // against a budget that is already gone. The aborted attempt comes
+        // back as `.abortedByLoginPane` (a misleading name for this case),
+        // which records nothing and latches nothing.
+        await withTaskCancellationHandler(
+            operation: { await state.awaitPendingSilentRenewal() },
+            onCancel: { Task { @MainActor in state.abortSilentRenewal() } }
+        )
+
         // Mirrors `ContentView.announceTurnedIn`: clear-then-post, so a
         // notice can't be posted twice even if this pass were somehow
         // re-entered.

@@ -221,14 +221,15 @@ final class CanvasSessionRenewer {
     /// attempts (unlike `hasSubmittedCredentialsThisAttempt`, this outlives
     /// a single `performAttempt()` call) — what `autoLoginCooldown` is
     /// measured against.
-    private var lastCredentialSubmissionAt: Date?
+    private(set) var lastCredentialSubmissionAt: Date?
 
     /// Called with the time of each credential submission, so the owner can
     /// persist it. See `autoLoginCooldown` for why the timestamp must outlive
     /// this instance. Carries a date only, never the credentials.
     private let onCredentialSubmission: ((Date) -> Void)?
 
-    private var lastAttemptAt: Date?
+    /// `private(set)` only so tests can read the seeded cooldown clocks.
+    private(set) var lastAttemptAt: Date?
     private var isInFlight = false
 
     #if DEBUG
@@ -313,9 +314,36 @@ final class CanvasSessionRenewer {
     /// consumed — the user is logging in for real; retrying silently a
     /// second later would race them all over again.
     func abortForLoginPane() {
+        abort()
+    }
+
+    /// The one teardown body behind both `abortForLoginPane()` and
+    /// `AppState.abortSilentRenewal()`. A background wake that iOS is about
+    /// to cut off (`BGTask.expirationHandler`) needs the same thing the login
+    /// pane does: stop the WebView now and let the attempt return, instead of
+    /// leaving a navigation (and, worse, a credential submission) running in a
+    /// process that is about to be suspended mid-flight. The signal and the
+    /// resulting `Outcome` keep their login-pane names (`.aborted`,
+    /// `.abortedByLoginPane`) because callers and tests match on them; for an
+    /// expiry abort the name is misleading but the meaning ("proves nothing,
+    /// changes nothing") is exactly right, so the case was deliberately not
+    /// renamed. A no-op when no attempt is in flight.
+    func abort() {
         guard isInFlight else { return }
         activeWebView?.stopLoading()
         activeWaiter?.signal(.aborted)
+    }
+
+    /// Folds in a credential-submission time persisted by ANOTHER process or
+    /// another `AppState` (a background wake builds its own renewer and writes
+    /// the clock to `UserDefaults.lhf`). This renewer was seeded once, at
+    /// creation, so without this a submission made in the background is
+    /// invisible to a long-lived foreground renewer and a foreground retry
+    /// could resubmit the password inside the six-hour window. Takes the
+    /// later of the two clocks, never the earlier: a stale persisted value
+    /// must not rewind a submission this instance itself just made.
+    func refreshCredentialSubmissionClock(_ persisted: Date?) {
+        lastCredentialSubmissionAt = [lastCredentialSubmissionAt, persisted].compactMap { $0 }.max()
     }
 
     init(
@@ -323,6 +351,7 @@ final class CanvasSessionRenewer {
         isLoginPaneActive: @escaping () -> Bool,
         autoLogin: (() -> (username: String, password: String)?)? = nil,
         lastCredentialSubmissionAt: Date? = nil,
+        lastAttemptAt: Date? = nil,
         onCredentialSubmission: ((Date) -> Void)? = nil
     ) {
         self.installation = installation
@@ -331,6 +360,13 @@ final class CanvasSessionRenewer {
         // Seeds the 6-hour credential cooldown from a previous process's
         // last submission (nil = none on record).
         self.lastCredentialSubmissionAt = lastCredentialSubmissionAt
+        // Seeds the one-hour attempt cooldown from the previous process's
+        // last real attempt. Left in memory only, every relaunch and every
+        // background wake (which builds a fresh renewer) got a free
+        // navigation against the IdP: two quick relaunches with a dead IdP
+        // session recorded two landings and latched the session dead within
+        // minutes, and background wakes hit the IdP every 15 minutes.
+        self.lastAttemptAt = lastAttemptAt
         self.onCredentialSubmission = onCredentialSubmission
     }
 
@@ -504,6 +540,37 @@ final class CanvasSessionRenewer {
         return .timedOut
     }
 
+    /// Pure decision behind the `.failed` settle signal (`didFail` /
+    /// `didFailProvisionalNavigation`: offline, a captive portal, a cell
+    /// handoff). A failed navigation says nothing about the IdP session, but
+    /// it used to fall through to the host classification with `webView.url`
+    /// nil and come out as `.landedOnLoginPage`, which the foreground policy
+    /// counts toward the two-landings latch, so two commutes through a tunnel
+    /// could sign the student out. The wrong fix would have been to special
+    /// case only a nil URL: a Canvas URL that failed to load is equally
+    /// unknown. So `.landedOnLoginPage` is returned only when the WebView was
+    /// positively sitting on a recognised login host, `.needsDuo` only on
+    /// Duo's host (same reading as `timeoutOutcome(finalURL:)`), and
+    /// everything else is `.timedOut`, which never latches.
+    ///
+    /// Not `nonisolated`: it composes `classifyFinalHost`, which reads this
+    /// class's `@MainActor`-isolated marker lists, exactly like
+    /// `timeoutOutcome(finalURL:)` above.
+    static func failedNavigationOutcome(
+        finalURL: URL?,
+        canvasHost: String = CanvasInstallation.penn.host
+    ) -> Outcome {
+        guard let finalURL else { return .timedOut }
+        if PennKeyLoginForm.isDuo(finalURL) {
+            return .needsDuo
+        }
+        if PennKeyLoginForm.isLoginForm(finalURL)
+            || classifyFinalHost(finalURL.host, canvasHost: canvasHost) == .loginPage {
+            return .landedOnLoginPage
+        }
+        return .timedOut
+    }
+
     /// True for a canvas.upenn.edu cookie whose name marks it as an actual
     /// session credential (as opposed to, say, a CSRF token or an analytics
     /// cookie that also happens to live on that domain) — see
@@ -635,6 +702,15 @@ final class CanvasSessionRenewer {
         if signal == .aborted {
             Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane", outcome: .abortedByLoginPane)
             return .abortedByLoginPane
+        }
+        if signal == .failed {
+            // Never falls through to the host classification below: see
+            // `failedNavigationOutcome`. Also never `.passwordRejected`,
+            // even after a submission this attempt made; a navigation that
+            // failed is not the credential form coming back.
+            let outcome = Self.failedNavigationOutcome(finalURL: webView.url, canvasHost: installation.host)
+            Self.logAttempt(host: webView.url?.host, status: "navigation-failed", outcome: outcome)
+            return outcome
         }
 
         let finalHost = webView.url?.host

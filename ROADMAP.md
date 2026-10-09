@@ -7,11 +7,10 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-09-25, on `V7`.
+Last updated 2026-10-09, on `v8`.
 
-Live on the App Store: **1.2.1**. Uploaded but never released: **3.0.0
-(builds 7–9)** from `v5`. The next release is 3.0.0 or later, built from
-`V7`.
+Live on the App Store: **3.0.0 (11)**, since about 2026-10-01. The next
+release is **3.0.1 (12)**, the sign-out fix, from `v8`.
 
 ---
 
@@ -22,10 +21,15 @@ These block shipping, or would make shipping risky.
 - **Ship 3.0.1 (12), the sign-out fix** (`v8`, 2026-10-09, blind;
   `docs/SIGNOUT_INVESTIGATION.md`). 3.0.0 (11) went live about 2026-10-01
   and students with a saved PennKey password were still signed out,
-  most likely because every manual reconnect purged Duo's trust. Compile
-  on the Mac, then verify on two phones with a 25-hour-aged session, one
-  with a saved password and Duo trust and one without, then TestFlight to
-  three affected students for a week, then the store. Raise the
+  most likely because every manual reconnect purged Duo's trust. A
+  three-slice review of that commit found two blockers in the background
+  wake (it never awaited its renewal; expiry tore nothing down) and a
+  failed navigation counted as a login landing; the fixes are the second
+  blind round of 2026-10-09 and predict 1536/154. Compile on the Mac
+  (`swift test --no-parallel` AND the iOS `xcodebuild`, since
+  `BackgroundRefresh.swift` is iOS-only), then run
+  `docs/SIGNOUT_VERIFICATION.md` on two phones, then TestFlight to three
+  affected students for a week, then the store. Raise the
   `update-manifest` floor only after it is downloadable, and only with
   Olisa's word.
 - **Verify background refresh on a device.** The crash is fixed on `v8`
@@ -63,6 +67,11 @@ These block shipping, or would make shipping risky.
 
 Roughly in priority order.
 
+- **Silent renewal follow-ups** (from the 2026-10-09 review, none
+  blocking): don't count a landing toward the latch when the six-hour
+  credential cooldown suppressed the password; have the live `AppState`
+  re-read the renewal summary after a background wake; return a real
+  `success` from the background `run()`.
 - **Edit and delete recurring tasks.** Once saved, a recurring task can't be
   changed or removed from anywhere in the app. Found 2026-09-24, when a task
   saved with no class could only be repaired in code
@@ -136,6 +145,15 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-09 (`v8`, blind, second round).** Review fixes for the
+  sign-out commit: the background wake awaits its renewal and tears it
+  down on expiry; a failed navigation is unknown, not a landing; a
+  persisted Duo stand-down for background wakes; the attempt cooldown
+  seeded from persistence; a proven-alive session resets the landing
+  streak; the reconnect banner hidden while a renewal is in flight;
+  Profile's health lines in plain words with the rejected and
+  waiting-on-Duo states; "switch school?" confirmation in the picker;
+  `docs/SIGNOUT_VERIFICATION.md`.
 - **2026-10-09 (`v8`, blind).** The App Store sign-out investigation and
   fix: `docs/SIGNOUT_INVESTIGATION.md`. Olisa's "never signed out" phone
   turned out to run the same App Store build 11; the difference was a

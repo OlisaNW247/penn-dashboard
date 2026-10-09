@@ -153,9 +153,9 @@ struct RenewalPolicyTests {
 
     // MARK: - backgroundMayUseCredentials
 
-    private func mayUse(_ outcome: AppState.RenewalOutcomeKind?, submittedHoursAgo: Double?) -> Bool {
+    private func mayUse(duoStandDown: Bool, submittedHoursAgo: Double?) -> Bool {
         AppState.backgroundMayUseCredentials(
-            lastOutcome: outcome,
+            duoStandDown: duoStandDown,
             lastCredentialSubmissionAt: submittedHoursAgo.map { now.addingTimeInterval(-$0 * hour) },
             now: now
         )
@@ -163,21 +163,20 @@ struct RenewalPolicyTests {
 
     @Test("once Duo has asked, the background never offers the password, however old the submission")
     func backgroundStandsDownAfterDuo() {
-        #expect(mayUse(.needsDuo, submittedHoursAgo: nil) == false)
-        #expect(mayUse(.needsDuo, submittedHoursAgo: 100) == false)
+        #expect(mayUse(duoStandDown: true, submittedHoursAgo: nil) == false)
+        #expect(mayUse(duoStandDown: true, submittedHoursAgo: 100) == false)
     }
 
     @Test("within six hours of the last credential submission the background does not resubmit")
     func backgroundHonoursSixHourClock() {
-        #expect(mayUse(.renewed, submittedHoursAgo: 5) == false)
-        #expect(mayUse(nil, submittedHoursAgo: 0.1) == false)
-        #expect(mayUse(.renewed, submittedHoursAgo: 7) == true)
+        #expect(mayUse(duoStandDown: false, submittedHoursAgo: 5) == false)
+        #expect(mayUse(duoStandDown: false, submittedHoursAgo: 0.1) == false)
+        #expect(mayUse(duoStandDown: false, submittedHoursAgo: 7) == true)
     }
 
     @Test("no history means the background may use the credentials")
     func backgroundWithNoHistory() {
-        #expect(mayUse(nil, submittedHoursAgo: nil) == true)
-        #expect(mayUse(.timedOut, submittedHoursAgo: nil) == true)
+        #expect(mayUse(duoStandDown: false, submittedHoursAgo: nil) == true)
     }
 
     // MARK: - summary

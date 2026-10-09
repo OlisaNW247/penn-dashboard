@@ -94,7 +94,15 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
-                    if state.canvasSessionExpired {
+                    // Hidden while a silent renewal is running: the 24-hour cookie
+                    // rule flips `canvasSessionExpired` before the renewal it
+                    // starts has finished, so a saved-password student would see
+                    // this banner flash for the seconds a good renewal takes, and
+                    // a tap on it aborts the renewal and opens the login pane.
+                    // The wrong fix would be to delay setting
+                    // `canvasSessionExpired`, which the retry policy and Grade
+                    // Watcher read as the truth about the cookie.
+                    if state.canvasSessionExpired && !state.isSilentRenewalInFlight {
                         canvasSessionExpiredBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
@@ -206,6 +214,15 @@ struct ContentView: View {
             vm.bind(to: state)
         }
         .task {
+            // Read Duo's trust cookie once up front. The loop below sleeps
+            // five minutes before its first `refresh()`, and
+            // `onChange(of: scenePhase)` does not fire for the phase the view
+            // starts in, so without this a trusted student would see Profile's
+            // Duo line empty (or "not trusted yet") for the first five
+            // minutes of every launch. Only the cheap cookie-jar read: the
+            // launch sync already runs from `RootView`, and a full
+            // `refresh()` here would repeat it.
+            await state.refreshDuoRememberSummary()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
@@ -471,8 +488,12 @@ struct ContentView: View {
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
-    /// from its persisted session, then reload the dashboard. Runs on launch,
-    /// on activation, and on the 5-minute loop — there's no manual sync button.
+    /// from its persisted session, then reload the dashboard. Runs on
+    /// activation (`onChange(of: scenePhase)`, which does not fire for the
+    /// initial phase) and on the 5-minute loop, whose first pass comes after
+    /// the sleep, so it does NOT run at launch: the launch sync is
+    /// `RootView`'s `syncIfConfigured()`, and the `.task` above does the one
+    /// cheap launch-time read of its own. There's no manual sync button.
     private func refresh() async {
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)
@@ -480,11 +501,12 @@ struct ContentView: View {
         state.refreshCanvasSessionExpiredState()
         // Retry a silent Canvas renewal if the policy says one is due (it
         // does nothing while awaiting Duo, after a rejected password, or
-        // inside the cooldown). Rides this existing launch/activation/5-minute
+        // inside the cooldown). Rides this existing activation/5-minute
         // cadence rather than a timer of its own.
         state.retrySilentRenewalIfDue()
         // Cheap (one cookie-jar read, no network) — refreshed on the same
-        // launch/activation/5-minute cadence as everything else here so
+        // activation/5-minute cadence as everything else here (and once at
+        // launch by the `.task` above) so
         // Settings' "stay signed in" footer and the diagnostics report never
         // show a stale read of how long Duo will keep skipping its prompt.
         await state.refreshDuoRememberSummary()

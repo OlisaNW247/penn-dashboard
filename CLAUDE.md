@@ -160,7 +160,11 @@ fastest way for a new session to know what exists.
   5. a per-course setup walk (`OnboardingCourseSetup`)
 
   "Just exploring? preview with sample data" on the first pane is preview
-  mode, App Review's only way in (see Known gaps). A student can instead
+  mode, App Review's only way in (see Known gaps). A reconnect from the
+  dashboard banner opens the Canvas login directly; the school picker is
+  behind the back chevron, and since 2026-10-09 (blind) picking a
+  different school there asks "switch school?" first, because it signs
+  the student out and forgets the saved password and Duo trust. A student can instead
   paste a Canvas calendar link (`PasteFeedLinkSheet`); that install gets
   the feed but no session, so no Grade Watcher.
 - **Dashboard** (`ContentView`):
@@ -201,7 +205,8 @@ fastest way for a new session to know what exists.
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
      only when Penn rejected a saved PennKey password; at Penn, three
      read-only sign-in health lines under Canvas since `v8`: password
-     saved or not, Duo trusted until when, last silent sign-in outcome;
+     saved or not (or rejected, or waiting on Duo), whether Duo
+     remembers this phone, last silent sign-in in plain words;
      and a read-only "ed discussion" status line, since there is nothing
      to connect)
   3. appearance (system / light / dark)
@@ -311,8 +316,15 @@ step in App Store Connect; there is no API key on the dev Mac.
 4,400 blind lines across two features (Ed Discussion ingestion and the
 sign-out fix) with zero errors and zero failures; the count is what the
 diffs predicted (1411 + 61 Ed + 26 sign-out + 1 health-line suite split),
-so nothing was lost. Hold the rule: a change that lowers
-the count has lost work. Investigate rather than accept it, and when a
+so nothing was lost. **Uncompiled on top of that (2026-10-09, the
+review-fixes commit for the sign-out work):** the diff predicts
+**1536 / 154** (16 in `SilentRenewalCoreTests`, 4 in
+`SwitchSchoolConfirmationTests`, `SignInHealthTests` rewritten with a
+net +17, `RenewalPolicyTests` re-signed). That number is a prediction
+until the Mac reports it. `BackgroundRefresh.swift` is `#if os(iOS)`, so
+`swift test` never compiles it: a change there also needs the iOS
+`xcodebuild` from Commands before it counts as compiled. Hold the rule:
+a change that lowers the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
 
@@ -559,8 +571,27 @@ itself.
   notification to the student's phone and only an interactive login can
   grant trust. Every outcome is written to `lastSilentRenewalSummaryV1`
   (outcome, time, context; never a URL or credential) and shown in
-  Profile → accounts with whether a password is saved and the Duo trust
-  date.
+  Profile → accounts in plain words, with whether a password is saved
+  (and whether Penn rejected it or Duo is waiting) and whether a live
+  Duo cookie exists ("duo remembers this phone"; never a date, because
+  the cookie seen on a device lives 399 days while Penn's remember window
+  is about 30).
+  The second blind round (2026-10-09, after a three-slice review of the
+  first): every production trigger goes through
+  `AppState.startSilentCanvasRenewal()`, which stores the task so the
+  background wake can `awaitPendingSilentRenewal()` before telling iOS it
+  is done, and `BGTask.expirationHandler` → `abortSilentRenewal()` tears
+  the WebView down; the dashboard hides the reconnect banner while
+  `isSilentRenewalInFlight`; a `.failed` navigation (offline, captive
+  portal) is `.timedOut`, never a login landing
+  (`CanvasSessionRenewer.failedNavigationOutcome`); the background's
+  "Duo has asked" stand-down is its own persisted flag
+  (`backgroundDuoStandDownV1`, lifted only by `.renewed`, an interactive
+  login or a newly saved password); the renewer's hour cooldown is seeded
+  from `lastSilentRenewalAttemptAtV1` (so `-LHFAgeCanvasSession` now also
+  clears that key); and a token mint or Grade Watcher success resets the
+  landing streak (`noteCanvasSessionProvenAlive`). The runbook for the
+  device check is `docs/SIGNOUT_VERIFICATION.md`.
   Every successful pass through Duo re-issues Duo's 30-day
   `browsertrust` cookie, so a student who opens the app at least monthly
   should never see Duo again. Since `v8` the Canvas login pane's pre-login
@@ -912,6 +943,26 @@ itself.
   re-logins, the one path never tested, whose hidden WebView may stall on
   Duo and latch `needs Duo`. Fix it together with a foreground-only guard
   on `CanvasSessionRenewer` (`ROADMAP.md` → Now).
+- **A background wake that starts a renewal and does not await it has
+  not run a renewal.** The first `v8` fix made `BGTask` wakes renew: the
+  fresh `AppState()`'s `init` sees the expired cookie and fires
+  `Task { await attemptSilentCanvasRenewal() }`, then `run()` does its
+  syncs (which return in a second or two when the cookie is dead, because
+  there is nothing to sync with) and calls `setTaskCompleted`. iOS then
+  suspends the process with the renewal mid-navigation, or mid password
+  submission, and nothing is saved or recorded; the next wake starts over
+  and, six hours on, submits the password again. Found by review before
+  any device saw it (2026-10-09). The fix is a stored task
+  (`startSilentCanvasRenewal` / `awaitPendingSilentRenewal`) plus a
+  teardown on expiry; the wrong fix is a timer in `run()`, which would
+  race the renewer's own 20 s budget. From the same review: a `.failed`
+  WebKit navigation (offline) fell through the host classification with a
+  nil URL and came out as `.landedOnLoginPage`, so two tunnels an hour
+  apart could latch a live session dead; and the one-hour attempt
+  cooldown lived only in memory, so two relaunches bypassed it. The
+  general tell: a "blind" commit's riskiest paths are the ones no test
+  can drive (`BackgroundRefresh.swift` is iOS-only and never compiled by
+  `swift test`); review those by hand before the device does.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -979,7 +1030,15 @@ none is a ship line.
   purge, reconnect straight to the Canvas login, background wakes
   un-crashed with a never-latch guard, foreground retries instead of a
   one-shot latch, a sign-in health line in Profile, Gradescope cookies
-  re-stamped on sync). None of it has run on a device.
+  re-stamped on sync), plus the second blind round of 2026-10-09 that a
+  three-slice review of that commit forced (the background wake now waits
+  for its renewal, see the trap below). None of it has run on a device;
+  `docs/SIGNOUT_VERIFICATION.md` is the runbook. Known follow-ups, not
+  blocking: a saved-password student whose session dies inside the
+  six-hour credential cooldown gets GET-only retries whose landings count
+  toward the latch; the live foreground `AppState` does not re-read the
+  summary a background wake wrote until relaunch; `run()` reports
+  `success: true` even when it skipped everything.
 - **Background refresh crashed on every wake from 2026-08-24 to `v8`** (see
   the background-refresh trap, now historical). The `v8` fix has not been
   exercised on a device: verify with Xcode's Debug → Simulate Background
@@ -1038,7 +1097,10 @@ Your job is to plan, delegate, and review — not to write code yourself.
 ### Model tiers and token economy
 The overseer runs on the session's top model (Fable); doers are pinned
 cheaper in `.claude/agents/` frontmatter — `implementer`/`verifier` on
-Sonnet, `mechanic` on Haiku. For built-in agents, pass the tier per call:
+Sonnet, `mechanic` on Haiku. A cloud session that starts on `main` does
+not register those definitions (seen 2026-10-09: "Agent type 'verifier'
+not found"); fall back to `general-purpose` with `model: "sonnet"` and
+paste the role's rules into the brief. For built-in agents, pass the tier per call:
 `model: "haiku"` for `Explore`/searches/surveys, `model: "sonnet"` for
 anything with judgment in it. The top model never does bulk reading or
 mechanical edits, and doers never make architecture calls.

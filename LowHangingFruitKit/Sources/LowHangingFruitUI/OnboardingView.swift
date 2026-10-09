@@ -50,6 +50,12 @@ struct OnboardingView: View {
     @State private var schoolSearch = ""
     @State private var customCanvasAddress = ""
     @State private var customAddressError: String?
+    /// The school the student tapped while a different one was already
+    /// chosen, held here until they answer the "switch school?" dialog.
+    /// `CanvasInstallation` is `Identifiable`, but the dialog is driven by a
+    /// plain Bool plus this stored value so cancelling can simply drop it.
+    @State private var pendingInstallation: CanvasInstallation?
+    @State private var showSwitchSchoolConfirmation = false
 
     /// One case per screen in the linear walk, plus the per-course walk that
     /// can follow it. Order here is the order a student walks them in; there
@@ -92,6 +98,30 @@ struct OnboardingView: View {
         case .full:
             return .schoolSelection
         }
+    }
+
+    /// Whether picking `picked` must be confirmed first. Switching to a
+    /// different school after one was already chosen runs
+    /// `AppState.selectCanvasInstallation` -> `disconnectCanvas()`, which
+    /// deletes the saved PennKey password, the cookies and Duo's trust, and
+    /// the picker is one back-chevron from the reconnect login pane, so a
+    /// stray tap must not do that silently. Re-picking the current school is a
+    /// no-op in AppState and needs no question; a first run (nothing chosen
+    /// yet) has nothing to lose.
+    ///
+    /// `nonisolated` for the same reason as `initialPhase` above.
+    nonisolated static func needsSwitchConfirmation(
+        picked: CanvasInstallation,
+        current: CanvasInstallation,
+        hasChosenSchool: Bool
+    ) -> Bool {
+        hasChosenSchool && picked != current
+    }
+
+    /// The body text of the "switch school?" dialog. The school name is the
+    /// public institution name, never a URL or credential.
+    nonisolated static func switchSchoolMessage(currentSchoolName: String) -> String {
+        "this signs you out of \(currentSchoolName) and forgets your saved password and duo trust."
     }
 
     /// `hasChosenSchool` is `AppState.hasChosenCanvasInstallation`, passed by
@@ -154,6 +184,22 @@ struct OnboardingView: View {
                 // nothing else for it to do here.
                 PennKeyCredentialsSheet(cancelLabel: "not now")
                     .environmentObject(state)
+            }
+            // At the outer level for the same reason as the sheet above: the
+            // dialog must survive `stepContent` swapping branches. The
+            // message names the school being left, read when the dialog is
+            // built, which is before `selectCanvasInstallation` changes it.
+            .confirmationDialog("switch school?",
+                                isPresented: $showSwitchSchoolConfirmation,
+                                titleVisibility: .visible) {
+                Button("switch", role: .destructive) {
+                    confirmSchoolSwitch()
+                }
+                Button("cancel", role: .cancel) {
+                    pendingInstallation = nil
+                }
+            } message: {
+                Text(Self.switchSchoolMessage(currentSchoolName: state.canvasInstallation.name))
             }
     }
 
@@ -265,8 +311,7 @@ struct OnboardingView: View {
     private func schoolButton(_ school: CanvasInstallation) -> some View {
         Button {
             lhfHapticLight()
-            state.selectCanvasInstallation(school)
-            phase = .canvasLogin
+            chooseSchool(school)
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -295,6 +340,30 @@ struct OnboardingView: View {
             return
         }
         customAddressError = nil
+        chooseSchool(installation)
+    }
+
+    /// The one path from the picker (a listed school or a typed address) to
+    /// `selectCanvasInstallation`. A different school than the current one,
+    /// after a school was already chosen, goes through the confirmation
+    /// dialog first; everything else proceeds as before.
+    private func chooseSchool(_ installation: CanvasInstallation) {
+        if Self.needsSwitchConfirmation(picked: installation,
+                                        current: state.canvasInstallation,
+                                        hasChosenSchool: state.hasChosenCanvasInstallation) {
+            pendingInstallation = installation
+            showSwitchSchoolConfirmation = true
+            return
+        }
+        state.selectCanvasInstallation(installation)
+        phase = .canvasLogin
+    }
+
+    /// The destructive answer to the dialog: take the stored pick and do
+    /// what `chooseSchool` would have done without the question.
+    private func confirmSchoolSwitch() {
+        guard let installation = pendingInstallation else { return }
+        pendingInstallation = nil
         state.selectCanvasInstallation(installation)
         phase = .canvasLogin
     }
