@@ -311,17 +311,13 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1499 tests / 152 suites, all green, on `v8` (2026-10-09,
-`swift test --no-parallel`, on Olisa's Mac, 3.1 s).** First compile of
-4,400 blind lines across two features (Ed Discussion ingestion and the
-sign-out fix) with zero errors and zero failures; the count is what the
-diffs predicted (1411 + 61 Ed + 26 sign-out + 1 health-line suite split),
-so nothing was lost. **Uncompiled on top of that (2026-10-09, the
-review-fixes commit for the sign-out work):** the diff predicts
-**1536 / 154** (16 in `SilentRenewalCoreTests`, 4 in
-`SwitchSchoolConfirmationTests`, `SignInHealthTests` rewritten with a
-net +17, `RenewalPolicyTests` re-signed). That number is a prediction
-until the Mac reports it. `BackgroundRefresh.swift` is `#if os(iOS)`, so
+**Current: 1539 tests / 154 suites, all green, on `v8` (2026-10-09,
+`swift test --no-parallel`, on Olisa's Mac, 3.3 s).** The second compile
+of the day: the sign-out review fixes (predicted 1536/154: 16 in
+`SilentRenewalCoreTests`, 4 in `SwitchSchoolConfirmationTests`,
+`SignInHealthTests` net +17) plus the Ed token transport (3 in
+`EdWiringTests`), 1499 + 37 + 3, zero errors and zero failures, so
+nothing was lost. `BackgroundRefresh.swift` is `#if os(iOS)`, so
 `swift test` never compiles it: a change there also needs the iOS
 `xcodebuild` from Commands before it counts as compiled. Hold the rule:
 a change that lowers the count has lost work. Investigate rather than accept it, and when a
@@ -358,6 +354,10 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 1539/154 `v8`, 2026-10-09 (later that day): the sign-out review fixes
+  (`SilentRenewalCoreTests`, `SwitchSchoolConfirmationTests`,
+  `SignInHealthTests` rewritten) and the Ed session-token transport
+  (three in `EdWiringTests`).
 - 1499/152 `v8`, 2026-10-09: Ed Discussion ingestion (`EdIngestionTests`,
   `EdClientTests`, `EdKindTests`, `EdWiringTests`) and the sign-out fix
   (`RenewalPolicyTests`, `ReconnectPaneTests`, `SignInHealthTests`; two
