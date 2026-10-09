@@ -302,8 +302,12 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1411 tests / 140 suites, all green, on `V7` (2026-09-27,
-`swift test --no-parallel`, on a Mac).** Hold the rule: a change that lowers
+**Current: 1499 tests / 152 suites, all green, on `v8` (2026-10-09,
+`swift test --no-parallel`, on Olisa's Mac, 3.1 s).** First compile of
+4,400 blind lines across two features (Ed Discussion ingestion and the
+sign-out fix) with zero errors and zero failures; the count is what the
+diffs predicted (1411 + 61 Ed + 26 sign-out + 1 health-line suite split),
+so nothing was lost. Hold the rule: a change that lowers
 the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
@@ -338,6 +342,11 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 1499/152 `v8`, 2026-10-09: Ed Discussion ingestion (`EdIngestionTests`,
+  `EdClientTests`, `EdKindTests`, `EdWiringTests`) and the sign-out fix
+  (`RenewalPolicyTests`, `ReconnectPaneTests`, `SignInHealthTests`; two
+  tests in `CanvasSessionDeadStateTests` rewritten for the new latch rule,
+  none removed).
 - 1411/140 `V7`, 2026-09-27: Olisa's 24-hour cookie rule restored
   (`df759f8`, `a16ea07`). Four tests removed on purpose because they pinned
   the "keep cookies forever" rule that was reverted:
@@ -923,7 +932,7 @@ because some of it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Blind until compiled. |
+| `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
