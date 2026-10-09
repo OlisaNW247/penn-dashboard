@@ -396,13 +396,13 @@ struct ContentView: View {
 
     private func canvasSessionExpiredBannerTitle(rejected: Bool, awaitingDuo: Bool) -> String {
         if rejected { return "your stored pennkey password didn't work" }
-        if awaitingDuo { return "tap to finish signing in — duo needs you" }
+        if awaitingDuo { return "duo needs you to sign in once" }
         return "your canvas login needs a refresh"
     }
 
     private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String {
         if rejected { return "update it in profile." }
-        if awaitingDuo { return "your pennkey password went through; duo needs a tap to finish." }
+        if awaitingDuo { return "then tap yes, this is my device so smooth can sign in for you next time" }
         return "reconnect to keep automatic submission tracking accurate."
     }
 
@@ -478,6 +478,11 @@ struct ContentView: View {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         state.refreshCanvasSessionExpiredState()
+        // Retry a silent Canvas renewal if the policy says one is due (it
+        // does nothing while awaiting Duo, after a rejected password, or
+        // inside the cooldown). Rides this existing launch/activation/5-minute
+        // cadence rather than a timer of its own.
+        state.retrySilentRenewalIfDue()
         // Cheap (one cookie-jar read, no network) — refreshed on the same
         // launch/activation/5-minute cadence as everything else here so
         // Settings' "stay signed in" footer and the diagnostics report never

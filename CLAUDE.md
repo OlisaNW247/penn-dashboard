@@ -111,10 +111,13 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **1.2.1** (App Store id
-`6783911002`, released 2026-09-04; re-confirmed by Olisa on the store page
-2026-09-15). This line has been stale before, so re-check it rather than
-trust it. `project.yml` stamps **3.0.0 (build 11)**. Builds 7–9 of 3.0.0
+**Release state.** Live on the App Store: **3.0.0 (build 11)** (App Store
+id `6783911002`, released about 2026-10-01; confirmed on the store page by
+Olisa 2026-10-09, with 1.2.1 live before it from 2026-09-04). This line has
+been stale before, so re-check it rather than trust it. `project.yml`
+stamps **3.0.1 (build 12)** on `v8` (2026-10-09, the sign-out fix below;
+not yet archived). The `update-manifest` floor is still 1.2.1; raising it
+to 3.0.0 is Olisa's call. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
 2.1(a), see Known gaps). Build 10 was uploaded 2026-09-16 at 9:54 AM,
 from before stay-signed-in existed, and attached to that rejected
@@ -192,8 +195,11 @@ fastest way for a new session to know what exists.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
-     only when Penn rejected a saved PennKey password; a read-only "ed
-     discussion" status line at Penn, since there is nothing to connect)
+     only when Penn rejected a saved PennKey password; at Penn, three
+     read-only sign-in health lines under Canvas since `v8`: password
+     saved or not, Duo trusted until when, last silent sign-in outcome;
+     and a read-only "ed discussion" status line, since there is nothing
+     to connect)
   3. appearance (system / light / dark)
   4. reminders (on/off; 1 hour, 3 hours, 1 day, 2 days; "turned in"
      confirmations)
@@ -526,13 +532,29 @@ itself.
   this device" for 30 days, roughly monthly).
 - **When it runs.** Whenever the saved Canvas cookie is more than 24 hours
   past its last save (`SessionCookieStore.load`), on launch or on returning
-  to the foreground, and on a Grade Watcher 401. The code would also run
-  it on a background wake, but every background wake crashes before doing
-  anything (see the background-refresh trap), so in practice it only ever
-  runs with the app open.
+  to the foreground, on a Grade Watcher 401, and, since `v8` (2026-10-09,
+  blind), on each foreground refresh while the session is expired and
+  `AppState.shouldRetrySilentRenewal` says the cooldown has passed, and on
+  background wakes now that the crash below is fixed. A background
+  renewal runs in `RenewalContext.background` with a 20 s budget and can
+  only ever *help*: `.renewed` saves cookies, `.passwordRejected` still
+  disables auto-login, and every other outcome changes nothing, so a
+  hidden WebView stalled on Duo in the background cannot latch the
+  session dead. In the foreground `.timedOut` never latches, a
+  `.landedOnLoginPage` latches only on the second consecutive landing,
+  and `.needsDuo` still latches, because a retry would push a Duo
+  notification to the student's phone and only an interactive login can
+  grant trust. Every outcome is written to `lastSilentRenewalSummaryV1`
+  (outcome, time, context; never a URL or credential) and shown in
+  Profile → accounts with whether a password is saved and the Duo trust
+  date.
   Every successful pass through Duo re-issues Duo's 30-day
   `browsertrust` cookie, so a student who opens the app at least monthly
-  should never see Duo again.
+  should never see Duo again. Since `v8` the Canvas login pane's pre-login
+  purge keeps that cookie (`CanvasInstallation.preLoginPurgeDomainHints`);
+  before, every manual reconnect deleted it, which is the most likely
+  reason students with a saved password still saw Duo and the banner
+  (`docs/SIGNOUT_INVESTIGATION.md`). Disconnecting still purges Duo.
 - **Removal.** Disconnecting Canvas deletes the saved password.
 - **Verified on a device, 2026-09-27, in the foreground.** On Marco's
   phone, with a real PennKey and Duo, `-LHFAgeCanvasSession` renewed in 8
@@ -858,7 +880,10 @@ itself.
   trap), the 2026-09-26 failure was a renewal with the app open, not a
   background stall; whether Duo's trust had lapsed or its page was just
   slow that day is unknown.
-- **Every background refresh has crashed since 2026-08-24, invisibly.**
+- **Every background refresh crashed from 2026-08-24 until `v8`, invisibly**
+  (fixed 2026-10-09, blind: the launch handler is now `{ @Sendable task in
+  … }` into a `nonisolated` static, and background renewals never latch;
+  the history stays here because the wrong fix is still tempting).
   `LHFBackgroundRefresh.register()` hands `BGTaskScheduler` a launch
   handler with `using: nil`, so iOS runs it on its own background queue.
   The closure inherits main-actor isolation, and Swift 6 checks that at
@@ -931,10 +956,17 @@ none is a ship line.
 - **Stay signed in is proven in the foreground only.** A real PennKey and
   Duo renewed silently on two phones on 2026-09-27. If a student is ever
   signed out again, read `debugRenewalLogV1` off a DEBUG build before
-  redesigning.
-- **Background refresh does nothing: it crashes on every wake** (see the
-  background-refresh trap). Shipped that way in 3.0.0 (11) on purpose,
-  because fixing it alone would switch on untested background re-logins.
+  redesigning. App Store 3.0.0 users were signed out anyway; the
+  investigation and the fix are `docs/SIGNOUT_INVESTIGATION.md` and the
+  `v8` sign-out commit of 2026-10-09 (blind: Duo-preserving pre-login
+  purge, reconnect straight to the Canvas login, background wakes
+  un-crashed with a never-latch guard, foreground retries instead of a
+  one-shot latch, a sign-in health line in Profile, Gradescope cookies
+  re-stamped on sync). None of it has run on a device.
+- **Background refresh crashed on every wake from 2026-08-24 to `v8`** (see
+  the background-refresh trap, now historical). The `v8` fix has not been
+  exercised on a device: verify with Xcode's Debug → Simulate Background
+  Fetch on a DEBUG build and `debugRenewalLogV1`.
 - **Non-Penn schools have only been exercised by tests.** The seven verified
   installations and the custom-address path have never been signed into on a
   device.

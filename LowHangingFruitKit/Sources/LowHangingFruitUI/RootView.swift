@@ -102,7 +102,10 @@ struct RootCore: View {
                 // onboarding's choices sit in `UserDefaults` while the
                 // dashboard kept showing whatever was on disk before
                 // onboarding ran.
-                OnboardingView(destination: state.onboardingDestination)
+                OnboardingView(
+                    destination: state.onboardingDestination,
+                    hasChosenSchool: state.hasChosenCanvasInstallation
+                )
                     .environmentObject(state)
                     .environmentObject(scheduler)
                     .transition(.opacity)

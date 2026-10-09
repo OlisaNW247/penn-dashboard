@@ -33,6 +33,21 @@ public struct CanvasInstallation: Codable, Sendable, Hashable, Identifiable {
         return Array(Set(hints.filter { !$0.isEmpty })).sorted()
     }
 
+    /// The subset of `websiteDataDomainHints` the Canvas login pane clears
+    /// before it shows the login page: everything except Duo.
+    ///
+    /// Duo's remember-device cookie is what lets the hidden
+    /// `CanvasSessionRenewer` get through Duo without a tap, so it has to
+    /// survive a manual reconnect (CLAUDE.md, "Stay signed in"; the owner's
+    /// phone works precisely because its trust was never purged). The
+    /// Canvas and identity-provider records are still cleared, because a
+    /// stale IdP session can bounce or confuse the login. The wrong fix is
+    /// dropping the pre-login purge altogether. Only disconnect uses the
+    /// full `websiteDataDomainHints`, so disconnecting still wipes Duo.
+    public var preLoginPurgeDomainHints: [String] {
+        websiteDataDomainHints.filter { !$0.localizedCaseInsensitiveContains("duosecurity") }
+    }
+
     /// Creates an unverified installation from a student-entered address.
     /// Only a normal public HTTPS hostname is accepted; authentication later
     /// proves whether it is actually Canvas.

@@ -17,15 +17,19 @@ import Testing
 struct CanvasSessionDeadStateTests {
     // MARK: - confirmedDeadAfterRenewal(current:outcome:)
 
-    @Test("timedOut confirms the session dead")
-    func timedOutConfirmsDead() {
-        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .timedOut) == true)
+    // 2026-10-09: a timeout no longer latches, and a first landing on the
+    // login form no longer latches (docs/SIGNOUT_INVESTIGATION.md, H3). The
+    // full context-by-outcome table is in `RenewalPolicyTests`.
+    @Test("timedOut is unknown: it leaves the confirmed-dead record unchanged")
+    func timedOutLeavesCurrentUnchanged() {
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .timedOut) == false)
         #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .timedOut) == true)
     }
 
-    @Test("landedOnLoginPage confirms the session dead")
-    func landedOnLoginPageConfirmsDead() {
-        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .landedOnLoginPage) == true)
+    @Test("landedOnLoginPage confirms the session dead on the second consecutive landing")
+    func landedOnLoginPageConfirmsDeadOnSecondLanding() {
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .landedOnLoginPage) == false)
+        #expect(AppState.confirmedDeadAfterRenewal(current: false, outcome: .landedOnLoginPage, priorConsecutiveLandings: 1) == true)
         #expect(AppState.confirmedDeadAfterRenewal(current: true, outcome: .landedOnLoginPage) == true)
     }
 

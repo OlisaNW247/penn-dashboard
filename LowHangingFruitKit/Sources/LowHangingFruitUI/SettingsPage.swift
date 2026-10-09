@@ -122,6 +122,7 @@ struct SettingsPage: View {
                                connected: state.isCanvasConnected,
                                working: state.isLoading || state.isCanvasDiscoveryLoading,
                                disconnect: .canvas)
+                    signInHealthRows
                     accountRow(label: "gradescope",
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
@@ -349,6 +350,52 @@ struct SettingsPage: View {
             NSWorkspace.shared.open(url)
         }
 #endif
+    }
+
+    /// The pure text behind `signInHealthRows`, split out so a test can pin
+    /// the wording and the "nothing secret on screen" rule without a Keychain
+    /// or an `AppState`. Inputs are already-summarised strings
+    /// (`AppState.duoRememberSummary`, `lastSilentRenewalSummary`), never
+    /// cookies, URLs or credentials, so no line here can carry one.
+    nonisolated static func healthLines(passwordSaved: Bool,
+                                        duoSummary: String?,
+                                        lastRenewal: String?) -> [String] {
+        var lines: [String] = []
+        lines.append(passwordSaved
+            ? "pennkey password saved \u{2014} smooth signs in for you"
+            : "no pennkey password saved \u{2014} you'll sign in by hand when canvas logs you out")
+        lines.append(duoSummary
+            ?? "duo: not trusted yet \u{2014} tap yes, this is my device next time duo asks")
+        if let lastRenewal {
+            lines.append("last silent sign-in: \(lastRenewal)")
+        }
+        return lines
+    }
+
+    /// Read-only sign-in health under the Canvas row (Penn only, shown while
+    /// Canvas is connected): is a PennKey password saved, is Duo trusting
+    /// this phone, and how the last silent sign-in went. The old
+    /// troubleshooting section was removed in 56fdefa, so an affected
+    /// student could only describe a banner ("it logged me out"); these
+    /// three lines are what tells the sign-out causes apart
+    /// (docs/SIGNOUT_INVESTIGATION.md). No buttons and no secrets: the
+    /// summaries are outcome words and times, never a cookie value, URL or
+    /// credential. The rejected-password case keeps its own "update
+    /// password" row (`stayLoggedInRows`).
+    @ViewBuilder
+    private var signInHealthRows: some View {
+        if state.isCanvasConnected && state.canvasInstallation.id == CanvasInstallation.penn.id {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Self.healthLines(passwordSaved: state.isPennKeyPasswordSaved,
+                                         duoSummary: state.duoRememberSummary,
+                                         lastRenewal: state.lastSilentRenewalSummary),
+                        id: \.self) { line in
+                    Text(line)
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     /// "Stay signed in" repair row, inside the "accounts" section. The

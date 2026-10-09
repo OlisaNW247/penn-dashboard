@@ -130,13 +130,33 @@ final class CanvasSessionRenewer {
     /// closure), so this cooldown's real job is bounding the case where a
     /// session keeps expiring and reviving faster than a human notices, not
     /// the rejected-password case specifically.
-    static let autoLoginCooldown: TimeInterval = 6 * 60 * 60
+    ///
+    /// `nonisolated` so `AppState.backgroundMayUseCredentials` (a pure,
+    /// nonisolated rule) can read the same number instead of keeping a
+    /// second copy that could drift. The clock behind it is persisted
+    /// (`onCredentialSubmission`, `init`'s `lastCredentialSubmissionAt`):
+    /// every background wake builds a fresh renewer, so an in-memory-only
+    /// timestamp would reset the six hours on every wake and each wake would
+    /// resubmit the password and push Duo to the student's phone.
+    nonisolated static let autoLoginCooldown: TimeInterval = 6 * 60 * 60
 
     /// Hard cap on one attempt. Past this the WebView is discarded regardless
     /// of what WebKit is still doing — a hung SSO hop (a stuck Duo prompt
     /// that will never complete without a human, a slow network) must not
     /// leave a silent background attempt running indefinitely.
     static let timeout: TimeInterval = 30
+
+    /// The budget for an attempt made during a background wake
+    /// (`AppState.RenewalContext.background`). iOS gives a `BGAppRefreshTask`
+    /// roughly 30 seconds in total, and that budget also has to pay for the
+    /// ledger sync and the grade refresh that run around the renewal, so
+    /// spending a full `timeout` here would let the system's expiration
+    /// handler cut the whole wake off mid-navigation. 20 seconds is long
+    /// enough for the 8-second hands-free renewal measured on 2026-09-27
+    /// and short enough to leave the rest of the wake some room. A global
+    /// shortening of `timeout` was rejected: the foreground path has the
+    /// student's full attention and a slower Duo page deserves the 30 s.
+    static let backgroundTimeout: TimeInterval = 20
 
     private let installation: CanvasInstallation
 
@@ -202,6 +222,11 @@ final class CanvasSessionRenewer {
     /// a single `performAttempt()` call) — what `autoLoginCooldown` is
     /// measured against.
     private var lastCredentialSubmissionAt: Date?
+
+    /// Called with the time of each credential submission, so the owner can
+    /// persist it. See `autoLoginCooldown` for why the timestamp must outlive
+    /// this instance. Carries a date only, never the credentials.
+    private let onCredentialSubmission: ((Date) -> Void)?
 
     private var lastAttemptAt: Date?
     private var isInFlight = false
@@ -296,11 +321,17 @@ final class CanvasSessionRenewer {
     init(
         installation: CanvasInstallation = .penn,
         isLoginPaneActive: @escaping () -> Bool,
-        autoLogin: (() -> (username: String, password: String)?)? = nil
+        autoLogin: (() -> (username: String, password: String)?)? = nil,
+        lastCredentialSubmissionAt: Date? = nil,
+        onCredentialSubmission: ((Date) -> Void)? = nil
     ) {
         self.installation = installation
         self.isLoginPaneActive = isLoginPaneActive
         self.autoLogin = autoLogin
+        // Seeds the 6-hour credential cooldown from a previous process's
+        // last submission (nil = none on record).
+        self.lastCredentialSubmissionAt = lastCredentialSubmissionAt
+        self.onCredentialSubmission = onCredentialSubmission
     }
 
     /// Attempts one silent renewal, subject to every guard in `gate(...)`.
@@ -309,13 +340,27 @@ final class CanvasSessionRenewer {
     /// `AppState.refreshGradeWatcher(cookies:)`) — the cooldown/in-flight
     /// state make every call after the first in a given window a cheap,
     /// synchronous no-op.
-    func renewIfNeeded(now: Date = Date()) async -> Outcome {
+    ///
+    /// `timeout` is the hard cap for THIS attempt (the background wake passes
+    /// `backgroundTimeout`), and `cooldown` is the spacing this attempt is
+    /// measured against. Both are per-call rather than global so the
+    /// foreground default (30 s, one hour) is untouched. `AppState` passes a
+    /// shorter `cooldown` only for the retry after a `.timedOut` attempt,
+    /// which is unknown rather than dead and so does not deserve a full hour
+    /// of waiting; the 6-hour `autoLoginCooldown` on resubmitting the stored
+    /// password is separate and unaffected.
+    func renewIfNeeded(
+        now: Date = Date(),
+        timeout: TimeInterval = CanvasSessionRenewer.timeout,
+        cooldown: TimeInterval = CanvasSessionRenewer.cooldown
+    ) async -> Outcome {
         if let gated = Self.gate(
             now: now,
             lastAttempt: lastAttemptAt,
             inFlight: isInFlight,
             paneActive: isLoginPaneActive(),
-            isTestRunner: SharedDefaults.isTestRunner
+            isTestRunner: SharedDefaults.isTestRunner,
+            cooldown: cooldown
         ) {
             #if DEBUG
             DebugRenewalLog.record("requested, skipped: \(gated)")
@@ -335,7 +380,7 @@ final class CanvasSessionRenewer {
         isInFlight = true
         defer { isInFlight = false }
 
-        return await performAttempt()
+        return await performAttempt(timeout: timeout)
     }
 
     /// Pure decision logic behind `renewIfNeeded()`: `nil` means "proceed
@@ -348,7 +393,8 @@ final class CanvasSessionRenewer {
         lastAttempt: Date?,
         inFlight: Bool,
         paneActive: Bool,
-        isTestRunner: Bool
+        isTestRunner: Bool,
+        cooldown: TimeInterval = CanvasSessionRenewer.cooldown
     ) -> Outcome? {
         if isTestRunner {
             return .notAttempted(reason: "test runner")
@@ -487,7 +533,7 @@ final class CanvasSessionRenewer {
     /// The actual WebKit-touching attempt. Never called directly — only
     /// through `renewIfNeeded()`, which has already recorded the cooldown
     /// timestamp and set the in-flight flag before this runs.
-    private func performAttempt() async -> Outcome {
+    private func performAttempt(timeout: TimeInterval) async -> Outcome {
         // Fresh for every attempt — see this flag's own doc comment. Reset
         // here rather than only at declaration so a *reused* renewer
         // (`AppState.canvasSessionRenewer` is created once and kept across
@@ -564,7 +610,7 @@ final class CanvasSessionRenewer {
         // codebase) makes the isolation explicit rather than relying on
         // inferred inheritance from the enclosing method.
         let timeoutTask = Task { @MainActor [weak waiter] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.timeout * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             guard !Task.isCancelled else { return }
             waiter?.signal(.timedOut)
         }
@@ -746,7 +792,9 @@ final class CanvasSessionRenewer {
         }
 
         hasSubmittedCredentialsThisAttempt = true
-        lastCredentialSubmissionAt = Date()
+        let submittedAt = Date()
+        lastCredentialSubmissionAt = submittedAt
+        onCredentialSubmission?(submittedAt)
         let script = PennKeyLoginForm.fillAndSubmitScript(username: credentials.username, password: credentials.password)
         webView.evaluateJavaScript(script, completionHandler: nil)
         // Keep waiting: the submission's own resulting navigation (Canvas,

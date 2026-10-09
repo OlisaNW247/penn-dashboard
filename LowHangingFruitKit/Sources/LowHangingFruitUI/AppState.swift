@@ -584,6 +584,28 @@ final class AppState: ObservableObject {
     /// would silently retry the same background Duo push it already knows
     /// needs a human, rather than waiting for one.
     private static let autoLoginAwaitingDuoKey = "autoLoginAwaitingDuoV1"
+    /// Backs `lastSilentRenewalSummary` -- the secret-free "outcome · time ·
+    /// context" line for Profile's sign-in health row. Per-device state, so
+    /// absent from `CloudPrefsMirror`'s allowlist like the keys above.
+    private static let lastSilentRenewalSummaryKey = "lastSilentRenewalSummaryV1"
+    /// Backs `lastSilentRenewalAttemptAt` (seconds since 1970) -- when the
+    /// last REAL silent renewal finished. Persisted because the renewer's own
+    /// cooldown lives in memory and resets with every process, while the
+    /// retry policy (`shouldRetrySilentRenewal`) has to hold across launches.
+    private static let lastSilentRenewalAttemptAtKey = "lastSilentRenewalAttemptAtV1"
+    /// Backs `lastSilentRenewalAttemptOutcome`: the outcome kind of that same
+    /// real attempt. Separate from the summary string on purpose, so the
+    /// display line can never be what the retry policy reads.
+    private static let lastSilentRenewalAttemptOutcomeKey = "lastSilentRenewalAttemptOutcomeV1"
+    /// Backs `silentRenewalConsecutiveLandings` -- how many foreground
+    /// renewals in a row ended on the login form, which is what it takes
+    /// (two) before `.landedOnLoginPage` is believed to mean "dead".
+    private static let silentRenewalConsecutiveLandingsKey = "silentRenewalConsecutiveLandingsV1"
+    /// Backs the renewer's credential-submission clock (seconds since 1970).
+    /// The renewer's 6-hour `autoLoginCooldown` used to live only in memory,
+    /// and every background wake builds a fresh `AppState` and renewer, so
+    /// each wake would have resubmitted the password and pushed Duo.
+    private static let lastCredentialSubmissionAtKey = "lastCredentialSubmissionAtV1"
     /// Backs `hasOfferedStayLoggedIn` — whether the one-time "want Smooth to
     /// remember your PennKey password?" offer has already been shown once,
     /// right after a successful interactive Canvas login
@@ -645,6 +667,12 @@ final class AppState: ObservableObject {
         self.stayLoggedInEnabled = UserDefaults.lhf.bool(forKey: Self.stayLoggedInEnabledKey)
         self.autoLoginDisabledReason = UserDefaults.lhf.string(forKey: Self.autoLoginDisabledReasonKey)
         self.autoLoginAwaitingDuo = UserDefaults.lhf.bool(forKey: Self.autoLoginAwaitingDuoKey)
+        self.lastSilentRenewalSummary = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalSummaryKey)
+        self.lastSilentRenewalAttemptAt = (UserDefaults.lhf.object(forKey: Self.lastSilentRenewalAttemptAtKey) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
+        self.lastSilentRenewalAttemptOutcome = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+            .flatMap { RenewalOutcomeKind(rawValue: $0) }
+        self.silentRenewalConsecutiveLandings = UserDefaults.lhf.integer(forKey: Self.silentRenewalConsecutiveLandingsKey)
         self.hasOfferedStayLoggedIn = UserDefaults.lhf.bool(forKey: Self.hasOfferedStayLoggedInKey)
         // Seeded here (not left at its `= []` default) so the dashboard's
         // "nothing to submit" caveat is correct on the very first frame of a
@@ -1535,6 +1563,11 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
         setAutoLoginDisabledReason(nil)
         setAutoLoginAwaitingDuo(false)
+        // A newly saved (or corrected) password is a new credential: the
+        // six-hour clock was measuring the old one. The renewer is rebuilt
+        // so its in-memory copy of that clock goes too.
+        UserDefaults.lhf.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        canvasSessionRenewer = nil
     }
 
     /// Settings → "stay signed in", turned off — and the one path
@@ -1593,6 +1626,242 @@ final class AppState: ObservableObject {
     func noteStayLoggedInOffered() {
         hasOfferedStayLoggedIn = true
         UserDefaults.lhf.set(true, forKey: Self.hasOfferedStayLoggedInKey)
+    }
+
+    // MARK: - Silent renewal: context, history, retry
+
+    /// Where a silent renewal is running from. A foreground renewal has the
+    /// student's phone awake, the app on screen and Duo's page at full
+    /// speed; a background one (`LHFBackgroundRefresh.run()`) has a ~30 s
+    /// budget, a throttled WebView and nobody to answer Duo. Evidence from a
+    /// background attempt is therefore weaker, and the rule is that it can
+    /// REPAIR a session (`.renewed`) but never CONDEMN one: see
+    /// `confirmedDeadAfterRenewal`. A context rather than a block, because
+    /// refusing to renew in the background at all would throw away the one
+    /// outcome that is always good news.
+    enum RenewalContext: String, Sendable {
+        case foreground
+        case background
+    }
+
+    /// `CanvasSessionRenewer.Outcome` without its payload, so it can be
+    /// stored, parsed back out of the summary string, and passed to pure
+    /// policy functions without dragging the renewer's type along. The raw
+    /// values are the enum case names and appear verbatim in
+    /// `lastSilentRenewalSummary`.
+    enum RenewalOutcomeKind: String, Sendable, Equatable {
+        case renewed
+        case needsDuo
+        case timedOut
+        case landedOnLoginPage
+        case passwordRejected
+        case notAttempted
+        case abortedByLoginPane
+    }
+
+    /// Set to `.background` by `LHFBackgroundRefresh.run()` immediately after
+    /// it builds its own `AppState`, and nowhere else. Every other `AppState`
+    /// is a foreground one.
+    var renewalContext: RenewalContext = .foreground
+
+    /// "<outcome> · <yyyy-MM-dd HH:mm> · <foreground|background>" for the last
+    /// silent renewal that actually ran (`.notAttempted` is not recorded: a
+    /// cooldown no-op says nothing about sign-in health and would overwrite
+    /// the real answer on the next redundant bounce). Never a URL, a cookie
+    /// name or a credential. Persisted; cleared on Canvas disconnect.
+    @Published private(set) var lastSilentRenewalSummary: String?
+
+    /// When the last real (network-touching) silent renewal finished, for
+    /// the retry policy. Not set by `.notAttempted` or `.abortedByLoginPane`.
+    private var lastSilentRenewalAttemptAt: Date?
+    private var lastSilentRenewalAttemptOutcome: RenewalOutcomeKind?
+    /// Consecutive foreground `.landedOnLoginPage` outcomes; see
+    /// `silentRenewalConsecutiveLandingsKey`.
+    private var silentRenewalConsecutiveLandings: Int
+
+    /// Pure rule: may a BACKGROUND renewal be offered the stored password?
+    /// No once Duo has asked (`lastOutcome == .needsDuo`, from any context):
+    /// only a human clears that, and `noteCanvasLoginSessionCaptured()`
+    /// forgets it. No within `CanvasSessionRenewer.autoLoginCooldown` of the
+    /// last submission, across launches. When this says no, the background
+    /// attempt rides the IdP session GET-only, which keeps the Canvas cookie
+    /// fresh while that session lives and pushes nothing to the phone.
+    nonisolated static func backgroundMayUseCredentials(
+        lastOutcome: RenewalOutcomeKind?,
+        lastCredentialSubmissionAt: Date?,
+        now: Date
+    ) -> Bool {
+        if lastOutcome == .needsDuo { return false }
+        if let lastCredentialSubmissionAt,
+           now.timeIntervalSince(lastCredentialSubmissionAt) < CanvasSessionRenewer.autoLoginCooldown {
+            return false
+        }
+        return true
+    }
+
+    /// Whether a PennKey password is on file, for Profile's sign-in health
+    /// line. The Keychain read happens on each access and never exposes the
+    /// value to the caller.
+    var isPennKeyPasswordSaved: Bool { PennKeyCredentialStore.hasCredentials }
+
+    /// How long after a `.timedOut` attempt the next try is allowed. A
+    /// timeout is "we don't know", so it is retried far sooner than the
+    /// one-hour `CanvasSessionRenewer.cooldown` that follows a clear answer.
+    nonisolated static let timedOutRetryInterval: TimeInterval = 10 * 60
+
+    /// Pure maps between `Outcome` and its payload-free kind.
+    nonisolated static func renewalOutcomeKind(_ outcome: CanvasSessionRenewer.Outcome) -> RenewalOutcomeKind {
+        switch outcome {
+        case .renewed: return .renewed
+        case .needsDuo: return .needsDuo
+        case .timedOut: return .timedOut
+        case .landedOnLoginPage: return .landedOnLoginPage
+        case .passwordRejected: return .passwordRejected
+        case .notAttempted: return .notAttempted
+        case .abortedByLoginPane: return .abortedByLoginPane
+        }
+    }
+
+    /// The summary line. Built only from the enum case name, a date and the
+    /// context, so no URL, cookie or credential can reach it by construction.
+    /// The date uses a pinned POSIX locale so the string is stable; `timeZone`
+    /// is a parameter only so tests can fix it.
+    nonisolated static func renewalSummary(
+        kind: RenewalOutcomeKind,
+        at date: Date,
+        context: RenewalContext,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return "\(kind.rawValue) \u{00B7} \(formatter.string(from: date)) \u{00B7} \(context.rawValue)"
+    }
+
+    /// Reads the outcome back out of a summary line (the text before the
+    /// first " · "); `nil` for anything unrecognised.
+    nonisolated static func renewalOutcomeKind(fromSummary summary: String) -> RenewalOutcomeKind? {
+        guard let first = summary.components(separatedBy: " \u{00B7} ").first else { return nil }
+        return RenewalOutcomeKind(rawValue: first)
+    }
+
+    /// Pure policy behind `retrySilentRenewalIfDue()`: should a foreground
+    /// refresh start another silent renewal now?
+    ///
+    /// - `confirmedDead`: the caller passes `canvasSessionExpired`, i.e. the
+    ///   cookie rule OR the confirmed-dead latch.
+    /// - Awaiting Duo is a hard no: a retry would push a Duo notification to
+    ///   the student's phone, and only an interactive login clears that latch.
+    /// - A disabled reason (a rejected password) is a hard no: a rejected
+    ///   password is never retried.
+    /// - Otherwise the last real attempt must be older than `cooldown`, or,
+    ///   when it timed out, older than `timedOutRetryInterval`. No attempt on
+    ///   record means due. A last attempt in the future (clock change) is not
+    ///   due, so a bad clock cannot make this fire on every refresh.
+    nonisolated static func shouldRetrySilentRenewal(
+        confirmedDead: Bool,
+        awaitingDuo: Bool,
+        disabledReason: String?,
+        lastAttemptAt: Date?,
+        lastOutcome: RenewalOutcomeKind?,
+        now: Date,
+        cooldown: TimeInterval
+    ) -> Bool {
+        // A first landing on the login form with a still-fresh cookie leaves
+        // `confirmedDead` false by design (it takes two to latch), so the last
+        // outcome alone also makes a retry eligible; otherwise that second
+        // landing would wait for a Grade Watcher 401.
+        guard confirmedDead || lastOutcome == .landedOnLoginPage else { return false }
+        guard !awaitingDuo, disabledReason == nil else { return false }
+        guard let lastAttemptAt else { return true }
+        let elapsed = now.timeIntervalSince(lastAttemptAt)
+        if lastOutcome == .timedOut {
+            return elapsed >= timedOutRetryInterval
+        }
+        return elapsed >= cooldown
+    }
+
+    /// Called from the foreground refresh (`ContentView.refresh()`, which
+    /// runs on launch, on activation and on the existing 5-minute loop, so
+    /// there is no new timer). Starts one silent renewal when the policy says
+    /// one is due. Before this, renewal fired only on the false-to-true edge
+    /// of `canvasSessionExpired`, so a single bad outcome stayed latched until
+    /// a manual login (docs/SIGNOUT_INVESTIGATION.md, H3). The renewer's own
+    /// in-flight and login-pane guards still apply.
+    func retrySilentRenewalIfDue(now: Date = Date()) {
+        guard renewalContext == .foreground, !isUsingFixtureData, !isCanvasLoginPaneActive else { return }
+        guard Self.shouldRetrySilentRenewal(
+            confirmedDead: canvasSessionExpired,
+            awaitingDuo: autoLoginAwaitingDuo,
+            disabledReason: autoLoginDisabledReason,
+            lastAttemptAt: lastSilentRenewalAttemptAt,
+            lastOutcome: lastSilentRenewalAttemptOutcome,
+            now: now,
+            cooldown: CanvasSessionRenewer.cooldown
+        ) else { return }
+        // The renewer keeps its own in-memory one-hour spacing; after a
+        // timeout the policy allows an earlier retry, so tell the renewer.
+        let renewerCooldown = lastSilentRenewalAttemptOutcome == .timedOut
+            ? Self.timedOutRetryInterval
+            : CanvasSessionRenewer.cooldown
+        Task { await performSilentCanvasRenewal(cooldown: renewerCooldown) }
+    }
+
+    /// Records one outcome in the summary, the retry bookkeeping and the
+    /// consecutive-landing count, then persists them. The writes honour
+    /// `persistsConfirmedDeadFlag` so `noteRenewalOutcomeForTesting` stays out
+    /// of the shared defaults domain, for the reason given there.
+    private func recordSilentRenewal(kind: RenewalOutcomeKind, context: RenewalContext, at now: Date) {
+        // Landing count first. Only a foreground landing counts toward the
+        // "second consecutive" rule; a background landing neither adds to it
+        // nor resets it. `.timedOut` is unknown and leaves it alone.
+        switch (kind, context) {
+        case (.landedOnLoginPage, .foreground):
+            silentRenewalConsecutiveLandings += 1
+        case (.renewed, _), (.needsDuo, .foreground), (.passwordRejected, _):
+            silentRenewalConsecutiveLandings = 0
+        default:
+            break
+        }
+        // A cooldown no-op proves nothing; don't let it overwrite the answer.
+        if kind != .notAttempted {
+            lastSilentRenewalSummary = Self.renewalSummary(kind: kind, at: now, context: context)
+        }
+        if kind != .notAttempted && kind != .abortedByLoginPane {
+            lastSilentRenewalAttemptAt = now
+            lastSilentRenewalAttemptOutcome = kind
+        }
+        guard persistsConfirmedDeadFlag else { return }
+        let defaults = UserDefaults.lhf
+        if let summary = lastSilentRenewalSummary {
+            defaults.set(summary, forKey: Self.lastSilentRenewalSummaryKey)
+        }
+        if let at = lastSilentRenewalAttemptAt, let outcome = lastSilentRenewalAttemptOutcome {
+            defaults.set(at.timeIntervalSince1970, forKey: Self.lastSilentRenewalAttemptAtKey)
+            defaults.set(outcome.rawValue, forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+        }
+        defaults.set(silentRenewalConsecutiveLandings, forKey: Self.silentRenewalConsecutiveLandingsKey)
+    }
+
+    private static func persistedCredentialSubmissionAt() -> Date? {
+        (UserDefaults.lhf.object(forKey: lastCredentialSubmissionAtKey) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
+    }
+
+    /// Forgets the renewal history: Canvas disconnect (nothing left to
+    /// renew) and a fresh interactive login (`landings` only).
+    private func resetSilentRenewalHistory() {
+        lastSilentRenewalSummary = nil
+        lastSilentRenewalAttemptAt = nil
+        lastSilentRenewalAttemptOutcome = nil
+        silentRenewalConsecutiveLandings = 0
+        let defaults = UserDefaults.lhf
+        defaults.removeObject(forKey: Self.lastSilentRenewalSummaryKey)
+        defaults.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
+        defaults.removeObject(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+        defaults.removeObject(forKey: Self.silentRenewalConsecutiveLandingsKey)
+        defaults.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
     }
 
     // MARK: - Duo remembered-device diagnostics
@@ -1832,10 +2101,12 @@ final class AppState: ObservableObject {
     /// `classifyFinalHost(...)` there) so this is unit-testable without
     /// constructing an `AppState` or touching WebKit at all.
     ///
-    /// `.timedOut` and `.landedOnLoginPage` are both real network round trips
-    /// against Penn's IdP that ended somewhere other than a fresh Canvas
-    /// session — that's the server-side proof of death this flag exists to
-    /// record. `.passwordRejected` joins them: a stored PennKey password was
+    /// `.landedOnLoginPage` (twice running, in the foreground; see the
+    /// Context section below) is a real network round trip against Penn's
+    /// IdP that ended somewhere other than a fresh Canvas session — that's
+    /// the server-side proof of death this flag exists to record.
+    /// (`.timedOut` used to be in this group and no longer is: a timeout
+    /// proves nothing.) `.passwordRejected` joins it: a stored PennKey password was
     /// actually submitted and the chain landed back on the login form
     /// instead of Duo/Canvas, which is just as much proof the session needs
     /// a real (human) login as the no-credentials case. `.renewed` is the
@@ -1860,17 +2131,47 @@ final class AppState: ObservableObject {
     /// (cooldown/in-flight/pane-active/test-runner) and `.abortedByLoginPane`
     /// (the attempt never actually reached the IdP) prove nothing either way
     /// now, so `current` passes through unchanged for those two alone.
-    static func confirmedDeadAfterRenewal(
+    ///
+    /// **Context (2026-10-09, docs/SIGNOUT_INVESTIGATION.md H2/H3).** The
+    /// rule above latched on the first bad outcome and nothing ever retried,
+    /// so one slow Duo page or one bad connection showed the banner until a
+    /// manual login. It now distinguishes how strong the evidence is:
+    /// - `.renewed` clears the flag in any context.
+    /// - `.passwordRejected` latches in any context: a rejected password is
+    ///   never retried, whoever saw it.
+    /// - In `.background`, nothing else latches. A background wake has a
+    ///   throttled WebView and a 20 s budget, so its failures are weak
+    ///   evidence, and a `.needsDuo` there would also have set the
+    ///   awaiting-Duo latch against a Duo prompt the student never saw.
+    /// - In `.foreground`, `.needsDuo` still latches (only a human clears it).
+    ///   `.timedOut` is unknown and never latches (`current` passes
+    ///   through). `.landedOnLoginPage` latches only when
+    ///   `priorConsecutiveLandings` is at least 1, i.e. on the SECOND
+    ///   landing in a row; the first is retried under
+    ///   `shouldRetrySilentRenewal`. The cookie rule in
+    ///   `SessionCookieStore.load` still marks the session expired
+    ///   independently, so not latching here does not hide the banner for an
+    ///   aged-out cookie.
+    nonisolated static func confirmedDeadAfterRenewal(
         current: Bool,
-        outcome: CanvasSessionRenewer.Outcome
+        outcome: CanvasSessionRenewer.Outcome,
+        context: RenewalContext = .foreground,
+        priorConsecutiveLandings: Int = 0
     ) -> Bool {
         switch outcome {
-        case .timedOut, .landedOnLoginPage, .passwordRejected, .needsDuo:
-            return true
         case .renewed:
             return false
+        case .passwordRejected:
+            return true
         case .abortedByLoginPane, .notAttempted:
             return current
+        case .needsDuo:
+            return context == .foreground ? true : current
+        case .timedOut:
+            return current
+        case .landedOnLoginPage:
+            guard context == .foreground else { return current }
+            return priorConsecutiveLandings >= 1 ? true : current
         }
     }
 
@@ -1913,8 +2214,13 @@ final class AppState: ObservableObject {
     /// report which `CanvasSessionRenewer.Outcome` case a real attempt
     /// actually landed on instead of the button just going quiet the way a
     /// production silent renewal is supposed to.
+    ///
+    /// `cooldown` overrides the renewer's spacing for this one call; only
+    /// `retrySilentRenewalIfDue()` passes it (shorter, after a `.timedOut`).
+    /// A background `AppState` gets `CanvasSessionRenewer.backgroundTimeout`
+    /// so the attempt fits inside the system's wake budget.
     @discardableResult
-    private func performSilentCanvasRenewal() async -> CanvasSessionRenewer.Outcome {
+    private func performSilentCanvasRenewal(cooldown: TimeInterval? = nil) async -> CanvasSessionRenewer.Outcome {
         guard !isUsingFixtureData else {
             #if DEBUG
             DebugRenewalLog.record("requested, skipped: fixture data (-LHFDemoData)")
@@ -1941,12 +2247,32 @@ final class AppState: ObservableObject {
             // it did before this feature existed.
             autoLogin: { [weak self] in
                 guard let self, self.canAutoLoginSilently else { return nil }
+                // A background wake never re-offers the password once Duo
+                // has asked, nor within six hours of the last submission.
+                if self.renewalContext == .background,
+                   !Self.backgroundMayUseCredentials(
+                       lastOutcome: self.lastSilentRenewalAttemptOutcome,
+                       lastCredentialSubmissionAt: Self.persistedCredentialSubmissionAt(),
+                       now: Date()
+                   ) {
+                    return nil
+                }
                 return PennKeyCredentialStore.load()
+            },
+            lastCredentialSubmissionAt: Self.persistedCredentialSubmissionAt(),
+            onCredentialSubmission: { date in
+                UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastCredentialSubmissionAtKey)
             }
         )
         canvasSessionRenewer = renewer
 
-        let outcome = await renewer.renewIfNeeded()
+        let attemptTimeout = renewalContext == .background
+            ? CanvasSessionRenewer.backgroundTimeout
+            : CanvasSessionRenewer.timeout
+        let outcome = await renewer.renewIfNeeded(
+            timeout: attemptTimeout,
+            cooldown: cooldown ?? CanvasSessionRenewer.cooldown
+        )
         applyRenewalOutcome(outcome)
 
         guard outcome == .renewed else { return outcome }
@@ -1962,12 +2288,19 @@ final class AppState: ObservableObject {
     /// a real attempt runs without needing a real network round trip.
     private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome) {
         // Wired on EVERY outcome, not just `.renewed` — the whole point of
-        // the sticky dead-state fix is that a `.timedOut`/`.landedOnLoginPage`/
-        // `.needsDuo` result (real proof the session is dead server-side —
-        // see `confirmedDeadAfterRenewal`'s doc comment for why `.needsDuo`
-        // belongs in that group) must reach `canvasSessionExpired` too, not
-        // just a successful renewal.
-        setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(current: canvasSessionConfirmedDead, outcome: outcome))
+        // the sticky dead-state fix is that a foreground `.needsDuo` or a
+        // second `.landedOnLoginPage` (real proof the session is dead
+        // server-side; `.timedOut` and anything seen in the background are
+        // deliberately not proof — see `confirmedDeadAfterRenewal`'s doc
+        // comment) must reach `canvasSessionExpired` too, not just a
+        // successful renewal.
+        let context = renewalContext
+        setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(
+            current: canvasSessionConfirmedDead,
+            outcome: outcome,
+            context: context,
+            priorConsecutiveLandings: silentRenewalConsecutiveLandings
+        ))
         // `.passwordRejected` and `.needsDuo` are ALSO evidence about the
         // stored PennKey password/silent-path specifically (as opposed to
         // the Canvas session in general, which the line above already
@@ -1980,14 +2313,21 @@ final class AppState: ObservableObject {
         // password is correct or that Duo has been answered, and clearing
         // either latch on that unrelated evidence would silently re-arm the
         // silent path to repeat the exact failure it just latched against.
+        //
+        // `.passwordRejected` disables auto-login in ANY context (a rejected
+        // password must never be retried). `.needsDuo` sets the awaiting-Duo
+        // latch only in the foreground: a background wake's Duo page is not
+        // evidence that the student has anything to answer, and the latch
+        // also hides the retry path and turns the banner into "duo needs you".
         switch outcome {
         case .passwordRejected:
             noteAutoLoginRejected()
         case .needsDuo:
-            setAutoLoginAwaitingDuo(true)
+            if context == .foreground { setAutoLoginAwaitingDuo(true) }
         case .renewed, .landedOnLoginPage, .timedOut, .abortedByLoginPane, .notAttempted:
             break
         }
+        recordSilentRenewal(kind: Self.renewalOutcomeKind(outcome), context: context, at: Date())
         // Recomputes on both the dead and renewed paths so the banner
         // reflects whichever way this attempt cut. Note: if this call flips
         // `canvasSessionExpired` false→true (the dead path), its own
@@ -2270,6 +2610,19 @@ final class AppState: ObservableObject {
     func noteCanvasLoginSessionCaptured() {
         setCanvasSessionConfirmedDead(false)
         setAutoLoginAwaitingDuo(false)
+        // A real login resets the "landed on the login form" streak too, and
+        // forgets the last attempt's outcome: that is what lifts the
+        // background's "Duo has asked" stand-down, and stops a stale
+        // `.landedOnLoginPage` from making a now-healthy session look
+        // retry-eligible.
+        if silentRenewalConsecutiveLandings != 0 {
+            silentRenewalConsecutiveLandings = 0
+            UserDefaults.lhf.removeObject(forKey: Self.silentRenewalConsecutiveLandingsKey)
+        }
+        if lastSilentRenewalAttemptOutcome != nil {
+            lastSilentRenewalAttemptOutcome = nil
+            UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+        }
         refreshCanvasSessionExpiredState()
         Task { @MainActor [weak self] in
             await self?.refreshDuoRememberSummary()
@@ -2548,6 +2901,7 @@ final class AppState: ObservableObject {
         // dependency on anything this method clears afterward), so it's
         // simplest to get out of the way immediately.
         disableStayLoggedIn()
+        resetSilentRenewalHistory()
         SessionCookieStore.remove(service: .canvas)
         // The Ed session exists only as a child of the Canvas login (the LTI
         // launch minted it), so it goes with it, along with the caches that
@@ -2942,6 +3296,22 @@ final class AppState: ObservableObject {
                 gradescopeItems = fetched
             }
             lastGradescopeSync = Date()
+            // Re-stamp the Gradescope session after every authenticated
+            // fetch, as Canvas already does (`GradeWatcherStore`,
+            // `CanvasSessionRenewer`). Gradescope's session cookie carries no
+            // expiry, so `SessionCookieStore.load` drops it 24 hours after its
+            // `capturedAt`, and the only thing that ever wrote `capturedAt` was
+            // the login; a student using the app daily was therefore dropped a
+            // day after connecting, and `AutoSyncCoordinator` read the empty
+            // set as "disconnected" (docs/SIGNOUT_INVESTIGATION.md H5).
+            // `GradescopeClient` does not surface rotated `Set-Cookie` values,
+            // so this merges the cookies the request just proved live. They
+            // are only ones the server accepted (we are past a successful
+            // `fetchAssignments`), and `merge` itself drops any with a past
+            // expiry, so nothing the server deleted is resurrected. This
+            // sits on the success path only: a failed or rejected fetch never
+            // refreshes the clock, so a dead session still ages out.
+            SessionCookieStore.merge(cookies, service: .gradescope)
             setGradescopeConnected(true)
             rebuildDashboardItems()
         } catch {

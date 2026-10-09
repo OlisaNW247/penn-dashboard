@@ -19,22 +19,20 @@ Live on the App Store: **1.2.1**. Uploaded but never released: **3.0.0
 
 These block shipping, or would make shipping risky.
 
-- **Finish submitting 3.0.0 (11).** Uploaded and set up in App Store
-  Connect on 2026-09-27 (`CLAUDE.md` → Release state); the last clicks
-  (remove 3.0.0 from the old rejected submission, swap build 10 for 11,
-  Add for Review → Submit) were Marco's to do. Check its status there.
-  After approval and release, raise the `update-manifest` floor to 3.0.0.
-- **Fix the background-refresh crash, with a foreground-only re-login.**
-  Every `BGAppRefreshTask` wake has crashed on entry since 2026-08-24
-  (`CLAUDE.md` → the background-refresh trap), so background refresh has
-  never run. Fix the handler's isolation (run the launch handler's work on
-  the main actor, e.g. a `Task { @MainActor in … }` hop, and complete the
-  task on every path), and in the same change let `CanvasSessionRenewer`
-  run only while the app is active, so a background wake that finds a
-  day-old cookie leaves it for the next open. Both halves together keep
-  sign-in exactly as proven while background refresh starts fetching
-  deadlines. Verify with a DEBUG build and `debugRenewalLogV1`, plus Xcode's
-  Debug → Simulate Background Fetch.
+- **Ship 3.0.1 (12), the sign-out fix** (`v8`, 2026-10-09, blind;
+  `docs/SIGNOUT_INVESTIGATION.md`). 3.0.0 (11) went live about 2026-10-01
+  and students with a saved PennKey password were still signed out,
+  most likely because every manual reconnect purged Duo's trust. Compile
+  on the Mac, then verify on two phones with a 25-hour-aged session, one
+  with a saved password and Duo trust and one without, then TestFlight to
+  three affected students for a week, then the store. Raise the
+  `update-manifest` floor only after it is downloadable, and only with
+  Olisa's word.
+- **Verify background refresh on a device.** The crash is fixed on `v8`
+  (launch handler made `@Sendable` + `nonisolated`; background renewals
+  run with a 20 s budget and can only help, never latch). Xcode's Debug →
+  Simulate Background Fetch on a DEBUG build, then read
+  `debugRenewalLogV1` and the Profile health line.
 - **Test with real Canvas and Gradescope data.** Every grade, submission and
   syllabus path has only been proven against fixtures. This is the
   highest-value check outstanding.
@@ -138,6 +136,18 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-09 (`v8`, blind).** The App Store sign-out investigation and
+  fix: `docs/SIGNOUT_INVESTIGATION.md`. Olisa's "never signed out" phone
+  turned out to run the same App Store build 11; the difference was a
+  saved password, Duo trust and daily use. Fixes: the pre-login purge keeps
+  Duo trust; reconnect starts at the Canvas login, not the school picker;
+  the background-refresh crash is fixed with a never-latch guard; foreground
+  renewals retry on a cooldown instead of latching on one timeout; a
+  secret-free last-renewal summary and a sign-in health line in Profile;
+  Gradescope cookies re-stamped on sync; stamped 3.0.1 (12).
+- **2026-10-02 (`v8`, blind).** Ed Discussion ingestion end to end
+  (`docs/ED_DISCUSSION.md`); the `ed` document kind on both sides of the
+  wire; migration not yet applied.
 - **2026-09-27.** Stay signed in works like Olisa's phone again: the
   24-hour cookie rule and Penn's cookie handling restored byte for byte
   from `39b2fff`, so the app re-logs in on open after a day away (PennKey

@@ -17,6 +17,32 @@ import os
 /// runs, so "Turned in ✓" and widget freshness aren't gated on the app being
 /// opened.
 ///
+/// **History: every wake crashed from 2026-08-24 until the fix recorded
+/// here (CLAUDE.md, "Every background refresh has crashed").** `register()`
+/// is `@MainActor`, and the launch-handler closure written inside it
+/// inherited that isolation. `BGTaskScheduler` is handed `using: nil`, so iOS
+/// calls the closure on its own private queue
+/// (`com.apple.BGTaskScheduler (com.lhf.lowhangingfruit.refresh)`), and
+/// Swift 6 checks inherited main-actor isolation at run time: the process
+/// died on entry with `SIGTRAP` in `_dispatch_assert_queue_fail`, before a
+/// single line of work ran. Nobody saw it because the app was closed. It is
+/// the same trap as `GradeCourseCardView.decidedText`. The fix is that the
+/// closure is explicitly `@Sendable` (a `@Sendable` closure never inherits an
+/// actor), `launch(_:)`/`handle(_:)` are explicitly `nonisolated`, and the
+/// only things they share across queues are the `Sendable`
+/// `OSAllocatedUnfairLock` and the framework's own task object. All
+/// main-actor work happens behind the `Task { @MainActor in ... }` hop in
+/// `handle(_:)`, which was always correct. The wrong fix would have been
+/// hopping onto the main actor inside the closure itself: the isolation
+/// check runs at closure entry, so a hop inside it is too late.
+///
+/// Fixing the crash alone would have switched on background Canvas re-logins
+/// for the first time, so it ships with `AppState.RenewalContext`: `run()`
+/// marks its `AppState` as `.background`, where a failed silent renewal can
+/// neither latch the session dead nor trigger a Duo push (see
+/// `AppState.confirmedDeadAfterRenewal`) and the attempt gets
+/// `CanvasSessionRenewer.backgroundTimeout` instead of 30 seconds.
+///
 /// Public because the App target (which owns `@main`) can only see public API
 /// of this module — `AppState`, `NotificationScheduler`, and
 /// `AutoSyncCoordinator` are all `internal`, so this enum is the one thing
@@ -39,20 +65,27 @@ public enum LHFBackgroundRefresh {
     /// only correct call site.
     ///
     /// `@MainActor` because `register()` itself is only ever called from
-    /// `LHFApp.init()` on the main actor; the launch-handler closure passed
-    /// to `BGTaskScheduler` below is a separate, ordinary (non-isolated)
-    /// closure — the system can invoke it on a background queue, so actor
-    /// hops for the real work happen explicitly inside `handle(_:)`, not by
-    /// relying on this function's own isolation.
+    /// `LHFApp.init()` on the main actor. The launch-handler closure below
+    /// must NOT share that isolation (see the type's header comment): it is
+    /// written `@Sendable`, which stops it inheriting this function's actor,
+    /// and it does nothing but forward to the `nonisolated` `launch(_:)`.
     @MainActor
     public static func register() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskID, using: nil) { task in
-            guard let refreshTask = task as? BGAppRefreshTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            handle(refreshTask)
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskID, using: nil) { @Sendable task in
+            LHFBackgroundRefresh.launch(task)
         }
+    }
+
+    /// The body of the launch handler, kept out of the closure so its
+    /// isolation is stated in a signature (`nonisolated`) rather than
+    /// inferred from where a closure literal happens to sit. Runs on the
+    /// system's queue.
+    nonisolated private static func launch(_ task: BGTask) {
+        guard let refreshTask = task as? BGAppRefreshTask else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        handle(refreshTask)
     }
 
     /// Submits the next background-refresh request. Idempotent: submitting
@@ -83,7 +116,7 @@ public enum LHFBackgroundRefresh {
     /// on whatever queue the system calls it from, rather than hopping to
     /// the main actor first — the system wants the completion promptly once
     /// the budget is gone.
-    private static func handle(_ task: BGAppRefreshTask) {
+    nonisolated private static func handle(_ task: BGAppRefreshTask) {
         let completed = OSAllocatedUnfairLock(initialState: false)
         func completeOnce(success: Bool) {
             let isFirst = completed.withLock { done -> Bool in
@@ -136,6 +169,12 @@ public enum LHFBackgroundRefresh {
     @MainActor
     private static func run() async {
         let state = AppState()
+        // First statement after `init` and before any suspension point, so
+        // the context is in place before anything else on the main actor
+        // (including any renewal `Task` `init` itself queued) can run: every
+        // renewal this wake makes is `.background` (no latching dead, no
+        // credential offer once Duo has asked, 20 s budget).
+        state.renewalContext = .background
         let scheduler = NotificationScheduler()
 
         // Fixture/demo/preview data must never trigger real network activity

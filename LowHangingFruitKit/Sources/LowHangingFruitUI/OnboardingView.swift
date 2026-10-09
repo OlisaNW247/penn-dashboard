@@ -55,20 +55,58 @@ struct OnboardingView: View {
     /// can follow it. Order here is the order a student walks them in; there
     /// is no case for "the hub" any more; see this type's doc comment for
     /// what used to live there.
-    private enum Phase: Hashable {
+    /// Internal rather than private so `ReconnectPaneTests` can pin
+    /// `initialPhase(for:hasChosenSchool:)`.
+    enum Phase: Hashable {
         case schoolSelection
         case canvasLogin
         case gradescopeLogin
         case reminders
     }
 
-    init(destination: AppState.OnboardingDestination = .full) {
+    /// Where the walk starts. A pure rule so it can be tested.
+    ///
+    /// A Canvas **reconnect** (`.canvas`) for a student who has already picked
+    /// a school starts at that school's login, not at the picker. The picker
+    /// is not harmless: choosing any school other than the current one calls
+    /// `AppState.selectCanvasInstallation`, which runs `disconnectCanvas()`
+    /// and with it deletes the saved PennKey password, the cookies and Duo's
+    /// remember-device trust (`docs/SIGNOUT_INVESTIGATION.md`, H6). A student
+    /// who only wanted to sign back in must not be one stray tap from that.
+    /// The picker stays reachable through the login pane's explicit back
+    /// action. A first run (no school chosen yet) still starts at the picker,
+    /// and `.full` always does, since it is the whole walk.
+    ///
+    /// `nonisolated` for the same reason as `GradeCourseCardView.decidedText`
+    /// (CLAUDE.md, Swift 6 trap): a static on a `View` is main-actor
+    /// isolated otherwise, and tests call this off the main actor.
+    nonisolated static func initialPhase(
+        for destination: AppState.OnboardingDestination,
+        hasChosenSchool: Bool
+    ) -> Phase {
+        switch destination {
+        case .gradescope:
+            return .gradescopeLogin
+        case .canvas:
+            return hasChosenSchool ? .canvasLogin : .schoolSelection
+        case .full:
+            return .schoolSelection
+        }
+    }
+
+    /// `hasChosenSchool` is `AppState.hasChosenCanvasInstallation`, passed by
+    /// `RootView`; it defaults to false (a first run) so no caller has to
+    /// read defaults from inside a view initializer.
+    init(
+        destination: AppState.OnboardingDestination = .full,
+        hasChosenSchool: Bool = false
+    ) {
         #if DEBUG
         let initialPhase: Phase = ProcessInfo.processInfo.arguments.contains("-LHFRemindersOnboardingHarness")
             ? .reminders
-            : (destination == .gradescope ? .gradescopeLogin : .schoolSelection)
+            : Self.initialPhase(for: destination, hasChosenSchool: hasChosenSchool)
         #else
-        let initialPhase: Phase = destination == .gradescope ? .gradescopeLogin : .schoolSelection
+        let initialPhase: Phase = Self.initialPhase(for: destination, hasChosenSchool: hasChosenSchool)
         #endif
         _phase = State(initialValue: initialPhase)
     }
@@ -859,8 +897,16 @@ private struct CanvasLoginPane: View {
             }
         }
         .task {
+            // `preLoginPurgeDomainHints`, not `websiteDataDomainHints`: this
+            // pane runs on every manual reconnect, and the full list includes
+            // Duo. Purging Duo here deletes its remember-device cookie, so
+            // the hidden `CanvasSessionRenewer`'s next pass stops at Duo
+            // (`.needsDuo`) and latches the session dead
+            // (`docs/SIGNOUT_INVESTIGATION.md`, H2). Canvas and the identity
+            // provider are still cleared so a half-dead session cannot bounce
+            // the login. Disconnect keeps the full list and still wipes Duo.
             await WebsiteDataReset.purgeWebsiteData(
-                matchingDomainContains: installation.websiteDataDomainHints,
+                matchingDomainContains: installation.preLoginPurgeDomainHints,
                 in: LoginDataStores.canvas
             )
             isPurging = false
