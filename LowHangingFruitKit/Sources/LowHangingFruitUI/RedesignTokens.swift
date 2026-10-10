@@ -453,13 +453,20 @@ struct SmoothDueValue {
 }
 
 /// Compact two-line deadline value used on Smooth cards: `4d / late`, `5h`,
-/// the weekday for the next five days, or a short date beyond that window.
-/// Full dates remain available in expanded detail.
+/// `8m` inside the last hour, the weekday for the next five days, or a short
+/// date beyond that window. Full dates remain available in expanded detail.
+///
+/// Minutes are floored at 1 ("1m", never "0m"), and the hour form starts at
+/// exactly 60 minutes. Before minutes existed this read "1h" for anything
+/// under an hour, so an item due in 8 minutes looked like it had an hour left.
 func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
     guard let due else { return SmoothDueValue(primary: "—", secondary: "no date") }
     let seconds = due.timeIntervalSince(now)
     if seconds < 0 {
         let late = -seconds
+        if late < 3_600 {
+            return SmoothDueValue(primary: "\(max(1, Int(late / 60)))m", secondary: "late")
+        }
         if late < 86_400 {
             return SmoothDueValue(primary: "\(max(1, Int(late / 3_600)))h", secondary: "late")
         }
@@ -469,6 +476,9 @@ func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
             to: Calendar.current.startOfDay(for: now)
         ).day ?? Int(late / 86_400)
         return SmoothDueValue(primary: "\(max(1, days))d", secondary: "late")
+    }
+    if seconds < 3_600 {
+        return SmoothDueValue(primary: "\(max(1, Int(seconds / 60)))m", secondary: nil)
     }
     if seconds < 86_400 {
         return SmoothDueValue(primary: "\(max(1, Int(seconds / 3_600)))h", secondary: nil)
@@ -485,9 +495,11 @@ func smoothDueValue(_ due: Date?, now: Date = Date()) -> SmoothDueValue {
     )
 }
 
-/// Compact, weekday-free due text: "2 days late", "5h left", "in 3 days".
-/// Day counts are calendar-day differences (not raw 24h chunks), so an item
-/// due "in 2 days" reads that way regardless of the time of day.
+/// Compact, weekday-free due text: "2 days late", "5h left", "8m left",
+/// "in 3 days". Day counts are calendar-day differences (not raw 24h chunks),
+/// so an item due "in 2 days" reads that way regardless of the time of day.
+/// Inside the last hour it counts minutes, as `smoothDueValue` does, so the
+/// spoken label and the card never disagree.
 func dueText(_ due: Date?, now: Date = Date()) -> String {
     guard let due else { return "no due date" }
     let s = due.timeIntervalSince(now)
@@ -495,6 +507,9 @@ func dueText(_ due: Date?, now: Date = Date()) -> String {
 
     if s < 0 {
         let late = -s
+        if late < 3_600 {
+            return "\(max(1, Int(late / 60)))m late"
+        }
         if late < 86_400 {
             let h = max(1, Int(late / 3600))
             return "\(h)h late"
@@ -502,6 +517,10 @@ func dueText(_ due: Date?, now: Date = Date()) -> String {
         let d = cal.dateComponents([.day], from: cal.startOfDay(for: due),
                                    to: cal.startOfDay(for: now)).day ?? Int(late / 86_400)
         return "\(max(1, d)) day\(d == 1 ? "" : "s") late"
+    }
+
+    if s < 3_600 {
+        return "\(max(1, Int(s / 60)))m left"
     }
 
     if s < 86_400 {
@@ -512,6 +531,17 @@ func dueText(_ due: Date?, now: Date = Date()) -> String {
     let d = cal.dateComponents([.day], from: cal.startOfDay(for: now),
                                to: cal.startOfDay(for: due)).day ?? Int(s / 86_400)
     return "in \(max(1, d)) day\(d == 1 ? "" : "s")"
+}
+
+/// What VoiceOver says for the date column of a card, whose visible text is
+/// only "Tue" or "5h" with no hint that it is the due time. Built on
+/// `dueText` so the words match what a sighted student can read elsewhere.
+/// A date the student moved themselves keeps the "adjusted" mark the column
+/// shows.
+func dueAccessibilityLabel(_ due: Date?, adjusted: Bool = false, now: Date = Date()) -> String {
+    guard due != nil else { return "no due date" }
+    let label = "due, \(dueText(due, now: now))"
+    return adjusted ? "\(label), adjusted" : label
 }
 
 // MARK: – Haptics (iOS only, no-op on macOS)

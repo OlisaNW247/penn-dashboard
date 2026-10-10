@@ -67,7 +67,14 @@ final class NotificationScheduler: ObservableObject {
         self.defaults = defaults
         let d = defaults
         self.isEnabled = d.bool(forKey: Self.enabledKey)
-        if let raw = d.array(forKey: Self.offsetsKey) as? [Int], !raw.isEmpty {
+        // A key that is present is the student's answer, and an empty list is
+        // a legitimate answer: "no lead-time reminders". Only a MISSING key
+        // means "never chosen, use the defaults". This used to also fall back
+        // when the saved list was empty, so a student who switched every lead
+        // time off got "1 day, 1 hour" back, silently, on the next launch;
+        // `setOffset` writes the empty array on purpose when the last switch
+        // goes off, and this read has to honour what that write meant.
+        if let raw = d.array(forKey: Self.offsetsKey) as? [Int] {
             self.leadOffsets = Set(raw.compactMap(LeadOffset.init(rawValue:)))
         } else {
             // The same default a course with `leadOffsets == nil` inherits, so
@@ -115,6 +122,16 @@ final class NotificationScheduler: ObservableObject {
         }
     }
 
+    /// Whether any switch the Profile page shows is on. The empty answer is a
+    /// real, saved state (see `init`), and it is invisible in a list of
+    /// unticked switches, so Profile says so in words. Counted against
+    /// `LeadOffset.offered` rather than the raw set because the planner only
+    /// ever fires `offered` lead times: a set holding nothing but the retired
+    /// `.d7` shows five off switches and sends nothing, which is "none on".
+    var hasActiveLeadTimes: Bool {
+        !leadOffsets.isDisjoint(with: LeadOffset.offered)
+    }
+
     func setOffset(_ offset: LeadOffset, on: Bool) {
         if on { leadOffsets.insert(offset) } else { leadOffsets.remove(offset) }
         defaults.set(leadOffsets.map(\.rawValue), forKey: Self.offsetsKey)
@@ -138,10 +155,31 @@ final class NotificationScheduler: ObservableObject {
     /// `DashboardViewModel.reload`, and the two would diverge the first time one
     /// of them learned about a new filter.
     ///
-    /// Empty until the dashboard has scheduled at least once this launch, which
-    /// is the honest failure mode: an edit made before that simply waits for the
-    /// dashboard's own five-minute refresh to pick it up.
+    /// Empty until the dashboard has scheduled at least once this launch. That
+    /// alone used to be the honest failure mode (an edit made before then
+    /// waited for the dashboard's own refresh), but it also made turning
+    /// reminders on from Profile a no-op the first time, so the dashboard now
+    /// registers `liveItems` as well.
     private var lastScheduledItems: [DashItem] = []
+
+    /// The dashboard's live item list, registered once by `ContentView`.
+    ///
+    /// `lastScheduledItems` is only filled by a `reschedule`, and the
+    /// dashboard only calls `reschedule` while reminders are on. So a student
+    /// who turns reminders on from Profile for the first time this launch has
+    /// nothing recorded, and a preference-change reschedule would silently do
+    /// nothing until they next returned to the dashboard, which is exactly the
+    /// gap that change exists to close. Asking the dashboard for its items at
+    /// the moment of the change needs no second copy of its filters (the
+    /// concern in the note above) and cannot go stale.
+    var liveItems: (() -> [DashItem])?
+
+    /// What a preference-change reschedule plans from: the dashboard's live
+    /// items when it has registered, otherwise the last set a `reschedule`
+    /// saw.
+    func itemsForPreferenceReschedule() -> [DashItem] {
+        liveItems?() ?? lastScheduledItems
+    }
 
     /// The in-flight debounce from `rescheduleAfterPreferenceChange`.
     private var pendingPreferenceReschedule: Task<Void, Never>?
@@ -172,11 +210,11 @@ final class NotificationScheduler: ObservableObject {
     /// after they stop.
     func rescheduleAfterPreferenceChange(debounce: Duration = .milliseconds(600)) {
         pendingPreferenceReschedule?.cancel()
-        guard isEnabled, !lastScheduledItems.isEmpty else { return }
+        guard isEnabled, !itemsForPreferenceReschedule().isEmpty else { return }
         pendingPreferenceReschedule = Task { [weak self] in
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled, let self else { return }
-            await self.reschedule(from: self.lastScheduledItems)
+            await self.reschedule(from: self.itemsForPreferenceReschedule())
         }
     }
 
@@ -403,6 +441,11 @@ final class NotificationScheduler: ObservableObject {
         preferences: CoursePreferencesStore? = nil
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
+        // Read once per pass, from the same store the mute and lead-time
+        // settings come from; `courseNameOverrides` is the canonical copy of
+        // the renames (`SharedDefaults.courseNameOverridesKey` is only its
+        // projection for the widget), so the two cannot disagree.
+        let nameOverrides = prefs.courseNameOverrides
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
 
         var byCourse: [String: [Candidate]] = [:]
@@ -469,7 +512,18 @@ final class NotificationScheduler: ObservableObject {
             // identical notifications, and neither said which piece of work
             // it meant without opening the app. See `reminderBody`.
             let urgency = DueState(due: pair.item.due, now: pair.fireDate)
-            content.title = pair.item.assignment.course
+            // The headline is the class as the student sees it on the card:
+            // their rename if they gave one, "Misc" when the work has no class
+            // (`Assignment.displayCourse(overrides:)`, the same call the cards
+            // make). It used to be the raw Canvas code, so a class renamed to
+            // "Algorithms" still buzzed as "CIS 1210", and a classless task
+            // arrived with an empty title.
+            content.title = pair.item.assignment.displayCourse(overrides: nameOverrides)
+            // Grouping stays on the RAW code, never the display name: a rename
+            // must not split one class's reminders into two stacks on the lock
+            // screen, and the code is the identity every other per-class
+            // setting keys on (see CLAUDE.md, "Course identity").
+            content.threadIdentifier = pair.item.assignment.course
             content.body = Self.reminderBody(
                 assignmentTitle: pair.item.assignment.title,
                 headline: pair.offset.headline
