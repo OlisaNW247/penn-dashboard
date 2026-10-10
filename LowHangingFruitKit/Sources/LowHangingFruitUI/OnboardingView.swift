@@ -1137,7 +1137,7 @@ private struct CanvasLoginPane: View {
                     // appearance; resetting it while Penn's pane is still
                     // mid-Duo would let a re-rendered credential form be
                     // auto-filled a second time.
-                    message = state.error ?? "couldn't sign in. try again."
+                    message = "couldn't sign in. try again."
                     navObserver.reset()
                 }
             }

@@ -82,7 +82,7 @@ struct ProfileClassesSection: View {
         // attached to the `Section` rather than to any one row on purpose: a
         // row-attached alert dies with its row, and the rename prompt has to
         // outlive a list that re-sorts underneath it.
-        .alert("Rename class", isPresented: Binding(
+        .alert("rename class", isPresented: Binding(
             get: { renamingCourse != nil },
             set: { if !$0 { renamingCourse = nil } }
         )) {

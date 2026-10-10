@@ -62,7 +62,10 @@ struct SettingsPage: View {
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
         var id: String { rawValue }
-        var label: String { self == .canvas ? "Canvas" : "Gradescope" }
+        /// Used only in the confirmation's title, which the app writes in
+        /// lowercase like every other title; no place that needs capitals
+        /// reads it.
+        var label: String { self == .canvas ? "canvas" : "gradescope" }
         var message: String {
             switch self {
             case .canvas:
@@ -223,7 +226,20 @@ struct SettingsPage: View {
         Section {
             Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
-                set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+                set: { newValue in
+                    Task {
+                        await scheduler.setEnabled(newValue)
+                        // Saving the switch is not enough: with the app
+                        // backgrounded while still on this page, nothing else
+                        // re-plans until the student is back on the dashboard
+                        // (`ContentView` reschedules when its path empties).
+                        // Same path the per-class switches use. Runs after the
+                        // await so the permission answer is in; turning
+                        // reminders off makes it a no-op, since `setEnabled`
+                        // has already cleared what was pending.
+                        scheduler.rescheduleAfterPreferenceChange()
+                    }
+                }
             ))
 
             if scheduler.isEnabled {
@@ -236,8 +252,22 @@ struct SettingsPage: View {
                     ForEach(NotificationScheduler.LeadOffset.offered) { offset in
                         Toggle(offset.label, isOn: Binding(
                             get: { scheduler.leadOffsets.contains(offset) },
-                            set: { scheduler.setOffset(offset, on: $0) }
+                            set: {
+                                scheduler.setOffset(offset, on: $0)
+                                // Same reason as the master switch above.
+                                scheduler.rescheduleAfterPreferenceChange()
+                            }
                         ))
+                    }
+
+                    // All five off is a saved choice ("no lead-time reminders"),
+                    // and it looks identical to a list nobody has set up yet.
+                    // Same words, icon and colour as the per-class list.
+                    if !scheduler.hasActiveLeadTimes {
+                        Label("no reminder times", systemImage: "exclamationmark.triangle")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2SpineAmber)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(

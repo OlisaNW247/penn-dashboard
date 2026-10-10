@@ -186,6 +186,10 @@ struct AssignmentCardView: View {
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
+            // One element that says it is the due time, instead of a bare
+            // "Tue" / "5h" / "late" read as three unrelated fragments.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(dueAccessibilityLabel(item.due, adjusted: item.dueOverride != nil, now: now))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

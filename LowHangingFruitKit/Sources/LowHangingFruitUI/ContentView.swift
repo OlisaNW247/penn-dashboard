@@ -94,6 +94,8 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
+                    notSavingBanner
+
                     // Hidden while a silent renewal is running: the 24-hour cookie
                     // rule flips `canvasSessionExpired` before the renewal it
                     // starts has finished, so a saved-password student would see
@@ -181,6 +183,11 @@ struct ContentView: View {
         // deliberately AppState-free so they still render in previews.
         .environment(\.courseNameOverrides, state.courseNameOverrides)
         .onAppear {
+            // Lets a reminder switch flipped on Profile re-plan from what the
+            // dashboard is showing right now, even if reminders were off until
+            // that moment (see `NotificationScheduler.liveItems`). Captures
+            // the view model itself, not this struct.
+            scheduler.liveItems = { [vm] in vm.items }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
@@ -296,7 +303,10 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
-                .contentShape(Circle())
+                // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
+                // gives the filter button next to it, so the three controls
+                // share one hit size without widening the row.
+                .contentShape(Circle().inset(by: -3))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("add assignment or recurring task")
@@ -322,7 +332,8 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothAnnouncementAccent)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothAnnouncementFill))
-                .contentShape(Circle())
+                // See `addInlineButton`: 44pt hit region, 38pt drawing.
+                .contentShape(Circle().inset(by: -3))
                 // Unread only: the total never went down, so after the first
                 // week it said nothing. No badge at all once everything's
                 // been seen.
@@ -826,6 +837,37 @@ struct ContentView: View {
         }
     }
 
+    /// Quiet notice that nothing on this screen will survive a relaunch: the
+    /// ledger fell back to memory, or its last write failed (see
+    /// `AppState.showsNotSavingBanner` for the rule and why it is read here).
+    /// Fixed words on purpose: the system error behind a failed write is
+    /// nothing a student can act on, and there is no button because there is
+    /// nothing in the app that fixes a full disk. The padding sits inside the
+    /// `if` so a healthy dashboard has no gap where this would be.
+    @ViewBuilder
+    private var notSavingBanner: some View {
+        if state.showsNotSavingBanner {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.smoothMarigoldInk)
+                Text("not saving on this phone")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2Ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.smoothMarigold.opacity(0.16))
+            )
+            .accessibilityElement(children: .combine)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+        }
+    }
+
     // MARK: Date
 
     /// Cached rather than built per call: `DateFormatter` construction is
@@ -1021,7 +1063,7 @@ private struct SmoothTodoEmptyState: View {
                 .offset(y: appeared ? 0 : 8)
                 .animation(.easeOut(duration: 0.34).delay(0.12), value: appeared)
 
-            Text("nothing due this week")
+            Text("nothing due soon")
                 .font(.lhfMono(10, weight: .semibold))
                 .tracking(0.9)
                 .foregroundStyle(Color.v2DateText)
@@ -1032,7 +1074,7 @@ private struct SmoothTodoEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("nothing due this week. go enjoy life")
+        .accessibilityLabel("nothing due soon. go enjoy life")
         .onAppear {
             if reduceMotion {
                 appeared = true
