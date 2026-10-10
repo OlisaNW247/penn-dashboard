@@ -183,7 +183,7 @@ struct DueDateEditTests {
 
     // MARK: Every reader sees it
 
-    @Test("the card, the reminders, the widget and both of ask's pools carry the edited date")
+    @Test("the card, the reminders, the widget and the on-device pool carry the edited date; the server document does not")
     func everyReaderSeesTheEdit() throws {
         var h = try Harness()
         defer { h.tearDown() }
@@ -230,15 +230,21 @@ struct DueDateEditTests {
         let work = try #require(h.state.assistantWorkItems().first { $0.id == ahead.id })
         #expect(work.dueAt == moved)
 
-        // Ask, server path: the context document names the date by its ISO
-        // timestamp on the item's line.
+        // Ask, server path: deliberately the OPPOSITE. The context document is
+        // sent to the backend, and docs/PRIVACY.md promises due-date edits never
+        // leave the device, so it still names the feed's date (by its ISO
+        // timestamp, on the item's line) and the edited date appears nowhere in
+        // it. The on-device pool above and this document can therefore disagree
+        // about a date the student moved; that is the price of the promise.
+        let document = h.state.assistantContextDocument()
         let line = try #require(
-            h.state.assistantContextDocument()
+            document
                 .split(separator: "\n")
                 .first { $0.contains("Quoted everywhere") }
         )
-        #expect(line.contains("due \(isoTimestamp(moved))"), "\(line)")
-        #expect(!line.contains(isoTimestamp(original)), "\(line)")
+        #expect(line.contains("due \(isoTimestamp(original))"), "\(line)")
+        #expect(!line.contains(isoTimestamp(moved)), "\(line)")
+        #expect(!document.contains(isoTimestamp(moved)), "the edited date is nowhere in what is sent")
     }
 
     @Test("the widget orders by the edited date, and can show an item the feed left undated")

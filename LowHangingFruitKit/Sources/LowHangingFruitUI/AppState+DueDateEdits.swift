@@ -13,15 +13,20 @@ import LowHangingFruitKit
 //
 // `AppState` owns the edits now, as `[assignment id: Date]`, persisted
 // (`DueDateEditStore`, `SharedDefaults.dueDateEditsKey`; that key's comment says
-// why this is defaults and not the ledger). Every reader asks `AppState` for
-// the date:
+// why this is defaults and not the ledger). Every reader ON THE PHONE asks
+// `AppState` for the date:
 //
 //  - the dashboard: `DashboardViewModel.reload` fills `DashItem.dueOverride`,
 //    and its sections, the card, the prev tab's placement and reminders (which
 //    plan from `vm.items`' `due`) all follow it;
 //  - the widget snapshot: `widgetNextDueItems()`;
-//  - ask: `assistantWorkItems()` (on-device) and `assistantContextDocument()`
-//    (the server path).
+//  - ask, on-device: `assistantWorkItems()`.
+//
+// One reader deliberately does NOT: `assistantContextDocument()`, the document
+// ask sends to the backend, keeps the feed's date. docs/PRIVACY.md promises
+// that due-date edits never leave the device, and quoting the edit there would
+// upload it. So the on-device answerer and the server path can disagree about a
+// date the student moved; that is the price of the promise.
 //
 // The wrong fix would have been to persist the view model's array, or to write
 // the edit onto `canvasItems` itself: the feed overwrites those on every sync
@@ -53,9 +58,9 @@ extension AppState {
     /// A cross-posted item (`linkedID`: the same assignment on Canvas and on
     /// Gradescope, collapsed into one card by `AssignmentDeduplicator`) is
     /// recorded under both ids, the way completion marks both. The card carries
-    /// one of them; ask's pools are built from the raw feeds and list both
-    /// copies, so keying only the card's id would leave ask quoting the
-    /// unedited date for the twin.
+    /// one of them; the on-device ask pool is built from the raw feeds and
+    /// lists both copies, so keying only the card's id would leave ask quoting
+    /// the unedited date for the twin.
     ///
     /// An edit equal to the item's own date is not an edit: it clears the entry
     /// rather than storing a no-op that would later read as "edited" on a card

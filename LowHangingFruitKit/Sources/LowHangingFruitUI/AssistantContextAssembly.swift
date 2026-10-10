@@ -103,11 +103,17 @@ extension AppState {
             AssistantContextDocument.WorkFacts(
                 course: assignment.course,
                 title: assignment.title,
-                // The student's edited date when they made one, so the server
-                // path quotes what the card shows. This changes the document
-                // only when an edit changes, never between two questions on the
-                // same facts, so the prompt-cache prefix above stays stable.
-                due: effectiveDueDate(for: assignment),
+                // The feed's date, deliberately NOT the student's edited one
+                // (`effectiveDueDate(for:)`). This document is sent to the
+                // backend with every question, and docs/PRIVACY.md promises that
+                // due-date edits "never leave the device"; quoting the edit here
+                // would upload it. The on-device answerer's pool
+                // (`assistantWorkItems()`) does carry the edit, so the two paths
+                // can disagree about a date the student moved. That is the price
+                // of the promise. The wrong fix is to "make them agree" by
+                // sending the edit: it is a privacy-policy change, and one that
+                // needs PRIVACY.md changed first.
+                due: assignment.dueAt,
                 isCompleted: isCompleted(assignment),
                 // `.event` is the model's own "there is nothing to hand in"
                 // marker — lectures, office hours, an exam date — and the

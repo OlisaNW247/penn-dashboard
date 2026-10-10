@@ -309,7 +309,9 @@ final class AppState: ObservableObject {
 
     /// The due dates the student has edited by hand, `[assignment id: Date]`:
     /// the one place an edit lives, so the dashboard card, reminders, the widget
-    /// snapshot and both of ask's pools all read the same date. Written only
+    /// snapshot and the on-device ask pool all read the same date (the document
+    /// ask sends to the backend deliberately does not; see
+    /// `assistantContextDocument()`). Written only
     /// through `setDueDateEdit` and `pruneDueDateEdits` (`AppState+DueDateEdits
     /// .swift`, where the rules are); internal rather than `private(set)`
     /// because `private` is file-scoped and those live in that extension.
