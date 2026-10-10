@@ -108,10 +108,10 @@ struct GradeWatcherView: View {
 
     private var emptyCoursesState: some View {
         VStack(spacing: 4) {
-            Text("no classes selected yet.")
+            Text("no classes selected")
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
-            Text("turn on a class in settings \u{2192} classes to see its grades here.")
+            Text("turn one on in profile \u{2192} classes")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)
@@ -132,12 +132,6 @@ struct GradeWatcherView: View {
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
                 .multilineTextAlignment(.center)
-            Text("\(selectedCodes.count) class\(selectedCodes.count == 1 ? " is" : "es are") switched on, but Canvas hasn\u{2019}t told us their course pages yet. Grades need a live Canvas login. reconnect Canvas in Settings, then open Grades again.")
-                .font(.lhfSans(12))
-                .foregroundStyle(Color.v2RingSub)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 32)
             recoveryActions
                 .padding(.top, 8)
         }
@@ -303,7 +297,7 @@ struct GradeWatcherView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "wifi.slash")
                     .foregroundStyle(Color.v2DueAmber)
-                Text("showing last known grades. your canvas session expired.")
+                Text("showing last known grades")
                     .font(.lhfSans(12, weight: .medium))
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)

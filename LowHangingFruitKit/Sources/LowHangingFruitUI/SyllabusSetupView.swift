@@ -90,7 +90,7 @@ struct SyllabusSetupView: View {
             .listRowSeparator(.hidden)
 
             Section {
-                Text("smooth reads only the grading section. the category weights, any drop rules, how many assignments to expect, and the letter cutoffs if your syllabus lists them. it stays on your phone.")
+                Text("reads only the grading section. stays on your phone.")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
             }
@@ -103,9 +103,6 @@ struct SyllabusSetupView: View {
                     Label("look on canvas", systemImage: "magnifyingglass")
                 }
                 .disabled(store.snapshots[courseID] == nil)
-                Text("checks this course\u{2019}s syllabus page, its pages, and any file named like a syllabus.")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2RingSub)
             } header: {
                 SmoothSectionHeader("find it automatically", accent: .smoothGrape)
             }
@@ -141,7 +138,7 @@ struct SyllabusSetupView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SmoothFormHeader(title: "Paste syllabus", accent: .smoothGrape, spark: .smoothLemon)
                     .padding(.horizontal)
-                Text("paste the part of your syllabus that lists what each thing is worth.")
+                Text("paste your syllabus\u{2019}s grading section")
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .padding(.horizontal)
@@ -317,11 +314,11 @@ struct SyllabusSetupView: View {
 
                 Section {
                     if match.isCompleteCoverage {
-                        Label("every category is matched. your syllabus\u{2019}s weights are in use.", systemImage: "checkmark.circle.fill")
+                        Label("all matched", systemImage: "checkmark.circle.fill")
                             .font(.lhfSans(12))
                             .foregroundStyle(Color.v2SpineGreen)
                     } else {
-                        Text("match each category from your syllabus to the matching canvas group. weights only take effect once every canvas group is covered. a half-matched syllabus would silently drop the rest of your grade.")
+                        Text("match each category to a canvas group.")
                             .font(.lhfSans(12))
                             .foregroundStyle(Color.v2DateText)
                     }
@@ -429,7 +426,7 @@ struct SyllabusSetupView: View {
                 .foregroundStyle(Color.v2Ink)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("you can still set weights by hand on the report. tap any category\u{2019}s weight to edit it.")
+            Text("or set weights by hand on the report")
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)
