@@ -164,9 +164,13 @@ extension AppState {
     /// Mirrors the pools `assistantContextDocument()` sends to the backend so
     /// the two paths agree on what exists.
     func assistantWorkItems() -> [WorkItem] {
-        let pool = canvasItems + gradescopeItems + moduleReadingItems + announcementItems
-            + effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
-            + manualAssignments.map { $0.asAssignment() }
+        // `droppingSignupBacklog`: ask must not answer "what's overdue" with the
+        // work the dashboard is withholding from a new student (`SignupBacklog`).
+        let pool = droppingSignupBacklog(
+            canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+                + effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
+                + manualAssignments.map { $0.asAssignment() }
+        )
         var seen: Set<String> = []
         return pool.compactMap { assignment in
             guard seen.insert(assignment.id).inserted else { return nil }

@@ -14,6 +14,13 @@ struct DoneView: View {
     let sections: [DashSection]
     let weeklyDone: Int
     let onUncomplete: (DashItem) -> Void
+    /// How many older unfinished assignments the sign-up rule is withholding
+    /// (`SignupBacklog`), whether the student has chosen to see them, and the
+    /// switch between the two. Defaulted so the tab renders without any of it
+    /// (previews, an existing install: the count is zero and the line is absent).
+    var backlogHiddenCount: Int = 0
+    var backlogRevealed: Bool = false
+    var onToggleBacklog: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showsEarlier = false
@@ -40,6 +47,38 @@ struct DoneView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+
+            backlogLine
+        }
+    }
+
+    /// One quiet line at the foot of the tab: the way back to work the sign-up
+    /// rule withheld. Absent unless something is actually withheld, so it never
+    /// appears for an existing install or for a student with nothing old.
+    /// Caption styling matches "nice pace." above; the button's hit area is 44pt
+    /// even though its words are small.
+    @ViewBuilder
+    private var backlogLine: some View {
+        if backlogHiddenCount > 0 {
+            HStack(alignment: .center, spacing: 4) {
+                Text(SignupBacklogCopy.line(count: backlogHiddenCount, revealed: backlogRevealed))
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.v2RingSub)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    lhfHapticLight()
+                    onToggleBacklog()
+                } label: {
+                    Text(SignupBacklogCopy.buttonTitle(revealed: backlogRevealed))
+                        .font(.lhfSans(11, weight: .semibold))
+                        .foregroundStyle(Color.smoothCobaltInk)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(SignupBacklogCopy.accessibilityLabel(revealed: backlogRevealed))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -138,5 +177,31 @@ struct DoneCardView: View {
             .opacity(0.55)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The words of the prev tab's backlog line, kept apart from the view so the
+/// singular/plural rule can be tested without rendering anything. Lowercase,
+/// like the rest of the dashboard's captions.
+enum SignupBacklogCopy {
+    static func line(count: Int, revealed: Bool) -> String {
+        if revealed {
+            return count == 1
+                ? "showing an older assignment from before you joined"
+                : "showing older assignments from before you joined"
+        }
+        return count == 1
+            ? "1 older assignment from before you joined is hidden"
+            : "\(count) older assignments from before you joined are hidden"
+    }
+
+    static func buttonTitle(revealed: Bool) -> String {
+        revealed ? "hide" : "show"
+    }
+
+    static func accessibilityLabel(revealed: Bool) -> String {
+        revealed
+            ? "hide older assignments from before you joined"
+            : "show older assignments from before you joined"
     }
 }

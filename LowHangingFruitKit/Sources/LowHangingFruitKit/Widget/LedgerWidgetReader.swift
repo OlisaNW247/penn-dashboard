@@ -41,7 +41,15 @@ public enum LedgerWidgetReader {
 
     /// Testable seam: the same derivation against an explicit store file, so the
     /// filtering rules are exercised without an App Group entitlement.
-    static func snapshot(storeURL url: URL, now: Date = Date()) -> WidgetSnapshot? {
+    /// `defaults` is where the user's preferences are read from; it is a
+    /// parameter so a test can supply a scratch suite instead of the shared one
+    /// (a decision written to the shared domain would be read by every
+    /// `AppState` in every concurrently running suite).
+    static func snapshot(
+        storeURL url: URL,
+        now: Date = Date(),
+        defaults: UserDefaults = .lhf
+    ) -> WidgetSnapshot? {
         // Don't let SwiftData create an empty store from inside the extension —
         // if the app has never run, there is simply nothing to show.
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -71,10 +79,17 @@ public enum LedgerWidgetReader {
         // suite. Without these the widget cheerfully advertised a class the
         // user had hidden or deleted, under the raw Canvas name they had
         // already renamed.
-        let hidden = Set(UserDefaults.lhf.stringArray(forKey: SharedDefaults.hiddenCoursesKey) ?? [])
-        let deleted = Set(UserDefaults.lhf.stringArray(forKey: SharedDefaults.deletedCoursesKey) ?? [])
-        let nameOverrides = UserDefaults.lhf
+        let hidden = Set(defaults.stringArray(forKey: SharedDefaults.hiddenCoursesKey) ?? [])
+        let deleted = Set(defaults.stringArray(forKey: SharedDefaults.deletedCoursesKey) ?? [])
+        let nameOverrides = defaults
             .dictionary(forKey: SharedDefaults.courseNameOverridesKey) as? [String: String] ?? [:]
+        // The sign-up backlog (`SignupBacklog`): the dashboard hides unfinished
+        // feed work that was already more than a week overdue when the student
+        // signed up, so this fallback must too, or the widget advertises exactly
+        // the items the dashboard is hiding. nil when nothing is hidden for this
+        // install (undecided, an existing install, or the student chose to see
+        // everything), which is also what an absent key reads as.
+        let backlog = SignupBacklogStore(defaults: defaults).activeBacklog
 
         // A plain loop rather than the filter chain this used to be: the
         // merged chain grew to nine links and the Swift 6 type-checker gave
@@ -93,6 +108,11 @@ public enum LedgerWidgetReader {
             // shared suite, because unlike hiding and deletion this fact is
             // per-item, not per-course — see `StoredAssignment.archivedTerm`.
             if row.isArchived { continue }
+            if let backlog,
+               let source = Assignment.Source(rawValue: row.sourceRaw),
+               backlog.hides(source: source, dueAt: row.dueAt, isFinished: row.isFinished) {
+                continue
+            }
             if isAgedOut(row, now: now) { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's

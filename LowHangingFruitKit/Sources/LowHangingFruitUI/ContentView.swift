@@ -553,7 +553,13 @@ struct ContentView: View {
                         vm.uncomplete(item)
                     }
                     rescheduleNotifications()
-                }
+                },
+                backlogHiddenCount: state.signupBacklogHiddenCount,
+                backlogRevealed: state.signupBacklogRevealed,
+                // `vm` reloads itself off AppState's republish, as it does for
+                // every other change. No reminders are touched: what this
+                // brings back is past due, and reminders only schedule ahead.
+                onToggleBacklog: { state.setSignupBacklogRevealed(!state.signupBacklogRevealed) }
             )
         }
     }

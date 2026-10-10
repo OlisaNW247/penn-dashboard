@@ -181,10 +181,21 @@ fastest way for a new session to know what exists.
     the **megaphone**. The megaphone opens the announcement finds sheet;
     its badge counts only unread finds, and rows unread when opened are
     tagged NEW (`AnnouncementReadState`).
-  - **todo**: overdue plus the next two days.
+  - **todo**: overdue plus the next two days. For someone who signed up
+    on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
+    that was already more than 7 days overdue at their first sync is
+    withheld from todo, all, the widget and ask (`SignupBacklog`; a
+    set-once cutoff in `UserDefaults.lhf`, `signupBacklogCutoffV1`,
+    decided at the first real feed reconcile). Installs that already held
+    feed rows get a "hide nothing" sentinel and see no change. Nothing is
+    deleted, finished work still reaches prev, and manual work is never
+    hidden.
   - **all**: future work through the term.
   - **prev** (`DoneView`): leads with "N down this week", shows this week's
-    finished work, and opens "earlier this semester" in place.
+    finished work, and opens "earlier this semester" in place. When the
+    sign-up rule above is withholding anything, a quiet last line reads
+    "N older assignments from before you joined are hidden" with
+    "show" / "hide" (`signupBacklogRevealedV1`).
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already

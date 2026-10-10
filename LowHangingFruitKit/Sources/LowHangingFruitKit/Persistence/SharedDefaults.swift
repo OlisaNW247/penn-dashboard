@@ -29,6 +29,17 @@ public enum SharedDefaults {
     public static let deletedCoursesKey = "deletedCourseKeys"
     public static let courseNameOverridesKey = "courseNameOverrides"
 
+    /// The sign-up backlog decision (`SignupBacklogStore`): a cutoff instant
+    /// (seconds since 1970; `0` means "decided, hide nothing"), written once,
+    /// and the student's "show older assignments" switch beside it. Listed here
+    /// for the same reason as the three above: `LedgerWidgetReader` reads them
+    /// from the widget process. Born in the shared suite, so deliberately NOT in
+    /// `SharedDefaultsMigration.legacyKeys` (that list is frozen), and not in
+    /// `CloudPrefsMirror.mirroredKeys` (a second device decides for itself
+    /// against its own ledger).
+    public static let signupBacklogCutoffKey = "signupBacklogCutoffV1"
+    public static let signupBacklogRevealedKey = "signupBacklogRevealedV1"
+
     /// The App Group suite, or nil when this process has no App Group
     /// entitlement (unit tests, SwiftUI previews, an unsigned binary).
     ///

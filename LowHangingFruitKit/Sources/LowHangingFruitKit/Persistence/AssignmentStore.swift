@@ -923,6 +923,33 @@ public final class AssignmentStore {
         Set(rows(source: .canvas).compactMap { $0.canvasSubmissionObservedAt != nil ? $0.course : nil })
     }
 
+    /// Whether the ledger already holds any row that came from a feed
+    /// (Canvas, Modules, Gradescope, announcements), aged, gone, finished or
+    /// completion-only included. Read-only. This is the "is this an existing
+    /// install?" question the sign-up backlog asks once, before a first real
+    /// reconcile inserts its rows (`SignupBacklogStore.decideIfNeeded`).
+    ///
+    /// It deliberately counts *every* feed-sourced row, including the hidden
+    /// completion-only ones: an install that has ever recorded a completion for
+    /// feed work is not a new student, and the cost of mistaking an existing
+    /// install for a new one (work they could see yesterday vanishes after an
+    /// update) is far worse than the cost of the opposite mistake (a new student
+    /// sees the old backlog, which is what every student saw before this rule).
+    ///
+    /// `ignoring` is for ids that are known not to be real: the preview mode's
+    /// sample rows. Preview does not write the ledger today (the dashboard never
+    /// forwards a sample item's completion to `AppState`), but "a student who
+    /// previewed first is still a new student" must not depend on that staying
+    /// true.
+    public func holdsFeedRows(ignoring ignoredIDs: Set<String> = []) -> Bool {
+        allRows().contains { row in
+            guard let source = Assignment.Source(rawValue: row.sourceRaw),
+                  SignupBacklog.isFeedSource(source)
+            else { return false }
+            return !ignoredIDs.contains(row.id)
+        }
+    }
+
     // MARK: Test/diagnostic access
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.

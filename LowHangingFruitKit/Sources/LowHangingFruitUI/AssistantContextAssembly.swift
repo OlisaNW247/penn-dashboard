@@ -94,7 +94,11 @@ extension AppState {
         // Every pool the dashboard itself draws from. `announcementItems` is
         // included here — as work, which is what those rows are — rather than
         // in the `announcements:` parameter; see the note above.
-        let pool = canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+        // Minus the sign-up backlog (`SignupBacklog`), so the server path and the
+        // on-device path (`assistantWorkItems()`) agree with the dashboard.
+        let pool = droppingSignupBacklog(
+            canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+        )
         let work = pool.map { assignment in
             AssistantContextDocument.WorkFacts(
                 course: assignment.course,
