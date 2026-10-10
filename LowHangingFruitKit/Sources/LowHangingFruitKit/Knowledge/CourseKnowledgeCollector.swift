@@ -12,7 +12,20 @@ import Foundation
 /// talks to anything but Canvas. Per-course failures are recorded, not
 /// thrown, so one course with a broken Modules page can't hide the rest. An
 /// expired session is the exception: it is thrown so the caller can stop
-/// hammering Canvas and tell the student to reconnect.
+/// hammering Canvas and tell the student to reconnect. A 403 is not an
+/// expired session (see `CanvasCourseContentClient.Error.sessionExpired`): it
+/// is one course Canvas will not show this account, and that course alone is
+/// recorded as an error while the others carry on.
+///
+/// **A course is only "fully fetched" if nothing about it failed.** The merge
+/// drops a fully fetched course's documents that were not seen this run, and
+/// the upload tells the server the same, for every classmate, so a fetch that
+/// failed and came back empty is indistinguishable from a document the
+/// teacher deleted. Any error while reading a course (an endpoint, a page
+/// body, a syllabus request, or the announcements call, which covers every
+/// course at once) makes it *partial*: its new documents are added and its
+/// changed ones updated, nothing it already holds is dropped, and it is not
+/// reported as fully synced.
 ///
 /// `fetchFully` (see `run`) lets a caller skip the Canvas fetch for courses
 /// the shared backend already has fresh: if a classmate in the same Canvas
@@ -26,15 +39,23 @@ import Foundation
 public struct CourseKnowledgeCollector: Sendable {
     public struct Report: Sendable {
         public let knowledge: CourseKnowledgeBase
+        /// How many courses came back usable: at most one of their endpoints
+        /// failed. This is only a count for the "couldn't read course
+        /// materials" notice; it says nothing about which courses were read
+        /// in full (`fullyFetchedCourseIDs`).
         public let syncedCourses: Int
         public let errors: [String]
-        /// Which courses this run actually re-fetched from Canvas and
-        /// merged as a full resync — i.e. the `fetchFully` set that
-        /// succeeded (or, when `fetchFully` was `nil`, every course whose
-        /// endpoints mostly answered). A caller uploading to the shared
-        /// backend needs exactly this set for `SyncPlanner.uploads(fullyFetched:)`,
-        /// and `syncedCourses` alone (a count) can't reconstruct it.
+        /// Which courses this run re-fetched from Canvas without a single
+        /// error and merged as a full resync (so documents Canvas no longer
+        /// has were dropped). A caller uploading to the shared backend needs
+        /// exactly this set for `SyncPlanner.uploads(fullyFetched:)`, and
+        /// `syncedCourses` alone (a count) can't reconstruct it. A course
+        /// with any error is in `partialCourseIDs` instead.
         public let fullyFetchedCourseIDs: Set<String>
+        /// Courses this run fetched from Canvas where something failed. Their
+        /// documents were merged add-and-update only, and they are
+        /// deliberately absent from `fullyFetchedCourseIDs`.
+        public let partialCourseIDs: Set<String>
         /// Outbound links gathered from this run's pages, assignments, and
         /// module items — the raw material for the server's course-website
         /// discovery (`backend/PROTOCOL.md`'s `discover-websites`). Not
@@ -43,11 +64,19 @@ public struct CourseKnowledgeCollector: Sendable {
         /// consumed by `SyncPlanner.uploads` and never written to disk.
         public let links: [CourseLink]
 
-        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String], fullyFetchedCourseIDs: Set<String> = [], links: [CourseLink] = []) {
+        public init(
+            knowledge: CourseKnowledgeBase,
+            syncedCourses: Int,
+            errors: [String],
+            fullyFetchedCourseIDs: Set<String> = [],
+            partialCourseIDs: Set<String> = [],
+            links: [CourseLink] = []
+        ) {
             self.knowledge = knowledge
             self.syncedCourses = syncedCourses
             self.errors = errors
             self.fullyFetchedCourseIDs = fullyFetchedCourseIDs
+            self.partialCourseIDs = partialCourseIDs
             self.links = links
         }
     }
@@ -98,6 +127,9 @@ public struct CourseKnowledgeCollector: Sendable {
         var documents: [CourseDocument] = []
         var errors: [String] = []
         var synced: Set<String> = []
+        var partial: Set<String> = []
+        var usableCourses = 0
+        var announcementsFailed = false
         // Outbound links, gathered only from pages, assignments and module
         // items — never announcements, which are noisy (a link to a due
         // Gradescope assignment, a Zoom room, a form) compared to the
@@ -117,11 +149,22 @@ public struct CourseKnowledgeCollector: Sendable {
             }
         } catch {
             errors.append("announcements: \(error.localizedDescription)")
+            // The one call covers every course. Without it a fully fetched
+            // course would be merged with no announcements at all, dropping
+            // the ones it holds and telling the server they are gone.
+            announcementsFailed = true
         }
 
         let content = CanvasCourseContentClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
         let syllabus = CanvasSyllabusClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
         let modules = CanvasModulesClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
+
+        // What the device already holds for each course's pages, so a page
+        // whose `updated_at` has not moved is not downloaded again.
+        var storedPages: [String: [String: CourseDocument]] = [:]
+        for document in store.load().documents where document.kind == .page {
+            storedPages[document.courseID, default: [:]][document.sourceID] = document
+        }
 
         for course in courses {
             guard fetchFully == nil || fetchFully!.contains(course.courseID) else {
@@ -148,42 +191,73 @@ public struct CourseKnowledgeCollector: Sendable {
                 errors.append("\(course.code) assignments: \(error.localizedDescription)")
             }
 
+            // Modules are fetched ahead of pages because they say which pages
+            // the instructor linked, and those are read first. Their
+            // documents and links are still appended last, below, so the
+            // order everything else in this run is gathered in is unchanged.
+            var moduleItems: [CanvasModulesClient.ModuleItem] = []
             do {
-                let pages = try await content.pages(courseID: course.courseID)
-                documents.append(contentsOf: pages.map { CourseDocumentBuilder.page(from: $0, course: course, now: now) })
-                links.append(contentsOf: pages.flatMap { CourseDocumentBuilder.links(from: $0, course: course) })
-            } catch {
-                courseErrors += 1
-                errors.append("\(course.code) pages: \(error.localizedDescription)")
-            }
-
-            do {
-                for candidate in try await syllabus.findCandidates(courseID: course.courseID) {
-                    if let doc = CourseDocumentBuilder.syllabus(from: candidate, course: course, now: now) {
-                        documents.append(doc)
-                    }
-                    links.append(contentsOf: candidate.links.map {
-                        CourseLink(courseID: course.courseID, href: $0.href, text: $0.text, origin: .syllabus)
-                    })
-                }
-            } catch {
-                courseErrors += 1
-                errors.append("\(course.code) syllabus: \(error.localizedDescription)")
-            }
-
-            do {
-                let items = try await modules.fetchModuleItems(courseID: course.courseID)
-                documents.append(contentsOf: CourseDocumentBuilder.modules(from: items, course: course, now: now))
-                links.append(contentsOf: CourseDocumentBuilder.links(from: items, course: course))
+                moduleItems = try await modules.fetchModuleItems(courseID: course.courseID)
             } catch {
                 courseErrors += 1
                 errors.append("\(course.code) modules: \(error.localizedDescription)")
             }
 
-            // A course counts as re-synced (so vanished documents are dropped)
-            // only when most of its endpoints answered; otherwise the last
-            // good copy is kept rather than half-erased.
-            if courseErrors <= 1 { synced.insert(course.courseID) }
+            do {
+                let stored = storedPages[course.courseID] ?? [:]
+                let pageSet = try await content.pages(
+                    courseID: course.courseID,
+                    priorityPageURLs: moduleItems.compactMap(\.pageURL),
+                    storedUpdatedAt: stored.compactMapValues(\.updatedAt)
+                )
+                if let front = pageSet.frontPage {
+                    documents.append(CourseDocumentBuilder.home(from: front, course: course, now: now))
+                    links.append(contentsOf: CourseDocumentBuilder.links(from: front, course: course))
+                }
+                documents.append(contentsOf: pageSet.pages.map { CourseDocumentBuilder.page(from: $0, course: course, now: now) })
+                links.append(contentsOf: pageSet.pages.flatMap { CourseDocumentBuilder.links(from: $0, course: course) })
+                // An unchanged page keeps its stored document, which must be
+                // in this run's set or a full merge would treat it as gone.
+                // Its links are not re-gathered (the stored text has no
+                // hrefs); the server already holds the candidates from the
+                // run that first read the page.
+                documents.append(contentsOf: pageSet.unchangedPageURLs.compactMap { stored[$0] })
+                if !pageSet.failures.isEmpty {
+                    courseErrors += 1
+                    errors.append("\(course.code) pages: \(pageSet.failures.count) not read, first: \(pageSet.failures[0])")
+                }
+            } catch {
+                courseErrors += 1
+                errors.append("\(course.code) pages: \(error.localizedDescription)")
+            }
+
+            let syllabusSearch = await syllabus.searchCandidates(courseID: course.courseID)
+            for candidate in syllabusSearch.candidates {
+                if let doc = CourseDocumentBuilder.syllabus(from: candidate, course: course, now: now) {
+                    documents.append(doc)
+                }
+                links.append(contentsOf: candidate.links.map {
+                    CourseLink(courseID: course.courseID, href: $0.href, text: $0.text, origin: .syllabus)
+                })
+            }
+            if !syllabusSearch.failures.isEmpty {
+                courseErrors += 1
+                errors.append("\(course.code) syllabus: \(syllabusSearch.failures[0])")
+            }
+
+            documents.append(contentsOf: CourseDocumentBuilder.modules(from: moduleItems, course: course, now: now))
+            links.append(contentsOf: CourseDocumentBuilder.links(from: moduleItems, course: course))
+
+            // A course counts as re-synced (so vanished documents are
+            // dropped, here and on the server) only when nothing about it
+            // failed. A partial course still gets everything that did arrive
+            // merged in; it just never loses what it already had.
+            if courseErrors <= 1 { usableCourses += 1 }
+            if courseErrors == 0 && !announcementsFailed {
+                synced.insert(course.courseID)
+            } else {
+                partial.insert(course.courseID)
+            }
         }
 
         var knowledge = store.load()
@@ -206,6 +280,13 @@ public struct CourseKnowledgeCollector: Sendable {
             if dedupedLinks.count == 400 { break }
         }
 
-        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors, fullyFetchedCourseIDs: synced, links: dedupedLinks)
+        return Report(
+            knowledge: knowledge,
+            syncedCourses: usableCourses,
+            errors: errors,
+            fullyFetchedCourseIDs: synced,
+            partialCourseIDs: partial,
+            links: dedupedLinks
+        )
     }
 }

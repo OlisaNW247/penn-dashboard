@@ -62,6 +62,14 @@ public struct CanvasModulesClient: Sendable {
         /// to give here for them. Added as the last init parameter (default
         /// `nil`) so every existing call site keeps compiling unchanged.
         public let externalURL: URL?
+        /// Canvas's `page_url` — the slug of the wiki page this item points
+        /// at, present only when `typeRaw == "Page"`. Page items carry no
+        /// `content_id` (see `overlayDates`), so the slug is the only handle
+        /// on the page itself, and the course-materials sync uses it to read
+        /// every page a module links to (`CanvasCourseContentClient.pages`).
+        /// Added as the last init parameter (default `nil`) so every existing
+        /// call site keeps compiling unchanged.
+        public let pageURL: String?
 
         public init(
             id: String,
@@ -70,7 +78,8 @@ public struct CanvasModulesClient: Sendable {
             typeRaw: String,
             contentID: String? = nil,
             moduleName: String? = nil,
-            externalURL: URL? = nil
+            externalURL: URL? = nil,
+            pageURL: String? = nil
         ) {
             self.id = id
             self.title = title
@@ -79,6 +88,7 @@ public struct CanvasModulesClient: Sendable {
             self.contentID = contentID
             self.moduleName = moduleName
             self.externalURL = externalURL
+            self.pageURL = pageURL
         }
     }
 
@@ -279,7 +289,8 @@ public struct CanvasModulesClient: Sendable {
                         // types can carry the field with unrelated meaning
                         // in principle, so this narrows on Canvas's own type
                         // tag rather than "is the field present".
-                        externalURL: item.type == "ExternalUrl" ? item.externalURL : nil
+                        externalURL: item.type == "ExternalUrl" ? item.externalURL : nil,
+                        pageURL: item.type == "Page" ? item.pageURL : nil
                     ))
                 }
             }
@@ -409,7 +420,8 @@ public struct CanvasModulesClient: Sendable {
                     typeRaw: item.typeRaw,
                     contentID: item.contentID,
                     moduleName: item.moduleName,
-                    externalURL: item.externalURL
+                    externalURL: item.externalURL,
+                    pageURL: item.pageURL
                 )
             }
 
@@ -424,7 +436,8 @@ public struct CanvasModulesClient: Sendable {
                     typeRaw: item.typeRaw,
                     contentID: item.contentID,
                     moduleName: item.moduleName,
-                    externalURL: item.externalURL
+                    externalURL: item.externalURL,
+                    pageURL: item.pageURL
                 )
             }
 
@@ -481,12 +494,14 @@ private struct ModuleItemDTO: Decodable {
     let contentID: Int?
     let contentDetails: ContentDetailsDTO?
     let externalURL: URL?
+    let pageURL: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, type
         case contentID = "content_id"
         case contentDetails = "content_details"
         case externalURL = "external_url"
+        case pageURL = "page_url"
     }
 
     struct ContentDetailsDTO: Decodable {

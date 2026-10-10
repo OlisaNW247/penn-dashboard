@@ -19,7 +19,13 @@ import Foundation
 /// `CanvasGradesClient` — the same stance that file documents.
 public struct CanvasCourseContentClient: Sendable {
     public enum Error: Swift.Error, Sendable, LocalizedError, Equatable {
-        /// 401/403, or Canvas silently redirected to its HTML login page.
+        /// 401, or Canvas silently redirected to its HTML login page. A 403 is
+        /// deliberately NOT this: Canvas answers 403 for "this account may not
+        /// see this course's material" (a concluded or restricted course) and
+        /// for rate limiting, neither of which means the session is dead.
+        /// Reading it as `sessionExpired` let one forbidden course abort the
+        /// whole materials sync. It surfaces as `http(403)`, a per-course
+        /// error.
         case sessionExpired
         case http(Int)
         case notHTTP
@@ -64,24 +70,102 @@ public struct CanvasCourseContentClient: Sendable {
         return try await getAllPages(url)
     }
 
-    /// GET /api/v1/courses/:id/pages (listing), then each published page's
-    /// body — the listing endpoint never includes bodies. Capped because a
-    /// course with two hundred pages is a course packet, not a syllabus.
-    public func pages(courseID: String, maxBodies: Int = 40) async throws -> [CourseContentPage] {
+    /// How many page bodies one course may have read per sync, the front page
+    /// included. It was 40 (the 40 most recently edited pages), which left
+    /// most of a real course's pages unread. The server puts no cap on
+    /// documents per course (`backend/supabase/functions/sync/index.ts` caps
+    /// only one upload call at 200 documents, which the client already
+    /// batches around), so this is a bound on Canvas requests, not on what
+    /// the server accepts.
+    public static let defaultMaxPageBodies = 120
+
+    /// GET /api/v1/courses/:id/pages (listing), then the bodies of the pages
+    /// worth reading, up to `maxBodies` — the listing endpoint never includes
+    /// bodies. Capped because a course with five hundred pages is a course
+    /// packet, not a syllabus.
+    ///
+    /// Which bodies, in order:
+    /// 1. the course front page (`GET .../front_page`; a 404 means the course
+    ///    has none, which is not an error). It leads because it is where an
+    ///    instructor puts office hours and policies. It is returned apart
+    ///    from `pages` so it can become a `.home` document, and it is not
+    ///    also returned as a page.
+    /// 2. every page in `priorityPageURLs` (the pages the course's modules
+    ///    link to), in the order given. A module-linked page is the one the
+    ///    instructor told students to read, and recency ordering alone left
+    ///    it unread whenever it was not among the newest.
+    /// 3. the rest of the listing, most recently updated first.
+    ///
+    /// `storedUpdatedAt` maps a page slug to the `updatedAt` of the document
+    /// the caller already holds for it. A selected page whose listing
+    /// `updated_at` matches is not fetched again (`unchangedPageURLs`): the
+    /// caller reuses its stored document. Reused pages still count against
+    /// `maxBodies`, so the set of pages a course holds does not creep upward
+    /// across syncs.
+    ///
+    /// A body that fails for any reason other than "not found" is recorded in
+    /// `failures`, not skipped silently: the caller must not treat a course
+    /// with a missing page as fully read, or the merge would drop that page
+    /// and the upload would tell the server it is gone. Not found is a page
+    /// deleted between the listing and the fetch, which really is gone.
+    public func pages(
+        courseID: String,
+        maxBodies: Int = CanvasCourseContentClient.defaultMaxPageBodies,
+        priorityPageURLs: [String] = [],
+        storedUpdatedAt: [String: Date] = [:]
+    ) async throws -> CourseContentPageSet {
         let listURL = api("courses/\(courseID)/pages", query: [
             ("per_page", "100"),
             ("sort", "updated_at"),
             ("order", "desc"),
         ])
         let listing: [CourseContentPage] = try await getAllPages(listURL)
-        var pages: [CourseContentPage] = []
-        for page in listing.prefix(maxBodies) where page.published != false {
-            let slug = page.url.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? page.url
-            // One broken page shouldn't sink the rest of the course.
-            guard let full: CourseContentPage = try? await getOne(api("courses/\(courseID)/pages/\(slug)")) else { continue }
-            pages.append(full)
+        var failures: [String] = []
+
+        var frontPage: CourseContentPage?
+        do {
+            let candidate: CourseContentPage = try await getOne(api("courses/\(courseID)/front_page"))
+            if candidate.published != false { frontPage = candidate }
+        } catch Error.http(404) {
+            // No front page is set for this course.
+        } catch {
+            failures.append("front page: \(error.localizedDescription)")
         }
-        return pages
+
+        // Unpublished pages are never read, whichever list names them. The
+        // front page is seeded as "seen" so it is read once, as the home
+        // document, and not again as a page.
+        var seen = Set(listing.filter { $0.published == false }.map(\.url))
+        if let frontPage { seen.insert(frontPage.url) }
+        var ordered: [String] = []
+        for slug in priorityPageURLs + listing.map(\.url) {
+            if seen.insert(slug).inserted { ordered.append(slug) }
+        }
+
+        let budget = max(maxBodies - (frontPage == nil ? 0 : 1), 0)
+        let listed = Dictionary(listing.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        var pages: [CourseContentPage] = []
+        var unchanged: [String] = []
+        for slug in ordered.prefix(budget) {
+            if let stored = storedUpdatedAt[slug], let current = listed[slug]?.updatedAt,
+               abs(stored.timeIntervalSince(current)) < 1 {
+                unchanged.append(slug)
+                continue
+            }
+            let encoded = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+            do {
+                pages.append(try await getOne(api("courses/\(courseID)/pages/\(encoded)")))
+            } catch Error.http(404) {
+                continue
+            } catch Error.sessionExpired {
+                // Every further body would fail the same way; stop asking.
+                failures.append("page \(slug): \(Error.sessionExpired.localizedDescription)")
+                break
+            } catch {
+                failures.append("page \(slug): \(error.localizedDescription)")
+            }
+        }
+        return CourseContentPageSet(frontPage: frontPage, pages: pages, unchangedPageURLs: unchanged, failures: failures)
     }
 
     /// GET /api/v1/courses/:id/tabs — the course navigation menu, every
@@ -133,7 +217,9 @@ public struct CanvasCourseContentClient: Sendable {
         CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
-        if http.statusCode == 401 || http.statusCode == 403 { throw Error.sessionExpired }
+        // Only 401 means the session is dead. 403 falls through to `http(403)`
+        // below; see `Error.sessionExpired`.
+        if http.statusCode == 401 { throw Error.sessionExpired }
         guard (200..<300).contains(http.statusCode) else { throw Error.http(http.statusCode) }
         if let type = http.value(forHTTPHeaderField: "Content-Type"), type.localizedCaseInsensitiveContains("text/html") {
             throw Error.sessionExpired
@@ -206,6 +292,29 @@ public struct CourseContentPage: Decodable, Sendable, Hashable {
         case url, title, body, published
         case htmlURL = "html_url"
         case updatedAt = "updated_at"
+    }
+}
+
+/// What `CanvasCourseContentClient.pages` found for one course.
+public struct CourseContentPageSet: Sendable {
+    /// The course front page with its body, when the course has a published
+    /// one. Not repeated in `pages`.
+    public let frontPage: CourseContentPage?
+    /// Pages whose body was fetched this run.
+    public let pages: [CourseContentPage]
+    /// Slugs of pages that were selected but not fetched because the
+    /// caller's stored copy is still current; the caller keeps that
+    /// document.
+    public let unchangedPageURLs: [String]
+    /// One line per body that could not be read for a reason other than "not
+    /// found". Non-empty means the course was not read in full.
+    public let failures: [String]
+
+    public init(frontPage: CourseContentPage?, pages: [CourseContentPage], unchangedPageURLs: [String], failures: [String]) {
+        self.frontPage = frontPage
+        self.pages = pages
+        self.unchangedPageURLs = unchangedPageURLs
+        self.failures = failures
     }
 }
 
@@ -302,6 +411,25 @@ public enum CourseDocumentBuilder {
             courseID: course.courseID,
             course: course.code,
             kind: .page,
+            sourceID: page.url,
+            title: page.title,
+            url: page.htmlURL,
+            text: HTMLText.plainText(from: page.body ?? ""),
+            updatedAt: page.updatedAt,
+            fetchedAt: now
+        )
+    }
+
+    /// The course front page as a `.home` document. The backend accepts the
+    /// kind (`backend/supabase/functions/_shared/manifest.ts`'s
+    /// `DOCUMENT_KINDS`) and `extract-profile` reads it ahead of ordinary
+    /// pages. The slug is the `sourceID`, so a course that moves its front
+    /// page to another page replaces this document rather than editing it.
+    public static func home(from page: CourseContentPage, course: CourseSummary, now: Date = Date()) -> CourseDocument {
+        CourseDocument(
+            courseID: course.courseID,
+            course: course.code,
+            kind: .home,
             sourceID: page.url,
             title: page.title,
             url: page.htmlURL,

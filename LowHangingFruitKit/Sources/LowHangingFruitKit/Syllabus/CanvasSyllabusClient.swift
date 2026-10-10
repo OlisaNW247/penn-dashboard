@@ -59,25 +59,75 @@ public struct CanvasSyllabusClient: Sendable {
         self.accessToken = accessToken
     }
 
+    /// What `searchCandidates` found, and whether looking went wrong.
+    public struct CandidateSearch: Sendable {
+        public let candidates: [SyllabusCandidate]
+        /// One line per request that failed for a reason other than "there
+        /// is nothing here" (HTTP 404). Empty for a course that simply has no
+        /// syllabus. Non-empty means a syllabus the course does have may be
+        /// missing from `candidates`.
+        public let failures: [String]
+
+        public init(candidates: [SyllabusCandidate], failures: [String]) {
+            self.candidates = candidates
+            self.failures = failures
+        }
+    }
+
     /// Every syllabus-ish document found for a course, best source first.
     /// Never throws for "nothing found" — an empty array is a normal answer.
+    /// Failures are swallowed here, which is right for the paste-a-syllabus
+    /// screen (it falls back to asking the student); the course-materials
+    /// sync calls `searchCandidates` instead, because it must tell "no
+    /// syllabus" from "could not look".
     public func findCandidates(courseID: String) async throws -> [SyllabusCandidate] {
-        var candidates: [SyllabusCandidate] = []
+        await searchCandidates(courseID: courseID).candidates
+    }
 
-        if let body = try? await syllabusBody(courseID: courseID), !body.text.isEmpty {
-            candidates.append(SyllabusCandidate(
-                id: "syllabus-body-\(courseID)",
-                source: .canvasSyllabusPage,
-                name: "Course syllabus page",
-                text: body.text,
-                links: body.links
-            ))
+    /// `findCandidates` plus an account of what failed. A 404 means the
+    /// course has no such thing and is not a failure, and neither is a
+    /// response with no usable text. Anything else is: a syllabus that failed
+    /// to load looks exactly like a course with none, and the sync must not
+    /// conclude the syllabus was deleted and drop it, locally and on the
+    /// server for every classmate.
+    public func searchCandidates(courseID: String) async -> CandidateSearch {
+        var candidates: [SyllabusCandidate] = []
+        var failures: [String] = []
+
+        do {
+            let body = try await syllabusBody(courseID: courseID)
+            if !body.text.isEmpty {
+                candidates.append(SyllabusCandidate(
+                    id: "syllabus-body-\(courseID)",
+                    source: .canvasSyllabusPage,
+                    name: "Course syllabus page",
+                    text: body.text,
+                    links: body.links
+                ))
+            }
+        } catch {
+            Self.record(error, as: "syllabus body", in: &failures)
         }
 
-        candidates.append(contentsOf: (try? await syllabusPages(courseID: courseID)) ?? [])
-        candidates.append(contentsOf: (try? await syllabusFiles(courseID: courseID)) ?? [])
+        do {
+            candidates.append(contentsOf: try await syllabusPages(courseID: courseID, failures: &failures))
+        } catch {
+            Self.record(error, as: "syllabus pages", in: &failures)
+        }
+        do {
+            candidates.append(contentsOf: try await syllabusFiles(courseID: courseID, failures: &failures))
+        } catch {
+            Self.record(error, as: "syllabus files", in: &failures)
+        }
 
-        return candidates.filter { !$0.text.isEmpty }
+        return CandidateSearch(candidates: candidates.filter { !$0.text.isEmpty }, failures: failures)
+    }
+
+    /// Notes `error` in `failures` unless it is a 404, which is how Canvas
+    /// says the course has no such page or file.
+    private static func record(_ error: Swift.Error, as source: String, in failures: inout [String]) {
+        if (error as? Error) == .http(status: 404) { return }
+        failures.append("\(source): \(error.localizedDescription)")
     }
 
     // MARK: - Sources
@@ -99,7 +149,7 @@ public struct CanvasSyllabusClient: Sendable {
 
     /// GET /api/v1/courses/:id/pages?search_term=syllabus, then the body of
     /// each hit (the list endpoint doesn't include page bodies).
-    private func syllabusPages(courseID: String) async throws -> [SyllabusCandidate] {
+    private func syllabusPages(courseID: String, failures: inout [String]) async throws -> [SyllabusCandidate] {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/v1/courses/\(courseID)/pages"),
             resolvingAgainstBaseURL: false
@@ -117,8 +167,14 @@ public struct CanvasSyllabusClient: Sendable {
         for page in pages.prefix(3) {
             guard let slug = page.url else { continue }
             let bodyURL = baseURL.appendingPathComponent("api/v1/courses/\(courseID)/pages/\(slug)")
-            guard let bodyData = try? await fetch(bodyURL),
-                  let full = try? JSONDecoder().decode(CoursePageDTO.self, from: bodyData),
+            let bodyData: Data
+            do {
+                bodyData = try await fetch(bodyURL)
+            } catch {
+                Self.record(error, as: "syllabus page \(slug)", in: &failures)
+                continue
+            }
+            guard let full = try? JSONDecoder().decode(CoursePageDTO.self, from: bodyData),
                   let html = full.body, !html.isEmpty
             else { continue }
             candidates.append(SyllabusCandidate(
@@ -132,7 +188,7 @@ public struct CanvasSyllabusClient: Sendable {
     }
 
     /// GET /api/v1/courses/:id/files?search_term=syllabus → download the PDFs.
-    private func syllabusFiles(courseID: String) async throws -> [SyllabusCandidate] {
+    private func syllabusFiles(courseID: String, failures: inout [String]) async throws -> [SyllabusCandidate] {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("api/v1/courses/\(courseID)/files"),
             resolvingAgainstBaseURL: false
@@ -151,7 +207,14 @@ public struct CanvasSyllabusClient: Sendable {
             guard let urlString = file.url, let fileURL = URL(string: urlString) else { continue }
             guard Self.isTrustedFileURL(fileURL, baseURL: baseURL) else { continue }
             guard (file.size ?? 0) <= Self.maxFileBytes else { continue }
-            guard let bytes = try? await fetch(fileURL), let text = SyllabusTextExtractor.text(fromPDF: bytes) else { continue }
+            let bytes: Data
+            do {
+                bytes = try await fetch(fileURL)
+            } catch {
+                Self.record(error, as: "syllabus file \(file.id ?? 0)", in: &failures)
+                continue
+            }
+            guard let text = SyllabusTextExtractor.text(fromPDF: bytes) else { continue }
             candidates.append(SyllabusCandidate(
                 id: "file-\(file.id ?? 0)",
                 source: .canvasFile,
