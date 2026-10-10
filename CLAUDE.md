@@ -148,7 +148,7 @@ require an update (`Update/`, below).
 
 ## What the app does
 
-Screen by screen, as of 2026-09-25 on `V7`. Keep this current. It is the
+Screen by screen, as of 2026-10-10 on `v8-launch-prep`. Keep this current. It is the
 fastest way for a new session to know what exists.
 
 - **Onboarding.** A three-beat intro (`MissionIntroView`), then
@@ -171,27 +171,38 @@ fastest way for a new session to know what exists.
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. A grades button
     (when Grade Watcher is usable) and a profile button sit beside it.
-  - **Banners.** A sync error, and a Canvas "needs a refresh" banner when
-    the session is dead.
+  - **Banners.** A sync error ("couldn't sync"), a Canvas banner when
+    the session is dead ("reconnect canvas", "duo needs you", or "pennkey
+    password rejected"), and, since 2026-10-10, "not saving on this
+    phone" when the ledger is running in memory or its last save failed
+    (`StorageHealth`; never in preview or demo mode).
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
     coloured chips, `CoursePicker`), and
     the **megaphone**. Since 2026-10-10 the megaphone opens a real
-    announcements list (`AnnouncementFindsView`): a "tasks found" section
-    with the tasks the Announcement Watcher extracted, then "all
-    announcements", every Canvas announcement from the last 60 days in the
-    student's classes, newest first, each with a preview and "open in
-    canvas". Before that it listed only extracted tasks and hid itself
-    when there were none, which read as "announcements are missing". The
-    list is an on-device cache (`AnnouncementLogStore`,
+    announcements list (`AnnouncementFindsView`): "tasks found", the
+    tasks the Announcement Watcher extracted, then "all announcements",
+    every Canvas announcement from the last 60 days in the student's
+    classes plus, for classes on Ed Discussion, the Ed announcements and
+    pinned posts already on the phone, newest first. A row is class,
+    date ("ed" beside it for an Ed post), title, a one-line preview and
+    an arrow; the whole row opens the original. Before that the sheet
+    listed only extracted tasks and hid itself when there were none,
+    which read as "announcements are missing".
+    The Canvas rows are an on-device cache (`AnnouncementLogStore`,
     `announcement-log.json` beside the course-knowledge file; title,
-    class, date, link and a 280-character preview; cleared on disconnect).
-    Extraction, including the AI assist, still only ever sees the last 14
-    days. The badge counts unread finds and unread announcements; rows
-    unread when opened are tagged NEW (`AnnouncementReadState`), and the
-    first fill on an install counts as already seen.
+    class, date, link and a 280-character preview; cleared on
+    disconnect), filled by `syncAnnouncements`, which now asks Canvas
+    for 60 days back *through tomorrow* (see the announcements-window
+    trap). The Ed rows are built at display time from `.ed` course
+    documents (`EdDocumentHeader`), never written to that file, and the
+    list follows `$courseKnowledge` without the sync calling it.
+    Extraction, including the AI assist, still only ever sees the last
+    14 days. The badge counts unread finds, announcements and Ed rows;
+    rows unread when opened are tagged NEW (`AnnouncementReadState`), and
+    the first fill of each kind on an install counts as already seen.
   - **todo**: overdue plus the next two days. For someone who signed up
     on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
     that was already more than 7 days overdue at their first sync is
@@ -217,9 +228,17 @@ fastest way for a new session to know what exists.
     tasks show none). An edited date is saved since 2026-10-10
     (`dueDateEditsV1` in `UserDefaults.lhf`, owned by `AppState`,
     `AppState+DueDateEdits.swift`) and is what the card, reminders, the
-    widget and ask all use; before that it lived only in the view model
-    and was gone on relaunch. The ledger is its proper home; defaults is
-    the stopgap that avoids a schema migration. Swipe right
+    widget and the on-device answerer all use; before that it lived only
+    in the view model and was gone on relaunch. The context document sent
+    to the server keeps the feed date on purpose, because
+    `docs/PRIVACY.md` promises due-date edits never leave the phone. The
+    ledger is the edit's proper home; defaults is the stopgap that avoids
+    a schema migration. On the student's own work the opened card also
+    shows "delete" (a one-off task) or "stop repeating" (an occurrence of
+    a recurring task), each behind a system confirmation (2026-10-10;
+    `OwnTaskRemoval`, `AppState.removeManualAssignment` /
+    `removeRecurringTask`). Never on feed items or on preview and demo
+    data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
 - **Grade Watcher** (`GradeWatcherView`). Per-course grades from Canvas's
@@ -233,17 +252,25 @@ fastest way for a new session to know what exists.
 
   `docs/grades.md` is the design record.
 - **ask / "the tree"** (`AssistantView`). A chat about your classes: the
-  server path for Penn, with the on-device responder as fallback.
+  server path for Penn, with the on-device responder as fallback. Either
+  way the search over course material runs on the phone (see "ask:
+  retrieval is on the phone" under Architecture). Source chips under an
+  answer are links when they can be tied to exactly one document
+  (`CitationLinks`, 2026-10-10). Its own canned lines are a few words
+  ("Couldn't find that.", "answering from your phone.").
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
-     only when Penn rejected a saved PennKey password; at Penn, three
-     read-only sign-in health lines under Canvas since `v8`: password
-     saved or not (or rejected, or waiting on Duo), whether Duo
-     remembers this phone, last silent sign-in in plain words;
-     and a read-only "ed discussion" status line, since there is nothing
-     to connect)
-  3. appearance (system / light / dark)
+     only when Penn rejected a saved PennKey password). The sign-in
+     health lines and the "ed discussion" status row that `v8` added
+     here were taken off the page on 2026-10-10 ("a whole yap about
+     Canvas", Marco). The strings and `SignInHealthTests` remain, and
+     the lines render in one collapsed "sign-in diagnostics" disclosure
+     inside the DEBUG-only testing section, which is where
+     `docs/SIGNOUT_VERIFICATION.md` now sends the reader. A Release
+     build shows none of it.
+  3. appearance (light / dark; there is no "system" option and the
+     default is light, whatever this file said before 2026-10-10)
   4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
      "turned in" confirmations). "10 minutes before" (`LeadOffset.m10`,
      2026-10-09) is opt-in: off by default and absent from the onboarding
@@ -257,14 +284,29 @@ fastest way for a new session to know what exists.
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
 
-  Semester rollover and "add a class" live in `ProfileSemesterSection`.
+  `ProfileSemesterSection` (semester rollover, "add a class") exists but
+  is only reachable from its `#Preview`; `VisualStructureTests` forbids
+  "semester" in the page body, so none of its text ships.
+
+  **Copy rule (2026-10-10, Marco): the least text that works.** No
+  explanatory sentences, no captions restating a control, no raw system
+  errors, no developer diagnostics on a normal screen. Sync failures
+  read "couldn't sync"; the Canvas banner reads "reconnect canvas",
+  "duo needs you", or "pennkey password rejected". What must stay is
+  listed in the memory note `keep-copy-minimal` and comes from
+  `docs/PRIVACY.md` and `docs/appstore/REVIEW_NOTES.md`.
 - **Background.** A 5-minute refresh loop while open, `BGAppRefreshTask` in
   the background (`BackgroundRefresh.swift`), silent Canvas session renewal
   (`CanvasSessionRenewer`, plus the saved PennKey password where
   available), grade-change and "turned in" notifications.
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
-  hours).
+  hours). It shows the app's published snapshot whenever one decodes,
+  empty included ("all clear"), and reads the ledger only when the app
+  has never published (`WidgetSnapshotStore.current`, 2026-10-10). Its
+  timeline has an entry at each of the next due times so it re-renders
+  when work goes overdue (`WidgetTimelinePlanner`); overdue work stays
+  listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
 
@@ -350,15 +392,16 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1539 tests / 154 suites, all green, on `v8` (2026-10-09,
-`swift test --no-parallel`, on Olisa's Mac, 3.3 s).** The second compile
-of the day: the sign-out review fixes (predicted 1536/154: 16 in
-`SilentRenewalCoreTests`, 4 in `SwitchSchoolConfirmationTests`,
-`SignInHealthTests` net +17) plus the Ed token transport (3 in
-`EdWiringTests`), 1499 + 37 + 3, zero errors and zero failures, so
-nothing was lost. `BackgroundRefresh.swift` is `#if os(iOS)`, so
-`swift test` never compiles it: a change there also needs the iOS
-`xcodebuild` from Commands before it counts as compiled. Hold the rule:
+**Current: 1975 tests / 189 suites, all green, on `v8-launch-prep`
+(2026-10-10, `swift test --no-parallel`, on Marco's Mac, 4.1 s, the only
+test run on the machine at the time).** The same tree compiles for iOS in
+Debug and Release (`xcodebuild -destination 'generic/platform=iOS'
+CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
+extension and `BackgroundRefresh.swift`; `swift test` compiles neither,
+so a change in `LHFWidget/` or behind `#if os(iOS)` needs that
+`xcodebuild` before it counts as compiled. `v8` itself is 1539/154,
+re-verified on this Mac at `e2672eb` on 2026-10-09 before anything was
+changed. Hold the rule:
 a change that lowers the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
@@ -393,6 +436,22 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 1975/189 `v8-launch-prep`, 2026-10-10: `v8`'s 1539 plus 436, nothing
+  removed. By commit, so a later drop can be traced: source links +25;
+  the 10-minute reminder +17; the sign-up rule +43, and +16 when it was
+  reworked to stay out of the sync; reminder wording +8; the
+  announcements list +36 and its window fix +4; ask's search +27 and
+  excerpts and follow-ups +54; saved due-date edits +28; ask and Ed +29,
+  ask's own text +19, source chips +19; the Settings copy +6, ten small
+  fixes +36, the widget +21; Grade Watcher copy +7; Ed rows in the
+  megaphone +23; deleting your own tasks +18. Tests that pinned old
+  wording were updated to pin the new wording exactly, never loosened;
+  the one test whose subject disappeared ("class" against "classes" in
+  a Grade Watcher message) was replaced by one for the string that
+  replaced it. Four agents ran the suite in four worktrees at once
+  while this was being built and saw unrelated suites fail at random;
+  that is the shared-defaults trap, and none of those runs is a
+  baseline.
 - 1539/154 `v8`, 2026-10-09 (later that day): the sign-out review fixes
   (`SilentRenewalCoreTests`, `SwitchSchoolConfirmationTests`,
   `SignInHealthTests` rewritten) and the Ed session-token transport
@@ -559,6 +618,38 @@ the result. Deploying `ask` itself is a production change and needs a
 person's go. The 2026-09-22 promotion was 55/55 on the canary (first
 word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
 
+### ask: retrieval is on the phone
+
+The server does no searching. `ask` answers from the context document
+and whatever passages the phone sends in `excerpts`, and the context
+document tells the model to say it isn't in the app's records unless an
+excerpt states the answer. So a passage the phone's search misses is an
+answer nobody can give, and "ask can't find it" is nearly always a
+client problem. The pieces, all exercised by tests:
+
+- **Search** (`CourseSearch`, `BM25Index`, `QueryExpansion`,
+  `CourseMatcher`). BM25 over 160-220 word passages, titles indexed,
+  lone digits kept ("exam 2"), singular and plural on one stem, a small
+  query-only synonym table, the course scope and kind boosts applied
+  *before* the cut, and one unscoped retry when a scoped search finds
+  nothing. The index is rebuilt in memory at launch; nothing to migrate.
+- **What is sent** (`BackendAssistantResponder.retrievedExcerpts`). Up to
+  eight passages of 1,500 characters, three per document, cut at a word
+  boundary; Ed posts and announcements carry "posted Oct 3"; image-only
+  Ed posts are skipped. It was four passages cut at 700 until
+  2026-10-10, which dropped the tail of nearly every passage.
+- **Follow-ups** (`FollowUpRetrieval`). A question that names no course
+  searches within the course the nearest earlier question named (up to
+  four back), and a question of six words or fewer is searched with the
+  one before it. On the phone only: `history` is still sent empty and
+  `question` is exactly what was typed. Sending earlier turns is a
+  privacy-policy change nobody has approved.
+- **What the phone holds** is the limit. Canvas Files (slides, readings,
+  any PDF not named "syllabus") are not ingested at all, only the 40
+  newest pages get their bodies, and no announcement has ever been
+  collected (Known gaps). Those are in the course-material sync, which
+  Marco has said not to touch (`parked/ask-course-sync-fixes`).
+
 ### Stay signed in (Penn only)
 
 Canvas signs students out from time to time, and reconnecting means PennKey
@@ -678,8 +769,9 @@ itself.
   looks completely normal until a relaunch loses everything. A "storage"
   section in Settings used to surface this; it dropped out of the page in a
   Settings merge before `V7` and its dead code was deleted on 2026-09-24,
-  so today **nothing warns the student** (only the iCloud sync row, and only
-  while sync is on). See Known gaps.
+  so from then until 2026-10-10 **nothing warned the student**. The
+  dashboard now shows "not saving on this phone" (`StorageHealth`). See
+  Known gaps.
 - **`AVAudioSession` is never configured by default**, and `AVPlayer` then
   activates it as `.soloAmbient`, which stops the user's music. `SplashView` sets
   `.ambient` + `.mixWithOthers`. The splash clips have **no audio track** — if
@@ -1023,6 +1115,21 @@ itself.
   kind `announcement`). That is a one-argument fix in the course-material
   sync, left for Marco and Olisa because Marco said not to touch the sync
   (see Known gaps).
+- **Every worktree's test run shares one defaults domain.** On 2026-10-10
+  four agents ran `swift test` in four git worktrees at once and
+  unrelated suites failed at random: `CourseContentDashboardTests` saw
+  `"SCEN-G 100"` where it had written `"SCEN-A 100"`,
+  `AnnouncementWatcherWiringTests` and `AskKnowledgeWiringTests` failed
+  once each and passed on the next run. Under the test runner
+  `UserDefaults.lhf` is the test process's standard domain, and that
+  domain belongs to `swiftpm-testing-helper`, not to a checkout, so two
+  runs in two directories write the same keys. It is the shared-
+  `UserDefaults` trap again, across processes this time, which is why
+  `--no-parallel` did not help. The tell is a failure in a suite the
+  change never touched, with another checkout's values in the message.
+  A verification run has to be the only test run on the machine; the
+  counts in Test baseline were taken that way. The wrong fix is
+  retrying until green and calling it verified.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -1042,11 +1149,14 @@ itself.
 
 ## Branches
 
-`V7` is the line; everything current is on it. The rest is history, kept
-because some of it holds work that exists nowhere else.
+`v8` is the line. `v8-launch-prep` is the launch-prep work on top of it
+(2026-10-09/10), pushed and waiting to be merged into `v8`. The rest is
+history, kept because some of it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Not yet merged into `v8`. |
+| `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
@@ -1065,6 +1175,69 @@ because some of it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **The summary sent with every ask question carries completion state,
+  and `docs/PRIVACY.md` says it does not.** Read on 2026-10-10 while
+  checking something else; it has been so since `assistant-ui`
+  (2026-09-02/06). `AssistantContextDocument.render` writes each work
+  item as `course | title | due … | done / nothing to submit /
+  outstanding | source`, and `assistantContextDocument()` fills
+  `isCompleted` from the student's real completion state. The policy
+  says, three times, that completions never leave the phone, and that
+  the summary is "built without your name, grades, or completion state";
+  the privacy posture at the top of this file says the work list never
+  leaves either, and the document is the work list (feed items; manual
+  tasks are not in it). Nothing was changed: taking the status out makes
+  "what am I missing?" worse and re-bills the cached prefix once, and
+  changing the sentence changes a published promise. It is Marco's and
+  Olisa's decision, and it should be made before the next release.
+- **The launch-prep work is mostly unseen on a device** (`v8-launch-prep`,
+  2026-10-10). Marco's phone took builds up to `b5ed8a1` (links,
+  10-minute reminder, reminder wording, the first announcements list and
+  its window fix) and was then unplugged. Everything after that is
+  compiled for iOS and tested on the Mac only: the Settings and banner
+  copy, the Ed rows in the megaphone, ask's changes, saved due-date
+  edits, deleting your own tasks, the widget, the "not saving" banner,
+  the under-an-hour "8m" form. The sign-up rule can only be seen on a
+  fresh install.
+- **ask has never seen an announcement.** `CourseKnowledgeCollector` asks
+  Canvas for announcements from 200 days back without an `until`, and
+  Canvas ends the window 28 days after it starts (the announcements-
+  window trap). Marco's phone, 2026-10-10: 106 course documents, none of
+  kind `announcement`. The fix is passing `until:` in that one call. It
+  is in the course-material sync, so it waits for Marco and Olisa.
+- **ask cannot read Canvas Files.** Slides, readings and any PDF not
+  named like a syllabus are never ingested; only the 40 most recently
+  updated pages get their bodies; module items contribute titles only.
+  This is probably the largest remaining reason "it's in the class
+  files but ask can't find it". Ingesting Files changes what is pooled
+  on the server (instructors' files) and `docs/PRIVACY.md`, so it needs
+  a decision, not just code.
+- **A half-failed course-material sync erases documents**, for the
+  student and, through the pool, for classmates; and one forbidden
+  course aborts the whole run before anything is saved. Fixes exist on
+  `parked/ask-course-sync-fixes` and are not merged (see Branches).
+  Related and server-side: `selectLiveDocumentsForCourses` is an
+  unpaginated select, so a student past PostgREST's row limit (1000 by
+  default; unverified for this project) gets a silently truncated
+  manifest.
+- **`docs/PRIVACY.md` says anonymous Ed posts never leave the phone, and
+  nothing enforces it.** `EdThreadFilter` never reads `isAnonymous`, so
+  an anonymous post that staff pinned would be kept and pooled. Either
+  the keep-rule or the sentence has to change; the keep-rule is scraping
+  logic, which is Olisa's. Also from the 2026-10-10 Ed review, all in
+  the coordinator and left alone: a 401 partway through a run drops the
+  Ed documents of the classes not yet read; each read replaces a class's
+  whole Ed set with the newest 100 threads, so older pinned posts vanish
+  and pooled ones are downloaded and dropped again every sync; staff
+  answers inside student questions are never captured.
+- **A deleted announcement stays in the megaphone until it ages out**,
+  and an Ed row's date is the thread's last activity, so a bumped old
+  pinned post can read as recent.
+- **An edited due date lives in defaults, not the ledger** (see "What
+  the app does" → Cards). It does not follow a row that later collapses
+  into a twin, and the term cap, the sign-up rule and the overdue-Canvas
+  hold still read the feed date.
 
 - **Ed Discussion ingestion has not completed a sync on a device** (`v8`,
   2026-10-02, blind). The DEBUG "probe ed discussion" row settled the one
@@ -1121,10 +1294,21 @@ none is a ship line.
   sync path has had little real-device soak time; treat it as Phase A.
 - **The onboarding per-course walk** is covered by tests but has never been
   walked on a device (it needs a real Canvas session).
-- **Recurring tasks can't be edited or deleted** from anywhere in the app.
+- **Recurring tasks can be stopped, not edited.** "stop repeating" on an
+  opened occurrence removes the rule (2026-10-10); a task saved with the
+  wrong title, time or class can still only be stopped and added again.
   A task saved without a class is filed under the class its title names
-  (`RecurringTask.adoptingCourse`), but anything else wrong with a saved
-  task is permanent until this exists (`ROADMAP.md` → Next).
+  (`RecurringTask.adoptingCourse`). Stopping an accepted syllabus
+  suggestion removes it like any other, and the next Canvas scan offers
+  it again: suggestions are kept in memory, not remembered once accepted.
+- **A finished occurrence of a recurring task never shows in prev.**
+  Completing one is recorded (a completion-only ledger row,
+  `StoredAssignment.completionOnly`) and survives everything, but
+  `DashboardViewModel.reload` builds prev from `mergedCoursework` plus
+  the one-off tasks, and a generated occurrence is in neither. A
+  student's weekly reading ticks vanish from view instead of counting
+  toward "N down this week". Found 2026-10-10 while adding "stop
+  repeating" and unchanged by it. Not fixed: it changes what prev shows.
 - **Preview mode is App Review's only way in, and it was removed once.** The
   only sign-in at Penn is PennKey, which nobody outside Penn can be issued,
   so the "just exploring? preview with sample data" link on the intro's
