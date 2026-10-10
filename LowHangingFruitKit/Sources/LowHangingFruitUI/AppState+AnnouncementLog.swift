@@ -37,7 +37,20 @@ extension AppState {
     /// path builds a `CanvasAnnouncementsClient`; a test supplies this
     /// instead so the sync runs end to end with no network and no Canvas
     /// session.
-    typealias AnnouncementFetch = @MainActor (_ courseIDs: [String], _ since: Date) async throws -> [CanvasAnnouncement]
+    typealias AnnouncementFetch = @MainActor (_ courseIDs: [String], _ since: Date, _ until: Date) async throws -> [CanvasAnnouncement]
+
+    /// The window `syncAnnouncements()` asks Canvas for: `retention` days back
+    /// through one day after `now`. The end is not optional. Canvas defaults
+    /// `end_date` to 28 days after `start_date`, which at a 60-day start means
+    /// "60 to 32 days ago" and hides every recent post (see the comment in
+    /// `syncAnnouncements`). The extra day covers clock skew between the
+    /// phone and Canvas, and a post stamped later today in another time zone.
+    nonisolated static func announcementFetchWindow(now: Date) -> (since: Date, until: Date) {
+        (
+            since: now.addingTimeInterval(-AnnouncementLogStore.retention),
+            until: now.addingTimeInterval(24 * 60 * 60)
+        )
+    }
 
     /// Announcements posted within this long are the only ones the
     /// extraction pipeline (informational gate, heuristic extractor, AI

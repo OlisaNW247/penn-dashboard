@@ -4416,12 +4416,25 @@ final class AppState: ObservableObject {
         let courseCodesByID = selectedCanvasCourseIDs()
         guard !courseCodesByID.isEmpty else { return }
 
-        let windowStart = now.addingTimeInterval(-AnnouncementLogStore.retention)
+        // THE WINDOW MUST HAVE AN END. Canvas's announcements API defaults
+        // `end_date` to 28 days after `start_date`, so a request that sends
+        // only a start asks for "start through start + 28 days". At the old
+        // 14-day look-back that ran past today and the default was invisible.
+        // At 60 days it is "60 to 32 days ago": the log filled with nothing
+        // newer than a month old, and, because extraction reads this same
+        // fetch, the Announcement Watcher silently stopped seeing every
+        // recent post. Found on a real phone: two records, 46 and 39 days
+        // old, beside four newer ids already in `processedAnnouncementIDs`.
+        // `since` alone is only correct for a start within 28 days; this one
+        // is not, so `until` is always sent (`announcementFetchWindow`).
+        // The wrong fix is shortening the look-back to 28 days: the list is
+        // meant to reach back 60.
+        let window = Self.announcementFetchWindow(now: now)
         let courseIDs = Array(courseCodesByID.keys)
         let fetched: [CanvasAnnouncement]
         do {
             if let announcementFetchForTesting {
-                fetched = try await announcementFetchForTesting(courseIDs, windowStart)
+                fetched = try await announcementFetchForTesting(courseIDs, window.since, window.until)
             } else {
                 // Constructed locally, never stored on `self` —
                 // `CanvasAnnouncementsClient` is deliberately not `Sendable`
@@ -4432,7 +4445,9 @@ final class AppState: ObservableObject {
                     cookies: cookies,
                     accessToken: canvasAccessTokenBearer
                 )
-                fetched = try await client.fetchAnnouncements(courseIDs: courseIDs, since: windowStart)
+                fetched = try await client.fetchAnnouncements(
+                    courseIDs: courseIDs, since: window.since, until: window.until
+                )
             }
         } catch {
             // Silent — see the method doc comment. A lapsed Canvas session

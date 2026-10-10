@@ -75,7 +75,11 @@ struct AnnouncementLogSyncTests {
         let scratchName: String
         let scratch: UserDefaults
         let extraction = ExtractionLog()
-        var fetchCalls: [(courseIDs: [String], since: Date)] = []
+        var fetchCalls: [(courseIDs: [String], since: Date, until: Date)] = []
+        /// When true the stub answers like Canvas: only announcements posted
+        /// inside the requested `since...until` window come back. Off by
+        /// default, where the stub returns `response` whole.
+        var filtersByWindow = false
         /// What the next fetch returns; nil makes it throw.
         var response: [CanvasAnnouncement]? = []
 
@@ -148,10 +152,13 @@ struct AnnouncementLogSyncTests {
         #expect(Set(courses.map(\.id)).isSubset(of: Set(state.selectedCanvasCourseIDs().keys)))
 
         let harness = Harness(state: state, directory: directory, scratchName: scratchName, scratch: scratch)
-        state.announcementFetchForTesting = { [harness] ids, since in
-            harness.fetchCalls.append((ids, since))
+        state.announcementFetchForTesting = { [harness] ids, since, until in
+            harness.fetchCalls.append((ids, since, until))
             guard let response = harness.response else { throw FetchFailure() }
-            return response
+            guard harness.filtersByWindow else { return response }
+            return response.filter { announcement in
+                announcement.postedAt.map { $0 >= since && $0 <= until } ?? true
+            }
         }
         let extraction = harness.extraction
         state.announcementExtractorForTesting = { _ in
@@ -239,6 +246,47 @@ struct AnnouncementLogSyncTests {
             #expect(rows.map(\.sourceID) == ["announcement-9100011-0"])
             // Only the extracted one is marked processed.
             #expect(h.state.processedAnnouncementIDs == ["9100011"])
+        }
+    }
+
+    @Test("the fetch window starts 60 days back and ends after now, because Canvas defaults end_date to 28 days after start_date")
+    func fetchWindowHasAnEndAfterNow() async throws {
+        try await withHarness { h in
+            let now = Date()
+            await h.state.syncAnnouncements(now: now)
+            let call = try #require(h.fetchCalls.first)
+            #expect(call.since == now.addingTimeInterval(-60 * Self.day))
+            #expect(call.until > now)
+            #expect(call.until == now.addingTimeInterval(Self.day))
+            // And it is a whole 61-day window, far past Canvas's 28-day default.
+            #expect(call.until.timeIntervalSince(call.since) == 61 * Self.day)
+
+            let window = AppState.announcementFetchWindow(now: now)
+            #expect(window.since == call.since)
+            #expect(window.until == call.until)
+        }
+    }
+
+    @Test("regression: against a Canvas that honours the requested window, a 40-day-old and a 2-day-old announcement are both recorded and the recent one still reaches extraction")
+    func recentAnnouncementsSurviveTheWindow() async throws {
+        try await withHarness(tasksPerAnnouncement: 1) { h in
+            let now = Date()
+            h.filtersByWindow = true
+            h.response = [
+                announcement("9100100", daysAgo: 46, now: now),
+                announcement("9100101", daysAgo: 40, now: now),
+                announcement("9100102", daysAgo: 2, now: now),
+            ]
+            await h.state.syncAnnouncements(now: now)
+
+            // Both the old and the recent post are listed.
+            #expect(Set(h.diskLog?.map(\.id) ?? []) == ["9100100", "9100101", "9100102"])
+            #expect(h.state.announcementRecordsOnPage.map(\.id) == ["9100102", "9100101", "9100100"])
+            // The Announcement Watcher still sees the last 14 days: the recent
+            // post is extracted and makes its ledger row; the older ones do not.
+            #expect(h.extraction.ids == ["9100102"])
+            let rows = h.state.assignmentStore?.assignments(source: .canvasAnnouncement) ?? []
+            #expect(rows.map(\.sourceID) == ["announcement-9100102-0"])
         }
     }
 

@@ -994,6 +994,27 @@ itself.
   general tell: a "blind" commit's riskiest paths are the ones no test
   can drive (`BackgroundRefresh.swift` is iOS-only and never compiled by
   `swift test`); review those by hand before the device does.
+- **Canvas's announcements API ends its window 28 days after it starts,
+  unless told otherwise.** `end_date` defaults to `start_date` + 28 days.
+  `CanvasAnnouncementsClient` sent only `start_date`, which was correct by
+  accident while every caller asked for the last 14 days. On 2026-10-10
+  the megaphone list widened its start to 60 days, and on Marco's phone
+  the new log filled with exactly two announcements, 46 and 39 days old,
+  and nothing newer: the request had become "60 to 32 days ago". Worse,
+  the Announcement Watcher was silently dead, because nothing from the
+  last 14 days reached extraction any more. Tests could not see it: the
+  stub returned whatever it was handed. The tells, read off the phone:
+  `announcement-log.json` holding only old records while
+  `processedAnnouncementIDsV1` held newer ids. Fixed by passing `until:`
+  (tomorrow) from `syncAnnouncements`; the regression test's stub now
+  honours the window the way Canvas does. The wrong fix is shortening the
+  look-back to 28 days. **Still broken, on purpose:**
+  `CourseKnowledgeCollector` asks for 200 days back with no `until`, so
+  its window ended about 172 days ago and it has never collected an
+  announcement (Marco's phone, same day: 106 course documents, none of
+  kind `announcement`). That is a one-argument fix in the course-material
+  sync, left for Marco and Olisa because Marco said not to touch the sync
+  (see Known gaps).
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
