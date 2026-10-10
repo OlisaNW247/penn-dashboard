@@ -589,7 +589,10 @@ struct OnboardingView: View {
                 alignment: .leading,
                 spacing: 10
             ) {
-                ForEach(NotificationScheduler.LeadOffset.offered) { offset in
+                // Not `offered`: the first-run grid keeps its four pills (see
+                // `LeadOffset.onboardingOffered` for why "10 minutes before"
+                // is left to Profile).
+                ForEach(NotificationScheduler.LeadOffset.onboardingOffered) { offset in
                     leadTimePill(offset)
                 }
             }

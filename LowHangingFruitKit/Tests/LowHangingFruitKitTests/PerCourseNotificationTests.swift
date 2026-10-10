@@ -145,22 +145,28 @@ struct PerCourseNotificationTests {
 
     /// The regression this whole allocation exists to prevent.
     ///
-    /// One heavily-configured class (five lead times, twelve assignments) is on
-    /// its own enough to fill the budget. Under the old flat "sort every
-    /// candidate by fire date and take the first sixty" it would have taken a
-    /// large share of the slots and the four classes the student never touched
-    /// would have gone quiet — silently, with nothing to notice until something
-    /// was missed. Round-robin gives each course a turn, so the four untouched
-    /// classes get *every* reminder they asked for and the greedy one takes only
-    /// what is left.
+    /// One heavily-configured class (all five offered lead times, twelve
+    /// assignments) is on its own enough to fill the budget. Under the old
+    /// flat "sort every candidate by fire date and take the first sixty" it
+    /// would have taken a large share of the slots and the four classes the
+    /// student never touched would have gone quiet — silently, with nothing to
+    /// notice until something was missed. Round-robin gives each course a turn,
+    /// so the four untouched classes get *every* reminder they asked for and
+    /// the greedy one takes only what is left.
     @Test("A five-lead-time course cannot crowd out the courses nobody configured")
     func budgetIsFairUnderContention() {
         withFixture(global: [.h24, .h1]) { scheduler, prefs, now in
             var items: [DashItem] = []
 
-            // The configured class: all five lead times, twelve assignments, all
-            // due beyond a week out so every one of the five actually fires.
+            // The configured class: every offered lead time (10 minutes,
+            // 1 hour, 3 hours, 1 day, 2 days), twelve assignments, all due
+            // beyond a week out so every one of the five actually fires.
             // 12 × 5 = 60 candidates — the entire budget by itself.
+            // `allCases` also holds the retired `.d7`, which the planner
+            // skips, so it adds nothing. The arithmetic below went stale once
+            // already, when `.d7` left `offered` and nothing noticed, so the
+            // count it rests on is asserted rather than assumed.
+            #expect(LeadOffset.offered.count == 5)
             prefs.setLeadOffsets("CIS 1200", Set(LeadOffset.allCases))
             for i in 0..<12 {
                 items.append(assignment("CIS 1200", "cis\(i)", due: now + 8 * .day + Double(i) * .hour))
@@ -178,7 +184,7 @@ struct PerCourseNotificationTests {
             let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
             let counts = requestCountsByCourse(requests, in: items)
 
-            // 92 candidates chasing 60 slots. Every quiet class drains
+            // 60 + 32 = 92 candidates chasing 60 slots. Every quiet class drains
             // completely — 8 each is well under its 60/5 = 12 guaranteed share.
             for course in quiet {
                 #expect(counts[course] == 8, "\(course) should keep every reminder it asked for")

@@ -214,8 +214,10 @@ fastest way for a new session to know what exists.
      and a read-only "ed discussion" status line, since there is nothing
      to connect)
   3. appearance (system / light / dark)
-  4. reminders (on/off; 1 hour, 3 hours, 1 day, 2 days; "turned in"
-     confirmations)
+  4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
+     "turned in" confirmations). "10 minutes before" (`LeadOffset.m10`,
+     2026-10-09) is opt-in: off by default and absent from the onboarding
+     pills (`LeadOffset.onboardingOffered`).
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
