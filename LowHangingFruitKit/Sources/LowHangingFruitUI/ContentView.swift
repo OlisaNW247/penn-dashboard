@@ -690,7 +690,13 @@ struct ContentView: View {
                             }
                             rescheduleNotifications()
                         },
-                        onEdit: { item in editing = item }
+                        onEdit: { item in editing = item },
+                        onRemove: { item in
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                vm.removeOwnTask(item)
+                            }
+                            rescheduleNotifications()
+                        }
                     )
                 }
             }

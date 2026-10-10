@@ -566,6 +566,18 @@ final class AppState: ObservableObject {
     // them. `SharedDefaults` still declares the three the widget reads.
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
+
+    /// The defaults domain holding those two blobs: the student's own recurring
+    /// tasks, and their one-off tasks while the ledger is not the durable copy.
+    /// Always `UserDefaults.lhf` in the app. A test passes `ownTasksDefaults:` to
+    /// `init` for a scratch suite, because removing a task is a write to one of
+    /// these blobs, and a write to the shared domain is read back by the
+    /// `AppState.init` of every suite running alongside (the shared-`UserDefaults`
+    /// trap in CLAUDE.md). Unlike `dueDateEditStore` it is not nil under the test
+    /// runner when nothing is passed: existing tests rely on these blobs
+    /// round-tripping through the shared domain, and this seam changes nothing
+    /// for them.
+    private var ownTasksDefaults: UserDefaults = .lhf
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
@@ -725,12 +737,19 @@ final class AppState: ObservableObject {
     /// `UserDefaults.lhf`; under the test runner, passing nothing means the edits
     /// are kept in memory only and never read from or written to a defaults
     /// domain. The shared domain is refused outright.
+    ///
+    /// `ownTasksDefaults` is the same kind of seam for the student's own tasks
+    /// (`ownTasksDefaults`, the property): a scratch suite to read and write the
+    /// recurring-task blob, and the one-off blob while the ledger is not the
+    /// durable copy. Production passes nothing and gets `UserDefaults.lhf`. The
+    /// shared domain is refused outright.
     init(
         assignmentStore: AssignmentStore? = nil,
         gradeHistoryStore: GradeHistoryStore? = nil,
         signupBacklogDefaults: UserDefaults? = nil,
         persistedFlagsForSignupBacklog: (complete: Bool, inPreview: Bool)? = nil,
-        dueDateEditsDefaults: UserDefaults? = nil
+        dueDateEditsDefaults: UserDefaults? = nil,
+        ownTasksDefaults: UserDefaults? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
         // URL is itself a bearer credential, since Canvas embeds a per-user
@@ -808,8 +827,14 @@ final class AppState: ObservableObject {
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
             .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
-        self.recurringTasks = Self.loadRecurringTasks()
-        self.manualAssignments = Self.loadManualAssignments()
+        let tasksDefaults = ownTasksDefaults ?? UserDefaults.lhf
+        precondition(
+            ownTasksDefaults == nil || tasksDefaults !== UserDefaults.lhf,
+            "ownTasksDefaults needs a scratch UserDefaults suite, not the shared domain"
+        )
+        self.ownTasksDefaults = tasksDefaults
+        self.recurringTasks = Self.loadRecurringTasks(from: tasksDefaults)
+        self.manualAssignments = Self.loadManualAssignments(from: tasksDefaults)
 
         // Read once, at the top of this launch, and handed to both the
         // ledger's own opt-in CloudKit mirroring and this launch's
@@ -941,7 +966,7 @@ final class AppState: ObservableObject {
             // opposite of the point.
             if store.isPersistent {
                 store.upsert(self.manualAssignments.map { $0.asAssignment() })
-                UserDefaults.lhf.removeObject(forKey: Self.manualAssignmentsKey)
+                self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
                 self.manualAssignments = store
                     .assignments(source: .manual)
                     .compactMap(ManualAssignment.init)
@@ -5545,6 +5570,37 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Stops a recurring task: the rule goes, so no further occurrence is
+    /// generated, and nothing the student did with its past occurrences goes
+    /// with it.
+    ///
+    /// **Why the finished occurrences survive.** An occurrence is never stored;
+    /// `RecurringTask.upcomingAssignments` mints it fresh on every rebuild. The
+    /// only trace of one is the record of its completion, a hidden
+    /// completion-only row on the ledger keyed by the occurrence's id
+    /// (`markCompleted` writes it, `StoredAssignment.completionOnly`). That row
+    /// belongs to the ledger, not to the task, and this deliberately does not
+    /// touch the ledger at all: the rule is removed from the defaults blob and
+    /// that is all. Deleting the rows "for tidiness" would be the wrong fix, and
+    /// it is the one that would lose work.
+    ///
+    /// What does go is anything that exists only because the task did: the
+    /// student's edited due dates for its occurrences. `pruneDueDateEdits` cannot
+    /// do this one, because it forgets an edit only while its family still has
+    /// items in the pool, and the last recurring task leaves none.
+    ///
+    /// A syllabus- or announcement-suggested task is stored exactly like a typed
+    /// one (`addCanvasSuggestion` calls `addRecurringTask`), so it goes the same
+    /// way. Suggestions are not remembered anywhere (`canvasRequirementSuggestions`
+    /// is in memory, rebuilt by a scan), so there is no list for it to return to;
+    /// a later scan offers it again exactly as it offered an accepted one before.
+    func removeRecurringTask(id: UUID) {
+        recurringTasks.removeAll { $0.id == id }
+        persistRecurringTasks()
+        clearDueDateEdits(forRecurringTask: id)
+        rebuildDashboardItems()
+    }
+
     /// True when manual work is ledger-backed. False only where the ledger fell
     /// back to memory, in which case the UserDefaults blob is still the durable
     /// copy and has to keep being written.
@@ -5570,6 +5626,11 @@ final class AppState: ObservableObject {
         } else {
             persistManualAssignments()
         }
+        // The task's edited due date goes with it. `pruneDueDateEdits` (called
+        // by the rebuild below) would not: it forgets an edit only while its
+        // family still has items in the pool, and the last one-off task leaves
+        // none, so the edit would sit in the defaults for good.
+        for task in removed { setDueDateEdit(nil, for: task.asAssignment()) }
         rebuildDashboardItems()
     }
 
@@ -6768,7 +6829,7 @@ final class AppState: ObservableObject {
 
     private func persistRecurringTasks() {
         guard let data = try? JSONEncoder().encode(recurringTasks) else { return }
-        UserDefaults.lhf.set(data, forKey: Self.recurringTasksKey)
+        ownTasksDefaults.set(data, forKey: Self.recurringTasksKey)
     }
 
     /// v4's CoursePreferences consolidation removed this helper along with the
@@ -6780,8 +6841,8 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
     }
 
-    private static func loadRecurringTasks() -> [RecurringTask] {
-        guard let data = UserDefaults.lhf.data(forKey: recurringTasksKey),
+    private static func loadRecurringTasks(from defaults: UserDefaults) -> [RecurringTask] {
+        guard let data = defaults.data(forKey: recurringTasksKey),
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
         else { return [] }
         return tasks
@@ -6789,11 +6850,11 @@ final class AppState: ObservableObject {
 
     private func persistManualAssignments() {
         guard let data = try? JSONEncoder().encode(manualAssignments) else { return }
-        UserDefaults.lhf.set(data, forKey: Self.manualAssignmentsKey)
+        ownTasksDefaults.set(data, forKey: Self.manualAssignmentsKey)
     }
 
-    private static func loadManualAssignments() -> [ManualAssignment] {
-        guard let data = UserDefaults.lhf.data(forKey: manualAssignmentsKey),
+    private static func loadManualAssignments(from defaults: UserDefaults) -> [ManualAssignment] {
+        guard let data = defaults.data(forKey: manualAssignmentsKey),
               let items = try? JSONDecoder().decode([ManualAssignment].self, from: data)
         else { return [] }
         return items

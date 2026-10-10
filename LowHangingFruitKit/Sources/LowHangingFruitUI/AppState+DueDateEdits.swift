@@ -92,6 +92,28 @@ extension AppState {
         publishWidgetSnapshot()
     }
 
+    /// Forgets every edited due date belonging to one recurring task's
+    /// occurrences: called when the task is removed (`removeRecurringTask`).
+    ///
+    /// By key rather than by occurrence, because the task no longer has
+    /// occurrences to ask: `upcomingAssignments` only mints the coming weeks, and
+    /// an edit on one that has since passed is still stored under its id. An id
+    /// belongs to the task when it is in the recurring family and its occurrence
+    /// id names the task. Another task's edits, and every other family's, stay.
+    func clearDueDateEdits(forRecurringTask taskID: UUID) {
+        guard !isUsingFixtureData else { return }
+        let kept = dueDateEdits.filter { entry in
+            guard EditSourceFamily(id: entry.key) == .recurring,
+                  let colon = entry.key.firstIndex(of: ":")
+            else { return true }
+            let sourceID = String(entry.key[entry.key.index(after: colon)...])
+            return RecurringTask.occurrenceTaskID(fromSourceID: sourceID) != taskID
+        }
+        guard kept.count != dueDateEdits.count else { return }
+        dueDateEdits = kept
+        dueDateEditStore?.save(kept)
+    }
+
     /// Drops an edit only when there is positive evidence its item is gone: the
     /// item's own source loaded in this rebuild, and the id is not among what it
     /// loaded.
