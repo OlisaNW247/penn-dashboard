@@ -43,7 +43,9 @@ struct OnDeviceAssistantResponder: AssistantResponder {
                     userName: context.userName,
                     now: context.askedAt,
                     items: context.work,
-                    knowledge: context.knowledge
+                    knowledge: context.knowledge,
+                    previousQuestion: context.previousQuestion,
+                    olderQuestions: context.olderQuestions
                 )
                 let answer = await ClassAssistant(context: knowledgeContext).respond(to: prompt)
                 for word in answer.text.splittingKeepingSeparators() {

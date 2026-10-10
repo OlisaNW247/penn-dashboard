@@ -260,12 +260,70 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         )
     }
 
-    /// How many passages ride along with a question, and how long each may
-    /// be. Four passages of ~700 characters is roughly a page: enough for a
-    /// policy section and its exception, small enough that the per-turn
-    /// part of the request stays cheap.
-    static let excerptLimit = 4
-    static let excerptCharacterLimit = 700
+    /// How many passages ride along with a question, how long each may be,
+    /// and how many may come from one document.
+    ///
+    /// The server does no retrieval of its own: the model answers from the
+    /// passages the phone picks, and the context document tells it to say the
+    /// policy "isn't in the app's records" unless an excerpt states it. So the
+    /// size of this channel is the size of what ask can know about a question.
+    ///
+    /// It used to be four passages cut at 700 characters. A passage is
+    /// chunked at 160 to 220 words (`PassageChunker`), which is roughly 1,000
+    /// to 1,400 characters, so the cut dropped the back third to half of
+    /// nearly every passage. Policy prose keeps its exception in the back half
+    /// ("... late work loses 10% per day, except for the final project"), so
+    /// the model was shown the rule without the clause that changes it, or the
+    /// top of a grading table without its last rows, and where the answer
+    /// sat in the cut part it was told, correctly from where it stood, that no
+    /// excerpt stated it. Four passages also meant a syllabus whose answer
+    /// spans three sections (grading, attendance, the exam schedule) could
+    /// supply at most two of them (`CourseSearch`'s default `perDocument`),
+    /// so the third section never arrived at all.
+    ///
+    /// Eight whole passages at up to 1,500 characters is at most about 12,000
+    /// characters, around 3,000 tokens per question, against roughly 700
+    /// before. The server caps neither the field nor its token count: it
+    /// refuses only a request body over 6 MB, and its daily limit counts
+    /// requests (40 per user by default), not tokens. The excerpts sit after
+    /// the cache breakpoint, so they cost input tokens on that turn and never
+    /// disturb the cached prefix. 1,500 is above what the chunker's 220-word
+    /// cap normally produces, so a passage arrives whole; the cut below is
+    /// for the rare longer one.
+    static let excerptLimit = 8
+    static let excerptCharacterLimit = 1500
+    static let excerptsPerDocument = 3
+
+    /// `text` unchanged when it fits in `limit` characters, otherwise cut at
+    /// the last space at or before the limit. A cut in the middle of a word
+    /// ("... within 24 ho") hands the model a fragment it may read as a
+    /// different number or word; ending on a whole word reads as a cut. One
+    /// unbroken run longer than the limit (a URL) has no space to cut at and
+    /// is cut at the limit, since dropping it entirely would be worse.
+    static func cutAtWordBoundary(_ text: String, limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit)
+        func trimmed(_ part: Substring) -> String {
+            var end = part.endIndex
+            while end > part.startIndex, part[part.index(before: end)].isWhitespace {
+                end = part.index(before: end)
+            }
+            return String(part[part.startIndex..<end])
+        }
+        // The cut already falls between words when the next character is a
+        // space; otherwise it is inside a word, so back up to the space before.
+        let next = text[text.index(text.startIndex, offsetBy: limit)]
+        if next.isWhitespace {
+            let result = trimmed(head)
+            return result.isEmpty ? String(head) : result
+        }
+        if let lastSpace = head.lastIndex(where: \.isWhitespace) {
+            let result = trimmed(head[head.startIndex..<lastSpace])
+            if !result.isEmpty { return result }
+        }
+        return String(head)
+    }
 
     /// The passages of the student's synced course materials that best match
     /// the question, rendered as a block for the `excerpts` field. Empty
@@ -276,23 +334,46 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// to the server on purpose: putting every syllabus in `contextDocument`
     /// would work, but it would change on every sync and re-bill the whole
     /// cached prefix server-side, and a four-course corpus is tens of
-    /// thousands of tokens the question almost never needs. Three or four
-    /// matched passages sent as `excerpts` cost a few hundred tokens and
-    /// nothing in cache terms.
+    /// thousands of tokens the question almost never needs. The few matched
+    /// passages sent as `excerpts` (see `excerptLimit` for how many and what
+    /// they cost) change with every question and sit after the cache
+    /// breakpoint, so they cost nothing in cache terms.
+    ///
+    /// A follow-up is retrieved with the help of the questions before it
+    /// (`FollowUpRetrieval`): "and for the final?" searches the course an
+    /// earlier question named, and a short one also borrows the previous
+    /// question's words. That choice is all the earlier questions do here.
+    /// They are not added to the request, not to `history` and not to the
+    /// question, and the output never mentions them.
     static func retrievedExcerpts(question: String, context: AssistantContext) -> String {
         guard !context.knowledge.isEmpty else { return "" }
         let courses = context.knowledge.courses
-        let parsed = QuestionParser.parse(question, courses: courses)
+        let followUp = FollowUpRetrieval.resolve(
+            question: question,
+            previousQuestion: context.previousQuestion,
+            olderQuestions: context.olderQuestions,
+            courses: courses
+        )
         // A course's display code can span more than one Canvas site (PHYS
         // 0151's lecture and lab), so scoping retrieval by a single
         // `courseID` — the old behavior — silently searched only whichever
         // one site a dictionary-style lookup happened to keep.
         // `courseIDs(forCode:)` returns every site sharing the code; `nil`
-        // (a question that doesn't name a course) stays unscoped exactly as
-        // before.
-        let courseIDs = parsed.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        // (a question that doesn't name a course, and follows no question
+        // that did) stays unscoped exactly as before.
+        let courseIDs = followUp.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        // The component ("the lab late policy") is read from the question as
+        // typed: an inherited course is a guess about the subject, but a
+        // lab/lecture word in the earlier question is not a claim about this
+        // one.
         let preferredComponent = DocumentComponent.mentioned(in: question)
-        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseIDs: courseIDs, preferredComponent: preferredComponent, limit: excerptLimit)
+        let hits = CourseSearch(knowledge: context.knowledge).search(
+            followUp.query,
+            courseIDs: courseIDs,
+            preferredComponent: preferredComponent,
+            limit: excerptLimit,
+            perDocument: excerptsPerDocument
+        )
         guard !hits.isEmpty else { return "" }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
@@ -305,7 +386,8 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             splitByCourse[hit.document.course] = DocumentComponent.courseIsSplit(code: hit.document.course, in: context.knowledge)
         }
         let lines = hits.enumerated().map { index, hit -> String in
-            let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
+            let flattened = hit.passage.text.replacingOccurrences(of: "\n", with: " ")
+            let body = cutAtWordBoundary(flattened, limit: excerptCharacterLimit)
             let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
             return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
