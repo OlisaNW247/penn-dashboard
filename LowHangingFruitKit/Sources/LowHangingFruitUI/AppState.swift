@@ -280,14 +280,22 @@ final class AppState: ObservableObject {
     @Published private(set) var rolloverOffer: SemesterRollover.Offer?
 
     /// The sign-up backlog's persisted decision and switch (see
-    /// `SignupBacklog`). Nil under the test runner unless a test opted in with
-    /// `enableSignupBacklogForTesting(defaults:)`: an `AppState` that is nil
-    /// here takes no decision and hides nothing, which is what keeps every
-    /// existing suite's expectations (they feed 45-to-90-day-old fixtures into a
-    /// fresh ledger) and the shared-defaults domain untouched. A `var` only so
-    /// that one seam can swap it; production assigns it once, here.
+    /// `SignupBacklog`). Nil under the test runner unless a test constructed
+    /// this `AppState` with `signupBacklogDefaults:` (a scratch suite): an
+    /// `AppState` that is nil here takes no decision and hides nothing, which is
+    /// what keeps every existing suite's expectations (they feed 45-to-90-day-old
+    /// fixtures into a fresh ledger) and the shared-defaults domain untouched.
+    /// Assigned once, in `init`, before anything reads it.
     private var signupBacklogStore: SignupBacklogStore? =
         SharedDefaults.isTestRunner ? nil : SignupBacklogStore(defaults: .lhf)
+
+    /// Test-only stand-in for the two persisted flags the first-launch clause
+    /// reads (`hasCompletedOnboarding`, `isPreviewMode`), so a test can be "a
+    /// phone that had finished onboarding when this build installed" or "a phone
+    /// in preview mode" without writing either flag to the shared domain. Nil in
+    /// production, where the real properties are read. See
+    /// `recordSignupBacklogForExistingInstallIfNeeded`.
+    private var signupBacklogPersistedFlagsOverride: (complete: Bool, inPreview: Bool)?
 
     /// How many otherwise-visible unfinished items the sign-up rule withholds
     /// from the dashboard (or would, while `signupBacklogRevealed`). Zero for an
@@ -681,9 +689,22 @@ final class AppState: ObservableObject {
     /// or temp-file store (and drive it across simulated launches). The default
     /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
     /// app, fresh in-memory in unit tests.
+    ///
+    /// `signupBacklogDefaults` is a test-only way to back the sign-up backlog
+    /// with a scratch `UserDefaults` suite, so a test can drive the real
+    /// decision (including the one `init` takes) without touching shared state.
+    /// Production passes nothing and gets `UserDefaults.lhf`; under the test
+    /// runner, passing nothing means no decision and nothing hidden (see
+    /// `signupBacklogStore`). The shared domain is refused outright.
+    /// `persistedFlagsForSignupBacklog` is the matching test-only stand-in for
+    /// the persisted onboarding and preview flags; a test that supplies a
+    /// scratch suite should always supply it too, because the real flags live in
+    /// the shared domain, where another suite may be writing them.
     init(
         assignmentStore: AssignmentStore? = nil,
-        gradeHistoryStore: GradeHistoryStore? = nil
+        gradeHistoryStore: GradeHistoryStore? = nil,
+        signupBacklogDefaults: UserDefaults? = nil,
+        persistedFlagsForSignupBacklog: (complete: Bool, inPreview: Bool)? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
         // URL is itself a bearer credential, since Canvas embeds a per-user
@@ -827,6 +848,22 @@ final class AppState: ObservableObject {
         // call is legal.
         normalizeStoredCourseNames()
 
+        // The sign-up backlog: classify an existing install now, while the
+        // ledger is exactly as the previous launch left it. Before the
+        // announcement-extraction repair below purges rows, before the pools are
+        // seeded, and above all before the first `rebuildDashboardItems()`
+        // anywhere in this launch, because that rebuild reads an undecided
+        // install holding feed items as a first sign-up. See `SignupBacklog`.
+        if let signupBacklogDefaults {
+            precondition(
+                signupBacklogDefaults !== UserDefaults.lhf,
+                "signupBacklogDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            signupBacklogStore = SignupBacklogStore(defaults: signupBacklogDefaults)
+        }
+        signupBacklogPersistedFlagsOverride = persistedFlagsForSignupBacklog
+        recordSignupBacklogForExistingInstallIfNeeded()
+
         if let store {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
@@ -913,9 +950,8 @@ final class AppState: ObservableObject {
         }
 
         // The "show older assignments" switch is read back before the first
-        // rebuild so that rebuild already honours it. Reads only; the
-        // decision itself is taken at the first real feed reconcile, never
-        // at launch.
+        // rebuild so that rebuild already honours it. Reads only; whether this
+        // is an existing install was settled above, before any rebuild.
         signupBacklogRevealed = signupBacklogStore?.isRevealed ?? false
 
         // The announcement log is read back before the first rebuild, which
@@ -1234,54 +1270,93 @@ final class AppState: ObservableObject {
     // MARK: Sign-up backlog
     //
     // The rule and its persistence live in the Kit (`SignupBacklog`,
-    // `SignupBacklogStore`); this is only the wiring: the one moment the
-    // decision is taken, the one filter that applies it, and the student's way
-    // back to the withheld work.
+    // `SignupBacklogStore`); this is only the wiring. The decision is taken in
+    // two places, both beside the sync and neither inside it (`sync()` and
+    // `syncGradescope` are the co-developer's and are deliberately untouched):
+    //
+    //  1. `init`, before the first rebuild: an install whose ledger already
+    //     holds feed rows is an existing install, and is recorded as "never
+    //     hide anything" (`recordSignupBacklogForExistingInstallIfNeeded`).
+    //  2. `rebuildDashboardItems`, before its filter runs: the first rebuild
+    //     that finds feed items on an install that is still undecided is the
+    //     sign-up moment (`recordSignupBacklogAtFirstFeedIfNeeded`). For a new
+    //     student that is the rebuild `sync()` makes straight after its first
+    //     reconcile, with no suspension point in between.
+    //
+    // Then the one filter that applies it, and the student's way back to the
+    // withheld work.
 
     /// Ids of the bundled sample rows (preview mode, the DEBUG demo). Never
     /// evidence that this install has seen a real feed.
     private static let sampleDataIDs: Set<String> = Set(SampleData.items().map(\.assignment.id))
 
-    /// Per-instance test seam: back this `AppState`'s sign-up backlog with a
-    /// scratch `UserDefaults` so a test can drive the real decision and the real
-    /// filter without touching shared state. Without it, under the test runner,
-    /// an `AppState` takes no decision and hides nothing (`signupBacklogStore`
-    /// is nil), so no suite can write the cutoff key to the shared domain that
-    /// every concurrently running suite's `AppState.init` reads (the
-    /// shared-defaults trap in CLAUDE.md), and no existing suite's fixture,
-    /// which feeds >7-day-overdue items into a fresh ledger, is hidden.
-    /// Refuses the shared domain outright: passing it would reintroduce exactly
-    /// the pollution the seam exists to prevent. (Under the test runner
-    /// `UserDefaults.lhf` *is* the process's standard domain, so this one
-    /// comparison covers both; the source-scanning test in
-    /// `SharedDefaultsMigrationTests` forbids naming the private domain here.)
-    func enableSignupBacklogForTesting(defaults: UserDefaults) {
-        precondition(
-            defaults !== UserDefaults.lhf,
-            "enableSignupBacklogForTesting needs a scratch UserDefaults suite, not the shared domain"
-        )
-        signupBacklogStore = SignupBacklogStore(defaults: defaults)
-        signupBacklogRevealed = signupBacklogStore?.isRevealed ?? false
-    }
-
     /// The rule as decided, whatever the "show" switch says; nil when nothing
-    /// is ever hidden: before the first sync, on an existing install, in
+    /// is ever hidden: before the first feed items, on an existing install, in
     /// preview or demo mode, and in any test that did not opt in.
     private var decidedSignupBacklog: SignupBacklog? {
         guard !isUsingFixtureData else { return nil }
         return signupBacklogStore?.decidedBacklog
     }
 
-    /// Takes the once-only decision at the first real feed reconcile. Preview
-    /// and demo mode never take it: their rows are fixtures, and a decision
-    /// taken then would be made at the wrong moment for the student who signs in
-    /// for real afterwards.
-    private func takeSignupBacklogDecisionIfNeeded(ledger: AssignmentStore, now: Date) {
-        guard !isUsingFixtureData, let backlogStore = signupBacklogStore else { return }
-        backlogStore.decideIfNeeded(
-            ledgerHoldsFeedRows: ledger.holdsFeedRows(ignoring: Self.sampleDataIDs),
-            now: now
+    /// Placement 1: called from `init` before the first
+    /// `rebuildDashboardItems()`, while the ledger is exactly as the previous
+    /// launch left it. An existing install must see no change at all, so it is
+    /// recorded as "never hide". Two things prove an install is existing, and
+    /// either is enough:
+    ///
+    ///  - **The ledger already holds feed rows.** An empty ledger proves
+    ///    nothing: that may be a student who has not synced yet, who stays
+    ///    undecided and is decided later by placement 2.
+    ///  - **It is the first launch of a build with this feature, and onboarding
+    ///    was already complete, outside preview mode.** This catches the
+    ///    existing install whose ledger is empty (the store fell back to memory,
+    ///    every row aged out, the feed was empty). It must be the first launch
+    ///    and only the first: onboarding does not wait for the first sync to
+    ///    succeed (`connectCanvas` returns once the feed URL is captured and
+    ///    `sync()` swallows its errors), so a new student can finish onboarding
+    ///    with an empty ledger when the connect-time and hand-off syncs both
+    ///    fail, and then relaunch. On that later launch `hasCompletedOnboarding`
+    ///    is true, and read every time it would classify them as existing with
+    ///    their whole backlog still to arrive. A fresh install's first launch has
+    ///    onboarding incomplete (it only completes on the last step, after the
+    ///    Canvas sync), so it can never match, and the marker (written here,
+    ///    whatever the outcome) switches the clause off for every launch after.
+    ///
+    /// Preview mode is excluded because `enterPreviewMode` marks onboarding
+    /// complete too: a student who previews first is a new student.
+    ///
+    /// Deliberately not gated on `isUsingFixtureData`, unlike placement 2. The
+    /// ledger never holds preview or demo rows (and `holdsFeedRows` ignores the
+    /// sample ids in case one ever leaks), so rows here are real, and a real
+    /// student whose phone happens to be in persisted preview mode when this
+    /// build installs is still an existing install if their ledger says so.
+    /// This path can only ever record "never hide", the safe direction.
+    func recordSignupBacklogForExistingInstallIfNeeded() {
+        guard let backlogStore = signupBacklogStore else { return }
+        let firstLaunch = backlogStore.claimFirstLaunch()
+        let onboardingComplete = signupBacklogPersistedFlagsOverride?.complete ?? hasCompletedOnboarding
+        let inPreview = signupBacklogPersistedFlagsOverride?.inPreview ?? isPreviewMode
+        backlogStore.recordExistingInstallIfUndecided(
+            preDatesFeature: firstLaunch && onboardingComplete && !inPreview,
+            ledgerHoldsFeedRows: assignmentStore?.holdsFeedRows(ignoring: Self.sampleDataIDs) ?? false
         )
+    }
+
+    /// Placement 2: called from `rebuildDashboardItems()` just before its
+    /// filter, so the cutoff it records is applied in that same rebuild. Acts
+    /// only on an install that is still undecided after `init`'s check, when
+    /// this is not preview or demo mode, and when at least one real feed pool
+    /// has something in it. By then `init` has already classified every install
+    /// whose ledger held rows, so non-empty pools on an undecided install can
+    /// only be items that arrived since launch: a first sign-up.
+    private func recordSignupBacklogAtFirstFeedIfNeeded(now: Date) {
+        guard !isUsingFixtureData,
+              let backlogStore = signupBacklogStore,
+              backlogStore.decision == .undecided,
+              !(canvasItems.isEmpty && gradescopeItems.isEmpty
+                && moduleReadingItems.isEmpty && announcementItems.isEmpty)
+        else { return }
+        backlogStore.recordSignupIfUndecided(at: now)
     }
 
     /// "show" / "hide" on the prev tab's backlog line.
@@ -1300,11 +1375,14 @@ final class AppState: ObservableObject {
         return pool.filter { !backlog.hides($0, isFinished: isCompleted($0)) }
     }
 
-    /// Test seam: `rebuildDashboardItems()` is private, and the sign-up filter
-    /// is part of it. A test that has fed a feed through `ingestCanvasFeed`
-    /// calls this in place of the rest of `sync()`.
-    func rebuildDashboardItemsForTesting() {
-        rebuildDashboardItems()
+    /// Test seam: `rebuildDashboardItems()` is private, and the sign-up
+    /// decision and filter are part of it. A test that has reconciled a feed
+    /// through the instance's store and put the result in `canvasItems` calls
+    /// this in place of the rest of `sync()` (which rebuilds right after its
+    /// reconcile). `now` is the moment the rebuild runs, and so the sign-up
+    /// moment if this is the one that decides.
+    func rebuildDashboardItemsForTesting(now: Date = Date()) {
+        rebuildDashboardItems(now: now)
     }
 
     /// True once the Canvas calendar feed has been captured automatically.
@@ -3524,38 +3602,26 @@ final class AppState: ObservableObject {
             let fetched = try await client.fetchCalendarItems()
                 .map(attributingUnknownCourse)
                 .sorted(by: Self.byDueDate)
-            ingestCanvasFeed(fetched)
+            // Reconcile into the durable ledger rather than replacing the pool:
+            // items that dropped out of the rolling feed are retained, and a
+            // suspiciously empty fetch is refused so one blip can't wipe the list.
+            if let store = assignmentStore {
+                let result = store.reconcile(fetched, source: .canvas)
+                canvasItems = result.items.sorted(by: Self.byDueDate)
+                if result.wasSuspectedPartial {
+                    syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
+                }
+                // Rows this reconcile just created may be the ones a carried-over
+                // completion has been waiting for.
+                reloadCompletionFromLedger()
+            } else {
+                canvasItems = fetched
+            }
             rebuildDashboardItems()
             recomputeCourseProfiles()
             lastSync = Date()
         } catch {
             self.error = "Sync failed: \(error.localizedDescription)"
-        }
-    }
-
-    /// The reconcile half of `sync()`, split from the network fetch so a test
-    /// can drive exactly what a sync does with a fetched feed (including the
-    /// sign-up decision) without a network. Does not rebuild the dashboard:
-    /// `sync()` does that next.
-    func ingestCanvasFeed(_ fetched: [Assignment], now: Date = Date()) {
-        // Reconcile into the durable ledger rather than replacing the pool:
-        // items that dropped out of the rolling feed are retained, and a
-        // suspiciously empty fetch is refused so one blip can't wipe the list.
-        if let store = assignmentStore {
-            // Before the reconcile, never after: "did the ledger already hold
-            // feed rows" is only answerable until this call inserts the fetched
-            // ones. See `SignupBacklog`.
-            takeSignupBacklogDecisionIfNeeded(ledger: store, now: now)
-            let result = store.reconcile(fetched, source: .canvas)
-            canvasItems = result.items.sorted(by: Self.byDueDate)
-            if result.wasSuspectedPartial {
-                syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
-            }
-            // Rows this reconcile just created may be the ones a carried-over
-            // completion has been waiting for.
-            reloadCompletionFromLedger()
-        } else {
-            canvasItems = fetched
         }
     }
 
@@ -3641,18 +3707,6 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(connected, forKey: Self.canvasDiscoveryConnectedKey)
     }
 
-    /// The reconcile half of `syncGradescope`, split out for the same reason as
-    /// `ingestCanvasFeed(_:now:)`. Does not rebuild the dashboard.
-    func ingestGradescopeFeed(_ fetched: [Assignment], now: Date = Date()) {
-        if let store = assignmentStore {
-            takeSignupBacklogDecisionIfNeeded(ledger: store, now: now)
-            gradescopeItems = store.reconcile(fetched, source: .gradescope).items
-            reloadCompletionFromLedger()
-        } else {
-            gradescopeItems = fetched
-        }
-    }
-
     func syncGradescope(cookies: [HTTPCookie]) async {
         await syncGradescope(cookies: cookies, reportErrors: true)
     }
@@ -3683,7 +3737,12 @@ final class AppState: ObservableObject {
             // entry (e.g. "CIS 2400 Systems Programming" → "CIS 2400").
             let fetched = try await client.fetchAssignments().map(Self.normalizingCourse)
             // Same durable reconciliation as Canvas (see `sync()`).
-            ingestGradescopeFeed(fetched)
+            if let store = assignmentStore {
+                gradescopeItems = store.reconcile(fetched, source: .gradescope).items
+                reloadCompletionFromLedger()
+            } else {
+                gradescopeItems = fetched
+            }
             lastGradescopeSync = Date()
             // Re-stamp the Gradescope session after every authenticated
             // fetch, as Canvas already does (`GradeWatcherStore`,
@@ -5930,6 +5989,7 @@ final class AppState: ObservableObject {
         // matches among otherwise-visible work, so the prev tab's "N hidden"
         // line is honest, and it is computed even while the student has chosen
         // to see everything (the line then offers "hide").
+        recordSignupBacklogAtFirstFeedIfNeeded(now: now)
         let backlog = decidedSignupBacklog
         let backlogMatches: [Assignment] = backlog.map { rule in
             beforeBacklog.filter { rule.hides($0, isFinished: false) }

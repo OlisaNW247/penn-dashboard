@@ -65,6 +65,8 @@ struct DoneView: View {
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2RingSub)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(SignupBacklogCopy.accessibilityLine(
+                        count: backlogHiddenCount, revealed: backlogRevealed))
                 Button {
                     lhfHapticLight()
                     onToggleBacklog()
@@ -180,11 +182,23 @@ struct DoneCardView: View {
     }
 }
 
-/// The words of the prev tab's backlog line, kept apart from the view so the
-/// singular/plural rule can be tested without rendering anything. Lowercase,
-/// like the rest of the dashboard's captions.
+/// The words of the prev tab's backlog line, kept apart from the view so they
+/// can be tested without rendering anything. Lowercase, like the rest of the
+/// dashboard's captions, and as short as it can be: the owner wants the least
+/// possible text on screen. The cost of three words is context, so what
+/// VoiceOver speaks (`accessibilityLine`, `accessibilityLabel`) keeps the full
+/// sentence.
 enum SignupBacklogCopy {
     static func line(count: Int, revealed: Bool) -> String {
+        revealed ? "older shown" : "\(count) older hidden"
+    }
+
+    static func buttonTitle(revealed: Bool) -> String {
+        revealed ? "hide" : "show"
+    }
+
+    /// What VoiceOver reads for the line itself.
+    static func accessibilityLine(count: Int, revealed: Bool) -> String {
         if revealed {
             return count == 1
                 ? "showing an older assignment from before you joined"
@@ -195,10 +209,7 @@ enum SignupBacklogCopy {
             : "\(count) older assignments from before you joined are hidden"
     }
 
-    static func buttonTitle(revealed: Bool) -> String {
-        revealed ? "hide" : "show"
-    }
-
+    /// What VoiceOver reads for the button.
     static func accessibilityLabel(revealed: Bool) -> String {
         revealed
             ? "hide older assignments from before you joined"

@@ -196,17 +196,20 @@ fastest way for a new session to know what exists.
     on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
     that was already more than 7 days overdue at their first sync is
     withheld from todo, all, the widget and ask (`SignupBacklog`; a
-    set-once cutoff in `UserDefaults.lhf`, `signupBacklogCutoffV1`,
-    decided at the first real feed reconcile). Installs that already held
-    feed rows get a "hide nothing" sentinel and see no change. Nothing is
-    deleted, finished work still reaches prev, and manual work is never
-    hidden.
+    set-once cutoff in `UserDefaults.lhf`, `signupBacklogCutoffV1`). The
+    decision is taken beside the sync, never inside it: at `init`, an
+    install whose ledger already holds feed rows, or that had finished
+    onboarding when this build first launched (`signupBacklogSeenV1`),
+    records a "hide nothing" sentinel and sees no change; otherwise the
+    first `rebuildDashboardItems` that sees real feed items records
+    "now minus 7 days". Nothing is deleted, finished work still reaches
+    prev, and manual work is never hidden.
   - **all**: future work through the term.
   - **prev** (`DoneView`): leads with "N down this week", shows this week's
     finished work, and opens "earlier this semester" in place. When the
     sign-up rule above is withholding anything, a quiet last line reads
-    "N older assignments from before you joined are hidden" with
-    "show" / "hide" (`signupBacklogRevealedV1`).
+    "N older hidden" with "show", or "older shown" with "hide"
+    (`signupBacklogRevealedV1`).
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already

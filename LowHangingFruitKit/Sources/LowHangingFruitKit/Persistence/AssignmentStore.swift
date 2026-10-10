@@ -926,8 +926,9 @@ public final class AssignmentStore {
     /// Whether the ledger already holds any row that came from a feed
     /// (Canvas, Modules, Gradescope, announcements), aged, gone, finished or
     /// completion-only included. Read-only. This is the "is this an existing
-    /// install?" question the sign-up backlog asks once, before a first real
-    /// reconcile inserts its rows (`SignupBacklogStore.decideIfNeeded`).
+    /// install?" question the sign-up backlog asks once, at launch, before
+    /// anything in that launch has dashboarded a feed
+    /// (`SignupBacklogStore.recordExistingInstallIfUndecided`).
     ///
     /// It deliberately counts *every* feed-sourced row, including the hidden
     /// completion-only ones: an install that has ever recorded a completion for

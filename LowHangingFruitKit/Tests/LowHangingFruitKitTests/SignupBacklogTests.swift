@@ -103,13 +103,13 @@ struct SignupBacklogStoreTests {
         #expect(store.isRevealed == false)
     }
 
-    @Test("an empty ledger at the first feed arrival records sign-up minus seven days")
-    func emptyLedgerRecordsACutoff() {
+    @Test("the first feed items record sign-up minus seven days")
+    func signupRecordsACutoff() {
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
 
-        let decision = store.decideIfNeeded(ledgerHoldsFeedRows: false, now: signup)
+        let decision = store.recordSignupIfUndecided(at: signup)
         let expected = signup.addingTimeInterval(-7 * 86_400)
         #expect(decision == .cutoff(expected))
         #expect(store.decidedBacklog == SignupBacklog(cutoff: expected))
@@ -125,7 +125,7 @@ struct SignupBacklogStoreTests {
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
 
-        #expect(store.decideIfNeeded(ledgerHoldsFeedRows: true, now: signup) == .noCutoff)
+        #expect(store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: true) == .noCutoff)
         #expect(store.decision == .noCutoff)
         #expect(store.decidedBacklog == nil)
         // Decided is not the same as undecided: the key exists.
@@ -135,40 +135,101 @@ struct SignupBacklogStoreTests {
         #expect((defaults.object(forKey: SharedDefaults.signupBacklogCutoffKey) as? Double) == 0)
     }
 
-    @Test("the decision is set once: later syncs cannot move it in either direction")
-    func decisionIsSetOnce() {
+    @Test("an empty ledger records nothing: a student who has not synced yet stays undecided")
+    func emptyLedgerStaysUndecided() {
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
-        let first = store.decideIfNeeded(ledgerHoldsFeedRows: false, now: signup)
 
-        // A reconnect a month later: the ledger is empty again (a disconnect
-        // purges it) and the clock has moved. Neither may move the cutoff.
+        #expect(store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: false) == .undecided)
+        #expect(store.decision == .undecided)
+        #expect(defaults.object(forKey: SharedDefaults.signupBacklogCutoffKey) == nil)
+    }
+
+    @Test("the decision is set once: nothing later can move it in either direction")
+    func decisionIsSetOnce() {
         let later = signup.addingTimeInterval(30 * 86_400)
-        #expect(store.decideIfNeeded(ledgerHoldsFeedRows: false, now: later) == first)
-        // And a ledger that now holds rows must not flip it to the sentinel.
-        #expect(store.decideIfNeeded(ledgerHoldsFeedRows: true, now: later) == first)
+
+        // A cutoff stays the same cutoff: a reconnect a month later (the ledger
+        // is empty again after a disconnect, and the clock has moved), a second
+        // sign-up moment, and a ledger that now holds rows cannot move it.
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SignupBacklogStore(defaults: defaults)
+        let first = store.recordSignupIfUndecided(at: signup)
+        #expect(store.recordSignupIfUndecided(at: later) == first)
+        #expect(store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: true) == first)
+        #expect(store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: false) == first)
 
         // The same from the other side: a sentinel stays a sentinel.
         let (otherDefaults, otherName) = scratch()
         defer { otherDefaults.removePersistentDomain(forName: otherName) }
         let existing = SignupBacklogStore(defaults: otherDefaults)
-        existing.decideIfNeeded(ledgerHoldsFeedRows: true, now: signup)
-        #expect(existing.decideIfNeeded(ledgerHoldsFeedRows: false, now: later) == .noCutoff)
+        existing.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: true)
+        #expect(existing.recordSignupIfUndecided(at: later) == .noCutoff)
+        #expect(existing.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: false) == .noCutoff)
     }
 
-    @Test("the ledger is only consulted on the one call that decides")
+    @Test("the ledger is only consulted while undecided")
     func ledgerQuestionIsLazy() {
+        // Once a cutoff is recorded the ledger is never scanned again.
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SignupBacklogStore(defaults: defaults)
+        var asked = 0
+        func ledger() -> Bool { asked += 1; return true }
+
+        store.recordSignupIfUndecided(at: signup)
+        store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: ledger())
+        store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: ledger())
+        #expect(asked == 0)
+
+        // And once the sentinel is recorded it is asked exactly the once.
+        let (otherDefaults, otherName) = scratch()
+        defer { otherDefaults.removePersistentDomain(forName: otherName) }
+        let existing = SignupBacklogStore(defaults: otherDefaults)
+        existing.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: ledger())
+        existing.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: ledger())
+        existing.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: ledger())
+        #expect(asked == 1)
+    }
+
+    @Test("the first launch is claimed exactly once, and the marker survives a relaunch")
+    func firstLaunchIsClaimedOnce() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SignupBacklogStore(defaults: defaults)
+
+        #expect(store.claimFirstLaunch() == true)
+        #expect(store.claimFirstLaunch() == false)
+        // A relaunch is a new store over the same defaults.
+        #expect(SignupBacklogStore(defaults: defaults).claimFirstLaunch() == false)
+    }
+
+    @Test("proof from outside the ledger records the sentinel on an empty ledger, without asking the ledger")
+    func preDatesFeatureRecordsNoCutoff() {
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
         var asked = 0
         func ledger() -> Bool { asked += 1; return false }
 
-        store.decideIfNeeded(ledgerHoldsFeedRows: ledger(), now: signup)
-        store.decideIfNeeded(ledgerHoldsFeedRows: ledger(), now: signup)
-        store.decideIfNeeded(ledgerHoldsFeedRows: ledger(), now: signup)
-        #expect(asked == 1)
+        #expect(store.recordExistingInstallIfUndecided(preDatesFeature: true, ledgerHoldsFeedRows: ledger())
+                == .noCutoff)
+        #expect(asked == 0, "the outside proof settles it; the ledger is not scanned")
+        #expect(store.decidedBacklog == nil)
+    }
+
+    @Test("without outside proof an empty ledger still records nothing, and a cutoff is never overwritten")
+    func preDatesFeatureIsOnlyAnAddedSignal() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SignupBacklogStore(defaults: defaults)
+        #expect(store.recordExistingInstallIfUndecided(preDatesFeature: false, ledgerHoldsFeedRows: false)
+                == .undecided)
+
+        let first = store.recordSignupIfUndecided(at: signup)
+        #expect(store.recordExistingInstallIfUndecided(preDatesFeature: true, ledgerHoldsFeedRows: true) == first)
     }
 
     @Test("a damaged value leans toward showing everything instead of being decided again")
@@ -180,7 +241,8 @@ struct SignupBacklogStoreTests {
             defaults.set(bad, forKey: SharedDefaults.signupBacklogCutoffKey)
             let store = SignupBacklogStore(defaults: defaults)
             #expect(store.decision == .noCutoff, "\(bad)")
-            #expect(store.decideIfNeeded(ledgerHoldsFeedRows: false, now: signup) == .noCutoff)
+            #expect(store.recordSignupIfUndecided(at: signup) == .noCutoff)
+            #expect(store.recordExistingInstallIfUndecided(ledgerHoldsFeedRows: true) == .noCutoff)
         }
     }
 
@@ -189,7 +251,7 @@ struct SignupBacklogStoreTests {
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
-        store.decideIfNeeded(ledgerHoldsFeedRows: false, now: signup)
+        store.recordSignupIfUndecided(at: signup)
         #expect(store.activeBacklog != nil)
 
         store.isRevealed = true
@@ -207,12 +269,14 @@ struct SignupBacklogStoreTests {
     func keyNames() {
         #expect(SharedDefaults.signupBacklogCutoffKey == "signupBacklogCutoffV1")
         #expect(SharedDefaults.signupBacklogRevealedKey == "signupBacklogRevealedV1")
+        #expect(SharedDefaults.signupBacklogSeenKey == "signupBacklogSeenV1")
     }
 
     @Test("nothing in this file wrote the shared domain")
     func neverTouchesTheSharedDomain() {
         #expect(UserDefaults.lhf.object(forKey: SharedDefaults.signupBacklogCutoffKey) == nil)
         #expect(UserDefaults.lhf.object(forKey: SharedDefaults.signupBacklogRevealedKey) == nil)
+        #expect(UserDefaults.lhf.object(forKey: SharedDefaults.signupBacklogSeenKey) == nil)
     }
 }
 
@@ -306,7 +370,7 @@ struct SignupBacklogWidgetReaderTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
-        SignupBacklogStore(defaults: defaults).decideIfNeeded(ledgerHoldsFeedRows: false, now: now)
+        SignupBacklogStore(defaults: defaults).recordSignupIfUndecided(at: now)
 
         let snapshot = try #require(LedgerWidgetReader.snapshot(storeURL: url, now: now, defaults: defaults))
         #expect(snapshot.items.map(\.title) == ["My old task", "Recent", "Ahead"])
@@ -326,7 +390,7 @@ struct SignupBacklogWidgetReaderTests {
 
         let (existing, existingName) = scratch()
         defer { existing.removePersistentDomain(forName: existingName) }
-        SignupBacklogStore(defaults: existing).decideIfNeeded(ledgerHoldsFeedRows: true, now: now)
+        SignupBacklogStore(defaults: existing).recordExistingInstallIfUndecided(ledgerHoldsFeedRows: true)
         let onAnExistingInstall = try #require(
             LedgerWidgetReader.snapshot(storeURL: url, now: now, defaults: existing))
         #expect(onAnExistingInstall.items.map(\.title) == all)
@@ -339,7 +403,7 @@ struct SignupBacklogWidgetReaderTests {
         let (defaults, name) = scratch()
         defer { defaults.removePersistentDomain(forName: name) }
         let store = SignupBacklogStore(defaults: defaults)
-        store.decideIfNeeded(ledgerHoldsFeedRows: false, now: now)
+        store.recordSignupIfUndecided(at: now)
         store.isRevealed = true
 
         let snapshot = try #require(LedgerWidgetReader.snapshot(storeURL: url, now: now, defaults: defaults))

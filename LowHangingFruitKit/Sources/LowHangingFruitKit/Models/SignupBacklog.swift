@@ -95,11 +95,11 @@ public struct SignupBacklog: Equatable, Sendable {
 public struct SignupBacklogStore {
     /// What the store knows about the sign-up decision.
     public enum Decision: Equatable, Sendable {
-        /// No real feed has reconciled yet. Nothing is hidden.
+        /// No feed items have arrived on this install yet. Nothing is hidden.
         case undecided
-        /// Decided that nothing is ever hidden on this install: it already
-        /// held feed rows when this feature arrived (an existing install
-        /// updating), so a cutoff would change what they see.
+        /// Decided that nothing is ever hidden on this install: its ledger
+        /// already held feed rows when this feature arrived (an existing
+        /// install updating), so a cutoff would change what they see.
         case noCutoff
         /// Decided at a genuine first sign-up: hide unfinished feed work due
         /// before this moment.
@@ -131,25 +131,58 @@ public struct SignupBacklogStore {
         return .cutoff(Date(timeIntervalSince1970: seconds))
     }
 
-    /// Takes the decision if, and only if, none has been taken: the first call
-    /// on an install writes, every later call returns what was written.
+    /// True exactly once per install: on the first call, which writes a marker
+    /// and returns true; every later call returns false. Called on every launch
+    /// of a build that has this feature, so "true" means *this is the first
+    /// launch of such a build on this install*, and it is written whatever that
+    /// launch goes on to decide.
     ///
-    /// `ledgerHoldsFeedRows` is evaluated lazily, only on the one call that
-    /// decides, and must describe the ledger *before* the reconcile that
-    /// triggered it inserts the fetched rows (otherwise every install would
-    /// look like an existing one).
+    /// What it is for: "onboarding was already complete" is proof that an
+    /// install pre-dates the feature only at that one moment. A fresh install's
+    /// first launch has onboarding incomplete, so it can never match; but a new
+    /// student who finishes onboarding before any feed item has arrived (the
+    /// connect-time and hand-off syncs both failed or came back empty) would
+    /// match on their next launch, if that clause were allowed to run every
+    /// time, and be recorded as an existing install while the whole backlog
+    /// was still waiting to arrive.
+    public func claimFirstLaunch() -> Bool {
+        guard defaults.object(forKey: SharedDefaults.signupBacklogSeenKey) == nil else { return false }
+        defaults.set(true, forKey: SharedDefaults.signupBacklogSeenKey)
+        return true
+    }
+
+    /// Records "this is an install that pre-dates the feature: hide nothing,
+    /// ever", if and only if no decision has been taken and either
+    /// `preDatesFeature` (the caller has proof from outside the ledger, see
+    /// `claimFirstLaunch`) or the ledger already holds feed rows. A no-op once
+    /// decided, and with neither (that is a student who has not synced yet, who
+    /// stays undecided).
+    ///
+    /// `ledgerHoldsFeedRows` is evaluated lazily, only while undecided and only
+    /// if `preDatesFeature` did not already settle it, so the scan of the ledger
+    /// is paid on the launches that need it and never after. It must describe
+    /// the ledger as the previous launch left it, before anything in this
+    /// launch has reconciled a feed into it.
     @discardableResult
-    public func decideIfNeeded(
-        ledgerHoldsFeedRows: @autoclosure () -> Bool,
-        now: Date
+    public func recordExistingInstallIfUndecided(
+        preDatesFeature: Bool = false,
+        ledgerHoldsFeedRows: @autoclosure () -> Bool
     ) -> Decision {
         let existing = decision
+        guard existing == .undecided, preDatesFeature || ledgerHoldsFeedRows() else { return existing }
+        defaults.set(Self.noCutoffValue, forKey: SharedDefaults.signupBacklogCutoffKey)
+        return .noCutoff
+    }
+
+    /// Records the sign-up moment, if and only if no decision has been taken:
+    /// the first call on an install writes `moment - 7 days`, every later call
+    /// returns what was written. This is the moment a genuinely new student's
+    /// first feed items arrive.
+    @discardableResult
+    public func recordSignupIfUndecided(at moment: Date) -> Decision {
+        let existing = decision
         guard existing == .undecided else { return existing }
-        if ledgerHoldsFeedRows() {
-            defaults.set(Self.noCutoffValue, forKey: SharedDefaults.signupBacklogCutoffKey)
-            return .noCutoff
-        }
-        let cutoff = SignupBacklog.cutoff(forSignupAt: now)
+        let cutoff = SignupBacklog.cutoff(forSignupAt: moment)
         defaults.set(cutoff.timeIntervalSince1970, forKey: SharedDefaults.signupBacklogCutoffKey)
         return .cutoff(cutoff)
     }
