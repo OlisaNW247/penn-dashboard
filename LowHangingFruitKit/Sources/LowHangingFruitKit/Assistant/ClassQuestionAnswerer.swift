@@ -65,10 +65,26 @@ public struct ClassQuestionAnswerer: Sendable {
         if let course = context.courses.first {
             questions.append("What's the late policy in \(course.code)?")
         }
-        if !context.knowledge.documents(ofKind: .announcement).isEmpty {
+        if !announcementDocuments(in: context.knowledge).isEmpty {
             questions.append("Latest announcements")
         }
         return questions
+    }
+
+    /// What "latest announcements" draws on: every Canvas announcement, plus
+    /// the Ed Discussion posts that are announcements or pinned posts. A
+    /// plain staff post on Ed is course material, not news, so it is not
+    /// listed. A class whose only synced material is Ed has announcements
+    /// all the same; counting Canvas alone hid the chip and answered "no
+    /// announcements" for it, which was false.
+    private static func announcementDocuments(in knowledge: CourseKnowledgeBase) -> [CourseDocument] {
+        knowledge.documents.filter { doc in
+            switch doc.kind {
+            case .announcement: return true
+            case .ed: return EdDocumentHeader.parse(doc.text).isAnnouncementOrPinned
+            default: return false
+            }
+        }
     }
 
     // MARK: - Structured answers
@@ -264,9 +280,16 @@ public struct ClassQuestionAnswerer: Sendable {
     }
 
     private func recentAnnouncements(_ parsed: ParsedQuestion) -> AssistantAnswer {
-        let announcements = context.knowledge.documents(ofKind: .announcement)
+        // Canvas announcements and Ed announcements/pinned posts in one list,
+        // newest first by their own date. Equal dates fall back to the id so
+        // the order never depends on the sort's choice between ties.
+        let announcements = Self.announcementDocuments(in: context.knowledge)
             .filter { doc in parsed.course.map { CourseMatcher.sameCourse(doc.course, as: $0) } ?? true }
-            .sorted { ($0.updatedAt ?? $0.fetchedAt) > ($1.updatedAt ?? $1.fetchedAt) }
+            .sorted { lhs, rhs in
+                let l = lhs.updatedAt ?? lhs.fetchedAt
+                let r = rhs.updatedAt ?? rhs.fetchedAt
+                return l != r ? l > r : lhs.id < rhs.id
+            }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
         guard !announcements.isEmpty else {
             let hint = context.knowledge.isEmpty ? " Sync course materials in Settings first." : ""
@@ -496,8 +519,16 @@ public struct ClassQuestionAnswerer: Sendable {
 
     /// The document body without the "Due:/Points:/Status:" header lines the
     /// builder prepends for assignments.
+    ///
+    /// An Ed document is different: its header is the one `[ed · reason]
+    /// category` line `EdDocumentBuilder` writes (`EdDocumentHeader` reads
+    /// it back), and the rest is the staff member's own text. That text is
+    /// shown whole. Running it through the line filter below would drop a
+    /// line of the post that merely starts with "Due: " or "Status: ", which
+    /// an announcement about a deadline is likely to have.
     private func bodyText(of doc: CourseDocument) -> String {
-        doc.text
+        if doc.kind == .ed { return EdDocumentHeader.parse(doc.text).body }
+        return doc.text
             .components(separatedBy: "\n")
             .filter { !($0.hasPrefix("Due: ") || $0.hasPrefix("Points: ") || $0.hasPrefix("Status: ") || $0.hasPrefix("Posted: ")) }
             .joined(separator: "\n")
