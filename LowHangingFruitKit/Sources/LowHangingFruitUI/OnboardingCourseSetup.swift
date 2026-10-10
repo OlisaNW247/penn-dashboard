@@ -422,7 +422,7 @@ struct OnboardingCourseSetupPane: View {
                 // moved on is still theirs — it lands in
                 // `state.canvasRequirementSuggestions` and stays reachable
                 // from Settings → Tasks.
-                Text("Still scanning. You can keep going.")
+                Text("still scanning")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.v2CourseCode)
                     .fixedSize(horizontal: false, vertical: true)
@@ -573,10 +573,7 @@ struct OnboardingCourseSetupPane: View {
                     get: { prefs.nothingToSubmitEnabled },
                     set: { state.setNothingToSubmitEnabled(course, $0) }
                 )) {
-                    settingLabel(
-                        "Items with nothing to submit",
-                        detail: "For example: readings, classes, and attendance."
-                    )
+                    settingLabel("Items with nothing to submit")
                 }
                 .toggleStyle(.switch)
                 // Same `.tint` `SettingsPage.smoothFormChrome` applies app-wide.

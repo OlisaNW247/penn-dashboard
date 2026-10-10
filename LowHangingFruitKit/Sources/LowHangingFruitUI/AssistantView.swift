@@ -470,8 +470,17 @@ struct AssistantView: View {
         }
     }
 
+    /// A chip without a URL is the plain text it has always been. One with a
+    /// URL is a `Link` to the source, marked by a small arrow and no extra
+    /// words (the chip already says what it is). The capsule keeps its size;
+    /// only the hit area grows, to 44pt tall, the same floor the card's own
+    /// "open in canvas" link uses. `Link`, not a tap gesture, for the reason
+    /// `AssignmentCardView` gives: a real control is accessible as a link and
+    /// claims the touch cleanly.
+    @ViewBuilder
     private func citationChip(_ citation: AssistantCitation) -> some View {
-        HStack(spacing: 5) {
+        let linked = citation.url != nil
+        let capsule = HStack(spacing: 5) {
             Circle()
                 .fill(Color.v2SpinePurple.opacity(0.55))
                 .frame(width: 5, height: 5)
@@ -481,11 +490,29 @@ struct AssistantView: View {
             Text(citation.detail.map { "\(citation.source) · \($0)" } ?? citation.source)
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2CourseCode)
+            if linked {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.v2CourseCode)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Capsule().fill(Color.v2Ink.opacity(0.05)))
-        .accessibilityElement(children: .combine)
+
+        if let url = citation.url {
+            Link(destination: url) {
+                capsule
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("opens the source")
+        } else {
+            capsule.accessibilityElement(children: .combine)
+        }
     }
 
     // MARK: Composer
@@ -646,7 +673,7 @@ struct AssistantView: View {
         return [
             Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
             Suggestion(prompt: "when's my next exam?"),
-            Suggestion(prompt: "where is my physics class?"),
+            Suggestion(prompt: "what's due this week?"),
             Suggestion(prompt: "how much is the \(code(1)) final worth?"),
         ]
     }

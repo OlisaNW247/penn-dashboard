@@ -22,6 +22,13 @@ struct DashItem: Identifiable, Equatable {
     /// construction site (`SampleData`, tests) keeps compiling and previews
     /// render exactly as before unless a fixture opts a specific item in.
     var requiresNoSubmission: Bool = false
+    /// What the opened card offers to take away (`OwnTaskRemoval`): "delete" on
+    /// the student's own one-off task, "stop repeating" on an occurrence of a
+    /// recurring one, nil for everything else. Snapshotted at `reload` time for
+    /// the same reason as `requiresNoSubmission`: the card holds no `AppState`,
+    /// and preview or demo data must not offer it. Nil by default, so sample
+    /// data and every existing construction site offer nothing.
+    var removal: OwnTaskRemoval? = nil
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
@@ -170,15 +177,25 @@ final class DashboardViewModel: ObservableObject {
 
         var built: [DashItem] = []
 
+        // The student's edited due dates live on `AppState` (persisted, and read
+        // by the widget and ask as well), so they come from there on every
+        // rebuild, including the first one after a relaunch. `prior` is only a
+        // fallback for an edit `AppState` declines to keep (fixture data), so a
+        // session-local edit in preview still survives a republish. It cannot
+        // resurrect a cleared edit: `setDue` clears the item's own copy in the
+        // same call that clears `AppState`'s.
+        //
         // Active pool: everything AppState surfaces as incomplete.
         let active = state.assignments + state.laterAssignments + state.assessments
+        let isFixture = state.isUsingFixtureData
         for a in active {
             let prior = priorByID[a.assignmentID]
             built.append(DashItem(assignment: a,
-                                  dueOverride: prior?.dueOverride,
+                                  dueOverride: state.editedDueDate(for: a) ?? prior?.dueOverride,
                                   isCompleted: false,
                                   completedAt: nil,
-                                  requiresNoSubmission: state.requiresNoSubmission(a)))
+                                  requiresNoSubmission: state.requiresNoSubmission(a),
+                                  removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped
@@ -198,7 +215,7 @@ final class DashboardViewModel: ObservableObject {
         for a in pool where state.isCompleted(a) && !seen.contains(a.id) && state.isCourseSelected(a.course) {
             seen.insert(a.id)
             built.append(DashItem(assignment: a,
-                                  dueOverride: priorByID[a.id]?.dueOverride,
+                                  dueOverride: state.editedDueDate(for: a) ?? priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a)))
@@ -223,9 +240,47 @@ final class DashboardViewModel: ObservableObject {
         if !usingSampleData { appState?.markActive(item.assignment) }
     }
 
+    /// Sets (or, with `nil`, resets) the student's edited due date for a card.
+    /// The card is updated at once so the sheet and the sections reflect it in
+    /// the same turn; `AppState` keeps the edit (persisted, and visible to the
+    /// widget, reminders and ask) and the next `reload` reads it back from
+    /// there. Sample data is the exception, as for `complete`: nothing is
+    /// written, the edit lives on the card for the session.
+    ///
+    /// Saving the date a card already has is not an edit: it leaves the card
+    /// unedited, which is also what `AppState` stores (nothing) and so what the
+    /// card will read after a relaunch.
     func setDue(_ item: DashItem, to date: Date?) {
         guard let i = index(of: item) else { return }
-        items[i].dueOverride = date
+        let edit = (date == items[i].assignment.dueAt) ? nil : date
+        items[i].dueOverride = edit
+        if !usingSampleData { appState?.setDueDateEdit(edit, for: items[i].assignment) }
+    }
+
+    /// Takes the student's own task off the dashboard: deletes a one-off, or
+    /// ends a recurring task so nothing more is generated from it. What the card
+    /// offered (`item.removal`) decides which; an item that offered nothing, and
+    /// anything in sample data, is left alone.
+    ///
+    /// The card leaves in the same turn rather than on `AppState`'s republish,
+    /// which the sink in `bind` delivers on a later run-loop turn: the caller
+    /// reschedules reminders from `items` straight after this returns, and they
+    /// must not be planned for work that is gone. `AppState` is the record; its
+    /// next `reload` confirms what is left. Only unfinished occurrences leave
+    /// here, so nothing completed is dropped from view by ending its rule.
+    func removeOwnTask(_ item: DashItem) {
+        guard !usingSampleData, let state = appState, let removal = item.removal else { return }
+        switch removal {
+        case .deleteTask(let id):
+            state.removeManualAssignment(id: id)
+            items.removeAll { $0.id == item.id }
+        case .stopRepeating(let taskID):
+            state.removeRecurringTask(id: taskID)
+            items.removeAll { candidate in
+                !candidate.isCompleted
+                    && RecurringTask.occurrenceTaskID(fromSourceID: candidate.assignment.sourceID) == taskID
+            }
+        }
     }
 
     private func index(of item: DashItem) -> Int? {

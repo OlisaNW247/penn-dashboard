@@ -41,7 +41,7 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
     /// "recitation") that they're checked before lab/lecture in `classify`,
     /// and never in tension with the "never lab" bias.
     // Every comparison below runs against `TextTokenizer.tokens`, which
-    // stems: "recitation" comes out as "recitate", "class" as "clas",
+    // stems: "recitation" comes out as "recitat", "lecture" as "lectur",
     // "exams" as "exam". A word list written in plain English would then
     // silently never match those forms — the first version of this file did
     // exactly that and would have classified every recitation page as

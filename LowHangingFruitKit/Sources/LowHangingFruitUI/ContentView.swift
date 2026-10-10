@@ -36,9 +36,9 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
-    @State private var seenAnnouncementIDs = AnnouncementReadState().seenIDs
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
-    /// after opening has marked everything seen.
+    /// after opening has marked everything seen. Holds both kinds of id: a
+    /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
     @State private var announcementNewIDs: Set<String> = []
     /// `Assignment.course` key of the class the list is narrowed to, or nil.
     @State private var classFilter: String?
@@ -94,6 +94,8 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
 
+                    notSavingBanner
+
                     // Hidden while a silent renewal is running: the 24-hour cookie
                     // rule flips `canvasSessionExpired` before the renewal it
                     // starts has finished, so a saved-password student would see
@@ -112,7 +114,7 @@ struct ContentView: View {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
                         addInlineButton
-                        if !state.announcementPageItems.isEmpty {
+                        if state.showsAnnouncementsButton {
                             announcementFindsButton
                         }
                     }
@@ -181,6 +183,11 @@ struct ContentView: View {
         // deliberately AppState-free so they still render in previews.
         .environment(\.courseNameOverrides, state.courseNameOverrides)
         .onAppear {
+            // Lets a reminder switch flipped on Profile re-plan from what the
+            // dashboard is showing right now, even if reminders were off until
+            // that moment (see `NotificationScheduler.liveItems`). Captures
+            // the view model itself, not this struct.
+            scheduler.liveItems = { [vm] in vm.items }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
@@ -252,7 +259,11 @@ struct ContentView: View {
                 .environmentObject(state)
         }
         .sheet(isPresented: $showAnnouncementFinds) {
-            AnnouncementFindsView(items: state.announcementPageItems, newIDs: announcementNewIDs)
+            AnnouncementFindsView(
+                items: state.announcementPageItems,
+                records: state.announcementRecordsOnPage,
+                newIDs: announcementNewIDs
+            )
         }
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
@@ -292,23 +303,25 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
-                .contentShape(Circle())
+                // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
+                // gives the filter button next to it, so the three controls
+                // share one hit size without widening the row.
+                .contentShape(Circle().inset(by: -3))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("add assignment or recurring task")
         .help("add assignment or recurring task")
     }
 
+    /// Unread finds plus unread plain announcements. The seen set lives on
+    /// `AppState` (not view state) because the announcement sync marks the
+    /// first fill of the log as seen while this view is already on screen.
     private var unreadAnnouncementCount: Int {
-        AnnouncementReadState.unread(state.announcementPageItems, seen: seenAnnouncementIDs).count
+        state.unreadAnnouncementCount
     }
 
     private func openAnnouncements() {
-        let items = state.announcementPageItems
-        announcementNewIDs = Set(AnnouncementReadState.unread(items, seen: seenAnnouncementIDs).map(\.id))
-        let readState = AnnouncementReadState()
-        readState.markAllSeen(items)
-        seenAnnouncementIDs = readState.seenIDs
+        announcementNewIDs = state.openAnnouncementsSheet()
         showAnnouncementFinds = true
     }
 
@@ -319,7 +332,8 @@ struct ContentView: View {
                 .foregroundStyle(Color.smoothAnnouncementAccent)
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color.smoothAnnouncementFill))
-                .contentShape(Circle())
+                // See `addInlineButton`: 44pt hit region, 38pt drawing.
+                .contentShape(Circle().inset(by: -3))
                 // Unread only: the total never went down, so after the first
                 // week it said nothing. No badge at all once everything's
                 // been seen.
@@ -391,9 +405,13 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo))
                         .font(.lhfSans(12, weight: .semibold))
-                    Text(canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo))
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText)
+                    // Only the two states the student has to act on differently
+                    // get a second line; the plain "reconnect canvas" has none.
+                    if let subtitle = canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo) {
+                        Text(subtitle)
+                            .font(.lhfSans(11))
+                            .foregroundStyle(Color.v2DateText)
+                    }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
@@ -406,21 +424,23 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            "\(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo)). "
-                + (rejected ? "update it in profile." : "reconnect canvas.")
+            [canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo),
+             canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo)]
+                .compactMap { $0 }
+                .joined(separator: ". ")
         )
     }
 
     private func canvasSessionExpiredBannerTitle(rejected: Bool, awaitingDuo: Bool) -> String {
-        if rejected { return "your stored pennkey password didn't work" }
-        if awaitingDuo { return "duo needs you to sign in once" }
-        return "your canvas login needs a refresh"
+        if rejected { return "pennkey password rejected" }
+        if awaitingDuo { return "duo needs you" }
+        return "reconnect canvas"
     }
 
-    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String {
+    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String? {
         if rejected { return "update it in profile." }
-        if awaitingDuo { return "then tap yes, this is my device so smooth can sign in for you next time" }
-        return "reconnect to keep automatic submission tracking accurate."
+        if awaitingDuo { return "tap yes, this is my device" }
+        return nil
     }
 
     // MARK: Header
@@ -553,7 +573,13 @@ struct ContentView: View {
                         vm.uncomplete(item)
                     }
                     rescheduleNotifications()
-                }
+                },
+                backlogHiddenCount: state.signupBacklogHiddenCount,
+                backlogRevealed: state.signupBacklogRevealed,
+                // `vm` reloads itself off AppState's republish, as it does for
+                // every other change. No reminders are touched: what this
+                // brings back is past due, and reminders only schedule ahead.
+                onToggleBacklog: { state.setSignupBacklogRevealed(!state.signupBacklogRevealed) }
             )
         }
     }
@@ -628,13 +654,13 @@ struct ContentView: View {
         if sections.isEmpty {
             switch emptyStateStatus {
             case .loading:            loadingState
-            case let .error(message): errorState(message)
+            case .error:              errorState
             case .caughtUp:
                 // A first-time install can have `awaitingCanvasCheck`
                 // non-empty (see `AppState`'s doc comment on that property)
                 // while every other bucket is genuinely empty — nothing
                 // caught up yet, everything held pending a Canvas check.
-                // `allDoneState`'s "you're all caught up" would be exactly
+                // `allDoneState`'s "go enjoy life" would be exactly
                 // the false celebration this whole feature exists to
                 // prevent, so this case takes priority over it here.
                 if state.awaitingCanvasCheck.isEmpty {
@@ -664,7 +690,13 @@ struct ContentView: View {
                             }
                             rescheduleNotifications()
                         },
-                        onEdit: { item in editing = item }
+                        onEdit: { item in editing = item },
+                        onRemove: { item in
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                vm.removeOwnTask(item)
+                            }
+                            rescheduleNotifications()
+                        }
                     )
                 }
             }
@@ -681,7 +713,7 @@ struct ContentView: View {
         HStack(spacing: 8) {
             ProgressView()
                 .scaleEffect(0.7)
-            Text("checking canvas for what you've turned in…")
+            Text("checking canvas…")
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2DateText)
         }
@@ -692,14 +724,9 @@ struct ContentView: View {
     private var allDoneState: some View {
         ZStack {
             chillArtwork(maxWidth: 320, opacity: 0.35)
-            VStack(spacing: 8) {
-                Text("go enjoy life")
-                    .font(.lhfSerif(46))
-                    .foregroundStyle(Color.v2Ink)
-                Text("you're all caught up")
-                    .font(.lhfSecondary(15))
-                    .foregroundStyle(Color.v2DateText.opacity(0.85))
-            }
+            Text("go enjoy life")
+                .font(.lhfSerif(46))
+                .foregroundStyle(Color.v2Ink)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
@@ -747,7 +774,7 @@ struct ContentView: View {
     private var loadingState: some View {
         VStack(spacing: 14) {
             ProgressView()
-            Text("loading your assignments…")
+            Text("loading…")
                 .font(.lhfSecondary(15))
                 .foregroundStyle(Color.v2DateText)
         }
@@ -760,7 +787,7 @@ struct ContentView: View {
     /// Full-screen failure state, shown only when a sync failed AND there's
     /// nothing cached to fall back on. When we do have items, the slimmer
     /// `syncErrorBanner` surfaces the error without hiding the list.
-    private func errorState(_ message: String) -> some View {
+    private var errorState: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34, weight: .regular))
@@ -768,12 +795,6 @@ struct ContentView: View {
             Text("couldn't sync")
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
-            Text(message)
-                .font(.lhfSecondary(14))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 28)
             Button { Task { await refresh() } } label: {
                 Text("try again")
                     .font(.lhfSans(15, weight: .semibold))
@@ -794,13 +815,13 @@ struct ContentView: View {
     /// on the dashboard itself — previously they only surfaced in Settings.
     @ViewBuilder
     private var syncErrorBanner: some View {
-        if !vm.items.isEmpty, let error = state.error {
+        if !vm.items.isEmpty, state.error != nil {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.v2SpineRed)
                     .padding(.top, 1)
-                Text(error)
+                Text("couldn't sync")
                     .font(.lhfSans(13))
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -817,8 +838,39 @@ struct ContentView: View {
                     .fill(Color.v2SpineRed.opacity(0.10))
             )
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("sync failed. \(error). double-tap to retry.")
+            .accessibilityLabel("couldn't sync. double-tap to retry.")
             .accessibilityAddTraits(.isButton)
+        }
+    }
+
+    /// Quiet notice that nothing on this screen will survive a relaunch: the
+    /// ledger fell back to memory, or its last write failed (see
+    /// `AppState.showsNotSavingBanner` for the rule and why it is read here).
+    /// Fixed words on purpose: the system error behind a failed write is
+    /// nothing a student can act on, and there is no button because there is
+    /// nothing in the app that fixes a full disk. The padding sits inside the
+    /// `if` so a healthy dashboard has no gap where this would be.
+    @ViewBuilder
+    private var notSavingBanner: some View {
+        if state.showsNotSavingBanner {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.smoothMarigoldInk)
+                Text("not saving on this phone")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2Ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.smoothMarigold.opacity(0.16))
+            )
+            .accessibilityElement(children: .combine)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
         }
     }
 
@@ -1017,7 +1069,7 @@ private struct SmoothTodoEmptyState: View {
                 .offset(y: appeared ? 0 : 8)
                 .animation(.easeOut(duration: 0.34).delay(0.12), value: appeared)
 
-            Text("nothing due this week")
+            Text("nothing due soon")
                 .font(.lhfMono(10, weight: .semibold))
                 .tracking(0.9)
                 .foregroundStyle(Color.v2DateText)
@@ -1028,7 +1080,7 @@ private struct SmoothTodoEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("nothing due this week. go enjoy life")
+        .accessibilityLabel("nothing due soon. go enjoy life")
         .onAppear {
             if reduceMotion {
                 appeared = true

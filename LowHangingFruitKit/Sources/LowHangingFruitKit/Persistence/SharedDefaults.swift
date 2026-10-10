@@ -29,6 +29,45 @@ public enum SharedDefaults {
     public static let deletedCoursesKey = "deletedCourseKeys"
     public static let courseNameOverridesKey = "courseNameOverrides"
 
+    /// The sign-up backlog decision (`SignupBacklogStore`): a cutoff instant
+    /// (seconds since 1970; `0` means "decided, hide nothing"), written once,
+    /// and the student's "show older assignments" switch beside it. Listed here
+    /// for the same reason as the three above: `LedgerWidgetReader` reads them
+    /// from the widget process. Born in the shared suite, so deliberately NOT in
+    /// `SharedDefaultsMigration.legacyKeys` (that list is frozen), and not in
+    /// `CloudPrefsMirror.mirroredKeys` (a second device decides for itself
+    /// against its own ledger).
+    /// `signupBacklogSeenKey` is the set-once marker for "the first launch of a
+    /// build that has this feature has happened" (`SignupBacklogStore
+    /// .claimFirstLaunch`). Only the app reads it; it is listed with its
+    /// siblings so the three keys live in one place.
+    public static let signupBacklogCutoffKey = "signupBacklogCutoffV1"
+    public static let signupBacklogRevealedKey = "signupBacklogRevealedV1"
+    public static let signupBacklogSeenKey = "signupBacklogSeenV1"
+
+    /// The due dates a student has edited by hand ("edit date" on a card), as
+    /// `[assignment id: Date]` (`DueDateEditStore`).
+    ///
+    /// **This is a stopgap, and the ledger is the proper home.** An edited due
+    /// date is the student's own work, in the same sense a completion is, and
+    /// the invariant for that is "nothing the student did is ever lost": it
+    /// belongs on `StoredAssignment`, where it would be safe from a defaults
+    /// wipe and would travel with the row. That means a new field and so a
+    /// `LedgerSchema` migration, and this release should not take one (the
+    /// migration has never opened a real pre-existing store; see CLAUDE.md →
+    /// Known gaps). So the edits sit in App Group defaults beside the other
+    /// per-install choices, and the day the ledger grows the field this key is
+    /// read once, copied onto the rows, and retired. Until then a lost defaults
+    /// domain loses the edits (the dates revert to the feed's, which is the
+    /// state before the student touched anything, not a corrupt one).
+    ///
+    /// Born in the shared suite, so deliberately NOT in
+    /// `SharedDefaultsMigration.legacyKeys` (frozen), and not in
+    /// `CloudPrefsMirror.mirroredKeys` (it is keyed by ids from this device's
+    /// ledger; a second device decides for itself). Only the app reads it: the
+    /// widget gets the effective date through the snapshot the app writes.
+    public static let dueDateEditsKey = "dueDateEditsV1"
+
     /// The App Group suite, or nil when this process has no App Group
     /// entitlement (unit tests, SwiftUI previews, an unsigned binary).
     ///

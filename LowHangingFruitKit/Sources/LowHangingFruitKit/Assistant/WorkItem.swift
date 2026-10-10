@@ -78,13 +78,25 @@ public struct AskKnowledgeContext: Sendable {
     public var items: [WorkItem]
     public var knowledge: CourseKnowledgeBase
     public var search: CourseSearch
+    /// The most recent earlier question the student asked in this
+    /// conversation, or `nil` for the first. Read only by retrieval
+    /// (`FollowUpRetrieval`), so a follow-up like "and for the final?" is
+    /// searched in the course the question before it named. It never changes
+    /// what a structured answer (what's due, next exam) is computed from.
+    public var previousQuestion: String?
+    /// The questions before `previousQuestion`, newest first. Read only by
+    /// `FollowUpRetrieval`, for a course to inherit; empty for a first or
+    /// second question.
+    public var olderQuestions: [String]
 
     public init(
         userName: String = "",
         now: Date = Date(),
         calendar: Calendar = .current,
         items: [WorkItem],
-        knowledge: CourseKnowledgeBase
+        knowledge: CourseKnowledgeBase,
+        previousQuestion: String? = nil,
+        olderQuestions: [String] = []
     ) {
         self.userName = userName
         self.now = now
@@ -92,6 +104,8 @@ public struct AskKnowledgeContext: Sendable {
         self.items = items
         self.knowledge = knowledge
         self.search = CourseSearch(knowledge: knowledge)
+        self.previousQuestion = previousQuestion
+        self.olderQuestions = olderQuestions
     }
 
     /// Courses known from either source, deduplicated by short code.

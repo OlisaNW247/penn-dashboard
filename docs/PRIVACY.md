@@ -32,6 +32,18 @@ stored.
   device.
 - **The widget snapshot.** A small "next due" summary written to a private
   container shared only between the app and its widget on your device.
+- **The announcements list.** The megaphone on the dashboard lists your
+  classes' Canvas announcements from the last 60 days. For that the app keeps
+  each one's title, class, date, link and a short preview in a file on this
+  phone. That file is never uploaded, and disconnecting Canvas deletes it.
+  For a class that uses Ed Discussion, the list also shows that class's Ed
+  announcements and pinned posts, taken from the course material already on
+  your phone (described below); showing them makes no new request and sends
+  nothing.
+- **Due dates you change.** If you edit an assignment's due date, the new
+  date is saved on this phone and used for your list, your reminders and the
+  widget. It is never uploaded: a question you ask "the tree" is sent with
+  the date Canvas or Gradescope gave, not the one you set.
 
 ## Stay signed in (optional)
 

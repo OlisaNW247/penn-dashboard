@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import WebKit
@@ -79,6 +80,40 @@ final class AppState: ObservableObject {
     /// dashboard candidates and copies suppressed by structured coursework.
     /// The dedicated announcements page reads this undeduplicated collection.
     @Published private(set) var announcementPageItems: [Assignment] = []
+    /// The megaphone sheet's "all announcements" list: every Canvas
+    /// announcement logged in the last 60 days for a class that is still
+    /// selected, newest first. Plain announcements, not extracted tasks; the
+    /// finds above are the tasks. Backed by `AnnouncementLogStore` and
+    /// maintained by `AppState+AnnouncementLog.swift`, whose methods write
+    /// these, so (like `courseKnowledge`) they are internal rather than
+    /// `private(set)`: `private` is file-scoped.
+    @Published var announcementRecordsOnPage: [AnnouncementRecord] = []
+    /// Ids the student has already seen in the megaphone sheet (finds and
+    /// records both; see `AnnouncementReadState`). Mirrors the persisted set.
+    @Published var announcementSeenIDs: Set<String> = []
+    /// Every stored record, before the class-selection filter.
+    var announcementLogRecords: [AnnouncementRecord] = []
+    /// Ed Discussion announcements and pinned posts, derived from
+    /// `courseKnowledge` and merged into the list at display time. Never
+    /// written to the log file. Kept current by `announcementKnowledgeSubscription`.
+    var edAnnouncementRecords: [AnnouncementRecord] = []
+    /// Watches `courseKnowledge` so the list follows a knowledge sync without
+    /// the sync knowing the list exists (`AppState+AnnouncementLog.swift`).
+    var announcementKnowledgeSubscription: AnyCancellable?
+    /// The announcement log's file and read state. Nil under the test runner
+    /// unless a test opted in with `enableAnnouncementLogForTesting`: an
+    /// `AppState` that is nil here records nothing, so it can neither touch
+    /// the real Application Support file nor write the seen-ids key that
+    /// every concurrently running suite shares. Same shape as
+    /// `signupBacklogStore`.
+    var announcementLog: AnnouncementLogContext? =
+        SharedDefaults.isTestRunner ? nil : AnnouncementLogContext.live()
+    /// Per-instance test seams for `syncAnnouncements()`, memory-only: a
+    /// stand-in for the Canvas fetch, and a stand-in for the extractor choice
+    /// (which would otherwise be the heuristic, or the backend). Both nil in
+    /// the shipping app.
+    var announcementFetchForTesting: AnnouncementFetch?
+    var announcementExtractorForTesting: (@MainActor (CanvasAnnouncement) -> any AnnouncementAssignmentExtractor)?
     /// Useful preparation and reference tasks found in announcements, kept
     /// outside the owed-work dashboard. These remain ledger-backed through
     /// `announcementItems`; this is only the current, de-duplicated view.
@@ -243,6 +278,53 @@ final class AppState: ObservableObject {
     /// the year, and the reason `ProfileSemesterSection` can sit at the top of
     /// Profile without costing anything.
     @Published private(set) var rolloverOffer: SemesterRollover.Offer?
+
+    /// The sign-up backlog's persisted decision and switch (see
+    /// `SignupBacklog`). Nil under the test runner unless a test constructed
+    /// this `AppState` with `signupBacklogDefaults:` (a scratch suite): an
+    /// `AppState` that is nil here takes no decision and hides nothing, which is
+    /// what keeps every existing suite's expectations (they feed 45-to-90-day-old
+    /// fixtures into a fresh ledger) and the shared-defaults domain untouched.
+    /// Assigned once, in `init`, before anything reads it.
+    private var signupBacklogStore: SignupBacklogStore? =
+        SharedDefaults.isTestRunner ? nil : SignupBacklogStore(defaults: .lhf)
+
+    /// Test-only stand-in for the two persisted flags the first-launch clause
+    /// reads (`hasCompletedOnboarding`, `isPreviewMode`), so a test can be "a
+    /// phone that had finished onboarding when this build installed" or "a phone
+    /// in preview mode" without writing either flag to the shared domain. Nil in
+    /// production, where the real properties are read. See
+    /// `recordSignupBacklogForExistingInstallIfNeeded`.
+    private var signupBacklogPersistedFlagsOverride: (complete: Bool, inPreview: Bool)?
+
+    /// How many otherwise-visible unfinished items the sign-up rule withholds
+    /// from the dashboard (or would, while `signupBacklogRevealed`). Zero for an
+    /// existing install and for anyone before their first sync. Drives the
+    /// quiet line at the foot of the prev tab; recomputed on every rebuild.
+    @Published private(set) var signupBacklogHiddenCount = 0
+
+    /// The student's "show older assignments from before you joined" switch.
+    /// Mirrors `SignupBacklogStore.isRevealed`, which is its persisted copy.
+    @Published private(set) var signupBacklogRevealed = false
+
+    /// The due dates the student has edited by hand, `[assignment id: Date]`:
+    /// the one place an edit lives, so the dashboard card, reminders, the widget
+    /// snapshot and the on-device ask pool all read the same date (the document
+    /// ask sends to the backend deliberately does not; see
+    /// `assistantContextDocument()`). Written only
+    /// through `setDueDateEdit` and `pruneDueDateEdits` (`AppState+DueDateEdits
+    /// .swift`, where the rules are); internal rather than `private(set)`
+    /// because `private` is file-scoped and those live in that extension.
+    @Published var dueDateEdits: [String: Date] = [:]
+
+    /// The edits' persisted copy (`DueDateEditStore`). Nil under the test runner
+    /// unless a test constructed this `AppState` with `dueDateEditsDefaults:` (a
+    /// scratch suite): an `AppState` that is nil here reads nothing and writes
+    /// nothing, keeps its edits in memory only, and so can neither pick up
+    /// another suite's edits nor leak its own into every concurrently running
+    /// `AppState.init`. Same shape as `signupBacklogStore`.
+    var dueDateEditStore: DueDateEditStore? =
+        SharedDefaults.isTestRunner ? nil : DueDateEditStore(defaults: .lhf)
 
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
@@ -484,6 +566,18 @@ final class AppState: ObservableObject {
     // them. `SharedDefaults` still declares the three the widget reads.
     private static let recurringTasksKey = "recurringTasks"
     private static let manualAssignmentsKey = "manualAssignments"
+
+    /// The defaults domain holding those two blobs: the student's own recurring
+    /// tasks, and their one-off tasks while the ledger is not the durable copy.
+    /// Always `UserDefaults.lhf` in the app. A test passes `ownTasksDefaults:` to
+    /// `init` for a scratch suite, because removing a task is a write to one of
+    /// these blobs, and a write to the shared domain is read back by the
+    /// `AppState.init` of every suite running alongside (the shared-`UserDefaults`
+    /// trap in CLAUDE.md). Unlike `dueDateEditStore` it is not nil under the test
+    /// runner when nothing is passed: existing tests rely on these blobs
+    /// round-tripping through the shared domain, and this seam changes nothing
+    /// for them.
+    private var ownTasksDefaults: UserDefaults = .lhf
     private static let canvasDiscoveryConnectedKey = "canvasDiscoveryConnected"
     private static let gradescopeConnectedKey = "gradescopeConnected"
     private static let onboardingCompletedKey = "hasCompletedOnboarding"
@@ -626,9 +720,36 @@ final class AppState: ObservableObject {
     /// or temp-file store (and drive it across simulated launches). The default
     /// nil resolves to `AssignmentStore.makeDefault()` — persistent in the real
     /// app, fresh in-memory in unit tests.
+    ///
+    /// `signupBacklogDefaults` is a test-only way to back the sign-up backlog
+    /// with a scratch `UserDefaults` suite, so a test can drive the real
+    /// decision (including the one `init` takes) without touching shared state.
+    /// Production passes nothing and gets `UserDefaults.lhf`; under the test
+    /// runner, passing nothing means no decision and nothing hidden (see
+    /// `signupBacklogStore`). The shared domain is refused outright.
+    /// `persistedFlagsForSignupBacklog` is the matching test-only stand-in for
+    /// the persisted onboarding and preview flags; a test that supplies a
+    /// scratch suite should always supply it too, because the real flags live in
+    /// the shared domain, where another suite may be writing them.
+    ///
+    /// `dueDateEditsDefaults` is the same kind of seam for the student's edited
+    /// due dates (`dueDateEditStore`): production passes nothing and gets
+    /// `UserDefaults.lhf`; under the test runner, passing nothing means the edits
+    /// are kept in memory only and never read from or written to a defaults
+    /// domain. The shared domain is refused outright.
+    ///
+    /// `ownTasksDefaults` is the same kind of seam for the student's own tasks
+    /// (`ownTasksDefaults`, the property): a scratch suite to read and write the
+    /// recurring-task blob, and the one-off blob while the ledger is not the
+    /// durable copy. Production passes nothing and gets `UserDefaults.lhf`. The
+    /// shared domain is refused outright.
     init(
         assignmentStore: AssignmentStore? = nil,
-        gradeHistoryStore: GradeHistoryStore? = nil
+        gradeHistoryStore: GradeHistoryStore? = nil,
+        signupBacklogDefaults: UserDefaults? = nil,
+        persistedFlagsForSignupBacklog: (complete: Bool, inPreview: Bool)? = nil,
+        dueDateEditsDefaults: UserDefaults? = nil,
+        ownTasksDefaults: UserDefaults? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
         // URL is itself a bearer credential, since Canvas embeds a per-user
@@ -706,8 +827,14 @@ final class AppState: ObservableObject {
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
             .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
-        self.recurringTasks = Self.loadRecurringTasks()
-        self.manualAssignments = Self.loadManualAssignments()
+        let tasksDefaults = ownTasksDefaults ?? UserDefaults.lhf
+        precondition(
+            ownTasksDefaults == nil || tasksDefaults !== UserDefaults.lhf,
+            "ownTasksDefaults needs a scratch UserDefaults suite, not the shared domain"
+        )
+        self.ownTasksDefaults = tasksDefaults
+        self.recurringTasks = Self.loadRecurringTasks(from: tasksDefaults)
+        self.manualAssignments = Self.loadManualAssignments(from: tasksDefaults)
 
         // Read once, at the top of this launch, and handed to both the
         // ledger's own opt-in CloudKit mirroring and this launch's
@@ -772,6 +899,22 @@ final class AppState: ObservableObject {
         // call is legal.
         normalizeStoredCourseNames()
 
+        // The sign-up backlog: classify an existing install now, while the
+        // ledger is exactly as the previous launch left it. Before the
+        // announcement-extraction repair below purges rows, before the pools are
+        // seeded, and above all before the first `rebuildDashboardItems()`
+        // anywhere in this launch, because that rebuild reads an undecided
+        // install holding feed items as a first sign-up. See `SignupBacklog`.
+        if let signupBacklogDefaults {
+            precondition(
+                signupBacklogDefaults !== UserDefaults.lhf,
+                "signupBacklogDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            signupBacklogStore = SignupBacklogStore(defaults: signupBacklogDefaults)
+        }
+        signupBacklogPersistedFlagsOverride = persistedFlagsForSignupBacklog
+        recordSignupBacklogForExistingInstallIfNeeded()
+
         if let store {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
@@ -823,7 +966,7 @@ final class AppState: ObservableObject {
             // opposite of the point.
             if store.isPersistent {
                 store.upsert(self.manualAssignments.map { $0.asAssignment() })
-                UserDefaults.lhf.removeObject(forKey: Self.manualAssignmentsKey)
+                self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
                 self.manualAssignments = store
                     .assignments(source: .manual)
                     .compactMap(ManualAssignment.init)
@@ -856,6 +999,29 @@ final class AppState: ObservableObject {
                 self?.reloadMirroredPreferences()
             }
         }
+
+        // The "show older assignments" switch is read back before the first
+        // rebuild so that rebuild already honours it. Reads only; whether this
+        // is an existing install was settled above, before any rebuild.
+        signupBacklogRevealed = signupBacklogStore?.isRevealed ?? false
+
+        // The announcement log is read back before the first rebuild, which
+        // is what filters it by class selection, so the megaphone is right on
+        // the first frame.
+        loadAnnouncementLog()
+
+        // The student's edited due dates, read back before the first rebuild:
+        // that rebuild publishes the widget snapshot (which carries them) and
+        // may prune them, and a prune against an empty in-memory copy would
+        // write that emptiness over what the last launch saved.
+        if let dueDateEditsDefaults {
+            precondition(
+                dueDateEditsDefaults !== UserDefaults.lhf,
+                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
+        }
+        dueDateEdits = dueDateEditStore?.load() ?? [:]
 
         rebuildDashboardItems()
 
@@ -1163,6 +1329,124 @@ final class AppState: ObservableObject {
         #else
         return false
         #endif
+    }
+
+    // MARK: Sign-up backlog
+    //
+    // The rule and its persistence live in the Kit (`SignupBacklog`,
+    // `SignupBacklogStore`); this is only the wiring. The decision is taken in
+    // two places, both beside the sync and neither inside it (`sync()` and
+    // `syncGradescope` are the co-developer's and are deliberately untouched):
+    //
+    //  1. `init`, before the first rebuild: an install whose ledger already
+    //     holds feed rows is an existing install, and is recorded as "never
+    //     hide anything" (`recordSignupBacklogForExistingInstallIfNeeded`).
+    //  2. `rebuildDashboardItems`, before its filter runs: the first rebuild
+    //     that finds feed items on an install that is still undecided is the
+    //     sign-up moment (`recordSignupBacklogAtFirstFeedIfNeeded`). For a new
+    //     student that is the rebuild `sync()` makes straight after its first
+    //     reconcile, with no suspension point in between.
+    //
+    // Then the one filter that applies it, and the student's way back to the
+    // withheld work.
+
+    /// Ids of the bundled sample rows (preview mode, the DEBUG demo). Never
+    /// evidence that this install has seen a real feed.
+    private static let sampleDataIDs: Set<String> = Set(SampleData.items().map(\.assignment.id))
+
+    /// The rule as decided, whatever the "show" switch says; nil when nothing
+    /// is ever hidden: before the first feed items, on an existing install, in
+    /// preview or demo mode, and in any test that did not opt in.
+    private var decidedSignupBacklog: SignupBacklog? {
+        guard !isUsingFixtureData else { return nil }
+        return signupBacklogStore?.decidedBacklog
+    }
+
+    /// Placement 1: called from `init` before the first
+    /// `rebuildDashboardItems()`, while the ledger is exactly as the previous
+    /// launch left it. An existing install must see no change at all, so it is
+    /// recorded as "never hide". Two things prove an install is existing, and
+    /// either is enough:
+    ///
+    ///  - **The ledger already holds feed rows.** An empty ledger proves
+    ///    nothing: that may be a student who has not synced yet, who stays
+    ///    undecided and is decided later by placement 2.
+    ///  - **It is the first launch of a build with this feature, and onboarding
+    ///    was already complete, outside preview mode.** This catches the
+    ///    existing install whose ledger is empty (the store fell back to memory,
+    ///    every row aged out, the feed was empty). It must be the first launch
+    ///    and only the first: onboarding does not wait for the first sync to
+    ///    succeed (`connectCanvas` returns once the feed URL is captured and
+    ///    `sync()` swallows its errors), so a new student can finish onboarding
+    ///    with an empty ledger when the connect-time and hand-off syncs both
+    ///    fail, and then relaunch. On that later launch `hasCompletedOnboarding`
+    ///    is true, and read every time it would classify them as existing with
+    ///    their whole backlog still to arrive. A fresh install's first launch has
+    ///    onboarding incomplete (it only completes on the last step, after the
+    ///    Canvas sync), so it can never match, and the marker (written here,
+    ///    whatever the outcome) switches the clause off for every launch after.
+    ///
+    /// Preview mode is excluded because `enterPreviewMode` marks onboarding
+    /// complete too: a student who previews first is a new student.
+    ///
+    /// Deliberately not gated on `isUsingFixtureData`, unlike placement 2. The
+    /// ledger never holds preview or demo rows (and `holdsFeedRows` ignores the
+    /// sample ids in case one ever leaks), so rows here are real, and a real
+    /// student whose phone happens to be in persisted preview mode when this
+    /// build installs is still an existing install if their ledger says so.
+    /// This path can only ever record "never hide", the safe direction.
+    func recordSignupBacklogForExistingInstallIfNeeded() {
+        guard let backlogStore = signupBacklogStore else { return }
+        let firstLaunch = backlogStore.claimFirstLaunch()
+        let onboardingComplete = signupBacklogPersistedFlagsOverride?.complete ?? hasCompletedOnboarding
+        let inPreview = signupBacklogPersistedFlagsOverride?.inPreview ?? isPreviewMode
+        backlogStore.recordExistingInstallIfUndecided(
+            preDatesFeature: firstLaunch && onboardingComplete && !inPreview,
+            ledgerHoldsFeedRows: assignmentStore?.holdsFeedRows(ignoring: Self.sampleDataIDs) ?? false
+        )
+    }
+
+    /// Placement 2: called from `rebuildDashboardItems()` just before its
+    /// filter, so the cutoff it records is applied in that same rebuild. Acts
+    /// only on an install that is still undecided after `init`'s check, when
+    /// this is not preview or demo mode, and when at least one real feed pool
+    /// has something in it. By then `init` has already classified every install
+    /// whose ledger held rows, so non-empty pools on an undecided install can
+    /// only be items that arrived since launch: a first sign-up.
+    private func recordSignupBacklogAtFirstFeedIfNeeded(now: Date) {
+        guard !isUsingFixtureData,
+              let backlogStore = signupBacklogStore,
+              backlogStore.decision == .undecided,
+              !(canvasItems.isEmpty && gradescopeItems.isEmpty
+                && moduleReadingItems.isEmpty && announcementItems.isEmpty)
+        else { return }
+        backlogStore.recordSignupIfUndecided(at: now)
+    }
+
+    /// "show" / "hide" on the prev tab's backlog line.
+    func setSignupBacklogRevealed(_ revealed: Bool) {
+        guard let backlogStore = signupBacklogStore, revealed != signupBacklogRevealed else { return }
+        backlogStore.isRevealed = revealed
+        signupBacklogRevealed = revealed
+        rebuildDashboardItems()
+    }
+
+    /// `pool` without the work the dashboard is withholding, for readers that
+    /// build their own pool from the raw arrays (the assistant) and would
+    /// otherwise answer "what's overdue" with the very items the dashboard hid.
+    func droppingSignupBacklog(_ pool: [Assignment]) -> [Assignment] {
+        guard !signupBacklogRevealed, let backlog = decidedSignupBacklog else { return pool }
+        return pool.filter { !backlog.hides($0, isFinished: isCompleted($0)) }
+    }
+
+    /// Test seam: `rebuildDashboardItems()` is private, and the sign-up
+    /// decision and filter are part of it. A test that has reconciled a feed
+    /// through the instance's store and put the result in `canvasItems` calls
+    /// this in place of the rest of `sync()` (which rebuilds right after its
+    /// reconcile). `now` is the moment the rebuild runs, and so the sign-up
+    /// moment if this is the one that decides.
+    func rebuildDashboardItemsForTesting(now: Date = Date()) {
+        rebuildDashboardItems(now: now)
     }
 
     /// True once the Canvas calendar feed has been captured automatically.
@@ -3196,6 +3480,12 @@ final class AppState: ObservableObject {
         // next `syncAnnouncements()` to notice they're gone.
         assignmentStore?.purge(source: .canvasAnnouncement)
         announcementItems = []
+        // The plain announcement list is Canvas-derived text too, and goes
+        // here, unconditionally: `clearCourseKnowledge()` only runs when the
+        // backend deletion succeeds (or is configured at all), and an
+        // on-device list of a disconnected account's posts must not depend on
+        // that.
+        clearAnnouncementLog()
         // `processedAnnouncementIDs` is the "have we looked at this yet"
         // cache that gates re-extraction — it must be cleared alongside the
         // rows above, or a reconnect (even to the SAME account) would treat
@@ -4093,7 +4383,7 @@ final class AppState: ObservableObject {
         extracted.enumerated().map { index, e in
             Assignment(
                 source: .canvasAnnouncement,
-                sourceID: "announcement-\(announcement.id)-\(index)",
+                sourceID: AnnouncementRecord.findSourceID(announcementID: announcement.id, index: index),
                 kind: e.kind == .preparation ? .event : .assignment,
                 course: courseCode,
                 title: e.title,
@@ -4227,15 +4517,28 @@ final class AppState: ObservableObject {
     /// path); a missed announcement fetch is not something worth interrupting
     /// the student over, and the sync-banner machinery exists for failures
     /// that ARE.
-    func syncAnnouncements() async {
+    ///
+    /// **Two windows, one fetch.** The fetch asks Canvas for the last 60
+    /// days (`AnnouncementLogStore.retention`) so the megaphone sheet can
+    /// list every announcement (`recordFetchedAnnouncements`, before any
+    /// gate below). Extraction is a different question and keeps its old
+    /// answer: only announcements posted in the last 14 days
+    /// (`announcementsEligibleForExtraction`) go on to the informational
+    /// gate, the extractors and the AI assist, so widening the fetch sends
+    /// nothing extra to the backend and creates no extra ledger row. The
+    /// wrong version is widening the window and filtering nothing: every
+    /// 15-to-60-day-old post would be extracted once, and on the AI path
+    /// that is a bill and an upload nobody asked for.
+    func syncAnnouncements(now: Date = Date()) async {
         guard !isUsingFixtureData else { return }
         guard let store = assignmentStore else { return }
 
-        let cookies = SessionCookieStore.load(service: .canvas)
         // A usable Canvas access token authenticates the
         // `CanvasAnnouncementsClient` fetch below on its own, so an empty
-        // cookie array alone is no longer "nothing to sync with."
-        guard !cookies.isEmpty || hasCanvasCredentials else { return }
+        // cookie array alone is no longer "nothing to sync with." A test
+        // that supplies its own fetch needs neither.
+        let cookies = announcementFetchForTesting == nil ? SessionCookieStore.load(service: .canvas) : []
+        guard announcementFetchForTesting != nil || !cookies.isEmpty || hasCanvasCredentials else { return }
 
         // id -> code, filtered to the courses the class picker has selected —
         // exactly `selectedCanvasCourseIDs()`'s existing contract (Grade
@@ -4244,33 +4547,55 @@ final class AppState: ObservableObject {
         let courseCodesByID = selectedCanvasCourseIDs()
         guard !courseCodesByID.isEmpty else { return }
 
-        // Constructed locally, never stored on `self` — `CanvasAnnouncementsClient`
-        // is deliberately not `Sendable` (see its type doc comment), so an
-        // instance must not outlive this single call.
-        let client = CanvasAnnouncementsClient(
-            baseURL: canvasBaseURL,
-            cookies: cookies,
-            accessToken: canvasAccessTokenBearer
-        )
-        let fourteenDaysAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
+        // THE WINDOW MUST HAVE AN END. Canvas's announcements API defaults
+        // `end_date` to 28 days after `start_date`, so a request that sends
+        // only a start asks for "start through start + 28 days". At the old
+        // 14-day look-back that ran past today and the default was invisible.
+        // At 60 days it is "60 to 32 days ago": the log filled with nothing
+        // newer than a month old, and, because extraction reads this same
+        // fetch, the Announcement Watcher silently stopped seeing every
+        // recent post. Found on a real phone: two records, 46 and 39 days
+        // old, beside four newer ids already in `processedAnnouncementIDs`.
+        // `since` alone is only correct for a start within 28 days; this one
+        // is not, so `until` is always sent (`announcementFetchWindow`).
+        // The wrong fix is shortening the look-back to 28 days: the list is
+        // meant to reach back 60.
+        let window = Self.announcementFetchWindow(now: now)
+        let courseIDs = Array(courseCodesByID.keys)
         let fetched: [CanvasAnnouncement]
         do {
-            fetched = try await client.fetchAnnouncements(
-                courseIDs: Array(courseCodesByID.keys),
-                since: fourteenDaysAgo
-            )
+            if let announcementFetchForTesting {
+                fetched = try await announcementFetchForTesting(courseIDs, window.since, window.until)
+            } else {
+                // Constructed locally, never stored on `self` —
+                // `CanvasAnnouncementsClient` is deliberately not `Sendable`
+                // (see its type doc comment), so an instance must not outlive
+                // this single call.
+                let client = CanvasAnnouncementsClient(
+                    baseURL: canvasBaseURL,
+                    cookies: cookies,
+                    accessToken: canvasAccessTokenBearer
+                )
+                fetched = try await client.fetchAnnouncements(
+                    courseIDs: courseIDs, since: window.since, until: window.until
+                )
+            }
         } catch {
             // Silent — see the method doc comment. A lapsed Canvas session
             // surfaces plenty loudly already through `refreshGradeWatcher`'s
             // and `refreshCanvasSessionExpiredState`'s own paths; this method
-            // doesn't need to pile on.
+            // doesn't need to pile on. The log is left exactly as it was.
             return
         }
 
-        let unprocessed = fetched.filter { !processedAnnouncementIDs.contains($0.id) }
+        // Before the early return below and before every gate: a fetch with
+        // nothing new to extract still updates the list.
+        recordFetchedAnnouncements(fetched, courseCodesByID: courseCodesByID, now: now)
+
+        let unprocessed = Self.announcementsEligibleForExtraction(fetched, now: now)
+            .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else { return }
 
-        let now = Date()
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
 
@@ -4325,7 +4650,9 @@ final class AppState: ObservableObject {
             // heuristic extractor's own default already tolerates.
             let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
             let extractor: any AnnouncementAssignmentExtractor
-            if announcementAIEnabled,
+            if let announcementExtractorForTesting {
+                extractor = announcementExtractorForTesting(announcement)
+            } else if announcementAIEnabled,
                canvasInstallation.id == CanvasInstallation.penn.id,
                let client = BackendServices.client,
                HeuristicAnnouncementExtractor.mightContainTask(
@@ -4727,20 +5054,29 @@ final class AppState: ObservableObject {
     /// precedence and patterns `Assignment.canvasAssignmentID` uses, without
     /// exposing its private `firstMatch` helper.
     static func joinPath(url: URL?, sourceID: String) -> String {
-        if let url, Self.regexMatches(#"/assignments/(\d+)"#, in: url.absoluteString) {
+        if let url, Self.regexMatches(Self.joinPathURLRegex, in: url.absoluteString) {
             return "url"
         }
-        if let url, Self.regexMatches(#"#assignment_(\d+)"#, in: url.absoluteString) {
+        if let url, Self.regexMatches(Self.joinPathFragmentRegex, in: url.absoluteString) {
             return "fragment"
         }
-        if Self.regexMatches(#"assignment-(\d+)"#, in: sourceID) {
+        if Self.regexMatches(Self.joinPathUIDRegex, in: sourceID) {
             return "uid"
         }
         return "none"
     }
 
-    private static func regexMatches(_ pattern: String, in text: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+    /// The three patterns `Assignment.canvasAssignmentID` uses, compiled once
+    /// here too (that property's expressions are private to the Kit). Same
+    /// patterns, same order in `joinPath`; this is a diagnostics mirror, and the
+    /// two must keep agreeing. `try?` kept: a pattern that failed to compile
+    /// reads as "no match", as it did when it was built per call.
+    private static let joinPathURLRegex = try? NSRegularExpression(pattern: #"/assignments/(\d+)"#)
+    private static let joinPathFragmentRegex = try? NSRegularExpression(pattern: #"#assignment_(\d+)"#)
+    private static let joinPathUIDRegex = try? NSRegularExpression(pattern: #"assignment-(\d+)"#)
+
+    private static func regexMatches(_ regex: NSRegularExpression?, in text: String) -> Bool {
+        guard let regex else { return false }
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
@@ -5052,6 +5388,11 @@ final class AppState: ObservableObject {
     /// re-sync and can't orphan the class. Clearing the field restores the code.
     func renameCourse(_ course: String, to newName: String) {
         coursePreferences.setDisplayName(course, to: newName)
+        // The widget snapshot carries the displayed class name
+        // (`widgetNextDueItems`), and a rename rebuilds nothing, so without this
+        // the home screen would keep the old name until the next sync happened
+        // to rebuild the dashboard.
+        publishWidgetSnapshot()
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
@@ -5229,6 +5570,37 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Stops a recurring task: the rule goes, so no further occurrence is
+    /// generated, and nothing the student did with its past occurrences goes
+    /// with it.
+    ///
+    /// **Why the finished occurrences survive.** An occurrence is never stored;
+    /// `RecurringTask.upcomingAssignments` mints it fresh on every rebuild. The
+    /// only trace of one is the record of its completion, a hidden
+    /// completion-only row on the ledger keyed by the occurrence's id
+    /// (`markCompleted` writes it, `StoredAssignment.completionOnly`). That row
+    /// belongs to the ledger, not to the task, and this deliberately does not
+    /// touch the ledger at all: the rule is removed from the defaults blob and
+    /// that is all. Deleting the rows "for tidiness" would be the wrong fix, and
+    /// it is the one that would lose work.
+    ///
+    /// What does go is anything that exists only because the task did: the
+    /// student's edited due dates for its occurrences. `pruneDueDateEdits` cannot
+    /// do this one, because it forgets an edit only while its family still has
+    /// items in the pool, and the last recurring task leaves none.
+    ///
+    /// A syllabus- or announcement-suggested task is stored exactly like a typed
+    /// one (`addCanvasSuggestion` calls `addRecurringTask`), so it goes the same
+    /// way. Suggestions are not remembered anywhere (`canvasRequirementSuggestions`
+    /// is in memory, rebuilt by a scan), so there is no list for it to return to;
+    /// a later scan offers it again exactly as it offered an accepted one before.
+    func removeRecurringTask(id: UUID) {
+        recurringTasks.removeAll { $0.id == id }
+        persistRecurringTasks()
+        clearDueDateEdits(forRecurringTask: id)
+        rebuildDashboardItems()
+    }
+
     /// True when manual work is ledger-backed. False only where the ledger fell
     /// back to memory, in which case the UserDefaults blob is still the durable
     /// copy and has to keep being written.
@@ -5254,6 +5626,11 @@ final class AppState: ObservableObject {
         } else {
             persistManualAssignments()
         }
+        // The task's edited due date goes with it. `pruneDueDateEdits` (called
+        // by the rebuild below) would not: it forgets an edit only while its
+        // family still has items in the pool, and the last one-off task leaves
+        // none, so the edit would sit in the defaults for good.
+        for task in removed { setDueDateEdit(nil, for: task.asAssignment()) }
         rebuildDashboardItems()
     }
 
@@ -5690,7 +6067,11 @@ final class AppState: ObservableObject {
         announcementFinds = secondaryAnnouncementItems
             .filter(isVisibleAnnouncement)
             .sorted(by: Self.byDueDate)
-        let incomplete = allItems.filter { item in
+        // The plain-announcement list follows the same class selection, so
+        // hiding or deleting a class (both end in a rebuild) takes its
+        // announcements off the sheet in the same pass.
+        refreshAnnouncementRecordsOnPage()
+        let beforeBacklog = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && isCourseSelected(item.course)          // class picker
@@ -5707,6 +6088,35 @@ final class AppState: ObservableObject {
                     archivedTerms: archivedTermSet,
                     archivedCourseTerms: archivedCourseTerms
                 )
+        }
+
+        // The sign-up backlog (`SignupBacklog`): a new student's first sync
+        // lists every assignment the semester ever had, and the ones already
+        // more than a week overdue at sign-up are withheld here rather than
+        // opening the dashboard on a wall of red. This is the one place the
+        // rule is applied to the dashboard, so todo, all, the menu bar and the
+        // widget snapshot (all built from `incomplete` below) follow it
+        // together. It sits after `mergedCoursework` was assigned, like the
+        // archive filter above, which is what keeps this a display rule and
+        // not deletion: a finished item is never hidden by it and reaches the
+        // prev tab through that pool regardless. The count is of what the rule
+        // matches among otherwise-visible work, so the prev tab's "N hidden"
+        // line is honest, and it is computed even while the student has chosen
+        // to see everything (the line then offers "hide").
+        recordSignupBacklogAtFirstFeedIfNeeded(now: now)
+        let backlog = decidedSignupBacklog
+        let backlogMatches: [Assignment] = backlog.map { rule in
+            beforeBacklog.filter { rule.hides($0, isFinished: false) }
+        } ?? []
+        if signupBacklogHiddenCount != backlogMatches.count {
+            signupBacklogHiddenCount = backlogMatches.count
+        }
+        let incomplete: [Assignment]
+        if signupBacklogRevealed || backlogMatches.isEmpty {
+            incomplete = beforeBacklog
+        } else {
+            let withheld = Set(backlogMatches.map(\.id))
+            incomplete = beforeBacklog.filter { !withheld.contains($0.id) }
         }
 
         // First-launch submission hold. An overdue `.canvas`/`.canvasModules`
@@ -5834,20 +6244,58 @@ final class AppState: ObservableObject {
             }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
+        // Stale edited due dates go here, once the pool for this rebuild is
+        // known; `pruneDueDateEdits` holds the rule and its guards. Before the
+        // snapshot below so the widget never publishes an edit that was just
+        // dropped.
+        pruneDueDateEdits(
+            against: canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+                + recurringAssignments + manualItems
+        )
         publishWidgetSnapshot()
+    }
+
+    /// The widget's five soonest dated items, from the same arrays the
+    /// dashboard shows. A function of its own so a test can read what would be
+    /// published, since `WidgetSnapshotStore` is inert under the test runner.
+    ///
+    /// Both halves of what a card shows are applied here, because the widget is
+    /// a separate process that cannot ask `AppState`: the date is the student's
+    /// edited one when they edited it (`effectiveDueDate(for:)`, which also
+    /// decides what is dated and in what order, so a card moved to next week
+    /// sorts as next week), and the class is the name the student gave it, or
+    /// "Misc" for a blank one (`displayCourse(overrides:)`, the same call the
+    /// cards make). The widget's own ledger fallback (`LedgerWidgetReader`)
+    /// already applies the rename; publishing the raw code here meant the
+    /// widget's name for a class changed depending on which path built it.
+    func widgetNextDueItems() -> [WidgetItem] {
+        let overrides = courseNameOverrides
+        let dated: [(assignment: Assignment, due: Date)] = (assignments + assessments + laterAssignments)
+            .compactMap { assignment in
+                effectiveDueDate(for: assignment).map { (assignment, $0) }
+            }
+        return dated
+            .sorted { lhs, rhs in
+                lhs.due == rhs.due ? lhs.assignment.id < rhs.assignment.id : lhs.due < rhs.due
+            }
+            .prefix(5)
+            .map {
+                WidgetItem(
+                    title: $0.assignment.title,
+                    course: $0.assignment.displayCourse(overrides: overrides),
+                    dueAt: $0.due
+                )
+            }
     }
 
     /// Publishes the "next due" snapshot to the shared App Group container and
     /// asks WidgetKit to refresh. The widget extension is a separate process
     /// that can't read AppState, so this file is the bridge. Cheap (a few items
     /// as JSON) and safe when the App Group isn't configured (the store no-ops).
-    private func publishWidgetSnapshot() {
-        let nextDue = (assignments + assessments + laterAssignments)
-            .filter { $0.dueAt != nil }
-            .sorted(by: Assignment.isOrderedByDueDate)
-            .prefix(5)
-            .map { WidgetItem(title: $0.title, course: $0.course, dueAt: $0.dueAt) }
-        WidgetSnapshotStore.write(WidgetSnapshot(items: Array(nextDue), generatedAt: Date()))
+    /// Internal rather than `private` so `setDueDateEdit` (in
+    /// `AppState+DueDateEdits.swift`) can republish when a date is edited.
+    func publishWidgetSnapshot() {
+        WidgetSnapshotStore.write(WidgetSnapshot(items: widgetNextDueItems(), generatedAt: Date()))
         #if canImport(WidgetKit)
         WidgetCenter.shared.reloadAllTimelines()
         #endif
@@ -6381,7 +6829,7 @@ final class AppState: ObservableObject {
 
     private func persistRecurringTasks() {
         guard let data = try? JSONEncoder().encode(recurringTasks) else { return }
-        UserDefaults.lhf.set(data, forKey: Self.recurringTasksKey)
+        ownTasksDefaults.set(data, forKey: Self.recurringTasksKey)
     }
 
     /// v4's CoursePreferences consolidation removed this helper along with the
@@ -6393,8 +6841,8 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.dictionary(forKey: key) as? [String: String] ?? [:]
     }
 
-    private static func loadRecurringTasks() -> [RecurringTask] {
-        guard let data = UserDefaults.lhf.data(forKey: recurringTasksKey),
+    private static func loadRecurringTasks(from defaults: UserDefaults) -> [RecurringTask] {
+        guard let data = defaults.data(forKey: recurringTasksKey),
               let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
         else { return [] }
         return tasks
@@ -6402,11 +6850,11 @@ final class AppState: ObservableObject {
 
     private func persistManualAssignments() {
         guard let data = try? JSONEncoder().encode(manualAssignments) else { return }
-        UserDefaults.lhf.set(data, forKey: Self.manualAssignmentsKey)
+        ownTasksDefaults.set(data, forKey: Self.manualAssignmentsKey)
     }
 
-    private static func loadManualAssignments() -> [ManualAssignment] {
-        guard let data = UserDefaults.lhf.data(forKey: manualAssignmentsKey),
+    private static func loadManualAssignments(from defaults: UserDefaults) -> [ManualAssignment] {
+        guard let data = defaults.data(forKey: manualAssignmentsKey),
               let items = try? JSONDecoder().decode([ManualAssignment].self, from: data)
         else { return [] }
         return items
@@ -6637,24 +7085,12 @@ final class AppState: ObservableObject {
     /// `/calendar?include_contexts=course_<id>` link. Only the first was handled
     /// before, so a feed of the second kind resolved no courses at all and Grade
     /// Watcher reported that nothing was selected.
+    ///
+    /// The parsing itself moved to the Kit (`CanvasCourseURL`) so
+    /// `Assignment.sourceLinks` reads course ids by exactly the same rule;
+    /// this stays as the forwarding seam the app and its tests already call.
     static func courseID(from url: URL) -> String? {
-        let parts = url.pathComponents
-        if let index = parts.firstIndex(of: "courses"),
-           parts.indices.contains(parts.index(after: index)) {
-            let candidate = parts[parts.index(after: index)]
-            if !candidate.isEmpty, candidate.allSatisfy(\.isNumber) { return candidate }
-        }
-
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let contexts = components.queryItems?
-                .first(where: { $0.name == "include_contexts" })?.value
-        else { return nil }
-
-        for context in contexts.split(separator: ",") where context.hasPrefix("course_") {
-            let id = context.dropFirst("course_".count)
-            if !id.isEmpty, id.allSatisfy(\.isNumber) { return String(id) }
-        }
-        return nil
+        CanvasCourseURL.courseID(from: url)
     }
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {

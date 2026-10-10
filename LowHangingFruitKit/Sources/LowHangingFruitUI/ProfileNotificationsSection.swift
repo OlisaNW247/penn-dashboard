@@ -33,12 +33,13 @@ import LowHangingFruitKit
 ///    Turning it off is the deliberate act that creates an override, and it
 ///    seeds the override from the current global so the student starts from
 ///    where they already were rather than from nothing.
-/// 3. **While inheriting, the lead times are not controls.** They render as a
-///    flat, dimmed, non-tappable read-out with the words "from Profile →
-///    Reminders" underneath. Nothing on screen looks settable unless setting it
-///    is what it does. That is the whole point — a disabled-looking toggle still
-///    reads as *this class's* toggle, so there are no toggles here at all until
-///    the student asks for them.
+/// 3. **While inheriting, there are no lead-time controls at all.** Nothing on
+///    screen looks settable unless setting it is what it does. That is the
+///    whole point — a disabled-looking toggle still reads as *this class's*
+///    toggle, so there are no toggles here until the student asks for them.
+///    (A flat read-out of the inherited times used to sit here too, five rows
+///    per class; it was cut on 2026-10-10 as too much text, since the badge
+///    and the switch already say the class is following the defaults.)
 ///
 /// ## The signature is the contract
 ///
@@ -238,34 +239,9 @@ struct ProfileNotificationsSection: View {
         ))
         .font(.lhfSecondary(14))
 
-        if isInheriting {
-            inheritedLeadTimes
-        } else {
+        if !isInheriting {
             overriddenLeadTimes(course)
         }
-    }
-
-    /// The inherited times, as a read-out rather than as controls. See this
-    /// type's note: a disabled toggle still reads as *this class's* toggle, so
-    /// while a class is inheriting there are no toggles at all.
-    private var inheritedLeadTimes: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(NotificationScheduler.LeadOffset.offered) { offset in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: scheduler.leadOffsets.contains(offset)
-                          ? "checkmark.circle.fill" : "circle")
-                    Text(offset.label)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .font(.lhfSecondary(13))
-                .foregroundStyle(Color.v2DateText)
-            }
-
-        }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("inherited reminder times: \(offsetList(scheduler.leadOffsets)). set in profile, reminders. this class follows them.")
     }
 
     @ViewBuilder
@@ -294,7 +270,7 @@ struct ProfileNotificationsSection: View {
         // list of five unticked switches — it looks identical to "I haven't
         // finished setting this up". Say what it currently means.
         if chosen.isEmpty {
-            Label("no reminder times. this class won\u{2019}t warn you.",
+            Label("no reminder times",
                   systemImage: "exclamationmark.triangle")
                 .font(.lhfSecondary(12))
                 .foregroundStyle(Color.v2SpineAmber)

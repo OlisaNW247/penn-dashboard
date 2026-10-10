@@ -28,9 +28,14 @@ struct AssignmentCardView: View {
     /// Called once the exit animation has finished.
     let onComplete: () -> Void
     let onEdit: () -> Void
+    /// Called after the student confirms removing their own task
+    /// (`item.removal`). Defaulted so previews and every other construction
+    /// site, which never offer the button, need not pass one.
+    var onRemove: () -> Void = {}
 
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
+    @State private var confirmingRemoval = false
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
     @State private var exitScale: CGFloat = 1
@@ -186,6 +191,10 @@ struct AssignmentCardView: View {
                         .foregroundStyle(Color.smoothInk.opacity(0.68))
                 }
             }
+            // One element that says it is the due time, instead of a bare
+            // "Tue" / "5h" / "late" read as three unrelated fragments.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(dueAccessibilityLabel(item.due, adjusted: item.dueOverride != nil, now: now))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -219,6 +228,58 @@ struct AssignmentCardView: View {
                 .accessibilityLabel("edit due date")
             }
             .padding(.top, 10)
+
+            // One link per page this item came from (`Assignment.sourceLinks`:
+            // zero for manual work, two for a Canvas+Gradescope pair). A
+            // `Link`, not a tap gesture, for the same reason "edit date" is a
+            // `Button`: a control that is a view of its own claims the touch
+            // before the card's expand/collapse tap above it does, and a drag
+            // that begins on it is still the card's swipe. A bare gesture
+            // here would collapse the card on its way to Safari. The 44pt
+            // floor is on the height only, so the target stays as wide as its
+            // words and the empty space beside it still collapses the card.
+            ForEach(item.assignment.sourceLinks) { link in
+                Link(destination: link.url) {
+                    HStack(spacing: 5) {
+                        Text(link.label)
+                            .font(.lhfAssignmentTitle(12))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .medium))
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(Color.smoothInk)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("opens the original page")
+            }
+
+            // Only on the student's own work (`OwnTaskRemoval`): "delete" on a
+            // one-off task, "stop repeating" on an occurrence of a recurring
+            // one. A `Button` with a 44pt-tall target for the same reason as
+            // the controls above, and the dialog is attached to it so a
+            // confirmation on iPad and Mac anchors to the button. Tapping it
+            // only asks; the task goes once the destructive choice is made.
+            if let removal = item.removal {
+                Button { confirmingRemoval = true } label: {
+                    Text(removal.buttonLabel)
+                        .font(.lhfAssignmentTitle(12))
+                        .foregroundStyle(Color.smoothTomatoInk)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(removal.accessibilityLabel)
+                .confirmationDialog(
+                    removal.confirmationTitle,
+                    isPresented: $confirmingRemoval,
+                    titleVisibility: .visible
+                ) {
+                    Button(removal.confirmLabel, role: .destructive) { onRemove() }
+                    Button(OwnTaskRemoval.cancelLabel, role: .cancel) {}
+                }
+            }
 
             // No second "nothing to submit" here: the collapsed caveat line
             // stays visible when the card opens, so repeating it below the

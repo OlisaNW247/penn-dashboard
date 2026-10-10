@@ -24,7 +24,8 @@ public struct SearchHit: Sendable, Hashable, Identifiable {
     }
 }
 
-/// Retrieval over the course knowledge base: BM25 keyword search, an optional
+/// Retrieval over the course knowledge base: BM25 keyword search (with the
+/// query widened by a small synonym table, `QueryExpansion`), an optional
 /// course filter, a small boost for the kinds of documents most likely to
 /// answer policy questions, and (on Apple platforms) an on-device sentence
 /// embedding rerank from the NaturalLanguage framework. No network, no keys.
@@ -59,8 +60,11 @@ public struct CourseSearch: Sendable {
             }
         }
         self.passages = passageMap
-        self.documents = Dictionary(knowledge.documents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        self.index = BM25Index(passages: all)
+        let documentsByID = Dictionary(knowledge.documents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        self.documents = documentsByID
+        // The titles go in with the passages so a page is findable by its
+        // name; see `BM25Index.init(passages:titles:)`.
+        self.index = BM25Index(passages: all, titles: documentsByID.mapValues(\.title))
     }
 
     public var isEmpty: Bool { index.isEmpty }
@@ -75,14 +79,20 @@ public struct CourseSearch: Sendable {
     ///     exactly as it was before component-awareness existed. Other
     ///     components are never hidden, only outranked, so the model still
     ///     sees them labelled as a possible secondary answer.
+    ///   - limit: how many passages to return.
+    ///   - perDocument: how many of those may come from one document. The
+    ///     default of 2 keeps one long syllabus from crowding out an
+    ///     announcement that answers the question directly; a caller asking
+    ///     for more passages (a larger `limit`) can raise it.
     public func search(
         _ query: String,
         courseID: String? = nil,
         kinds: Set<CourseDocument.Kind>? = nil,
         preferredComponent: DocumentComponent? = nil,
-        limit: Int = 5
+        limit: Int = 5,
+        perDocument: Int = 2
     ) -> [SearchHit] {
-        search(query, courseIDs: courseID.map { [$0] }, kinds: kinds, preferredComponent: preferredComponent, limit: limit)
+        search(query, courseIDs: courseID.map { [$0] }, kinds: kinds, preferredComponent: preferredComponent, limit: limit, perDocument: perDocument)
     }
 
     /// Like the `courseID:` overload above, except a question can now be
@@ -95,48 +105,114 @@ public struct CourseSearch: Sendable {
     /// nothing rather than falling back to unscoped — a caller resolving
     /// zero courseIDs for a named course should get no hits, not every
     /// course's.
+    ///
+    /// A scope is a guess about what the question meant, not a fact: the
+    /// course matcher can pick the wrong class, or the right class can
+    /// simply not hold the answer (a question about "the exam in CIS 2400"
+    /// whose answer is in an announcement filed under another site). So a
+    /// non-empty scope that finds nothing is retried once, unscoped, rather
+    /// than answering "I couldn't find that" from a filter that may have
+    /// been wrong. The hits then carry their own course, so the reader can
+    /// see they came from somewhere else. (The empty set above is a
+    /// different case: it means the caller found no sites at all, and stays
+    /// "no hits.")
     public func search(
         _ query: String,
         courseIDs: Set<String>?,
         kinds: Set<CourseDocument.Kind>? = nil,
         preferredComponent: DocumentComponent? = nil,
-        limit: Int = 5
+        limit: Int = 5,
+        perDocument: Int = 2
     ) -> [SearchHit] {
         guard !index.isEmpty else { return [] }
-        // Over-fetch so filters and the rerank have something to work with.
-        let raw = index.search(query, limit: max(limit * 6, 30))
-        var hits: [SearchHit] = []
+        let candidates = index.matches(for: QueryExpansion.weightedTerms(for: query))
+        let scoped = rank(
+            candidates, query: query, courseIDs: courseIDs, kinds: kinds,
+            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument
+        )
+        guard scoped.isEmpty, let courseIDs, !courseIDs.isEmpty else { return scoped }
+        return rank(
+            candidates, query: query, courseIDs: nil, kinds: kinds,
+            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument
+        )
+    }
+
+    /// Scope, boost, cut, rerank, cap — in that order. The order is the
+    /// point: the BM25 list is *every* matching passage, and the scope
+    /// (course, kind) and the kind/component boosts are applied to all of
+    /// it before anything is thrown away. This used to take BM25's global
+    /// top 30 first and filter to the named course afterwards, so with five
+    /// courses synced the named course's best passages could be outscored
+    /// by thirty passages from other courses and cut before the filter ever
+    /// saw them, leaving "no hits" for a question the materials answer. The
+    /// boosts had the same problem in miniature: a lab passage boosted ×1.5
+    /// could not climb into a pool it had already been cut from.
+    private func rank(
+        _ candidates: [BM25Index.Hit],
+        query: String,
+        courseIDs: Set<String>?,
+        kinds: Set<CourseDocument.Kind>?,
+        preferredComponent: DocumentComponent?,
+        limit: Int,
+        perDocument: Int
+    ) -> [SearchHit] {
         // Classify once per document per search, not once per passage: a
         // syllabus contributing two passages (the `perDocument` cap below)
         // should not pay for `DocumentComponent.component(of:in:)` twice.
         var componentByDocument: [String: DocumentComponent] = [:]
-        for hit in raw {
+        func component(of document: CourseDocument) -> DocumentComponent {
+            if let cached = componentByDocument[document.id] { return cached }
+            let resolved = DocumentComponent.component(of: document, in: knowledge)
+            componentByDocument[document.id] = resolved
+            return resolved
+        }
+        var kindBoostByKind: [CourseDocument.Kind: Double] = [:]
+
+        var scored: [(passage: Passage, document: CourseDocument, score: Double)] = []
+        for hit in candidates {
             guard let passage = passages[hit.passageID], let document = documents[passage.documentID] else { continue }
             if let courseIDs, !courseIDs.contains(document.courseID) { continue }
             if let kinds, !kinds.contains(document.kind) { continue }
-            let component: DocumentComponent
-            if let cached = componentByDocument[document.id] {
-                component = cached
-            } else {
-                component = DocumentComponent.component(of: document, in: knowledge)
-                componentByDocument[document.id] = component
-            }
-            let score = hit.score * kindBoost(document.kind, query: query) * componentBoost(component, preferredComponent: preferredComponent)
-            hits.append(SearchHit(passage: passage, document: document, score: score, component: component))
+            let kindBoost = kindBoostByKind[document.kind] ?? self.kindBoost(document.kind, query: query)
+            kindBoostByKind[document.kind] = kindBoost
+            // Only a question that names a component needs to know which
+            // component each document is before the cut; otherwise the
+            // classification waits until the pool is small.
+            let componentBoost = preferredComponent == nil
+                ? 1.0
+                : self.componentBoost(component(of: document), preferredComponent: preferredComponent)
+            scored.append((passage, document, hit.score * kindBoost * componentBoost))
+        }
+
+        // Over-fetch so the rerank has something to work with.
+        let pool = max(limit * 6, 30)
+        var hits: [SearchHit] = Self.descendingOrder(of: scored.map(\.score)).prefix(pool).map { position in
+            let item = scored[position]
+            return SearchHit(passage: item.passage, document: item.document, score: item.score, component: component(of: item.document))
         }
         hits = rerank(query: query, hits: hits)
-        // At most two passages per document so one long syllabus can't crowd
-        // out an announcement that answers the question directly.
-        var perDocument: [String: Int] = [:]
+
+        // At most `perDocument` passages per document (two by default) so
+        // one long syllabus can't crowd out an announcement that answers
+        // the question directly.
+        var seenPerDocument: [String: Int] = [:]
         var result: [SearchHit] = []
-        for hit in hits.sorted(by: { $0.score > $1.score }) {
-            let seen = perDocument[hit.document.id, default: 0]
-            guard seen < 2 else { continue }
-            perDocument[hit.document.id] = seen + 1
+        for position in Self.descendingOrder(of: hits.map(\.score)) {
+            let hit = hits[position]
+            let seen = seenPerDocument[hit.document.id, default: 0]
+            guard seen < perDocument else { continue }
+            seenPerDocument[hit.document.id] = seen + 1
             result.append(hit)
-            if result.count == limit { break }
+            if result.count >= limit { break }
         }
         return result
+    }
+
+    /// Indices of `scores`, highest score first. Equal scores keep their
+    /// incoming order, so the ranking never depends on the sort's choice
+    /// between ties.
+    private static func descendingOrder(of scores: [Double]) -> [Int] {
+        scores.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }
     }
 
     /// A preferred component boosts its own documents, treats `.general`

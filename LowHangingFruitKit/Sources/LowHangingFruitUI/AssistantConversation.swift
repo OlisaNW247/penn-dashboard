@@ -1,4 +1,5 @@
 import Foundation
+import LowHangingFruitKit
 import SwiftUI
 import os
 
@@ -45,6 +46,26 @@ final class AssistantConversation: ObservableObject {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
 
+        // The transcript is the only place that knows what was asked before
+        // this, so the earlier questions are attached here, before the new
+        // one is appended, rather than by each caller: the student's own
+        // words only, newest first, never an answer, at most as many as
+        // retrieval will look back through. They ride along only so
+        // retrieval can follow a follow-up into the right course
+        // (`FollowUpRetrieval`); no responder sends them anywhere. Whatever
+        // the caller put in these fields is replaced: a stale value there
+        // would search the wrong course.
+        let turnContext: AssistantContext = {
+            var copy = context
+            let earlier = messages.reversed()
+                .filter { $0.role == .student }
+                .prefix(FollowUpRetrieval.maxEarlierQuestions)
+                .map(\.text)
+            copy.previousQuestion = earlier.first
+            copy.olderQuestions = Array(earlier.dropFirst())
+            return copy
+        }()
+
         messages.append(AssistantMessage(role: .student, text: trimmed))
         messages.append(AssistantMessage(role: .assistant, text: "", isStreaming: true))
         isResponding = true
@@ -52,7 +73,7 @@ final class AssistantConversation: ObservableObject {
         let index = messages.count - 1
         askTrace.info("0 send: consumer task starting")
         inFlight = Task { [responder] in
-            for await chunk in responder.reply(to: trimmed, context: context) {
+            for await chunk in responder.reply(to: trimmed, context: turnContext) {
                 askTrace.info("8 chunk delivered to conversation")
                 guard !Task.isCancelled, messages.indices.contains(index) else { break }
                 switch chunk {
