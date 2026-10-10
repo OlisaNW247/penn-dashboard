@@ -340,9 +340,29 @@ public struct ClassQuestionAnswerer: Sendable {
         // not "matches nothing" — same as the old `courseID == nil` branch
         // below, which is why an empty set is passed through as `nil`
         // (unscoped) rather than as a scope that excludes everything.
-        let courseIDs = parsed.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        //
+        // A question that names no course may be a follow-up ("and for the
+        // final?"): `FollowUpRetrieval` then lends this search the course the
+        // nearest earlier question that named one (looking back a few
+        // questions), and, for a short fragment, the previous question's
+        // words. This is the only place the earlier questions are used. The
+        // structured answers above still read `parsed.course` alone, so
+        // "what's due this week?" asked right after a CIS 2400 question
+        // still lists every course. And only the *scope* is borrowed, never
+        // the post-filter below: that filter exists for a course the student
+        // named but has no synced materials for, and a guessed course with no
+        // materials should fall back to searching everything instead.
+        let followUp = FollowUpRetrieval.resolve(
+            question: query,
+            previousQuestion: context.previousQuestion,
+            olderQuestions: context.olderQuestions,
+            courses: context.courses
+        )
+        let namesOwnCourse = parsed.course != nil
+        let courseIDs = (parsed.course ?? followUp.course).map { context.knowledge.courseIDs(forCode: $0.code) }
         let scopedIDs = (courseIDs?.isEmpty ?? true) ? nil : courseIDs
-        var hits = context.search.search(query, courseIDs: scopedIDs, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
+        let searchText = namesOwnCourse ? query : followUp.query
+        var hits = context.search.search(searchText, courseIDs: scopedIDs, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
         if scopedIDs == nil, let course = parsed.course {
             hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
         }
