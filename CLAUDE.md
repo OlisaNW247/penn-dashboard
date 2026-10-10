@@ -228,7 +228,10 @@ fastest way for a new session to know what exists.
   4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
      "turned in" confirmations). "10 minutes before" (`LeadOffset.m10`,
      2026-10-09) is opt-in: off by default and absent from the onboarding
-     pills (`LeadOffset.onboardingOffered`).
+     pills (`LeadOffset.onboardingOffered`). A reminder's title is the
+     class and its body is the assignment's name then the lead phrase
+     ("Problem Set 4. Due in 1 hour", `NotificationScheduler.reminderBody`,
+     2026-10-09; before that the body was the lead phrase alone).
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"

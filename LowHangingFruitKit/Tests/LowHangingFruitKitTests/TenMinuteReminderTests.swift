@@ -47,7 +47,8 @@ struct TenMinuteReminderTests {
         #expect(LeadOffset.m10.label == "10 minutes before")
         #expect(LeadOffset.m10.headline == "Due in 10 minutes")
         // Same shape as its neighbours: the Profile summary strips " before"
-        // from the label, and the notification body is the headline alone.
+        // from the label, and the notification body ends with the headline
+        // (after the assignment's name; see `ReminderWordingTests`).
         #expect(LeadOffset.m10.label.hasSuffix(" before"))
         #expect(LeadOffset.m10.headline.hasPrefix("Due in "))
     }
@@ -132,7 +133,7 @@ struct TenMinuteReminderTests {
             #expect(requests.map(\.identifier) == ["due:canvas:hw:600"])
             let request = try #require(requests.first)
             #expect(request.content.title == "CIS 1200")
-            #expect(request.content.body == "Due in 10 minutes")
+            #expect(request.content.body == "HW hw. Due in 10 minutes")
 
             // The trigger carries minute-resolution components for due − 10
             // minutes. Minute resolution floors the fire time, so it may land

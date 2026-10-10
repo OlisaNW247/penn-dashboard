@@ -456,16 +456,24 @@ final class NotificationScheduler: ObservableObject {
 
         let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
             let content = UNMutableNotificationContent()
-            // Owner's notification redesign (2026-08-26): the class name is
-            // the headline and the lead phrase is the entire body — no
-            // urgency emoji, no assignment title, no formatted date. The
-            // notification's job is "look at this class now-ish"; the app is
-            // one tap away for everything else. Urgency still shapes
+            // The class name is the headline; the body is the assignment's
+            // name and then the lead phrase ("Problem Set 4. Due in 1 hour").
+            // No urgency emoji and no formatted date: urgency still shapes
             // BEHAVIOR (the time-sensitive interruption level below), it
-            // just no longer shapes the text.
+            // just doesn't shape the text.
+            //
+            // The 2026-08-26 redesign left the assignment's name out on
+            // purpose ("look at this class now-ish; the app is one tap away
+            // for everything else"). Reversed on 2026-10-09 at Marco's
+            // request: a class with two things due the same evening sent two
+            // identical notifications, and neither said which piece of work
+            // it meant without opening the app. See `reminderBody`.
             let urgency = DueState(due: pair.item.due, now: pair.fireDate)
             content.title = pair.item.assignment.course
-            content.body = pair.offset.headline
+            content.body = Self.reminderBody(
+                assignmentTitle: pair.item.assignment.title,
+                headline: pair.offset.headline
+            )
             content.sound = .default
             content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
             let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
@@ -475,6 +483,42 @@ final class NotificationScheduler: ObservableObject {
         }
 
         return requests
+    }
+
+    /// The longest assignment name a reminder shows before it is cut. A lock
+    /// screen gives a notification about four short lines; an untrimmed
+    /// "Homework 3: Dynamic Programming and Greedy Algorithms (Written
+    /// Portion, Sections 001-004)" would push "Due in 1 hour", the one fact
+    /// the reminder exists to deliver, off the end.
+    nonisolated static let reminderTitleLimit = 80
+
+    /// The body of a due-date reminder: the assignment's name, then the lead
+    /// phrase, in the shape the grade alerts already use ("Problem Set 4.
+    /// 18/20").
+    ///
+    /// - A name longer than `reminderTitleLimit` is cut at a word boundary and
+    ///   ends in an ellipsis.
+    /// - A name that already ends in punctuation ("Read ch. 3.", "Ready?", or
+    ///   the ellipsis just added) is followed by a space alone, so the body
+    ///   never reads "ch. 3.. Due in 1 hour".
+    /// - A blank name leaves the lead phrase standing alone, which is what
+    ///   every reminder said before this existed.
+    ///
+    /// Pure and `nonisolated`: it is called from the planner and from tests,
+    /// and a string rule has no business inheriting an actor (CLAUDE.md, the
+    /// `decidedText` trap).
+    nonisolated static func reminderBody(assignmentTitle: String, headline: String) -> String {
+        var name = assignmentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return headline }
+        if name.count > reminderTitleLimit {
+            let head = name.prefix(reminderTitleLimit)
+            // Back up to the last space so the cut never lands inside a word;
+            // one unbroken run longer than the limit is cut where it stands.
+            let cut = head.lastIndex(where: \.isWhitespace).map { head[head.startIndex..<$0] } ?? head
+            name = cut.trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+        }
+        let endsSentence = name.last.map { ".!?\u{2026}:;,".contains($0) } ?? false
+        return endsSentence ? "\(name) \(headline)" : "\(name). \(headline)"
     }
 
     /// Stable, unique per (assignment, lead time) — the property `reschedule`'s
