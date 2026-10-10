@@ -37,8 +37,13 @@ public enum SharedDefaults {
     /// `SharedDefaultsMigration.legacyKeys` (that list is frozen), and not in
     /// `CloudPrefsMirror.mirroredKeys` (a second device decides for itself
     /// against its own ledger).
+    /// `signupBacklogSeenKey` is the set-once marker for "the first launch of a
+    /// build that has this feature has happened" (`SignupBacklogStore
+    /// .claimFirstLaunch`). Only the app reads it; it is listed with its
+    /// siblings so the three keys live in one place.
     public static let signupBacklogCutoffKey = "signupBacklogCutoffV1"
     public static let signupBacklogRevealedKey = "signupBacklogRevealedV1"
+    public static let signupBacklogSeenKey = "signupBacklogSeenV1"
 
     /// The App Group suite, or nil when this process has no App Group
     /// entitlement (unit tests, SwiftUI previews, an unsigned binary).
