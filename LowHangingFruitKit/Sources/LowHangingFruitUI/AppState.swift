@@ -6637,24 +6637,12 @@ final class AppState: ObservableObject {
     /// `/calendar?include_contexts=course_<id>` link. Only the first was handled
     /// before, so a feed of the second kind resolved no courses at all and Grade
     /// Watcher reported that nothing was selected.
+    ///
+    /// The parsing itself moved to the Kit (`CanvasCourseURL`) so
+    /// `Assignment.sourceLinks` reads course ids by exactly the same rule;
+    /// this stays as the forwarding seam the app and its tests already call.
     static func courseID(from url: URL) -> String? {
-        let parts = url.pathComponents
-        if let index = parts.firstIndex(of: "courses"),
-           parts.indices.contains(parts.index(after: index)) {
-            let candidate = parts[parts.index(after: index)]
-            if !candidate.isEmpty, candidate.allSatisfy(\.isNumber) { return candidate }
-        }
-
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let contexts = components.queryItems?
-                .first(where: { $0.name == "include_contexts" })?.value
-        else { return nil }
-
-        for context in contexts.split(separator: ",") where context.hasPrefix("course_") {
-            let id = context.dropFirst("course_".count)
-            if !id.isEmpty, id.allSatisfy(\.isNumber) { return String(id) }
-        }
-        return nil
+        CanvasCourseURL.courseID(from: url)
     }
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {

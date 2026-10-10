@@ -56,6 +56,7 @@ struct AnnouncementFindsView: View {
 
     @ViewBuilder
     private func row(for item: Assignment) -> some View {
+        let link = item.sourceLinks.first
         let content = HStack(spacing: 12) {
             Capsule()
                 .fill(Color.smoothAnnouncementAccent)
@@ -91,17 +92,25 @@ struct AnnouncementFindsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if item.url != nil {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
+            // The arrow alone never said where it went or that the whole row
+            // is the link; the words do. `sourceLinks` (not `item.url`) so the
+            // words appear exactly when a tappable, https destination exists.
+            if link != nil {
+                HStack(spacing: 4) {
+                    Text(SourceLink.canvasLabel)
+                        .font(.lhfMono(9.5, weight: .semibold))
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(Color.smoothMuted)
+                .accessibilityHidden(true)
             }
         }
         .padding(14)
         .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-        if let url = item.url {
-            Link(destination: url) { content }
+        if let link {
+            Link(destination: link.url) { content }
                 .buttonStyle(.plain)
                 .accessibilityHint("opens the original announcement")
         } else {

@@ -185,7 +185,11 @@ fastest way for a new session to know what exists.
   - **all**: future work through the term.
   - **prev** (`DoneView`): leads with "N down this week", shows this week's
     finished work, and opens "earlier this semester" in place.
-  - **Cards.** Tap a card to open it (full date, "edit date"); swipe right
+  - **Cards.** Tap a card to open it (full date, "edit date", and since
+    2026-10-09 "open in canvas" / "open in gradescope", derived at display
+    time by `Assignment.sourceLinks` from the URL the ledger already
+    stores; a Canvas+Gradescope pair shows both, manual work and recurring
+    tasks show none); swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
 - **Grade Watcher** (`GradeWatcherView`). Per-course grades from Canvas's
