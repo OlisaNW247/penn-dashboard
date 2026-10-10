@@ -299,6 +299,23 @@ final class AppState: ObservableObject {
     /// Mirrors `SignupBacklogStore.isRevealed`, which is its persisted copy.
     @Published private(set) var signupBacklogRevealed = false
 
+    /// The due dates the student has edited by hand, `[assignment id: Date]`:
+    /// the one place an edit lives, so the dashboard card, reminders, the widget
+    /// snapshot and both of ask's pools all read the same date. Written only
+    /// through `setDueDateEdit` and `pruneDueDateEdits` (`AppState+DueDateEdits
+    /// .swift`, where the rules are); internal rather than `private(set)`
+    /// because `private` is file-scoped and those live in that extension.
+    @Published var dueDateEdits: [String: Date] = [:]
+
+    /// The edits' persisted copy (`DueDateEditStore`). Nil under the test runner
+    /// unless a test constructed this `AppState` with `dueDateEditsDefaults:` (a
+    /// scratch suite): an `AppState` that is nil here reads nothing and writes
+    /// nothing, keeps its edits in memory only, and so can neither pick up
+    /// another suite's edits nor leak its own into every concurrently running
+    /// `AppState.init`. Same shape as `signupBacklogStore`.
+    var dueDateEditStore: DueDateEditStore? =
+        SharedDefaults.isTestRunner ? nil : DueDateEditStore(defaults: .lhf)
+
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
     /// store stays free of notification plumbing.
@@ -692,11 +709,18 @@ final class AppState: ObservableObject {
     /// the persisted onboarding and preview flags; a test that supplies a
     /// scratch suite should always supply it too, because the real flags live in
     /// the shared domain, where another suite may be writing them.
+    ///
+    /// `dueDateEditsDefaults` is the same kind of seam for the student's edited
+    /// due dates (`dueDateEditStore`): production passes nothing and gets
+    /// `UserDefaults.lhf`; under the test runner, passing nothing means the edits
+    /// are kept in memory only and never read from or written to a defaults
+    /// domain. The shared domain is refused outright.
     init(
         assignmentStore: AssignmentStore? = nil,
         gradeHistoryStore: GradeHistoryStore? = nil,
         signupBacklogDefaults: UserDefaults? = nil,
-        persistedFlagsForSignupBacklog: (complete: Bool, inPreview: Bool)? = nil
+        persistedFlagsForSignupBacklog: (complete: Bool, inPreview: Bool)? = nil,
+        dueDateEditsDefaults: UserDefaults? = nil
     ) {
         // Keychain-backed (docs/CANVAS_LOGIN_HARDENING.md item 3c) — the feed
         // URL is itself a bearer credential, since Canvas embeds a per-user
@@ -950,6 +974,19 @@ final class AppState: ObservableObject {
         // is what filters it by class selection, so the megaphone is right on
         // the first frame.
         loadAnnouncementLog()
+
+        // The student's edited due dates, read back before the first rebuild:
+        // that rebuild publishes the widget snapshot (which carries them) and
+        // may prune them, and a prune against an empty in-memory copy would
+        // write that emptiness over what the last launch saved.
+        if let dueDateEditsDefaults {
+            precondition(
+                dueDateEditsDefaults !== UserDefaults.lhf,
+                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
+        }
+        dueDateEdits = dueDateEditStore?.load() ?? [:]
 
         rebuildDashboardItems()
 
@@ -4982,20 +5019,29 @@ final class AppState: ObservableObject {
     /// precedence and patterns `Assignment.canvasAssignmentID` uses, without
     /// exposing its private `firstMatch` helper.
     static func joinPath(url: URL?, sourceID: String) -> String {
-        if let url, Self.regexMatches(#"/assignments/(\d+)"#, in: url.absoluteString) {
+        if let url, Self.regexMatches(Self.joinPathURLRegex, in: url.absoluteString) {
             return "url"
         }
-        if let url, Self.regexMatches(#"#assignment_(\d+)"#, in: url.absoluteString) {
+        if let url, Self.regexMatches(Self.joinPathFragmentRegex, in: url.absoluteString) {
             return "fragment"
         }
-        if Self.regexMatches(#"assignment-(\d+)"#, in: sourceID) {
+        if Self.regexMatches(Self.joinPathUIDRegex, in: sourceID) {
             return "uid"
         }
         return "none"
     }
 
-    private static func regexMatches(_ pattern: String, in text: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+    /// The three patterns `Assignment.canvasAssignmentID` uses, compiled once
+    /// here too (that property's expressions are private to the Kit). Same
+    /// patterns, same order in `joinPath`; this is a diagnostics mirror, and the
+    /// two must keep agreeing. `try?` kept: a pattern that failed to compile
+    /// reads as "no match", as it did when it was built per call.
+    private static let joinPathURLRegex = try? NSRegularExpression(pattern: #"/assignments/(\d+)"#)
+    private static let joinPathFragmentRegex = try? NSRegularExpression(pattern: #"#assignment_(\d+)"#)
+    private static let joinPathUIDRegex = try? NSRegularExpression(pattern: #"assignment-(\d+)"#)
+
+    private static func regexMatches(_ regex: NSRegularExpression?, in text: String) -> Bool {
+        guard let regex else { return false }
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
@@ -5307,6 +5353,11 @@ final class AppState: ObservableObject {
     /// re-sync and can't orphan the class. Clearing the field restores the code.
     func renameCourse(_ course: String, to newName: String) {
         coursePreferences.setDisplayName(course, to: newName)
+        // The widget snapshot carries the displayed class name
+        // (`widgetNextDueItems`), and a rename rebuilds nothing, so without this
+        // the home screen would keep the old name until the next sync happened
+        // to rebuild the dashboard.
+        publishWidgetSnapshot()
     }
 
     /// Remembers every course-code -> Canvas-id pair this sync revealed. Called
@@ -6122,25 +6173,57 @@ final class AppState: ObservableObject {
             }
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
+        // Stale edited due dates go here, once the pool for this rebuild is
+        // known; `pruneDueDateEdits` holds the rule and its guards. Before the
+        // snapshot below so the widget never publishes an edit that was just
+        // dropped.
+        pruneDueDateEdits(
+            against: canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+                + recurringAssignments + manualItems
+        )
         publishWidgetSnapshot()
     }
 
     /// The widget's five soonest dated items, from the same arrays the
     /// dashboard shows. A function of its own so a test can read what would be
     /// published, since `WidgetSnapshotStore` is inert under the test runner.
+    ///
+    /// Both halves of what a card shows are applied here, because the widget is
+    /// a separate process that cannot ask `AppState`: the date is the student's
+    /// edited one when they edited it (`effectiveDueDate(for:)`, which also
+    /// decides what is dated and in what order, so a card moved to next week
+    /// sorts as next week), and the class is the name the student gave it, or
+    /// "Misc" for a blank one (`displayCourse(overrides:)`, the same call the
+    /// cards make). The widget's own ledger fallback (`LedgerWidgetReader`)
+    /// already applies the rename; publishing the raw code here meant the
+    /// widget's name for a class changed depending on which path built it.
     func widgetNextDueItems() -> [WidgetItem] {
-        (assignments + assessments + laterAssignments)
-            .filter { $0.dueAt != nil }
-            .sorted(by: Assignment.isOrderedByDueDate)
+        let overrides = courseNameOverrides
+        let dated: [(assignment: Assignment, due: Date)] = (assignments + assessments + laterAssignments)
+            .compactMap { assignment in
+                effectiveDueDate(for: assignment).map { (assignment, $0) }
+            }
+        return dated
+            .sorted { lhs, rhs in
+                lhs.due == rhs.due ? lhs.assignment.id < rhs.assignment.id : lhs.due < rhs.due
+            }
             .prefix(5)
-            .map { WidgetItem(title: $0.title, course: $0.course, dueAt: $0.dueAt) }
+            .map {
+                WidgetItem(
+                    title: $0.assignment.title,
+                    course: $0.assignment.displayCourse(overrides: overrides),
+                    dueAt: $0.due
+                )
+            }
     }
 
     /// Publishes the "next due" snapshot to the shared App Group container and
     /// asks WidgetKit to refresh. The widget extension is a separate process
     /// that can't read AppState, so this file is the bridge. Cheap (a few items
     /// as JSON) and safe when the App Group isn't configured (the store no-ops).
-    private func publishWidgetSnapshot() {
+    /// Internal rather than `private` so `setDueDateEdit` (in
+    /// `AppState+DueDateEdits.swift`) can republish when a date is edited.
+    func publishWidgetSnapshot() {
         WidgetSnapshotStore.write(WidgetSnapshot(items: widgetNextDueItems(), generatedAt: Date()))
         #if canImport(WidgetKit)
         WidgetCenter.shared.reloadAllTimelines()

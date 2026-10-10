@@ -214,7 +214,12 @@ fastest way for a new session to know what exists.
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
     stores; a Canvas+Gradescope pair shows both, manual work and recurring
-    tasks show none); swipe right
+    tasks show none). An edited date is saved since 2026-10-10
+    (`dueDateEditsV1` in `UserDefaults.lhf`, owned by `AppState`,
+    `AppState+DueDateEdits.swift`) and is what the card, reminders, the
+    widget and ask all use; before that it lived only in the view model
+    and was gone on relaunch. The ledger is its proper home; defaults is
+    the stopgap that avoids a schema migration. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
 - **Grade Watcher** (`GradeWatcherView`). Per-course grades from Canvas's

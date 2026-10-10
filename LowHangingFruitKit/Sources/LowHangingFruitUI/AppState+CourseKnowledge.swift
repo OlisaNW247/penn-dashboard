@@ -174,7 +174,13 @@ extension AppState {
         var seen: Set<String> = []
         return pool.compactMap { assignment in
             guard seen.insert(assignment.id).inserted else { return nil }
-            return WorkItem(assignment: assignment, isCompleted: isCompleted(assignment))
+            // The student's edited due date, if any: ask must quote the date the
+            // card shows, not the one the feed still carries.
+            return WorkItem(
+                assignment: assignment,
+                isCompleted: isCompleted(assignment),
+                dueOverride: editedDueDate(for: assignment)
+            )
         }
     }
 

@@ -168,19 +168,39 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     public var canvasAssignmentID: String? {
         guard source == .canvas || source == .canvasModules else { return nil }
         if let url {
-            if let id = Self.firstMatch(#"/assignments/(\d+)"#, in: url.absoluteString) {
+            if let id = Self.firstMatch(Self.urlPathAssignmentPattern, in: url.absoluteString) {
                 return id
             }
-            if let id = Self.firstMatch(#"#assignment_(\d+)"#, in: url.absoluteString) {
+            if let id = Self.firstMatch(Self.urlFragmentAssignmentPattern, in: url.absoluteString) {
                 return id
             }
         }
         guard source == .canvas else { return nil }
-        return Self.firstMatch(#"assignment-(\d+)"#, in: sourceID)
+        return Self.firstMatch(Self.uidAssignmentPattern, in: sourceID)
     }
 
-    private static func firstMatch(_ pattern: String, in text: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+    // The three expressions behind `canvasAssignmentID`, compiled once. They were
+    // built inside `firstMatch` on every call, and this property is read several
+    // times per item on every dashboard rebuild (dedup, submission state,
+    // diagnostics), so a few hundred items meant a few thousand compilations of
+    // the same three constant patterns per rebuild.
+    //
+    // The patterns and the order they are tried in above are unchanged on
+    // purpose, down to the unanchored UID one (which finds "assignment-7" inside
+    // "sub_assignment-7"; `CanvasAssignmentIDPinTests` pins that). This id is a
+    // join key for dedup and submission state, so a matching change here is an
+    // identity change, not a tidy-up. `try?` is kept too: a pattern that failed
+    // to compile would read as "no match", exactly as before, rather than trap.
+    //
+    // `NSRegularExpression` is immutable once built and documented as safe to
+    // match from any thread, which is what makes a shared `static let` correct
+    // for a value type that is read from the widget process and from tests.
+    private static let urlPathAssignmentPattern = try? NSRegularExpression(pattern: #"/assignments/(\d+)"#)
+    private static let urlFragmentAssignmentPattern = try? NSRegularExpression(pattern: #"#assignment_(\d+)"#)
+    private static let uidAssignmentPattern = try? NSRegularExpression(pattern: #"assignment-(\d+)"#)
+
+    private static func firstMatch(_ regex: NSRegularExpression?, in text: String) -> String? {
+        guard let regex,
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               match.numberOfRanges >= 2,
               let range = Range(match.range(at: 1), in: text)

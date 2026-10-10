@@ -170,12 +170,20 @@ final class DashboardViewModel: ObservableObject {
 
         var built: [DashItem] = []
 
+        // The student's edited due dates live on `AppState` (persisted, and read
+        // by the widget and ask as well), so they come from there on every
+        // rebuild, including the first one after a relaunch. `prior` is only a
+        // fallback for an edit `AppState` declines to keep (fixture data), so a
+        // session-local edit in preview still survives a republish. It cannot
+        // resurrect a cleared edit: `setDue` clears the item's own copy in the
+        // same call that clears `AppState`'s.
+        //
         // Active pool: everything AppState surfaces as incomplete.
         let active = state.assignments + state.laterAssignments + state.assessments
         for a in active {
             let prior = priorByID[a.assignmentID]
             built.append(DashItem(assignment: a,
-                                  dueOverride: prior?.dueOverride,
+                                  dueOverride: state.editedDueDate(for: a) ?? prior?.dueOverride,
                                   isCompleted: false,
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a)))
@@ -198,7 +206,7 @@ final class DashboardViewModel: ObservableObject {
         for a in pool where state.isCompleted(a) && !seen.contains(a.id) && state.isCourseSelected(a.course) {
             seen.insert(a.id)
             built.append(DashItem(assignment: a,
-                                  dueOverride: priorByID[a.id]?.dueOverride,
+                                  dueOverride: state.editedDueDate(for: a) ?? priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a)))
@@ -223,9 +231,21 @@ final class DashboardViewModel: ObservableObject {
         if !usingSampleData { appState?.markActive(item.assignment) }
     }
 
+    /// Sets (or, with `nil`, resets) the student's edited due date for a card.
+    /// The card is updated at once so the sheet and the sections reflect it in
+    /// the same turn; `AppState` keeps the edit (persisted, and visible to the
+    /// widget, reminders and ask) and the next `reload` reads it back from
+    /// there. Sample data is the exception, as for `complete`: nothing is
+    /// written, the edit lives on the card for the session.
+    ///
+    /// Saving the date a card already has is not an edit: it leaves the card
+    /// unedited, which is also what `AppState` stores (nothing) and so what the
+    /// card will read after a relaunch.
     func setDue(_ item: DashItem, to date: Date?) {
         guard let i = index(of: item) else { return }
-        items[i].dueOverride = date
+        let edit = (date == items[i].assignment.dueAt) ? nil : date
+        items[i].dueOverride = edit
+        if !usingSampleData { appState?.setDueDateEdit(edit, for: items[i].assignment) }
     }
 
     private func index(of item: DashItem) -> Int? {
