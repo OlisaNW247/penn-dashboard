@@ -128,7 +128,7 @@ struct GradeReportView: View {
             Button("reset all edits", role: .destructive) { resetAllEdits() }
             Button("cancel", role: .cancel) {}
         } message: {
-            Text("this clears every score you corrected, expected item count, grading mode choice, and manual weight for this class. canvas\u{2019}s own numbers are unaffected.")
+            Text("clears your edits for this class.")
         }
         .sheet(isPresented: $showSyllabusSetup) {
             SyllabusSetupView(
@@ -327,7 +327,7 @@ struct GradeReportView: View {
                 .foregroundStyle(Color.v2Ink)
                 .lineLimit(1)
             Spacer()
-            Button("use", action: onUse)
+            Button("use it", action: onUse)
                 .controlSize(.small)
             Button("skip", action: onSkip)
                 .controlSize(.small)
@@ -569,9 +569,6 @@ struct GradeReportView: View {
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
                 }
-                Text("last refreshed \(relativeTimeString(store.lastRefreshed))")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2RingSub)
             }
             .padding(.top, 6)
         } label: {
@@ -601,7 +598,7 @@ struct GradeReportView: View {
             Text("no grades for this class yet.")
                 .font(.lhfSerif(17))
                 .foregroundStyle(Color.v2DateText)
-            Text("once canvas has scored something, the full report shows up here.")
+            Text("nothing scored yet")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2RingSub)
                 .multilineTextAlignment(.center)

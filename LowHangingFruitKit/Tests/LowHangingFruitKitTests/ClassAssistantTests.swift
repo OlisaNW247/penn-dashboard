@@ -247,7 +247,7 @@ struct ClassQuestionAnswererTests {
     @Test("admits when the materials don't cover it")
     func unknown() {
         let answer = AssistantFixture.answer("what is the dress code for the gala")
-        #expect(answer.text.hasPrefix("I couldn't find that in your course materials."))
+        #expect(answer.text == "Couldn't find that.")
         #expect(answer.sources.isEmpty)
     }
 
@@ -256,7 +256,7 @@ struct ClassQuestionAnswererTests {
         let context = AskKnowledgeContext(userName: "", now: AssistantFixture.now, calendar: AssistantFixture.calendar, items: AssistantFixture.items, knowledge: .empty)
         let answerer = ClassQuestionAnswerer(context: context)
         #expect(answerer.answer("what's due this week").text.hasPrefix("4 things due"))
-        #expect(answerer.answer("late policy").text.hasPrefix("I only have your calendar so far."))
+        #expect(answerer.answer("late policy").text == "Nothing synced yet.")
         #expect(ClassQuestionAnswerer.suggestedQuestions(for: context).count == 4)
     }
 }

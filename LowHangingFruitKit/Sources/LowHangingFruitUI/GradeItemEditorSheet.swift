@@ -63,10 +63,6 @@ struct GradeItemEditorSheet: View {
                     Text("canvas: \(canvasReferenceText)")
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.v2RingSub)
-                    Text("edits stay on this phone and never change canvas.")
-                        .font(.lhfSans(10.5))
-                        .foregroundStyle(Color.v2RingSub)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .smoothSectionBackground(.smoothTeal)
 

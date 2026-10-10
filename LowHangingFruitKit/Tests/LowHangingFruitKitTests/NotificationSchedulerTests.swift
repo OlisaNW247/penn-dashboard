@@ -71,19 +71,21 @@ final class NotificationSchedulerTests: XCTestCase {
         }
     }
 
-    func testContentIsClassNameAndLeadPhraseOnly() {
+    func testContentIsClassNameThenAssignmentNameAndLeadPhrase() {
         withScheduler { s, prefs in    // defaults: [.h24, .h1]
             let now = Date()
             let reqs = s.plannedRequests(from: [item("1", due: now.addingTimeInterval(3 * 86_400))],
                                          now: now, preferences: prefs)
             XCTAssertEqual(reqs.count, 2)
 
-            // Owner's redesign: title is the class name, body is the lead phrase,
-            // and NOTHING else — no urgency emoji, no assignment title, no date.
+            // Title is the class name; body is the assignment's name and
+            // then the lead phrase (2026-10-09: the name was added because two
+            // reminders for one class were otherwise indistinguishable). Still
+            // no urgency emoji and no date.
             for r in reqs {
                 XCTAssertEqual(r.content.title, "CIS 2400")
             }
-            XCTAssertEqual(Set(reqs.map(\.content.body)), ["Due in 24 hours", "Due in 1 hour"])
+            XCTAssertEqual(Set(reqs.map(\.content.body)), ["HW 1. Due in 24 hours", "HW 1. Due in 1 hour"])
             let emoji: Set<Character> = ["🔴", "🟠", "🔵", "🟢"]
             for r in reqs {
                 XCTAssertTrue((r.content.title + r.content.body).allSatisfy { !emoji.contains($0) },

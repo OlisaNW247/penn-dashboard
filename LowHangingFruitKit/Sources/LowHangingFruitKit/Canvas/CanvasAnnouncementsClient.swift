@@ -81,8 +81,27 @@ public final class CanvasAnnouncementsClient {
     /// Fetches announcements posted on/after `since` for every course in
     /// `courseIDs`, across as many `context_codes[]` as Canvas needs, and
     /// decodes them into `CanvasAnnouncement`.
-    public func fetchAnnouncements(courseIDs: [String], since: Date) async throws -> [CanvasAnnouncement] {
-        let pages = try await fetchAllAnnouncementPages(courseIDs: courseIDs, since: since)
+    ///
+    /// **`since` alone is only correct for a start within 28 days.** Canvas's
+    /// announcements API takes `start_date` and `end_date`, and `end_date`
+    /// DEFAULTS TO 28 DAYS AFTER `start_date`. A request that sends only
+    /// `start_date` therefore asks for "start through start + 28 days", not
+    /// "start through now". With the original 14-day look-back that window ran
+    /// past today, so nobody saw the default. With a 60-day start it is "60 to
+    /// 32 days ago": every recent announcement silently disappears, with no
+    /// error and a perfectly normal-looking response. Pass `until` whenever
+    /// `since` is more than 28 days back.
+    ///
+    /// `until` is optional and nil by default so existing callers (the
+    /// course-material collector among them) send exactly the request they
+    /// always have: no `end_date`, Canvas's default window. See
+    /// `announcementsURL`.
+    public func fetchAnnouncements(
+        courseIDs: [String],
+        since: Date,
+        until: Date? = nil
+    ) async throws -> [CanvasAnnouncement] {
+        let pages = try await fetchAllAnnouncementPages(courseIDs: courseIDs, since: since, until: until)
         let announcements = try pages.flatMap { try Self.decodeAnnouncements(json: $0.data) }
 
         // Only surface rotated cookies once every page this fetch touched has
@@ -102,31 +121,19 @@ public final class CanvasAnnouncementsClient {
         return announcements
     }
 
-    /// GET .../api/v1/announcements?context_codes[]=course_...&start_date=...&per_page=100,
+    /// GET .../api/v1/announcements?context_codes[]=course_...&start_date=...[&end_date=...]&per_page=100,
     /// following the `Link: rel="next"` header until exhausted. Carries each
     /// page's response + URL alongside its body so `fetchAnnouncements` can
     /// parse rotated cookies off of it after a successful decode, without
     /// this method itself knowing anything about cookie rotation.
     private func fetchAllAnnouncementPages(
         courseIDs: [String],
-        since: Date
+        since: Date,
+        until: Date?
     ) async throws -> [(data: Data, response: HTTPURLResponse, url: URL)] {
-        guard var components = URLComponents(
-            url: baseURL.appendingPathComponent("api/v1/announcements"),
-            resolvingAgainstBaseURL: false
+        guard let firstURL = Self.announcementsURL(
+            baseURL: baseURL, courseIDs: courseIDs, since: since, until: until
         ) else { throw Error.invalidURL }
-
-        // Built locally, not cached as static state, for the same reason
-        // `CanvasGradesClient.parseDate` builds its formatters locally:
-        // `ISO8601DateFormatter` isn't `Sendable`.
-        let startDateFormatter = ISO8601DateFormatter()
-        startDateFormatter.formatOptions = [.withInternetDateTime]
-
-        var queryItems = courseIDs.map { URLQueryItem(name: "context_codes[]", value: "course_\($0)") }
-        queryItems.append(URLQueryItem(name: "start_date", value: startDateFormatter.string(from: since)))
-        queryItems.append(URLQueryItem(name: "per_page", value: "100"))
-        components.queryItems = queryItems
-        guard let firstURL = components.url else { throw Error.invalidURL }
 
         var pages: [(data: Data, response: HTTPURLResponse, url: URL)] = []
         var nextURL: URL? = firstURL
@@ -159,6 +166,41 @@ public final class CanvasAnnouncementsClient {
             nextURL = candidate
         }
         return pages
+    }
+
+    /// The first-page request URL, kept pure so a test can pin it.
+    ///
+    /// With `until` nil this is byte-for-byte the URL this client has always
+    /// built (`start_date` and `per_page` only), and a test pins that against
+    /// a literal: the course-material collector shares this method, and what
+    /// it sends must not change. With `until` set, `end_date` follows
+    /// `start_date`, formatted exactly like it (internet date-time, whole
+    /// seconds, `Z`).
+    static func announcementsURL(
+        baseURL: URL,
+        courseIDs: [String],
+        since: Date,
+        until: Date? = nil
+    ) -> URL? {
+        guard var components = URLComponents(
+            url: baseURL.appendingPathComponent("api/v1/announcements"),
+            resolvingAgainstBaseURL: false
+        ) else { return nil }
+
+        // Built locally, not cached as static state, for the same reason
+        // `CanvasGradesClient.parseDate` builds its formatters locally:
+        // `ISO8601DateFormatter` isn't `Sendable`.
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime]
+
+        var queryItems = courseIDs.map { URLQueryItem(name: "context_codes[]", value: "course_\($0)") }
+        queryItems.append(URLQueryItem(name: "start_date", value: dateFormatter.string(from: since)))
+        if let until {
+            queryItems.append(URLQueryItem(name: "end_date", value: dateFormatter.string(from: until)))
+        }
+        queryItems.append(URLQueryItem(name: "per_page", value: "100"))
+        components.queryItems = queryItems
+        return components.url
     }
 
     private func fetchRaw(_ url: URL) async throws -> (Data, HTTPURLResponse) {

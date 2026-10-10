@@ -8,9 +8,14 @@ public enum HTMLText {
     public static func plainText(from html: String) -> String {
         var s = html
 
-        s = replace(in: s, pattern: #"<script\b[^>]*>.*?</script>"#, with: " ")
-        s = replace(in: s, pattern: #"<style\b[^>]*>.*?</style>"#, with: " ")
-        s = replace(in: s, pattern: #"<!--.*?-->"#, with: " ")
+        // `[\s\S]*?`, not `.*?`: ICU's `.` stops at a line break, so a
+        // `<style>` or `<script>` block (or a comment) that spans lines
+        // never matched, and its CSS and JavaScript went on to be indexed
+        // as if the instructor had written them. A Canvas page's embedded
+        // stylesheet is almost always multi-line.
+        s = replace(in: s, pattern: #"<script\b[^>]*>[\s\S]*?</script>"#, with: " ")
+        s = replace(in: s, pattern: #"<style\b[^>]*>[\s\S]*?</style>"#, with: " ")
+        s = replace(in: s, pattern: #"<!--[\s\S]*?-->"#, with: " ")
 
         // Block boundaries → newline. `<br>` and closing block tags both count.
         s = replace(in: s, pattern: #"<br\s*/?>"#, with: "\n")

@@ -34,12 +34,6 @@ struct AddAssignmentSheet: View {
                                selection: $dueDate,
                                displayedComponents: [.date, .hourAndMinute])
                     Toggle("repeats weekly", isOn: $repeatsWeekly)
-                } footer: {
-                    if repeatsWeekly {
-                        Text("repeats every \(weekdayName(dueDate)) at \(timeString(dueDate)).")
-                            .font(.lhfSecondary(12))
-                            .foregroundStyle(Color.v2DateText)
-                    }
                 }
                 .smoothSectionBackground(.smoothTeal)
             }
@@ -84,15 +78,5 @@ struct AddAssignmentSheet: View {
             state.addManualAssignment(ManualAssignment(title: t, course: c, dueAt: dueDate))
         }
         dismiss()
-    }
-
-    private func weekdayName(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "EEEE"
-        return f.string(from: date)
-    }
-
-    private func timeString(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"
-        return f.string(from: date)
     }
 }

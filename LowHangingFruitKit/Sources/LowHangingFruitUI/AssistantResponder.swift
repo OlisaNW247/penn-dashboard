@@ -28,6 +28,14 @@ struct AssistantCitation: Identifiable, Hashable, Sendable {
     var course: String
     var source: String
     var detail: String?
+    /// Where the source lives (a Canvas page, an Ed thread, a course
+    /// website page), when the app knows for certain; `nil` means the chip
+    /// is plain text, exactly as before. Set only through
+    /// `AssistantCitation.linkable(_:)`, so it is always `https` with a host.
+    /// The on-device path takes it from the document it answered from; the
+    /// server path resolves it against the excerpts that turn sent
+    /// (`CitationLinks.resolve`), because the model returns no URLs.
+    var url: URL? = nil
 }
 
 /// One incremental piece of an answer.
@@ -91,6 +99,29 @@ struct AssistantContext: Sendable {
     var work: [WorkItem] = []
 
     var userName: String = ""
+
+    /// The most recent earlier question the student typed in this
+    /// conversation, or `nil` for the first. Set by `AssistantConversation
+    /// .send`, which owns the transcript. Both responders hand it to
+    /// `FollowUpRetrieval` so a short follow-up ("and for the final?") picks
+    /// its passages from the course the question before it named.
+    ///
+    /// It decides which passages are chosen and nothing else. It is NOT sent
+    /// to the server (`BackendAssistantResponder.makeRequest` keeps `history`
+    /// empty and `question` verbatim: earlier turns leaving the phone would
+    /// be a privacy-policy change), and it must never be rendered into
+    /// `contextDocument`, whose bytes are the prompt-cache prefix.
+    var previousQuestion: String?
+
+    /// The student questions before `previousQuestion`, newest first, so a
+    /// chain of fragments ("late policy in CIS 2400?", "and for the final?",
+    /// "what about the midterm?") can still find the course its first link
+    /// named. Together with `previousQuestion` at most
+    /// `FollowUpRetrieval.maxEarlierQuestions`, set by `AssistantConversation
+    /// .send`. Same limits as `previousQuestion`: it chooses passages and
+    /// nothing else, is never sent to the server, and never enters
+    /// `contextDocument`.
+    var olderQuestions: [String] = []
 }
 
 protocol AssistantResponder: Sendable {

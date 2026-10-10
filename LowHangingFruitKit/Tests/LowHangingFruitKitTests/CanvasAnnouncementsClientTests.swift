@@ -213,4 +213,45 @@ struct CanvasAnnouncementsClientTests {
             fromLinkHeader: "<https://canvas.upenn.edu/x>; rel=\"prev\"") == nil)
         #expect(CanvasAnnouncementsClient.nextPageURL(fromLinkHeader: nil) == nil)
     }
+
+    // MARK: - Request URL: the end_date trap
+
+    // Canvas's announcements API defaults `end_date` to 28 days after
+    // `start_date`. A request with only a start therefore covers "start through
+    // start + 28 days", which at a 60-day start is "60 to 32 days ago". These
+    // pin the request itself, since a decoded-fixture test can never see it.
+
+    private static let pinnedSince = Date(timeIntervalSince1970: 1_800_000_000)   // 2027-01-15T08:00:00Z
+    private static let pinnedBase = URL(string: "https://canvas.upenn.edu")!
+
+    @Test("with no `until` the request URL is exactly what it was before `until` existed, so the course-material collector sends nothing new")
+    func urlWithoutUntilIsUnchanged() throws {
+        let url = try #require(CanvasAnnouncementsClient.announcementsURL(
+            baseURL: Self.pinnedBase, courseIDs: ["1010", "2020"], since: Self.pinnedSince
+        ))
+        // This literal was captured from the pre-change construction, run
+        // verbatim; it is not derived from the code under test.
+        #expect(url.absoluteString == "https://canvas.upenn.edu/api/v1/announcements?context_codes%5B%5D=course_1010&context_codes%5B%5D=course_2020&start_date=2027-01-15T08:00:00Z&per_page=100")
+        #expect(!url.absoluteString.contains("end_date"))
+        // An explicit nil is the same request as omitting the argument.
+        #expect(CanvasAnnouncementsClient.announcementsURL(
+            baseURL: Self.pinnedBase, courseIDs: ["1010", "2020"], since: Self.pinnedSince, until: nil
+        ) == url)
+    }
+
+    @Test("with `until` the request URL carries end_date, formatted exactly like start_date, and is otherwise unchanged")
+    func urlWithUntilCarriesEndDate() throws {
+        let until = Self.pinnedSince.addingTimeInterval(24 * 60 * 60)
+        let url = try #require(CanvasAnnouncementsClient.announcementsURL(
+            baseURL: Self.pinnedBase, courseIDs: ["1010", "2020"], since: Self.pinnedSince, until: until
+        ))
+        #expect(url.absoluteString == "https://canvas.upenn.edu/api/v1/announcements?context_codes%5B%5D=course_1010&context_codes%5B%5D=course_2020&start_date=2027-01-15T08:00:00Z&end_date=2027-01-16T08:00:00Z&per_page=100")
+
+        // Dropping end_date gives back the no-`until` URL: nothing else moved.
+        let withoutUntil = try #require(CanvasAnnouncementsClient.announcementsURL(
+            baseURL: Self.pinnedBase, courseIDs: ["1010", "2020"], since: Self.pinnedSince
+        ))
+        #expect(url.absoluteString.replacingOccurrences(of: "&end_date=2027-01-16T08:00:00Z", with: "")
+            == withoutUntil.absoluteString)
+    }
 }

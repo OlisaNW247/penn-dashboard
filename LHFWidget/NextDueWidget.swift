@@ -21,40 +21,36 @@ struct NextDueProvider: TimelineProvider {
         // The widget gallery preview has no App Group data to read yet, so it
         // gets the sample; a real placement on the Home/Lock Screen always
         // reflects the actual snapshot (or empty, never fake data).
+        let now = Date()
         let snapshot: WidgetSnapshot
         if context.isPreview {
             snapshot = WidgetSnapshotStore.read() ?? Self.sampleSnapshot
         } else {
-            snapshot = Self.currentSnapshot()
+            snapshot = WidgetSnapshotStore.current(now: now)
         }
-        completion(NextDueEntry(date: Date(), snapshot: snapshot))
+        completion(NextDueEntry(date: now, snapshot: snapshot))
     }
 
-    /// The app's published snapshot when there is one, otherwise a view derived
-    /// straight from the shared assignment ledger.
+    /// One entry now, then one at each of the next few due times. Every entry
+    /// carries the same items (overdue work stays on the widget); the extra
+    /// dates only make WidgetKit render again when an item turns overdue,
+    /// instead of leaving it as it looked until the next reload. Both decisions
+    /// live in the Kit, where `swift test` reaches them: which snapshot to trust
+    /// is `WidgetSnapshotStore.current` (the app's published snapshot, even when
+    /// it is empty; the ledger only when the app has published nothing), and
+    /// the entry dates are `WidgetTimelinePlanner`.
     ///
-    /// The snapshot stays authoritative because it is the only thing that has
-    /// been through the dashboard's full filtering — hidden classes, dedup,
-    /// manual assignments and recurring tasks all live app-side. The ledger
-    /// fallback exists for the one case the snapshot can't cover: a fresh
-    /// install (or a cleared container) where real assignments are already
-    /// synced but the app hasn't rebuilt its dashboard yet, which used to leave
-    /// the widget blank until it was next opened.
-    static func currentSnapshot(now: Date = Date()) -> WidgetSnapshot {
-        if let published = WidgetSnapshotStore.read(), !published.items.isEmpty {
-            return published
-        }
-        return LedgerWidgetReader.snapshot(now: now) ?? .empty
-    }
-
+    /// Due-date countdowns render live via `Text(_:style:)`, so the entries
+    /// only need refreshing periodically to pick up new data: WidgetKit's own
+    /// budget, plus the app's explicit reload on every dashboard rebuild, keep
+    /// this from ever going far out of date.
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextDueEntry>) -> Void) {
-        let snapshot = Self.currentSnapshot()
-        let entry = NextDueEntry(date: Date(), snapshot: snapshot)
-        // Due-date countdowns render live via `Text(_:style:)`, so the entry
-        // itself only needs refreshing periodically to pick up new data —
-        // WidgetKit's own budget, plus the app's explicit reload on every
-        // dashboard rebuild, keep this from ever going far out of date.
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
+        let now = Date()
+        let snapshot = WidgetSnapshotStore.current(now: now)
+        let entries = WidgetTimelinePlanner.steps(for: snapshot, now: now).map {
+            NextDueEntry(date: $0.date, snapshot: $0.snapshot)
+        }
+        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }
 
     private static var sampleSnapshot: WidgetSnapshot {
@@ -77,7 +73,7 @@ struct NextDueWidget: Widget {
             NextDueEntryView(entry: entry)
         }
         .configurationDisplayName("Next Due")
-        .description("Your next assignments, sorted so the soonest is on top.")
+        .description("next due")
         .supportedFamilies([
             .systemSmall,
             .systemMedium,

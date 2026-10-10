@@ -77,10 +77,12 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // request build inside) are needed together.
             let task = Task.detached(priority: .userInitiated) {
                 askTrace.info("1 reply task started; building request")
-                let request = Self.makeRequest(question: prompt, context: context)
+                let prepared = Self.prepareRequest(question: prompt, context: context)
+                let request = prepared.request
                 askTrace.info("2 request built: \(request.excerpts.count, privacy: .public) excerpt chars, \(request.courseIDs.count, privacy: .public) courses")
                 await Self.run(
                     request: request,
+                    excerptSources: prepared.sources,
                     prompt: prompt,
                     context: context,
                     client: client,
@@ -101,6 +103,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// half getting dragged along.
     private static func run(
         request: AskRequest,
+        excerptSources: [ExcerptSource],
         prompt: String,
         context: AssistantContext,
         client: BackendClient,
@@ -199,7 +202,11 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             textChars += trailing.count
             if !trailing.isEmpty { continuation.yield(.text(trailing)) }
             if !splitter.citations.isEmpty {
-                continuation.yield(.citations(splitter.citations))
+                // The model names a source by course, kind and a few words;
+                // only the phone knows which documents it just sent, so a
+                // citation that unambiguously names one of them gets that
+                // document's link here, and every other stays plain text.
+                continuation.yield(.citations(CitationLinks.resolve(splitter.citations, against: excerptSources)))
             }
         }
 
@@ -215,11 +222,12 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // student with nothing while an on-device answer, built from the
         // same synced course materials and the dashboard's own items, is
         // sitting right there unused. So an empty `done` gets the same
-        // on-device handoff a pre-stream failure gets, just with a message
-        // that doesn't blame a connection or a quota that were both fine.
+        // on-device handoff a pre-stream failure gets, with the same plain
+        // notice (there is no connection or quota to blame, and no reason
+        // worth showing).
         if !Task.isCancelled, endedInDone, textChars == 0, splitter.citations.isEmpty {
             askTrace.info("6e stream ended with no text; answering on-device")
-            continuation.yield(.text("the server didn't send an answer that time — answering from your phone instead.\n\n"))
+            continuation.yield(.text(fallbackNotice + "\n\n"))
             await forward(fallback.reply(to: prompt, context: context), to: continuation)
         }
 
@@ -250,22 +258,92 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// responder — the same reason `ClaudeAssistantResponder
     /// .buildRequestBody` was `static`.
     static func makeRequest(question: String, context: AssistantContext) -> AskRequest {
-        AskRequest(
+        prepareRequest(question: question, context: context).request
+    }
+
+    /// `makeRequest` plus the documents its excerpts came from, from one
+    /// retrieval. The request is exactly what `makeRequest` returns, field
+    /// for field, and is all that goes on the wire; `sources` stays on the
+    /// phone for the turn, so the answer's citations can be linked
+    /// (`CitationLinks.resolve`) without the server returning a URL or the
+    /// request growing a field.
+    static func prepareRequest(question: String, context: AssistantContext) -> (request: AskRequest, sources: [ExcerptSource]) {
+        let block = excerptBlock(question: question, context: context)
+        let request = AskRequest(
             question: question,
             contextDocument: context.contextDocument,
-            excerpts: retrievedExcerpts(question: question, context: context),
+            excerpts: block.text,
             askedAt: context.askedAt,
             courseIDs: context.knowledge.courses.map(\.courseID),
             history: []
         )
+        return (request, block.sources)
     }
 
-    /// How many passages ride along with a question, and how long each may
-    /// be. Four passages of ~700 characters is roughly a page: enough for a
-    /// policy section and its exception, small enough that the per-turn
-    /// part of the request stays cheap.
-    static let excerptLimit = 4
-    static let excerptCharacterLimit = 700
+    /// How many passages ride along with a question, how long each may be,
+    /// and how many may come from one document.
+    ///
+    /// The server does no retrieval of its own: the model answers from the
+    /// passages the phone picks, and the context document tells it to say the
+    /// policy "isn't in the app's records" unless an excerpt states it. So the
+    /// size of this channel is the size of what ask can know about a question.
+    ///
+    /// It used to be four passages cut at 700 characters. A passage is
+    /// chunked at 160 to 220 words (`PassageChunker`), which is roughly 1,000
+    /// to 1,400 characters, so the cut dropped the back third to half of
+    /// nearly every passage. Policy prose keeps its exception in the back half
+    /// ("... late work loses 10% per day, except for the final project"), so
+    /// the model was shown the rule without the clause that changes it, or the
+    /// top of a grading table without its last rows, and where the answer
+    /// sat in the cut part it was told, correctly from where it stood, that no
+    /// excerpt stated it. Four passages also meant a syllabus whose answer
+    /// spans three sections (grading, attendance, the exam schedule) could
+    /// supply at most two of them (`CourseSearch`'s default `perDocument`),
+    /// so the third section never arrived at all.
+    ///
+    /// Eight whole passages at up to 1,500 characters is at most about 12,000
+    /// characters, around 3,000 tokens per question, against roughly 700
+    /// before. The server caps neither the field nor its token count: it
+    /// refuses only a request body over 6 MB, and its daily limit counts
+    /// requests (40 per user by default), not tokens. The excerpts sit after
+    /// the cache breakpoint, so they cost input tokens on that turn and never
+    /// disturb the cached prefix. 1,500 is above what the chunker's 220-word
+    /// cap normally produces, so a passage arrives whole; the cut below is
+    /// for the rare longer one.
+    static let excerptLimit = 8
+    static let excerptCharacterLimit = 1500
+    static let excerptsPerDocument = 3
+
+    /// `text` unchanged when it fits in `limit` characters, otherwise cut at
+    /// the last space at or before the limit. A cut in the middle of a word
+    /// ("... within 24 ho") hands the model a fragment it may read as a
+    /// different number or word; ending on a whole word reads as a cut. One
+    /// unbroken run longer than the limit (a URL) has no space to cut at and
+    /// is cut at the limit, since dropping it entirely would be worse.
+    static func cutAtWordBoundary(_ text: String, limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit)
+        func trimmed(_ part: Substring) -> String {
+            var end = part.endIndex
+            while end > part.startIndex, part[part.index(before: end)].isWhitespace {
+                end = part.index(before: end)
+            }
+            return String(part[part.startIndex..<end])
+        }
+        // The cut already falls between words when the next character is a
+        // space; otherwise it is inside a word, so back up to the space before.
+        let next = text[text.index(text.startIndex, offsetBy: limit)]
+        if next.isWhitespace {
+            let result = trimmed(head)
+            return result.isEmpty ? String(head) : result
+        }
+        if let lastSpace = head.lastIndex(where: \.isWhitespace) {
+            let result = trimmed(head[head.startIndex..<lastSpace])
+            if !result.isEmpty { return result }
+        }
+        return String(head)
+    }
 
     /// The passages of the student's synced course materials that best match
     /// the question, rendered as a block for the `excerpts` field. Empty
@@ -276,24 +354,73 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// to the server on purpose: putting every syllabus in `contextDocument`
     /// would work, but it would change on every sync and re-bill the whole
     /// cached prefix server-side, and a four-course corpus is tens of
-    /// thousands of tokens the question almost never needs. Three or four
-    /// matched passages sent as `excerpts` cost a few hundred tokens and
-    /// nothing in cache terms.
+    /// thousands of tokens the question almost never needs. The few matched
+    /// passages sent as `excerpts` (see `excerptLimit` for how many and what
+    /// they cost) change with every question and sit after the cache
+    /// breakpoint, so they cost nothing in cache terms.
+    ///
+    /// A follow-up is retrieved with the help of the questions before it
+    /// (`FollowUpRetrieval`): "and for the final?" searches the course an
+    /// earlier question named, and a short one also borrows the previous
+    /// question's words. That choice is all the earlier questions do here.
+    /// They are not added to the request, not to `history` and not to the
+    /// question, and the output never mentions them.
     static func retrievedExcerpts(question: String, context: AssistantContext) -> String {
-        guard !context.knowledge.isEmpty else { return "" }
+        excerptBlock(question: question, context: context).text
+    }
+
+    /// The rendered `excerpts` text and, in the same order as its numbered
+    /// lines, the document each line came from.
+    struct ExcerptBlock: Sendable {
+        let text: String
+        let sources: [ExcerptSource]
+    }
+
+    static func excerptBlock(question: String, context: AssistantContext) -> ExcerptBlock {
+        guard !context.knowledge.isEmpty else { return ExcerptBlock(text: "", sources: []) }
         let courses = context.knowledge.courses
-        let parsed = QuestionParser.parse(question, courses: courses)
+        let followUp = FollowUpRetrieval.resolve(
+            question: question,
+            previousQuestion: context.previousQuestion,
+            olderQuestions: context.olderQuestions,
+            courses: courses
+        )
         // A course's display code can span more than one Canvas site (PHYS
         // 0151's lecture and lab), so scoping retrieval by a single
         // `courseID` — the old behavior — silently searched only whichever
         // one site a dictionary-style lookup happened to keep.
         // `courseIDs(forCode:)` returns every site sharing the code; `nil`
-        // (a question that doesn't name a course) stays unscoped exactly as
-        // before.
-        let courseIDs = parsed.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        // (a question that doesn't name a course, and follows no question
+        // that did) stays unscoped exactly as before.
+        let courseIDs = followUp.course.map { context.knowledge.courseIDs(forCode: $0.code) }
+        // The component ("the lab late policy") is read from the question as
+        // typed: an inherited course is a guess about the subject, but a
+        // lab/lecture word in the earlier question is not a claim about this
+        // one.
         let preferredComponent = DocumentComponent.mentioned(in: question)
-        let hits = CourseSearch(knowledge: context.knowledge).search(question, courseIDs: courseIDs, preferredComponent: preferredComponent, limit: excerptLimit)
-        guard !hits.isEmpty else { return "" }
+        let search = CourseSearch(knowledge: context.knowledge)
+        func topHits(limit: Int) -> [SearchHit] {
+            search.search(
+                followUp.query,
+                courseIDs: courseIDs,
+                preferredComponent: preferredComponent,
+                limit: limit,
+                perDocument: excerptsPerDocument
+            )
+        }
+        var hits = topHits(limit: excerptLimit)
+        // An Ed post that is only a picture matches on its title and category
+        // words and then has nothing to say, but it still takes one of the
+        // eight slots. When one turns up, search deeper and let the next hits
+        // take the places, so the common case (nothing to skip) runs exactly
+        // the search it always did. Three times the limit is enough headroom
+        // for a class whose board is mostly screenshots; if even that runs
+        // dry the excerpts are simply fewer. The documents are not touched:
+        // this only decides what rides along with one question.
+        if hits.contains(where: \.isTextlessEdPost) {
+            hits = Array(topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }.prefix(excerptLimit))
+        }
+        guard !hits.isEmpty else { return ExcerptBlock(text: "", sources: []) }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
         // so the model can tell the two apart — see
@@ -305,13 +432,63 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             splitByCourse[hit.document.course] = DocumentComponent.courseIsSplit(code: hit.document.course, in: context.knowledge)
         }
         let lines = hits.enumerated().map { index, hit -> String in
-            let body = String(hit.passage.text.prefix(excerptCharacterLimit)).replacingOccurrences(of: "\n", with: " ")
+            let flattened = hit.passage.text.replacingOccurrences(of: "\n", with: " ")
+            let body = cutAtWordBoundary(flattened, limit: excerptCharacterLimit)
             let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
-            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
+            let postedTag = postedLabel(for: hit.document, askedAt: context.askedAt).map { "posted \($0) · " } ?? ""
+            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(postedTag)\(componentTag)\"\(hit.document.title)\": \(body)"
         }
-        return (["RETRIEVED EXCERPTS (from the student's synced course materials):"] + lines).joined(separator: "\n")
+        var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
+        if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
+        return ExcerptBlock(
+            text: (header + lines).joined(separator: "\n"),
+            sources: hits.map { ExcerptSource(document: $0.document) }
+        )
     }
+
+    /// The one line that follows the `RETRIEVED EXCERPTS` header, only when an
+    /// excerpt below it is an Ed Discussion post. The server's prompt knows
+    /// "excerpts" but not their kinds, so without this a model sees
+    /// `· ed discussion ·` and has to guess what it is and how far to trust
+    /// it. Must not start with `[`: the excerpt lines do, and the tests (and
+    /// anything reading the block) tell the two apart by that.
+    static let edExcerptNote = "Excerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted."
+
+    /// Every school the app signs in to (Penn, Brown, Columbia, Cornell,
+    /// Dartmouth, Harvard, Princeton, Yale) keeps Eastern time. A date label
+    /// needs a day, and the day a post was written is the day in the
+    /// student's time zone: UTC would call a 9 PM post the next day, which is
+    /// the wrong answer to "what did they post yesterday?". It is a fixed
+    /// zone rather than the device's so two calls with the same inputs give
+    /// the same text.
+    private static let excerptTimeZone = TimeZone(identifier: "America/New_York") ?? .gmt
+
+    /// `Oct 3`, or `Oct 3, 2025` when the post is not from the year the
+    /// question was asked in, for an Ed post or a Canvas announcement with a
+    /// known date; `nil` for every other kind of document and for an
+    /// undated one. A syllabus has no "posted" day, and a policy that has
+    /// been edited since is not news.
+    ///
+    /// Reads `askedAt` and never the clock: the same inputs always give the
+    /// same text. The excerpts sit after the cache breakpoint, so a date here
+    /// cannot disturb the cached prefix, but "the same question, the same
+    /// bytes" is what lets this be tested and traced.
+    static func postedLabel(for document: CourseDocument, askedAt: Date) -> String? {
+        guard document.kind == .ed || document.kind == .announcement,
+              let posted = document.updatedAt
+        else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = excerptTimeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = excerptTimeZone
+        let sameYear = calendar.component(.year, from: posted) == calendar.component(.year, from: askedAt)
+        formatter.dateFormat = sameYear ? "MMM d" : "MMM d, yyyy"
+        return formatter.string(from: posted)
+    }
+
 
     // MARK: - The `<sources>` splitter
 
@@ -477,27 +654,32 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
 
     // MARK: - Friendly error messages
 
-    /// What to say instead of a raw status code or stack trace, and — for
-    /// every case this can be reached with — followed immediately by the
-    /// on-device answer, never left standing alone. Rewritten from
-    /// `ClaudeAssistantResponder.friendlyMessage(for:)` to drop every
-    /// mention of an API key: there is no student-managed credential left
-    /// to point at, so a message like the old "check your api key in
-    /// settings" would just be wrong now, not merely dated.
+    /// What the student is told when the answer comes from the phone instead
+    /// of the server. `docs/PRIVACY.md` describes the fallback, so the app
+    /// says so every time; it says nothing else. The owner's rule is "as
+    /// simple as possible", and a status code, "couldn't verify your
+    /// session" or "something went wrong building the request" is something a
+    /// student cannot act on. The reason is not lost: `askTrace` logs the
+    /// thrown error (`5x askStream threw`) and the empty-answer case
+    /// (`6e stream ended with no text`) for whoever is reading the console.
+    static let fallbackNotice = "answering from your phone."
+
+    /// The one case that differs: a student who has used the day's questions
+    /// can do something about it (wait until tomorrow), so it is named.
+    static let quotaFallbackNotice = "daily limit reached. " + fallbackNotice
+
+    /// Followed immediately by the on-device answer, never left standing
+    /// alone. Rewritten from `ClaudeAssistantResponder.friendlyMessage(for:)`
+    /// to drop every mention of an API key: there is no student-managed
+    /// credential left to point at. Every error but the quota maps to the
+    /// same text on purpose; the switch stays exhaustive (no `default`) so a
+    /// new `BackendError` case has to be given a decision here.
     static func friendlyMessage(for error: BackendError) -> String {
         switch error {
-        case .notConfigured:
-            return "ask isn't connected to a server yet — answering from your phone instead."
-        case .unauthorized:
-            return "couldn't verify your session with the server — answering from your phone instead."
-        case let .http(status):
-            return "couldn't reach the server (\(status)) — answering from your phone instead."
         case .quotaExceeded:
-            return "you've hit today's question limit — answering from your phone instead."
-        case .transport:
-            return "couldn't reach the server — answering from your phone instead."
-        case .decoding:
-            return "something went wrong building the request — answering from your phone instead."
+            return quotaFallbackNotice
+        case .notConfigured, .unauthorized, .http, .transport, .decoding:
+            return fallbackNotice
         }
     }
 
@@ -511,19 +693,22 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         return friendlyMessage(for: backendError)
     }
 
-    /// A short apology appended after whatever text already rendered when
+    /// One plain line appended after whatever text already rendered when
     /// the stream itself reports an `error` event (`backend/PROTOCOL.md`'s
-    /// `data: {"type":"error",...}`) rather than ending in `done`. Keyed off
+    /// `data: {"type":"error",...}`) rather than ending in `done`: it says
+    /// the answer stopped (or why, for the quota) and nothing more, in the
+    /// same lower-case voice as `fallbackNotice`. No parentheses and no
+    /// apology: the owner's rule is "as simple as possible". Keyed off
     /// `code`, not the free-text `message` the server sends: `message` is
     /// meant for logs, and echoing server-authored text straight to the
     /// transcript is exactly the kind of thing this Kit avoids doing with
     /// any text it didn't compose itself.
-    private static func midStreamErrorMessage(for code: String) -> String {
+    static func midStreamErrorMessage(for code: String) -> String {
         switch code {
         case "quota_exceeded":
-            return "\n\n(you've hit today's question limit for now.)"
+            return "\n\ndaily limit reached."
         default:
-            return "\n\n(something went wrong on the server's side.)"
+            return "\n\nanswer cut off."
         }
     }
 }

@@ -110,13 +110,10 @@ public struct GradeExplanation: Sendable, Hashable {
                 modeLine = "weighted by category (\(modeSourceText))"
             }
             let weightSumText = compactPercentText(breakdown.participatingWeightSum ?? 0)
-            formulaLine = "each graded category's percent is multiplied by its weight, "
-                + "added together, then divided by the combined weight of categories "
-                + "with scored work so far (\(weightSumText))."
+            formulaLine = "category % \u{00d7} weight, over the weight graded so far (\(weightSumText))"
         case .points:
             modeLine = "points, no categories (\(modeSourceText))"
-            formulaLine = "every point earned is divided by every point possible in "
-                + "graded work so far, in one bucket."
+            formulaLine = "points earned \u{00f7} points possible"
         }
 
         let categoryLines = breakdown.categories.map { category -> CategoryLine in
@@ -148,7 +145,7 @@ public struct GradeExplanation: Sendable, Hashable {
             // happen to have (which is misleading precisely because its
             // weight is forced to 0 regardless of that ratio).
             let percentText = category.isUnmapped
-                ? "needs a home \u{00b7} 0% until you place it"
+                ? "needs a home"
                 : category.percent.map(compactPercentText) ?? "no scores yet"
             let contributionText = category.contributionPercent.map {
                 "+\(compactNumberText($0)) of your grade"
@@ -219,17 +216,17 @@ public struct GradeExplanation: Sendable, Hashable {
         if let semesterFraction = breakdown.semesterDecidedFraction {
             decidedLine = "\(compactPercentText(semesterFraction * 100)) of the semester decided"
         } else {
-            let postedText = "\(compactPercentText(breakdown.decidedFraction * 100)) of what's posted is graded"
+            let postedText = "\(compactPercentText(breakdown.decidedFraction * 100)) graded"
             if breakdown.categoriesMissingExpectedCount.isEmpty {
                 // Either points mode (no weight concept to name a culprit
                 // by) or, in weighted mode, every non-zero-weight category
                 // DOES have an expected count and the nil came from
                 // somewhere else (e.g. no weighted category at all) -- the
                 // old, generic wording still applies.
-                decidedLine = postedText + " \u{2014} semester share unknown until every category has an expected count"
+                decidedLine = postedText + " \u{00b7} semester share unknown"
             } else {
                 let names = breakdown.categoriesMissingExpectedCount.map { $0.lowercased() }.joined(separator: ", ")
-                decidedLine = postedText + " \u{2014} semester share unknown until \(names) have expected counts"
+                decidedLine = postedText + " \u{00b7} semester share unknown until \(names) have expected counts"
             }
         }
 

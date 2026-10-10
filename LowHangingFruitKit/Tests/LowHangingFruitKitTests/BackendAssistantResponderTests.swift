@@ -273,12 +273,49 @@ struct BackendAssistantResponderTests {
             #expect(message.contains("phone"))
         }
 
-        @Test("an HTTP failure names only the status code, never the endpoint")
-        func httpFailureNamesOnlyStatusCode() {
+        @Test("an HTTP failure shows the student no status code, and never the endpoint")
+        func httpFailureShowsNoStatusCode() {
             let message = BackendAssistantResponder.friendlyMessage(for: .http(503))
-            #expect(message.contains("503"))
+            #expect(!message.contains("503"))
             #expect(!message.contains("supabase"))
             #expect(!message.contains("functions/v1"))
+        }
+
+        @Test("every failure but the quota is exactly the plain notice, with no reason and no digits", arguments: [
+            BackendError.notConfigured,
+            BackendError.unauthorized,
+            BackendError.http(401),
+            BackendError.http(503),
+            BackendError.transport,
+            BackendError.decoding,
+        ])
+        func plainNoticeForEveryOtherFailure(error: BackendError) {
+            let message = BackendAssistantResponder.friendlyMessage(for: error)
+            #expect(message == "answering from your phone.")
+            #expect(message == BackendAssistantResponder.fallbackNotice)
+            #expect(message.rangeOfCharacter(from: .decimalDigits) == nil)
+        }
+
+        @Test("a stream that errors partway ends with one plain line: no parentheses, no apology")
+        func midStreamErrorIsOnePlainLine() {
+            let quota = BackendAssistantResponder.midStreamErrorMessage(for: "quota_exceeded")
+            let other = BackendAssistantResponder.midStreamErrorMessage(for: "upstream_error")
+            #expect(quota == "\n\ndaily limit reached.")
+            #expect(other == "\n\nanswer cut off.")
+            for message in [quota, other] {
+                #expect(!message.contains("("))
+                #expect(!message.contains(")"))
+                #expect(!message.lowercased().contains("sorry"))
+                #expect(!message.lowercased().contains("server"))
+            }
+        }
+
+        @Test("the quota says the daily limit was reached, then that the phone is answering")
+        func quotaNoticeNamesTheLimit() {
+            let message = BackendAssistantResponder.friendlyMessage(for: .quotaExceeded(resetAt: nil))
+            #expect(message == "daily limit reached. answering from your phone.")
+            #expect(message == BackendAssistantResponder.quotaFallbackNotice)
+            #expect(message.hasSuffix(BackendAssistantResponder.fallbackNotice))
         }
     }
 }

@@ -83,7 +83,7 @@ struct GradeCategoryMapEditor: View {
             }
             Button("cancel", role: .cancel) {}
         } message: {
-            Text("this puts every canvas group and item back where canvas put it, and removes any category you added or renamed. scores and syllabus attachment are unaffected.")
+            Text("puts everything back where canvas had it.")
         }
     }
 
@@ -105,7 +105,7 @@ struct GradeCategoryMapEditor: View {
             !category.canvasGroupIDs.isEmpty || suggestion.itemAssignments.values.contains(category.id)
         }
         VStack(alignment: .leading, spacing: 8) {
-            Text("suggested mapping, as read by smooth\u{2019}s server.")
+            Text("suggested by smooth\u{2019}s server")
                 .font(.lhfSans(12))
                 .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -331,7 +331,7 @@ struct GradeCategoryMapEditor: View {
                 .font(.lhfSans(9, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(Color.v2SpineAmber)
-            Text("these canvas groups aren\u{2019}t in your syllabus\u{2019}s categories, so they count 0% until you place them.")
+            Text("count 0% until placed")
                 .font(.lhfSans(11))
                 .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)

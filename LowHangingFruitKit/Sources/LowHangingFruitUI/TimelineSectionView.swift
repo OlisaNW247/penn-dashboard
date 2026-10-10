@@ -20,6 +20,8 @@ struct TimelineSectionView: View {
     let section: DashSection
     let onComplete: (DashItem) -> Void
     let onEdit: (DashItem) -> Void
+    /// The student confirmed removing their own task from an opened card.
+    let onRemove: (DashItem) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -29,7 +31,8 @@ struct TimelineSectionView: View {
                 AssignmentCardView(
                     item: item,
                     onComplete: { onComplete(item) },
-                    onEdit: { onEdit(item) }
+                    onEdit: { onEdit(item) },
+                    onRemove: { onRemove(item) }
                 )
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .move(edge: .top)),
