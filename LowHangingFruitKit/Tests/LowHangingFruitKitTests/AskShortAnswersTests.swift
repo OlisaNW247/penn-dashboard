@@ -89,6 +89,32 @@ struct AskShortAnswersTests {
         }
     }
 
+    @Test("an unmatched assignment is 'Couldn't match \"X\".', with no advice")
+    func couldntMatch() {
+        let question = "did I submit the flurble"
+        guard case let .submissionStatus(query) = QuestionParser.parse(question, courses: AssistantFixture.courses).intent else {
+            Issue.record("expected a submission question")
+            return
+        }
+        #expect(query == "flurble")
+        let text = Self.answerer(knowledge: AssistantFixture.knowledge, items: AssistantFixture.items).answer(question).text
+        #expect(text == "Couldn't match \"flurble\".")
+    }
+
+    @Test("a finished item Canvas has not reported on says so and no longer sends the student to sync")
+    func markedDoneWithoutCanvasReport() {
+        let text = Self.answerer(items: AssistantFixture.items).answer("did I submit pset 1").text
+        #expect(text == "You marked PSet 1: warmup (CIS 2400) done in LHF. Canvas hasn't reported a submission for it yet.")
+    }
+
+    @Test("no upcoming exams is 'No upcoming exams.', keeping a named course")
+    func noUpcomingExams() {
+        let answerer = Self.answerer()
+        #expect(answerer.answer("when is my next exam").text == "No upcoming exams.")
+        let withClass = Self.answerer(items: [AssistantFixture.item("1", "CIS 2400", "PSet 2: bits and bytes", due: AssistantFixture.at(day: 10))])
+        #expect(withClass.answer("when is my next exam in cis 2400").text == "No upcoming exams for CIS 2400.")
+    }
+
     @Test("the starter chip 'what's due this week?' is a structured question the answerer handles")
     func dueThisWeekChip() {
         let chip = "what's due this week?"

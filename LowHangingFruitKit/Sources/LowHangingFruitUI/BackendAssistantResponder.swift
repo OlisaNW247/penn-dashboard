@@ -77,10 +77,12 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // request build inside) are needed together.
             let task = Task.detached(priority: .userInitiated) {
                 askTrace.info("1 reply task started; building request")
-                let request = Self.makeRequest(question: prompt, context: context)
+                let prepared = Self.prepareRequest(question: prompt, context: context)
+                let request = prepared.request
                 askTrace.info("2 request built: \(request.excerpts.count, privacy: .public) excerpt chars, \(request.courseIDs.count, privacy: .public) courses")
                 await Self.run(
                     request: request,
+                    excerptSources: prepared.sources,
                     prompt: prompt,
                     context: context,
                     client: client,
@@ -101,6 +103,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// half getting dragged along.
     private static func run(
         request: AskRequest,
+        excerptSources: [ExcerptSource],
         prompt: String,
         context: AssistantContext,
         client: BackendClient,
@@ -199,7 +202,11 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             textChars += trailing.count
             if !trailing.isEmpty { continuation.yield(.text(trailing)) }
             if !splitter.citations.isEmpty {
-                continuation.yield(.citations(splitter.citations))
+                // The model names a source by course, kind and a few words;
+                // only the phone knows which documents it just sent, so a
+                // citation that unambiguously names one of them gets that
+                // document's link here, and every other stays plain text.
+                continuation.yield(.citations(CitationLinks.resolve(splitter.citations, against: excerptSources)))
             }
         }
 
@@ -251,14 +258,26 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// responder — the same reason `ClaudeAssistantResponder
     /// .buildRequestBody` was `static`.
     static func makeRequest(question: String, context: AssistantContext) -> AskRequest {
-        AskRequest(
+        prepareRequest(question: question, context: context).request
+    }
+
+    /// `makeRequest` plus the documents its excerpts came from, from one
+    /// retrieval. The request is exactly what `makeRequest` returns, field
+    /// for field, and is all that goes on the wire; `sources` stays on the
+    /// phone for the turn, so the answer's citations can be linked
+    /// (`CitationLinks.resolve`) without the server returning a URL or the
+    /// request growing a field.
+    static func prepareRequest(question: String, context: AssistantContext) -> (request: AskRequest, sources: [ExcerptSource]) {
+        let block = excerptBlock(question: question, context: context)
+        let request = AskRequest(
             question: question,
             contextDocument: context.contextDocument,
-            excerpts: retrievedExcerpts(question: question, context: context),
+            excerpts: block.text,
             askedAt: context.askedAt,
             courseIDs: context.knowledge.courses.map(\.courseID),
             history: []
         )
+        return (request, block.sources)
     }
 
     /// How many passages ride along with a question, how long each may be,
@@ -347,7 +366,18 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// They are not added to the request, not to `history` and not to the
     /// question, and the output never mentions them.
     static func retrievedExcerpts(question: String, context: AssistantContext) -> String {
-        guard !context.knowledge.isEmpty else { return "" }
+        excerptBlock(question: question, context: context).text
+    }
+
+    /// The rendered `excerpts` text and, in the same order as its numbered
+    /// lines, the document each line came from.
+    struct ExcerptBlock: Sendable {
+        let text: String
+        let sources: [ExcerptSource]
+    }
+
+    static func excerptBlock(question: String, context: AssistantContext) -> ExcerptBlock {
+        guard !context.knowledge.isEmpty else { return ExcerptBlock(text: "", sources: []) }
         let courses = context.knowledge.courses
         let followUp = FollowUpRetrieval.resolve(
             question: question,
@@ -390,7 +420,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         if hits.contains(where: \.isTextlessEdPost) {
             hits = Array(topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }.prefix(excerptLimit))
         }
-        guard !hits.isEmpty else { return "" }
+        guard !hits.isEmpty else { return ExcerptBlock(text: "", sources: []) }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
         // so the model can tell the two apart — see
@@ -411,7 +441,10 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         }
         var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
         if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
-        return (header + lines).joined(separator: "\n")
+        return ExcerptBlock(
+            text: (header + lines).joined(separator: "\n"),
+            sources: hits.map { ExcerptSource(document: $0.document) }
+        )
     }
 
     /// The one line that follows the `RETRIEVED EXCERPTS` header, only when an
@@ -660,19 +693,22 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         return friendlyMessage(for: backendError)
     }
 
-    /// A short apology appended after whatever text already rendered when
+    /// One plain line appended after whatever text already rendered when
     /// the stream itself reports an `error` event (`backend/PROTOCOL.md`'s
-    /// `data: {"type":"error",...}`) rather than ending in `done`. Keyed off
+    /// `data: {"type":"error",...}`) rather than ending in `done`: it says
+    /// the answer stopped (or why, for the quota) and nothing more, in the
+    /// same lower-case voice as `fallbackNotice`. No parentheses and no
+    /// apology: the owner's rule is "as simple as possible". Keyed off
     /// `code`, not the free-text `message` the server sends: `message` is
     /// meant for logs, and echoing server-authored text straight to the
     /// transcript is exactly the kind of thing this Kit avoids doing with
     /// any text it didn't compose itself.
-    private static func midStreamErrorMessage(for code: String) -> String {
+    static func midStreamErrorMessage(for code: String) -> String {
         switch code {
         case "quota_exceeded":
-            return "\n\n(you've hit today's question limit for now.)"
+            return "\n\ndaily limit reached."
         default:
-            return "\n\n(something went wrong on the server's side.)"
+            return "\n\nanswer cut off."
         }
     }
 }

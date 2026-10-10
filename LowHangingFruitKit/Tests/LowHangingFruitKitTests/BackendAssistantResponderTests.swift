@@ -296,6 +296,20 @@ struct BackendAssistantResponderTests {
             #expect(message.rangeOfCharacter(from: .decimalDigits) == nil)
         }
 
+        @Test("a stream that errors partway ends with one plain line: no parentheses, no apology")
+        func midStreamErrorIsOnePlainLine() {
+            let quota = BackendAssistantResponder.midStreamErrorMessage(for: "quota_exceeded")
+            let other = BackendAssistantResponder.midStreamErrorMessage(for: "upstream_error")
+            #expect(quota == "\n\ndaily limit reached.")
+            #expect(other == "\n\nanswer cut off.")
+            for message in [quota, other] {
+                #expect(!message.contains("("))
+                #expect(!message.contains(")"))
+                #expect(!message.lowercased().contains("sorry"))
+                #expect(!message.lowercased().contains("server"))
+            }
+        }
+
         @Test("the quota says the daily limit was reached, then that the phone is answering")
         func quotaNoticeNamesTheLimit() {
             let message = BackendAssistantResponder.friendlyMessage(for: .quotaExceeded(resetAt: nil))

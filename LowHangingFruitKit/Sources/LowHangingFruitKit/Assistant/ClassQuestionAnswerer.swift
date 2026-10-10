@@ -195,11 +195,11 @@ public struct ClassQuestionAnswerer: Sendable {
         let hits = search(query, parsed: parsed, kinds: [.syllabus, .page, .announcement, .ed, .module, .website])
         if let best = hits.first {
             let scope = parsed.course.map { " for \($0.code)" } ?? ""
-            let text = "I don't see a dated \(kind.label)\(scope) on your calendar yet. Here's what the \(best.document.course) \(best.document.kind.label) says:\n\(excerpt(best.passage.text, query: query))"
+            let text = "No dated \(kind.label)\(scope) yet. From the \(best.document.course) \(best.document.kind.label):\n\(excerpt(best.passage.text, query: query))"
             return AssistantAnswer(text: text, sources: sources(for: hits), question: parsed, grounding: hits, isExact: false)
         }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
-        return AssistantAnswer(text: "No upcoming \(kind.pluralLabel)\(scope) in your synced classes.", sources: [], question: parsed, isExact: true)
+        return AssistantAnswer(text: "No upcoming \(kind.pluralLabel)\(scope).", sources: [], question: parsed, isExact: true)
     }
 
     private func itemDetail(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
@@ -264,11 +264,11 @@ public struct ClassQuestionAnswerer: Sendable {
         }
         if let item = bestItem(matching: query, in: openItems(course: parsed.course, includeCompleted: true)) {
             let text = item.isCompleted
-                ? "You marked \(item.title) (\(item.course)) done in LHF. Canvas hasn't reported a submission for it yet; sync course materials to check."
+                ? "You marked \(item.title) (\(item.course)) done in LHF. Canvas hasn't reported a submission for it yet."
                 : "\(item.title) (\(item.course)) isn't marked done, and I don't have Canvas submission data for it yet."
             return AssistantAnswer(text: text, sources: sources(for: [item]), question: parsed, isExact: true)
         }
-        return AssistantAnswer(text: "I couldn't match \"\(query)\" to an assignment. Try the name as it appears on Canvas.", sources: [], question: parsed, isExact: true)
+        return AssistantAnswer(text: "Couldn't match \"\(query)\".", sources: [], question: parsed, isExact: true)
     }
 
     private func overdue(_ parsed: ParsedQuestion) -> AssistantAnswer {

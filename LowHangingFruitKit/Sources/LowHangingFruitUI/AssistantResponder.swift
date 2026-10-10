@@ -28,6 +28,14 @@ struct AssistantCitation: Identifiable, Hashable, Sendable {
     var course: String
     var source: String
     var detail: String?
+    /// Where the source lives (a Canvas page, an Ed thread, a course
+    /// website page), when the app knows for certain; `nil` means the chip
+    /// is plain text, exactly as before. Set only through
+    /// `AssistantCitation.linkable(_:)`, so it is always `https` with a host.
+    /// The on-device path takes it from the document it answered from; the
+    /// server path resolves it against the excerpts that turn sent
+    /// (`CitationLinks.resolve`), because the model returns no URLs.
+    var url: URL? = nil
 }
 
 /// One incremental piece of an answer.

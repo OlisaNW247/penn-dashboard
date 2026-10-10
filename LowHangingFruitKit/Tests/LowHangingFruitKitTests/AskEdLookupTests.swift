@@ -81,7 +81,7 @@ struct AskEdLookupTests {
         #expect(QuestionParser.parse(question, courses: AssistantFixture.courses).intent == .nextItem(kind: .exam))
         let answer = Self.answerer(documents).answer(question)
 
-        #expect(answer.text.hasPrefix("I don't see a dated exam on your calendar yet. Here's what the CIS 2400 ed discussion says:\n"))
+        #expect(answer.text.hasPrefix("No dated exam yet. From the CIS 2400 ed discussion:\n"))
         #expect(answer.text.contains("Towne 100"))
         #expect(!answer.text.contains("[ed ·"))
         #expect(!answer.text.contains("pinned"))
@@ -150,7 +150,7 @@ struct AskEdLookupTests {
         #expect(Self.rawTop([picture, syllabusPage], query: "exam date schedule \(question)").first?.document.id == picture.id)   // premise
 
         let answer = Self.answerer([picture, syllabusPage]).answer(question)
-        #expect(answer.text.hasPrefix("I don't see a dated exam on your calendar yet. Here's what the CIS 2400 page says:\n"))
+        #expect(answer.text.hasPrefix("No dated exam yet. From the CIS 2400 page:\n"))
         #expect(answer.text.contains("Towne 100"))
         #expect(!answer.text.contains("[image]"))
         #expect(answer.sources.map(\.title) == ["Exam dates"])
