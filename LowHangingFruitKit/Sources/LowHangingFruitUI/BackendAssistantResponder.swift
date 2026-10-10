@@ -367,13 +367,28 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // lab/lecture word in the earlier question is not a claim about this
         // one.
         let preferredComponent = DocumentComponent.mentioned(in: question)
-        let hits = CourseSearch(knowledge: context.knowledge).search(
-            followUp.query,
-            courseIDs: courseIDs,
-            preferredComponent: preferredComponent,
-            limit: excerptLimit,
-            perDocument: excerptsPerDocument
-        )
+        let search = CourseSearch(knowledge: context.knowledge)
+        func topHits(limit: Int) -> [SearchHit] {
+            search.search(
+                followUp.query,
+                courseIDs: courseIDs,
+                preferredComponent: preferredComponent,
+                limit: limit,
+                perDocument: excerptsPerDocument
+            )
+        }
+        var hits = topHits(limit: excerptLimit)
+        // An Ed post that is only a picture matches on its title and category
+        // words and then has nothing to say, but it still takes one of the
+        // eight slots. When one turns up, search deeper and let the next hits
+        // take the places, so the common case (nothing to skip) runs exactly
+        // the search it always did. Three times the limit is enough headroom
+        // for a class whose board is mostly screenshots; if even that runs
+        // dry the excerpts are simply fewer. The documents are not touched:
+        // this only decides what rides along with one question.
+        if hits.contains(where: Self.carriesNoText) {
+            hits = Array(topHits(limit: excerptLimit * 3).filter { !Self.carriesNoText($0) }.prefix(excerptLimit))
+        }
         guard !hits.isEmpty else { return "" }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
@@ -390,9 +405,60 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             let body = cutAtWordBoundary(flattened, limit: excerptCharacterLimit)
             let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
-            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(componentTag)\"\(hit.document.title)\": \(body)"
+            let postedTag = postedLabel(for: hit.document, askedAt: context.askedAt).map { "posted \($0) · " } ?? ""
+            return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(postedTag)\(componentTag)\"\(hit.document.title)\": \(body)"
         }
-        return (["RETRIEVED EXCERPTS (from the student's synced course materials):"] + lines).joined(separator: "\n")
+        var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
+        if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
+        return (header + lines).joined(separator: "\n")
+    }
+
+    /// The one line that follows the `RETRIEVED EXCERPTS` header, only when an
+    /// excerpt below it is an Ed Discussion post. The server's prompt knows
+    /// "excerpts" but not their kinds, so without this a model sees
+    /// `· ed discussion ·` and has to guess what it is and how far to trust
+    /// it. Must not start with `[`: the excerpt lines do, and the tests (and
+    /// anything reading the block) tell the two apart by that.
+    static let edExcerptNote = "Excerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted."
+
+    /// Every school the app signs in to (Penn, Brown, Columbia, Cornell,
+    /// Dartmouth, Harvard, Princeton, Yale) keeps Eastern time. A date label
+    /// needs a day, and the day a post was written is the day in the
+    /// student's time zone: UTC would call a 9 PM post the next day, which is
+    /// the wrong answer to "what did they post yesterday?". It is a fixed
+    /// zone rather than the device's so two calls with the same inputs give
+    /// the same text.
+    private static let excerptTimeZone = TimeZone(identifier: "America/New_York") ?? .gmt
+
+    /// `Oct 3`, or `Oct 3, 2025` when the post is not from the year the
+    /// question was asked in, for an Ed post or a Canvas announcement with a
+    /// known date; `nil` for every other kind of document and for an
+    /// undated one. A syllabus has no "posted" day, and a policy that has
+    /// been edited since is not news.
+    ///
+    /// Reads `askedAt` and never the clock: the same inputs always give the
+    /// same text. The excerpts sit after the cache breakpoint, so a date here
+    /// cannot disturb the cached prefix, but "the same question, the same
+    /// bytes" is what lets this be tested and traced.
+    static func postedLabel(for document: CourseDocument, askedAt: Date) -> String? {
+        guard document.kind == .ed || document.kind == .announcement,
+              let posted = document.updatedAt
+        else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = excerptTimeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = excerptTimeZone
+        let sameYear = calendar.component(.year, from: posted) == calendar.component(.year, from: askedAt)
+        formatter.dateFormat = sameYear ? "MMM d" : "MMM d, yyyy"
+        return formatter.string(from: posted)
+    }
+
+    /// An Ed hit whose passage has nothing to read once the header is set
+    /// aside (empty, or only `[image]` placeholders). See `retrievedExcerpts`.
+    private static func carriesNoText(_ hit: SearchHit) -> Bool {
+        hit.document.kind == .ed && EdDocumentHeader.carriesNoText(hit.passage.text)
     }
 
     // MARK: - The `<sources>` splitter
