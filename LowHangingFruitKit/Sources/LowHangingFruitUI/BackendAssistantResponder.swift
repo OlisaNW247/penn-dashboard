@@ -215,11 +215,12 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // student with nothing while an on-device answer, built from the
         // same synced course materials and the dashboard's own items, is
         // sitting right there unused. So an empty `done` gets the same
-        // on-device handoff a pre-stream failure gets, just with a message
-        // that doesn't blame a connection or a quota that were both fine.
+        // on-device handoff a pre-stream failure gets, with the same plain
+        // notice (there is no connection or quota to blame, and no reason
+        // worth showing).
         if !Task.isCancelled, endedInDone, textChars == 0, splitter.citations.isEmpty {
             askTrace.info("6e stream ended with no text; answering on-device")
-            continuation.yield(.text("the server didn't send an answer that time — answering from your phone instead.\n\n"))
+            continuation.yield(.text(fallbackNotice + "\n\n"))
             await forward(fallback.reply(to: prompt, context: context), to: continuation)
         }
 
@@ -386,8 +387,8 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // for a class whose board is mostly screenshots; if even that runs
         // dry the excerpts are simply fewer. The documents are not touched:
         // this only decides what rides along with one question.
-        if hits.contains(where: Self.carriesNoText) {
-            hits = Array(topHits(limit: excerptLimit * 3).filter { !Self.carriesNoText($0) }.prefix(excerptLimit))
+        if hits.contains(where: \.isTextlessEdPost) {
+            hits = Array(topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }.prefix(excerptLimit))
         }
         guard !hits.isEmpty else { return "" }
         // Labelled only for courses that are actually split (a lecture
@@ -455,11 +456,6 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         return formatter.string(from: posted)
     }
 
-    /// An Ed hit whose passage has nothing to read once the header is set
-    /// aside (empty, or only `[image]` placeholders). See `retrievedExcerpts`.
-    private static func carriesNoText(_ hit: SearchHit) -> Bool {
-        hit.document.kind == .ed && EdDocumentHeader.carriesNoText(hit.passage.text)
-    }
 
     // MARK: - The `<sources>` splitter
 
@@ -625,27 +621,32 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
 
     // MARK: - Friendly error messages
 
-    /// What to say instead of a raw status code or stack trace, and — for
-    /// every case this can be reached with — followed immediately by the
-    /// on-device answer, never left standing alone. Rewritten from
-    /// `ClaudeAssistantResponder.friendlyMessage(for:)` to drop every
-    /// mention of an API key: there is no student-managed credential left
-    /// to point at, so a message like the old "check your api key in
-    /// settings" would just be wrong now, not merely dated.
+    /// What the student is told when the answer comes from the phone instead
+    /// of the server. `docs/PRIVACY.md` describes the fallback, so the app
+    /// says so every time; it says nothing else. The owner's rule is "as
+    /// simple as possible", and a status code, "couldn't verify your
+    /// session" or "something went wrong building the request" is something a
+    /// student cannot act on. The reason is not lost: `askTrace` logs the
+    /// thrown error (`5x askStream threw`) and the empty-answer case
+    /// (`6e stream ended with no text`) for whoever is reading the console.
+    static let fallbackNotice = "answering from your phone."
+
+    /// The one case that differs: a student who has used the day's questions
+    /// can do something about it (wait until tomorrow), so it is named.
+    static let quotaFallbackNotice = "daily limit reached. " + fallbackNotice
+
+    /// Followed immediately by the on-device answer, never left standing
+    /// alone. Rewritten from `ClaudeAssistantResponder.friendlyMessage(for:)`
+    /// to drop every mention of an API key: there is no student-managed
+    /// credential left to point at. Every error but the quota maps to the
+    /// same text on purpose; the switch stays exhaustive (no `default`) so a
+    /// new `BackendError` case has to be given a decision here.
     static func friendlyMessage(for error: BackendError) -> String {
         switch error {
-        case .notConfigured:
-            return "ask isn't connected to a server yet — answering from your phone instead."
-        case .unauthorized:
-            return "couldn't verify your session with the server — answering from your phone instead."
-        case let .http(status):
-            return "couldn't reach the server (\(status)) — answering from your phone instead."
         case .quotaExceeded:
-            return "you've hit today's question limit — answering from your phone instead."
-        case .transport:
-            return "couldn't reach the server — answering from your phone instead."
-        case .decoding:
-            return "something went wrong building the request — answering from your phone instead."
+            return quotaFallbackNotice
+        case .notConfigured, .unauthorized, .http, .transport, .decoding:
+            return fallbackNotice
         }
     }
 

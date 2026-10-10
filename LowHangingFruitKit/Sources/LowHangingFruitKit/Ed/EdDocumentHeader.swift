@@ -89,3 +89,31 @@ public struct EdDocumentHeader: Sendable, Equatable {
         return !remaining.contains { $0.isLetter || $0.isNumber }
     }
 }
+
+/// What the on-device answerer and the `ask` excerpt picker need to know about
+/// a search hit that came from an Ed Discussion post. Both read the passage
+/// through `EdDocumentHeader`, so the two stay in step with the builder.
+extension SearchHit {
+    /// An Ed passage with nothing to read once the header is set aside: no
+    /// body at all, or only `[image]` placeholders (`EdDocumentHeader
+    /// .carriesNoText`). Always `false` for any other kind of document.
+    public var isTextlessEdPost: Bool {
+        document.kind == .ed && EdDocumentHeader.carriesNoText(passage.text)
+    }
+
+    /// This hit with an Ed passage's header line removed, for showing to a
+    /// student or handing to a model as grounding. The first passage of an Ed
+    /// document opens with `[ed · pinned] Homework / Hw 3`; later passages
+    /// and every other kind of document have no such line and come back
+    /// unchanged. Identity (`passage.id`, the document, the score and the
+    /// component) is kept, so nothing that keys on the hit notices.
+    public var withoutEdHeader: SearchHit {
+        guard document.kind == .ed else { return self }
+        let body = EdDocumentHeader.parse(passage.text).body
+        guard body != passage.text else { return self }
+        return SearchHit(
+            passage: Passage(documentID: passage.documentID, ordinal: passage.ordinal, text: body),
+            document: document, score: score, component: component
+        )
+    }
+}

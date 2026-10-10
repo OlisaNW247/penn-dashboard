@@ -29,6 +29,12 @@ public struct ClassQuestionAnswerer: Sendable {
     public let context: AskKnowledgeContext
     public static let maxListItems = 8
 
+    /// The whole answer when there is nothing to answer from. Sync is
+    /// automatic (there is no "sync" button to point a student at), and the
+    /// owner wants the shortest true thing, so this names the state and
+    /// nothing else.
+    private static let nothingSynced = "Nothing synced yet."
+
     public init(context: AskKnowledgeContext) {
         self.context = context
     }
@@ -90,9 +96,7 @@ public struct ClassQuestionAnswerer: Sendable {
     // MARK: - Structured answers
 
     private func help(_ parsed: ParsedQuestion) -> AssistantAnswer {
-        let name = context.userName.isEmpty ? "" : ", \(context.userName)"
         let lines = [
-            "Hi\(name). Ask me anything about your classes. For example:",
             "1. What's due this week?",
             "2. When is my next midterm?",
             "3. Did I submit the lab?",
@@ -105,7 +109,7 @@ public struct ClassQuestionAnswerer: Sendable {
     private func courseList(_ parsed: ParsedQuestion) -> AssistantAnswer {
         let courses = context.courses
         guard !courses.isEmpty else {
-            return AssistantAnswer(text: "I don't see any courses yet. Connect Canvas and sync, then ask again.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: "No classes yet.", sources: [], question: parsed, isExact: true)
         }
         var lines = ["You're in \(courses.count) course\(courses.count == 1 ? "" : "s"):"]
         for (index, course) in courses.enumerated() {
@@ -239,7 +243,7 @@ public struct ClassQuestionAnswerer: Sendable {
                 .filter { $0.submitted == false && ($0.dueAt ?? .distantFuture) >= context.now.addingTimeInterval(-7 * 86_400) }
                 .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
             if docs.isEmpty {
-                return AssistantAnswer(text: "I don't have submission data yet. Sync course materials in Settings, then ask again.", sources: [], question: parsed, isExact: true)
+                return AssistantAnswer(text: Self.nothingSynced, sources: [], question: parsed, isExact: true)
             }
             if pending.isEmpty {
                 return AssistantAnswer(text: "Everything due recently shows as submitted on Canvas.", sources: [], question: parsed, isExact: true)
@@ -292,8 +296,8 @@ public struct ClassQuestionAnswerer: Sendable {
             }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
         guard !announcements.isEmpty else {
-            let hint = context.knowledge.isEmpty ? " Sync course materials in Settings first." : ""
-            return AssistantAnswer(text: "No announcements\(scope) yet.\(hint)", sources: [], question: parsed, isExact: true)
+            let text = context.knowledge.isEmpty ? Self.nothingSynced : "No announcements\(scope) yet."
+            return AssistantAnswer(text: text, sources: [], question: parsed, isExact: true)
         }
         var lines = ["Latest announcements\(scope):"]
         let top = Array(announcements.prefix(3))
@@ -310,12 +314,11 @@ public struct ClassQuestionAnswerer: Sendable {
 
     private func lookup(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
         if context.knowledge.isEmpty {
-            return AssistantAnswer(text: "I only have your calendar so far. Sync course materials in Settings and I can answer questions about the syllabus, assignments, and announcements.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: Self.nothingSynced, sources: [], question: parsed, isExact: true)
         }
         let hits = search(query, parsed: parsed, kinds: nil)
         guard let best = hits.first else {
-            let scope = parsed.course.map { " for \($0.code)" } ?? ""
-            return AssistantAnswer(text: "I couldn't find that in your course materials\(scope). Try different words, or ask about the syllabus, an assignment, or an announcement.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: "Couldn't find that.", sources: [], question: parsed, isExact: true)
         }
         var lines = ["From the \(best.document.course) \(best.document.kind.label) \"\(componentLabel(best))\(best.document.title)\":", excerpt(best.passage.text, query: query)]
         if hits.count > 1, hits[1].document.id != best.document.id {
@@ -385,12 +388,34 @@ public struct ClassQuestionAnswerer: Sendable {
         let courseIDs = (parsed.course ?? followUp.course).map { context.knowledge.courseIDs(forCode: $0.code) }
         let scopedIDs = (courseIDs?.isEmpty ?? true) ? nil : courseIDs
         let searchText = namesOwnCourse ? query : followUp.query
-        var hits = context.search.search(searchText, courseIDs: scopedIDs, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
-        if scopedIDs == nil, let course = parsed.course {
-            hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
+        let preferredComponent = DocumentComponent.mentioned(in: query)
+        func topHits(limit: Int) -> [SearchHit] {
+            var hits = context.search.search(searchText, courseIDs: scopedIDs, kinds: kinds, preferredComponent: preferredComponent, limit: limit)
+            if scopedIDs == nil, let course = parsed.course {
+                hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
+            }
+            return hits
         }
-        return hits
+        var hits = topHits(limit: Self.hitLimit)
+        // An Ed post that is only a picture (or only a header) matches on its
+        // title and category words and then has nothing to show, but as the
+        // best hit it would be the whole answer. When one turns up, search
+        // deeper and let the next hits take the places; a search with nothing
+        // to skip runs exactly as it always did. The documents are untouched:
+        // this only decides what this one answer is drawn from.
+        if hits.contains(where: \.isTextlessEdPost) {
+            hits = Array(topHits(limit: Self.hitLimit * 3).filter { !$0.isTextlessEdPost }.prefix(Self.hitLimit))
+        }
+        // Passages go on to the answer text and to the on-device model as
+        // grounding; an Ed passage's `[ed · reason] category` line is
+        // bookkeeping for the index and the server's model, not something to
+        // show a student or to have a model echo back.
+        return hits.map(\.withoutEdHeader)
     }
+
+    /// How many passages a lookup keeps; the answer uses the first two and
+    /// the source chips the rest.
+    private static let hitLimit = 4
 
     /// Token-overlap match of a free-text mention against item titles. Numbers
     /// must match exactly ("pset 5" never matches "PSet 6").

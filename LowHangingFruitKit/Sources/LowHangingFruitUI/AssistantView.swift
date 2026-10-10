@@ -646,7 +646,7 @@ struct AssistantView: View {
         return [
             Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
             Suggestion(prompt: "when's my next exam?"),
-            Suggestion(prompt: "where is my physics class?"),
+            Suggestion(prompt: "what's due this week?"),
             Suggestion(prompt: "how much is the \(code(1)) final worth?"),
         ]
     }

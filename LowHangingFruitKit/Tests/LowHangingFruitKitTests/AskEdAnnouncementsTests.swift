@@ -168,10 +168,10 @@ struct AskEdAnnouncementsTests {
         #expect(scoped.text == "No announcements for CIS 2400 yet.")
         #expect(scoped.sources.isEmpty)
 
-        // With nothing synced at all the old hint is still given.
+        // With nothing synced at all, say that and nothing else.
         let empty = ClassQuestionAnswerer(context: AskKnowledgeContext(
             userName: "", now: AssistantFixture.now, calendar: AssistantFixture.calendar, items: [], knowledge: .empty
         )).answer("Latest announcements")
-        #expect(empty.text == "No announcements yet. Sync course materials in Settings first.")
+        #expect(empty.text == "Nothing synced yet.")
     }
 }

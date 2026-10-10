@@ -140,4 +140,39 @@ struct EdDocumentHeaderTests {
         #expect(!EdDocumentHeader.carriesNoText("[ed · pinned]\n[image]\nRoom 100"))
         #expect(!EdDocumentHeader.carriesNoText("Plain text with no header"))
     }
+
+    // MARK: - SearchHit helpers
+
+    private static func hit(_ text: String, kind: CourseDocument.Kind = .ed, ordinal: Int = 0) -> SearchHit {
+        let document = CourseDocument(courseID: "1", course: "CIS 2400", kind: kind, sourceID: "9", title: "T", url: nil, text: text)
+        return SearchHit(passage: Passage(documentID: document.id, ordinal: ordinal, text: text), document: document, score: 2.5)
+    }
+
+    @Test("an Ed hit whose passage is empty or only placeholders is textless; anything else is not")
+    func textlessEdHit() {
+        #expect(Self.hit("[ed · announcement] General\n[image]").isTextlessEdPost)
+        #expect(Self.hit("[ed · pinned]").isTextlessEdPost)
+        #expect(!Self.hit("[ed · announcement] General\nMidterm moved.").isTextlessEdPost)
+        // Only Ed documents are ever judged: a page that is just "[image]" is left to the ranking.
+        #expect(!Self.hit("[image]", kind: .page).isTextlessEdPost)
+    }
+
+    @Test("withoutEdHeader drops the header from the first passage and keeps the hit's identity")
+    func hitWithoutHeader() {
+        let hit = Self.hit("[ed · pinned] Homework / Hw 3\nBring ID.")
+        let clean = hit.withoutEdHeader
+        #expect(clean.passage.text == "Bring ID.")
+        #expect(clean.passage.id == hit.passage.id)
+        #expect(clean.document == hit.document)
+        #expect(clean.score == hit.score)
+        #expect(clean.component == hit.component)
+    }
+
+    @Test("withoutEdHeader leaves a later passage and every other kind of document unchanged")
+    func hitWithoutHeaderLeavesOthersAlone() {
+        let later = Self.hit("The second chunk of a long post.", ordinal: 1)
+        #expect(later.withoutEdHeader == later)
+        let page = Self.hit("[ed · pinned] looks like a header but this is a page", kind: .page)
+        #expect(page.withoutEdHeader == page)
+    }
 }
