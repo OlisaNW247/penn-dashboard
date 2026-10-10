@@ -70,9 +70,9 @@ struct GradeExplanationTests {
     func weightedModeAndFormulaLines() {
         let explanation = GradeExplanation.make(from: weightedFixture(), canvasScore: nil)
         #expect(explanation.modeLine == "weighted by category (from canvas)")
-        #expect(explanation.formulaLine == "each graded category's percent is multiplied by its weight, "
-            + "added together, then divided by the combined weight of categories "
-            + "with scored work so far (80%).")
+        // 80% is the participating weight sum (hw 30 + exams 50); the
+        // untouched 20% category is left out until something is graded.
+        #expect(explanation.formulaLine == "category % \u{00d7} weight, over the weight graded so far (80%)")
     }
 
     @Test("weighted fixture: category lines carry weight, source, graded/expected counts, percent and contribution")
@@ -146,8 +146,7 @@ struct GradeExplanationTests {
     func pointsModeAndFormulaLines() {
         let explanation = GradeExplanation.make(from: pointsFixture(), canvasScore: nil)
         #expect(explanation.modeLine == "points, no categories (from canvas)")
-        #expect(explanation.formulaLine == "every point earned is divided by every point possible in "
-            + "graded work so far, in one bucket.")
+        #expect(explanation.formulaLine == "points earned \u{00f7} points possible")
     }
 
     @Test("points fixture: category lines have no weight concept; the expected-count suffix is the predicted count")
@@ -196,6 +195,81 @@ struct GradeExplanationTests {
     func pointsCanvasLineNil() {
         let explanation = GradeExplanation.make(from: pointsFixture(), canvasScore: nil)
         #expect(explanation.canvasLine == nil)
+    }
+
+    // MARK: - Posted-only decidedLine and the unmapped percent (copy diet, 2026-10-10)
+    //
+    // Neither of these had a test before the Grade Watcher copy shortening,
+    // because `GradeEngine.compute` no longer produces the shapes that reach
+    // them from the fixtures above (every category now carries a predicted
+    // count, and an unmapped category needs a map with a stray Canvas group).
+    // `GradeExplanation.make` still honors a hand-fed breakdown, so these pin
+    // the new wording directly.
+
+    private func postedOnlyBreakdown(
+        decidedFraction: Double,
+        categoriesMissingExpectedCount: [String] = []
+    ) -> GradeBreakdown {
+        GradeBreakdown(
+            mode: .points,
+            currentPercent: 91,
+            decidedFraction: decidedFraction,
+            pendingGradingCount: 0,
+            categories: [],
+            semesterDecidedFraction: nil,
+            modeSource: .canvas,
+            leftOutCategoryIDs: [],
+            participatingWeightSum: nil,
+            attendanceOnlyPercent: nil,
+            categoriesMissingExpectedCount: categoriesMissingExpectedCount
+        )
+    }
+
+    @Test("decidedLine: semester share unknown reads '<n>% graded \u{00b7} semester share unknown'")
+    func decidedLinePostedOnlyGeneric() {
+        let explanation = GradeExplanation.make(
+            from: postedOnlyBreakdown(decidedFraction: 0.63), canvasScore: nil
+        )
+        #expect(explanation.decidedLine == "63% graded \u{00b7} semester share unknown")
+    }
+
+    @Test("decidedLine: a hand-fed missing-categories list still names them, lowercased, after the short form")
+    func decidedLinePostedOnlyNamesMissingCategories() {
+        let explanation = GradeExplanation.make(
+            from: postedOnlyBreakdown(
+                decidedFraction: 0.63,
+                categoriesMissingExpectedCount: ["Quizzes", "HomeWorks"]
+            ),
+            canvasScore: nil
+        )
+        #expect(explanation.decidedLine
+                == "63% graded \u{00b7} semester share unknown until quizzes, homeworks have expected counts")
+    }
+
+    @Test("an unmapped category's percent reads just 'needs a home', with no percent and no instructions")
+    func unmappedCategoryPercentText() {
+        let mapped = category("g-hw", name: "Homework", items: [item("h1", points: 10, score: 9)])
+        let stray = category("g-extra", name: "Imported Assignments", items: [item("x1", points: 10, score: 5)])
+        let map = GradeCategoryMap(categories: [
+            GradeCategoryMap.Category(
+                id: "map:homework", name: "Homework", weightPercent: 100,
+                expectedCount: nil, canvasGroupIDs: ["g-hw"], provenance: .syllabus
+            ),
+        ], provenance: .syllabus)
+        let breakdown = GradeEngine.compute(.init(
+            courseUsesWeights: false, categories: [mapped, stray], now: now, categoryMap: map
+        ))
+        let explanation = GradeExplanation.make(from: breakdown, canvasScore: nil)
+
+        let strayLine = explanation.categoryLines.first { $0.name == "Imported Assignments" }
+        #expect(strayLine?.isUnmapped == true)
+        #expect(strayLine?.percentText == "needs a home")
+
+        // The mapped category keeps its real percent: only the stray group is
+        // flagged.
+        let homeworkLine = explanation.categoryLines.first { $0.name == "Homework" }
+        #expect(homeworkLine?.isUnmapped == false)
+        #expect(homeworkLine?.percentText == "90%")
     }
 
     // MARK: - expectedCountText (GradeCountPredictor wording)

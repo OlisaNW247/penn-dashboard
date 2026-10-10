@@ -223,7 +223,7 @@ final class GradeWatcherStore: ObservableObject {
             // list rides a cookieless ICS feed, while grades need a real Canvas
             // session. An account connected before this app stored Canvas
             // cookies (or a token) has neither, so say what actually fixes it.
-            error = "No saved Canvas session. Grades need a live Canvas login. the assignment list doesn\u{2019}t. Reconnect Canvas in Settings to enable grades."
+            error = "reconnect canvas for grades"
             return
         }
         guard !courseIDs.isEmpty else { return }
@@ -406,10 +406,13 @@ final class GradeWatcherStore: ObservableObject {
         guard failed > 0 else { return RefreshOutcome(isSessionExpired: false, error: nil) }
 
         if succeeded > 0 {
-            let noun = failed == 1 ? "class" : "classes"
+            // Just the tally. The old "class"/"classes" noun and the "those
+            // are showing their last grades" sentence went with the copy
+            // diet (2026-10-10): the cards below already show their last
+            // grades, so saying so only added a line to read.
             return RefreshOutcome(
                 isSessionExpired: false,
-                error: "Couldn\u{2019}t refresh \(failed) of \(total) \(noun). those are showing their last grades."
+                error: "couldn\u{2019}t refresh \(failed) of \(total)"
             )
         }
 
@@ -419,9 +422,13 @@ final class GradeWatcherStore: ObservableObject {
                 error: "Your Canvas session expired. grades are showing the last refresh until you reconnect."
             )
         }
+        // `lastFailure` is still collected and passed in, but no longer
+        // printed: its `localizedDescription` is system text ("The
+        // operation couldn't be completed. (NSURLErrorDomain error
+        // -1009.)") that tells a student nothing they can act on.
         return RefreshOutcome(
             isSessionExpired: false,
-            error: "Grade Watcher sync failed: \(lastFailure?.localizedDescription ?? "unknown error")"
+            error: "couldn\u{2019}t load grades"
         )
     }
 

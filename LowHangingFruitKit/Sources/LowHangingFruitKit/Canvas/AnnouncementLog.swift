@@ -104,7 +104,21 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
             with: " ",
             options: .regularExpression
         )
-        let text = HTMLText.plainText(from: withoutBlocks)
+        return collapsedAndCut(HTMLText.plainText(from: withoutBlocks), limit: limit)
+    }
+
+    /// The preview for text that is already plain (an Ed post's body, which
+    /// `EdDocumentText` converted from Ed's XML): whitespace collapsed and cut
+    /// like `snippet(fromHTML:)`, but with no HTML pass. A plain-text body
+    /// can legitimately contain `<` and `>` ("x < y and z > w"), and running
+    /// `HTMLText` over it would delete everything between them as a tag. The
+    /// `[image]` placeholders `EdDocumentText` writes where Ed had a picture
+    /// are dropped: in a one-line preview they are noise, not content.
+    public static func snippet(fromPlainText text: String, limit: Int = snippetLimit) -> String {
+        collapsedAndCut(text.replacingOccurrences(of: "[image]", with: " "), limit: limit)
+    }
+
+    private static func collapsedAndCut(_ text: String, limit: Int) -> String {
         let collapsed = text
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
@@ -121,6 +135,68 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
             return String(head[..<lastSpace])
         }
         return String(head)
+    }
+
+    // MARK: Ed Discussion rows
+
+    /// What every Ed row's id starts with: the document id's own kind prefix
+    /// (`ed:{canvasCourse}:{thread}`). Canvas announcement ids are decimal
+    /// digits, so the two id spaces cannot meet.
+    public static let edIDPrefix = "ed:"
+
+    /// True for a row that came from an Ed Discussion document rather than a
+    /// Canvas announcement. Derived from the id, which the one constructor
+    /// (`edRecord`) builds from the document's, so it cannot disagree with it.
+    public var isEd: Bool { id.hasPrefix(Self.edIDPrefix) }
+
+    /// The "all announcements" row for an Ed document, or nil when the
+    /// document is not one a student should see listed:
+    ///
+    /// - it must be an Ed document whose header reason is an announcement or
+    ///   a pinned post. A plain "staff post" is course material the filter
+    ///   keeps, not news (`EdDocumentHeader.isAnnouncementOrPinned`);
+    /// - it must carry text, not only `[image]` placeholders
+    ///   (`EdDocumentHeader.carriesNoText`);
+    /// - it must be dated, and within the log's 60 days. `updatedAt` is the
+    ///   thread's last-activity date, and a row with no date has no place in
+    ///   a newest-first window.
+    ///
+    /// Pure: reads the document and nothing else, never fetches, and never
+    /// changes what Ed keeps. The snippet is the body after the bracketed
+    /// header line, so `[ed · pinned] Homework / Hw 3` never shows.
+    public static func edRecord(from document: CourseDocument, now: Date) -> AnnouncementRecord? {
+        guard document.kind == .ed,
+              let posted = document.updatedAt,
+              posted >= now.addingTimeInterval(-AnnouncementLogStore.retention)
+        else { return nil }
+        let header = EdDocumentHeader.parse(document.text)
+        guard header.isAnnouncementOrPinned,
+              !EdDocumentHeader.carriesNoText(document.text)
+        else { return nil }
+        return AnnouncementRecord(
+            id: document.id,
+            courseID: document.courseID,
+            courseCode: document.course,
+            title: document.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            postedAt: posted,
+            url: document.url,
+            snippet: snippet(fromPlainText: header.body),
+            recordedAt: document.fetchedAt
+        )
+    }
+
+    /// Every listable Ed row among `documents`, newest first, inside the
+    /// same 60-day, 300-row bounds as the log (`AnnouncementLogStore.pruned`).
+    /// A document id seen twice yields one row.
+    public static func edRecords(from documents: [CourseDocument], now: Date) -> [AnnouncementRecord] {
+        var seen = Set<String>()
+        let rows = documents.compactMap { document -> AnnouncementRecord? in
+            guard let row = edRecord(from: document, now: now), seen.insert(row.id).inserted else {
+                return nil
+            }
+            return row
+        }
+        return AnnouncementLogStore.pruned(rows, now: now)
     }
 
     // MARK: Ordering and age
@@ -168,12 +244,7 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
            calendar.isDate(postedAt, inSameDayAs: yesterday) {
             return "yesterday"
         }
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("MMMd")
-        return formatter.string(from: postedAt).lowercased()
+        return PostedDateFormatters.string(from: postedAt, calendar: calendar, locale: locale).lowercased()
     }
 
     // MARK: Join with the extractor's finds
@@ -327,5 +398,66 @@ public struct AnnouncementLogStore: Sendable {
     private struct LogFile: Codable {
         var version: Int
         var records: [AnnouncementRecord]
+    }
+}
+
+/// One `DateFormatter` per (locale, calendar, time zone), made once and
+/// reused. The sheet asks for a label per row, and building a `DateFormatter`
+/// (and parsing its template) is among the slower things a row can do; with
+/// up to a few hundred rows that was a visible cost on opening the sheet. The
+/// key names everything the output depends on, so a student who changes time
+/// zone or region gets a fresh formatter rather than the old one's answer.
+///
+/// `DateFormatter` is not `Sendable`, so access is serialized by a lock and
+/// the instances never leave this type.
+private final class PostedDateFormatters: @unchecked Sendable {
+    private static let shared = PostedDateFormatters()
+    private let lock = NSLock()
+    private var formatters: [String: DateFormatter] = [:]
+
+    static func string(from date: Date, calendar: Calendar, locale: Locale) -> String {
+        shared.string(from: date, calendar: calendar, locale: locale)
+    }
+
+    /// The cached formatter's identity for this (locale, calendar, time zone),
+    /// or nil when none has been built. Lets a test pin reuse (the same
+    /// object every call) without counting a process-wide total that other
+    /// tests running alongside would disturb.
+    static func identity(calendar: Calendar, locale: Locale) -> ObjectIdentifier? {
+        shared.identity(forKey: key(calendar: calendar, locale: locale))
+    }
+
+    private static func key(calendar: Calendar, locale: Locale) -> String {
+        "\(locale.identifier)|\(calendar.identifier)|\(calendar.timeZone.identifier)"
+    }
+
+    private func identity(forKey key: String) -> ObjectIdentifier? {
+        lock.lock(); defer { lock.unlock() }
+        return formatters[key].map { ObjectIdentifier($0) }
+    }
+
+    private func string(from date: Date, calendar: Calendar, locale: Locale) -> String {
+        let key = Self.key(calendar: calendar, locale: locale)
+        lock.lock(); defer { lock.unlock() }
+        let formatter: DateFormatter
+        if let cached = formatters[key] {
+            formatter = cached
+        } else {
+            formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
+            formatter.setLocalizedDateFormatFromTemplate("MMMd")
+            formatters[key] = formatter
+        }
+        return formatter.string(from: date)
+    }
+}
+
+extension AnnouncementRecord {
+    /// Test hook: identity of the cached posted-date formatter for this
+    /// locale, calendar and time zone, or nil if none has been built yet.
+    static func postedFormatterIdentity(calendar: Calendar, locale: Locale) -> ObjectIdentifier? {
+        PostedDateFormatters.identity(calendar: calendar, locale: locale)
     }
 }
