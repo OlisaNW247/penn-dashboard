@@ -7,14 +7,16 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-10, on `v8-launch-prep`.
+Last updated 2026-10-10, on `v8`.
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
-**3.0.1 (12)**, the sign-out fix, from `v8`. `v8-launch-prep` is Marco's
-launch-prep work on top of `v8` (2026-10-09/10), pushed and waiting to
-be merged into it; whether it rides in 3.0.1 or follows it is Marco's
-and Olisa's call.
+**3.0.1 (12)**, the sign-out fix, from `v8`. Marco's launch-prep work
+(2026-10-09/10, built on `v8-launch-prep`) was merged into `v8` on
+2026-10-10 through pull request 9, at his instruction, so it now rides
+in whatever is built from `v8` next. Most of it has not been on a phone:
+the first item under Now is the check that should happen before a build
+from `v8` goes to TestFlight.
 
 ---
 
