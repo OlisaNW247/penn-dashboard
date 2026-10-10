@@ -28,9 +28,14 @@ struct AssignmentCardView: View {
     /// Called once the exit animation has finished.
     let onComplete: () -> Void
     let onEdit: () -> Void
+    /// Called after the student confirms removing their own task
+    /// (`item.removal`). Defaulted so previews and every other construction
+    /// site, which never offer the button, need not pass one.
+    var onRemove: () -> Void = {}
 
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
+    @State private var confirmingRemoval = false
     @State private var exitOpacity: Double = 1
     @State private var exitOffset: CGFloat = 0
     @State private var exitScale: CGFloat = 1
@@ -248,6 +253,32 @@ struct AssignmentCardView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("opens the original page")
+            }
+
+            // Only on the student's own work (`OwnTaskRemoval`): "delete" on a
+            // one-off task, "stop repeating" on an occurrence of a recurring
+            // one. A `Button` with a 44pt-tall target for the same reason as
+            // the controls above, and the dialog is attached to it so a
+            // confirmation on iPad and Mac anchors to the button. Tapping it
+            // only asks; the task goes once the destructive choice is made.
+            if let removal = item.removal {
+                Button { confirmingRemoval = true } label: {
+                    Text(removal.buttonLabel)
+                        .font(.lhfAssignmentTitle(12))
+                        .foregroundStyle(Color.smoothTomatoInk)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(removal.accessibilityLabel)
+                .confirmationDialog(
+                    removal.confirmationTitle,
+                    isPresented: $confirmingRemoval,
+                    titleVisibility: .visible
+                ) {
+                    Button(removal.confirmLabel, role: .destructive) { onRemove() }
+                    Button(OwnTaskRemoval.cancelLabel, role: .cancel) {}
+                }
             }
 
             // No second "nothing to submit" here: the collapsed caveat line
