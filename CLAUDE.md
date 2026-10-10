@@ -178,9 +178,20 @@ fastest way for a new session to know what exists.
     views, with a clearable chip under the row), **+** (the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
     coloured chips, `CoursePicker`), and
-    the **megaphone**. The megaphone opens the announcement finds sheet;
-    its badge counts only unread finds, and rows unread when opened are
-    tagged NEW (`AnnouncementReadState`).
+    the **megaphone**. Since 2026-10-10 the megaphone opens a real
+    announcements list (`AnnouncementFindsView`): a "tasks found" section
+    with the tasks the Announcement Watcher extracted, then "all
+    announcements", every Canvas announcement from the last 60 days in the
+    student's classes, newest first, each with a preview and "open in
+    canvas". Before that it listed only extracted tasks and hid itself
+    when there were none, which read as "announcements are missing". The
+    list is an on-device cache (`AnnouncementLogStore`,
+    `announcement-log.json` beside the course-knowledge file; title,
+    class, date, link and a 280-character preview; cleared on disconnect).
+    Extraction, including the AI assist, still only ever sees the last 14
+    days. The badge counts unread finds and unread announcements; rows
+    unread when opened are tagged NEW (`AnnouncementReadState`), and the
+    first fill on an install counts as already seen.
   - **todo**: overdue plus the next two days. For someone who signed up
     on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
     that was already more than 7 days overdue at their first sync is

@@ -504,6 +504,9 @@ extension AppState {
 
     func clearCourseKnowledge() {
         CourseKnowledgeStore.default().clear()
+        // The announcement list is the same kind of thing (re-fetchable
+        // Canvas text, kept beside this cache), so it goes with it.
+        clearAnnouncementLog()
         courseKnowledge = .empty
         courseKnowledgeNotice = nil
         pushGradeWatcherFacts()

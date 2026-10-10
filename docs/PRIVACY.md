@@ -32,6 +32,12 @@ stored.
   device.
 - **The widget snapshot.** A small "next due" summary written to a private
   container shared only between the app and its widget on your device.
+- **The announcements list.** The megaphone on the dashboard lists your
+  classes' Canvas announcements from the last 60 days. For that the app keeps
+  each one's title, class, date, link and a short preview in a file on this
+  phone. That file is never uploaded, and disconnecting Canvas deletes it.
+  (Separately, announcement text is part of the pooled course material
+  described below, as it already was.)
 
 ## Stay signed in (optional)
 

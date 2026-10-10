@@ -79,6 +79,33 @@ final class AppState: ObservableObject {
     /// dashboard candidates and copies suppressed by structured coursework.
     /// The dedicated announcements page reads this undeduplicated collection.
     @Published private(set) var announcementPageItems: [Assignment] = []
+    /// The megaphone sheet's "all announcements" list: every Canvas
+    /// announcement logged in the last 60 days for a class that is still
+    /// selected, newest first. Plain announcements, not extracted tasks; the
+    /// finds above are the tasks. Backed by `AnnouncementLogStore` and
+    /// maintained by `AppState+AnnouncementLog.swift`, whose methods write
+    /// these, so (like `courseKnowledge`) they are internal rather than
+    /// `private(set)`: `private` is file-scoped.
+    @Published var announcementRecordsOnPage: [AnnouncementRecord] = []
+    /// Ids the student has already seen in the megaphone sheet (finds and
+    /// records both; see `AnnouncementReadState`). Mirrors the persisted set.
+    @Published var announcementSeenIDs: Set<String> = []
+    /// Every stored record, before the class-selection filter.
+    var announcementLogRecords: [AnnouncementRecord] = []
+    /// The announcement log's file and read state. Nil under the test runner
+    /// unless a test opted in with `enableAnnouncementLogForTesting`: an
+    /// `AppState` that is nil here records nothing, so it can neither touch
+    /// the real Application Support file nor write the seen-ids key that
+    /// every concurrently running suite shares. Same shape as
+    /// `signupBacklogStore`.
+    var announcementLog: AnnouncementLogContext? =
+        SharedDefaults.isTestRunner ? nil : AnnouncementLogContext.live()
+    /// Per-instance test seams for `syncAnnouncements()`, memory-only: a
+    /// stand-in for the Canvas fetch, and a stand-in for the extractor choice
+    /// (which would otherwise be the heuristic, or the backend). Both nil in
+    /// the shipping app.
+    var announcementFetchForTesting: AnnouncementFetch?
+    var announcementExtractorForTesting: (@MainActor (CanvasAnnouncement) -> any AnnouncementAssignmentExtractor)?
     /// Useful preparation and reference tasks found in announcements, kept
     /// outside the owed-work dashboard. These remain ledger-backed through
     /// `announcementItems`; this is only the current, de-duplicated view.
@@ -882,6 +909,11 @@ final class AppState: ObservableObject {
         // decision itself is taken at the first real feed reconcile, never
         // at launch.
         signupBacklogRevealed = signupBacklogStore?.isRevealed ?? false
+
+        // The announcement log is read back before the first rebuild, which
+        // is what filters it by class selection, so the megaphone is right on
+        // the first frame.
+        loadAnnouncementLog()
 
         rebuildDashboardItems()
 
@@ -3298,6 +3330,12 @@ final class AppState: ObservableObject {
         // next `syncAnnouncements()` to notice they're gone.
         assignmentStore?.purge(source: .canvasAnnouncement)
         announcementItems = []
+        // The plain announcement list is Canvas-derived text too, and goes
+        // here, unconditionally: `clearCourseKnowledge()` only runs when the
+        // backend deletion succeeds (or is configured at all), and an
+        // on-device list of a disconnected account's posts must not depend on
+        // that.
+        clearAnnouncementLog()
         // `processedAnnouncementIDs` is the "have we looked at this yet"
         // cache that gates re-extraction — it must be cleared alongside the
         // rows above, or a reconnect (even to the SAME account) would treat
@@ -4214,7 +4252,7 @@ final class AppState: ObservableObject {
         extracted.enumerated().map { index, e in
             Assignment(
                 source: .canvasAnnouncement,
-                sourceID: "announcement-\(announcement.id)-\(index)",
+                sourceID: AnnouncementRecord.findSourceID(announcementID: announcement.id, index: index),
                 kind: e.kind == .preparation ? .event : .assignment,
                 course: courseCode,
                 title: e.title,
@@ -4348,15 +4386,28 @@ final class AppState: ObservableObject {
     /// path); a missed announcement fetch is not something worth interrupting
     /// the student over, and the sync-banner machinery exists for failures
     /// that ARE.
-    func syncAnnouncements() async {
+    ///
+    /// **Two windows, one fetch.** The fetch asks Canvas for the last 60
+    /// days (`AnnouncementLogStore.retention`) so the megaphone sheet can
+    /// list every announcement (`recordFetchedAnnouncements`, before any
+    /// gate below). Extraction is a different question and keeps its old
+    /// answer: only announcements posted in the last 14 days
+    /// (`announcementsEligibleForExtraction`) go on to the informational
+    /// gate, the extractors and the AI assist, so widening the fetch sends
+    /// nothing extra to the backend and creates no extra ledger row. The
+    /// wrong version is widening the window and filtering nothing: every
+    /// 15-to-60-day-old post would be extracted once, and on the AI path
+    /// that is a bill and an upload nobody asked for.
+    func syncAnnouncements(now: Date = Date()) async {
         guard !isUsingFixtureData else { return }
         guard let store = assignmentStore else { return }
 
-        let cookies = SessionCookieStore.load(service: .canvas)
         // A usable Canvas access token authenticates the
         // `CanvasAnnouncementsClient` fetch below on its own, so an empty
-        // cookie array alone is no longer "nothing to sync with."
-        guard !cookies.isEmpty || hasCanvasCredentials else { return }
+        // cookie array alone is no longer "nothing to sync with." A test
+        // that supplies its own fetch needs neither.
+        let cookies = announcementFetchForTesting == nil ? SessionCookieStore.load(service: .canvas) : []
+        guard announcementFetchForTesting != nil || !cookies.isEmpty || hasCanvasCredentials else { return }
 
         // id -> code, filtered to the courses the class picker has selected —
         // exactly `selectedCanvasCourseIDs()`'s existing contract (Grade
@@ -4365,33 +4416,40 @@ final class AppState: ObservableObject {
         let courseCodesByID = selectedCanvasCourseIDs()
         guard !courseCodesByID.isEmpty else { return }
 
-        // Constructed locally, never stored on `self` — `CanvasAnnouncementsClient`
-        // is deliberately not `Sendable` (see its type doc comment), so an
-        // instance must not outlive this single call.
-        let client = CanvasAnnouncementsClient(
-            baseURL: canvasBaseURL,
-            cookies: cookies,
-            accessToken: canvasAccessTokenBearer
-        )
-        let fourteenDaysAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
+        let windowStart = now.addingTimeInterval(-AnnouncementLogStore.retention)
+        let courseIDs = Array(courseCodesByID.keys)
         let fetched: [CanvasAnnouncement]
         do {
-            fetched = try await client.fetchAnnouncements(
-                courseIDs: Array(courseCodesByID.keys),
-                since: fourteenDaysAgo
-            )
+            if let announcementFetchForTesting {
+                fetched = try await announcementFetchForTesting(courseIDs, windowStart)
+            } else {
+                // Constructed locally, never stored on `self` —
+                // `CanvasAnnouncementsClient` is deliberately not `Sendable`
+                // (see its type doc comment), so an instance must not outlive
+                // this single call.
+                let client = CanvasAnnouncementsClient(
+                    baseURL: canvasBaseURL,
+                    cookies: cookies,
+                    accessToken: canvasAccessTokenBearer
+                )
+                fetched = try await client.fetchAnnouncements(courseIDs: courseIDs, since: windowStart)
+            }
         } catch {
             // Silent — see the method doc comment. A lapsed Canvas session
             // surfaces plenty loudly already through `refreshGradeWatcher`'s
             // and `refreshCanvasSessionExpiredState`'s own paths; this method
-            // doesn't need to pile on.
+            // doesn't need to pile on. The log is left exactly as it was.
             return
         }
 
-        let unprocessed = fetched.filter { !processedAnnouncementIDs.contains($0.id) }
+        // Before the early return below and before every gate: a fetch with
+        // nothing new to extract still updates the list.
+        recordFetchedAnnouncements(fetched, courseCodesByID: courseCodesByID, now: now)
+
+        let unprocessed = Self.announcementsEligibleForExtraction(fetched, now: now)
+            .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else { return }
 
-        let now = Date()
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
 
@@ -4446,7 +4504,9 @@ final class AppState: ObservableObject {
             // heuristic extractor's own default already tolerates.
             let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
             let extractor: any AnnouncementAssignmentExtractor
-            if announcementAIEnabled,
+            if let announcementExtractorForTesting {
+                extractor = announcementExtractorForTesting(announcement)
+            } else if announcementAIEnabled,
                canvasInstallation.id == CanvasInstallation.penn.id,
                let client = BackendServices.client,
                HeuristicAnnouncementExtractor.mightContainTask(
@@ -5811,6 +5871,10 @@ final class AppState: ObservableObject {
         announcementFinds = secondaryAnnouncementItems
             .filter(isVisibleAnnouncement)
             .sorted(by: Self.byDueDate)
+        // The plain-announcement list follows the same class selection, so
+        // hiding or deleting a class (both end in a rebuild) takes its
+        // announcements off the sheet in the same pass.
+        refreshAnnouncementRecordsOnPage()
         let beforeBacklog = allItems.filter { item in
             !isCompleted(item)
                 && !Self.isTooOld(item, now: now)

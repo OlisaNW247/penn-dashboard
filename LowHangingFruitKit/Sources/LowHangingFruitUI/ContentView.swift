@@ -36,9 +36,9 @@ struct ContentView: View {
     @State private var editing: DashItem?
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
-    @State private var seenAnnouncementIDs = AnnouncementReadState().seenIDs
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
-    /// after opening has marked everything seen.
+    /// after opening has marked everything seen. Holds both kinds of id: a
+    /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
     @State private var announcementNewIDs: Set<String> = []
     /// `Assignment.course` key of the class the list is narrowed to, or nil.
     @State private var classFilter: String?
@@ -112,7 +112,7 @@ struct ContentView: View {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
                         addInlineButton
-                        if !state.announcementPageItems.isEmpty {
+                        if state.showsAnnouncementsButton {
                             announcementFindsButton
                         }
                     }
@@ -252,7 +252,11 @@ struct ContentView: View {
                 .environmentObject(state)
         }
         .sheet(isPresented: $showAnnouncementFinds) {
-            AnnouncementFindsView(items: state.announcementPageItems, newIDs: announcementNewIDs)
+            AnnouncementFindsView(
+                items: state.announcementPageItems,
+                records: state.announcementRecordsOnPage,
+                newIDs: announcementNewIDs
+            )
         }
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
@@ -299,16 +303,15 @@ struct ContentView: View {
         .help("add assignment or recurring task")
     }
 
+    /// Unread finds plus unread plain announcements. The seen set lives on
+    /// `AppState` (not view state) because the announcement sync marks the
+    /// first fill of the log as seen while this view is already on screen.
     private var unreadAnnouncementCount: Int {
-        AnnouncementReadState.unread(state.announcementPageItems, seen: seenAnnouncementIDs).count
+        state.unreadAnnouncementCount
     }
 
     private func openAnnouncements() {
-        let items = state.announcementPageItems
-        announcementNewIDs = Set(AnnouncementReadState.unread(items, seen: seenAnnouncementIDs).map(\.id))
-        let readState = AnnouncementReadState()
-        readState.markAllSeen(items)
-        seenAnnouncementIDs = readState.seenIDs
+        announcementNewIDs = state.openAnnouncementsSheet()
         showAnnouncementFinds = true
     }
 
