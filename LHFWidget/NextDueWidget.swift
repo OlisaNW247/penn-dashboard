@@ -77,7 +77,7 @@ struct NextDueWidget: Widget {
             NextDueEntryView(entry: entry)
         }
         .configurationDisplayName("Next Due")
-        .description("Your next assignments, sorted so the soonest is on top.")
+        .description("next due")
         .supportedFamilies([
             .systemSmall,
             .systemMedium,

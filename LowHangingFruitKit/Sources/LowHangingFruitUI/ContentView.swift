@@ -394,9 +394,13 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo))
                         .font(.lhfSans(12, weight: .semibold))
-                    Text(canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo))
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText)
+                    // Only the two states the student has to act on differently
+                    // get a second line; the plain "reconnect canvas" has none.
+                    if let subtitle = canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo) {
+                        Text(subtitle)
+                            .font(.lhfSans(11))
+                            .foregroundStyle(Color.v2DateText)
+                    }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
@@ -409,21 +413,23 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            "\(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo)). "
-                + (rejected ? "update it in profile." : "reconnect canvas.")
+            [canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo),
+             canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo)]
+                .compactMap { $0 }
+                .joined(separator: ". ")
         )
     }
 
     private func canvasSessionExpiredBannerTitle(rejected: Bool, awaitingDuo: Bool) -> String {
-        if rejected { return "your stored pennkey password didn't work" }
-        if awaitingDuo { return "duo needs you to sign in once" }
-        return "your canvas login needs a refresh"
+        if rejected { return "pennkey password rejected" }
+        if awaitingDuo { return "duo needs you" }
+        return "reconnect canvas"
     }
 
-    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String {
+    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String? {
         if rejected { return "update it in profile." }
-        if awaitingDuo { return "then tap yes, this is my device so smooth can sign in for you next time" }
-        return "reconnect to keep automatic submission tracking accurate."
+        if awaitingDuo { return "tap yes, this is my device" }
+        return nil
     }
 
     // MARK: Header
@@ -637,13 +643,13 @@ struct ContentView: View {
         if sections.isEmpty {
             switch emptyStateStatus {
             case .loading:            loadingState
-            case let .error(message): errorState(message)
+            case .error:              errorState
             case .caughtUp:
                 // A first-time install can have `awaitingCanvasCheck`
                 // non-empty (see `AppState`'s doc comment on that property)
                 // while every other bucket is genuinely empty — nothing
                 // caught up yet, everything held pending a Canvas check.
-                // `allDoneState`'s "you're all caught up" would be exactly
+                // `allDoneState`'s "go enjoy life" would be exactly
                 // the false celebration this whole feature exists to
                 // prevent, so this case takes priority over it here.
                 if state.awaitingCanvasCheck.isEmpty {
@@ -690,7 +696,7 @@ struct ContentView: View {
         HStack(spacing: 8) {
             ProgressView()
                 .scaleEffect(0.7)
-            Text("checking canvas for what you've turned in…")
+            Text("checking canvas…")
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2DateText)
         }
@@ -701,14 +707,9 @@ struct ContentView: View {
     private var allDoneState: some View {
         ZStack {
             chillArtwork(maxWidth: 320, opacity: 0.35)
-            VStack(spacing: 8) {
-                Text("go enjoy life")
-                    .font(.lhfSerif(46))
-                    .foregroundStyle(Color.v2Ink)
-                Text("you're all caught up")
-                    .font(.lhfSecondary(15))
-                    .foregroundStyle(Color.v2DateText.opacity(0.85))
-            }
+            Text("go enjoy life")
+                .font(.lhfSerif(46))
+                .foregroundStyle(Color.v2Ink)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
@@ -756,7 +757,7 @@ struct ContentView: View {
     private var loadingState: some View {
         VStack(spacing: 14) {
             ProgressView()
-            Text("loading your assignments…")
+            Text("loading…")
                 .font(.lhfSecondary(15))
                 .foregroundStyle(Color.v2DateText)
         }
@@ -769,7 +770,7 @@ struct ContentView: View {
     /// Full-screen failure state, shown only when a sync failed AND there's
     /// nothing cached to fall back on. When we do have items, the slimmer
     /// `syncErrorBanner` surfaces the error without hiding the list.
-    private func errorState(_ message: String) -> some View {
+    private var errorState: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34, weight: .regular))
@@ -777,12 +778,6 @@ struct ContentView: View {
             Text("couldn't sync")
                 .font(.lhfSerif(30))
                 .foregroundStyle(Color.v2Ink)
-            Text(message)
-                .font(.lhfSecondary(14))
-                .foregroundStyle(Color.v2DateText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 28)
             Button { Task { await refresh() } } label: {
                 Text("try again")
                     .font(.lhfSans(15, weight: .semibold))
@@ -803,13 +798,13 @@ struct ContentView: View {
     /// on the dashboard itself — previously they only surfaced in Settings.
     @ViewBuilder
     private var syncErrorBanner: some View {
-        if !vm.items.isEmpty, let error = state.error {
+        if !vm.items.isEmpty, state.error != nil {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.v2SpineRed)
                     .padding(.top, 1)
-                Text(error)
+                Text("couldn't sync")
                     .font(.lhfSans(13))
                     .foregroundStyle(Color.v2Ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -826,7 +821,7 @@ struct ContentView: View {
                     .fill(Color.v2SpineRed.opacity(0.10))
             )
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("sync failed. \(error). double-tap to retry.")
+            .accessibilityLabel("couldn't sync. double-tap to retry.")
             .accessibilityAddTraits(.isButton)
         }
     }

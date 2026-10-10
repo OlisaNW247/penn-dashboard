@@ -95,7 +95,7 @@ struct ProfileClassesSection: View {
             }
             Button("cancel", role: .cancel) { renamingCourse = nil }
         } message: {
-            Text("shown instead of \(renamingCourse ?? "the class code"). leave it empty to reset.")
+            Text("empty resets")
         }
     }
 

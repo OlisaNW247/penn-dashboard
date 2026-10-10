@@ -248,14 +248,9 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Where do you use Canvas?")
-                            .font(.lhfSerif(34))
-                            .foregroundStyle(Color.v2Ink)
-                        Text("Choose a verified school, or enter the Canvas address your school gave you.")
-                            .font(.lhfSans(14))
-                            .foregroundStyle(Color.v2DateText)
-                    }
+                    Text("Where do you use Canvas?")
+                        .font(.lhfSerif(34))
+                        .foregroundStyle(Color.v2Ink)
 
                     TextField("Search schools", text: $schoolSearch)
                         .font(.lhfSans(16, weight: .medium))
@@ -336,7 +331,7 @@ struct OnboardingView: View {
 
     private func chooseCustomCanvas() {
         guard let installation = CanvasInstallation.custom(address: customCanvasAddress) else {
-            customAddressError = "Enter a public HTTPS Canvas address, such as canvas.school.edu."
+            customAddressError = "enter a canvas address, like canvas.school.edu"
             return
         }
         customAddressError = nil
@@ -529,7 +524,6 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     remindersHeadline
-                    syncNotice
                     leadTimeSection
                     notificationExtrasSection
                 }
@@ -548,33 +542,6 @@ struct OnboardingView: View {
             .font(.lhfSerif(34))
             .foregroundStyle(Color.v2Ink)
             .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// A soft, borderless pastel field — the same flat `opacity(0.13)` treatment
-    /// `smoothSectionBackground` gives every Settings group, rather than the
-    /// filled-pill-with-a-stroke look this used before the redesign. Teal
-    /// because that's the color Settings already uses for "connected, in
-    /// progress" states (the account rows' checkmarks), not a color picked
-    /// fresh for this one banner.
-    private var syncNotice: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.smoothTealInk)
-                .padding(.top, 1)
-
-            Text("Your classes and assignments may take a few minutes to appear.")
-                .font(.lhfSans(12, weight: .medium))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.smoothTeal.opacity(0.13))
-        )
-        .accessibilityElement(children: .combine)
     }
 
     private var leadTimeSection: some View {
@@ -639,7 +606,6 @@ struct OnboardingView: View {
         VStack(spacing: 10) {
             notificationOption(
                 title: "turned in notifications",
-                detail: "confirm when Canvas sees a submission",
                 isOn: Binding(
                     get: { scheduler.turnedInEnabled },
                     set: { scheduler.setTurnedInEnabled($0) }
@@ -650,18 +616,12 @@ struct OnboardingView: View {
 
     private func notificationOption(
         title: String,
-        detail: String,
         isOn: Binding<Bool>
     ) -> some View {
         Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                Text(detail)
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.v2DateText)
-            }
+            Text(title)
+                .font(.lhfSans(15, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
         }
         .toggleStyle(.switch)
         // Cobalt: the same `.tint` `SettingsPage.smoothFormChrome` applies to
@@ -1177,7 +1137,7 @@ private struct CanvasLoginPane: View {
                     // appearance; resetting it while Penn's pane is still
                     // mid-Duo would let a re-rendered credential form be
                     // auto-filled a second time.
-                    message = state.error ?? "That address did not produce a usable Canvas session. Finish signing in or choose another school."
+                    message = state.error ?? "couldn't sign in. try again."
                     navObserver.reset()
                 }
             }

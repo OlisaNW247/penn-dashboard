@@ -35,14 +35,14 @@ struct PasteFeedLinkSheet: View {
                 } header: {
                     SmoothSectionHeader("canvas calendar link", accent: .smoothTeal)
                 } footer: {
-                    Text("these steps are for the desktop canvas site — calendar feed isn't available in the canvas app or on a phone browser, so grab the link from a computer. on \(state.canvasInstallation.host): calendar → calendar feed (bottom right) → copy the link. paste it here exactly as given — a webcal:// link works too.")
+                    Text("on a computer: calendar → calendar feed → copy link.")
                         .font(.lhfSecondary(12))
                         .foregroundStyle(Color.v2DateText)
                 }
                 .smoothSectionBackground(.smoothTeal)
 
                 Section {
-                    Text("logging in to canvas gives you a more accurate dashboard, so that's what we recommend. with a calendar link, the app can't tell what you've already submitted, so finished work keeps showing as outstanding until you check it off yourself.")
+                    Text("a link can't see what you've submitted.")
                         .font(.lhfSans(12))
                         .foregroundStyle(Color.v2DateText)
                 }
