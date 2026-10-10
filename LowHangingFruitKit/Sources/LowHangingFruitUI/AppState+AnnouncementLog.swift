@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import LowHangingFruitKit
 
@@ -10,6 +11,11 @@ import LowHangingFruitKit
 // "aren't there". `syncAnnouncements()` now also writes every announcement it
 // fetches into `AnnouncementLogStore`, and the sheet lists those under the
 // finds.
+//
+// Ed Discussion announcements and pinned posts are listed too. They are not
+// fetched here: Ed is already read into `courseKnowledge` by the course-material
+// sync, and this file only reads that (`AnnouncementRecord.edRecords`), merging
+// the rows at display time and never into the log file.
 //
 // Nothing here talks to a server. The log is read from and written to one
 // file on the phone, it is cleared when Canvas is disconnected, and nothing
@@ -117,13 +123,77 @@ extension AppState {
     func loadAnnouncementLog(now: Date = Date()) {
         guard let log = announcementLog else {
             announcementLogRecords = []
+            edAnnouncementRecords = []
             announcementSeenIDs = []
             refreshAnnouncementRecordsOnPage()
             return
         }
         announcementLogRecords = log.store.load(now: now)
         announcementSeenIDs = log.readState.seenIDs
+        observeKnowledgeForAnnouncements()
+        refreshEdAnnouncementRecords(from: courseKnowledge, now: now)
+    }
+
+    // MARK: Ed Discussion rows
+
+    /// Subscribes, once, to `courseKnowledge`, so the list follows a knowledge
+    /// sync without a single call being added to the sync. `@Published`
+    /// delivers the *new* value (it fires before the property changes), so the
+    /// handler reads the value it is given and never `self.courseKnowledge`,
+    /// which still holds the old one at that moment. `dropFirst` skips the
+    /// current value the subscription replays; `loadAnnouncementLog` has
+    /// already used it.
+    func observeKnowledgeForAnnouncements() {
+        guard announcementKnowledgeSubscription == nil else { return }
+        announcementKnowledgeSubscription = $courseKnowledge
+            .dropFirst()
+            .sink { [weak self] knowledge in
+                // `courseKnowledge` is only ever set on the main actor, so
+                // this runs there already; the assertion states it.
+                MainActor.assumeIsolated {
+                    self?.refreshEdAnnouncementRecords(from: knowledge, now: Date())
+                }
+            }
+    }
+
+    /// Recomputes the Ed rows from `knowledge` and the list from them. Off
+    /// entirely when the announcement log is (the test-runner default), so an
+    /// `AppState` that did not opt in lists nothing and writes nothing.
+    func refreshEdAnnouncementRecords(from knowledge: CourseKnowledgeBase, now: Date) {
+        let next = announcementLog == nil
+            ? []
+            : AnnouncementRecord.edRecords(from: knowledge.documents, now: now)
+        if next != edAnnouncementRecords { edAnnouncementRecords = next }
+        seedEdAnnouncementsIfNeeded()
         refreshAnnouncementRecordsOnPage()
+    }
+
+    /// The first time Ed rows exist on this install, they count as already
+    /// seen, so the badge does not jump to the whole backlog the day they
+    /// first appear. Tracked by its own flag (`edSeeded`), not by the Canvas
+    /// log's first fill: an install that filled its Canvas log long ago must
+    /// still get this once. Set only when there is something to mark, so a
+    /// class whose Ed posts arrive in a later sync is seeded then and not at
+    /// launch with nothing to see. Later Ed rows are unread.
+    private func seedEdAnnouncementsIfNeeded() {
+        guard let log = announcementLog,
+              !isUsingFixtureData,
+              !edAnnouncementRecords.isEmpty,
+              !log.readState.edSeeded
+        else { return }
+        // A plain union, not `markSeen(_:keepingOnly:)`: this can run at
+        // launch, before the first rebuild has loaded the finds, and pruning
+        // to "what is on the page" then would forget finds already seen.
+        log.readState.markSeen(Set(edAnnouncementRecords.map(AnnouncementReadState.key(for:))))
+        log.readState.markEdSeeded()
+        announcementSeenIDs = log.readState.seenIDs
+    }
+
+    /// The seen-set key of every row that could still be listed: all of
+    /// `canvas` (the stored log, hidden classes included) and all Ed rows.
+    /// This is what bounds the persisted set.
+    private func knownAnnouncementKeys(canvas: [AnnouncementRecord]) -> Set<String> {
+        Set((canvas + edAnnouncementRecords).map(AnnouncementReadState.key(for:)))
     }
 
     /// Recomputes the sheet's list from the stored records and the current
@@ -136,8 +206,10 @@ extension AppState {
         if isUsingFixtureData {
             next = []
         } else {
+            // Canvas log and Ed rows are merged here, at display time, and
+            // only here: the log file stays Canvas-only.
             next = Self.announcementRecordsForPage(
-                announcementLogRecords,
+                announcementLogRecords + edAnnouncementRecords,
                 isCourseSelected: { self.isCourseSelected($0) }
             )
         }
@@ -195,7 +267,7 @@ extension AppState {
         if previous == nil {
             let incomingKeys = Set(incoming.map { AnnouncementReadState.recordKey($0.id) })
             let pageKeys = Set(announcementPageItems.map(\.id))
-                .union(kept.map { AnnouncementReadState.recordKey($0.id) })
+                .union(knownAnnouncementKeys(canvas: kept))
             log.readState.markSeen(incomingKeys, keepingOnly: pageKeys)
         }
         announcementSeenIDs = log.readState.seenIDs
@@ -231,12 +303,16 @@ extension AppState {
             records: announcementRecordsOnPage,
             seen: announcementSeenIDs
         )
+        // Rows of a hidden class are not on the page but are still known, so
+        // their already-seen state survives the class being shown again.
+        let known = knownAnnouncementKeys(canvas: announcementLogRecords)
         if let log = announcementLog {
-            log.readState.markAllSeen(announcementPageItems, records: announcementRecordsOnPage)
+            log.readState.markAllSeen(announcementPageItems, records: announcementRecordsOnPage, keeping: known)
             announcementSeenIDs = log.readState.seenIDs
         } else {
             announcementSeenIDs = Set(announcementPageItems.map(\.id))
-                .union(announcementRecordsOnPage.map { AnnouncementReadState.recordKey($0.id) })
+                .union(announcementRecordsOnPage.map(AnnouncementReadState.key(for:)))
+                .union(announcementSeenIDs.intersection(known))
         }
         return newIDs
     }
@@ -247,11 +323,19 @@ extension AppState {
     /// pointed at it. Canvas-derived text, so it goes when Canvas is
     /// disconnected (`disconnectCanvas`) and with the rest of the on-device
     /// course cache (`clearCourseKnowledge`).
+    ///
+    /// Ed rows are derived from the course knowledge, which this does not
+    /// touch, so they stay listed; their seen state is forgotten with the
+    /// rest and re-seeded straight away, so clearing the log does not make
+    /// every Ed post unread.
     func clearAnnouncementLog() {
         announcementLog?.store.clear()
         announcementLog?.readState.forgetRecords()
         announcementLogRecords = []
-        announcementRecordsOnPage = []
-        announcementSeenIDs = announcementSeenIDs.filter { !AnnouncementReadState.isRecordKey($0) }
+        announcementSeenIDs = announcementSeenIDs.filter {
+            !AnnouncementReadState.isRecordKey($0) && !AnnouncementReadState.isEdKey($0)
+        }
+        seedEdAnnouncementsIfNeeded()
+        refreshAnnouncementRecordsOnPage()
     }
 }
