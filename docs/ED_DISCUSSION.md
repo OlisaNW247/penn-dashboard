@@ -1,16 +1,21 @@
 # Ed Discussion → pooled course material
 
-Written 2026-09-22. Branch: `v8` (cut from `V7` 2026-10-02). Status:
-**phase 1 built on 2026-10-02, blind, across six commits; nothing has run
-on a device yet.** The cookie transport is assumed; the phase 0 probe's
-paste (still outstanding) confirms or corrects it. What exists:
+Written 2026-09-22. Branch: `v8` (cut from `V7` 2026-10-02). Status, as
+of 2026-10-10: **phase 1 built 2026-10-02 (blind), compiled green
+2026-10-09 (1539/154), and the access path proven on Olisa's phone the
+same day**: the launch lands on Ed, and the captured token reads Ed's API
+(`native whoAmI (token): status=200 courses=19`). The backend accepts
+kind `ed` since 2026-10-10 (migration applied, `sync` version 7
+deployed). What has not happened yet: a full sync on a device, so the
+Profile row has never read "connected" and no `ed` document has reached
+the pool. What exists:
 
 | Piece | Where |
 |---|---|
 | kind `ed` on both sides of the wire | `CourseDocument.Kind.ed`, migration `20261002090000_ed_kind.sql`, `_shared/manifest.ts`, `PROTOCOL.md` |
 | wire models, XML → text, filter, matcher, builder | `Kit/Ed/EdWire.swift`, `EdDocumentText.swift`, `EdThreadFilter.swift`, `EdCourseMatcher.swift`, `EdDocumentBuilder.swift` |
 | HTTP client and document ingestion | `Kit/Ed/EdClient.swift` (cookie or `x-token` auth), `EdIngestion.swift` |
-| hidden-WebView LTI launch, session capture | `UI/EdSessionLauncher.swift`. The session is a `localStorage` token (`authToken`, else `authToken:us`) read after landing and kept in `UI/EdSessionTokenStore.swift` (Keychain, this-device-only, deleted on Canvas disconnect); any `edstem` cookies still go to `SessionCookieStore.Service.ed` (never aged by the 24 h Canvas rule) as a fallback. Not yet re-run on a device since the change |
+| hidden-WebView LTI launch, session capture | `UI/EdSessionLauncher.swift`. The session is a `localStorage` token (`authToken`, else `authToken:us`) read after landing and kept in `UI/EdSessionTokenStore.swift` (Keychain, this-device-only, deleted on Canvas disconnect); any `edstem` cookies still go to `SessionCookieStore.Service.ed` (never aged by the 24 h Canvas rule) as a fallback. Token path proven by the probe 2026-10-09 |
 | orchestration inside the course-material sync | `UI/EdDiscussionCoordinator.swift`, called from `AppState+CourseKnowledge.swift` before the backend upload on both paths |
 | status for the student | read-only "ed discussion" row in Profile → accounts (Penn only) |
 | kill switch | `FeatureFlags.edDiscussion` |

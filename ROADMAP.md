@@ -91,9 +91,9 @@ Roughly in priority order.
   server path of ask, and announcement AI assist are Penn-only because the
   backend keys course material by numeric Canvas course id. Namespacing it
   by Canvas origin unlocks them everywhere.
-- **Ed Discussion as a source.** The groundwork is in `docs/ED_DISCUSSION.md`
-  (the recon probe; its DEBUG button left Settings on 2026-09-24, but the
-  `AppState` seam remains).
+- **Ed Discussion, phase 2.** The Announcement Watcher reading `ed`
+  documents through the same gate as Canvas announcements, once phase 1
+  has completed a sync on a device (`docs/ED_DISCUSSION.md`).
 - **Canvas access tokens**, the day Penn issues an OAuth developer key or
   lifts the student-token restriction. The plumbing is built and gated off
   (`FeatureFlags.canvasAccessTokens`).
@@ -163,9 +163,15 @@ Kept so nobody rebuilds them blind.
   renewals retry on a cooldown instead of latching on one timeout; a
   secret-free last-renewal summary and a sign-in health line in Profile;
   Gradescope cookies re-stamped on sync; stamped 3.0.1 (12).
+- **2026-10-10.** Ed Discussion backend live: the `ed` kind migration
+  applied and `sync` version 7 deployed, with Olisa's go. On 2026-10-09
+  the DEBUG probe proved the access path on a real phone (LTI launch
+  lands on Ed; the session is a `localStorage` token, now captured into
+  the Keychain and sent as `x-token`; Ed answered 200 with 19 courses).
+  Still to do: one full sync on a device.
 - **2026-10-02 (`v8`, blind).** Ed Discussion ingestion end to end
   (`docs/ED_DISCUSSION.md`); the `ed` document kind on both sides of the
-  wire; migration not yet applied.
+  wire.
 - **2026-09-27.** Stay signed in works like Olisa's phone again: the
   24-hour cookie rule and Penn's cookie handling restored byte for byte
   from `39b2fff`, so the app re-logs in on open after a day away (PennKey
