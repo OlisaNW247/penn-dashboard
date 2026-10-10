@@ -112,6 +112,13 @@ public enum WidgetSnapshotStore {
     /// showing its last-known (or empty) state.
     public static func write(_ snapshot: WidgetSnapshot) {
         guard let url = fileURL() else { return }
+        write(snapshot, to: url)
+    }
+
+    /// Testable seam: the same atomic write against an explicit file, so tests
+    /// exercise the real encode/decode round trip in a temp directory without
+    /// ever resolving the App Group container.
+    static func write(_ snapshot: WidgetSnapshot, to url: URL) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: url, options: .atomic)
     }
@@ -119,11 +126,64 @@ public enum WidgetSnapshotStore {
     /// Reads the last-written snapshot, or nil if none exists yet, the App
     /// Group isn't configured, or the file can't be decoded.
     public static func read() -> WidgetSnapshot? {
-        guard let url = fileURL(),
-              let data = try? Data(contentsOf: url),
+        guard let url = fileURL() else { return nil }
+        return read(from: url)
+    }
+
+    /// Testable seam for `read()`: nil for a missing file and for an
+    /// unreadable one alike, because neither tells the widget anything the app
+    /// said.
+    static func read(from url: URL) -> WidgetSnapshot? {
+        guard let data = try? Data(contentsOf: url),
               let snapshot = try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
         else { return nil }
         return snapshot
+    }
+
+    /// What the widget should show right now: the app's published snapshot
+    /// when there is one, otherwise a view derived straight from the ledger.
+    ///
+    /// **A published snapshot is trusted even when it is empty.** The app
+    /// publishes the same lists the dashboard shows, and an empty list is a
+    /// real answer: the student is caught up, or the first-sync hold is
+    /// withholding overdue work it has not verified yet, or every remaining
+    /// item is hidden, deduplicated or marked "nothing to submit". This used
+    /// to treat an empty snapshot as "no snapshot" and read the ledger
+    /// instead, which put exactly those raw rows (the deduplicated twin, the
+    /// held item, the reading with nothing to submit) on a widget beside a
+    /// dashboard that deliberately hid them. The ledger cannot reproduce the
+    /// dashboard's filtering (see `LedgerWidgetReader`), so it may only stand
+    /// in where the app has said nothing at all.
+    ///
+    /// "Said nothing at all" is exactly: no snapshot file, or one that does
+    /// not decode (a newer or older schema, a damaged file, an App Group that
+    /// does not resolve). Those are the install-or-update window the fallback
+    /// was written for, and `read` already collapses them to nil.
+    ///
+    /// There is deliberately no staleness rule. The app republishes on every
+    /// dashboard rebuild, so a snapshot only ages while the app is closed, and
+    /// an old snapshot is still the dashboard's last word, which the raw
+    /// ledger never is. Age would only be needed to tell "never published"
+    /// from "published empty", and the file's existence already does that.
+    /// Items in an old snapshot whose due time has since passed stay on the
+    /// widget as overdue, as they do on the dashboard; `WidgetTimelinePlanner`
+    /// only schedules the re-render at that moment.
+    public static func current(now: Date = Date()) -> WidgetSnapshot {
+        current(snapshotURL: fileURL()) {
+            LedgerWidgetReader.snapshot(now: now)
+        }
+    }
+
+    /// Testable seam for `current(now:)`. `ledger` is a closure so a test can
+    /// prove it is never even called when a snapshot was published.
+    static func current(
+        snapshotURL: URL?,
+        ledger: () -> WidgetSnapshot?
+    ) -> WidgetSnapshot {
+        if let snapshotURL, let published = read(from: snapshotURL) {
+            return published
+        }
+        return ledger() ?? .empty
     }
 }
 
