@@ -1245,10 +1245,20 @@ none is a ship line.
   once the Keychain's Canvas cookies are injected into the hidden WebView,
   and Ed's session is a `localStorage` token (`authToken`), not a cookie
   (a cookie-only `GET /api/user` is 401). The token path
-  (`EdSessionTokenStore`, `EdAuth.token`) was wired that day and has not
-  yet been compiled or re-probed; the probe's `native whoAmI (token)`
-  line is the check. The server still rejects kind `ed` until migration
-  `20261002090000_ed_kind.sql` is applied and `sync` redeployed. The
+  (`EdSessionTokenStore`, `EdAuth.token`) was wired, compiled and
+  re-probed that day: `native whoAmI (token): status=200 courses=19`.
+  The backend accepts kind `ed` since 2026-10-10 (migration
+  `20261002090000_ed_kind.sql` applied through the Management API's
+  `database/query`, `sync` version 7 deployed with
+  `backend/scripts/deploy-function.mjs`; Node's fetch needs
+  `NODE_USE_ENV_PROXY=1` in the cloud container or the proxy never
+  injects the token). A full sync has since run on a device: Marco's
+  phone, read on 2026-10-10 with a `v8-launch-prep` DEBUG build, held 27
+  `ed` documents across two classes in `course-knowledge.json` (17 and
+  10), one of those classes having no other documents at all. Nobody
+  has yet checked those against what the two Ed boards show, and the Ed
+  status line now lives under Profile → testing → "sign-in diagnostics"
+  on a DEBUG build (it left the normal page on 2026-10-10). The
   feature fails soft throughout: every error is a note in the sync trace
   and the Settings status line, never a thrown error.
 - **Nothing has ever been tested against real Canvas or Gradescope data.**
