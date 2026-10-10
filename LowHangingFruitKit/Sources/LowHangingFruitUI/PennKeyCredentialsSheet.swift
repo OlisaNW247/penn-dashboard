@@ -84,10 +84,6 @@ struct PennKeyCredentialsSheet: View {
                         #if os(iOS)
                         .textContentType(.password)
                         #endif
-                } footer: {
-                    Label("only ever sent to penn's login page", systemImage: "checkmark.shield")
-                        .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.v2DateText)
                 }
                 .smoothSectionBackground(.smoothCobalt)
             }

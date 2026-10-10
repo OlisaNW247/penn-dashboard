@@ -160,4 +160,44 @@ struct GradeMinimalCopyTests {
             Issue.record("attendance-only headline should carry a secondary line")
         }
     }
+
+    // MARK: - Strings shortened in the 2026-10-10 copy diet
+    //
+    // These are the strings from that pass that can actually meet the budget
+    // and are reachable without instantiating a view. The formula line for
+    // weighted courses ("category % \u{00d7} weight, over the weight graded so
+    // far (80%)") is deliberately NOT here: it is nine words, and the agreed
+    // wording for it overrides the six-word rule, so it is pinned exactly in
+    // `GradeExplanationTests` instead. Strings that live only inside a view
+    // body (the confirmation dialogs, the syllabus setup lines) cannot be
+    // reached from a test at all.
+
+    @Test("explanation: points-mode formula and posted-only decided line stay within budget")
+    func explanationCopyBudget() {
+        let pointsFormula = GradeExplanation.make(
+            from: breakdown(decidedFraction: 0.63), canvasScore: nil
+        )
+        #expect(pointsFormula.formulaLine == "points earned \u{00f7} points possible")
+        assertBudget(pointsFormula.formulaLine)
+        #expect(pointsFormula.decidedLine == "63% graded \u{00b7} semester share unknown")
+        assertBudget(pointsFormula.decidedLine)
+    }
+
+    @MainActor
+    @Test("refresh banners: the partial, total and no-session messages stay within budget")
+    func refreshOutcomeCopyBudget() {
+        let partial = GradeWatcherStore.outcome(
+            total: 5, succeeded: 4, sawSessionExpired: false, lastFailure: nil
+        )
+        let total = GradeWatcherStore.outcome(
+            total: 5, succeeded: 0, sawSessionExpired: false, lastFailure: nil
+        )
+        for message in [partial.error, total.error] {
+            guard let message else {
+                Issue.record("a failed refresh should carry a message")
+                continue
+            }
+            assertBudget(message)
+        }
+    }
 }

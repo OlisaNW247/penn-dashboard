@@ -29,6 +29,12 @@ public struct ClassQuestionAnswerer: Sendable {
     public let context: AskKnowledgeContext
     public static let maxListItems = 8
 
+    /// The whole answer when there is nothing to answer from. Sync is
+    /// automatic (there is no "sync" button to point a student at), and the
+    /// owner wants the shortest true thing, so this names the state and
+    /// nothing else.
+    private static let nothingSynced = "Nothing synced yet."
+
     public init(context: AskKnowledgeContext) {
         self.context = context
     }
@@ -65,18 +71,32 @@ public struct ClassQuestionAnswerer: Sendable {
         if let course = context.courses.first {
             questions.append("What's the late policy in \(course.code)?")
         }
-        if !context.knowledge.documents(ofKind: .announcement).isEmpty {
+        if !announcementDocuments(in: context.knowledge).isEmpty {
             questions.append("Latest announcements")
         }
         return questions
     }
 
+    /// What "latest announcements" draws on: every Canvas announcement, plus
+    /// the Ed Discussion posts that are announcements or pinned posts. A
+    /// plain staff post on Ed is course material, not news, so it is not
+    /// listed. A class whose only synced material is Ed has announcements
+    /// all the same; counting Canvas alone hid the chip and answered "no
+    /// announcements" for it, which was false.
+    private static func announcementDocuments(in knowledge: CourseKnowledgeBase) -> [CourseDocument] {
+        knowledge.documents.filter { doc in
+            switch doc.kind {
+            case .announcement: return true
+            case .ed: return EdDocumentHeader.parse(doc.text).isAnnouncementOrPinned
+            default: return false
+            }
+        }
+    }
+
     // MARK: - Structured answers
 
     private func help(_ parsed: ParsedQuestion) -> AssistantAnswer {
-        let name = context.userName.isEmpty ? "" : ", \(context.userName)"
         let lines = [
-            "Hi\(name). Ask me anything about your classes. For example:",
             "1. What's due this week?",
             "2. When is my next midterm?",
             "3. Did I submit the lab?",
@@ -89,7 +109,7 @@ public struct ClassQuestionAnswerer: Sendable {
     private func courseList(_ parsed: ParsedQuestion) -> AssistantAnswer {
         let courses = context.courses
         guard !courses.isEmpty else {
-            return AssistantAnswer(text: "I don't see any courses yet. Connect Canvas and sync, then ask again.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: "No classes yet.", sources: [], question: parsed, isExact: true)
         }
         var lines = ["You're in \(courses.count) course\(courses.count == 1 ? "" : "s"):"]
         for (index, course) in courses.enumerated() {
@@ -175,11 +195,11 @@ public struct ClassQuestionAnswerer: Sendable {
         let hits = search(query, parsed: parsed, kinds: [.syllabus, .page, .announcement, .ed, .module, .website])
         if let best = hits.first {
             let scope = parsed.course.map { " for \($0.code)" } ?? ""
-            let text = "I don't see a dated \(kind.label)\(scope) on your calendar yet. Here's what the \(best.document.course) \(best.document.kind.label) says:\n\(excerpt(best.passage.text, query: query))"
+            let text = "No dated \(kind.label)\(scope) yet. From the \(best.document.course) \(best.document.kind.label):\n\(excerpt(best.passage.text, query: query))"
             return AssistantAnswer(text: text, sources: sources(for: hits), question: parsed, grounding: hits, isExact: false)
         }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
-        return AssistantAnswer(text: "No upcoming \(kind.pluralLabel)\(scope) in your synced classes.", sources: [], question: parsed, isExact: true)
+        return AssistantAnswer(text: "No upcoming \(kind.pluralLabel)\(scope).", sources: [], question: parsed, isExact: true)
     }
 
     private func itemDetail(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
@@ -223,7 +243,7 @@ public struct ClassQuestionAnswerer: Sendable {
                 .filter { $0.submitted == false && ($0.dueAt ?? .distantFuture) >= context.now.addingTimeInterval(-7 * 86_400) }
                 .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
             if docs.isEmpty {
-                return AssistantAnswer(text: "I don't have submission data yet. Sync course materials in Settings, then ask again.", sources: [], question: parsed, isExact: true)
+                return AssistantAnswer(text: Self.nothingSynced, sources: [], question: parsed, isExact: true)
             }
             if pending.isEmpty {
                 return AssistantAnswer(text: "Everything due recently shows as submitted on Canvas.", sources: [], question: parsed, isExact: true)
@@ -244,11 +264,11 @@ public struct ClassQuestionAnswerer: Sendable {
         }
         if let item = bestItem(matching: query, in: openItems(course: parsed.course, includeCompleted: true)) {
             let text = item.isCompleted
-                ? "You marked \(item.title) (\(item.course)) done in LHF. Canvas hasn't reported a submission for it yet; sync course materials to check."
+                ? "You marked \(item.title) (\(item.course)) done in LHF. Canvas hasn't reported a submission for it yet."
                 : "\(item.title) (\(item.course)) isn't marked done, and I don't have Canvas submission data for it yet."
             return AssistantAnswer(text: text, sources: sources(for: [item]), question: parsed, isExact: true)
         }
-        return AssistantAnswer(text: "I couldn't match \"\(query)\" to an assignment. Try the name as it appears on Canvas.", sources: [], question: parsed, isExact: true)
+        return AssistantAnswer(text: "Couldn't match \"\(query)\".", sources: [], question: parsed, isExact: true)
     }
 
     private func overdue(_ parsed: ParsedQuestion) -> AssistantAnswer {
@@ -264,13 +284,20 @@ public struct ClassQuestionAnswerer: Sendable {
     }
 
     private func recentAnnouncements(_ parsed: ParsedQuestion) -> AssistantAnswer {
-        let announcements = context.knowledge.documents(ofKind: .announcement)
+        // Canvas announcements and Ed announcements/pinned posts in one list,
+        // newest first by their own date. Equal dates fall back to the id so
+        // the order never depends on the sort's choice between ties.
+        let announcements = Self.announcementDocuments(in: context.knowledge)
             .filter { doc in parsed.course.map { CourseMatcher.sameCourse(doc.course, as: $0) } ?? true }
-            .sorted { ($0.updatedAt ?? $0.fetchedAt) > ($1.updatedAt ?? $1.fetchedAt) }
+            .sorted { lhs, rhs in
+                let l = lhs.updatedAt ?? lhs.fetchedAt
+                let r = rhs.updatedAt ?? rhs.fetchedAt
+                return l != r ? l > r : lhs.id < rhs.id
+            }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
         guard !announcements.isEmpty else {
-            let hint = context.knowledge.isEmpty ? " Sync course materials in Settings first." : ""
-            return AssistantAnswer(text: "No announcements\(scope) yet.\(hint)", sources: [], question: parsed, isExact: true)
+            let text = context.knowledge.isEmpty ? Self.nothingSynced : "No announcements\(scope) yet."
+            return AssistantAnswer(text: text, sources: [], question: parsed, isExact: true)
         }
         var lines = ["Latest announcements\(scope):"]
         let top = Array(announcements.prefix(3))
@@ -287,12 +314,11 @@ public struct ClassQuestionAnswerer: Sendable {
 
     private func lookup(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
         if context.knowledge.isEmpty {
-            return AssistantAnswer(text: "I only have your calendar so far. Sync course materials in Settings and I can answer questions about the syllabus, assignments, and announcements.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: Self.nothingSynced, sources: [], question: parsed, isExact: true)
         }
         let hits = search(query, parsed: parsed, kinds: nil)
         guard let best = hits.first else {
-            let scope = parsed.course.map { " for \($0.code)" } ?? ""
-            return AssistantAnswer(text: "I couldn't find that in your course materials\(scope). Try different words, or ask about the syllabus, an assignment, or an announcement.", sources: [], question: parsed, isExact: true)
+            return AssistantAnswer(text: "Couldn't find that.", sources: [], question: parsed, isExact: true)
         }
         var lines = ["From the \(best.document.course) \(best.document.kind.label) \"\(componentLabel(best))\(best.document.title)\":", excerpt(best.passage.text, query: query)]
         if hits.count > 1, hits[1].document.id != best.document.id {
@@ -362,12 +388,34 @@ public struct ClassQuestionAnswerer: Sendable {
         let courseIDs = (parsed.course ?? followUp.course).map { context.knowledge.courseIDs(forCode: $0.code) }
         let scopedIDs = (courseIDs?.isEmpty ?? true) ? nil : courseIDs
         let searchText = namesOwnCourse ? query : followUp.query
-        var hits = context.search.search(searchText, courseIDs: scopedIDs, kinds: kinds, preferredComponent: DocumentComponent.mentioned(in: query), limit: 4)
-        if scopedIDs == nil, let course = parsed.course {
-            hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
+        let preferredComponent = DocumentComponent.mentioned(in: query)
+        func topHits(limit: Int) -> [SearchHit] {
+            var hits = context.search.search(searchText, courseIDs: scopedIDs, kinds: kinds, preferredComponent: preferredComponent, limit: limit)
+            if scopedIDs == nil, let course = parsed.course {
+                hits = hits.filter { CourseMatcher.sameCourse($0.document.course, as: course) }
+            }
+            return hits
         }
-        return hits
+        var hits = topHits(limit: Self.hitLimit)
+        // An Ed post that is only a picture (or only a header) matches on its
+        // title and category words and then has nothing to show, but as the
+        // best hit it would be the whole answer. When one turns up, search
+        // deeper and let the next hits take the places; a search with nothing
+        // to skip runs exactly as it always did. The documents are untouched:
+        // this only decides what this one answer is drawn from.
+        if hits.contains(where: \.isTextlessEdPost) {
+            hits = Array(topHits(limit: Self.hitLimit * 3).filter { !$0.isTextlessEdPost }.prefix(Self.hitLimit))
+        }
+        // Passages go on to the answer text and to the on-device model as
+        // grounding; an Ed passage's `[ed · reason] category` line is
+        // bookkeeping for the index and the server's model, not something to
+        // show a student or to have a model echo back.
+        return hits.map(\.withoutEdHeader)
     }
+
+    /// How many passages a lookup keeps; the answer uses the first two and
+    /// the source chips the rest.
+    private static let hitLimit = 4
 
     /// Token-overlap match of a free-text mention against item titles. Numbers
     /// must match exactly ("pset 5" never matches "PSet 6").
@@ -496,8 +544,16 @@ public struct ClassQuestionAnswerer: Sendable {
 
     /// The document body without the "Due:/Points:/Status:" header lines the
     /// builder prepends for assignments.
+    ///
+    /// An Ed document is different: its header is the one `[ed · reason]
+    /// category` line `EdDocumentBuilder` writes (`EdDocumentHeader` reads
+    /// it back), and the rest is the staff member's own text. That text is
+    /// shown whole. Running it through the line filter below would drop a
+    /// line of the post that merely starts with "Due: " or "Status: ", which
+    /// an announcement about a deadline is likely to have.
     private func bodyText(of doc: CourseDocument) -> String {
-        doc.text
+        if doc.kind == .ed { return EdDocumentHeader.parse(doc.text).body }
+        return doc.text
             .components(separatedBy: "\n")
             .filter { !($0.hasPrefix("Due: ") || $0.hasPrefix("Points: ") || $0.hasPrefix("Status: ") || $0.hasPrefix("Posted: ")) }
             .joined(separator: "\n")

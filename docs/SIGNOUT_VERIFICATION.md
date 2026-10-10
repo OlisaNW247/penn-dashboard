@@ -54,10 +54,11 @@ xcrun devicectl device process launch --console --terminate-existing \
    the renewal starts; the fix hides it while a renewal is in flight, so
    a banner that appears and stays is a failure, and one that flashes
    for the length of the renewal means that hiding did not work (note it,
-   it is not a sign-out). Fail: a banner that stays ("your canvas login
-   needs a refresh" or "duo needs you to sign in once"), or a Duo push.
+   it is not a sign-out). Fail: a banner that stays ("reconnect canvas"
+   or "duo needs you"), or a Duo push.
 
-2. Open Profile → accounts and copy the three lines under Canvas. Expected:
+2. Open Profile → testing (debug build only) → sign-in diagnostics and copy
+   the three lines under it. Expected:
    - `pennkey password saved — smooth signs in for you`
    - `duo remembers this phone — penn asks again about every 30 days`
    - `last silent sign-in: signed in silently, <today's date and time> (foreground)`
@@ -110,7 +111,7 @@ the password is then saved, a silent renewal on the next aged launch.
 1. Install Debug and launch with `-LHFAgeCanvasSession` exactly as for
    phone A (its own CoreDevice id). With no password the renewal is a
    GET-only reload and should end on Penn's login page. Pass: the console
-   ends `landed-on-login`, the banner `your canvas login needs a refresh`
+   ends `landed-on-login`, the banner `reconnect canvas`
    is showing (the aged cookie alone shows it; the two-landings rule only
    decides whether a cookie that still looks fresh is latched dead), and
    the health lines read `no pennkey password saved …`, `duo: not trusted

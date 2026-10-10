@@ -62,13 +62,16 @@ struct SettingsPage: View {
     enum DisconnectTarget: String, Identifiable {
         case canvas, gradescope
         var id: String { rawValue }
-        var label: String { self == .canvas ? "Canvas" : "Gradescope" }
+        /// Used only in the confirmation's title, which the app writes in
+        /// lowercase like every other title; no place that needs capitals
+        /// reads it.
+        var label: String { self == .canvas ? "canvas" : "gradescope" }
         var message: String {
             switch self {
             case .canvas:
-                return "Removes your Canvas login, saved PennKey password and synced assignments and grades from this device, and deletes your class data from Smooth's server. Your own tasks, completions and reminders stay."
+                return "removes your canvas login and saved password from this phone, and deletes your class data from smooth's server."
             case .gradescope:
-                return "Removes your saved Gradescope login from this device, along with anything synced from it. Canvas stays connected."
+                return "removes your gradescope login and its synced work."
             }
         }
     }
@@ -115,30 +118,17 @@ struct SettingsPage: View {
                         dismiss()
                         state.restartOnboarding()
                     } label: {
-                        Label("exit preview and connect my Canvas", systemImage: "arrow.right.circle")
+                        Label("exit preview", systemImage: "arrow.right.circle")
                     }
                 } else {
                     accountRow(label: "canvas",
                                connected: state.isCanvasConnected,
                                working: state.isLoading || state.isCanvasDiscoveryLoading,
                                disconnect: .canvas)
-                    signInHealthRows
                     accountRow(label: "gradescope",
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
-                    // Read-only on purpose: Ed is signed in through the
-                    // Canvas login with nothing for the student to do, so a
-                    // button here would have nothing to press. Penn only,
-                    // since ingestion is (`refreshCourseKnowledge`).
-                    if FeatureFlags.edDiscussion && state.canvasInstallation.id == CanvasInstallation.penn.id {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Label("ed discussion", systemImage: "bubble.left.and.text.bubble.right")
-                            Text(state.edDiscussionStatus ?? "checks your classes' ed pages after canvas syncs")
-                                .font(.lhfSecondary(12))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                     stayLoggedInRows
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
@@ -181,6 +171,7 @@ struct SettingsPage: View {
             Section {
                 simulateCanvasLogoutRow
                 probeEdDiscussionRow
+                signInDiagnosticsGroup
             } header: {
                 SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
             }
@@ -235,7 +226,20 @@ struct SettingsPage: View {
         Section {
             Toggle("due-date reminders", isOn: Binding(
                 get: { scheduler.isEnabled },
-                set: { newValue in Task { await scheduler.setEnabled(newValue) } }
+                set: { newValue in
+                    Task {
+                        await scheduler.setEnabled(newValue)
+                        // Saving the switch is not enough: with the app
+                        // backgrounded while still on this page, nothing else
+                        // re-plans until the student is back on the dashboard
+                        // (`ContentView` reschedules when its path empties).
+                        // Same path the per-class switches use. Runs after the
+                        // await so the permission answer is in; turning
+                        // reminders off makes it a no-op, since `setEnabled`
+                        // has already cleared what was pending.
+                        scheduler.rescheduleAfterPreferenceChange()
+                    }
+                }
             ))
 
             if scheduler.isEnabled {
@@ -248,8 +252,22 @@ struct SettingsPage: View {
                     ForEach(NotificationScheduler.LeadOffset.offered) { offset in
                         Toggle(offset.label, isOn: Binding(
                             get: { scheduler.leadOffsets.contains(offset) },
-                            set: { scheduler.setOffset(offset, on: $0) }
+                            set: {
+                                scheduler.setOffset(offset, on: $0)
+                                // Same reason as the master switch above.
+                                scheduler.rescheduleAfterPreferenceChange()
+                            }
                         ))
+                    }
+
+                    // All five off is a saved choice ("no lead-time reminders"),
+                    // and it looks identical to a list nobody has set up yet.
+                    // Same words, icon and colour as the per-class list.
+                    if !scheduler.hasActiveLeadTimes {
+                        Label("no reminder times", systemImage: "exclamationmark.triangle")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2SpineAmber)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
@@ -287,11 +305,14 @@ struct SettingsPage: View {
             // otherwise a student who just turned sync on would see "Sync is
             // on" immediately, which isn't true until they relaunch.
             if state.cloudSyncEnabled != state.cloudSyncEnabledAtLaunch {
-                Text("restart Smooth to apply")
+                Text("restart to apply")
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2DateText)
-            } else if state.cloudSyncEnabled, let reason = state.assignmentStore?.storageFailureReason {
-                Text(reason)
+            } else if state.cloudSyncEnabled, state.assignmentStore?.storageFailureReason != nil {
+                // The store's own sentence (`AssignmentStore.storageFailureReason`)
+                // is a paragraph about CloudKit; the student can do nothing
+                // with it, so only the fact is shown.
+                Text("icloud sync unavailable")
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.smoothTomatoInk)
             }
@@ -313,7 +334,7 @@ struct SettingsPage: View {
             ))
             #endif
 
-            if let notice = state.syncNotice ?? state.error {
+            if let notice = Self.syncSectionMessage(notice: state.syncNotice, error: state.error) {
                 Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.smoothMarigoldInk)
@@ -323,6 +344,27 @@ struct SettingsPage: View {
         }
         .smoothSectionBackground(.smoothCobalt)
     }
+
+    /// What the sync section prints, or `nil` for nothing. The two inputs are
+    /// `AppState.syncNotice` and `AppState.error`, whose sentences are written
+    /// in sync code and carry system error text a student cannot act on, so
+    /// the page shows one fixed line for any failure instead of repeating
+    /// them. The scan's all-clear ("Canvas Scan connected. No recurring ...")
+    /// also arrives through `syncNotice`; it is good news, drew a warning
+    /// triangle, and is dropped here. It is recognised by its opening words
+    /// because the sentence is assigned in `AppState.scanCanvasRequirements`,
+    /// which this copy pass may not edit; `SettingsCopyTests` fails if the
+    /// two ever drift apart. The error is looked at even when the notice is
+    /// the all-clear, so a real failure is never hidden behind it.
+    nonisolated static func syncSectionMessage(notice: String?, error: String?) -> String? {
+        let failures = [notice, error]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty && !$0.hasPrefix(scanAllClearNoticePrefix) }
+        return failures.isEmpty ? nil : "couldn't sync"
+    }
+
+    /// The opening words of the scan's success notice; see `syncSectionMessage`.
+    nonisolated static let scanAllClearNoticePrefix = "Canvas Scan connected"
 
     /// "Delete my class data" used to be its own button (under
     /// troubleshooting, which is gone). It now rides on disconnecting
@@ -335,7 +377,7 @@ struct SettingsPage: View {
         backendDataDeletionError = nil
         Task {
             if !(await state.deleteBackendData()) {
-                backendDataDeletionError = "couldn't delete your data from smooth's server. check your connection, then reconnect and disconnect again."
+                backendDataDeletionError = "couldn't delete your server data. reconnect, then disconnect again."
             }
         }
     }
@@ -456,20 +498,24 @@ struct SettingsPage: View {
         return line
     }
 
-    /// Read-only sign-in health under the Canvas row (Penn only, shown while
-    /// Canvas is connected): is a PennKey password saved, is Duo trusting
-    /// this phone, and how the last silent sign-in went. The old
-    /// troubleshooting section was removed in 56fdefa, so an affected
-    /// student could only describe a banner ("it logged me out"); these
-    /// three lines are what tells the sign-out causes apart
-    /// (docs/SIGNOUT_INVESTIGATION.md). No buttons and no secrets: the
+    #if DEBUG
+    /// Read-only sign-in health (Penn only, shown while Canvas is connected):
+    /// is a PennKey password saved, is Duo trusting this phone, and how the
+    /// last silent sign-in went. The old troubleshooting section was removed
+    /// in 56fdefa, so an affected student could only describe a banner ("it
+    /// logged me out"); these three lines are what tells the sign-out causes
+    /// apart (docs/SIGNOUT_INVESTIGATION.md). No buttons and no secrets: the
     /// summaries are outcome words and times, never a cookie value, URL or
-    /// credential. The rejected-password case keeps its own "update
-    /// password" row (`stayLoggedInRows`), and the password line here says
-    /// the same thing in one clause so the two never disagree.
+    /// credential.
+    ///
+    /// Since the copy cut of 2026-10-10 these lines render only inside
+    /// `signInDiagnosticsGroup`, in debug builds. A student read them as a
+    /// "whole yap about Canvas" under the accounts rows, and the one thing
+    /// they can act on, a rejected password, still has its own line and its
+    /// "update password" button in `stayLoggedInRows`.
     @ViewBuilder
     private var signInHealthRows: some View {
-        if state.isCanvasConnected && state.canvasInstallation.id == CanvasInstallation.penn.id {
+        if showsSignInHealth {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Self.healthLines(passwordSaved: state.isPennKeyPasswordSaved,
                                          passwordRejected: state.autoLoginDisabledReason != nil,
@@ -486,6 +532,49 @@ struct SettingsPage: View {
         }
     }
 
+    private var showsSignInHealth: Bool {
+        state.isCanvasConnected && state.canvasInstallation.id == CanvasInstallation.penn.id
+    }
+
+    /// The Ed Discussion status that used to sit in the accounts section.
+    /// Read-only on purpose: Ed is signed in through the Canvas login with
+    /// nothing for the student to do, so a button here would have nothing to
+    /// press. Penn only, since ingestion is (`refreshCourseKnowledge`).
+    private var showsEdDiscussionStatus: Bool {
+        FeatureFlags.edDiscussion && state.canvasInstallation.id == CanvasInstallation.penn.id
+    }
+
+    @ViewBuilder
+    private var edDiscussionStatusRow: some View {
+        if showsEdDiscussionStatus {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("ed discussion", systemImage: "bubble.left.and.text.bubble.right")
+                Text(state.edDiscussionStatus ?? "checks your classes' ed pages after canvas syncs")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// One collapsed line holding every sign-in status the accounts section
+    /// no longer prints: the PennKey password / Duo / last-silent-sign-in
+    /// lines and the Ed Discussion status. Collapsed by default so a debug
+    /// build looks like a release build until the owner opens it.
+    /// `docs/SIGNOUT_VERIFICATION.md` tells the reader to copy these lines.
+    private var signInDiagnosticsGroup: some View {
+        DisclosureGroup("sign-in diagnostics") {
+            if showsSignInHealth || showsEdDiscussionStatus {
+                signInHealthRows
+                edDiscussionStatusRow
+            } else {
+                Text("nothing to show until canvas is connected")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    #endif
+
     /// "Stay signed in" repair row, inside the "accounts" section. The
     /// password itself is only ever entered in `PennKeyCredentialsSheet`,
     /// offered after an interactive Canvas login; this row appears only when
@@ -496,8 +585,11 @@ struct SettingsPage: View {
         // signed in is simply how Smooth works once a password has been
         // saved from the sign-in offer. What remains is the repair path —
         // without it a rejected password could never be re-entered.
-        if let reason = state.autoLoginDisabledReason {
-            Text(reason)
+        if state.autoLoginDisabledReason != nil {
+            // The stored reason (`AppState.noteAutoLoginRejected`) is a whole
+            // sentence; the row only needs to say what happened, and the
+            // button under it says what to do.
+            Text("pennkey password rejected")
                 .font(.lhfSecondary(12))
                 .foregroundStyle(Color.smoothTomatoInk)
             Button("update password") {

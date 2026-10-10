@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import WebKit
@@ -92,6 +93,13 @@ final class AppState: ObservableObject {
     @Published var announcementSeenIDs: Set<String> = []
     /// Every stored record, before the class-selection filter.
     var announcementLogRecords: [AnnouncementRecord] = []
+    /// Ed Discussion announcements and pinned posts, derived from
+    /// `courseKnowledge` and merged into the list at display time. Never
+    /// written to the log file. Kept current by `announcementKnowledgeSubscription`.
+    var edAnnouncementRecords: [AnnouncementRecord] = []
+    /// Watches `courseKnowledge` so the list follows a knowledge sync without
+    /// the sync knowing the list exists (`AppState+AnnouncementLog.swift`).
+    var announcementKnowledgeSubscription: AnyCancellable?
     /// The announcement log's file and read state. Nil under the test runner
     /// unless a test opted in with `enableAnnouncementLogForTesting`: an
     /// `AppState` that is nil here records nothing, so it can neither touch

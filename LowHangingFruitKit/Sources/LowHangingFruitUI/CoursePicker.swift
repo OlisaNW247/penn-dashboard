@@ -32,7 +32,7 @@ struct CoursePicker: View {
                 .foregroundStyle(Color.smoothMuted)
 
             if codes.isEmpty {
-                Text(allowsNone ? "no classes yet — this will be filed under no class." : "add a class before saving a recurring task.")
+                Text(allowsNone ? "no classes yet" : "add a class first")
                     .font(.lhfSecondary(13))
                     .foregroundStyle(Color.smoothMuted)
             } else {

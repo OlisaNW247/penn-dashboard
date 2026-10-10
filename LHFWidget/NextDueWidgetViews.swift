@@ -167,7 +167,7 @@ private struct MediumView: View {
     private var emptyState: some View {
         VStack {
             Spacer()
-            Text("nothing due. you're caught up.")
+            Text("all clear")
                 .font(.system(.footnote, design: .rounded).weight(.medium))
                 .foregroundStyle(Palette.courseGrey)
             Spacer()

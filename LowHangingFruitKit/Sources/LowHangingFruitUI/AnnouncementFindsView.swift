@@ -7,9 +7,15 @@ import LowHangingFruitKit
 ///   extracted, kept off the owed-work dashboard. Shown only when there are
 ///   some.
 /// - **all announcements**: every Canvas announcement from the last 60 days
-///   for the student's classes, newest first, whether or not the extractor
-///   found anything in it. This is the list students meant when they said
-///   "announcements aren't there": the sheet used to be the first list only.
+///   for the student's classes, plus the Ed Discussion announcements and
+///   pinned posts already on the phone, newest first, whether or not the
+///   extractor found anything in it. This is the list students meant when
+///   they said "announcements aren't there": the sheet used to be the first
+///   list only.
+///
+/// Rows are deliberately plain: class, date, a "NEW" mark, the title, and one
+/// line of preview. The arrow alone says a row opens elsewhere; an Ed row also
+/// carries the word "ed" in its meta line so it is not mistaken for Canvas.
 ///
 /// Rows marked "new" were unread when the sheet opened
 /// (`AnnouncementReadState`).
@@ -20,7 +26,7 @@ struct AnnouncementFindsView: View {
     var records: [AnnouncementRecord] = []
     /// Ids that were unread when the sheet opened, so their rows can say
     /// "new" even though opening the sheet has just marked them seen. A
-    /// find's `Assignment.id`, or a record's `AnnouncementReadState.recordKey`.
+    /// find's `Assignment.id`, or a row's `AnnouncementReadState.key(for:)`.
     var newIDs: Set<String> = []
     @Environment(\.dismiss) private var dismiss
     @Environment(\.courseNameOverrides) private var courseNameOverrides
@@ -28,7 +34,9 @@ struct AnnouncementFindsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                // Lazy: a few hundred announcements would otherwise all be
+                // built the moment the sheet opens.
+                LazyVStack(alignment: .leading, spacing: 12) {
                     // The same shape cluster Profile and Grade Watcher open
                     // with, so this sheet reads as one of the app's pages
                     // rather than a bare system list.
@@ -40,7 +48,7 @@ struct AnnouncementFindsView: View {
                     .padding(.bottom, 4)
 
                     if items.isEmpty && records.isEmpty {
-                        Text("no announcements in the last \(AnnouncementLogStore.retentionDays) days")
+                        Text(AnnouncementSheetCopy.emptyState)
                             .font(.lhfSecondary(14))
                             .foregroundStyle(Color.smoothMuted)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -114,6 +122,7 @@ struct AnnouncementFindsView: View {
                 Text(item.title)
                     .font(.lhfAssignmentTitle(17))
                     .foregroundStyle(Color.smoothInk)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let dueAt = item.dueAt {
                     Text(dueAt.formatted(date: .abbreviated, time: .shortened).lowercased())
@@ -123,18 +132,15 @@ struct AnnouncementFindsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // The arrow alone never said where it went or that the whole row
-            // is the link; the words do. `sourceLinks` (not `item.url`) so the
-            // words appear exactly when a tappable, https destination exists.
+            // The arrow alone is the affordance (a text label beside it was
+            // more words than the row needed). `sourceLinks` (not
+            // `item.url`) so it appears exactly when a tappable, https
+            // destination exists; the hint tells VoiceOver where it goes.
             if link != nil {
-                HStack(spacing: 4) {
-                    Text(SourceLink.canvasLabel)
-                        .font(.lhfMono(9.5, weight: .semibold))
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .foregroundStyle(Color.smoothMuted)
-                .accessibilityHidden(true)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+                    .accessibilityHidden(true)
             }
         }
         .padding(14)
@@ -143,7 +149,7 @@ struct AnnouncementFindsView: View {
         if let link {
             Link(destination: link.url) { content }
                 .buttonStyle(.plain)
-                .accessibilityHint("opens the original announcement")
+                .accessibilityHint(AnnouncementSheetCopy.canvasLinkHint)
         } else {
             content
         }
@@ -152,7 +158,7 @@ struct AnnouncementFindsView: View {
     @ViewBuilder
     private func recordRow(for record: AnnouncementRecord, now: Date, hasFind: Bool) -> some View {
         let link = record.safeWebURL
-        let isNew = newIDs.contains(AnnouncementReadState.recordKey(record.id))
+        let isNew = newIDs.contains(AnnouncementReadState.key(for: record))
         let content = HStack(spacing: 12) {
             Capsule()
                 .fill(Color.smoothAnnouncementAccent)
@@ -168,6 +174,13 @@ struct AnnouncementFindsView: View {
                         .foregroundStyle(Color.smoothAnnouncementAccent)
                     if let posted = record.postedLabel(now: now) {
                         Text(posted)
+                            .font(.lhfMono(9.5))
+                            .foregroundStyle(Color.smoothMuted)
+                    }
+                    // Only an Ed row says where it is from, in the date's own
+                    // style: its arrow opens Ed, not Canvas.
+                    if let source = AnnouncementSheetCopy.sourceWord(for: record) {
+                        Text(source)
                             .font(.lhfMono(9.5))
                             .foregroundStyle(Color.smoothMuted)
                     }
@@ -190,7 +203,7 @@ struct AnnouncementFindsView: View {
                             .overlay(Capsule().stroke(Color.smoothAnnouncementAccent, lineWidth: 1))
                     }
                 }
-                Text(record.title.isEmpty ? "untitled announcement" : record.title)
+                Text(AnnouncementSheetCopy.title(for: record))
                     .font(.lhfAssignmentTitle(17))
                     .foregroundStyle(Color.smoothInk)
                     .lineLimit(2)
@@ -199,23 +212,18 @@ struct AnnouncementFindsView: View {
                     Text(record.snippet)
                         .font(.lhfSecondary(13))
                         .foregroundStyle(Color.smoothMuted)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Only when the URL is https with a host (`safeWebURL`): the
-            // words appear exactly when the whole row is a working link.
+            // Only when the URL is https with a host (`safeWebURL`): the arrow
+            // appears exactly when the whole row is a working link.
             if link != nil {
-                HStack(spacing: 4) {
-                    Text(SourceLink.canvasLabel)
-                        .font(.lhfMono(9.5, weight: .semibold))
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .foregroundStyle(Color.smoothMuted)
-                .accessibilityHidden(true)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+                    .accessibilityHidden(true)
             }
         }
         .padding(14)
@@ -224,7 +232,7 @@ struct AnnouncementFindsView: View {
         if let link {
             Link(destination: link) { content }
                 .buttonStyle(.plain)
-                .accessibilityHint("opens the original announcement")
+                .accessibilityHint(AnnouncementSheetCopy.linkHint(for: record))
         } else {
             content
         }
@@ -242,5 +250,36 @@ extension AnnouncementRecord {
         }
         let trimmed = courseCode.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Misc" : trimmed
+    }
+}
+
+/// The sheet's fixed words and the per-row text rules that are not just
+/// layout, kept pure so a test can pin them. The owner's brief for this sheet
+/// was "way too much text; everything as simple as possible", so the rules
+/// here are mostly about what is left out.
+enum AnnouncementSheetCopy {
+    /// Shown when there is nothing at all to list. Not "in the last 60 days":
+    /// the window is not something a student needs to be told.
+    static let emptyState = "no announcements"
+    /// A row whose post came without a title.
+    static let untitled = "untitled"
+    static let canvasLinkHint = "opens the original announcement"
+    static let edLinkHint = "opens the post in ed"
+
+    /// The row's title, or "untitled" when it is blank or only whitespace.
+    static func title(for record: AnnouncementRecord) -> String {
+        let trimmed = record.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? untitled : trimmed
+    }
+
+    /// The single word that marks where a row came from, or nil for Canvas
+    /// (the default, which needs no word).
+    static func sourceWord(for record: AnnouncementRecord) -> String? {
+        record.isEd ? "ed" : nil
+    }
+
+    /// What VoiceOver says a tap on the row does.
+    static func linkHint(for record: AnnouncementRecord) -> String {
+        record.isEd ? edLinkHint : canvasLinkHint
     }
 }

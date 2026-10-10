@@ -19,6 +19,13 @@ import SwiftData
 /// empty until the app is next opened. The ledger already holds real
 /// assignments at that point, so showing them beats showing nothing.
 ///
+/// "No snapshot" means no file, or one that does not decode, and nothing else.
+/// A snapshot the app published with zero items is the dashboard's answer (the
+/// student is caught up, or the first-sync hold is withholding unverified
+/// work), and `WidgetSnapshotStore.current` trusts it. Falling back to this
+/// reader for an empty one is how the widget came to list rows the dashboard
+/// hides.
+///
 /// Only ledger-derivable filters are applied here, and every one of them is
 /// conservative: an item must be unfinished, still dated, and not aged out.
 public enum LedgerWidgetReader {

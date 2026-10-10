@@ -66,11 +66,12 @@ struct OnDeviceAssistantResponder: AssistantResponder {
     /// `SourceReference` → the chip the screen already knows how to draw.
     /// `source` is the material's kind ("syllabus", "announcement",
     /// "assignment"); `detail` is the document title so the student can find
-    /// it on Canvas.
+    /// it on Canvas; `url` is the document's own, so the chip opens it (see
+    /// `AssistantCitation.linkable` for what is and is not offered).
     static func citations(for sources: [SourceReference]) -> [AssistantCitation] {
         var seen: Set<String> = []
         return sources.compactMap { source in
-            let citation = AssistantCitation(course: source.course, source: source.kind, detail: source.title)
+            let citation = AssistantCitation(course: source.course, source: source.kind, detail: source.title, url: AssistantCitation.linkable(source.url))
             guard seen.insert(citation.id).inserted else { return nil }
             return citation
         }
