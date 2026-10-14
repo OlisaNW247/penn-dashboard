@@ -22,7 +22,9 @@ from `v8` goes to TestFlight.
 
 ## Now: before the next release
 
-These block shipping, or would make shipping risky.
+These block shipping, or would make shipping risky. The launch-prep
+work of 2026-10-09/10 is summarised, with the order to take these in,
+in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 - **Look at the launch-prep work on a phone** (`v8-launch-prep`). Marco's
   phone has builds up to `b5ed8a1`; everything after is compiled for iOS
