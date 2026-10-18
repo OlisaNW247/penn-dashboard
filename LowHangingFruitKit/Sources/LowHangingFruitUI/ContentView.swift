@@ -218,15 +218,45 @@ struct ContentView: View {
             vm.bind(to: state)
         }
         .task {
-            // Read Duo's trust cookie once up front. The loop below sleeps
-            // five minutes before its first `refresh()`, and
+            // Run the cookie-authenticated half of the refresh once, now.
             // `onChange(of: scenePhase)` does not fire for the phase the view
-            // starts in, so without this a trusted student would see Profile's
-            // Duo line empty (or "not trusted yet") for the first five
-            // minutes of every launch. Only the cheap cookie-jar read: the
-            // launch sync already runs from `RootView`, and a full
-            // `refresh()` here would repeat it.
-            await state.refreshDuoRememberSummary()
+            // starts in, and the loop below sleeps five minutes before its
+            // first pass, so a cold launch used to wait that long for it.
+            // `RootView`'s launch sync fetches only the cookieless ICS feed,
+            // which carries no submission state; the sources of "already
+            // handed in" are the Canvas fetch inside `refreshCanvasGrades` and
+            // Gradescope's scrape in `syncConnectedServices`. Submitted state
+            // is seeded from the ledger at init (`AppState.init`), so what
+            // read late was only work submitted since the last successful
+            // refresh: shown as not done, with its reminders (and the loud
+            // 10-minute alert) still planned, for about five minutes. That
+            // delay is read from the code and has not been seen on a device.
+            //
+            // What this costs, plainly: every cold launch now starts a full
+            // Gradescope scrape, the Canvas fetch with its piggybacked course
+            // intel and course-knowledge / Ed sync,
+            // `refreshCanvasSessionExpiredState` and `retrySilentRenewalIfDue`,
+            // as a resume from the background already does. The 15-minute
+            // throttles do NOT bound it here: `gradeWatcher.lastRefreshed` and
+            // `lastGradescopeSync` live in memory and are nil at a cold
+            // launch. Two passes overlapping (a foreground that lands while
+            // this one is still running) is prevented by the reentrancy
+            // guards instead (`GradeWatcherStore.isRefreshing`,
+            // `isGradescopeLoading`, `isCourseKnowledgeSyncing`, and the
+            // silent renewal's `pendingSilentRenewal` check).
+            //
+            // It is deliberately NOT `refresh()`: that also calls
+            // `syncIfConfigured()`, `RootView` has just started the same feed
+            // sync, and `sync()` has no reentrancy guard, so the feed would be
+            // fetched twice at launch. The wrong fix is dropping the loop's
+            // first sleep: that runs all of `refresh()`, feed included, beside
+            // `RootView`'s own sync.
+            //
+            // This pass also reads Duo's trust cookie (the standalone read that
+            // used to open this task, so Profile's Duo line is not empty for
+            // the first minutes of a launch). It now lands after the network
+            // work above rather than before it.
+            await refreshSessionSourcesAndReplan()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
@@ -534,15 +564,25 @@ struct ContentView: View {
             .contentShape(Circle())
     }
 
-    /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
-    /// from its persisted session, then reload the dashboard. Runs on
-    /// activation (`onChange(of: scenePhase)`, which does not fire for the
-    /// initial phase) and on the 5-minute loop, whose first pass comes after
-    /// the sleep, so it does NOT run at launch: the launch sync is
-    /// `RootView`'s `syncIfConfigured()`, and the `.task` above does the one
-    /// cheap launch-time read of its own. There's no manual sync button.
+    /// Silent refresh: re-fetch the cookieless Canvas feed, then everything
+    /// that needs the student's session (`refreshSessionSourcesAndReplan()`).
+    /// Runs on activation (`onChange(of: scenePhase)`, which does not fire
+    /// for the initial phase) and on the 5-minute loop, whose first pass comes
+    /// after the sleep. At launch the feed half is `RootView`'s
+    /// `syncIfConfigured()` and the `.task` above runs only the second half,
+    /// so a cold launch does not fetch the feed twice. There's no manual sync
+    /// button. `LHFScenes.swift`'s menu-bar copy mirrors this: keep the order.
     private func refresh() async {
         await state.syncIfConfigured()
+        await refreshSessionSourcesAndReplan()
+    }
+
+    /// Everything in `refresh()` after the feed fetch, in the same order:
+    /// Gradescope, the Canvas fetch that carries submission state, the
+    /// session-expiry check and silent renewal, then reload and replan. Split
+    /// out so the launch `.task` can run it once without repeating the feed
+    /// sync `RootView` already started.
+    private func refreshSessionSourcesAndReplan() async {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         state.refreshCanvasSessionExpiredState()
@@ -552,8 +592,8 @@ struct ContentView: View {
         // cadence rather than a timer of its own.
         state.retrySilentRenewalIfDue()
         // Cheap (one cookie-jar read, no network) — refreshed on the same
-        // activation/5-minute cadence as everything else here (and once at
-        // launch by the `.task` above) so
+        // activation/5-minute cadence as everything else here (and at launch,
+        // since the `.task` above runs this function once) so
         // Settings' "stay signed in" footer and the diagnostics report never
         // show a stale read of how long Duo will keep skipping its prompt.
         await state.refreshDuoRememberSummary()
