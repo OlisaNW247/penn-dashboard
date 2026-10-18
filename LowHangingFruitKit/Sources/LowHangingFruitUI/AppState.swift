@@ -715,6 +715,18 @@ final class AppState: ObservableObject {
     /// future login would be exactly the kind of repeat interruption this
     /// "once, then Settings is the way back" design exists to avoid.
     private static let hasOfferedStayLoggedInKey = "hasOfferedStayLoggedInV1"
+    /// Backs `canvasLoginEverCaptured` -- "this install has captured a Canvas
+    /// login cookie session at least once". Three states on purpose: absent
+    /// (a build that predates the flag, resolved once at `init` from what the
+    /// phone already holds), `true`, and an explicit `false` written by
+    /// `disconnectCanvas()`. The explicit `false` is what stops the legacy
+    /// evidence from resurrecting the flag after a disconnect:
+    /// `hasOfferedStayLoggedIn` is deliberately never reset, so with the key
+    /// merely removed, a disconnected student who then pasted a calendar link
+    /// would read as "logged in before" again and get a refresh banner for a
+    /// session they never had. Per-device state, so absent from
+    /// `CloudPrefsMirror`'s allowlist like the renewal keys above.
+    private static let canvasLoginCapturedKey = "canvasLoginCapturedV1"
 
     /// `assignmentStore` is injectable so tests can supply a specific in-memory
     /// or temp-file store (and drive it across simulated launches). The default
@@ -789,6 +801,25 @@ final class AppState: ObservableObject {
         // otherwise a confirmed-dead session would read as fine again on the
         // very next cold launch, before anything re-confirms it either way.
         self.canvasSessionConfirmedDead = UserDefaults.lhf.bool(forKey: Self.canvasSessionConfirmedDeadKey)
+        // The other input to the "login is gone" rule -- see
+        // `canvasLoginEverCaptured`. A build that predates the flag has no
+        // stored value, so it is inferred ONCE from what this phone already
+        // holds, and only a `true` is written back (below): a `false` could
+        // be a wrong answer, e.g. a Keychain read refused because a
+        // background wake ran before the first unlock, and would then be
+        // permanent. Skipped under the test runner, whose Keychain and
+        // defaults are shared by every suite in the process.
+        let storedLoginCaptured = UserDefaults.lhf.object(forKey: Self.canvasLoginCapturedKey) as? Bool
+        let resolvedLoginCaptured = Self.resolveCanvasLoginEverCaptured(stored: storedLoginCaptured) {
+            guard !SharedDefaults.isTestRunner else { return false }
+            return PennKeyCredentialStore.hasCredentials
+                || UserDefaults.lhf.bool(forKey: Self.hasOfferedStayLoggedInKey)
+                || SessionCookieStore.hasSavedCookies(service: .canvas)
+        }
+        self.canvasLoginEverCaptured = resolvedLoginCaptured
+        if storedLoginCaptured == nil, resolvedLoginCaptured, !SharedDefaults.isTestRunner {
+            UserDefaults.lhf.set(true, forKey: Self.canvasLoginCapturedKey)
+        }
         // "Stay signed in" — off by default, and only ever true after the
         // student explicitly turned it on through `PennKeyCredentialsSheet`.
         self.stayLoggedInEnabled = UserDefaults.lhf.bool(forKey: Self.stayLoggedInEnabledKey)
@@ -1755,6 +1786,135 @@ final class AppState: ObservableObject {
         canvasSessionConfirmedDead = true
     }
 
+    // MARK: - The Canvas login is gone (cookies removed after a login)
+
+    /// True once this install has captured a Canvas login cookie session at
+    /// least once, and until the student disconnects Canvas. It is the one
+    /// fact `SessionCookieStore.isExpired` cannot supply: that check reads
+    /// `false` both for "never had a session" (a pasted calendar link, a
+    /// fresh install) and for "had one and the whole item was deleted", so on
+    /// its own it cannot tell a student who has nothing to refresh from one
+    /// whose login vanished.
+    ///
+    /// **The bug this closes.** `GradeWatcherView.performRefresh` removes the
+    /// whole Canvas cookie item when a fetch comes back session-expired (and
+    /// the DEBUG "simulate canvas logout" does the same). Nothing was left for
+    /// `isExpired` to call stale, so `canvasSessionExpired` went to `false`:
+    /// no "needs a refresh" banner, no renew-on-open (the saved PennKey
+    /// password never used), and every cookie-gated fetch quietly stopped
+    /// while the cookieless calendar feed kept the dashboard looking alive.
+    /// On Marco's phone that lasted from 2026-10-10 to 2026-10-18:
+    /// `edTabCheckedAtByCanvasCourseV1` frozen at Oct 10 and no renewal-log
+    /// entry after it.
+    ///
+    /// Set when a login or a renewal has just saved cookies
+    /// (`noteCanvasLoginSessionCaptured()`, a `.renewed` outcome), cleared by
+    /// `disconnectCanvas()`. Persisted under `canvasLoginCapturedKey`; see
+    /// that key for the legacy resolution at `init`.
+    private(set) var canvasLoginEverCaptured: Bool
+
+    /// Single write path for `canvasLoginEverCaptured`. The persisted write is
+    /// skipped under the test runner: `UserDefaults.lhf` is process-wide
+    /// there, and a `true` written by one suite would make every
+    /// concurrently constructed `AppState` in another suite read "logged in
+    /// before", which is exactly the shared-defaults leak CLAUDE.md records
+    /// for `canvasSessionConfirmedDead` (the `FirstLaunchHoldDashboardTests`
+    /// incident). In tests the in-memory value is still real, so a test sees
+    /// the transitions on its own instance.
+    private func setCanvasLoginEverCaptured(_ value: Bool) {
+        canvasLoginEverCaptured = value
+        guard !SharedDefaults.isTestRunner else { return }
+        UserDefaults.lhf.set(value, forKey: Self.canvasLoginCapturedKey)
+    }
+
+    /// Pure resolution of `canvasLoginEverCaptured` at `init`: a stored value
+    /// wins, whichever way it points. With none (a build that predates the
+    /// flag), the phone's own evidence decides, lazily so that a stored value
+    /// never costs a Keychain read: `init` passes "a PennKey password is
+    /// saved, or the stay-signed-in offer was already shown, or Canvas cookies
+    /// are saved". The first two are only ever true after an interactive
+    /// Canvas login at Penn; the third covers an install that never got the
+    /// offer. A pasted-link install has none of the three, so it stays
+    /// `false`. `nonisolated` for the reason `tokenIsHealthyEnoughToSkipExpiryCheck`
+    /// gives.
+    nonisolated static func resolveCanvasLoginEverCaptured(stored: Bool?, legacyEvidence: () -> Bool) -> Bool {
+        if let stored { return stored }
+        return legacyEvidence()
+    }
+
+    /// Pure decision behind the third input to `canvasSessionExpired`: the
+    /// Canvas login is missing. All four must hold:
+    /// - Canvas is connected (a feed URL is saved);
+    /// - this is not preview or fixture data, which has no session to lose
+    ///   and must never show a reviewer a refresh banner;
+    /// - the install has captured a login before (`canvasLoginEverCaptured`),
+    ///   which is what excludes a pasted-calendar-link-only install and a
+    ///   fresh install, neither of which ever had a session; and
+    /// - no Canvas cookies are saved at all. Saved-but-stale is
+    ///   `SessionCookieStore.isExpired`'s case and already raises the banner.
+    ///
+    /// The wrong fix is making `isExpired` return `true` for "nothing saved":
+    /// it would show the refresh banner on the pasted-link and fresh installs
+    /// above, whose only difference from a lost login is this flag.
+    nonisolated static func isCanvasLoginMissing(
+        isCanvasConnected: Bool,
+        isUsingFixtureData: Bool,
+        everCaptured: Bool,
+        hasSavedCookies: Bool
+    ) -> Bool {
+        isCanvasConnected && !isUsingFixtureData && everCaptured && !hasSavedCookies
+    }
+
+    /// Per-instance stand-in for the two process-wide reads the rule makes
+    /// (`canvasICSURL`, the Keychain cookie item). `nil` is the default and
+    /// means "read the real ones".
+    private var canvasLoginMissingInputsOverrideForTesting: (isCanvasConnected: Bool, hasSavedCookies: Bool)?
+
+    /// The rule above with this instance's real inputs. The cheap in-memory
+    /// guards run first so the common case (no login captured yet, or preview
+    /// data) never reads the Keychain. Under the test runner with no
+    /// override the answer is `false` without reading anything: the feed URL
+    /// and the cookie item are shared by every suite in the process, and one
+    /// suite's save or clear must not be able to turn another suite's
+    /// `AppState` into an expired one (the same reasoning as
+    /// `forceCanvasCookieSessionExpiredForTesting`).
+    private var canvasLoginIsMissing: Bool {
+        guard canvasLoginEverCaptured, !isUsingFixtureData else { return false }
+        let connected: Bool
+        let hasCookies: Bool
+        if let canvasLoginMissingInputsOverrideForTesting {
+            connected = canvasLoginMissingInputsOverrideForTesting.isCanvasConnected
+            hasCookies = canvasLoginMissingInputsOverrideForTesting.hasSavedCookies
+        } else if SharedDefaults.isTestRunner {
+            return false
+        } else {
+            connected = isCanvasConnected
+            hasCookies = SessionCookieStore.hasSavedCookies(service: .canvas)
+        }
+        return Self.isCanvasLoginMissing(
+            isCanvasConnected: connected,
+            isUsingFixtureData: isUsingFixtureData,
+            everCaptured: canvasLoginEverCaptured,
+            hasSavedCookies: hasCookies
+        )
+    }
+
+    /// Test seam: pins `canvasLoginIsMissing`'s two process-wide inputs for this
+    /// instance only, with no write to the shared Keychain or defaults. Pass
+    /// `nil` to go back to the real reads. Pair it with
+    /// `forceCanvasCookieSessionExpiredForTesting(false)` so the aged-cookie
+    /// half of the recompute is pinned too and the test sees only this rule.
+    func forceCanvasLoginMissingInputsForTesting(isCanvasConnected: Bool, hasSavedCookies: Bool) {
+        canvasLoginMissingInputsOverrideForTesting = (isCanvasConnected, hasSavedCookies)
+    }
+
+    /// Test seam: sets `canvasLoginEverCaptured` through the same resolution
+    /// `init` uses, in memory only, as though the persisted value were
+    /// `stored` and the phone's legacy evidence were `legacyEvidence`.
+    func forceCanvasLoginHistoryForTesting(stored: Bool?, legacyEvidence: Bool) {
+        canvasLoginEverCaptured = Self.resolveCanvasLoginEverCaptured(stored: stored) { legacyEvidence }
+    }
+
     // MARK: - Stay signed in (PennKey auto-login)
 
     /// Settings → "stay signed in". Off by default (Penn blocks Canvas
@@ -2497,12 +2657,19 @@ final class AppState: ObservableObject {
     /// own cooldown/in-flight/pane-active guards make it safe to call from
     /// the launch/connect/disconnect recompute sites without any further
     /// gating here. `disconnectCanvas()` calls this too, but never actually
-    /// trips this branch in practice: `SessionCookieStore.remove(service:)`
-    /// deletes that service's Keychain item outright, so
-    /// `isExpired(service:)` — which requires a NON-empty, now-all-stale
-    /// persisted set — reads `false` (never-connected) immediately
-    /// afterward, not `true`. No special-casing needed for that call site;
-    /// verified by tracing `SessionCookieStore.isExpired`'s definition.
+    /// trips this branch in practice: it clears `canvasLoginEverCaptured`
+    /// first, and `SessionCookieStore.remove(service:)` deletes that
+    /// service's Keychain item outright, so neither the login-is-missing
+    /// rule below nor `isExpired(service:)` — which requires a NON-empty,
+    /// now-all-stale persisted set — reads `true` afterward. No
+    /// special-casing needed for that call site.
+    ///
+    /// The Keychain-derived input has two halves. `isExpired(service:)` is
+    /// "something is saved and none of it is live"; `canvasLoginIsMissing` is
+    /// "nothing is saved, but this install did log in once" (see
+    /// `canvasLoginEverCaptured` for the 2026-10-10 incident). Either one
+    /// raises the same flag, so the banner and the renew-on-open trigger
+    /// below treat a deleted session exactly as they treat an aged one.
     ///
     /// ORs in `canvasSessionConfirmedDead` alongside the Keychain check — the
     /// sticky, server-side-proven half of the flag (see that property's doc
@@ -2528,7 +2695,7 @@ final class AppState: ObservableObject {
             canvasSessionExpired = false
         } else {
             let cookieSessionExpired = cookieSessionExpiredOverrideForTesting ?? SessionCookieStore.isExpired(service: .canvas)
-            canvasSessionExpired = cookieSessionExpired || canvasSessionConfirmedDead
+            canvasSessionExpired = cookieSessionExpired || canvasLoginIsMissing || canvasSessionConfirmedDead
         }
         if canvasSessionExpired && !wasExpired {
             #if DEBUG
@@ -2793,7 +2960,14 @@ final class AppState: ObservableObject {
             noteAutoLoginRejected()
         case .needsDuo:
             if context == .foreground { setAutoLoginAwaitingDuo(true) }
-        case .renewed, .landedOnLoginPage, .timedOut, .abortedByLoginPane, .notAttempted:
+        case .renewed:
+            // The renewer has just merged fresh Canvas cookies into the
+            // store, so a login was captured (`canvasLoginEverCaptured`).
+            // Normally already true; it matters for an install whose flag
+            // was cleared or never resolved, and it keeps the recompute a
+            // few lines down from reading "no login yet" over live cookies.
+            setCanvasLoginEverCaptured(true)
+        case .landedOnLoginPage, .timedOut, .abortedByLoginPane, .notAttempted:
             break
         }
         recordSilentRenewal(kind: Self.renewalOutcomeKind(outcome), context: context, at: Date())
@@ -2937,6 +3111,14 @@ final class AppState: ObservableObject {
         lastSilentRenewalAttemptAt = nil
         UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
         UserDefaults.lhf.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        // With the cookie item deleted and `canvasLoginEverCaptured` set, this
+        // recompute now reads the login as missing, raises the banner and
+        // queues the same renew-on-open `startSilentCanvasRenewal()` a real
+        // lost session gets (before the fix it read `false` here, which was
+        // the bug). That queued task and the direct attempt below share one
+        // renewer; this call enters the renewer first, so it owns the attempt
+        // whose outcome is reported and the queued one comes back
+        // `.notAttempted`, which records nothing.
         refreshCanvasSessionExpiredState()
 
         // Recorded BEFORE the attempt, matching what the renewer's own
@@ -3088,6 +3270,10 @@ final class AppState: ObservableObject {
     /// `refreshCanvasSessionExpiredState()` already uses for
     /// `attemptSilentCanvasRenewal()`) is the lower-risk choice.
     func noteCanvasLoginSessionCaptured() {
+        // The cookies were saved a moment ago by the caller; this is the
+        // record that a login happened (`canvasLoginEverCaptured`). Before
+        // the recompute below, which reads it.
+        setCanvasLoginEverCaptured(true)
         noteCanvasSessionProvenAlive()
         setAutoLoginAwaitingDuo(false)
         // A real login is the human action the background's Duo stand-down
@@ -3509,6 +3695,11 @@ final class AppState: ObservableObject {
         // below or a disconnected user would keep seeing the reconnect nag
         // this whole method exists to let them escape.
         setCanvasSessionConfirmedDead(false)
+        // Same reasoning for "this install logged in once": with no Canvas
+        // connection left there is no login to be missing. Written as an
+        // explicit `false`, not removed, so the legacy evidence at `init`
+        // (`hasOfferedStayLoggedIn` is never reset) cannot bring it back.
+        setCanvasLoginEverCaptured(false)
         refreshCanvasSessionExpiredState()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
         // store, not just the Keychain copy above — otherwise a still-resident
