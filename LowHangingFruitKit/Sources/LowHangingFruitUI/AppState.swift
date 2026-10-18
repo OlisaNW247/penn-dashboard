@@ -3858,7 +3858,16 @@ final class AppState: ObservableObject {
             // Normalize Gradescope's course labels through the same parser as
             // Canvas so a course shared by both sources collapses to one picker
             // entry (e.g. "CIS 2400 Systems Programming" → "CIS 2400").
-            let fetched = try await client.fetchAssignments().map(Self.normalizingCourse)
+            let report = try await client.fetchAssignmentsReport()
+            // A row whose detail page could not be read this time keeps the
+            // "submitted" the ledger already holds for it (see
+            // `GradescopeClient.preservingUnverifiedSubmissions`); an explicit
+            // "not submitted" still overrides.
+            let fetched = GradescopeClient.preservingUnverifiedSubmissions(
+                fetched: report.assignments.map(Self.normalizingCourse),
+                unverifiedIDs: report.unverifiedAssignmentIDs,
+                previous: gradescopeItems
+            )
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
                 gradescopeItems = store.reconcile(fetched, source: .gradescope).items
