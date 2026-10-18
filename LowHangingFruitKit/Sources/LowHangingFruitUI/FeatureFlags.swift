@@ -6,36 +6,42 @@ import Foundation
 /// UserDefaults setting, because these gate what App Review sees and that must
 /// not depend on device state.
 enum FeatureFlags {
-    /// **Grade Watcher is off in the 1.0 submission.**
+    /// **Grade Watcher is off: the owner removed it on 2026-10-18.**
     ///
-    /// The grading engine itself is well tested, but the feature has never been
-    /// verified end to end against a real Canvas session — grades need a live
-    /// cookie session that the cookieless ICS feed the dashboard runs on
-    /// doesn't provide — and it does not currently work reliably on device.
-    /// Shipping a headline feature in that state is worse than shipping
-    /// without it.
+    /// This hides the **entry points** and the **grade-change notices**, and
+    /// nothing else. The header's grades button is the only route into
+    /// `GradeWatcherView` (and from it `GradeReportView`); it is gated on
+    /// this flag in `ContentView.header`, so with the flag false no Release
+    /// build can reach either screen. The DEBUG launch arguments
+    /// (`-LHFShowGrades`, `-LHFShowReport`) still seed the navigation path
+    /// for screenshots, and compile out of Release. The "grade posted"
+    /// notification is held back at the point it is posted
+    /// (`NotificationScheduler.gradeNoticesToPost`), not by changing the fetch.
+    /// The announcements megaphone took the grades button's place in the
+    /// header.
     ///
-    /// This hides only the **entry points**. Everything behind them stays
-    /// compiled and tested so the `v3` branch (where Grade Watcher, the grade
-    /// report and syllabus ingestion continue) keeps merging cleanly, and so
-    /// re-enabling is a one-line change once it's verified on device.
+    /// **The Canvas grade fetch deliberately keeps running.**
+    /// `AutoSyncCoordinator.refreshCanvasGrades` is the only source of
+    /// auto-submitted state (work already turned in filing itself under
+    /// Done), of the "turned in" notices, of the session-renewal probe that
+    /// runs on a 401, of course intel and announcements, and of the
+    /// course-knowledge refresh that feeds ask. The wrong fix is to gate
+    /// that fetch on this flag because "Grade Watcher is off": all of the
+    /// above would go quiet with it, and the symptom (work that never moves
+    /// to Done, a session that never renews) would not point back here. The
+    /// privacy policy and review notes disclose the fetch accordingly.
     ///
-    /// Note this does **not** stop Canvas grade data being fetched:
-    /// `AutoSyncCoordinator.refreshCanvasGrades` still runs, because automatic
-    /// submission detection (work you've already turned in filing itself under
-    /// Done) is derived from that same payload. The privacy policy and review
-    /// notes disclose that accordingly.
-    /// **true on `v6`.** The `false` that sat here through the 2.0.0 line was
-    /// a merge artifact, not a decision: the doc comment above it said "on
-    /// this branch the entry points are on" while the value said off — v4's
-    /// value survived the v3.5+v4 merge and v3.5's comment came along with
-    /// it, so Grade Watcher silently vanished from the UI while remaining
-    /// fully compiled, tested, and fed by every sync. v6 turns the entry
-    /// points back on deliberately (owner's call, 2026-08-31). The runtime
-    /// gate is still `state.canUseGradeWatcher` — a calendar-link-only
-    /// install with no cookie session never shows the button regardless of
-    /// this flag, which is what makes it safe to leave on.
-    static let gradeWatcher = true
+    /// Nothing is deleted. The grading engine, the report, the category
+    /// editor and their tests stay compiled so that re-enabling is a
+    /// one-line change. History, since the value has flipped before: it was
+    /// false in the 1.0 submission because the feature had never been
+    /// verified against a real Canvas session; a merge artifact kept it
+    /// false through the 2.0.0 line by accident (v4's value survived the
+    /// v3.5+v4 merge with v3.5's comment); `v6` turned it back on
+    /// deliberately (owner's call, 2026-08-31). The runtime gate
+    /// `state.canUseGradeWatcher` is separate and still means "there is a
+    /// Canvas credential", which the fetch above uses.
+    static let gradeWatcher = false
 
     /// **Canvas personal access tokens are off.** The whole mint-at-login
     /// path (`CanvasAccessTokenMinter`, `CanvasAccessTokenStore`, the

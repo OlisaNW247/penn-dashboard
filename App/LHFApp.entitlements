@@ -16,5 +16,10 @@
 	</array>
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+	<!-- The loud 10-minute alert (NotificationScheduler.loudRequests) posts
+	     Time Sensitive notifications. Without this key iOS delivers them as
+	     ordinary ones and says nothing. iOS only: the Mac file does not carry it. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>

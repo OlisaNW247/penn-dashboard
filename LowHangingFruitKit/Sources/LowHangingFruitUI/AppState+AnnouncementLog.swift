@@ -2,7 +2,11 @@ import Combine
 import Foundation
 import LowHangingFruitKit
 
-// The megaphone sheet's "all announcements" list.
+// The megaphone sheet's announcements list.
+//
+// (Since 2026-10-18 the sheet shows only the past 7 days of this log, beside
+// the tasks and exams found in them; `AppState+AnnouncementSheet.swift` holds
+// that rule. The log still keeps 60 days.)
 //
 // The megaphone used to open a list of *tasks* the announcement extractor had
 // pulled out of Canvas posts, and hid itself when there were none. The
@@ -277,16 +281,31 @@ extension AppState {
 
     // MARK: Megaphone
 
-    /// The megaphone's badge: unread finds plus unread records.
+    /// The megaphone's badge: unread found items plus unread posts, counted
+    /// over exactly the two lists the sheet shows (`announcementFoundItems`,
+    /// `announcementSheetRecords`, see `AppState+AnnouncementSheet.swift`). A
+    /// post from three weeks ago that was never opened, or a September task
+    /// that has since passed, is not on the sheet, so it must not be on the
+    /// badge either: a number the student cannot reduce by looking is the
+    /// failure the unread count was introduced to end.
     var unreadAnnouncementCount: Int {
+        announcementBadgeCount(now: Date())
+    }
+
+    /// `unreadAnnouncementCount` as of `now`, so a test can pin the 7-day
+    /// window and the found list's "not past yet" to a fixed moment.
+    func announcementBadgeCount(now: Date) -> Int {
         AnnouncementReadState.unreadCount(
-            finds: announcementPageItems,
-            records: announcementRecordsOnPage,
+            finds: announcementFoundItems(now: now),
+            records: announcementSheetRecords(now: now),
             seen: announcementSeenIDs
         )
     }
 
-    /// Whether the dashboard shows the megaphone at all.
+    /// Whether there is anything to open. The dashboard no longer asks:
+    /// since 2026-10-18 the megaphone lives in the header and always shows,
+    /// and an empty list says "no announcements" itself. Kept, with its
+    /// tests, as the plain "is the list empty" question.
     var showsAnnouncementsButton: Bool {
         AnnouncementReadState.megaphoneVisible(
             finds: announcementPageItems,
@@ -297,21 +316,28 @@ extension AppState {
     /// Called when the sheet opens. Returns the ids that were unread at that
     /// moment (a find's `Assignment.id`, a record's `recordKey`) so rows can
     /// still say NEW after opening has marked everything seen.
-    func openAnnouncementsSheet() -> Set<String> {
+    ///
+    /// Only what the sheet shows is marked seen (`announcementFoundItems`,
+    /// `announcementSheetRecords`). A post older than the window that was never
+    /// read stays unread in the stored set and is never counted: the window
+    /// only moves forward, so it cannot come back into view.
+    func openAnnouncementsSheet(now: Date = Date()) -> Set<String> {
+        let finds = announcementFoundItems(now: now)
+        let records = announcementSheetRecords(now: now)
         let newIDs = AnnouncementReadState.newIDs(
-            finds: announcementPageItems,
-            records: announcementRecordsOnPage,
+            finds: finds,
+            records: records,
             seen: announcementSeenIDs
         )
         // Rows of a hidden class are not on the page but are still known, so
         // their already-seen state survives the class being shown again.
         let known = knownAnnouncementKeys(canvas: announcementLogRecords)
         if let log = announcementLog {
-            log.readState.markAllSeen(announcementPageItems, records: announcementRecordsOnPage, keeping: known)
+            log.readState.markAllSeen(finds, records: records, keeping: known)
             announcementSeenIDs = log.readState.seenIDs
         } else {
-            announcementSeenIDs = Set(announcementPageItems.map(\.id))
-                .union(announcementRecordsOnPage.map(AnnouncementReadState.key(for:)))
+            announcementSeenIDs = Set(finds.map(\.id))
+                .union(records.map(AnnouncementReadState.key(for:)))
                 .union(announcementSeenIDs.intersection(known))
         }
         return newIDs

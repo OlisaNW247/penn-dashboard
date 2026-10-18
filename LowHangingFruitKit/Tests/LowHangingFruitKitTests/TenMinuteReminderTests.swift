@@ -193,6 +193,7 @@ struct TenMinuteReminderTests {
         withScratchDefaults { defaults in
             defaults.set([86_400, 3600, 604_800], forKey: "notif.leadOffsets")
             let scheduler = NotificationScheduler(defaults: defaults)
+            scheduler.setLoudAlertEnabled(false)   // pins the lead-time reminders only; see `LoudAlertTests`
             let prefs = CoursePreferencesStore(defaults: defaults)
             let now = Date()
 
@@ -208,6 +209,7 @@ struct TenMinuteReminderTests {
     func freshInstallGetsNoTenMinuteReminder() {
         withScratchDefaults { defaults in
             let scheduler = NotificationScheduler(defaults: defaults)
+            scheduler.setLoudAlertEnabled(false)   // pins the lead-time reminders only; see `LoudAlertTests`
             let prefs = CoursePreferencesStore(defaults: defaults)
             let now = Date()
 
@@ -345,9 +347,15 @@ struct TenMinuteReminderTests {
     /// A scheduler over `defaults` whose global lead times are exactly
     /// `leadTimes`. Every case is set explicitly so the result does not depend
     /// on what the scheduler started with.
+    ///
+    /// The loud 10-minute alert is switched off: it is on by default and, for
+    /// any unsubmitted item due within 48 hours, takes the place of the plain
+    /// 10-minute reminder these tests exist to pin. The two together are
+    /// covered by `LoudAlertTests`.
     private func makeScheduler(on defaults: UserDefaults,
                                leadTimes: Set<LeadOffset>) -> NotificationScheduler {
         let scheduler = NotificationScheduler(defaults: defaults)
+        scheduler.setLoudAlertEnabled(false)
         for offset in LeadOffset.allCases {
             scheduler.setOffset(offset, on: leadTimes.contains(offset))
         }
