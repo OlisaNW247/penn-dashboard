@@ -236,12 +236,37 @@ final class NotificationScheduler: ObservableObject {
     /// Safe against `reschedule`'s `cancelAll()`, which only clears *pending*
     /// requests: these have no trigger and are delivered on arrival.
     func notifyGradeChanges(_ changes: [AssignmentStore.ScoreChange]) async {
+        let changes = Self.gradeNoticesToPost(changes)
         guard isEnabled, !changes.isEmpty else { return }
         await refreshAuthStatus()
         guard authStatus == .authorized || authStatus == .provisional else { return }
         for request in Self.gradeRequests(changes) {
             try? await center.add(request)
         }
+    }
+
+    /// Which of the detected grade changes may be announced: all of them while
+    /// Grade Watcher is on, none once the owner has removed it
+    /// (`FeatureFlags.gradeWatcher`, 2026-10-18). A student with no grades
+    /// screen must not be told a grade posted, a notice that would lead
+    /// nowhere.
+    ///
+    /// This is the only place the flag is read for notices, and it sits at the
+    /// posting point on purpose. Both drains (`ContentView.announceGradeChanges`
+    /// and the menu-bar copy in `LHFScenes`) still empty
+    /// `AppState.pendingGradeChanges`, so nothing piles up while the flag is
+    /// off, and the grade fetch that fills that list is untouched: it is also
+    /// the source of auto-submitted state and "turned in" notices, which stay
+    /// exactly as they were. The wrong fix is to stop detecting changes in
+    /// `AppState.notifiableGradeChanges` or to skip the fetch.
+    ///
+    /// `nonisolated` and parameterised on the flag so a test can pin both
+    /// values without recompiling; the app passes the real flag.
+    nonisolated static func gradeNoticesToPost(
+        _ changes: [AssignmentStore.ScoreChange],
+        gradeWatcherEnabled: Bool = FeatureFlags.gradeWatcher
+    ) -> [AssignmentStore.ScoreChange] {
+        gradeWatcherEnabled ? changes : []
     }
 
     /// Pure request-building, so the wording and the collapse rule are testable

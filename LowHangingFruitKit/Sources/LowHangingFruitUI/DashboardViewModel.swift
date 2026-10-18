@@ -29,6 +29,12 @@ struct DashItem: Identifiable, Equatable {
     /// and preview or demo data must not offer it. Nil by default, so sample
     /// data and every existing construction site offer nothing.
     var removal: OwnTaskRemoval? = nil
+    /// A task found in an announcement (Canvas or Ed) whose date has passed
+    /// and that the student has not finished. It is shown in prev, plainly
+    /// marked as past, and is neither a completed card nor an active one
+    /// (`AppState.isLapsedAnnouncement`). False by default, so sample data and
+    /// every existing construction site are unaffected.
+    var isPast: Bool = false
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
@@ -83,11 +89,15 @@ struct DashItem: Identifiable, Equatable {
 
     /// The one-line caveat under the title, or nil. Both caveats can apply
     /// (an announcement can announce something with nothing to hand in), so
-    /// they join on one line rather than stacking two 9pt rows.
+    /// they join on one line rather than stacking two 9pt rows. A task found
+    /// in an Ed post says "from ed": it did not come from an announcement on
+    /// Canvas, and the card's link opens Ed.
     var caveatText: String? {
         var parts: [String] = []
         if showsNothingToSubmit { parts.append("nothing to submit") }
-        if isFromAnnouncement { parts.append("from announcements") }
+        if isFromAnnouncement {
+            parts.append(assignment.announcementOrigin == .ed ? "from ed" : "from announcements")
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
     }
 
@@ -135,6 +145,12 @@ struct DashSection: Identifiable {
 @MainActor
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var items: [DashItem] = []
+    /// Announcement-derived tasks whose date has passed (`DashItem.isPast`),
+    /// for the prev tab only. Kept apart from `items` on purpose: `items` is
+    /// what reminders are planned from, the class menu counts, and the
+    /// caught-up check reads, and a task the dashboard has put away belongs in
+    /// none of those.
+    @Published private(set) var pastItems: [DashItem] = []
 
     private weak var appState: AppState?
     private(set) var usingSampleData = false
@@ -165,6 +181,7 @@ final class DashboardViewModel: ObservableObject {
     func loadSampleData() {
         usingSampleData = true
         items = SampleData.items()
+        pastItems = []
     }
 
     func reload(preservingEdits: Bool = false) {
@@ -222,11 +239,37 @@ final class DashboardViewModel: ObservableObject {
         }
 
         items = built
+
+        // Past announcement tasks: not in `active` (AppState has already put
+        // them away) and not completed, so neither pool above holds them. The
+        // class picker applies as it does to the completed pool.
+        pastItems = state.lapsedAnnouncementItems
+            .filter { state.isCourseSelected($0.course) }
+            .map { a in
+                DashItem(assignment: a,
+                         dueOverride: state.editedDueDate(for: a) ?? priorByID[a.id]?.dueOverride,
+                         isCompleted: false,
+                         completedAt: nil,
+                         requiresNoSubmission: state.requiresNoSubmission(a),
+                         isPast: true)
+            }
     }
 
     // MARK: Mutations
 
     func complete(_ item: DashItem) {
+        // A past announcement task completes from the prev tab: it becomes an
+        // ordinary completed card, stamped now, and leaves the past list in
+        // the same turn (the next `reload` confirms it from `AppState`).
+        if let p = pastItems.firstIndex(where: { $0.id == item.id }) {
+            var done = pastItems.remove(at: p)
+            done.isPast = false
+            done.isCompleted = true
+            done.completedAt = Date()
+            items.append(done)
+            if !usingSampleData { appState?.markCompleted(item.assignment) }
+            return
+        }
         guard let i = index(of: item) else { return }
         items[i].isCompleted = true
         items[i].completedAt = Date()
@@ -377,7 +420,11 @@ final class DashboardViewModel: ObservableObject {
     /// time, falling back to the due date for items completed before timestamps
     /// were tracked — so completed work is never dropped.
     func doneSections(now: Date = Date()) -> [DashSection] {
-        let completed = items.filter { $0.isCompleted }
+        // Past announcement tasks sit in the same two sections as finished
+        // work, placed by their due date (they have no completion time), so the
+        // tab is one timeline of what has gone by. The card says which is
+        // which (`DoneCardView`).
+        let completed = items.filter { $0.isCompleted } + pastItems
         let cal = Calendar.current
         let semesterStart = Term(date: now).startDate()
 

@@ -341,6 +341,57 @@ public final class AssignmentStore {
         return doomed.count
     }
 
+    // MARK: Targeted gone-from-feed flags
+
+    /// Flags specific rows `isGoneFromFeed`, leaving every other field alone.
+    ///
+    /// `reconcile` flags a whole source's missing rows at once, which is the
+    /// wrong tool for announcement-derived rows: `.canvasAnnouncement` rows are
+    /// added by `upsert`, one announcement at a time, so no fetch ever holds
+    /// "the complete set" to reconcile against. The caller (the announcement
+    /// sync) knows exactly which posts Canvas stopped returning inside the
+    /// window it asked for, and passes the rows of those posts here. The row,
+    /// its completion and its place in the ledger stay: this is the same flag
+    /// `reconcile` sets, with the same consequences (`isAgedOut` may remove an
+    /// unfinished row 14 days after its due date; finished work is exempt).
+    /// Ids with no row are ignored. Returns how many rows changed.
+    @discardableResult
+    public func markGoneFromFeed(ids: Set<String>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        var changed = 0
+        for row in rowsByID().values where ids.contains(row.id) && !row.isGoneFromFeed {
+            row.isGoneFromFeed = true
+            changed += 1
+        }
+        if changed > 0 { saveChanges() }
+        return changed
+    }
+
+    /// The inverse of `markGoneFromFeed`: the post is back (unpublished and
+    /// republished, a flaky response that dropped it), so its rows count as
+    /// seen again at `now`. `upsert` does the same through `refresh`, but only
+    /// for a row it is handed; this is for rows whose post was seen again
+    /// without being re-extracted. Returns how many rows changed.
+    @discardableResult
+    public func markPresentInFeed(ids: Set<String>, now: Date = Date()) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        var changed = 0
+        for row in rowsByID().values where ids.contains(row.id) && row.isGoneFromFeed {
+            row.isGoneFromFeed = false
+            row.lastSeenInFeed = now
+            changed += 1
+        }
+        if changed > 0 { saveChanges() }
+        return changed
+    }
+
+    /// Ids of `source`'s rows currently flagged gone from their feed, whether
+    /// or not they are still visible. A read model for callers that show a
+    /// source's rows (`assignments(source:)` returns them all, flag unseen).
+    public func goneFromFeedIDs(source: Assignment.Source) -> Set<String> {
+        Set(rows(source: source).filter(\.isGoneFromFeed).map(\.id))
+    }
+
     // MARK: Identity — uniqueness is enforced here, not by the database
 
     /// Every row keyed by `id`, with any duplicate ids collapsed on the spot.

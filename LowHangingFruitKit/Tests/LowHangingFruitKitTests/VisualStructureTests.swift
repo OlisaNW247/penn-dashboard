@@ -55,8 +55,10 @@ struct VisualStructureTests {
 
         #expect(add.contains("smoothTomato"))
         #expect(!add.contains("smoothAnnouncement"))
+        // The megaphone is drawn by the header's shared 48pt circle
+        // (2026-10-18), which tints with the accent it is handed instead of
+        // using the 38pt button's separate `smoothAnnouncementFill`.
         #expect(announcements.contains("smoothAnnouncementAccent"))
-        #expect(announcements.contains("smoothAnnouncementFill"))
         #expect(!announcements.contains("smoothGrape"))
     }
 

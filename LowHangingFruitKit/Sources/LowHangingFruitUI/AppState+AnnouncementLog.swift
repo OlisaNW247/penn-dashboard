@@ -286,7 +286,10 @@ extension AppState {
         )
     }
 
-    /// Whether the dashboard shows the megaphone at all.
+    /// Whether there is anything to open. The dashboard no longer asks:
+    /// since 2026-10-18 the megaphone lives in the header and always shows,
+    /// and an empty list says "no announcements" itself. Kept, with its
+    /// tests, as the plain "is the list empty" question.
     var showsAnnouncementsButton: Bool {
         AnnouncementReadState.megaphoneVisible(
             finds: announcementPageItems,

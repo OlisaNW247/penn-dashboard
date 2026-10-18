@@ -30,8 +30,9 @@ These block shipping, or would make shipping risky.
   1. The megaphone: Canvas announcements reach today (re-read
      `announcement-log.json` off the phone; the first install showed the
      28-day-window bug), Ed rows for an Ed-only class, row layout.
-  2. Profile → accounts with no sign-in prose, and the collapsed
-     "sign-in diagnostics" in the DEBUG section.
+  2. Profile → accounts with no sign-in prose in a Release build. (On a
+     DEBUG build the sign-in lines are in plain view under the canvas row
+     again since 2026-10-18; the collapsed "sign-in diagnostics" is gone.)
   3. An opened card: "open in canvas" opens without collapsing the card;
      "edit date" survives a force-quit; "delete" / "stop repeating" on
      your own tasks.
@@ -248,6 +249,43 @@ Kept so nobody rebuilds them blind.
   later and was reverted (`CLAUDE.md` → the 24-hour trap).
 
 ## Done recently
+
+- **2026-10-18 (`v8-announcements`, not yet committed).** Grade Watcher
+  removed at the owner's call, and the megaphone takes its place.
+  - **Grade Watcher off.** `FeatureFlags.gradeWatcher = false`: no
+    grades button, no "grade posted" notifications. The Canvas grade
+    fetch keeps running on purpose (auto-submitted state, "turned in",
+    the 401 renewal probe, course intel, course knowledge). Code and
+    tests kept; re-enabling is one line.
+  - **Megaphone in the header**, 48pt, left of profile, always shown;
+    out of the control row. Empty list says "no announcements".
+  - **Profile → accounts.** DEBUG sign-in lines back in plain view
+    under the canvas row (the collapsed disclosure is gone); a Release
+    "sign in to canvas" button when Canvas is connected with no saved
+    login.
+  - **Tasks found in announcements are cards** (owner's call), Canvas and
+    Ed alike. Every task, submission or preparation, is a dashboard card
+    for a class whose "announcements on dashboard" switch is on (default);
+    only wording that reports something done ("grades posted") stays in
+    the megaphone. Undated ones sit under "later" in all, like any undated
+    item. Ed announcements and pinned posts are read for tasks by the same
+    extractors and the same "ai assist" switch as Canvas posts, once each
+    (`AppState+EdAnnouncementTasks.swift`); `docs/PRIVACY.md` says so.
+    Rows are `.canvasAnnouncement` with an `ed-` sourceID, so no schema
+    change and an older build reads them as announcement rows.
+  - **Past, not completed.** An announcement task whose date has passed
+    leaves todo and all and is listed in prev marked "past" (no
+    strikethrough); a tap on it completes it. Ordinary Canvas, Gradescope
+    and manual work is untouched.
+  - **Deleted posts.** A Canvas post that stops coming back inside the
+    fetched window has its cards hidden (rows flagged `isGoneFromFeed`,
+    never deleted; a finished task stays in prev); an empty or failed fetch
+    hides nothing. Not done for Ed, on purpose: see Known gaps in
+    `CLAUDE.md`.
+  - **One card per task** across Canvas, Ed and the feed, with a tick
+    carried to the card that is shown.
+  - **Not verified on a phone yet**: only compiled for the connected
+    phone (Debug) and iOS Release, and tested on the Mac.
 
 - **2026-10-09/10 (`v8-launch-prep`).** Marco's launch-prep list, on top
   of `v8`. Nothing in sign-in or the sync changed.

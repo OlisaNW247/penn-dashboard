@@ -114,9 +114,6 @@ struct ContentView: View {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
                         addInlineButton
-                        if state.showsAnnouncementsButton {
-                            announcementFindsButton
-                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
@@ -325,26 +322,33 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
+    /// The megaphone, in the header (it was a 38pt control in the row under
+    /// it until 2026-10-18). Same circle as `navButton`; only the action
+    /// differs.
     private var announcementFindsButton: some View {
         Button { openAnnouncements() } label: {
-            Image(systemName: "megaphone.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothAnnouncementAccent)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothAnnouncementFill))
-                // See `addInlineButton`: 44pt hit region, 38pt drawing.
-                .contentShape(Circle().inset(by: -3))
+            headerCircle(icon: "megaphone.fill", color: .smoothAnnouncementAccent)
                 // Unread only: the total never went down, so after the first
                 // week it said nothing. No badge at all once everything's
                 // been seen.
+                //
+                // Sits on the circle's upper-right rim, not in the square
+                // frame's corner: at the corner (the 38pt button's
+                // placement) a badge floats clear of a 48pt circle, whose
+                // corners are empty. The 2pt offsets leave it overhanging
+                // the 48pt frame by 2pt, which nothing above or beside it
+                // clips (the profile button is 10pt away). A capsule, not a
+                // circle, so "12" and "99+" widen it rather than overflow it.
                 .overlay(alignment: .topTrailing) {
                     if unreadAnnouncementCount > 0 {
-                        Text("\(unreadAnnouncementCount)")
-                            .font(.lhfMono(8, weight: .semibold))
+                        Text(AnnouncementSheetCopy.badgeText(unreadAnnouncementCount))
+                            .font(.lhfMono(9, weight: .semibold))
                             .foregroundStyle(Color.smoothPaper)
-                            .frame(minWidth: 14, minHeight: 14)
-                            .background(Circle().fill(Color.smoothTomato))
-                            .offset(x: 3, y: -3)
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .background(Capsule().fill(Color.smoothTomato))
+                            .offset(x: 2, y: -2)
                             .transition(.scale.combined(with: .opacity))
                             .accessibilityHidden(true)
                     }
@@ -468,6 +472,12 @@ struct ContentView: View {
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
+                // Where the grades button used to be (Grade Watcher was removed
+                // 2026-10-18, `FeatureFlags.gradeWatcher`). Always here, even
+                // with nothing to list: a control that appears and disappears
+                // with the sync leaves the header a different shape on every
+                // launch, and the sheet says "no announcements" by itself.
+                announcementFindsButton
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
@@ -494,17 +504,25 @@ struct ContentView: View {
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.smoothInk)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(color.opacity(0.18)))
-                .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
-                .contentShape(Circle())
+            headerCircle(icon: icon, color: color)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
+    }
+
+    /// The header's 48pt circle, shared by the push buttons above and the
+    /// megaphone (which presents a sheet, so it is a `Button`, not a
+    /// `NavigationLink`). One drawing, so the buttons cannot drift apart in
+    /// size, fill or stroke.
+    private func headerCircle(icon: String, color: Color) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.smoothInk)
+            .frame(width: 48, height: 48)
+            .background(Circle().fill(color.opacity(0.18)))
+            .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
+            .contentShape(Circle())
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
@@ -568,9 +586,15 @@ struct ContentView: View {
             DoneView(
                 sections: filteredByClass(vm.doneSections()),
                 weeklyDone: vm.weeklyProgress().done,
-                onUncomplete: { item in
+                onToggle: { item in
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        vm.uncomplete(item)
+                        // A past announcement task was never completed, so
+                        // the tap finishes it; finished work is un-finished.
+                        if item.isPast {
+                            vm.complete(item)
+                        } else {
+                            vm.uncomplete(item)
+                        }
                     }
                     rescheduleNotifications()
                 },

@@ -4,6 +4,12 @@ import LowHangingFruitKit
 /// "Done" tab — completed assignments styled as archived: greige surface, muted
 /// grey spine, green check, strikethrough title. Tapping un-completes an item.
 ///
+/// It also lists announcement tasks whose date has passed without being
+/// finished (`DashItem.isPast`), among the finished work and by date. They are
+/// told apart plainly, not by colour alone: no strikethrough, which is what
+/// "done" looks like here, and the word "past" where a finished card shows
+/// nothing. Tapping one marks it done.
+///
 /// Leads with the week's count ("4 down this week") rather than ending on it:
 /// with a whole semester of finished work below, the one number worth seeing
 /// sat at the bottom of a long scroll. Only this week's cards show by
@@ -13,7 +19,9 @@ import LowHangingFruitKit
 struct DoneView: View {
     let sections: [DashSection]
     let weeklyDone: Int
-    let onUncomplete: (DashItem) -> Void
+    /// A tap on a card: un-completes finished work, completes a past task.
+    /// The caller decides which (`DashItem.isPast`).
+    let onToggle: (DashItem) -> Void
     /// How many older unfinished assignments the sign-up rule is withholding
     /// (`SignupBacklog`), whether the student has chosen to see them, and the
     /// switch between the two. Defaulted so the tab renders without any of it
@@ -118,7 +126,7 @@ struct DoneView: View {
                 DoneCardView(
                     item: item,
                     dayLabel: section.dayLabel?(item),
-                    onTap: { onUncomplete(item) }
+                    onTap: { onToggle(item) }
                 )
                 .transition(.opacity)
             }
@@ -158,14 +166,28 @@ struct DoneCardView: View {
                     Text(item.assignment.title)
                         .font(.lhfAssignmentTitle(20))
                         .foregroundStyle(Color.smoothInk)
-                        .strikethrough(true, color: Color.smoothInk)
+                        // The strike is what "done" looks like on this tab, so
+                        // a task that merely went by does not get one.
+                        .strikethrough(!item.isPast, color: Color.smoothInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
 
                 Spacer(minLength: 8)
 
-                if let dayLabel {
+                if item.isPast {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("past")
+                            .font(.lhfMono(9.5, weight: .semibold))
+                            .tracking(1.1)
+                            .foregroundStyle(Color.smoothInk)
+                        if let dayLabel {
+                            Text(dayLabel)
+                                .font(.lhfMono(15, weight: .medium))
+                                .foregroundStyle(Color.smoothInk)
+                        }
+                    }
+                } else if let dayLabel {
                     Text(dayLabel)
                         .font(.lhfMono(15, weight: .medium))
                         .foregroundStyle(Color.smoothInk)

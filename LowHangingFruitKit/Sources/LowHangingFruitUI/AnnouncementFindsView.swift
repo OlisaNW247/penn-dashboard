@@ -67,9 +67,10 @@ struct AnnouncementFindsView: View {
                             let now = Date()
                             // Which of these posts a find came from, for the
                             // small "task found" tag. Joined on the id
-                            // inside the find's ledger `sourceID`.
+                            // inside the find's ledger `sourceID`: a Canvas
+                            // announcement id, or an Ed document id.
                             let withFinds = Set(items.compactMap {
-                                AnnouncementRecord.announcementID(fromFindSourceID: $0.sourceID)
+                                AnnouncementRecord.recordID(fromFindSourceID: $0.sourceID)
                             })
                             ForEach(records) { record in
                                 recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
@@ -149,7 +150,9 @@ struct AnnouncementFindsView: View {
         if let link {
             Link(destination: link.url) { content }
                 .buttonStyle(.plain)
-                .accessibilityHint(AnnouncementSheetCopy.canvasLinkHint)
+                .accessibilityHint(item.announcementOrigin == .ed
+                    ? AnnouncementSheetCopy.edLinkHint
+                    : AnnouncementSheetCopy.canvasLinkHint)
         } else {
             content
         }
@@ -259,10 +262,27 @@ extension AnnouncementRecord {
 /// here are mostly about what is left out.
 enum AnnouncementSheetCopy {
     /// Shown when there is nothing at all to list. Not "in the last 60 days":
-    /// the window is not something a student needs to be told.
+    /// the window is not something a student needs to be told. Since
+    /// 2026-10-18 this is reachable by every student who opens the megaphone
+    /// early on: the header button no longer hides itself while the list is
+    /// empty, so this line is what an empty list says. It stays one short
+    /// lowercase line, on purpose (the owner wants the least possible text).
     static let emptyState = "no announcements"
     /// A row whose post came without a title.
     static let untitled = "untitled"
+
+    /// The most the header badge counts to before it says "99+". A student
+    /// back from a long break can have a few hundred unread; the number has to
+    /// fit a 48pt circle's rim without clipping, and past two digits the exact
+    /// count tells them nothing the sheet does not. VoiceOver is still given
+    /// the true count (`ContentView.announcementFindsButton`).
+    static let badgeCap = 99
+
+    /// The text inside the megaphone's unread badge.
+    static func badgeText(_ unread: Int) -> String {
+        unread > badgeCap ? "\(badgeCap)+" : "\(unread)"
+    }
+
     static let canvasLinkHint = "opens the original announcement"
     static let edLinkHint = "opens the post in ed"
 

@@ -85,9 +85,12 @@ password, no name. Two things go through it:
   context document and matched excerpts, and are answered by a model via
   OpenRouter under LHF's own key (see the ask section below). The
   Announcement Watcher's AI assist is routed the same way, only for
-  announcements that an on-device gate judges could carry a task. It is on
-  by default, and a student can turn it off under Profile → notifications,
-  which `docs/PRIVACY.md` promises. Neither questions nor answers are
+  announcements that an on-device gate judges could carry a task. Since
+  2026-10-18 that covers Ed announcements and pinned posts too (title and
+  body, no author, once each, never for a hidden class), under the same
+  switch and the same gate; the text is what the pool already holds. It is
+  on by default, and a student can turn it off under Profile →
+  notifications, which `docs/PRIVACY.md` promises. Neither questions nor answers are
   stored, only per-user daily request counts and token totals.
 
 Disconnecting Canvas deletes the student's enrollment/usage rows and
@@ -166,11 +169,17 @@ fastest way for a new session to know what exists.
   different school there asks "switch school?" first, because it signs
   the student out and forgets the saved password and Duo trust. A student can instead
   paste a Canvas calendar link (`PasteFeedLinkSheet`); that install gets
-  the feed but no session, so no Grade Watcher.
+  the feed but no session. Since 2026-10-18 Profile → accounts shows a
+  "sign in to canvas" button under the canvas row for exactly that state
+  (connected, no saved login, not preview), because no banner appears
+  there and Grade Watcher's reconnect button is gone.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
-    ripples its squiggle and sweeps a shine across it. A grades button
-    (when Grade Watcher is usable) and a profile button sit beside it.
+    ripples its squiggle and sweeps a shine across it. The **megaphone**
+    and a profile button sit beside it, both 48pt circles. Since
+    2026-10-18 the megaphone is here, where the grades button was, and
+    always shows (an empty list says "no announcements"); the grades
+    button is gone with Grade Watcher (below).
   - **Banners.** A sync error ("couldn't sync"), a Canvas banner when
     the session is dead ("reconnect canvas", "duo needs you", or "pennkey
     password rejected"), and, since 2026-10-10, "not saving on this
@@ -180,8 +189,8 @@ fastest way for a new session to know what exists.
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
-    coloured chips, `CoursePicker`), and
-    the **megaphone**. Since 2026-10-10 the megaphone opens a real
+    coloured chips, `CoursePicker`). The **megaphone** used to be a fourth
+    control here and moved to the header on 2026-10-18. Since 2026-10-10 it opens a real
     announcements list (`AnnouncementFindsView`): "tasks found", the
     tasks the Announcement Watcher extracted, then "all announcements",
     every Canvas announcement from the last 60 days in the student's
@@ -200,10 +209,13 @@ fastest way for a new session to know what exists.
     documents (`EdDocumentHeader`), never written to that file, and the
     list follows `$courseKnowledge` without the sync calling it.
     Extraction, including the AI assist, still only ever sees the last
-    14 days. The badge counts unread finds, announcements and Ed rows;
+    14 days (for an Ed post, 14 days of activity). The badge counts unread finds, announcements and Ed rows;
     rows unread when opened are tagged NEW (`AnnouncementReadState`), and
-    the first fill of each kind on an install counts as already seen.
-  - **todo**: overdue plus the next two days. For someone who signed up
+    the first fill of each kind on an install counts as already seen. The
+    badge caps at "99+" (VoiceOver still gets the true count).
+  - **todo**: overdue plus the next two days. Tasks found in
+    announcements are cards here and in all (see the bullet after prev).
+    For someone who signed up
     on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
     that was already more than 7 days overdue at their first sync is
     withheld from todo, all, the widget and ask (`SignupBacklog`; a
@@ -217,10 +229,45 @@ fastest way for a new session to know what exists.
     prev, and manual work is never hidden.
   - **all**: future work through the term.
   - **prev** (`DoneView`): leads with "N down this week", shows this week's
-    finished work, and opens "earlier this semester" in place. When the
-    sign-up rule above is withholding anything, a quiet last line reads
-    "N older hidden" with "show", or "older shown" with "hide"
+    finished work, and opens "earlier this semester" in place. Since
+    2026-10-18 it also lists announcement tasks whose date passed
+    unfinished, in the same two sections by their date, marked "past" with
+    no strikethrough (a finished card is struck through); a tap completes
+    one, where a tap on finished work un-finishes it. They are not "down
+    this week" and are not in the pool reminders plan from
+    (`DashboardViewModel.pastItems`, `AppState.lapsedAnnouncementItems`).
+    When the sign-up rule above is withholding anything, a quiet last line
+    reads "N older hidden" with "show", or "older shown" with "hide"
     (`signupBacklogRevealedV1`).
+  - **Tasks found in announcements** (2026-10-18, owner's call; not yet on
+    a phone). Canvas announcements (`syncAnnouncements`) and Ed
+    announcements and pinned posts (`AppState+EdAnnouncementTasks.swift`,
+    triggered after the course knowledge changes and once at launch) are
+    read for tasks by the same extractors, the same "ai assist" switch and
+    the same on-device gate, once per post (`processedAnnouncementIDs` holds
+    both kinds of id). Each task, submission or preparation, dated or not,
+    is a card for a class whose per-class "announcements on dashboard"
+    switch is on (the default; it now governs Canvas and Ed together). A
+    task whose own wording reports something done ("grades posted") stays
+    megaphone-only, and a preparation task (`.event`) still answers to the
+    class's "items with nothing to submit" switch. An undated task sits
+    under "later" in all like any undated item, and has no date to pass, so
+    it leaves only by being finished, by its post being deleted, or by the
+    class being hidden. Rows are `.canvasAnnouncement` ledger rows; an Ed
+    one has an `ed-` sourceID (`AnnouncementOrigin`), which gives "from ed"
+    and "open in ed" on the card. It is a prefix and not a new
+    `Assignment.Source` or a new column on purpose: an older build maps an
+    unknown source to `.canvas` (the wrong source, and an id that no longer
+    matches the stored one), and a schema change makes an older build fall
+    back to an empty in-memory ledger. The same task on Canvas, on Ed, or
+    already a Canvas assignment is one card (`resolvingAnnouncementDuplicates`
+    with a fixed survivor order: dated, then Canvas, then id), and a tick on
+    the hidden twin carries to the shown one. A Canvas post that stops
+    coming back inside the fetched window has its rows flagged
+    `isGoneFromFeed` and its cards hidden (`reconcileAnnouncementPresence`;
+    evidence is the announcement log's posted date; an empty fetch judges
+    nothing; a finished task stays in prev; a post that returns restores
+    them). Ed deletions are not detected, see Known gaps.
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
@@ -241,8 +288,19 @@ fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
-- **Grade Watcher** (`GradeWatcherView`). Per-course grades from Canvas's
-  API with the student's session:
+- **Grade Watcher** (`GradeWatcherView`). **Removed from the app by the
+  owner on 2026-10-18** (`FeatureFlags.gradeWatcher = false`): no grades
+  button, so no route to `GradeWatcherView` or `GradeReportView` in a
+  Release build (the DEBUG `-LHFShowGrades`/`-LHFShowReport` launch
+  arguments still work), and no "grade posted" notifications
+  (`NotificationScheduler.gradeNoticesToPost`, at the posting point).
+  Nothing is deleted, and the Canvas grade fetch
+  (`AutoSyncCoordinator.refreshCanvasGrades`) deliberately keeps
+  running: it is the only source of auto-submitted state, "turned in"
+  notices, the 401 session-renewal probe, course intel and
+  announcements, and the course-knowledge refresh. Gating that fetch on
+  the flag is the wrong fix. What it was, per-course grades from
+  Canvas's API with the student's session:
   - syllabus categories (`GradeCategoryMap`, editable in
     `GradeCategoryMapEditor`, with a server-suggested mapping)
   - a "decided" syllabus prediction (`GradeCountPredictor`)
@@ -261,14 +319,16 @@ fastest way for a new session to know what exists.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
-     only when Penn rejected a saved PennKey password). The sign-in
-     health lines and the "ed discussion" status row that `v8` added
-     here were taken off the page on 2026-10-10 ("a whole yap about
-     Canvas", Marco). The strings and `SignInHealthTests` remain, and
-     the lines render in one collapsed "sign-in diagnostics" disclosure
-     inside the DEBUG-only testing section, which is where
-     `docs/SIGNOUT_VERIFICATION.md` now sends the reader. A Release
-     build shows none of it.
+     only when Penn rejected a saved PennKey password; "sign in to
+     canvas" under the canvas row when Canvas is connected with no saved
+     login, since 2026-10-18). The sign-in health lines and the "ed
+     discussion" status row that `v8` added here were taken off the page
+     on 2026-10-10 ("a whole yap about Canvas", Marco), moved into one
+     collapsed "sign-in diagnostics" disclosure, and on 2026-10-18 put
+     back in plain view at their `ba75e97` places (health lines under
+     the canvas row, the ed row under gradescope) at the co-owner's
+     request, still `#if DEBUG`. The disclosure is gone. A Release build
+     shows none of it. The strings and `SignInHealthTests` remain.
   3. appearance (light / dark; there is no "system" option and the
      default is light, whatever this file said before 2026-10-10)
   4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
@@ -298,7 +358,8 @@ fastest way for a new session to know what exists.
 - **Background.** A 5-minute refresh loop while open, `BGAppRefreshTask` in
   the background (`BackgroundRefresh.swift`), silent Canvas session renewal
   (`CanvasSessionRenewer`, plus the saved PennKey password where
-  available), grade-change and "turned in" notifications.
+  available) and "turned in" notifications. Grade-change notifications
+  are held back while Grade Watcher is off (2026-10-18).
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -392,11 +453,12 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1975 tests / 189 suites, all green, on `v8-launch-prep`
-(2026-10-10, `swift test --no-parallel`, on Marco's Mac, 4.1 s, the only
-test run on the machine at the time).** The same tree compiles for iOS in
-Debug and Release (`xcodebuild -destination 'generic/platform=iOS'
-CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
+**Current: 2028 tests / 194 suites, all green, on `v8-announcements`
+(2026-10-18, `swift test --no-parallel`, on Marco's Mac, 7.5 s, the only
+test run on the machine at the time; the 2026-10-10 figure was
+1975/189 on `v8-launch-prep`).** The same tree compiles for iOS in
+Debug (for the connected phone) and Release (`xcodebuild
+-destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
 extension and `BackgroundRefresh.swift`; `swift test` compiles neither,
 so a change in `LHFWidget/` or behind `#if os(iOS)` needs that
 `xcodebuild` before it counts as compiled. `v8` itself is 1539/154,
@@ -436,6 +498,33 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2028/194 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as
+  the only run on the machine: 1985/191 plus 43 tests in three new suites
+  (`AnnouncementTasksOnDashboardTests`, `EdAnnouncementTaskTests`,
+  `AnnouncementDeletionTests`); nothing removed. Two existing tests in
+  `AnnouncementWatcherWiringTests` were rewritten because they pinned the
+  rule the owner reversed (preparation tasks as megaphone-only finds):
+  the placement vocabulary test now expects `.main` for preparation and
+  keeps `.find` for informational wording, and the dashboard-surface test
+  now expects the preparation row on the dashboard; both say so in a
+  comment. A first run of the new suites failed three tests, all from
+  fixtures whose titles were duplicates by design (two near-identical
+  titles with close dates collapse into one card), fixed in the fixtures.
+- 1985/191 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as
+  the only test run on the machine: 1975/189 plus 10 tests in two new
+  suites (`GradeWatcherRemovalTests`, `HeaderMegaphoneTests`) and two new
+  `SettingsCopyTests`; nothing removed. Three existing tests were
+  rewritten because they pinned the old layout, none loosened to pass:
+  `SettingsCopyTests` "sign-in status and ed status render only inside
+  the collapsed debug disclosure" (now: debug-only, under their account
+  rows, no disclosure), `DashboardSmallFixesTests` "the add and
+  announcements buttons have the same 44pt hit area…" (the megaphone is
+  now the header's 48pt circle), and `VisualStructureTests` "announcement
+  and calendar quick actions have distinct accents" (the megaphone tints
+  with its accent through the shared header circle, no separate
+  `smoothAnnouncementFill`). A first run overlapped another worktree's
+  and failed two unrelated suites (the shared-defaults trap, below);
+  the rerun alone was green.
 - 1975/189 `v8-launch-prep`, 2026-10-10: `v8`'s 1539 plus 436, nothing
   removed. By commit, so a later drop can be traced: source links +25;
   the 10-minute reminder +17; the sign-up rule +43, and +16 when it was
@@ -1234,9 +1323,23 @@ none is a ship line.
   whole Ed set with the newest 100 threads, so older pinned posts vanish
   and pooled ones are downloaded and dropped again every sync; staff
   answers inside student questions are never captured.
-- **A deleted announcement stays in the megaphone until it ages out**,
-  and an Ed row's date is the thread's last activity, so a bumped old
-  pinned post can read as recent.
+- **A deleted announcement stays in the megaphone until it ages out**
+  (since 2026-10-18 its task cards are hidden, for Canvas posts only; the
+  list row is not). An Ed post that is deleted is not noticed at all: an
+  Ed read replaces a class's documents with its newest 100 threads and a
+  failed run drops the classes it had not reached, so a document missing
+  from `courseKnowledge` is weak evidence of deletion, and hiding on it
+  would hide real tasks. Fixing it means a trustworthy "this read
+  completed" signal from the Ed coordinator, which is off limits to this
+  line of work. An Ed row's date is also the thread's last activity, so a
+  bumped old pinned post can read as recent, and the Ed task pass reads it
+  as a post from the last 14 days.
+- **ask still calls a past announcement task overdue** (2026-10-18,
+  unverified on a phone). The dashboard puts such a task in prev as
+  "past"; `OnDeviceAssistantResponder` and the server context document
+  still list an unfinished submission-type one as outstanding, because
+  both read `announcementItems` directly. Left alone: what ask says is a
+  separate decision.
 - **An edited due date lives in defaults, not the ledger** (see "What
   the app does" → Cards). It does not follow a row that later collapses
   into a twin, and the term cap, the sign-up rule and the overdue-Canvas
@@ -1260,8 +1363,8 @@ none is a ship line.
   `ed` documents across two classes in `course-knowledge.json` (17 and
   10), one of those classes having no other documents at all. Nobody
   has yet checked those against what the two Ed boards show, and the Ed
-  status line now lives under Profile → testing → "sign-in diagnostics"
-  on a DEBUG build (it left the normal page on 2026-10-10). The
+  status line shows on a DEBUG build under the gradescope row in
+  Profile → accounts (it left the normal page on 2026-10-10). The
   feature fails soft throughout: every error is a note in the sync trace
   and the Settings status line, never a thrown error.
 - **Nothing has ever been tested against real Canvas or Gradescope data.**

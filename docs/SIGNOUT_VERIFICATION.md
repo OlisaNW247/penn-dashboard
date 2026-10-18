@@ -57,8 +57,8 @@ xcrun devicectl device process launch --console --terminate-existing \
    it is not a sign-out). Fail: a banner that stays ("reconnect canvas"
    or "duo needs you"), or a Duo push.
 
-2. Open Profile → testing (debug build only) → sign-in diagnostics and copy
-   the three lines under it. Expected:
+2. Open Profile → accounts (debug build only) and copy the three lines
+   directly under the canvas row. Expected:
    - `pennkey password saved — smooth signs in for you`
    - `duo remembers this phone — penn asks again about every 30 days`
    - `last silent sign-in: signed in silently, <today's date and time> (foreground)`

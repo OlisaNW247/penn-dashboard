@@ -22,11 +22,13 @@ struct DashboardSmallFixesTests {
         #expect(!source.contains(".alert(\"Rename class\""))
     }
 
-    @Test("the add and announcements buttons have the same 44pt hit area as the filter button")
+    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 48pt circle")
     func controlRowHitAreas() throws {
         let source = try uiSource("ContentView.swift")
         guard !source.isEmpty else { return }
-        for name in ["addInlineButton", "announcementFindsButton"] {
+        // The megaphone left this row for the header on 2026-10-18, so only
+        // the add button is still a 38pt control with a widened hit area.
+        for name in ["addInlineButton"] {
             let start = try #require(source.range(of: "private var \(name): some View"))
             let tail = source[start.lowerBound...]
             let end = tail.dropFirst().range(of: "\n    private ")?.lowerBound ?? tail.endIndex
@@ -35,6 +37,13 @@ struct DashboardSmallFixesTests {
             #expect(body.contains(".contentShape(Circle().inset(by: -3))"), "\(name) lost its 44pt hit area")
             #expect(!body.contains(".contentShape(Circle())"), "\(name) is back to a 38pt hit area")
         }
+        // The megaphone is drawn by the same function as the other header
+        // buttons, so its size, fill and stroke cannot drift from theirs.
+        let megaphone = try declarationBody("private var announcementFindsButton: some View", in: source)
+        #expect(megaphone.contains("headerCircle(icon: \"megaphone.fill\""))
+        let circle = try declarationBody("private func headerCircle(", in: source)
+        #expect(circle.contains(".frame(width: 48, height: 48)"))
+        #expect(circle.contains(".contentShape(Circle())"))
         // The reference the others copy.
         let controls = try uiSource("DashboardControls.swift")
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
@@ -66,6 +75,14 @@ struct DashboardSmallFixesTests {
         #expect(sync.lowerBound < banner.lowerBound)
         #expect(source.contains("Text(\"not saving on this phone\")"))
         #expect(source.contains("if state.showsNotSavingBanner"))
+    }
+
+    /// From `declaration` to the next private member of the view.
+    private func declarationBody(_ declaration: String, in source: String) throws -> String {
+        let start = try #require(source.range(of: declaration))
+        let tail = source[start.lowerBound...]
+        let end = tail.dropFirst().range(of: "\n    private ")?.lowerBound ?? tail.endIndex
+        return String(tail[..<end])
     }
 
     private func uiSource(_ filename: String) throws -> String {

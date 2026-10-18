@@ -231,7 +231,12 @@ struct AnnouncementWatcherWiringTests {
         }
     }
 
-    @Test("announcement routing keeps direct assessments on the dashboard and moves preparation or materials to finds")
+    // Rewritten 2026-10-18 with the owner's decision that every task found in
+    // an announcement is a dashboard card: preparation ("read", "bring",
+    // "review", a practice exam) used to be `.find` here and is `.main` now.
+    // What stays `.find` is wording that reports something done (slides or
+    // grades posted), which is information and not a task.
+    @Test("announcement routing puts every task on the dashboard and keeps only informational wording in finds")
     func announcementRoutingSeparatesOwedWorkFromFinds() {
         func placement(_ title: String, kind: Assignment.Kind = .assignment) -> AppState.AnnouncementDashboardPlacement {
             AppState.announcementDashboardPlacement(for: Assignment(
@@ -243,24 +248,31 @@ struct AnnouncementWatcherWiringTests {
         #expect(placement("Take midterm 1") == .main)
         #expect(placement("Take mid term 1 by Thursday") == .main)
         #expect(placement("Take mid-term 1 by Thursday") == .main)
-        #expect(placement("Take the practice mid term by Thursday") == .find)
-        #expect(placement("Practice midterm") == .find)
-        #expect(placement("Practice mid term") == .find)
-        #expect(placement("Review p sets") == .find)
-        #expect(placement("Bring Arches cover paper") == .find)
-        #expect(placement("Read chapter 4", kind: .event) == .find)
-        #expect(placement("Slides have been posted", kind: .assignment) == .find)
+        // Preparation tasks are cards too.
+        #expect(placement("Take the practice mid term by Thursday") == .main)
+        #expect(placement("Practice midterm") == .main)
+        #expect(placement("Practice mid term") == .main)
+        #expect(placement("Review p sets") == .main)
+        #expect(placement("Bring Arches cover paper") == .main)
+        #expect(placement("Read chapter 4", kind: .event) == .main)
         #expect(placement("Quiz 2", kind: .event) == .main)
         #expect(placement("Test 1", kind: .event) == .main)
         #expect(placement("Assessment 3", kind: .event) == .main)
         #expect(placement("Mid term 1", kind: .event) == .main)
-        #expect(placement("Take the practice test", kind: .assignment) == .find)
+        #expect(placement("Take the practice test", kind: .assignment) == .main)
+        // Wording that reports something done is information, whatever kind
+        // an older backend persisted it as.
+        #expect(placement("Slides have been posted", kind: .assignment) == .find)
+        #expect(placement("Slides have been posted", kind: .event) == .find)
         #expect(placement("Quiz grades posted", kind: .assignment) == .find)
     }
 
     // MARK: - Item 5: ledger partition guarantee + dashboard visibility
 
-    @Test("preparation announcement rows surface only in finds and survive a .canvas-source reconcile")
+    // Rewritten 2026-10-18: this pinned "a preparation row is a find, never a
+    // dashboard card", the rule the owner reversed. The ledger-partition half
+    // of the test is unchanged.
+    @Test("preparation announcement rows are dashboard cards and survive a .canvas-source reconcile")
     func announcementRowsSurviveCanvasReconcileAndSurfaceOnDashboard() {
         withRestoredDefaults {
             // Pinned to the current repair version so `AppState.init`'s
@@ -292,8 +304,8 @@ struct AnnouncementWatcherWiringTests {
 
             let state = AppState(assignmentStore: store)
             let dashboardItems = state.assignments + state.laterAssignments + state.assessments
-            #expect(!dashboardItems.contains { $0.title == "Bring a signed permission form" })
-            #expect(state.announcementFinds.contains { $0.title == "Bring a signed permission form" })
+            #expect(dashboardItems.contains { $0.title == "Bring a signed permission form" })
+            #expect(!state.announcementFinds.contains { $0.title == "Bring a signed permission form" })
 
             // A `.canvas`-source reconcile for the same course must not disturb
             // the `.canvasAnnouncement` row — `reconcile` partitions existing
