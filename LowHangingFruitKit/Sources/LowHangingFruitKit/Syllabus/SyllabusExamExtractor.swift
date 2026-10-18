@@ -25,6 +25,16 @@ public struct ExamCandidate: Sendable, Hashable {
     public let ordinal: Int?
     /// `makeup`, `retake` or `alternate`, when the line says so.
     public let modifiers: Set<String>
+    /// True when the line wrote a weekday beside the date ("Thursday,
+    /// October 23") and the date this candidate carries falls on it. A date
+    /// with no year is the extractor's own choice of year, and a weekday that
+    /// agrees with it is the only evidence in the line that the choice is
+    /// right: the instructor wrote two facts and they fit. False when no
+    /// weekday was written, and also false when one was written that no year
+    /// agrees with (a typo, which the extractor ignores rather than dropping
+    /// the exam). `SyllabusExamRows` uses this to decide whose date stands
+    /// when the server read the same exam and disagrees on the day.
+    public let weekdayConfirmed: Bool
 
     public init(
         name: String,
@@ -33,7 +43,8 @@ public struct ExamCandidate: Sendable, Hashable {
         sourceLine: String,
         kind: ExamDetection.Kind,
         ordinal: Int?,
-        modifiers: Set<String>
+        modifiers: Set<String>,
+        weekdayConfirmed: Bool = false
     ) {
         self.name = name
         self.date = date
@@ -42,6 +53,15 @@ public struct ExamCandidate: Sendable, Hashable {
         self.kind = kind
         self.ordinal = ordinal
         self.modifiers = modifiers
+        self.weekdayConfirmed = weekdayConfirmed
+    }
+
+    /// This candidate with `weekdayConfirmed` set as given.
+    func confirming(_ confirmed: Bool) -> ExamCandidate {
+        ExamCandidate(
+            name: name, date: date, hasTime: hasTime, sourceLine: sourceLine, kind: kind,
+            ordinal: ordinal, modifiers: modifiers, weekdayConfirmed: confirmed
+        )
     }
 }
 
@@ -109,7 +129,7 @@ public enum SyllabusExamExtractor {
             guard !line.isEmpty else { continue }
             for clause in clauses(of: line) {
                 for pairing in pairings(in: clause) {
-                    guard let (date, hasTime) = resolve(pairing, referenceDate: referenceDate, calendar: calendar) else { continue }
+                    guard let (date, hasTime, weekdayConfirmed) = resolve(pairing, referenceDate: referenceDate, calendar: calendar) else { continue }
                     let candidate = ExamCandidate(
                         name: displayName(pairing.mention.phrase),
                         date: date,
@@ -117,7 +137,8 @@ public enum SyllabusExamExtractor {
                         sourceLine: line,
                         kind: pairing.mention.kind,
                         ordinal: pairing.mention.ordinal,
-                        modifiers: pairing.mention.modifiers
+                        modifiers: pairing.mention.modifiers,
+                        weekdayConfirmed: weekdayConfirmed
                     )
                     let day = calendar.startOfDay(for: date).timeIntervalSinceReferenceDate
                     let key = [
@@ -127,7 +148,15 @@ public enum SyllabusExamExtractor {
                         String(day),
                     ].joined(separator: "|")
                     if let existing = indexByKey[key] {
-                        if hasTime && !found[existing].hasTime { found[existing] = candidate }
+                        // Same exam, same day, written twice. The timed copy is
+                        // kept; a weekday on either copy confirms the day for
+                        // both, since the key includes the day.
+                        let confirmed = found[existing].weekdayConfirmed || weekdayConfirmed
+                        if hasTime && !found[existing].hasTime {
+                            found[existing] = candidate.confirming(confirmed)
+                        } else if confirmed != found[existing].weekdayConfirmed {
+                            found[existing] = found[existing].confirming(confirmed)
+                        }
                     } else {
                         indexByKey[key] = found.count
                         found.append(candidate)
@@ -270,7 +299,7 @@ public enum SyllabusExamExtractor {
     /// "midterm exam" in a paragraph, "MIDTERM #1" in a heading: capitalise
     /// the first letter and otherwise leave the words as the syllabus wrote
     /// them. Re-casing the rest would turn "Exam II" into "Exam Ii".
-    private static func displayName(_ phrase: String) -> String {
+    static func displayName(_ phrase: String) -> String {
         guard let first = phrase.first else { return phrase }
         return first.uppercased() + phrase.dropFirst()
     }
@@ -398,18 +427,23 @@ public enum SyllabusExamExtractor {
 
     // MARK: - Resolving a pairing to a Date
 
-    private static func resolve(_ pairing: Pairing, referenceDate: Date, calendar: Calendar) -> (Date, Bool)? {
-        guard let day = resolveDay(pairing.date, referenceDate: referenceDate, calendar: calendar) else { return nil }
-        guard let time = clockTime(in: pairing) else { return (day, false) }
+    private static func resolve(
+        _ pairing: Pairing, referenceDate: Date, calendar: Calendar
+    ) -> (date: Date, hasTime: Bool, weekdayConfirmed: Bool)? {
+        guard let (day, weekdayConfirmed) = resolveDay(pairing.date, referenceDate: referenceDate, calendar: calendar) else { return nil }
+        guard let time = clockTime(in: pairing) else { return (day, false, weekdayConfirmed) }
         guard let moment = calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: day) else {
-            return (day, false)
+            return (day, false, weekdayConfirmed)
         }
-        return (moment, true)
+        return (moment, true, weekdayConfirmed)
     }
 
     /// The start of the day this date means, or nil when it cannot be
-    /// trusted. See the type comment for the year rule.
-    private static func resolveDay(_ match: DateMatch, referenceDate: Date, calendar: Calendar) -> Date? {
+    /// trusted, and whether a weekday written beside it agrees with it. See
+    /// the type comment for the year rule.
+    private static func resolveDay(
+        _ match: DateMatch, referenceDate: Date, calendar: Calendar
+    ) -> (day: Date, weekdayConfirmed: Bool)? {
         let referenceYear = calendar.component(.year, from: referenceDate)
         let years = match.year.map { [$0] } ?? [referenceYear - 1, referenceYear, referenceYear + 1]
 
@@ -435,11 +469,17 @@ public enum SyllabusExamExtractor {
         candidates = candidates.filter { $0 >= cutoff }
 
         // Closest to the reference wins; on a tie, the later one.
-        return candidates.min { a, b in
+        guard let chosen = candidates.min(by: { a, b in
             let da = abs(a.timeIntervalSince(referenceDate)), db = abs(b.timeIntervalSince(referenceDate))
             if da != db { return da < db }
             return a > b
-        }
+        }) else { return nil }
+        // Confirmed only by the date that was chosen. With an explicit year
+        // the weekday did not take part in choosing, so it is a real second
+        // fact there too; with a typo'd weekday that was ignored above it is
+        // simply not the chosen date's weekday.
+        let confirmed = match.weekday.map { calendar.component(.weekday, from: chosen) == $0 } ?? false
+        return (chosen, confirmed)
     }
 
     // MARK: - Clock time

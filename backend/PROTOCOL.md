@@ -55,6 +55,7 @@ CatalogEntryWire    { courseID, catalogCode, title, credits,
 CourseProfileWire   { courseID,
                       gradingWeights: [{ name, percent, expectedCount?, dropLowest? }],
                       components: [{ name, gradingBasis?, creditUnits? }],
+                      examDates: [{ name, date?, text }],
                       extractedAt }
 ```
 
@@ -135,6 +136,22 @@ already takes. The app offers a course's `gradingWeights` to Grade Watcher
 as a suggested grading scheme -- never auto-applied, since the ledger's
 "nothing the student did is ever lost" invariant extends to not silently
 overwriting a scheme the student already set up themselves.
+
+`examDates` is the exams the syllabus names, from the same stored profile
+(see "extract-profile" below), and is what the app files syllabus exam
+cards from. It is always present, `[]` when there is none. `name` and `text`
+are the extracted strings; `date` is present only when the stored date is a
+real `YYYY-MM-DD` calendar day (a date-time such as
+`2026-10-23T18:00:00-04:00` is cut to its day: the time and offset are
+dropped, since the app files the exam as an all-day entry). A date written
+any other way ("October 23", "10/23", "2026-02-30") is omitted and the entry
+goes out undated rather than being guessed at or dropped; entries with no
+usable name, and anything malformed in the stored jsonb, are dropped without
+failing the call. The app ignores undated entries. A dated entry for an exam
+the phone also read from the syllabus text replaces the on-device reading
+(same exam, same ledger row); an app build from before this field existed
+ignores the key and keeps reading the text. Additive: no existing field
+changed and no request changed.
 
 Client: applies `download` to local knowledge first, then fetches Canvas
 for every course NOT in `coursesFresh` (announcements are fetched for all
@@ -572,6 +589,16 @@ paraphrases of the source, never inferred):
   "components": [ { "name", "gradingBasis"?, "creditUnits"?, "notes"? } ],
   "sourceDocumentIDs": [ string ] }
 ```
+
+`examDates[].date` is an ISO 8601 date when the source gives an exact one and
+is omitted otherwise ("midterm week" is not a date). The prompt gives the
+model no current date or term, so a date the syllabus writes without a year
+rests on the model's guess of the year. `sync` passes the date on once
+normalized (see "sync" above). The app discards one more than 150 days in
+the past as a previous term's, and does not let the server's day override a
+reading from the syllabus text on the phone whose line named a weekday that
+fits the date it chose; where the two agree on the day it keeps the time of
+day the phone read, since the server's date has none.
 
 `components` is only populated when the syllabus itself distinguishes parts
 of the course (e.g. "the lab is graded pass/fail, 0.5 CU") -- not simply

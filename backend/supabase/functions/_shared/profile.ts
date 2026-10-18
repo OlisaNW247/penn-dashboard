@@ -247,9 +247,9 @@ export interface CourseProfileWireComponent {
  * One course's extracted profile as `sync`'s manifest response hands it to
  * the app (see PROTOCOL.md's "sync" section) -- distinct from
  * `CourseProfile` above, which is the full shape `extract-profile` stores
- * (also carrying `latePolicy`, `examDates`, `officeHours`, `contacts`,
- * `textbooks`, `keyPolicies`, `sourceDocumentIDs`, none of which Grade
- * Watcher's "offer this scheme" use needs or should have to parse). Built
+ * (also carrying `latePolicy`, `officeHours`, `contacts`, `textbooks`,
+ * `keyPolicies`, `sourceDocumentIDs`, none of which the app needs or should
+ * have to parse; `examDates` is the one extra field it does read, below). Built
  * by `_shared/db.ts`'s `selectProfileWiresForCourses`, one per manifest
  * course that has a `course_profiles` row -- a course with none simply
  * contributes nothing, the same "missing is not an error" posture
@@ -262,12 +262,59 @@ export interface CourseProfileWireComponent {
  * for free. The app treats every field here as a *suggestion*: it offers
  * `gradingWeights` to Grade Watcher as a starting scheme, never auto-
  * applies it.
+ *
+ * `examDates` is the exams the syllabus names, with `date` kept only when
+ * it is a real `YYYY-MM-DD` calendar day (`isoDayOf`) -- the app files a
+ * card for each dated entry and ignores the rest. Like the other two arrays
+ * it is never omitted: a row written before the field existed, or with a
+ * malformed value, reads as `[]`. It was added after `components`, and
+ * older apps ignore a key they do not know, so the response stays
+ * compatible in both directions; an app build that predates it simply
+ * keeps reading exams from the syllabus text on the phone.
  */
 export interface CourseProfileWire {
   courseID: string;
   gradingWeights: GradingWeight[];
   components: CourseProfileWireComponent[];
+  examDates: ExamDate[];
   extractedAt: string;
+}
+
+/**
+ * The calendar day an extracted exam date names, as `YYYY-MM-DD`, or
+ * `undefined` when `raw` doesn't name a real one.
+ *
+ * `PROFILE_INSTRUCTIONS` asks the model for ISO 8601 dates, but the stored
+ * value is whatever the model returned (`sanitizeProfile` only checks that
+ * it is a string), and this is read back from jsonb long after it was
+ * written. So the shape is checked again where it leaves the server: a bare
+ * `2026-10-23`, or a date-time such as `2026-10-23T18:00:00-04:00`, whose
+ * time and offset are dropped on purpose -- the app files a syllabus exam as
+ * an all-day entry, because the model has no reliable way to know the
+ * course's time zone and the day is what the instructor wrote down.
+ * Anything else ("October 23", "10/23", "TBD", "2026-02-30", "2026-13-01")
+ * is `undefined`, never a guess: an exam without a date is simply not dated,
+ * which is what the model was told to produce when the source gives none.
+ * The calendar check is a round trip through `Date.UTC`, which rolls
+ * February 30 into March rather than rejecting it.
+ */
+export function isoDayOf(raw: string): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/s.exec(raw.trim());
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  // `Date.UTC` treats years 0-99 as 1900-1999, so a year like 0050 also
+  // fails the comparison below and is rejected, which is the right answer.
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 /**

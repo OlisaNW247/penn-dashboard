@@ -188,6 +188,37 @@ struct SyllabusExamExtractorTests {
         #expect(try only("Midterm 1: Oct 23 (Fri)", ref: reference2026).date == Self.date(2026, 10, 23))
     }
 
+    @Test("a weekday that fits the date it was written beside confirms it; none, or a typo, does not")
+    func weekdayConfirmation() throws {
+        // October 23, 2025 is a Thursday (reference: October 1, 2025).
+        #expect(try only("Midterm 1: Thursday, October 23").weekdayConfirmed)
+        #expect(try only("Midterm 1: Oct 23 (Thu)").weekdayConfirmed)
+        #expect(try only("Thu 10/23 Midterm 1").weekdayConfirmed)
+        // An explicit year is trusted as written, and a weekday that fits it is
+        // still a second fact that agrees.
+        #expect(try only("Midterm 1: Thursday, October 23, 2025").weekdayConfirmed)
+        #expect(!(try only("Midterm 1: Friday, October 23, 2025").weekdayConfirmed))
+        // Nothing written, nothing confirmed.
+        #expect(!(try only("Midterm 1: October 23").weekdayConfirmed))
+        // A weekday no year fits is a typo: the exam is kept, unconfirmed.
+        let typo = try only("Midterm 1: Monday, October 23")
+        #expect(typo.date == Self.date(2025, 10, 23))
+        #expect(!typo.weekdayConfirmed)
+        // The 2026 reading of the same line, where the weekday picks the year.
+        let reference2026 = Self.date(2026, 10, 18)
+        #expect(try only("Midterm 1: Friday, October 23", ref: reference2026).weekdayConfirmed)
+    }
+
+    @Test("an exam written twice on one day keeps the timed copy, and a weekday on either copy confirms the day")
+    func weekdayConfirmationAcrossCopies() throws {
+        let timedLast = try only("Midterm 1: Oct 23\nMidterm 1: Thursday, October 23, 6 pm")
+        #expect(timedLast.hasTime && timedLast.weekdayConfirmed)
+        let timedFirst = try only("Midterm 1: Oct 23, 6 pm\nMidterm 1: Thursday, October 23")
+        #expect(timedFirst.hasTime && timedFirst.weekdayConfirmed)
+        let neither = try only("Midterm 1: Oct 23\nMidterm 1: Oct 23, 6 pm")
+        #expect(neither.hasTime && !neither.weekdayConfirmed)
+    }
+
     @Test("a date that does not exist is skipped")
     func impossibleDates() {
         #expect(extract("Midterm: February 30").isEmpty)

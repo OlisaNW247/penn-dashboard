@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import {
   type ProfileSourceDocument,
+  isoDayOf,
   parseProfile,
   profileSourceHash,
   selectProfileInput,
@@ -234,4 +235,29 @@ Deno.test("parseProfile drops a string expectedCount, keeping the rest of the en
     gradingWeights: [{ name: "Quizzes", percent: 10, expectedCount: "twelve" }],
   }));
   assert.deepEqual(profile.gradingWeights, [{ name: "Quizzes", percent: 10 }]);
+});
+
+Deno.test("isoDayOf keeps a bare ISO day and the day of an ISO date-time, whatever its offset", () => {
+  assert.equal(isoDayOf("2026-10-23"), "2026-10-23");
+  assert.equal(isoDayOf("  2026-10-23  "), "2026-10-23");
+  assert.equal(isoDayOf("2026-10-23T18:00:00-04:00"), "2026-10-23");
+  assert.equal(isoDayOf("2026-10-23T23:59:59Z"), "2026-10-23");
+  assert.equal(isoDayOf("2026-10-23 18:00"), "2026-10-23");
+});
+
+Deno.test("isoDayOf accepts a real leap day and refuses a day the calendar doesn't have", () => {
+  assert.equal(isoDayOf("2028-02-29"), "2028-02-29");
+  assert.equal(isoDayOf("2026-02-29"), undefined);
+  assert.equal(isoDayOf("2026-02-30"), undefined);
+  assert.equal(isoDayOf("2026-04-31"), undefined);
+  assert.equal(isoDayOf("2026-13-01"), undefined);
+  assert.equal(isoDayOf("2026-00-10"), undefined);
+  assert.equal(isoDayOf("2026-10-00"), undefined);
+  assert.equal(isoDayOf("0050-10-23"), undefined);
+});
+
+Deno.test("isoDayOf refuses anything that isn't written as YYYY-MM-DD", () => {
+  for (const raw of ["", "TBD", "October 23", "Oct 23, 2026", "10/23/2026", "2026-10", "2026-1-5", "20261023", "2026-10-23x", "week 8"]) {
+    assert.equal(isoDayOf(raw), undefined, JSON.stringify(raw));
+  }
 });

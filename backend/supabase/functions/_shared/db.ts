@@ -19,7 +19,14 @@ import {
   type CatalogCourseRow,
   type CatalogEntryWire,
 } from "./catalog.ts";
-import { sanitizeProfile, type CourseProfileWire, type GradingWeight, type ProfileComponent } from "./profile.ts";
+import {
+  isoDayOf,
+  sanitizeProfile,
+  type CourseProfileWire,
+  type ExamDate,
+  type GradingWeight,
+  type ProfileComponent,
+} from "./profile.ts";
 
 export interface CourseRow {
   course_id: string;
@@ -580,6 +587,23 @@ function toWireComponent(component: ProfileComponent): CourseProfileWire["compon
   return wire;
 }
 
+/** One stored exam entry as it goes on the wire, or `undefined` when it
+ *  can't be an exam at all (no name left after trimming). `date` rides along
+ *  only as a real `YYYY-MM-DD` day (`isoDayOf`); a date the model wrote some
+ *  other way, or one that doesn't exist on the calendar, is dropped and the
+ *  entry goes out undated, because the entry itself ("Final Exam", "TBD")
+ *  is still true and only the date is not usable. Built key by key, like
+ *  `toWireComponent`, so an absent date is an absent key rather than an own
+ *  property holding `undefined`. */
+function toWireExamDate(exam: ExamDate): ExamDate | undefined {
+  const name = exam.name.trim();
+  if (name === "") return undefined;
+  const wire: ExamDate = { name, text: exam.text };
+  const day = exam.date === undefined ? undefined : isoDayOf(exam.date);
+  if (day !== undefined) wire.date = day;
+  return wire;
+}
+
 /**
  * Maps one `course_profiles` row into the `CourseProfileWire` `sync`'s
  * manifest response hands the client -- Grade Watcher's suggested grading
@@ -618,6 +642,16 @@ export function profileRowToWire(row: CourseProfileDBRow): CourseProfileWire {
     courseID: row.course_id,
     gradingWeights: profile.gradingWeights ?? [],
     components: (profile.components ?? []).map(toWireComponent),
+    // Normalized here for the same reason as the two arrays above: this is
+    // jsonb. A row extracted before `examDates` existed has no such key, one
+    // with a malformed value was already turned into "omit" by
+    // `sanitizeProfile`'s `sanitizeArray`, and an entry whose date is not a
+    // real ISO day is undated by `toWireExamDate`. None of those may fail the
+    // manifest, which `handleManifest` would otherwise answer with no
+    // profiles at all.
+    examDates: (profile.examDates ?? [])
+      .map(toWireExamDate)
+      .filter((exam): exam is ExamDate => exam !== undefined),
     extractedAt: row.updated_at,
   };
 }
