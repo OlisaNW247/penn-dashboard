@@ -36,9 +36,24 @@ import LowHangingFruitKit
 //    the conditions a Canvas post does: the "ai assist" switch is on, the
 //    install is Penn's, a backend is configured, and the on-device gate
 //    (`mightContainTask`) says the text could carry a task. Otherwise it is the
-//    free on-device heuristic. The text sent is what the pooled copy already
-//    holds (the header line and body, no author), and `docs/PRIVACY.md` says
-//    so.
+//    free on-device heuristic. The request carries the post's title and body
+//    (never an author: the pooled copy has none, and the `[image]` markers are
+//    stripped), with the class code, the post's id (`ed:{course}:{thread}`) and
+//    its date; `docs/PRIVACY.md` says so.
+//  - **A failed read waits.** A post whose extraction throws (the backend is
+//    unreachable, or over the quota `ask` shares) is left unread, as a Canvas
+//    post is, but not retried on the next change to the course material: that
+//    change arrives with every sync, and a backend that is down would be asked
+//    again each time, spending the student's quota on a request that was just
+//    refused. Each such post is retried no sooner than `edTaskRetryInterval`
+//    later (persisted, so a relaunch does not reset it).
+//  - **Nothing is written for a class that is gone.** The extractor can take
+//    seconds (it is a network call), and Canvas can be disconnected or the
+//    class hidden meanwhile. After the await, and again before anything is
+//    written, the class is looked up afresh; a post whose class is no longer
+//    connected and selected is dropped on the floor, rows and read-ids both.
+//    Recording its id would outlive the disconnect that just cleared the
+//    ratchet, and the post would never be read again after a reconnect.
 //
 // Rows are `.canvasAnnouncement` with an `ed-` sourceID (`AnnouncementOrigin`).
 // See `AnnouncementRecord.edFindSourceID` for why that and not a new source or
@@ -60,13 +75,15 @@ extension AppState {
     /// per document id. Pure.
     nonisolated static func edDocumentsEligibleForTasks(
         _ documents: [CourseDocument],
-        now: Date
+        now: Date,
+        retryAfter: [String: Date] = [:]
     ) -> [CourseDocument] {
         let cutoff = now.addingTimeInterval(-announcementExtractionWindow)
         var seen = Set<String>()
         return documents.filter { document in
             guard document.kind == .ed,
                   let active = document.updatedAt, active >= cutoff,
+                  retryAfter[document.id].map({ $0 <= now }) ?? true,
                   EdDocumentHeader.parse(document.text).isAnnouncementOrPinned,
                   !EdDocumentHeader.carriesNoText(document.text)
             else { return false }
@@ -102,37 +119,72 @@ extension AppState {
         }
     }
 
+    // MARK: Failed reads wait
+
+    /// How long a post whose extraction failed waits before it is tried again.
+    nonisolated static let edTaskRetryInterval: TimeInterval = 6 * 60 * 60
+    static let edTaskRetryAfterKey = "edTaskRetryAfterV1"
+
+    /// Document id -> the earliest time it may be read again. Persisted as
+    /// seconds since 1970 in `UserDefaults.lhf`.
+    static func loadEdTaskRetryAfter() -> [String: Date] {
+        let saved = UserDefaults.lhf.dictionary(forKey: edTaskRetryAfterKey) as? [String: Double] ?? [:]
+        return saved.mapValues { Date(timeIntervalSince1970: $0) }
+    }
+
+    /// Saves `retryAfter` less what has already expired, so the dictionary only
+    /// ever holds posts that are actually waiting.
+    static func saveEdTaskRetryAfter(_ retryAfter: [String: Date], now: Date) {
+        let waiting = retryAfter.filter { $0.value > now }.mapValues(\.timeIntervalSince1970)
+        if waiting.isEmpty {
+            UserDefaults.lhf.removeObject(forKey: edTaskRetryAfterKey)
+        } else {
+            UserDefaults.lhf.set(waiting, forKey: edTaskRetryAfterKey)
+        }
+    }
+
     // MARK: The pass
+
+    /// The class code a post's cards would be filed under *now*, or nil when
+    /// its class is not connected or not selected. Looked up afresh each time
+    /// it is asked, on purpose: it is the answer to "is this still wanted",
+    /// and a code captured before an `await` is the answer to a question that
+    /// may have changed.
+    private func edTaskCourseCode(for document: CourseDocument) -> String? {
+        guard let code = canvasCourseIDs()[document.courseID], isCourseSelected(code) else { return nil }
+        return code
+    }
 
     /// Reads every eligible, unread Ed post once and files what it finds.
     /// Never throws; a post whose extraction fails (the AI path, offline) is
-    /// left unread for the next pass, like a Canvas post.
+    /// left unread, and tried again no sooner than `edTaskRetryInterval`.
     ///
     /// Called by `scheduleEdAnnouncementTaskPass()` after the course knowledge
     /// changes, and directly by tests.
     func syncEdAnnouncementTasks(now: Date = Date()) async {
         guard FeatureFlags.edDiscussion, !isUsingFixtureData, let store = assignmentStore else { return }
 
-        let eligible = Self.edDocumentsEligibleForTasks(courseKnowledge.documents, now: now)
-            .filter { !processedAnnouncementIDs.contains($0.id) }
+        var retryAfter = Self.loadEdTaskRetryAfter()
+        let eligible = Self.edDocumentsEligibleForTasks(
+            courseKnowledge.documents, now: now, retryAfter: retryAfter
+        )
+        .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !eligible.isEmpty else { return }
 
-        // The code the class's cards are filed under: the Canvas site's code
-        // as the feed knows it, so the per-class switch, the class filter and
-        // the duplicate check all see one class. A site the map does not know
-        // is left unread, like the Canvas path's unmapped-course branch, and
-        // that is also what keeps a disconnected install quiet: disconnecting
-        // empties the map (and purges these rows and the read ids), while the
-        // posts themselves can outlive it in the course-material cache, and
-        // without a Canvas account behind it nothing should turn them back
-        // into cards. The document's own `course` is not a fallback for that
-        // reason.
-        let codesByID = canvasCourseIDs()
-
-        var collected: [Assignment] = []
-        var processed: [String] = []
+        // What each post produced, kept apart from the ledger until the whole
+        // loop is done: every iteration awaits, so any of them can be the one
+        // during which Canvas is disconnected, and the rows of the posts read
+        // before it are as unwanted as its own. The class code is the Canvas
+        // site's code as the feed knows it, so the per-class switch, the class
+        // filter and the duplicate check all see one class. A site the map does
+        // not know is left unread, like the Canvas path's unmapped-course
+        // branch, and that is also what keeps a disconnected install quiet:
+        // disconnecting empties the map (and purges these rows and the read
+        // ids), while the posts themselves can outlive it in the course-material
+        // cache. The document's own `course` is not a fallback for that reason.
+        var results: [(document: CourseDocument, courseCode: String, rows: [Assignment])] = []
         for document in eligible {
-            guard let courseCode = codesByID[document.courseID], isCourseSelected(courseCode) else { continue }
+            guard let courseCode = edTaskCourseCode(for: document) else { continue }
 
             let header = EdDocumentHeader.parse(document.text)
             // The `[image]` markers `EdDocumentText` leaves where Ed had a
@@ -145,7 +197,7 @@ extension AppState {
             // that only reports something done ("grades posted") has nothing
             // to extract on either backend. Still a completed parse.
             if HeuristicAnnouncementExtractor.isLikelyInformational(title: title, body: body) {
-                processed.append(document.id)
+                results.append((document, courseCode, []))
                 continue
             }
 
@@ -172,13 +224,25 @@ extension AppState {
             do {
                 extracted = try await extractor.extract(from: source, now: now)
             } catch {
+                // Left unread, and left alone for a while: see the header.
+                retryAfter[document.id] = now.addingTimeInterval(Self.edTaskRetryInterval)
                 continue
             }
-            collected.append(contentsOf: Self.edAnnouncementAssignments(
+            // The await was a network call. Is the class still wanted?
+            guard edTaskCourseCode(for: document) == courseCode else { continue }
+            retryAfter[document.id] = nil
+            results.append((document, courseCode, Self.edAnnouncementAssignments(
                 from: extracted, document: document, courseCode: courseCode
-            ))
-            processed.append(document.id)
+            )))
         }
+        Self.saveEdTaskRetryAfter(retryAfter, now: now)
+
+        // Once more, for everything: a later await can have invalidated an
+        // earlier result.
+        guard !isUsingFixtureData else { return }
+        let wanted = results.filter { edTaskCourseCode(for: $0.document) == $0.courseCode }
+        let collected = wanted.flatMap(\.rows)
+        let processed = wanted.map(\.document.id)
 
         if !collected.isEmpty {
             store.upsert(collected, now: now)

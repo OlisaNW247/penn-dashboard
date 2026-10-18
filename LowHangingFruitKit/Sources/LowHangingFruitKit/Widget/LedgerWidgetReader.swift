@@ -121,6 +121,12 @@ public enum LedgerWidgetReader {
                 continue
             }
             if isAgedOut(row, now: now) { continue }
+            // An announcement row flagged gone is a task whose post Canvas
+            // stopped returning: the dashboard hides it, so the widget does too.
+            // Aging no longer removes such a row (it is exempt, see
+            // `AssignmentStore.isAgedOut`), so without this line it would sit in
+            // the widget for good.
+            if row.sourceRaw == Assignment.Source.canvasAnnouncement.rawValue, row.isGoneFromFeed { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's
             // isExpiredEvent: they drop off the moment their due time passes,
@@ -148,13 +154,15 @@ public enum LedgerWidgetReader {
 
     /// Mirrors `AssignmentStore.isAgedOut` — kept here rather than shared
     /// because that one is main-actor-isolated. Both must stay in step; the
-    /// rule is "finished or archived work never ages, otherwise gone + long
-    /// overdue does". The archived clause is redundant here — the filter chain
-    /// above already dropped those rows — and is kept anyway so the two copies
-    /// of this predicate remain literally the same rule, which is the only
-    /// property that makes duplicating it survivable.
+    /// rule is "finished or archived work never ages, announcement rows never
+    /// age, otherwise gone + long overdue does". The archived clause is
+    /// redundant here — the filter chain above already dropped those rows — and
+    /// is kept anyway so the two copies of this predicate remain literally the
+    /// same rule, which is the only property that makes duplicating it
+    /// survivable.
     private static func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
         guard !row.isFinished, !row.isArchived else { return false }
+        guard row.sourceRaw != Assignment.Source.canvasAnnouncement.rawValue else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
     }

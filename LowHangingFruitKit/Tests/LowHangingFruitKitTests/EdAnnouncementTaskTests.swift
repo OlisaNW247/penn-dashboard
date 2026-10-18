@@ -20,6 +20,7 @@ struct EdAnnouncementTaskTests {
     private static let day: TimeInterval = 24 * 3600
     private static let extractionVersionKey = "announcementExtractionVersionV1"
     private static let processedKey = "processedAnnouncementIDsV1"
+    private static let retryKey = "edTaskRetryAfterV1"
 
     // MARK: Fixtures
 
@@ -87,7 +88,7 @@ struct EdAnnouncementTaskTests {
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
-        let keys = [Self.extractionVersionKey, Self.processedKey]
+        let keys = [Self.extractionVersionKey, Self.processedKey, Self.retryKey]
         let saved = keys.map { ($0, shared.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -96,6 +97,7 @@ struct EdAnnouncementTaskTests {
         }
         shared.set(2, forKey: Self.extractionVersionKey)
         shared.removeObject(forKey: Self.processedKey)
+        shared.removeObject(forKey: Self.retryKey)
 
         let store = try AssignmentStore(inMemory: true)
         let state = AppState(assignmentStore: store)
@@ -258,7 +260,7 @@ struct EdAnnouncementTaskTests {
         }
     }
 
-    @Test("a failed extraction leaves the post unread, and the next pass tries it again")
+    @Test("a failed extraction leaves the post unread, and it is tried again once its wait is over")
     func failureIsRetried() async throws {
         let doc = document("9500501")
         try await withHarness(documents: [doc]) { h in
@@ -269,9 +271,122 @@ struct EdAnnouncementTaskTests {
             #expect(h.edRows.isEmpty)
 
             h.fails = false
-            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(AppState.edTaskRetryInterval + 1))
             #expect(h.calls.all == [doc.id, doc.id])
             #expect(h.edRows.count == 1)
+            #expect(UserDefaults.lhf.object(forKey: Self.retryKey) == nil, "a post that was read has nothing left to wait for")
+        }
+    }
+
+    /// Every sync replaces the course material, and the pass runs after each.
+    /// A backend that is down (or a quota `ask` shares and has used up) would
+    /// be asked for the same post again on every one of them.
+    @Test("a post whose read failed is not asked for again until six hours have passed, however often the material changes")
+    func failedReadWaits() async throws {
+        let doc = document("9500502")
+        try await withHarness(documents: [doc]) { h in
+            h.fails = true
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            #expect(h.calls.all == [doc.id])
+
+            for minutes in [1.0, 30, 120, 359] {
+                await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(minutes * 60))
+            }
+            #expect(h.calls.all == [doc.id], "four more passes inside the wait, no more requests")
+
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(6 * 3600 + 1))
+            #expect(h.calls.all == [doc.id, doc.id], "and one request once the wait is over")
+
+            // Failing again starts another wait from that moment.
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(7 * 3600))
+            #expect(h.calls.all == [doc.id, doc.id])
+        }
+    }
+
+    @Test("the wait outlives the app: it is saved, and a post waiting is not in the eligible set")
+    func waitIsPersisted() async throws {
+        let doc = document("9500503")
+        try await withHarness(documents: [doc]) { h in
+            h.fails = true
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            let saved = AppState.loadEdTaskRetryAfter()
+            #expect(saved[doc.id] == Self.now.addingTimeInterval(AppState.edTaskRetryInterval))
+
+            #expect(AppState.edDocumentsEligibleForTasks([doc], now: Self.now, retryAfter: saved).isEmpty)
+            #expect(AppState.edDocumentsEligibleForTasks(
+                [doc], now: Self.now.addingTimeInterval(AppState.edTaskRetryInterval), retryAfter: saved
+            ).map(\.id) == [doc.id])
+            // What has expired is dropped when the dictionary is saved again.
+            AppState.saveEdTaskRetryAfter(saved, now: Self.now.addingTimeInterval(AppState.edTaskRetryInterval + 1))
+            #expect(AppState.loadEdTaskRetryAfter().isEmpty)
+        }
+    }
+
+    // MARK: A class that goes away during the read
+
+    /// What `disconnectCanvas` does to the class map: the feed is emptied and
+    /// the saved id -> code cache is cleared. (Only this suite's class is
+    /// cleared from the cache, not all of them: the cache lives in the shared
+    /// defaults, and other suites' classes are not this test's to forget.)
+    private static func simulateDisconnect(_ state: AppState) {
+        state.canvasItems = []
+        state.coursePreferences.setCanvasCourseID("EDTASK 9501", nil)
+    }
+
+    /// The extractor is a network call. These stage "Canvas is disconnected, or
+    /// the class hidden, while it is in flight" by doing it from inside the
+    /// extractor, which is the one place that is exactly mid-await.
+    @Test("Canvas disconnected while a post is being read: no row, and no read-id that would outlive the disconnect")
+    func disconnectDuringRead() async throws {
+        let doc = document("9500511")
+        try await withHarness(documents: [doc]) { h in
+            h.state.announcementExtractorForTesting = { [h] _ in
+                Self.simulateDisconnect(h.state)
+                return Stub(log: h.calls, tasks: h.tasks)
+            }
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+
+            #expect(h.calls.all == [doc.id], "it was read before the disconnect")
+            #expect(h.edRows.isEmpty)
+            #expect(!h.state.processedAnnouncementIDs.contains(doc.id))
+            #expect(AppState.loadEdTaskRetryAfter().isEmpty, "and it is not blamed on the backend")
+        }
+    }
+
+    @Test("the class hidden while a post is being read: no row, and the post is read again when the class is shown")
+    func hideDuringRead() async throws {
+        let doc = document("9500512")
+        try await withHarness(documents: [doc]) { h in
+            h.state.announcementExtractorForTesting = { [h] _ in
+                h.state.setCourse("EDTASK 9501", selected: false)
+                return Stub(log: h.calls, tasks: h.tasks)
+            }
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            #expect(h.edRows.isEmpty)
+            #expect(!h.state.processedAnnouncementIDs.contains(doc.id))
+
+            h.state.announcementExtractorForTesting = { [h] _ in Stub(log: h.calls, tasks: h.tasks) }
+            h.state.setCourse("EDTASK 9501", selected: true)
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            #expect(h.edRows.count == 1)
+            #expect(h.state.processedAnnouncementIDs.contains(doc.id))
+        }
+    }
+
+    @Test("a disconnect during the second post's read also drops the first post's result")
+    func disconnectDuringALaterRead() async throws {
+        let first = document("9500513")
+        let second = document("9500514", title: "Second")
+        try await withHarness(documents: [first, second]) { h in
+            h.state.announcementExtractorForTesting = { [h] announcement in
+                if announcement.id == second.id { Self.simulateDisconnect(h.state) }
+                return Stub(log: h.calls, tasks: h.tasks)
+            }
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+
+            #expect(Set(h.calls.all) == [first.id, second.id])
+            #expect(h.edRows.isEmpty, "the first post's rows are as unwanted as the second's")
+            #expect(h.state.processedAnnouncementIDs.isDisjoint(with: [first.id, second.id]))
         }
     }
 

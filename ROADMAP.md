@@ -250,6 +250,55 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-18 (`v8-announcements`, not yet committed): ledger-safety fixes
+  from the review of the announcement-task commit.**
+  - **Aging no longer deletes a flagged announcement row.**
+    `AssignmentStore.isAgedOut` exempts `.canvasAnnouncement` (and the
+    widget's copy of it, which now also hides a flagged one); the test that
+    pinned the deletion pins the opposite. `CLAUDE.md` → Traps.
+  - **Two announcements are one task only on the same day**; a live twin is
+    never hidden behind a lapsed one; a tick carries only between copies of
+    the same day (never across a reschedule); an undated Canvas exam yields
+    to a dated twin.
+  - **A truncated fetch is not a deletion**: a class that returned nothing
+    is not judged, and a post must be missing twice in a row.
+  - **Edited due dates** survive their row being hidden.
+  - **Ed pass**: re-checks the class after the read and before writing,
+    and waits six hours before re-asking for a post whose read failed. The
+    syllabus pass re-checks too.
+  - **`docs/PRIVACY.md`** says the post's id goes with the AI-assist
+    request.
+
+- **2026-10-18 (`v8-announcements`, not yet committed): exam cards.** "If
+  you ever have a midterm, the class finds it from the syllabus or from an
+  announcement. Either way, don't duplicate it." Black in light mode, white
+  in dark (the card style was already merged); this adds the finding and
+  the one-card rule.
+  - **From the syllabus.** `AppState+SyllabusExams.swift` reads each
+    class's syllabus, course home page and course pages in the on-device
+    course knowledge (`SyllabusExamRows`, `SyllabusExamExtractor`) at
+    launch and whenever the material changes, and files one
+    `.canvasAnnouncement` row per exam with a `syllabus-{course}-{exam}` id
+    (no new source, no schema change). A date with no time is stored at the
+    end of its day, as Canvas all-day entries are.
+  - **One card per exam** across Canvas or Gradescope, Canvas and Ed
+    announcements and the syllabus, by exam identity and date
+    (`ExamDetection.isSameSitting`): a feed item first, then an
+    announcement, then the syllabus, so an announced new date replaces the
+    syllabus's. Unnumbered against numbered, and Midterm N against Exam N,
+    only when the days are within one. A tick on the hidden twin follows to
+    the shown card.
+  - **Rules.** Shows for every visible class whatever the "announcements
+    on dashboard" and "nothing to submit" switches say; past goes to prev;
+    the ordinary reminders, never the loud 10-minute alert; not in the
+    megaphone.
+  - Also in this tree and now described in `CLAUDE.md`: the loud
+    10-minute alert switch (Profile → reminders) and "the vault" PennKey
+    sheet.
+  - **Not verified on a phone**: tested on the Mac (64 new tests, 2164
+    total) and compiled for the connected phone only. Edges are in
+    `CLAUDE.md` → Known gaps.
+
 - **2026-10-18 (`v8-announcements`, not yet committed).** Grade Watcher
   removed at the owner's call, and the megaphone takes its place.
   - **Grade Watcher off.** `FeatureFlags.gradeWatcher = false`: no
@@ -278,9 +327,13 @@ Kept so nobody rebuilds them blind.
     strikethrough); a tap on it completes it. Ordinary Canvas, Gradescope
     and manual work is untouched.
   - **Deleted posts.** A Canvas post that stops coming back inside the
-    fetched window has its cards hidden (rows flagged `isGoneFromFeed`,
-    never deleted; a finished task stays in prev); an empty or failed fetch
-    hides nothing. Not done for Ed, on purpose: see Known gaps in
+    fetched window has its cards hidden (rows flagged `isGoneFromFeed`; a
+    finished task stays in prev); an empty or failed fetch hides nothing,
+    nor does a class the fetch returned no post for, and a post must be
+    missing twice in a row. The rows are never deleted: until the review
+    pass the same day, the ledger's aging rule deleted a flagged row 14
+    days after its date, so this said "never deleted" and was not true
+    (`CLAUDE.md` → Traps). Not done for Ed, on purpose: see Known gaps in
     `CLAUDE.md`.
   - **One card per task** across Canvas, Ed and the feed, with a tick
     carried to the card that is shown.

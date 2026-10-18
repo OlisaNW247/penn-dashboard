@@ -140,10 +140,13 @@ on-device alone:
   it off in Settings). With it on, extracting a task and due date from an
   announcement's text works the same way — the announcement
   text goes to the same server and model, and the result isn't stored either.
+  Each of these requests carries the post's title and body, the post's id (a
+  Canvas announcement's id, or the Ed thread's), the class code and the post's
+  date, and nothing else about you.
   Since 2026-10-18 the same switch covers Ed Discussion announcements and
   pinned posts for classes that use it (Penn): such a post's title and body
   (never an author's name, which the app does not keep) go to the same server
-  and model, with the class code and the date, once, only when
+  and model, with the class code, the post's id and the date, once, only when
   an on-device check says the text could contain a task, and only for a class
   you have not hidden. It is text the app already pools per class (see
   above), and the result isn't stored either. With the switch off, Canvas and

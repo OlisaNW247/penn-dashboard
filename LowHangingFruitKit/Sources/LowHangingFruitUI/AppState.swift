@@ -138,6 +138,17 @@ final class AppState: ObservableObject {
     /// from `announcementKnowledgeSubscription`, which only refreshes the
     /// megaphone's list.
     var edTaskKnowledgeSubscription: AnyCancellable?
+    /// The same three for the syllabus-exam pass
+    /// (`AppState+SyllabusExams.swift`). Its own, not the Ed ones: that pass is
+    /// switched by `FeatureFlags.edDiscussion` and this one must not be.
+    var syllabusExamPassTask: Task<Void, Never>?
+    var syllabusExamPassNeedsRerun = false
+    var syllabusExamKnowledgeSubscription: AnyCancellable?
+    /// Test seam: runs on the main actor after the syllabus pass has read the
+    /// material and before it looks the classes up again to decide what to
+    /// write, which is the one moment "Canvas was disconnected during the read"
+    /// can be staged. Nil in the shipping app.
+    var syllabusExamComputedHookForTesting: (@MainActor () -> Void)?
     /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
     /// incomplete buckets below are filtered out of, but kept whole so callers
     /// that need completed work (the Done tab) see one item per assignment
@@ -1044,6 +1055,16 @@ final class AppState: ObservableObject {
             scheduleEdAnnouncementTaskPass()
         }
 
+        // Exams named in a class's syllabus (`AppState+SyllabusExams.swift`),
+        // on the same terms: once now for the material already on the phone,
+        // and again whenever it changes. Beside the Ed hook and not inside it,
+        // because the Ed pass is behind `FeatureFlags.edDiscussion` and exams
+        // are not an Ed feature.
+        if !SharedDefaults.isTestRunner {
+            observeKnowledgeForSyllabusExams()
+            scheduleSyllabusExamPass()
+        }
+
         // The student's edited due dates, read back before the first rebuild:
         // that rebuild publishes the widget snapshot (which carries them) and
         // may prune them, and a prune against an empty in-memory copy would
@@ -1285,6 +1306,9 @@ final class AppState: ObservableObject {
         }
         processedAnnouncementIDs = []
         defaults.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        // Everything is about to be read again, so no post is waiting out a
+        // failed read any longer.
+        defaults.removeObject(forKey: Self.edTaskRetryAfterKey)
 
         defaults.set(Self.announcementExtractionVersion, forKey: Self.announcementExtractionVersionKey)
     }
@@ -3528,6 +3552,10 @@ final class AppState: ObservableObject {
         // under it.
         processedAnnouncementIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        // The two guards that live beside it describe this account's posts too
+        // (misses toward "deleted", Ed posts waiting out a failed read).
+        UserDefaults.lhf.removeObject(forKey: Self.announcementMissCountsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.edTaskRetryAfterKey)
         // The backend identity (`BackendIdentityStore`) is deliberately left
         // alone here, by the same precedent Gradescope's login already sets:
         // it is not a Canvas-session-derived credential. It is the anonymous
@@ -4457,12 +4485,23 @@ final class AppState: ObservableObject {
         resolvingAnnouncementDuplicates(candidates, against: existing).survivors
     }
 
+    /// One dropped candidate and what it collapsed into, with both dates, so the
+    /// caller can decide whether the student's tick on the hidden one still
+    /// means anything on the one that is shown (`completionFollows`).
+    struct AnnouncementTwin {
+        let hiddenID: String
+        let survivorID: String
+        let hiddenDue: Date?
+        let survivorDue: Date?
+    }
+
     /// `filteringAnnouncementDuplicates` plus the other half of the answer:
     /// which survivor (or existing item) each dropped candidate collapsed
-    /// into. The rebuild needs the pairs to carry a completion across, the way
-    /// it already does for the Canvas/Modules and override collapses: a
-    /// candidate the student ticked off must not lose that tick because a twin
-    /// now represents it.
+    /// into (`absorbed`), and which undated feed exams a dated candidate took
+    /// the place of (`displaced`). The rebuild needs the pairs to carry a
+    /// completion across, the way it already does for the Canvas/Modules and
+    /// override collapses: a candidate the student ticked off must not lose
+    /// that tick because a twin now represents it.
     ///
     /// A candidate that is itself announcement-derived is compared with another
     /// announcement-derived item in **both** directions. The one-directional
@@ -4472,23 +4511,90 @@ final class AppState: ObservableObject {
     /// "Submit PS3" and the other "PS3": the same task announced on Canvas and
     /// again on Ed. Against feed items the check stays one-directional, so
     /// nothing that deduplicated before deduplicates differently now.
+    ///
+    /// **Two announcements are one task only on the same day.** Against a feed
+    /// item the title heuristic tolerates 21 days between dates, because a feed
+    /// date is Canvas's own and an announcement restating it can be loose. Two
+    /// *announcements* are two people's prose, and "Submit weekly reflection"
+    /// posted for Oct 6 and again for Oct 20 is two weeks of reflections, not
+    /// one: collapsed, the earlier one survived, lapsed into prev on the 7th,
+    /// and left the live one hidden behind it. So a pair of announcement-derived
+    /// rows needs dates within `AssignmentDeduplicator.similarTitleDueDateTolerance`
+    /// (about a day) or one side undated, whatever the titles say. Exams are the
+    /// one exception, below.
+    ///
+    /// **Exams are matched by what they are, not by how the title reads.**
+    /// A midterm reaches the dashboard as a Canvas item ("Midterm 1"), as an
+    /// announcement ("Take Midterm 1 on Thursday") and as a syllabus line
+    /// ("Midterm: Oct 23"), and the title heuristic above cannot join all of
+    /// those: it needs the words to line up, and an unnumbered "Midterm" does
+    /// not line up with "Midterm 1" by design. `ExamDetection.isSameSitting`
+    /// joins them by exam identity and date (see there for the rules), across
+    /// dates on purpose: a rescheduled exam is still the one exam, so a found
+    /// exam is dropped when the class already shows that sitting, and the order
+    /// the caller offers candidates in (`announcementDedupOrder`) decides who
+    /// that is: a real feed item first because it is in `existing`, then an
+    /// announcement, then the syllabus, so the announced date replaces the
+    /// syllabus's. The completion of a sitting does not cross a reschedule
+    /// (`completionFollows`).
+    ///
+    /// **An undated feed exam does not hide a dated twin.** A Canvas "Midterm 1"
+    /// with no due date (common for exams graded by hand) used to win outright,
+    /// and the card read "no date" while the syllabus knew the day. When every
+    /// twin a dated exam candidate has is an undated real item of the same
+    /// sitting, the candidate stays and those items are `displaced`: the
+    /// caller drops them from the dashboard instead of copying a date onto a
+    /// feed row, which would be a fact the feed never said. Any dated feed twin
+    /// still wins, as before.
     static func resolvingAnnouncementDuplicates(
         _ candidates: [Assignment],
         against existing: [Assignment]
-    ) -> (survivors: [Assignment], absorbed: [(hiddenID: String, survivorID: String)]) {
+    ) -> (survivors: [Assignment], absorbed: [AnnouncementTwin], displaced: [AnnouncementTwin]) {
         var comparisonPool = existing
         var survivors: [Assignment] = []
-        var absorbed: [(hiddenID: String, survivorID: String)] = []
+        var absorbed: [AnnouncementTwin] = []
+        var displaced: [AnnouncementTwin] = []
+        // Identities are read once per row, not once per pair: the pool is
+        // every item the student has and most candidates are not exams.
+        //
+        // An announcement-derived row counts as an exam here only when its
+        // title leads with one (`ExamDetection.leadingExamIdentity`). Every
+        // candidate is announcement-derived, and "Bring a calculator to the
+        // exam" names an exam without being one: matched by identity it would
+        // be absorbed into the exam card, or worse, absorb the syllabus's
+        // midterm and leave a calculator reminder where the midterm was. A feed
+        // item's title is the name of a Canvas object, so any exam in it is its
+        // exam.
+        var identities: [String: ExamIdentity?] = [:]
+        func examIdentity(of item: Assignment) -> ExamIdentity? {
+            if let known = identities[item.id] { return known }
+            let identity = item.source == .canvasAnnouncement
+                ? ExamDetection.leadingExamIdentity(title: item.title, course: item.course)
+                : ExamDetection.examIdentity(title: item.title, course: item.course)
+            identities[item.id] = .some(identity)
+            return identity
+        }
         for candidate in candidates {
-            let twin = comparisonPool.first { other in
+            let candidateExam = examIdentity(of: candidate)
+            func sameSitting(_ other: Assignment) -> Bool {
+                guard let candidateExam, let otherExam = examIdentity(of: other) else { return false }
+                return ExamDetection.isSameSitting(
+                    candidateExam, due: candidate.dueAt, otherExam, due: other.dueAt
+                )
+            }
+            let twins = comparisonPool.filter { other in
                 guard announcementCoursesMatch(candidate.course, other.course) else { return false }
+                if sameSitting(other) { return true }
+                let otherIsAnnouncement = other.source == .canvasAnnouncement
+                if otherIsAnnouncement,
+                   !announcementDatesCompatible(candidate.dueAt, other.dueAt) { return false }
                 if AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
                     announcementTitle: candidate.title,
                     announcementDue: candidate.dueAt,
                     existingTitle: other.title,
                     existingDue: other.dueAt
                 ) { return true }
-                guard other.source == .canvasAnnouncement else { return false }
+                guard otherIsAnnouncement else { return false }
                 return AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
                     announcementTitle: other.title,
                     announcementDue: other.dueAt,
@@ -4496,14 +4602,55 @@ final class AppState: ObservableObject {
                     existingDue: candidate.dueAt
                 )
             }
-            if let twin {
-                absorbed.append((candidate.id, twin.id))
-            } else {
+            guard let twin = twins.first else {
                 survivors.append(candidate)
                 comparisonPool.append(candidate)
+                continue
+            }
+            let displaceable: (Assignment) -> Bool = { item in
+                item.dueAt == nil
+                    && [Assignment.Source.canvas, .canvasModules, .gradescope].contains(item.source)
+                    && sameSitting(item)
+            }
+            if candidate.dueAt != nil, candidateExam != nil, twins.allSatisfy(displaceable) {
+                for item in twins {
+                    displaced.append(AnnouncementTwin(
+                        hiddenID: item.id, survivorID: candidate.id,
+                        hiddenDue: item.dueAt, survivorDue: candidate.dueAt
+                    ))
+                }
+                let gone = Set(twins.map(\.id))
+                comparisonPool.removeAll { gone.contains($0.id) }
+                survivors.append(candidate)
+                comparisonPool.append(candidate)
+            } else {
+                absorbed.append(AnnouncementTwin(
+                    hiddenID: candidate.id, survivorID: twin.id,
+                    hiddenDue: candidate.dueAt, survivorDue: twin.dueAt
+                ))
             }
         }
-        return (survivors, absorbed)
+        return (survivors, absorbed, displaced)
+    }
+
+    /// Whether two dates could be one task's: either is missing, or they are
+    /// within `AssignmentDeduplicator.similarTitleDueDateTolerance`.
+    nonisolated static func announcementDatesCompatible(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        guard let lhs, let rhs else { return true }
+        return abs(lhs.timeIntervalSince(rhs)) <= AssignmentDeduplicator.similarTitleDueDateTolerance
+    }
+
+    /// Whether a tick on `hidden` may follow onto `survivor`: only when the two
+    /// are the same task on the same day (`announcementDatesCompatible`). Two
+    /// rows can be one card without being one piece of work: a rescheduled
+    /// exam is one sitting on the dashboard, and "I did the Oct 6 one" says
+    /// nothing about the Oct 30 one. Carrying across the gap would mark a
+    /// future sitting done on the strength of the student's tick on the old
+    /// date, and a completion is the one fact in the ledger that cannot be
+    /// re-derived from anything. Undated on either side is compatible: a tick
+    /// on a task that never had a date is about the task.
+    nonisolated static func completionFollows(from hidden: AnnouncementTwin) -> Bool {
+        announcementDatesCompatible(hidden.hiddenDue, hidden.survivorDue)
     }
 
     /// The order announcement candidates are offered to
@@ -4514,13 +4661,36 @@ final class AppState: ObservableObject {
     /// Canvas copy on one rebuild and the Ed copy on the next.
     ///
     /// Dated before undated (an announcement that names the day is worth more
-    /// than a twin that does not), then Canvas before Ed (the post the class
-    /// has always had, and the one whose link opens Canvas), then by id.
-    nonisolated static func announcementDedupOrder(_ items: [Assignment]) -> [Assignment] {
+    /// than a twin that does not), then the syllabus after every announcement,
+    /// then Canvas before Ed (the post the class has always had, and the one
+    /// whose link opens Canvas), then by id.
+    ///
+    /// The syllabus comes after the announcements because an announcement is
+    /// newer and is where a reschedule is announced, so when both name the same
+    /// exam the announcement's date is the one the class sees. It comes after
+    /// *dating*, not before it, so an announcement that names the exam without
+    /// a day ("the midterm will be in class") cannot hide the syllabus row that
+    /// has one: it is the undated twin that goes, as for any other pair.
+    ///
+    /// `lapsed` is the ids whose date has already passed (`isLapsedAnnouncement`),
+    /// and they go last of all. The lapse is decided after the duplicate check,
+    /// so without this a lapsed twin could be the survivor and carry its
+    /// "past" into prev, taking a live copy of the same task out of todo with
+    /// it. A live twin that outlives a lapsed one is the card the student can
+    /// still act on.
+    nonisolated static func announcementDedupOrder(
+        _ items: [Assignment], lapsed: Set<String> = []
+    ) -> [Assignment] {
         items.sorted { lhs, rhs in
+            let lhsLapsed = lapsed.contains(lhs.id)
+            let rhsLapsed = lapsed.contains(rhs.id)
+            if lhsLapsed != rhsLapsed { return !lhsLapsed }
             let lhsDated = lhs.dueAt != nil
             let rhsDated = rhs.dueAt != nil
             if lhsDated != rhsDated { return lhsDated }
+            let lhsSyllabus = lhs.announcementOrigin == .syllabus
+            let rhsSyllabus = rhs.announcementOrigin == .syllabus
+            if lhsSyllabus != rhsSyllabus { return !lhsSyllabus }
             let lhsEd = lhs.announcementOrigin == .ed
             let rhsEd = rhs.announcementOrigin == .ed
             if lhsEd != rhsEd { return !lhsEd }
@@ -4587,8 +4757,14 @@ final class AppState: ObservableObject {
     ///
     /// Whether a *class* shows these cards at all is the separate, per-class
     /// "announcements on dashboard" switch, applied by the caller.
+    ///
+    /// An exam out of the syllabus is always a card: its title is the exam's
+    /// name, written by the app and not by a professor, so there is no prose
+    /// for the informational check to misread, and it is not a megaphone find
+    /// (`announcementPageItems` leaves it out).
     static func announcementDashboardPlacement(for item: Assignment) -> AnnouncementDashboardPlacement {
-        AnnouncementTaskClassifier.isInformational(item.title) ? .find : .main
+        if item.announcementOrigin == .syllabus { return .main }
+        return AnnouncementTaskClassifier.isInformational(item.title) ? .find : .main
     }
 
     /// An announcement-derived task whose date has passed and that has no
@@ -4880,10 +5056,27 @@ final class AppState: ObservableObject {
     /// every post in every class being deleted at once. (A failed fetch never
     /// reaches here: `syncAnnouncements` returns on a throw.)
     ///
+    /// **A class that returned nothing is not judged, and one miss is not
+    /// deletion.** The fetch is paged (`CanvasAnnouncementsClient` stops at 50
+    /// pages and refuses a `Link` header that leaves the host), and a response
+    /// that is cut short looks exactly like a response with some posts deleted.
+    /// So a class's posts are judged only if this very fetch returned at least
+    /// one post for that class, and a post must be missing from two judged
+    /// fetches in a row before its rows are flagged
+    /// (`advanceAnnouncementMisses`; the counts are in `UserDefaults.lhf`, keyed
+    /// by post id, and a post seen again starts over). It is a cheap guard, not
+    /// proof: a fetch that is truncated the same way every time would still be
+    /// believed on its second run, which is why the flag is reversible.
+    ///
     /// **Flagged, never deleted.** The rows get `isGoneFromFeed` through
     /// `AssignmentStore.markGoneFromFeed`; their completions are untouched, and
     /// a row the student finished stays visible in prev
-    /// (`announcementRowsToShow`). A post that comes back is restored.
+    /// (`announcementRowsToShow`). A post that comes back is restored. That
+    /// sentence was only a comment until 2026-10-18: `AssignmentStore.isAgedOut`
+    /// deleted every unfinished flagged row 14 days after its date, through
+    /// `reconcile`'s prune on each Canvas sync, and `markPresentInFeed` cannot
+    /// restore a row that is gone. Announcement rows are now exempt from aging
+    /// by name (CLAUDE.md, Traps).
     ///
     /// The log is the evidence, so this does nothing while the log is off (the
     /// test-runner default) or cleared. Ed posts are never judged here: see
@@ -4902,6 +5095,17 @@ final class AppState: ObservableObject {
             window: window
         ) else { return false }
 
+        let defaults = UserDefaults.lhf
+        let advanced = Self.advanceAnnouncementMisses(
+            counts: defaults.dictionary(forKey: Self.announcementMissCountsKey) as? [String: Int] ?? [:],
+            missing: presence.missing
+        )
+        if advanced.counts.isEmpty {
+            defaults.removeObject(forKey: Self.announcementMissCountsKey)
+        } else {
+            defaults.set(advanced.counts, forKey: Self.announcementMissCountsKey)
+        }
+
         let rows = store.assignments(source: .canvasAnnouncement)
         let alreadyGone = store.goneFromFeedIDs(source: .canvasAnnouncement)
         var toHide: Set<String> = []
@@ -4910,7 +5114,7 @@ final class AppState: ObservableObject {
             guard let announcementID = AnnouncementRecord.announcementID(fromFindSourceID: row.sourceID) else {
                 continue
             }
-            if presence.missing.contains(announcementID) {
+            if advanced.confirmed.contains(announcementID) {
                 toHide.insert(row.id)
             } else if presence.returned.contains(announcementID), alreadyGone.contains(row.id) {
                 toRestore.insert(row.id)
@@ -4921,9 +5125,42 @@ final class AppState: ObservableObject {
         return hidden + restored > 0
     }
 
+    /// How many judged fetches in a row a post must be missing from before its
+    /// rows are flagged gone.
+    nonisolated static let announcementMissesToFlag = 2
+    private static let announcementMissCountsKey = "announcementMissCountsV1"
+
+    /// The pure half of the two-miss rule. `counts` is what was saved after the
+    /// previous judged fetch (post id -> consecutive misses) and `missing` is
+    /// what this one proved missing. Returns the counts to save and the posts
+    /// that have now been missing `announcementMissesToFlag` times.
+    ///
+    /// Only posts missing *now* keep a count: anything else (seen again, or no
+    /// longer judged because it drifted out of the window) starts over, so the
+    /// misses really are consecutive, and the saved dictionary cannot grow
+    /// past the posts currently in doubt.
+    nonisolated static func advanceAnnouncementMisses(
+        counts: [String: Int],
+        missing: Set<String>
+    ) -> (counts: [String: Int], confirmed: Set<String>) {
+        var next: [String: Int] = [:]
+        for id in missing { next[id] = (counts[id] ?? 0) + 1 }
+        let confirmed = Set(next.filter { $0.value >= announcementMissesToFlag }.map(\.key))
+        return (next, confirmed)
+    }
+
     /// The pure half of `reconcileAnnouncementPresence`: which known Canvas
     /// posts a fetch proves missing, and which it returned. Nil when the
     /// fetch is empty (nothing can be judged from it).
+    ///
+    /// A class is judged only if the fetch returned at least one of its posts.
+    /// `requestedCourseIDs` says which classes were *asked for*, which is not
+    /// the same thing: a class whose pages were cut off, or whose request was
+    /// refused halfway, was asked for and returned nothing, and "returned
+    /// nothing" is the signature of a failure at least as often as of every
+    /// post in a class being deleted at once. (The cost: a class whose last
+    /// post is deleted keeps its cards until another post appears. That is the
+    /// cheaper mistake.)
     nonisolated static func announcementPresence(
         fetched: [CanvasAnnouncement],
         requestedCourseIDs: Set<String>,
@@ -4932,10 +5169,11 @@ final class AppState: ObservableObject {
     ) -> (missing: Set<String>, returned: Set<String>)? {
         guard !fetched.isEmpty else { return nil }
         let returned = Set(fetched.map(\.id))
+        let judgedCourseIDs = Set(fetched.map(\.courseID)).intersection(requestedCourseIDs)
         let earliest = window.since.addingTimeInterval(24 * 60 * 60)
         let missing = known.filter { record in
             guard !record.isEd,
-                  requestedCourseIDs.contains(record.courseID),
+                  judgedCourseIDs.contains(record.courseID),
                   !returned.contains(record.id),
                   let posted = record.postedAt
             else { return false }
@@ -6222,6 +6460,12 @@ final class AppState: ObservableObject {
         // ledger invariant as the Canvas/Modules collapses above: if the user
         // completed the announcement-shaped copy before the structured row
         // arrived, that work must follow the surviving identity.
+        //
+        // Only between copies of the same day's task: the title heuristic
+        // tolerates 21 days against a feed item, which is right for hiding a
+        // restatement and wrong for passing a tick along, because "I did the
+        // one due the 6th" is not "I did the one due the 20th"
+        // (`completionFollows`).
         for announcementItem in announcementItems {
             if let survivor = realItems.first(where: { other in
                 Self.announcementCoursesMatch(announcementItem.course, other.course)
@@ -6231,7 +6475,7 @@ final class AppState: ObservableObject {
                         existingTitle: other.title,
                         existingDue: other.dueAt
                     )
-            }) {
+            }), Self.announcementDatesCompatible(announcementItem.dueAt, survivor.dueAt) {
                 carryCompletion(from: announcementItem.id, to: survivor.id)
             }
         }
@@ -6241,17 +6485,35 @@ final class AppState: ObservableObject {
         // fixes which twin survives (`announcementDedupOrder`), and a tick on
         // the one that is hidden follows onto the one that is shown, as in
         // the collapses above.
+        //
+        // A found exam is a candidate whatever the class's "announcements on
+        // dashboard" switch says: that switch is about tasks professors
+        // mention in passing, and a midterm is not one. Exams show for every
+        // class the student has not hidden (`isCourseSelected`, applied below
+        // like everything else).
+        //
+        // Lapsed rows are offered last (`announcementDedupOrder(lapsed:)`): the
+        // lapse is decided after this, and a survivor that has already gone by
+        // would put its twin's live copy in prev with it.
+        let lapsedAnnouncementIDs = Set(announcementItems.filter {
+            Self.isLapsedAnnouncement($0, dueAt: effectiveDueDate(for: $0), now: now)
+        }.map(\.id))
         let announcementResolution = Self.resolvingAnnouncementDuplicates(
             Self.announcementDedupOrder(announcementItems.filter {
                 Self.announcementDashboardPlacement(for: $0) == .main
-                    && announcementAssignmentsOnDashboard(for: $0.course)
-            }),
+                    && ($0.isFoundExam || announcementAssignmentsOnDashboard(for: $0.course))
+            }, lapsed: lapsedAnnouncementIDs),
             against: realItems
         )
-        for pair in announcementResolution.absorbed {
+        for pair in announcementResolution.absorbed + announcementResolution.displaced
+        where Self.completionFollows(from: pair) {
             carryCompletion(from: pair.hiddenID, to: pair.survivorID)
         }
         let mainAnnouncementItems = announcementResolution.survivors
+        // Undated feed exams a dated twin took the place of: out of the pool
+        // below, so the card is the one with the date. The ledger rows are
+        // untouched, and they come back the moment the twin goes.
+        let displacedFeedIDs = Set(announcementResolution.displaced.map(\.hiddenID))
         let secondaryAnnouncementItems = Self.filteringAnnouncementDuplicates(
             Self.announcementDedupOrder(announcementItems.filter {
                 Self.announcementDashboardPlacement(for: $0) == .find
@@ -6259,8 +6521,15 @@ final class AppState: ObservableObject {
             against: realItems + mainAnnouncementItems
         )
 
-        let canvasPool = structuredCanvasItems + mainAnnouncementItems
-        let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
+        let canvasPool = structuredCanvasItems.filter { !displacedFeedIDs.contains($0.id) } + mainAnnouncementItems
+        let gradescopePool = gradescopeItems.filter { !displacedFeedIDs.contains($0.id) }
+        // A found exam is admitted outright. Its kind is `.event` when the
+        // syllabus found it, and a course whose readings are switched off
+        // (`includesAsOptedInContent`) or a title the assessment regex does
+        // not know ("Test 2") would otherwise drop it here.
+        let canvasRelevant = canvasPool.filter {
+            $0.isAssignment || Self.isAssessment($0) || $0.isFoundExam || includesAsOptedInContent($0)
+        }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
         // into a single Canvas-anchored item before it ever reaches the
@@ -6272,7 +6541,7 @@ final class AppState: ObservableObject {
         let storedPairings = assignmentStore?.confirmedPairings() ?? []
         let pairings = AssignmentDeduplicator.matchPairs(
             canvasItems: canvasRelevant,
-            gradescopeItems: gradescopeItems,
+            gradescopeItems: gradescopePool,
             confirmedPairings: storedPairings
         )
         assignmentStore?.recordPairings(pairings)
@@ -6280,7 +6549,7 @@ final class AppState: ObservableObject {
         // isn't run a second time inside `merge`.
         let dedupedCoursework = AssignmentDeduplicator.merge(
             canvasItems: canvasRelevant,
-            gradescopeItems: gradescopeItems,
+            gradescopeItems: gradescopePool,
             confirmedPairings: pairings
         )
         mergedCoursework = dedupedCoursework
@@ -6315,7 +6584,12 @@ final class AppState: ObservableObject {
                     archivedCourseTerms: archivedCourseTerms
                 )
         }
+        // The megaphone lists announcements and what was found in them. An
+        // exam out of the syllabus was found in no announcement, and a row
+        // with no post behind it would open to nothing and count as an unread
+        // find, so it is left off.
         announcementPageItems = announcementItems
+            .filter { $0.announcementOrigin != .syllabus }
             .filter(isVisibleAnnouncement)
             .sorted(by: Self.byDueDate)
         announcementFinds = secondaryAnnouncementItems
@@ -6466,8 +6740,15 @@ final class AppState: ObservableObject {
         // just silent" promise is enforced; see `coursework` below for the
         // full reasoning. A closure because the prev tab's past announcement
         // tasks answer to it as well.
+        //
+        // A found exam passes whatever the switch says. A syllabus exam is
+        // `.event` (a sitting, nothing to hand in) and would be the first thing
+        // the switch hid, but the switch is for readings and check-ins: an
+        // exam that vanished from a class because its "nothing to submit" box
+        // was unticked would read as the app losing the midterm.
         let passesNothingToSubmitGate: (Assignment) -> Bool = { item in
-            self.coursePreferences.nothingToSubmitEnabled(item.course)
+            item.isFoundExam
+                || self.coursePreferences.nothingToSubmitEnabled(item.course)
                 || !(item.kind == .event || self.requiresNoSubmission(item))
         }
 
@@ -6529,8 +6810,18 @@ final class AppState: ObservableObject {
         // known; `pruneDueDateEdits` holds the rule and its guards. Before the
         // snapshot below so the widget never publishes an edit that was just
         // dropped.
+        //
+        // Announcement rows come from the ledger and not from `announcementItems`:
+        // that array drops the rows of a post Canvas stopped returning (they are
+        // flagged gone and hidden), and an edit on a hidden row is a student's
+        // fact about a task that comes back when the post does. Only a row that
+        // has left the ledger altogether should lose its edit. The store is the
+        // source of the whole ledger because `isAgedOut` exempts these rows, so
+        // "in the store" and "left the ledger" are the same question.
+        let announcementLedgerRows = assignmentStore?.assignments(source: .canvasAnnouncement)
+            ?? announcementItems
         pruneDueDateEdits(
-            against: canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+            against: canvasItems + gradescopeItems + moduleReadingItems + announcementLedgerRows
                 + recurringAssignments + manualItems
         )
         publishWidgetSnapshot()

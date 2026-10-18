@@ -329,23 +329,67 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
     public static func recordID(fromFindSourceID sourceID: String) -> String? {
         announcementID(fromFindSourceID: sourceID) ?? edDocumentID(fromFindSourceID: sourceID)
     }
+
+    // MARK: Syllabus exams
+    //
+    // An exam read out of a course's syllabus (`SyllabusExamRows`) is filed the
+    // way an Ed find is: a `.canvasAnnouncement` row whose `sourceID` starts
+    // with `syllabus-`. Same reasoning as for `ed-` above, and it is worth
+    // repeating because the temptation is stronger here, where the row is not
+    // an announcement at all: a `Source.syllabus` case would read back as
+    // `.canvas` on a build that does not know it (wrong source, and an id that
+    // no longer matches the stored one, so a tick would not stick), and a new
+    // column is a schema change an older build answers with an empty ledger.
+    // The prefix costs neither, and everything the announcement rows already
+    // have (the lapse into prev, the duplicate check, the completion carry, the
+    // purge on disconnect) applies to these without a second copy.
+    //
+    // The prefix also keeps these rows out of `announcementID(fromFindSourceID:)`
+    // (which wants `announcement-`), so `reconcileAnnouncementPresence` can
+    // never judge one "deleted" because no Canvas post carries its id.
+
+    /// What every syllabus exam's `sourceID` starts with. Canvas finds start
+    /// with `announcement-` and Ed finds with `ed-`, so none of the three
+    /// can meet.
+    public static let syllabusFindSourcePrefix = "syllabus-"
+
+    /// The ledger `sourceID` of one exam in one Canvas site's course material:
+    /// `syllabus-{canvasCourseID}-{examKey}`, where `examKey` is
+    /// `ExamIdentity.sourceKey` ("midterm-1", "final", "midterm-1-makeup").
+    ///
+    /// It is built from the exam's identity and **not** from its date or its
+    /// wording, so the same exam keeps one id when the instructor moves it or
+    /// rewrites the line: a completion, a due-date edit and the ledger row
+    /// all follow the exam instead of orphaning at every correction. The
+    /// Canvas course id (not the course code) is the scope because it is what
+    /// the document carries, and because a code can come back in a later term
+    /// where a site id cannot.
+    public static func syllabusFindSourceID(courseID: String, examKey: String) -> String {
+        "\(syllabusFindSourcePrefix)\(courseID)-\(examKey)"
+    }
 }
 
 /// Where a task found in an announcement came from. Not stored: derived from
-/// the row's `sourceID` (`AnnouncementRecord.edFindSourceID` vs `findSourceID`),
-/// so it cannot disagree with it and costs the ledger nothing.
+/// the row's `sourceID` (`AnnouncementRecord.edFindSourceID` vs `findSourceID`
+/// vs `syllabusFindSourceID`), so it cannot disagree with it and costs the
+/// ledger nothing.
 public enum AnnouncementOrigin: String, Sendable, Equatable {
     case canvas
     case ed
+    /// Not an announcement: an exam the syllabus names next to a date.
+    case syllabus
 }
 
 extension Assignment {
     /// The origin of an announcement-derived row, nil for every other source.
-    /// A `.canvasAnnouncement` row without the Ed prefix is Canvas: that is
-    /// every row written before Ed existed, whatever shape its `sourceID` has.
+    /// A `.canvasAnnouncement` row with neither the Ed nor the syllabus prefix
+    /// is Canvas: that is every row written before Ed existed, whatever shape
+    /// its `sourceID` has.
     public var announcementOrigin: AnnouncementOrigin? {
         guard source == .canvasAnnouncement else { return nil }
-        return sourceID.hasPrefix(AnnouncementRecord.edFindSourcePrefix) ? .ed : .canvas
+        if sourceID.hasPrefix(AnnouncementRecord.edFindSourcePrefix) { return .ed }
+        if sourceID.hasPrefix(AnnouncementRecord.syllabusFindSourcePrefix) { return .syllabus }
+        return .canvas
     }
 }
 

@@ -172,7 +172,12 @@ fastest way for a new session to know what exists.
   the feed but no session. Since 2026-10-18 Profile → accounts shows a
   "sign in to canvas" button under the canvas row for exactly that state
   (connected, no saved login, not preview), because no banner appears
-  there and Grade Watcher's reconnect button is gone.
+  there and Grade Watcher's reconnect button is gone. At Penn, the PennKey
+  sheet offered after the Canvas login is **"the vault"** since 2026-10-18
+  (`PennKeyCredentialsSheet`): a vault-door emblem that clunks shut once
+  as the sheet opens (drawn already shut under Reduce Motion), the same
+  one line about the Keychain, the two fields. It was a lock icon under
+  "stay signed in to canvas". Only the look changed.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **megaphone**
@@ -261,13 +266,80 @@ fastest way for a new session to know what exists.
     matches the stored one), and a schema change makes an older build fall
     back to an empty in-memory ledger. The same task on Canvas, on Ed, or
     already a Canvas assignment is one card (`resolvingAnnouncementDuplicates`
-    with a fixed survivor order: dated, then Canvas, then id), and a tick on
-    the hidden twin carries to the shown one. A Canvas post that stops
+    with a fixed survivor order: not yet lapsed, then dated, then Canvas,
+    then id). Two announcements are one task only on the same day (dates
+    within `AssignmentDeduplicator.similarTitleDueDateTolerance`, about 26
+    hours, or one undated): the same title for the 6th and again for the
+    20th is two tasks. A tick on the hidden twin carries to the shown one
+    only between copies of the same day (`completionFollows`), never across
+    a gap, a reschedule included. A Canvas post that stops
     coming back inside the fetched window has its rows flagged
     `isGoneFromFeed` and its cards hidden (`reconcileAnnouncementPresence`;
     evidence is the announcement log's posted date; an empty fetch judges
-    nothing; a finished task stays in prev; a post that returns restores
-    them). Ed deletions are not detected, see Known gaps.
+    nothing, and so does a class the fetch returned no post for; a post
+    must be missing from two judged fetches in a row, counted in
+    `announcementMissCountsV1`; a finished task stays in prev; a post that
+    returns restores them). The flag never deletes: the store's aging rule
+    exempts announcement rows (Traps). An edited due date stays while its
+    row is hidden. Ed deletions are not detected, see Known gaps.
+  - **Exam cards** (2026-10-18, owner's call; not yet on a phone). "If
+    you ever have a midterm, the class finds it from the syllabus or from
+    an announcement. Either way, if a midterm is found, don't duplicate
+    it." An exam card is black with white type in light mode and white
+    with black type in dark (`SmoothExamPalette`, drawn when the title is
+    an exam by `ExamDetection.isExam`, or when the dashboard says so with
+    `DashItem.examStyleOverride`). Three roads in, one card out:
+    - **The syllabus.** `AppState+SyllabusExams.swift` runs
+      `SyllabusExamRows` over each class's syllabus, course home page and
+      course pages in the on-device course knowledge (not announcements,
+      modules, assignment descriptions or Ed, which have their own
+      readers), at launch and whenever the knowledge changes, off the main
+      actor. `SyllabusExamExtractor` finds the lines that name an exam
+      next to a date. Each exam is a `.canvasAnnouncement` row, kind
+      `.event`, whose `sourceID` is `syllabus-{canvasCourseID}-{kind}[-n]
+      [-makeup]` (`AnnouncementRecord.syllabusFindSourceID`,
+      `ExamIdentity.sourceKey`): the id is the exam's identity and not its
+      date, so a second pass writes the same rows, a moved date updates
+      the row and keeps its tick, and an older build reads an announcement
+      task. No new `Source`, no new column, for the reason given under Ed
+      finds above. A date with no time is stored at 23:59:59 local like
+      every all-day Canvas entry (`AllDayDueMoment`), so the exam is
+      "today" all day and goes to prev when the day is over, and the open
+      card hides the clock time for it. Rows are never deleted when a
+      syllabus stops naming an exam (Known gaps).
+    - **An announcement.** An announcement task whose title *leads with*
+      an exam ("Midterm 1", "Take the final exam"; not "Bring a calculator
+      to the exam", `ExamDetection.leadingExamIdentity`) is a found exam
+      too (`Assignment.isFoundExam`).
+    - **Canvas or Gradescope** list it as an ordinary item and keep every
+      rule they had.
+    - **One card per exam.** `resolvingAnnouncementDuplicates` also joins
+      by exam identity and date (`ExamDetection.isSameSitting`): the same
+      kind, number and modifiers within 60 days is one sitting (a
+      reschedule, not last year's recycled site), and an unnumbered exam
+      against a numbered one, or Midterm N against Exam N, only when both
+      are dated within a calendar day. A final is only another final, two
+      different numbers never match, a makeup is its own exam. Precedence:
+      a feed item, then an announcement, then the syllabus (the order
+      `announcementDedupOrder` offers them in), so an announced new date
+      replaces the syllabus's; an announcement with no day does not hide a
+      syllabus row that has one, and neither does a Canvas or Gradescope
+      exam with no due date (the dated twin is the card and the feed row is
+      left out of the dashboard, `displaced`; nothing is written onto it).
+      The hidden twin stays in the ledger and a tick on it carries to the
+      card that is shown only if it was a tick on the same day: the
+      tick on the syllabus's Oct 23 midterm does not complete the Oct 30
+      one an announcement moved it to.
+    - **Rules for a found exam.** It shows for every class that is not
+      hidden whatever the class's "announcements on dashboard" and "items
+      with nothing to submit" switches say. Past, it goes to prev as "past"
+      like any announcement task; a feed exam keeps its normal overdue
+      behaviour. It gets the ordinary lead-time reminders and never the
+      loud 10-minute alert (`NotificationScheduler.loudAlerts` skips
+      `isFoundExam`: the syllabus's rows are `.event` and already out, but
+      the announcement extractors file every exam as a submission). A
+      syllabus exam is left out of the megaphone, which lists
+      announcements, and its card says "from syllabus".
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
@@ -337,7 +409,19 @@ fastest way for a new session to know what exists.
      pills (`LeadOffset.onboardingOffered`). A reminder's title is the
      class and its body is the assignment's name then the lead phrase
      ("Problem Set 4. Due in 1 hour", `NotificationScheduler.reminderBody`,
-     2026-10-09; before that the body was the lead phrase alone).
+     2026-10-09; before that the body was the lead phrase alone). Since
+     2026-10-18 a **"loud 10-minute alert"** switch sits beside them, on
+     by default (`notif.loudAlertEnabled`): for work that takes a
+     submission and has not been handed in, three Time Sensitive
+     notifications three seconds apart at 10 minutes before the due time
+     (`NotificationScheduler.loudAlerts`). Not for anything with nothing
+     to submit, a recurring occurrence, a completed item or an exam the
+     app found (exam cards, below); at most 10 items, nearest first,
+     planned before the ordinary reminders so they come out of the same 60
+     pending slots, and it replaces the plain "10 minutes before" for an
+     item that has the alert. It needs the Time Sensitive entitlement in
+     `App/LHFApp.entitlements` (iOS only); without it iOS delivers them as
+     ordinary notifications and says nothing. Never heard on a phone yet.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -453,8 +537,8 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2028 tests / 194 suites, all green, on `v8-announcements`
-(2026-10-18, `swift test --no-parallel`, on Marco's Mac, 7.5 s, the only
+**Current: 2190 tests / 202 suites, all green, on `v8-announcements`
+(2026-10-18, `swift test --no-parallel`, on Marco's Mac, 10.1 s, the only
 test run on the machine at the time; the 2026-10-10 figure was
 1975/189 on `v8-launch-prep`).** The same tree compiles for iOS in
 Debug (for the connected phone) and Release (`xcodebuild
@@ -498,6 +582,43 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2190/202 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as
+  the only run on the machine: 2164/201 plus 26 tests, the ledger-safety
+  fixes from the review of the announcement-task commit. New: a suite
+  `AnnouncementLedgerSafetyTests` (9: two days are two tasks, the live twin
+  outlasts the lapsed one, no tick across dates or a reschedule, an edited
+  date survives a hidden row); 7 in `AnnouncementDeletionTests`; 5 in
+  `EdAnnouncementTaskTests` (retry backoff, the class going away during a
+  read); 5 in `SyllabusExamDashboardTests` (an undated Canvas exam yields to
+  a dated twin, the syllabus pass re-check). **Rewritten, because they pinned
+  the behaviour that was the bug:** `AnnouncementDeletionTests` "a gone row
+  ages out like a gone feed item, but finished work never does" (it asserted
+  that `pruneAgedOut` deletes a flagged announcement row; now three tests
+  assert it does not, and that feed rows still age), and the three
+  end-to-end deletion tests that flagged a post on one absent response
+  (`deletedPostIsHidden`, `restoredPost`, `finishedTaskSurvivesDeletion`) now
+  take two, per the two-miss rule. `EdAnnouncementTaskTests` "a failed
+  extraction leaves the post unread, and the next pass tries it again" now
+  waits out the six hours. Each new rule was also broken on purpose and a
+  named test failed (13 rules; two first mutations did not bite, because the
+  mutation or the test was wrong, and a test was added for the carry in the
+  title loop).
+- 2164/201 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as
+  the only run on the machine: 2100/198 (the tree with the loud alert, the
+  vault sheet and the exam detector and card style merged in; measured
+  before this change) plus 64 tests in three new suites (`ExamSittingTests`
+  21, `SyllabusExamRowsTests` 14, `SyllabusExamDashboardTests` 29); nothing
+  removed or rewritten. A first full run failed one existing test, "the
+  per-class switch governs cards for Canvas and Ed together" in
+  `AnnouncementTasksOnDashboardTests`: the first version of
+  `isFoundExam` asked only whether a title named an exam, so the Ed task
+  "Bring a calculator to the exam" counted as one and ignored the class's
+  switch. The code was changed (`leadingExamIdentity`: the exam has to be
+  what the title leads with), not the test, and a regression test now pins
+  it. Each rule was also checked by breaking it and watching a named test
+  fail (toggle and nothing-to-submit exemptions, the loud-alert guard, the
+  megaphone exclusion, the identity match, all-day storage, placement and
+  order).
 - 2028/194 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as
   the only run on the machine: 1985/191 plus 43 tests in three new suites
   (`AnnouncementTasksOnDashboardTests`, `EdAnnouncementTaskTests`,
@@ -749,9 +870,10 @@ itself.
 - **How it turns on.** There is no toggle (removed 2026-09-24, owner's
   call: everyone should stay signed in). After every *interactive* Canvas
   login at Penn, while no password is saved, `OnboardingView.canvasConnected`
-  offers `PennKeyCredentialsSheet`. The sheet shows a lock, one line
-  ("encrypted in this phone's keychain. never sent to smooth."), and the two
-  fields. "Not now" is always available; nothing is stored unless the
+  offers `PennKeyCredentialsSheet`. The sheet is titled "the vault" (a
+  vault-door emblem that shuts once as it opens, since 2026-10-18; it
+  showed a lock icon before), then one line ("encrypted in this phone's
+  keychain. never sent to smooth."), and the two fields. "Not now" is always available; nothing is stored unless the
   student saves. The offer is gated on `CanvasInstallation.penn`: the sheet
   asks for a PennKey, and other schools must never see it.
 - **Where it lives.** `PennKeyLoginForm` (Kit, pure) recognizes the
@@ -828,6 +950,31 @@ itself.
 
 ## Traps that have already bitten
 
+- **A "flagged, never deleted" doc comment was a delete.** Announcement
+  rows hidden because their post vanished get `isGoneFromFeed`
+  (`markGoneFromFeed`), copying the flag a vanished feed item gets, and
+  its doc comment said "never deleted". The flag's other reader said
+  otherwise: `AssignmentStore.isAgedOut` (run by `reconcile` through
+  `pruneAgedOut` on every Canvas sync, over every source) deleted any
+  unfinished flagged row 14 days after its date, and a test
+  (`AnnouncementDeletionTests`, "a gone row ages out like a gone feed
+  item") pinned the deletion as intended. After that nothing could undo
+  it: `markPresentInFeed` restores a flag, not a row, and the post's id
+  is in `processedAnnouncementIDs`, so the extractor never produces the
+  task again. A wrongly flagged row (a truncated fetch, a class that
+  returned nothing) became a permanently lost task two weeks later. For a
+  feed item the same rule is harmless, because the feed lists it again;
+  an announcement row has no feed to re-derive it from. Found in review,
+  2026-10-18, by reading the predicate instead of the comment. The fix
+  exempts `.canvasAnnouncement` (Canvas, `ed-` and `syllabus-`) from aging
+  by name, in the store and in the widget's copy of the predicate
+  (`LedgerWidgetReader`, which also hides a flagged announcement row now,
+  since aging no longer will), and the test now pins non-deletion and
+  restoration. The wrong fix is trusting the flag's doc comment, or the
+  test, over `isAgedOut`: when a rule says "flag, don't delete", find
+  every reader of the flag, not just the writer. Two guards beside it
+  make a wrong flag rarer (a class that returned nothing is not judged;
+  two misses in a row), but a rarer wrong flag was never the fix.
 - **`xcodegen generate` deletes Info.plist content** unless it lives in
   `project.yml`'s `info.properties`. The widget dependency must be
   `platformFilter: iOS` — case-sensitive; `platforms:` is silently discarded.
@@ -1219,6 +1366,27 @@ itself.
   A verification run has to be the only test run on the machine; the
   counts in Test baseline were taken that way. The wrong fix is
   retrying until green and calling it verified.
+- **"Ed and announcements aren't being scraped" was a deleted Canvas
+  session, not a scraping bug.** On 2026-10-18 Marco reported that
+  neither Ed posts nor Canvas announcements were arriving. Both were
+  fine in code. Everything that reads Canvas with the student's login
+  (announcements, course materials, Ed's launch) hangs off one chain,
+  `refreshCanvasGrades` → `refreshCourseIntel` /
+  `refreshCourseKnowledge`, and that chain returns early when no
+  Canvas cookies are saved. On 2026-10-10 the Grade Watcher screen
+  (`GradeWatcherView.performRefresh`) removed the saved cookies after a
+  session-expired fetch, and with nothing saved,
+  `SessionCookieStore.isExpired` reads false: no "needs a refresh"
+  banner, no renew-on-open, and a dashboard that still looked alive
+  because the calendar feed needs no login. The tells, read off the
+  phone with `devicectl`: `edTabCheckedAtByCanvasCourseV1` frozen at
+  2026-10-10 and no `debugRenewalLogV1` entry after that day. The
+  missing Grade Watcher button (2026-10-15) was the same cause. Removing
+  Grade Watcher (2026-10-18) removed that purge from every Release path,
+  and Profile → accounts now shows "sign in to canvas" whenever Canvas
+  is connected with no saved login. The wrong fix is chasing the
+  scrapers; the purge-without-banner behaviour belongs to the sign-in
+  code and was left for Olisa (Known gaps).
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -1248,6 +1416,8 @@ it holds work that exists nowhere else.
 | Branch | What |
 |---|---|
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
+| `v8-announcements` | **Local, 2026-10-18, on `v8` at `beed156`; not merged or pushed.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, lapsing to prev, deletion-flagged, deduped), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. The work sits as one local WIP commit (`dcc512f`) plus uncommitted changes; squash it before anything is pushed. 2190/202 green; installed on Marco's phone 2026-10-18. Sign-in and sync files are byte-identical to `v8`. |
+| `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
@@ -1268,6 +1438,33 @@ none is a ship line.
 
 ## Known gaps
 
+- **A failed Canvas announcement read is retried on every sync.** Only the
+  Ed pass waits (`edTaskRetryInterval`, six hours, per post). A Canvas
+  post whose AI-assist call fails is left unread and asked for again on
+  each 5-minute sync, which spends the backend quota `ask` shares. Not
+  fixed: the review asked for Ed only.
+- **A fetch that is cut short the same way twice is believed.** The
+  two-miss rule (`announcementMissesToFlag`) and "a class that returned
+  nothing is not judged" stop a one-off truncation, not a deterministic
+  one (`CanvasAnnouncementsClient` caps at 50 pages). The flag is
+  reversible and the row is never deleted, which is what makes that safe
+  enough.
+- **Exam cards have been tested on the Mac only** (2026-10-18; compiled
+  for the connected phone, never installed). Never read against a real
+  syllabus: the extractor, the 60-day and one-day matching rules and the
+  year it picks for a date with no year are proven on fixtures. Known
+  edges, none of them fixed:
+  - A syllabus that stops naming an exam leaves its card. Rewriting the
+    line updates it (the id is the exam's identity), but an edit that both
+    renames the exam ("Midterm" to "Midterm 1") and moves its date leaves
+    the old row beside the new one. Deleting on absence was refused on
+    purpose: a failed sync drops whole courses from the material.
+  - A title like "Bring a calculator to the exam" is not treated as an
+    exam (`leadingExamIdentity`), but is still drawn black, because the
+    card's colour only asks whether an exam is named.
+  - Syllabus rows join the work list in the ask context document with the
+    source label "announcement" (`assistantSourceLabel`; a disclosure
+    boundary, left alone).
 - **The summary sent with every ask question carries completion state,
   and `docs/PRIVACY.md` says it does not.** Read on 2026-10-10 while
   checking something else; it has been so since `assistant-ui`

@@ -282,6 +282,20 @@ struct SettingsPage: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    // Not a lead time: it is its own switch because it is a
+                    // different kind of reminder (three Time Sensitive
+                    // notifications seconds apart for work not yet handed in)
+                    // and a student who wants no 10-minute reminder at all
+                    // still has to be able to find it. Changing it re-plans,
+                    // like the lead times above.
+                    Toggle("loud 10-minute alert", isOn: Binding(
+                        get: { scheduler.loudAlertEnabled },
+                        set: {
+                            scheduler.setLoudAlertEnabled($0)
+                            scheduler.rescheduleAfterPreferenceChange()
+                        }
+                    ))
+
                     Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
                         get: { scheduler.turnedInEnabled },
                         set: { scheduler.setTurnedInEnabled($0) }

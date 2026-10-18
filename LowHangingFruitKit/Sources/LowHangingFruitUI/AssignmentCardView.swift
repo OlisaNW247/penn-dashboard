@@ -32,6 +32,11 @@ struct AssignmentCardView: View {
     /// (`item.removal`). Defaulted so previews and every other construction
     /// site, which never offer the button, need not pass one.
     var onRemove: () -> Void = {}
+    /// The dashboard's own verdict on whether this item is an exam, for when
+    /// it knows better than the title does (an exam that arrived from an
+    /// announcement or the syllabus under some other name). Nil, the default
+    /// for every current call site, leaves the title to decide.
+    var isExamOverride: Bool? = nil
 
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
@@ -60,6 +65,40 @@ struct AssignmentCardView: View {
 
     private var dragProgress: CGFloat {
         min(max(dragX / completeThreshold, 0), 1)
+    }
+
+    // MARK: Exam styling
+    //
+    // An exam is the only card that leaves the urgency ramp: near-black with
+    // white type in light mode, near-white with black type in dark mode
+    // (`SmoothExamPalette`). Everything else about the card is unchanged, so
+    // the spine, `DueState` and the caveat logic still say what they always
+    // said. The decision is made here and nowhere else: every colour below
+    // asks `isExam`, so the dashboard can later set `isExamOverride` and the
+    // whole card follows. Reading `smoothInk` directly in any new text on this
+    // card would leave dark type on the dark fill, which is the bug this
+    // indirection exists to prevent.
+
+    private var isExam: Bool {
+        ExamDetection.isExam(title: item.assignment.title, override: isExamOverride)
+    }
+
+    /// Titles, the due value, the full date and the card's controls.
+    private var primaryTextColor: Color {
+        isExam ? .smoothExamText : .smoothInk
+    }
+
+    /// The quieter line: caveat, the secondary due value, "adjusted".
+    private var secondaryTextColor: Color {
+        isExam ? .smoothExamTextSecondary : Color.smoothInk.opacity(0.68)
+    }
+
+    private func courseCodeColor(now: Date) -> Color {
+        isExam ? .smoothExamTextSecondary : smoothTaskTextAccent(item.due, now: now)
+    }
+
+    private func cardFill(now: Date) -> Color {
+        isExam ? .smoothExamFill : smoothTaskFill(item.due, now: now)
     }
 
     var body: some View {
@@ -118,7 +157,7 @@ struct AssignmentCardView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
-        .background(smoothTaskFill(item.due, now: now))
+        .background(cardFill(now: now))
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
@@ -140,11 +179,11 @@ struct AssignmentCardView: View {
                 Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
                     .font(.lhfMono(9.5, weight: .semibold))
                     .tracking(1.1)
-                    .foregroundStyle(smoothTaskTextAccent(item.due, now: now))
+                    .foregroundStyle(courseCodeColor(now: now))
 
                 Text(item.assignment.title)
                     .font(.lhfAssignmentTitle(20))
-                    .foregroundStyle(Color.smoothInk)
+                    .foregroundStyle(primaryTextColor)
                     .lineLimit(isExpanded ? nil : 1)
                     .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
@@ -165,7 +204,7 @@ struct AssignmentCardView: View {
                 if let caveat = item.caveatText {
                     Text(caveat)
                         .font(.lhfSecondary(9, weight: .semibold))
-                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                        .foregroundStyle(secondaryTextColor)
                 }
             }
 
@@ -177,18 +216,18 @@ struct AssignmentCardView: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(value.primary)
                     .font(.lhfMono(18, weight: .medium))
-                    .foregroundStyle(Color.smoothInk)
+                    .foregroundStyle(primaryTextColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if let secondary = value.secondary {
                     Text(secondary)
                         .font(.lhfMono(8.5, weight: .semibold))
-                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                        .foregroundStyle(secondaryTextColor)
                 }
                 if item.dueOverride != nil {
                     Text("adjusted")
                         .font(.lhfMono(8.5))
-                        .foregroundStyle(Color.smoothInk.opacity(0.68))
+                        .foregroundStyle(secondaryTextColor)
                 }
             }
             // One element that says it is the due time, instead of a bare
@@ -209,7 +248,7 @@ struct AssignmentCardView: View {
             HStack(alignment: .center, spacing: 12) {
                 Text(fullDueText(item.due))
                     .font(.lhfAssignmentTitle(12.5))
-                    .foregroundStyle(Color.smoothInk)
+                    .foregroundStyle(primaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 8)
@@ -221,7 +260,7 @@ struct AssignmentCardView: View {
                         Text("edit date")
                             .font(.lhfAssignmentTitle(12))
                     }
-                    .foregroundStyle(Color.smoothInk)
+                    .foregroundStyle(primaryTextColor)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -247,7 +286,7 @@ struct AssignmentCardView: View {
                             .font(.system(size: 12, weight: .medium))
                             .accessibilityHidden(true)
                     }
-                    .foregroundStyle(Color.smoothInk)
+                    .foregroundStyle(primaryTextColor)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
@@ -265,7 +304,7 @@ struct AssignmentCardView: View {
                 Button { confirmingRemoval = true } label: {
                     Text(removal.buttonLabel)
                         .font(.lhfAssignmentTitle(12))
-                        .foregroundStyle(Color.smoothTomatoInk)
+                        .foregroundStyle(isExam ? Color.smoothExamDestructive : Color.smoothTomatoInk)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -290,7 +329,14 @@ struct AssignmentCardView: View {
 
     private func fullDueText(_ due: Date?) -> String {
         guard let due else { return "no due date" }
-        return due.formatted(date: .complete, time: .shortened).lowercased()
+        // An exam the app found with a date and no time is stored at the end
+        // of its day, the way every all-day entry is (`AllDayDueMoment`), and
+        // reading that back as "11:59 pm" would state a time nobody wrote. Only
+        // for a found exam (`isExamOverride`): a feed entry keeps the text it
+        // has always had, and a time the student set themselves is not the
+        // marker (it ends in :00).
+        let hidesTime = isExamOverride == true && AllDayDueMoment.isEndOfDay(due)
+        return due.formatted(date: .complete, time: hidesTime ? .omitted : .shortened).lowercased()
     }
 
     // MARK: Swipe to complete

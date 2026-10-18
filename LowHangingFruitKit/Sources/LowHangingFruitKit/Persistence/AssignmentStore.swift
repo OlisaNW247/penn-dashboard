@@ -352,8 +352,11 @@ public final class AssignmentStore {
     /// sync) knows exactly which posts Canvas stopped returning inside the
     /// window it asked for, and passes the rows of those posts here. The row,
     /// its completion and its place in the ledger stay: this is the same flag
-    /// `reconcile` sets, with the same consequences (`isAgedOut` may remove an
-    /// unfinished row 14 days after its due date; finished work is exempt).
+    /// `reconcile` sets, but not the same consequences. `isAgedOut` exempts
+    /// `.canvasAnnouncement` rows altogether, so a flagged announcement row is
+    /// hidden by the readers and never deleted, and `markPresentInFeed` can
+    /// always bring it back. (Until 2026-10-18 the comment here said "never
+    /// deleted" while the aging rule deleted it 14 days after its date.)
     /// Ids with no row are ignored. Returns how many rows changed.
     @discardableResult
     public func markGoneFromFeed(ids: Set<String>) -> Int {
@@ -485,8 +488,29 @@ public final class AssignmentStore {
     /// history with it. Archiving is the *deliberate* removal that aging was
     /// only ever a crude stand-in for: the student said put it away, not throw
     /// it out.
+    ///
+    /// **Announcement rows never age (`.canvasAnnouncement`: Canvas, `ed-` and
+    /// `syllabus-` alike).** The flag means something different for them. A
+    /// feed item is gone because the feed stopped listing it, and a feed that
+    /// lists it again restores it on the next fetch, so deleting a long-gone one
+    /// loses nothing the feed cannot give back. An announcement row is flagged
+    /// by `AppState.reconcileAnnouncementPresence` on the evidence of a *fetch
+    /// window* that can be wrong (a truncated response, a class that returned
+    /// nothing), the flag is meant to be reversible (`markPresentInFeed`), and
+    /// the row cannot be re-derived: `processedAnnouncementIDs` records the
+    /// post as already read, so the extractor will never produce it again. A
+    /// pruned row is therefore a task lost for good, to a rule written for a
+    /// different kind of row. The doc comment on `markGoneFromFeed` said
+    /// "flagged, never deleted" while this predicate, which `reconcile` runs
+    /// through `pruneAgedOut` on every Canvas sync, deleted every unfinished
+    /// flagged row 14 days after its date. The wrong fix is to trust that
+    /// comment (and the test that pinned the deletion as intended) instead of
+    /// the predicate. An abandoned announcement row costs a few bytes and is
+    /// hidden from every list by `AppState.announcementRowsToShow` and
+    /// `isTooOld`; it does not need to be collected.
     private func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
         guard !row.isFinished, !row.isArchived else { return false }
+        guard row.sourceRaw != Assignment.Source.canvasAnnouncement.rawValue else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
     }
@@ -604,11 +628,16 @@ public final class AssignmentStore {
     /// doesn't know about, that exists nowhere else — was the one thing with no
     /// durable record, no archive, and no presence in the widget.
     ///
-    /// `reconcile` only ever runs for `.canvas` / `.gradescope`, so these rows
-    /// are never marked gone, and `isAgedOut` requires `isGoneFromFeed` — user
-    /// work therefore never ages out. That's deliberate: aging exists to clear
-    /// abandoned *feed* items, and nothing about a manual assignment is
+    /// `reconcile` only ever runs for `.canvas` / `.gradescope`, so a manual
+    /// row is never marked gone, and `isAgedOut` requires `isGoneFromFeed` —
+    /// user work therefore never ages out. That's deliberate: aging exists to
+    /// clear abandoned *feed* items, and nothing about a manual assignment is
     /// abandoned just because it's old.
+    ///
+    /// Announcement-derived rows also come in through here, and unlike manual
+    /// work they *are* flagged gone (`markGoneFromFeed`). They are kept safe by
+    /// name, not by that argument: `isAgedOut` exempts `.canvasAnnouncement`
+    /// outright (see there for what the argument got wrong).
     ///
     /// Goes through `rowsByID()` rather than `allRows()` so the uniqueness
     /// invariant this class now enforces in code holds on this path too.

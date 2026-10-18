@@ -104,6 +104,36 @@ extension Color {
     static let v2DoneTitle   = Color.dynamic(light: 0x8A8478, dark: 0x7F8AA3)
     static let v2DoneCourse  = Color.dynamic(light: 0xAEA899, dark: 0x68738D)
 
+    // Exam cards: the one card that is not tinted by urgency. It inverts the
+    // page instead (near-black with white type on paper, near-white with
+    // near-black type after sunset), slightly translucent so it still reads
+    // as paper laid on the list rather than a hole in it. The numbers live in
+    // `SmoothExamPalette` so the contrast the type has to clear is a test, not
+    // an eyeball.
+    static let smoothExamFill = Color.dynamic(
+        light: SmoothExamPalette.fill.light.hex, lightAlpha: SmoothExamPalette.fill.light.alpha,
+        dark: SmoothExamPalette.fill.dark.hex, darkAlpha: SmoothExamPalette.fill.dark.alpha
+    )
+    static let smoothExamText = Color.dynamic(
+        light: SmoothExamPalette.text.light.hex, lightAlpha: SmoothExamPalette.text.light.alpha,
+        dark: SmoothExamPalette.text.dark.hex, darkAlpha: SmoothExamPalette.text.dark.alpha
+    )
+    /// Course code, caveat line, "adjusted": the quieter type that elsewhere is
+    /// `smoothInk` at 0.68 opacity.
+    static let smoothExamTextSecondary = Color.dynamic(
+        light: SmoothExamPalette.secondaryText.light.hex, lightAlpha: SmoothExamPalette.secondaryText.light.alpha,
+        dark: SmoothExamPalette.secondaryText.dark.hex, darkAlpha: SmoothExamPalette.secondaryText.dark.alpha
+    )
+    /// The destructive control ("delete", "stop repeating"). `smoothTomatoInk`
+    /// is a dark tomato for a pale card, so on an exam card, whose fill is the
+    /// opposite of every other card's, it would be dark red on near-black in
+    /// light mode and pale red on near-white after sunset. This is its
+    /// mirror.
+    static let smoothExamDestructive = Color.dynamic(
+        light: SmoothExamPalette.destructive.light.hex, lightAlpha: SmoothExamPalette.destructive.light.alpha,
+        dark: SmoothExamPalette.destructive.dark.hex, darkAlpha: SmoothExamPalette.destructive.dark.alpha
+    )
+
     /// A color that resolves to `light` or `dark` hex based on the active
     /// interface style, wherever it's drawn. Backed by a `UIColor`/`NSColor`
     /// dynamic provider so it keys off the trait collection / appearance in
@@ -124,6 +154,64 @@ extension Color {
         return Color(hex: light)
 #endif
     }
+
+    /// The same as `dynamic(light:dark:)` with a translucency per appearance.
+    /// Opacity cannot be applied afterwards with `.opacity(_:)` because the
+    /// exam fill wants a different amount in each mode (a near-black wash
+    /// needs to be a little denser than a near-white one to hold its edge).
+    static func dynamic(light: UInt32, lightAlpha: Double, dark: UInt32, darkAlpha: Double) -> Color {
+#if canImport(UIKit)
+        return Color(UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: dark)).withAlphaComponent(darkAlpha)
+                : UIColor(Color(hex: light)).withAlphaComponent(lightAlpha)
+        })
+#elseif canImport(AppKit)
+        return Color(NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(Color(hex: isDark ? dark : light)).withAlphaComponent(isDark ? darkAlpha : lightAlpha)
+        })
+#else
+        return Color(hex: light).opacity(lightAlpha)
+#endif
+    }
+}
+
+/// The exam card's colours as plain numbers: one hex and one opacity per
+/// appearance. `Color.smoothExam*` are built from these, and the tests read
+/// them directly to check that the type clears legible contrast on the fill
+/// in both modes, which cannot be asked of an opaque dynamic `Color`.
+struct SmoothExamPalette {
+    struct Shade: Equatable {
+        let hex: UInt32
+        let alpha: Double
+    }
+    struct Pair: Equatable {
+        let light: Shade
+        let dark: Shade
+    }
+
+    /// Light: `smoothInk`'s near-black. Dark: `smoothInk`'s near-white.
+    static let fill = Pair(
+        light: Shade(hex: 0x1B1714, alpha: 0.86),
+        dark: Shade(hex: 0xF8F1E5, alpha: 0.88)
+    )
+    /// White on the dark card; `smoothPaper`'s night blue-black on the pale one.
+    static let text = Pair(
+        light: Shade(hex: 0xFFFFFF, alpha: 1),
+        dark: Shade(hex: 0x0B1020, alpha: 1)
+    )
+    static let secondaryText = Pair(
+        light: Shade(hex: 0xFFFFFF, alpha: 0.72),
+        dark: Shade(hex: 0x0B1020, alpha: 0.72)
+    )
+    /// Light: the pale tomato `smoothTomatoInk` uses after sunset. Dark: a
+    /// tomato deeper than `smoothTomatoInk`'s light value, which on the pale
+    /// fill is just under legible.
+    static let destructive = Pair(
+        light: Shade(hex: 0xF59A85, alpha: 1),
+        dark: Shade(hex: 0x9E2F18, alpha: 1)
+    )
 }
 
 // MARK: – Smooth fonts

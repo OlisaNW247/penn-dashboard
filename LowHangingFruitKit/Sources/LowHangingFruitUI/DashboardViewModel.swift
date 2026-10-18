@@ -87,16 +87,34 @@ struct DashItem: Identifiable, Equatable {
     /// before trusting the due date. Same register as "nothing to submit".
     var isFromAnnouncement: Bool { assignment.source == .canvasAnnouncement }
 
+    /// An exam the app found, from the syllabus or from an announcement
+    /// (`Assignment.isFoundExam`). The card is drawn as an exam whatever its
+    /// title says (`examStyleOverride`), it shows for every visible class, and
+    /// it never gets the loud 10-minute alert.
+    var isFoundExam: Bool { assignment.isFoundExam }
+
+    /// What to hand `AssignmentCardView.isExamOverride`: `true` for a found
+    /// exam, so it renders as one whatever its title is, and nil otherwise,
+    /// which leaves every other card to its title as before. Never `false`: a
+    /// feed item that merely reads as an exam keeps its style, and this is not
+    /// the place to take it away.
+    var examStyleOverride: Bool? { isFoundExam ? true : nil }
+
     /// The one-line caveat under the title, or nil. Both caveats can apply
     /// (an announcement can announce something with nothing to hand in), so
     /// they join on one line rather than stacking two 9pt rows. A task found
     /// in an Ed post says "from ed": it did not come from an announcement on
-    /// Canvas, and the card's link opens Ed.
+    /// Canvas, and the card's link opens Ed. An exam out of the syllabus says
+    /// "from syllabus" for the same reason: it is no announcement's.
     var caveatText: String? {
         var parts: [String] = []
         if showsNothingToSubmit { parts.append("nothing to submit") }
         if isFromAnnouncement {
-            parts.append(assignment.announcementOrigin == .ed ? "from ed" : "from announcements")
+            switch assignment.announcementOrigin {
+            case .ed: parts.append("from ed")
+            case .syllabus: parts.append("from syllabus")
+            case .canvas, .none: parts.append("from announcements")
+            }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
     }
