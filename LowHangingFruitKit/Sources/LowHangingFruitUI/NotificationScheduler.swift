@@ -60,6 +60,33 @@ final class NotificationScheduler: ObservableObject {
     /// (`NotificationScheduler()`) working unchanged.
     private let defaults: UserDefaults
 
+    // MARK: Berserk mode: the loud alert as a real alarm
+
+    /// Asks the dashboard whether it is showing fixture data: preview mode, or
+    /// the DEBUG `-LHFDemoData` launch (`AppState.isUsingFixtureData`, the
+    /// app's one definition of that). Registered once by `ContentView` beside
+    /// `liveItems`, and read afresh at every reschedule, so it cannot go stale
+    /// the way a flag copied in at one moment would (a student can enter
+    /// preview mode long after launch). Nil until the dashboard has appeared,
+    /// which reads as "not fixture data".
+    var fixtureDataProbe: (() -> Bool)?
+
+    /// Stands in for AlarmKit in tests, which must never touch `AlarmManager`.
+    /// Nil in the app, where `activeAlarmBackend()` supplies the real one.
+    var alarmBackendOverride: (any BerserkAlarmBackend)?
+
+    /// Stands in for the notification center in tests, which cannot touch it
+    /// (`UNUserNotificationCenter.current()` traps in an unbundled test
+    /// binary). Nil in the app, where the scheduler is its own sink.
+    var notificationSinkOverride: (any PendingNotificationSink)?
+
+    /// Stands in for the system's notification permission in tests, for the
+    /// same reason. Nil in the app.
+    var authStatusOverride: UNAuthorizationStatus?
+
+    /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
+    private let reschedulePasses = RescheduleSerializer<[DashItem]>()
+
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
     private static let turnedInKey     = "notif.turnedInEnabled"
@@ -128,6 +155,7 @@ final class NotificationScheduler: ObservableObject {
     // MARK: Authorization
 
     func refreshAuthStatus() async {
+        if let authStatusOverride { authStatus = authStatusOverride; return }
         authStatus = await center.notificationSettings().authorizationStatus
     }
 
@@ -153,6 +181,7 @@ final class NotificationScheduler: ObservableObject {
             _ = await requestAuthorization()
         } else {
             cancelAll()
+            cancelAlarms()
         }
     }
 
@@ -228,16 +257,39 @@ final class NotificationScheduler: ObservableObject {
 
     /// Cancels all app-scheduled reminders and re-adds them from the current items.
     /// Completed / submitted / too-old / rescheduled items drop off automatically.
+    ///
+    /// **One pass at a time.** A pass awaits in several places (the permission
+    /// refresh, the alarm permission prompt, every `center.add`, AlarmKit), and
+    /// the main actor is free at each, so before this a second `reschedule`
+    /// could start in the middle of the first and the two would fight over the
+    /// same notifications and the same alarm ids. Now a call that arrives
+    /// during a pass records its items as the latest and returns; the running
+    /// pass runs once more with the latest items before it finishes
+    /// (`RescheduleSerializer`). So a call can return before its own items are
+    /// applied, but they are always applied next, by the pass that is already
+    /// running, whose caller is still awaiting. The rerun takes a fresh `now`;
+    /// only the first pass uses the `now` passed in.
+    ///
+    /// See `applyReminders` for what one pass does, and why in that order.
     func reschedule(from items: [DashItem], now: Date = Date()) async {
         lastScheduledItems = items
-        guard isEnabled else { cancelAll(); return }
-        await refreshAuthStatus()
-        guard authStatus == .authorized || authStatus == .provisional else { return }
-        center.delegate = NotificationResponseDelegate.shared
-        cancelAll()
-        for request in plannedRequests(from: items, now: now) {
-            try? await center.add(request)
+        var firstPassNow: Date? = now
+        await reschedulePasses.submit(items) { items in
+            let passNow = firstPassNow ?? Date()
+            firstPassNow = nil
+            await self.performReschedule(from: items, now: passNow)
         }
+    }
+
+    private func performReschedule(from items: [DashItem], now: Date) async {
+        let sink: any PendingNotificationSink = notificationSinkOverride ?? self
+        guard isEnabled else { sink.removeAllPending(); cancelAlarms(); return }
+        await refreshAuthStatus()
+        // Reminders that cannot be delivered are not reminders the student
+        // asked to hear from: with notifications refused there is no loud
+        // alert to replace, so an alarm left over from an earlier state goes.
+        guard authStatus == .authorized || authStatus == .provisional else { cancelAlarms(); return }
+        await applyReminders(from: items, now: now, sink: sink)
     }
 
     /// Re-plans from `lastScheduledItems` after the student changed a per-course
@@ -515,10 +567,25 @@ final class NotificationScheduler: ObservableObject {
     /// alert looks, the same limit the plain reminders use. Returned
     /// loud-first, nearest-due first, so
     /// `reschedule` adds the requests that matter most before the rest.
+    ///
+    /// # Berserk mode: `loudAlertsAsAlarms`
+    ///
+    /// When the loud alert is delivered as an AlarmKit alarm instead
+    /// (`BerserkAlarmPlan`), the three buzzes must not also go out. Passing
+    /// `true` leaves exactly the loud buzzes out of the result and changes
+    /// nothing else: the same items are still chosen by `loudAlerts`, so they
+    /// still get no plain "10 minutes before" reminder (the alarm replaces it
+    /// just as the buzzes did), and the budget is still divided as if the
+    /// buzzes were there, so every other request is the one that was planned
+    /// before. The wrong fix is to hand the freed slots to the round-robin:
+    /// that would make the same student's other reminders differ with the
+    /// delivery mode, and a fallback to buzzes after an AlarmKit error could
+    /// then push the plan over the cap. `false` is today's output, untouched.
     func plannedRequests(
         from items: [DashItem],
         now: Date = Date(),
-        preferences: CoursePreferencesStore? = nil
+        preferences: CoursePreferencesStore? = nil,
+        loudAlertsAsAlarms: Bool = false
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
@@ -586,6 +653,8 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
+        // The budget is spent on the buzzes whether or not they are emitted;
+        // see `loudAlertsAsAlarms` above.
         let budget = Self.maxPending - loudRequests.count
         let calendar = Calendar.current
 
@@ -628,7 +697,7 @@ final class NotificationScheduler: ObservableObject {
                                          content: content, trigger: trigger)
         }
 
-        return loudRequests + requests
+        return (loudAlertsAsAlarms ? [] : loudRequests) + requests
     }
 
     // MARK: The loud 10-minute alert
@@ -712,6 +781,31 @@ final class NotificationScheduler: ObservableObject {
             return lhs.item.id < rhs.item.id
         }
         return Array(alerts.prefix(Self.maxLoudItems))
+    }
+
+    /// The alarms Berserk mode would schedule: one per item `loudAlerts`
+    /// selects, whose alarm time (due minus 10 minutes) is still ahead.
+    ///
+    /// **The selection is `loudAlerts`, not a copy of it.** Which work
+    /// qualifies (not done, nothing-to-submit and recurring and found exams
+    /// out, the class's switch, the nearest ten) has one definition, so the
+    /// alarm and the buzzes can never disagree about which items to shout
+    /// about. The alarm adds only its own timing rule on top
+    /// (`BerserkAlarmPlan.alarms`).
+    ///
+    /// Pure: reads the per-course store and builds values, so a test can drive
+    /// it without AlarmKit. Empty while the loud-alert switch is off, because
+    /// `loudAlerts` is.
+    func plannedAlarms(
+        from items: [DashItem],
+        now: Date = Date(),
+        preferences: CoursePreferencesStore? = nil
+    ) -> [PlannedAlarm] {
+        let prefs = resolvedPreferences(preferences)
+        let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
+        let selection = loudAlerts(from: items, now: now, horizon: horizon, preferences: prefs)
+            .map(\.item)
+        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides)
     }
 
     /// The notifications of one item's alert, in the voice of the ordinary
@@ -822,8 +916,22 @@ final class NotificationScheduler: ObservableObject {
     /// and a string rule has no business inheriting an actor (CLAUDE.md, the
     /// `decidedText` trap).
     nonisolated static func reminderBody(assignmentTitle: String, headline: String) -> String {
-        var name = assignmentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = reminderName(assignmentTitle)
         guard !name.isEmpty else { return headline }
+        let endsSentence = name.last.map { ".!?\u{2026}:;,".contains($0) } ?? false
+        return endsSentence ? "\(name) \(headline)" : "\(name). \(headline)"
+    }
+
+    /// An assignment's name as a reminder shows it: trimmed, and cut at a word
+    /// boundary with an ellipsis when longer than `reminderTitleLimit`. Empty
+    /// for a blank name.
+    ///
+    /// Split out of `reminderBody` so the Berserk alarm's title follows the
+    /// very same rule rather than a second copy of it (`BerserkAlarmPlan`);
+    /// `reminderBody` calls this, so its output is unchanged.
+    nonisolated static func reminderName(_ assignmentTitle: String) -> String {
+        var name = assignmentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "" }
         if name.count > reminderTitleLimit {
             let head = name.prefix(reminderTitleLimit)
             // Back up to the last space so the cut never lands inside a word;
@@ -831,8 +939,7 @@ final class NotificationScheduler: ObservableObject {
             let cut = head.lastIndex(where: \.isWhitespace).map { head[head.startIndex..<$0] } ?? head
             name = cut.trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
         }
-        let endsSentence = name.last.map { ".!?\u{2026}:;,".contains($0) } ?? false
-        return endsSentence ? "\(name) \(headline)" : "\(name). \(headline)"
+        return name
     }
 
     /// Stable, unique per (assignment, lead time) — the property `reschedule`'s
@@ -903,4 +1010,18 @@ final class NotificationScheduler: ObservableObject {
         f.dateFormat = "EEE, MMM d 'at' h:mm a"
         return f.string(from: date)
     }
+}
+
+/// The scheduler is the notification center's sink in the app. In its own
+/// file-scope extension because `center` is private to this file.
+extension NotificationScheduler: PendingNotificationSink {
+    func prepare() {
+        // The same shared object `NotificationResponseRouter.install()` set at
+        // launch, never one of this class's own.
+        center.delegate = NotificationResponseDelegate.shared
+    }
+
+    func removeAllPending() { cancelAll() }
+
+    func add(_ request: UNNotificationRequest) async { try? await center.add(request) }
 }

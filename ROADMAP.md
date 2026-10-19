@@ -44,6 +44,21 @@ These block shipping, or would make shipping risky.
   6. The widget when caught up ("all clear") and at a due time.
   7. A fresh install in mid-semester: old overdue work withheld, "N
      older hidden · show" at the foot of prev.
+- **Take the song out of the alarm before any release build.**
+  `App/berserk-alarm.caf` is 13 seconds of Ed Motta's "Seis da Tarde",
+  for Marco's own phone. Delete it and its four `project.pbxproj` lines
+  before archiving (the alarm then uses the default tone), or license
+  it. Pushed to the public repo on 2026-10-19 at Marco's say (he
+  accepted the copyright risk); removing it later leaves it in history.
+- **Ring the Berserk alarm on a phone** (`v8-loud-alert-actions`, iOS 26).
+  Allow alarms at the prompt; edit a real Canvas card's date to about 11
+  minutes out; lock the phone. One minute later it should ring full
+  screen through silent mode. Check "turned in" (card done after unlock)
+  and the system "Stop" (opens the assignment in Canvas). Then decide:
+  keep "Stop opens Canvas", or make Stop only stop (`CLAUDE.md` → Traps,
+  "an alarm's stop is any dismissal"). Also try one with the app
+  force-quit first, and look at what the lock screen shows besides the
+  name.
 - **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
   With an item due in about 11 minutes: the three buzzes arrive Time
   Sensitive; "turned in" from the lock screen stops the next buzz and
@@ -265,9 +280,15 @@ Kept so nobody rebuilds them blind.
   something about it". Each buzz has **"turned in"** (silences the rest,
   then marks the item done as a swipe does) and **"open in canvas"** (or
   "open in gradescope"). The notification delegate is now installed at
-  launch, so a tap that cold-launches the app is not lost. **Not on a
-  phone**: Mac tests and an iOS Debug compile only (`CLAUDE.md` → Test
-  baseline).
+  launch, so a tap that cold-launches the app is not lost. On iOS 26 the
+  buzzes become **one AlarmKit alarm** (Marco: the three buzzes "doesn't
+  quite do enough"): full screen, through silent mode and Focus, with
+  "turned in" as the only button that marks anything done and Stop
+  opening the assignment. Older iPhones, the Mac and a refused permission
+  keep the buzzes. A build from before the review fixes was installed on
+  Marco's iPhone on 2026-10-19, and it rang (once alarms were allowed
+  for Smooth). Then with his own alarm sound, the first 13 seconds of a
+  song faded out and 20% quieter: "this is perfect for berserk mode".
 - **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
   merged): the stale-card rules.** The owner's phone filled with tasks
   already taken or never needed ("Take quiz covering assignments 1 and 2"

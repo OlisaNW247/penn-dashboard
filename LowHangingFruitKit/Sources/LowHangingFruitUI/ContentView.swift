@@ -195,6 +195,13 @@ struct ContentView: View {
             // that moment (see `NotificationScheduler.liveItems`). Captures
             // the view model itself, not this struct.
             scheduler.liveItems = { [vm] in vm.items }
+            // Berserk alarms never ring for preview or demo data. The scheduler
+            // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
+            // probe rather than a flag copied in here, where it would go stale
+            // the moment a student entered preview mode. It asks AppState's own
+            // `isUsingFixtureData` (preview mode, and the DEBUG demo launch)
+            // rather than keeping a second opinion about what is fixture data.
+            scheduler.fixtureDataProbe = { [state] in state.isUsingFixtureData }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
@@ -223,6 +230,9 @@ struct ContentView: View {
             // to the (empty, un-synced) real store. No network, no login.
             if state.isPreviewMode {
                 vm.loadSampleData()
+                // Entering preview takes back any alarm the student's real
+                // work had scheduled; later reschedules keep cancelling them.
+                scheduler.cancelAlarms()
                 // Dropped, not acted on: the sample data is not the student's
                 // work (`LoudAlertActions.disposition`).
                 isDashboardBound = true

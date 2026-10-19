@@ -152,4 +152,52 @@ public enum NotificationResponseRouter {
         center.delegate = NotificationResponseDelegate.shared
         center.setNotificationCategories(LoudAlertActions.categories())
     }
+
+    /// Where a press on one of a Berserk alarm's two buttons arrives
+    /// (`BerserkAlarmPlan`): the App target's intents call this, after
+    /// stopping their own alarm, and the press is queued in the same inbox the
+    /// notification buttons use, so the dashboard handles it by the same code
+    /// (`ContentView.takeLoudAlertActions`) and the same rules.
+    ///
+    /// - `.stop` queues "open this page" if `url` is an https URL with a
+    ///   host, and queues nothing otherwise.
+    /// - `.turnedIn` queues "turned in" for `assignmentID`. That is the only
+    ///   thing in the alarm feature that can mark work done, and even then
+    ///   only when the dashboard finds a matching active item. Never reached
+    ///   from `.stop`, whatever it is given: AlarmKit may run the stop intent
+    ///   when the alarm is swiped away or the side button is pressed.
+    ///
+    /// The URL is checked again here, by the notification parser's own rule,
+    /// rather than trusted because the alarm was ours: it travelled through
+    /// an intent parameter, as a string, and an intent can be invoked by
+    /// something other than our alarm. The stamp is taken now, at the press,
+    /// so a stale "open" expires like a notification's does.
+    ///
+    /// `@MainActor` because the inbox is; the intent's `perform()` is too.
+    @MainActor
+    public static func receiveAlarmAction(
+        _ button: BerserkAlarmButton,
+        assignmentID: String,
+        url: String
+    ) {
+        receiveAlarmAction(button, assignmentID: assignmentID, url: url,
+                           into: NotificationActionInbox.shared, at: Date())
+    }
+
+    /// As above into a given inbox at a given moment, so a test builds its own
+    /// and never touches the shared one. Returns whether anything was queued.
+    @MainActor
+    @discardableResult
+    static func receiveAlarmAction(
+        _ button: BerserkAlarmButton,
+        assignmentID: String,
+        url: String,
+        into inbox: NotificationActionInbox,
+        at now: Date
+    ) -> Bool {
+        guard let action = BerserkAlarmPlan.action(for: button, assignmentID: assignmentID, url: url)
+        else { return false }
+        inbox.deposit(action, arrivedAt: now)
+        return true
+    }
 }

@@ -496,6 +496,41 @@ fastest way for a new session to know what exists.
      otherwise open Canvas days later), a waiting "turned in" never does,
      because it is the student's own claim. Rules in
      `LoudAlertActions.swift`.
+     **On iOS 26 it is a real alarm** (2026-10-19, owner's call: "the
+     three buzzes doesn't quite do enough"; rang on Marco's iPhone the
+     same day). When the
+     student allows AlarmKit (one system prompt, from the first foreground
+     reschedule that has something to ring; usage string in
+     `NSAlarmKitUsageDescription`, kept in both `project.yml` and
+     `App/Info.plist`), the three buzzes become one AlarmKit alarm at the
+     same moment for the same items (`plannedAlarms` reuses `loudAlerts`).
+     It goes full screen and rings through silent mode and Focus like the
+     Clock app. Below iOS 26, on the Mac, with permission refused, or
+     whenever AlarmKit throws, the buzzes stay. The secondary button is
+     **"turned in"**, the only one that marks anything done. Stop opens
+     the item's Canvas or Gradescope page, or only stops when there is
+     none (Traps, "an alarm's stop is any dismissal"). Since iOS 26.1 the
+     system draws its own "Stop" label. The intents are `LiveActivityIntent`s in
+     `App/LHFApp.swift`, handed to the package through
+     `BerserkAlarmIntents.factory`, because the system needs App Intents
+     metadata it extracts from the app target. Alarm ids are a hash of
+     (assignment id, ring time), so a reschedule is idempotent and a moved
+     due date replaces the alarm. A reconcile never stops a ringing alarm
+     except for an item the student has just finished. Preview and demo
+     data never ring. Its sound is `App/berserk-alarm.caf` (2026-10-19, the
+     owner's pick: the first 13 seconds of Ed Motta's "Seis da Tarde",
+     faded out over the last 4, at 80% volume ("like 20% quieter"), 16-bit
+     CAF), played from the main bundle
+     because that is the only place developers report AlarmKit's
+     `.named` finding a sound; without the file it is the default tone.
+     **It is commercial music: fine on the owner's own phone, but it must
+     come out (the file plus its four `project.pbxproj` lines) before any
+     archive, TestFlight or App Store build unless it is licensed.** It
+     is in the public repo since 2026-10-19: the owner chose to push it,
+     saying he accepts the copyright risk, after being told the repo is
+     public and that git history keeps it. Files: `BerserkAlarmPlan.swift` (pure rules),
+     `BerserkAlarmDelivery.swift`, `BerserkAlarmScheduler.swift`
+     (AlarmKit, iOS 26 only).
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -611,9 +646,10 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2269 tests / 207 suites, all green, on `v8-loud-alert-actions`
-(2026-10-19, one commit on `75dc7aa`, `swift test --no-parallel` on
-Marco's Mac, 9.8 s, the only test run on the machine; its base
+**Current: 2332 tests / 209 suites, all green, on `v8-loud-alert-actions`
+(2026-10-19, `e3f9af8` plus the AlarmKit alarm and
+its custom sound, `swift test --no-parallel` on Marco's Mac, 10.6 s, the
+only test run on the machine; its base
 `v8-announcements` is 2230/206, re-verified the same day before anything
 changed, and the 2026-10-10 figure was 1975/189 on `v8-launch-prep`).
 The iOS Debug compile (`-destination 'generic/platform=iOS'`), which is
@@ -659,6 +695,19 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2332/209 `v8-loud-alert-actions`, 2026-10-19: plus 4 tests for the
+  alarm's custom sound (the pure choice, the file, the app target's
+  Resources phase read from `project.pbxproj` as a property list, and
+  the glue asking `Bundle.main`).
+- 2328/209 `v8-loud-alert-actions`, 2026-10-19, `swift test --no-parallel`
+  alone on the machine: 2269/207 plus 59 tests and 2 suites for the
+  AlarmKit alarm (`BerserkAlarmTests`, `BerserkAlarmDeliveryTests`: the
+  plan's parity with `loudAlerts`, stop never "turned in", the delivery
+  and settlement tables, "every loud item ends with exactly one of alarm
+  or buzzes", ringing-alarm rules, the reschedule serializer). Each review
+  fix was reverted in turn and its tests seen failing. The iOS Debug build
+  extracts App Intents metadata for both alarm intents; the macOS build
+  (`CODE_SIGNING_ALLOWED=NO`) succeeds too.
 - 2269/207 `v8-loud-alert-actions`, 2026-10-19, `swift test --no-parallel`
   as the only run on the machine: 2230/206 plus 39 tests, nothing removed.
   One new suite (`LoudAlertActionTests`: categories, labels, parsing,
@@ -1554,6 +1603,23 @@ itself.
   and hiding every Ed task whose post is older than 14 days whatever its
   due date, which would take "Project due Dec 1", pinned on Oct 1, off
   the dashboard on Oct 20.
+- **An alarm's stop is any dismissal, so it must never mean "turned in".**
+  The owner asked for "turned in" and "open in canvas" on the Berserk
+  alarm (2026-10-19), and the obvious mapping is stop = "turned in".
+  AlarmKit has one stop and one secondary button. Apple's AlarmKit FAQ
+  says the stop intent also runs when the alarm is swiped away or the
+  side button pressed (one developer reports it doesn't, on 26.2.1:
+  developer.apple.com/forums/thread/815064). Either way, a student who
+  silences the alarm without handing anything in would have the work
+  marked done and taken off the dashboard ten minutes before it is due,
+  the exact failure the alarm exists to prevent. So "turned in" is the
+  `.custom` secondary, which only an explicit tap reaches, and stop opens
+  the assignment. A wrong trigger then costs a Canvas page, not a missed
+  deadline. Since iOS 26.1 the stop button's own label is ignored
+  (`AlarmPresentation.Alert.init(title:stopButton:…)` is deprecated with
+  "stopButton … will no longer be used"), so the system shows "Stop"; a
+  stop that opens Canvas is a known, accepted surprise pending the
+  owner's verdict on a phone.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -1584,7 +1650,7 @@ it holds work that exists nowhere else.
 |---|---|
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
-| `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR, not merged.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch (What the app does → Profile → reminders). Separate from `fix/submission-status`, which branches from the same commit. Mac tests and an iOS Debug compile only; never on a phone. Sign-in and sync files are byte-identical to `75dc7aa`. |
+| `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit `e3f9af8` on `v8-announcements` at `75dc7aa`; no PR, not merged. The AlarmKit alarm (with its custom sound) is a second commit, pushed the same day.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch, and on iOS 26 a real AlarmKit alarm in place of the buzzes (What the app does → Profile → reminders). A build from before the review fixes was installed on Marco's iPhone on 2026-10-19 at 15:21. Separate from `fix/submission-status`, which branches from the same commit. Sign-in and sync files are byte-identical to `75dc7aa`. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
@@ -1607,6 +1673,24 @@ none is a ship line.
 
 ## Known gaps
 
+- **The Berserk alarm has rung once, on Marco's iPhone (iOS 26.6,
+  2026-10-19, a build from before the review fixes).** The first try did
+  not ring because alarms were not allowed for Smooth; after he allowed
+  them, it rang. The review-fixed build with the song rang the same day,
+  so AlarmKit does find a sound in the main bundle on 26.6; the owner:
+  "this is perfect for berserk mode". Which buttons he tried, and whether
+  the 13-second clip loops or plays once, are not recorded. Still unverified,
+  and not answerable from the SDK: that an alert-only alarm needs no
+  widget/Live Activity configuration (Apple requires one for countdown
+  alarms only); what `schedule(id:)` does with an id that already exists
+  and whether `cancel(id:)` throws for one that is gone; that both
+  buttons work from the lock screen with `.foreground(.immediate)`;
+  whether stop runs on swipe or the side button; whether the lock screen
+  shows the due time next to the bare assignment name; and a launch on
+  iOS 17–25 (AlarmKit is weak-linked in the Debug build; a Release archive
+  has not been checked). Disconnecting Canvas does not cancel alarms until
+  the next reschedule, so leaving the app straight from Settings can let
+  one ring for purged work (the buzzes have the same gap).
 - **The loud alert's buttons are proven on the Mac only** (2026-10-19,
   `v8-loud-alert-actions`). Unverified on a device: that a lock-screen
   "turned in" stops buzzes 2 and 3 in time, that a tap which

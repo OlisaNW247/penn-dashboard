@@ -11,6 +11,7 @@
 		32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 81469103D4BF3FC55D12744D /* Assets.xcassets */; };
 		384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */; };
 		4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */; };
 		42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */; };
 		7EBFF15B18E4FD732FFE5CD6 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */; };
 		C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */; };
@@ -56,6 +57,7 @@
 		AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LHFApp.entitlements; sourceTree = "<group>"; };
 		B2FB5A48F750018E0BC603A6 /* Smooth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smooth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5231672329B97276105F09B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */ = {isa = PBXFileReference; path = berserk-alarm.caf; sourceTree = "<group>"; };
 		FDF6FFE94ABFA7265FCF40BD /* LowHangingFruitKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LowHangingFruitKit; path = LowHangingFruitKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -91,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				81469103D4BF3FC55D12744D /* Assets.xcassets */,
+				E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */,
 				C5231672329B97276105F09B /* Info.plist */,
 				AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */,
 				3DC183EBB281825AF54C0509 /* LHFApp.swift */,
@@ -231,6 +234,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */,
+				41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */,
 				CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

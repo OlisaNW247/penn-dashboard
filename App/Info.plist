@@ -28,6 +28,8 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.education</string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Smooth rings an alarm 10 minutes before work you haven't turned in.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
