@@ -605,6 +605,21 @@ final class AppState: ObservableObject {
     /// the student's own record of anything, so there's nothing here worth
     /// syncing.
     private static let processedAnnouncementIDsKey = "processedAnnouncementIDsV1"
+    /// Backs the per-announcement failed-extraction counter
+    /// (`[String: Int]`, announcement id -> failed attempts). Device-local
+    /// like `processedAnnouncementIDsKey`, and cleared with it. See
+    /// `syncAnnouncements` for the rules that read it.
+    private static let announcementExtractionAttemptsKey = "announcementExtractionAttemptsV1"
+    /// Backs the run-level extraction back-off: a `Double`
+    /// (`timeIntervalSince1970`) before which `syncAnnouncements` sends
+    /// nothing to the extractor. Cleared with the processed set.
+    private static let announcementExtractionBackoffUntilKey = "announcementExtractionBackoffUntilV1"
+    /// A failing announcement is given up on (marked processed, no find) at
+    /// this many failed extractions. A quota refusal never counts.
+    static let announcementExtractionMaxAttempts = 3
+    /// How long a run in which every backend extraction failed keeps the next
+    /// runs from calling the extractor at all.
+    static let announcementExtractionBackoff: TimeInterval = 60 * 60
     /// Version-gates `repairAnnouncementExtractionIfNeeded()`, the one-time
     /// sweep run from `init` that cleans up after the extractor rewrite that
     /// added `HeuristicAnnouncementExtractor.isLikelyInformational` /
@@ -1253,6 +1268,8 @@ final class AppState: ObservableObject {
         }
         processedAnnouncementIDs = []
         defaults.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        defaults.removeObject(forKey: Self.announcementExtractionAttemptsKey)
+        defaults.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
 
         defaults.set(Self.announcementExtractionVersion, forKey: Self.announcementExtractionVersionKey)
     }
@@ -3591,6 +3608,8 @@ final class AppState: ObservableObject {
         // under it.
         processedAnnouncementIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.announcementExtractionAttemptsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
         // The two DEBUG sync summaries describe the account just left.
         lastAnnouncementSyncSummary = nil
         UserDefaults.lhf.removeObject(forKey: Self.lastAnnouncementSyncSummaryKey)
@@ -4724,8 +4743,37 @@ final class AppState: ObservableObject {
             return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)", at: now)
         }
 
+        // THE QUOTA IS SHARED WITH ASK, so a persistent extractor failure must
+        // not be retried at full volume forever. On 2026-10-19 every call
+        // failed (a 429 after the daily cap, but a decoding bug or a dead
+        // model does the same), each 15-minute sync re-sent the same 13
+        // posts, and the student's chat quota was gone within the hour.
+        // Three rules, all here: a run in which every backend extraction
+        // failed backs the extractor off for an hour; an id that fails three
+        // times is given up on; and a quota refusal stops the run without
+        // counting against any announcement. The wrong fix is marking a
+        // failed id processed at once: a network blip would then eat it.
+        let defaults = UserDefaults.lhf
+        if let until = defaults.object(forKey: Self.announcementExtractionBackoffUntilKey) as? Double {
+            if now.timeIntervalSince1970 < until {
+                return noteAnnouncementSync(
+                    "skipped: extraction backoff until \(Self.backoffClockStamp(Date(timeIntervalSince1970: until)))",
+                    at: now
+                )
+            }
+            defaults.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
+        }
+        var attempts = defaults.dictionary(forKey: Self.announcementExtractionAttemptsKey) as? [String: Int] ?? [:]
+
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
+        var gaveUpCount = 0
+        // Backend-or-injected extractions started and failed (not quota);
+        // the heuristic cannot throw and is not counted. All-failed is what
+        // starts the back-off.
+        var attemptedExtractions = 0
+        var failedExtractions = 0
+        var quotaRefused = false
         // Only for `lastAnnouncementSyncSummary`: which extractors ran, and
         // how many failed (those announcements stay unprocessed).
         var extractorsUsed: Set<String> = []
@@ -4802,6 +4850,8 @@ final class AppState: ObservableObject {
             }
 
             let extracted: [ExtractedAssignment]
+            let countsTowardBackoff = !(extractor is HeuristicAnnouncementExtractor)
+            if countsTowardBackoff { attemptedExtractions += 1 }
             do {
                 extracted = try await extractor.extract(from: sourceText, now: now)
             } catch {
@@ -4815,6 +4865,22 @@ final class AppState: ObservableObject {
                     firstExtractorError = Self.extractorErrorKindForSummary(
                         error, decodingDetail: BackendDiagnostics.lastDecodingFailure
                     )
+                }
+                if let backendError = error as? BackendError, case .quotaExceeded = backendError {
+                    // Not this announcement's fault, and every further call
+                    // would be refused too: stop here, leave the rest
+                    // unprocessed and their counters alone.
+                    quotaRefused = true
+                    break
+                }
+                if countsTowardBackoff { failedExtractions += 1 }
+                let failures = (attempts[announcement.id] ?? 0) + 1
+                if failures >= Self.announcementExtractionMaxAttempts {
+                    // Dropped, no find; `processed` below counts it.
+                    newlyProcessedIDs.append(announcement.id)
+                    gaveUpCount += 1
+                } else {
+                    attempts[announcement.id] = failures
                 }
                 continue
             }
@@ -4850,6 +4916,20 @@ final class AppState: ObservableObject {
         if !newlyProcessedIDs.isEmpty {
             processedAnnouncementIDs.formUnion(newlyProcessedIDs)
             UserDefaults.lhf.set(Array(processedAnnouncementIDs), forKey: Self.processedAnnouncementIDsKey)
+            // A processed id (found, found nothing, informational, or given
+            // up on) has no use for a counter.
+            for id in newlyProcessedIDs { attempts.removeValue(forKey: id) }
+        }
+        if attempts.isEmpty {
+            defaults.removeObject(forKey: Self.announcementExtractionAttemptsKey)
+        } else {
+            defaults.set(attempts, forKey: Self.announcementExtractionAttemptsKey)
+        }
+        if !quotaRefused, attemptedExtractions > 0, failedExtractions == attemptedExtractions {
+            defaults.set(
+                now.addingTimeInterval(Self.announcementExtractionBackoff).timeIntervalSince1970,
+                forKey: Self.announcementExtractionBackoffUntilKey
+            )
         }
         if !collected.isEmpty || !newlyProcessedIDs.isEmpty {
             rebuildDashboardItems()
@@ -4859,9 +4939,19 @@ final class AppState: ObservableObject {
             "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)"
                 + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
                 + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)"
-                + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? ""),
+                + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? "")
+                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : ""),
             at: now
         )
+    }
+
+    /// `HH:mm` in the zone given, for the back-off line of the summary.
+    nonisolated static func backoffClockStamp(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     /// Records what the last `syncAnnouncements` did (see

@@ -466,6 +466,10 @@ struct AnnouncementWatcherEdTests {
     /// Written by every `syncAnnouncements` (`lastAnnouncementSyncSummaryV1`),
     /// so it is backed up and restored with the other two.
     private static let summaryKey = "lastAnnouncementSyncSummaryV1"
+    /// The per-id failure counter and the run-level back-off, both written
+    /// by a failing `syncAnnouncements`; backed up, cleared and restored.
+    private static let attemptsKey = "announcementExtractionAttemptsV1"
+    private static let backoffKey = "announcementExtractionBackoffUntilV1"
     private static let course = (id: "9401", code: "ANWED 9401")
     private static let hiddenCourse = (id: "9402", code: "ANWED 9402")
 
@@ -512,7 +516,9 @@ struct AnnouncementWatcherEdTests {
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
-        let backup = [Self.processedKey, Self.extractionVersionKey, Self.summaryKey].map { ($0, shared.object(forKey: $0)) }
+        let backup = [
+            Self.processedKey, Self.extractionVersionKey, Self.summaryKey, Self.attemptsKey, Self.backoffKey,
+        ].map { ($0, shared.object(forKey: $0)) }
         defer {
             for (key, value) in backup {
                 if let value { shared.set(value, forKey: key) } else { shared.removeObject(forKey: key) }
@@ -520,6 +526,8 @@ struct AnnouncementWatcherEdTests {
         }
         shared.set(2, forKey: Self.extractionVersionKey)
         shared.removeObject(forKey: Self.processedKey)
+        shared.removeObject(forKey: Self.attemptsKey)
+        shared.removeObject(forKey: Self.backoffKey)
 
         let state = AppState(assignmentStore: try AssignmentStore(inMemory: true))
         state.forceFixtureDataForTesting(false)
@@ -803,6 +811,138 @@ struct AnnouncementWatcherEdTests {
         #expect(kind(BackendError.http(500), "ignored") == "http 500")
         let long = String(repeating: "a", count: 500)
         #expect(kind(BackendError.decoding, long).count == "decoding ()".count + 200)
+    }
+
+    // MARK: A failing extractor must not burn the shared quota forever
+
+    /// Records the call, then throws.
+    private struct RecordsThenThrows: AnnouncementAssignmentExtractor {
+        let seen: Seen
+        let error: any Error
+        func extract(from announcement: AnnouncementSourceText, now: Date) async throws -> [ExtractedAssignment] {
+            seen.record(announcement)
+            throw error
+        }
+    }
+
+    private func attempts() -> [String: Int] {
+        UserDefaults.lhf.dictionary(forKey: Self.attemptsKey) as? [String: Int] ?? [:]
+    }
+
+    @Test("an id that throws on three runs is processed on the third with no find, and the summary says it gave up")
+    func threeFailuresGiveUp() async throws {
+        try await withHarness { h in
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.http(502)) }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400801")])
+            let t0 = Date()
+            // Two hours apart so the back-off each failed run sets has lapsed.
+            await h.state.syncAnnouncements(now: t0)
+            #expect(attempts()["ed:9401:9400801"] == 1)
+            #expect(h.state.processedAnnouncementIDs.isEmpty)
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(2 * 3600))
+            #expect(attempts()["ed:9401:9400801"] == 2)
+            #expect(h.state.processedAnnouncementIDs.isEmpty)
+            let second = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(!second.contains("gave up"))
+
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(4 * 3600))
+            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400801"))
+            #expect(attempts().isEmpty)
+            #expect(h.finds.isEmpty)
+            #expect(seen.ids.count == 3)
+            let third = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(third.hasSuffix("errors 1 \u{00B7} processed 1 \u{00B7} first error: http 502 \u{00B7} gave up 1"))
+        }
+    }
+
+    @Test("an id that throws twice and then succeeds makes its find and leaves no counter behind")
+    func twoFailuresThenSuccess() async throws {
+        try await withHarness { h in
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.transport) }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400811")])
+            let t0 = Date()
+            await h.state.syncAnnouncements(now: t0)
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(2 * 3600))
+            #expect(attempts()["ed:9401:9400811"] == 2)
+
+            h.state.announcementExtractorForTesting = { _ in
+                FindsOneTask(seen: seen, title: "Sign up for a Verbal Assessment #2 slot", dueAt: nil)
+            }
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(4 * 3600))
+            #expect(h.finds.count == 1)
+            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400811"))
+            #expect(attempts().isEmpty)
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(!summary.contains("gave up"))
+        }
+    }
+
+    @Test("a quota refusal stops the run: the second post is never sent, nothing is processed, no counter moves, no back-off is set")
+    func quotaStopsTheRun() async throws {
+        try await withHarness { h in
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { _ in
+                RecordsThenThrows(seen: seen, error: BackendError.quotaExceeded(resetAt: nil))
+            }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400821"), edDoc("9400822")])
+            await h.state.syncAnnouncements(now: Date())
+
+            #expect(seen.ids.count == 1)
+            #expect(h.state.processedAnnouncementIDs.isEmpty)
+            #expect(attempts().isEmpty)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil)
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("errors 1 \u{00B7} processed 0 \u{00B7} first error: quota"))
+        }
+    }
+
+    @Test("after a run where every extraction failed, a run inside the hour skips with the back-off line and calls nothing, and one after the hour proceeds and clears it")
+    func backoffAfterAnAllFailedRun() async throws {
+        try await withHarness { h in
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.http(500)) }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400831"), edDoc("9400832")])
+            let t0 = Date()
+            await h.state.syncAnnouncements(now: t0)
+            #expect(seen.ids.count == 2)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) != nil)
+
+            let until = t0.addingTimeInterval(AppState.announcementExtractionBackoff)
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(30 * 60))
+            #expect(seen.ids.count == 2)
+            let skipped = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(skipped.hasSuffix("skipped: extraction backoff until \(AppState.backoffClockStamp(until))"))
+            // A skip is not a failed attempt.
+            #expect(attempts().values.allSatisfy { $0 == 1 })
+
+            h.state.announcementExtractorForTesting = { _ in
+                FindsOneTask(seen: seen, title: "Sign up for a Verbal Assessment #2 slot", dueAt: nil)
+            }
+            await h.state.syncAnnouncements(now: t0.addingTimeInterval(61 * 60))
+            #expect(seen.ids.count == 4)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil)
+            #expect(h.state.processedAnnouncementIDs.count == 2)
+        }
+    }
+
+    @Test("a run where only some extractions failed sets no back-off")
+    func partialFailureSetsNoBackoff() async throws {
+        try await withHarness { h in
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { announcement in
+                if announcement.id.hasSuffix("9400841") {
+                    return RecordsThenThrows(seen: seen, error: BackendError.http(500))
+                }
+                return FindsOneTask(seen: seen, title: "Sign up for a Verbal Assessment #2 slot", dueAt: nil)
+            }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400841"), edDoc("9400842")])
+            await h.state.syncAnnouncements(now: Date())
+            #expect(seen.ids.count == 2)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil)
+            #expect(h.state.processedAnnouncementIDs.count == 1)
+        }
     }
 
     @Test("a run with no selected course records why it stopped")
