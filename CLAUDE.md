@@ -414,17 +414,18 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2015 tests / 192 suites, all green, on `v8` at `6291b2f`
-(2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 7.2 s).** That is
+**Current: 2033 tests / 192 suites, all green, on `v8` at `2b46ce7`
+(2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 6.0 s).** That is
 the launch-prep merge (1975), the Ed posting-date fix (11), Ed posts
 through the Announcement Watcher (12), the sync summaries (8), the
-first-error line (2) and announcement tasks vanishing at their due time
-(7, `AnnouncementFindExpiryTests`). The same tree compiles for iOS in
-Debug (built to Olisa's iPhone the same day); `xcodebuild -destination
-'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` is what builds the
-widget extension and `BackgroundRefresh.swift`, which `swift test`
-compiles neither of, so a change in `LHFWidget/` or behind `#if os(iOS)`
-needs that `xcodebuild` before it counts as compiled. Hold the rule:
+first-error line (2), announcement tasks vanishing at their due time
+(7), the work-identity dedup tier (13) and the extraction retry cap
+(5). The same tree compiles for iOS in Debug (built to Olisa's iPhone
+the same day); `xcodebuild -destination 'generic/platform=iOS'
+CODE_SIGNING_ALLOWED=NO build` is what builds the widget extension and
+`BackgroundRefresh.swift`, which `swift test` compiles neither of, so a
+change in `LHFWidget/` or behind `#if os(iOS)` needs that `xcodebuild`
+before it counts as compiled. Hold the rule:
 a change that lowers the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
@@ -459,6 +460,9 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2033/192 `v8`, 2026-10-19 (evening): the work-identity dedup tier
+  (`AssignmentDeduplicatorTests`, 13) and the extraction retry cap
+  (`AnnouncementWatcherEdTests`, 5).
 - 2015/192 `v8`, 2026-10-19 (later): announcement and Ed tasks vanish at
   their due time (`AnnouncementFindExpiryTests`; its first run had one
   failure from fixture titles the twin check merged, fixed in `6291b2f`).
