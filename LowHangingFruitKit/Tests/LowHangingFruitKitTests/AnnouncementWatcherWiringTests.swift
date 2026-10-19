@@ -763,6 +763,48 @@ struct AnnouncementWatcherEdTests {
         }
     }
 
+    private struct ThrowsError: AnnouncementAssignmentExtractor {
+        let error: any Error
+        func extract(from announcement: AnnouncementSourceText, now: Date) async throws -> [ExtractedAssignment] {
+            throw error
+        }
+    }
+
+    @Test("a failing extractor adds the first error's kind after processed, and a clean run adds nothing")
+    func summaryNamesTheFirstExtractorError() async throws {
+        try await withHarness { h in
+            h.state.announcementExtractorForTesting = { _ in ThrowsError(error: BackendError.http(502)) }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400731")])
+            await h.state.syncAnnouncements(now: Date())
+            let failed = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(failed.hasSuffix("errors 1 \u{00B7} processed 0 \u{00B7} first error: http 502"))
+        }
+        try await withHarness { h in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400732")])
+            await h.state.syncAnnouncements(now: Date())
+            let clean = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(clean.hasSuffix("errors 0 \u{00B7} processed 1"))
+            #expect(!clean.contains("first error"))
+        }
+    }
+
+    @Test("extractor error kinds: backend cases by name, decoding with its capped detail only when given")
+    func extractorErrorKinds() {
+        func kind(_ e: Error, _ d: String? = nil) -> String {
+            AppState.extractorErrorKindForSummary(e, decodingDetail: d)
+        }
+        #expect(kind(BackendError.quotaExceeded(resetAt: nil)) == "quota")
+        #expect(kind(BackendError.unauthorized) == "unauthorized")
+        #expect(kind(BackendError.transport) == "transport")
+        #expect(kind(BackendError.notConfigured) == "notConfigured")
+        #expect(kind(URLError(.timedOut)) == "URLError -1001")
+        #expect(kind(BackendError.decoding) == "decoding")
+        #expect(kind(BackendError.decoding, "extract: Unrecognized backend date 2026-10-22") == "decoding (extract: Unrecognized backend date 2026-10-22)")
+        #expect(kind(BackendError.http(500), "ignored") == "http 500")
+        let long = String(repeating: "a", count: 500)
+        #expect(kind(BackendError.decoding, long).count == "decoding ()".count + 200)
+    }
+
     @Test("a run with no selected course records why it stopped")
     func summaryWhenNoCourseIsSelected() async throws {
         try await withHarness { h in

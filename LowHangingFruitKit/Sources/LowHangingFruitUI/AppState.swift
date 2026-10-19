@@ -2177,8 +2177,31 @@ final class AppState: ObservableObject {
             case .decodingFailed: return "decodingFailed"
             }
         }
+        if let backend = error as? BackendError {
+            switch backend {
+            case .notConfigured: return "notConfigured"
+            case .unauthorized: return "unauthorized"
+            case let .http(status): return "http \(status)"
+            case .quotaExceeded: return "quota"
+            case .transport: return "transport"
+            case .decoding: return "decoding"
+            }
+        }
         if let url = error as? URLError { return "URLError \(url.code.rawValue)" }
         return String(describing: type(of: error))
+    }
+
+    /// `errorKindForSummary`, plus for a backend decoding failure the detail
+    /// `BackendClient.describe` recorded (function name, coding path, decoder
+    /// message, byte count; never a body), scrubbed of anything URL-shaped
+    /// and capped at 200 characters. `decodingDetail` is a parameter because
+    /// `BackendDiagnostics` is main-actor isolated and this stays nonisolated
+    /// and pure for tests.
+    nonisolated static func extractorErrorKindForSummary(_ error: Error, decodingDetail: String?) -> String {
+        let kind = errorKindForSummary(error)
+        guard case BackendError.decoding? = error as? BackendError,
+              let decodingDetail, !decodingDetail.isEmpty else { return kind }
+        return kind + " (" + String(scrubbedForSummary(decodingDetail, limit: 200).prefix(200)) + ")"
     }
 
     /// Drops anything URL-shaped (a token holding "://" or "?") from a line
@@ -4692,6 +4715,9 @@ final class AppState: ObservableObject {
         // how many failed (those announcements stay unprocessed).
         var extractorsUsed: Set<String> = []
         var extractorErrors = 0
+        // The kind of the first extraction failure only (never free text), so
+        // the summary can say why `errors N` is not zero.
+        var firstExtractorError: String?
 
         for announcement in unprocessed {
             guard let courseCode = courseCodesByID[announcement.courseID] else {
@@ -4770,6 +4796,11 @@ final class AppState: ObservableObject {
                 // again, the same reasoning as the unmapped-course branch
                 // above.
                 extractorErrors += 1
+                if firstExtractorError == nil {
+                    firstExtractorError = Self.extractorErrorKindForSummary(
+                        error, decodingDetail: BackendDiagnostics.lastDecodingFailure
+                    )
+                }
                 continue
             }
 
@@ -4812,7 +4843,8 @@ final class AppState: ObservableObject {
         noteAnnouncementSync(
             "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)"
                 + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
-                + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)",
+                + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)"
+                + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? ""),
             at: now
         )
     }
