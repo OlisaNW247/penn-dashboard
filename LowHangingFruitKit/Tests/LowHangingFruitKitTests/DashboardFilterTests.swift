@@ -268,11 +268,20 @@ struct AnnouncementFindExpiryTests {
     func pastDueFindVanishes() throws {
         // "Submit ..." files a find on the main dashboard; "Read ..." files it in
         // the megaphone's finds (`announcementDashboardPlacement`).
+        //
+        // The four titles share no words on purpose. The rebuild drops an
+        // announcement find that looks like another one
+        // (`filteringAnnouncementDuplicates`, whose fuzzy tier compares title
+        // overlap when the due dates are close), and "Submit the past
+        // reflection" beside "Submit the upcoming reflection", an hour apart,
+        // read as twins: the later one was dropped as a copy of the earlier and
+        // todo and all came back without it. That was not the expiry rule, and
+        // the first version of this test blamed it wrongly.
         let now = Date().addingTimeInterval(86_400)
-        let pastMain = find("past-main", "Submit the past reflection", due: now.addingTimeInterval(-60))
-        let soonMain = find("soon-main", "Submit the upcoming reflection", due: now.addingTimeInterval(3600))
-        let pastFind = find("past-read", "Read past chapter 4", due: now.addingTimeInterval(-60))
-        let soonFind = find("soon-read", "Read upcoming chapter 5", due: now.addingTimeInterval(3600))
+        let pastMain = find("past-main", "Submit geology field report", due: now.addingTimeInterval(-60))
+        let soonMain = find("soon-main", "Upload haiku portfolio", due: now.addingTimeInterval(3600))
+        let pastFind = find("past-read", "Read Beowulf prologue", due: now.addingTimeInterval(-60))
+        let soonFind = find("soon-read", "Watch thermodynamics lecture", due: now.addingTimeInterval(3600))
         let h = try Harness(finds: [pastMain, soonMain, pastFind, soonFind])
         defer { h.tearDown() }
         try #require(h.state.announcementItems.count == 4, "the seeded rows were read back")
@@ -323,7 +332,7 @@ struct AnnouncementFindExpiryTests {
     @Test("a real Canvas assignment due one minute ago is still overdue in todo")
     func realCanvasWorkStaysOverdue() throws {
         let now = Date().addingTimeInterval(86_400)
-        let pastFind = find("past", "Submit the past reflection", due: now.addingTimeInterval(-60))
+        let pastFind = find("past", "Submit geology field report", due: now.addingTimeInterval(-60))
         let h = try Harness(finds: [pastFind])
         defer { h.tearDown() }
         let late = Assignment(source: .canvas, sourceID: "late", kind: .assignment, course: Self.course,
@@ -341,8 +350,10 @@ struct AnnouncementFindExpiryTests {
     @Test("a completed find due yesterday is still in prev, and an unfinished one that passed is not there or anywhere")
     func completedFindStaysInPrev() throws {
         let now = Date().addingTimeInterval(86_400)
-        let done = find("done", "Submit the finished reflection", due: now.addingTimeInterval(-86_400))
-        let neverDone = find("never", "Submit the forgotten reflection", due: now.addingTimeInterval(-86_400))
+        // Disjoint titles, so the twin check cannot drop one of them
+        // (`pastDueFindVanishes` explains).
+        let done = find("done", "Submit sonnet anthology", due: now.addingTimeInterval(-86_400))
+        let neverDone = find("never", "Upload ceramics sketchbook", due: now.addingTimeInterval(-86_400))
         let h = try Harness(finds: [done, neverDone])
         defer { h.tearDown() }
         try #require(h.state.announcementItems.count == 2)
@@ -351,6 +362,15 @@ struct AnnouncementFindExpiryTests {
 
         let vm = DashboardViewModel()
         vm.bind(to: h.state)
+        // Control: two days earlier, before either was due, the unfinished one
+        // is on the dashboard. Without this its absence below could just as
+        // well mean it never made it past the rebuild.
+        let earlier = now.addingTimeInterval(-2 * 86_400)
+        h.rebuild(at: earlier)
+        vm.reload()
+        #expect(ids(vm.allSections(now: earlier)).contains(neverDone.id), "premise: visible before it is due")
+        h.rebuild(at: now)
+        vm.reload()
         #expect(ids(vm.doneSections(now: now)).contains(done.id))
         #expect(!ids(vm.doneSections(now: now)).contains(neverDone.id), "an unfinished find never reaches prev")
         #expect(!ids(vm.todoSections(now: now)).contains(done.id))
@@ -362,9 +382,9 @@ struct AnnouncementFindExpiryTests {
     @Test("ask's pools drop a past-due unfinished find but keep a completed one and an upcoming one")
     func askPoolsFollowTheRule() throws {
         let now = Date()
-        let past = find("past", "Submit the past reflection", due: now.addingTimeInterval(-60))
-        let soon = find("soon", "Submit the upcoming reflection", due: now.addingTimeInterval(3600))
-        let done = find("done", "Submit the finished reflection", due: now.addingTimeInterval(-86_400))
+        let past = find("past", "Submit geology field report", due: now.addingTimeInterval(-60))
+        let soon = find("soon", "Upload haiku portfolio", due: now.addingTimeInterval(3600))
+        let done = find("done", "Submit sonnet anthology", due: now.addingTimeInterval(-86_400))
         let h = try Harness(finds: [past, soon, done])
         defer { h.tearDown() }
         try #require(h.state.announcementItems.count == 3)
@@ -383,7 +403,7 @@ struct AnnouncementFindExpiryTests {
         #expect(!work.contains(past.id))
         #expect(work.contains(soon.id))
         let document = h.state.assistantContextDocument()
-        #expect(document.contains("Submit the upcoming reflection"), "premise: the document does list this class's work")
-        #expect(!document.contains("Submit the past reflection"))
+        #expect(document.contains("Upload haiku portfolio"), "premise: the document does list this class's work")
+        #expect(!document.contains("Submit geology field report"))
     }
 }
