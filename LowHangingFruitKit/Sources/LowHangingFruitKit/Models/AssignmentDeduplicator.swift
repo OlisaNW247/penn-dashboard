@@ -126,6 +126,32 @@ public enum AssignmentDeduplicator {
             return announcementDatesDoNotContradict(announcementDue, existingDue)
         }
 
+        // Work identity is the same idea for the everyday assignment nouns
+        // (homework, problem set, lab, project, milestone, assignment, essay,
+        // paper). A Canvas announcement and an Ed post about one homework
+        // read "Complete HW 2 - Relational Databases" and "Complete
+        // Homework 2": same work, different words, and the Jaccard tier below
+        // cannot join them (and would need two due dates if it could).
+        // Both sides must carry exactly one noun-plus-ordinal. If the noun and
+        // ordinal agree, the pair is the same work when the modifier sets
+        // agree and refused when they do not ("HW 2" vs "HW 2 solutions
+        // posted" must stay two things, and the prefix tier below would
+        // otherwise have merged them). The same noun with a different ordinal
+        // is refused outright. If the nouns differ, or either side has no
+        // identity, this tier says nothing and the later tiers decide
+        // exactly as before.
+        if let announcementWork = workIdentity(in: announcementTokens),
+           let existingWork = workIdentity(in: existingTokens),
+           announcementWork.noun == existingWork.noun {
+            // Same noun, different number is different work, full stop. Left
+            // to the Jaccard tier, "HW 2 Relational Databases" and "HW 3
+            // Relational Databases" share 3 of 5 tokens and merge whenever
+            // their due dates are within 26 hours.
+            guard announcementWork.ordinal == existingWork.ordinal else { return false }
+            guard announcementWork.modifiers == existingWork.modifiers else { return false }
+            return announcementDatesDoNotContradict(announcementDue, existingDue)
+        }
+
         // The extractor can preserve the sentence tail even when its leading
         // imperative has been removed: "Take Quiz 2 on Canvas by Friday"
         // becomes [quiz, 2, on, canvas, by, friday]. A structured Canvas title
@@ -204,6 +230,93 @@ public enum AssignmentDeduplicator {
             ordinal: ordinal,
             modifiers: Set(tokens).intersection(reservedModifiers)
         )
+    }
+
+    private struct WorkIdentity: Equatable {
+        let noun: String
+        let ordinal: Int
+        let modifiers: Set<String>
+    }
+
+    /// Spellings (as they come out of `normalize`, which has already turned
+    /// "problem set(s)", "pset(s)", "ps" and "homework" into `hw`, and
+    /// "labs" / "projects" / "proj" into `lab` / `project`) mapped to one
+    /// canonical noun. The extra spellings are listed anyway so this table
+    /// does not silently depend on `canonicalize` staying as it is.
+    private static let workNouns: [String: String] = [
+        "hw": "hw", "hws": "hw", "hmwk": "hw", "homework": "hw", "homeworks": "hw",
+        "ps": "hw", "pset": "hw", "psets": "hw",
+        "lab": "lab", "labs": "lab",
+        "project": "project", "projects": "project", "proj": "project", "projs": "project",
+        "milestone": "milestone", "milestones": "milestone",
+        "assignment": "assignment", "assignments": "assignment",
+        "asst": "assignment", "assn": "assignment", "assign": "assignment",
+        "essay": "essay", "essays": "essay",
+        "paper": "paper", "papers": "paper",
+    ]
+
+    /// Words that make a variant of the work rather than the work itself.
+    /// Deliberately a separate, wider table than the assessment tier's
+    /// `practice/retake/makeup` (which it includes): solutions, grades and
+    /// extensions are things professors post ABOUT a homework, and none of
+    /// them is the homework. Sub-parts ("part 2", "part a") are handled
+    /// separately in `workModifiers` because they carry a value.
+    private static let workModifierWords: [String: String] = [
+        "solution": "solution", "solutions": "solution",
+        "grade": "grade", "grades": "grade", "graded": "grade",
+        "regrade": "regrade", "regrades": "regrade",
+        "extension": "extension", "extensions": "extension", "extended": "extension",
+        "practice": "practice", "retake": "retake", "makeup": "makeup",
+        "redo": "redo",
+        "resubmission": "resubmission", "resubmissions": "resubmission",
+        "resubmit": "resubmission", "resubmitted": "resubmission",
+    ]
+
+    /// Between a noun and its number: "Homework no. 2", "Assignment number 2".
+    private static let ordinalFillers: Set<String> = ["no", "number", "num"]
+
+    /// A canonical noun plus ordinal for the everyday assignment nouns, so
+    /// "HW 2", "Homework 2", "hw2", "HW #2" and "Homework #02" are one
+    /// identity (`normalize` has already stripped `#`/`:`/`-` and turned "02"
+    /// into "2").
+    ///
+    /// The ordinal is the integer directly after the noun (skipping "no" /
+    /// "number"), NOT the first integer anywhere after it: that would read
+    /// "Homework on chapter 3" as homework 3. Returns nil unless the title
+    /// carries exactly one noun-with-ordinal ("HW 2 and HW 3 solutions" is
+    /// two), and nil if it names an assessment kind (those belong to
+    /// `assessmentIdentity`; "Lab 4 quiz" is too ambiguous to decide here).
+    /// A bare "Homework" gives no identity.
+    private static func workIdentity(in tokens: [String]) -> WorkIdentity? {
+        guard assessmentKindCount(in: tokens) == 0 else { return nil }
+        var found: (noun: String, ordinal: Int)?
+        for (index, token) in tokens.enumerated() {
+            guard let noun = workNouns[token] else { continue }
+            var next = index + 1
+            while next < tokens.count, ordinalFillers.contains(tokens[next]) { next += 1 }
+            guard next < tokens.count, let ordinal = Int(tokens[next]) else { continue }
+            if found != nil { return nil }
+            found = (noun, ordinal)
+        }
+        guard let found else { return nil }
+        return WorkIdentity(noun: found.noun, ordinal: found.ordinal, modifiers: workModifiers(in: tokens))
+    }
+
+    private static func workModifiers(in tokens: [String]) -> Set<String> {
+        var modifiers: Set<String> = []
+        for (index, token) in tokens.enumerated() {
+            if let canonical = workModifierWords[token] {
+                modifiers.insert(canonical)
+            } else if token == "make", index + 1 < tokens.count, tokens[index + 1] == "up" {
+                modifiers.insert("makeup")
+            } else if token == "part" || token == "parts" || token == "pt" {
+                // "Part 2" and "Part A" are different sub-parts; a bare
+                // "part" still marks the title as a part of something.
+                let value = index + 1 < tokens.count ? tokens[index + 1] : ""
+                modifiers.insert("part:\(value)")
+            }
+        }
+        return modifiers
     }
 
     // MARK: - Course-scoped, 1:1 pairing

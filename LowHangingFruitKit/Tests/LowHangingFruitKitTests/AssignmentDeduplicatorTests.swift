@@ -203,6 +203,144 @@ struct AssignmentDeduplicatorTests {
         ))
     }
 
+    // MARK: - isLikelyAnnouncementDuplicate: work identity
+
+    private static func announcementTwin(
+        _ announcement: String,
+        _ existing: String,
+        announcementDue: Date? = nil,
+        existingDue: Date? = now
+    ) -> Bool {
+        AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+            announcementTitle: announcement,
+            announcementDue: announcementDue,
+            existingTitle: existing,
+            existingDue: existingDue
+        )
+    }
+
+    @Test("work identity: the CIS 4500 pair seen on a phone is one homework")
+    func workIdentityCanonicalPass() {
+        #expect(Self.announcementTwin("Complete HW 2 - Relational Databases", "Complete Homework 2"))
+        #expect(Self.announcementTwin(
+            "Complete HW 2 - Relational Databases", "Complete Homework 2",
+            announcementDue: Self.now, existingDue: Self.now
+        ))
+    }
+
+    @Test("work identity: spellings of homework, with # and leading zeros, are one identity")
+    func workIdentityHomeworkSpellings() {
+        for other in ["Homework 2", "hw2", "HW #2", "Homework #02", "HW: 2", "Homework no. 2"] {
+            #expect(Self.announcementTwin("HW 2 due Friday on Canvas, see Ed", other), "HW 2 vs \(other)")
+        }
+    }
+
+    @Test("work identity: each noun family joins its own spellings")
+    func workIdentityNounFamilies() {
+        let pairs: [(String, String)] = [
+            ("PSet 3 is out, start early", "Problem Set 3"),
+            ("Problem Set 3 is out, start early", "PS3"),
+            ("Lab 4 is out, start early", "Lab 04"),
+            ("Project 1 is out, start early", "Proj 1"),
+            ("Milestone 1 is out, start early", "Milestone #01"),
+            ("Assignment 2 is out, start early", "Asst 2"),
+            ("Essay 1 is out, start early", "Essay 01"),
+            ("Paper 2 is out, start early", "Paper #2"),
+        ]
+        for (announcement, existing) in pairs {
+            #expect(Self.announcementTwin(announcement, existing), "\(announcement) vs \(existing)")
+        }
+    }
+
+    @Test("work identity: Submission for Milestone 1 matches Milestone 1: Project Proposal")
+    func workIdentityMilestoneWithProjectWord() {
+        #expect(Self.announcementTwin(
+            "Submission for Milestone 1: Project Proposal",
+            "Milestone 1: Project Proposal"
+        ))
+    }
+
+    @Test("work identity: a different ordinal or noun is not the same work")
+    func workIdentityRefusesDifferentWork() {
+        #expect(!Self.announcementTwin("Homework 2", "Homework 3"))
+        #expect(!Self.announcementTwin("Lab 4", "Homework 4"))
+        #expect(!Self.announcementTwin("Complete Homework 3", "Complete HW 2 - Relational Databases"))
+    }
+
+    @Test("work identity: same noun and different ordinal is refused even when the rest of the title and the dates agree")
+    func workIdentityRefusesSameNounDifferentOrdinalDespiteSimilarity() {
+        #expect(!Self.announcementTwin(
+            "HW 2 Relational Databases", "HW 3 Relational Databases",
+            announcementDue: Self.now,
+            existingDue: Self.now.addingTimeInterval(86_400)
+        ))
+    }
+
+    @Test("work identity: a Canvas title that adds a topic after the same noun and ordinal still merges")
+    func workIdentityTopicSuffixStillMerges() {
+        #expect(Self.announcementTwin(
+            "Lab 4", "Lab 4 - Pipelining",
+            announcementDue: Self.now, existingDue: Self.now
+        ))
+    }
+
+    @Test("work identity: a noun with no ordinal gives no identity")
+    func workIdentityNeedsOrdinal() {
+        #expect(!Self.announcementTwin("Homework", "Homework 3"))
+        #expect(!Self.announcementTwin("Homework due Friday on chapter 3", "Homework 3"))
+        #expect(!Self.announcementTwin("Complete the homework", "Complete Homework 2"))
+    }
+
+    @Test("work identity: two work nouns on one side never collapse onto either")
+    func workIdentityRefusesTwoNouns() {
+        #expect(!Self.announcementTwin("HW 2 and HW 3 solutions", "HW 2"))
+        #expect(!Self.announcementTwin("Do HW 2 and Lab 4 this week", "Homework 2"))
+        #expect(!Self.announcementTwin("Homework 2", "Homework 2 and Homework 3"))
+    }
+
+    @Test("work identity: solutions, grades, regrades, extensions and sub-parts stay distinct")
+    func workIdentityModifiersRefuse() {
+        for variant in [
+            "HW 2 solutions posted", "HW 2 solution", "HW 2 grades released",
+            "HW 2 regrade requests", "HW 2 extension", "HW 2 practice",
+            "HW 2 makeup", "HW 2 make up", "HW 2 redo", "HW 2 resubmission",
+            "HW 2 part 2",
+        ] {
+            #expect(!Self.announcementTwin(variant, "Homework 2"), "\(variant)")
+            #expect(!Self.announcementTwin("Homework 2", variant), "\(variant)")
+        }
+    }
+
+    @Test("work identity: the same modifier on both sides still matches, different sub-parts do not")
+    func workIdentityMatchingModifiers() {
+        #expect(Self.announcementTwin("HW 2 part 1 is out", "Homework 2 Part 1"))
+        #expect(!Self.announcementTwin("HW 2 part 1 is out", "Homework 2 Part 2"))
+        #expect(Self.announcementTwin("HW 2 solutions posted", "Homework 2 Solutions"))
+    }
+
+    @Test("work identity: absent dates never block, same day passes, contradictory dates refuse")
+    func workIdentityDates() {
+        #expect(Self.announcementTwin("Complete HW 2", "Complete Homework 2", announcementDue: nil, existingDue: Self.now))
+        #expect(Self.announcementTwin("Complete HW 2", "Complete Homework 2", announcementDue: Self.now, existingDue: nil))
+        #expect(Self.announcementTwin("Complete HW 2", "Complete Homework 2", announcementDue: Self.now, existingDue: Self.now))
+        // The tier shares the assessment tier's rule: only a gap beyond 21
+        // days contradicts, so a week apart is still one homework.
+        #expect(Self.announcementTwin(
+            "Complete HW 2", "Complete Homework 2",
+            announcementDue: Self.now, existingDue: Self.now.addingTimeInterval(7 * 86_400)
+        ))
+        #expect(!Self.announcementTwin(
+            "Complete HW 2", "Complete Homework 2",
+            announcementDue: Self.now, existingDue: Self.now.addingTimeInterval(30 * 86_400)
+        ))
+    }
+
+    @Test("work identity: a quiz-bearing title is left to the assessment tier")
+    func workIdentityLeavesAssessmentsAlone() {
+        #expect(!Self.announcementTwin("Lab 4 quiz 1", "Lab 4"))
+        #expect(Self.announcementTwin("Take Quiz 2", "Quiz 2 - Chapter 4"))
+    }
+
     // MARK: - matchPairs: course scoping + 1:1 assignment
 
     @Test("same-titled items in different courses never match")
