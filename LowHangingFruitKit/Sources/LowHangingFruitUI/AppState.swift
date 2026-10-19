@@ -196,9 +196,13 @@ final class AppState: ObservableObject {
     @Published private(set) var completionDates: [String: Date] = [:]
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
-    /// from grade snapshots on every refresh and NOT persisted — so a Canvas
-    /// correction (a retracted submission) self-heals on the next sync instead of
-    /// sticking. Consulted by `isCompleted` to auto-file submitted work under Done.
+    /// from grade snapshots on every refresh, so a Canvas correction (a
+    /// retracted submission) self-heals on the next sync instead of sticking.
+    /// It is seeded at init from the ledger (`store.submittedCanvasAssignmentIDs()`,
+    /// which reads each row's `canvasSubmitted` flag) and `applySubmissionState`
+    /// writes that flag back on every refresh, so it survives a relaunch until
+    /// the next successful refresh overwrites it. Consulted by `isCompleted` to
+    /// auto-file submitted work under Done.
     @Published private(set) var submittedCanvasAssignmentIDs: Set<String> = []
 
     /// Row id (`Assignment.id`) → Canvas assignment id, for rows whose own

@@ -560,4 +560,154 @@ struct AssignmentDeduplicatorTests {
         #expect(result.canvasItems.contains { $0.id == gradescopeItem.id })
         #expect(!result.collapses.contains { $0.hiddenID == gradescopeItem.id || $0.survivorID == gradescopeItem.id })
     }
+
+    // MARK: - Two different Canvas assignment ids are never one card
+
+    // A module row reaches Canvas through `/assignments/<id>`; an ICS row
+    // through the `#assignment_<id>` fragment. Both resolve to
+    // `canvasAssignmentID`, and two different values are, by definition, two
+    // different Canvas assignments. Pass 2 of `collapseCanvasDuplicates` used
+    // to fall back to the title/due-date heuristic for any module row pass 1
+    // left over, without asking whether the two rows' own ids contradicted it.
+    // "Lab 3 Report" (id 222) beside "Lab 3" (id 111), due two hours apart, is
+    // a Jaccard 0.667 title match, so assignment 222 was hidden behind
+    // assignment 111: its own submission state was never consulted for any
+    // card, and a swipe on the module row was carried onto "Lab 3".
+
+    private static func icsFragmentRow(
+        id: String = "c1",
+        course: String = "CIS 1200",
+        title: String,
+        due: Date? = now,
+        assignmentID: String
+    ) -> Assignment {
+        Assignment(
+            source: .canvas, sourceID: id, kind: .assignment, course: course,
+            title: title, dueAt: due,
+            url: URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1#assignment_\(assignmentID)")
+        )
+    }
+
+    @Test("a module row and an ICS row with different assignment ids are never collapsed, however alike their titles")
+    func differingAssignmentIDsNeverCollapse() {
+        let ics = Self.icsFragmentRow(id: "c1", title: "Lab 3", due: Self.now, assignmentID: "111")
+        let module = Self.moduleRow(
+            id: "m1", title: "Lab 3 Report", due: Self.now.addingTimeInterval(2 * 3600),
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/222")
+        )
+        #expect(ics.canvasAssignmentID == "111")
+        #expect(module.canvasAssignmentID == "222")
+        // The premise: without the id check this pair IS a title/date match,
+        // so the survivors below are the veto's doing and not a weak fixture.
+        #expect(AssignmentDeduplicator.isLikelyDuplicate(
+            titleA: module.title, dueA: module.dueAt, titleB: ics.title, dueB: ics.dueAt
+        ))
+
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [ics], moduleItems: [module]
+        )
+        #expect(result.canvasItems == [ics])
+        #expect(result.moduleItems == [module])
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("the same pair collapses exactly as before when the module row's id is the ICS row's id")
+    func matchingAssignmentIDsStillCollapse() {
+        let ics = Self.icsFragmentRow(id: "c1", title: "Lab 3", due: Self.now, assignmentID: "111")
+        let module = Self.moduleRow(
+            id: "m1", title: "Lab 3 Report", due: Self.now.addingTimeInterval(2 * 3600),
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/111")
+        )
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [ics], moduleItems: [module]
+        )
+        #expect(result.canvasItems == [ics])
+        #expect(result.moduleItems.isEmpty)
+        #expect(result.collapses == [
+            AssignmentDeduplicator.CanvasCollapse(canvasID: ics.id, moduleID: module.id),
+        ])
+    }
+
+    @Test("a module row with no assignment id in its url still collapses onto a similar ICS row by title and date")
+    func moduleRowWithoutIDStillCollapsesByHeuristic() {
+        let ics = Self.icsFragmentRow(id: "c1", title: "Lab 3", due: Self.now, assignmentID: "111")
+        let module = Self.moduleRow(
+            id: "m1", title: "Lab 3 Report", due: Self.now.addingTimeInterval(2 * 3600),
+            url: URL(string: "https://canvas.upenn.edu/courses/1/modules/items/9")
+        )
+        #expect(module.canvasAssignmentID == nil)
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [ics], moduleItems: [module]
+        )
+        #expect(result.moduleItems.isEmpty)
+        #expect(result.collapses == [
+            AssignmentDeduplicator.CanvasCollapse(canvasID: ics.id, moduleID: module.id),
+        ])
+    }
+
+    @Test("a module row only vetoes against the canvas row it conflicts with; another similar row with no id still takes it")
+    func vetoIsPerPairNotPerModuleRow() {
+        let conflicting = Self.icsFragmentRow(id: "c1", title: "Lab 3", due: Self.now, assignmentID: "111")
+        let unresolved = Assignment(
+            source: .canvas, sourceID: "c2", kind: .assignment, course: "CIS 1200",
+            title: "Lab 3 Report", dueAt: Self.now.addingTimeInterval(3600), url: nil
+        )
+        #expect(unresolved.canvasAssignmentID == nil)
+        let module = Self.moduleRow(
+            id: "m1", title: "Lab 3 Report", due: Self.now.addingTimeInterval(2 * 3600),
+            url: URL(string: "https://canvas.upenn.edu/courses/1/assignments/222")
+        )
+        let result = AssignmentDeduplicator.collapseCanvasDuplicates(
+            canvasItems: [conflicting, unresolved], moduleItems: [module]
+        )
+        #expect(result.moduleItems.isEmpty)
+        #expect(result.collapses == [
+            AssignmentDeduplicator.CanvasCollapse(canvasID: unresolved.id, moduleID: module.id),
+        ])
+    }
+
+    // `collapseCanvasOverrides` groups on (course, canvasAssignmentID), so
+    // differing ids never share a group and the veto is structural there;
+    // these pin that it stays so, with the real override shape (UID
+    // `event-assignment-override-<overrideID>`, summary
+    // "<title> (<section>) [<code>]", id only in the URL fragment).
+
+    private static func overrideRow(
+        overrideID: String,
+        section: String,
+        due: Date?,
+        fragmentID: String
+    ) -> Assignment {
+        Assignment(
+            source: .canvas, sourceID: "event-assignment-override-\(overrideID)", kind: .assignment,
+            course: "CIS 1200", title: "X (\(section)) [CIS 1200]", dueAt: due,
+            url: URL(string: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=10&year=2026#assignment_\(fragmentID)")
+        )
+    }
+
+    @Test("override-shaped rows whose fragments name different assignments are not collapsed")
+    func overrideRowsWithDifferentFragmentIDsStaySeparate() {
+        let a = Self.overrideRow(overrideID: "901", section: "Section 201", due: Self.now, fragmentID: "5")
+        let b = Self.overrideRow(overrideID: "902", section: "Section 202", due: Self.now.addingTimeInterval(3600), fragmentID: "6")
+        #expect(a.canvasAssignmentID == "5")
+        #expect(b.canvasAssignmentID == "6")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [a, b], preferredDueDates: [:]
+        )
+        #expect(result.canvasItems.map(\.id) == [a.id, b.id])
+        #expect(result.collapses.isEmpty)
+    }
+
+    @Test("override-shaped rows sharing one fragment id still collapse to the earliest, as before")
+    func overrideRowsWithSameFragmentIDStillCollapse() {
+        let a = Self.overrideRow(overrideID: "901", section: "Section 201", due: Self.now, fragmentID: "5")
+        let b = Self.overrideRow(overrideID: "902", section: "Section 202", due: Self.now.addingTimeInterval(3600), fragmentID: "5")
+        let result = AssignmentDeduplicator.collapseCanvasOverrides(
+            canvasItems: [a, b], preferredDueDates: [:]
+        )
+        #expect(result.canvasItems.map(\.id) == [a.id])
+        #expect(result.collapses == [
+            AssignmentDeduplicator.OverrideCollapse(survivorID: a.id, hiddenID: b.id),
+        ])
+    }
 }

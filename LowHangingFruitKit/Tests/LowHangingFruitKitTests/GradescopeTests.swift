@@ -651,6 +651,68 @@ struct GradescopeTests {
         #expect(!GradescopeHTMLParser.isCompletedAssignmentPage(missingHTML))
     }
 
+    // MARK: - The detail pass does not let the assignment's own name vote
+
+    /// One course with one assignment whose row says "Open" (no keyword), so
+    /// the row reads not submitted and `refineCompletionStatus` goes to the
+    /// detail page.
+    private func fetchedSubmitted(title: String, detailPage: String) async throws -> Bool {
+        let account = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/123">CIS 5050</a>
+          </div>
+        </div>
+        """
+        let course = """
+        <table><tr>
+          <td><a href="/courses/123/assignments/456">\(title)</a></td>
+          <td>Sep 30, 2026 11:59 PM</td>
+          <td>Open</td>
+        </tr></table>
+        """
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, account)
+            case "/courses/123": (200, course)
+            case "/courses/123/assignments/456": (200, detailPage)
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+        let assignments = try await client.fetchAssignments()
+        return try #require(assignments.first).submitted
+    }
+
+    @Test("a detail page whose only keyword is the assignment's own name does not flip the row to submitted")
+    func detailPassIgnoresTitleKeyword() async throws {
+        let page = """
+        <html><head><title>Graded Problem Set 3</title></head>
+        <body><h1>Graded Problem Set 3</h1></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Graded Problem Set 3", detailPage: page) == false)
+    }
+
+    @Test("a detail page with a real Submitted status still marks the row submitted")
+    func detailPassStillReadsRealStatus() async throws {
+        let page = """
+        <html><head><title>Graded Problem Set 3</title></head>
+        <body><h1>Graded Problem Set 3</h1><p>Status: Submitted</p></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Graded Problem Set 3", detailPage: page) == true)
+    }
+
+    @Test("a negative word in the name does not hide a genuinely submitted detail page")
+    func detailPassNegativeWordTitle() async throws {
+        let page = """
+        <html><head><title>Missing Data Lab | Gradescope</title></head>
+        <body><h1>Missing Data Lab</h1><p>Submitted at Oct 5, 2026 at 11:12 PM</p></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Missing Data Lab", detailPage: page) == true)
+    }
+
     // MARK: - Score extraction (docs/grades.md §4, CP5)
 
     @Test("extracts earned/max from a labelled score string")

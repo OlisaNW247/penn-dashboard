@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-18, on `v8-ann-rules` (off `v8`).
+Last updated 2026-10-18, on `fix/submission-status` (off
+`v8-announcements` at `75dc7aa`).
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
@@ -43,6 +44,31 @@ These block shipping, or would make shipping risky.
   6. The widget when caught up ("all clear") and at a due time.
   7. A fresh install in mid-semester: old overdue work withheld, "N
      older hidden · show" at the foot of prev.
+- **Submitted work that still reads "not done"** (Marco's PHYS 0151
+  prelab, 2026-10-18; `CLAUDE.md` → Traps and Known gaps, "Turned-in
+  state"). On the phone, in this order:
+  1. Is there a saved Canvas login (Profile → accounts shows "sign in to
+     canvas" when there is not)? Without one nothing is ever marked
+     turned in. Not yet answered: whether Marco signed in after
+     2026-10-10, and whether the prelab went to Canvas or Gradescope.
+  2. Is Gradescope still connected? It disconnects itself silently.
+  3. Is the ledger on disk ("not saving on this phone"; does a swiped
+     task survive a force-quit)? Not yet answered.
+  4. With a build of `fix/submission-status`: a module-listed assignment
+     beside a similar-titled calendar item shows as two cards when they are
+     two assignments; a Gradescope "Graded …"-titled item with no
+     submission stays on the dashboard.
+- **Decide the submission-status parks** (Marco; Olisa for the sync):
+  1. `parked/launch-submission-refresh`: fetch submission state at a
+     cold launch. Moves the course-knowledge/Ed sync, a full Gradescope
+     scrape and the renewal checks to launch as well.
+  2. `parked/gradescope-unverified-submission`: keep "submitted" when a
+     Gradescope detail page fails to load. Edits one line of
+     `syncGradescope`.
+  3. No branch: Gradescope's silent, permanent disconnect in
+     `AutoSyncCoordinator.syncConnectedServices`, and re-planning
+     reminders after a background wake (`BackgroundRefresh.run`), so a
+     loud alert doesn't fire for work already handed in.
 - **Decide the three sync questions** (Marco and Olisa; nothing here is
   merged, because Marco said not to touch the sync):
   1. Pass `until:` where `CourseKnowledgeCollector` fetches
@@ -109,6 +135,18 @@ These block shipping, or would make shipping risky.
 
 Roughly in priority order.
 
+- **"Berserk mode" is the loud 10-minute alert.** Marco, 2026-10-19:
+  "basically the 10-minute alert", for the moment right before an
+  assignment goes unsubmitted, when the app "goes berserk and forces you to
+  notice and either fix it or do something about it"; possibly not needed
+  as a separate feature. Nothing separate is built. What the loud alert
+  lacks against that description: the notification has no actions (no
+  category, no notification delegate anywhere in the app), so it can only
+  be noticed, not acted on; and it can fire for work handed in while the
+  app was closed (`CLAUDE.md` → Known gaps, "Turned-in state"). Marco
+  asked for "turned in" and "open in canvas" buttons on 2026-10-19; they
+  are on `v8-loud-alert-actions` (its own worktree off `75dc7aa`,
+  pushed 2026-10-19, not merged, not on a phone).
 - **Silent renewal follow-ups** (from the 2026-10-09 review, none
   blocking): don't count a landing toward the latch when the six-hour
   credential cooldown suppressed the password; have the live `AppState`
@@ -250,6 +288,20 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-18 (`fix/submission-status`, off `v8-announcements` at
+  `75dc7aa`, pushed 2026-10-19, not merged): turned-in accuracy.** From the stale PHYS 0151
+  prelab report. Two ways the app could get "turned in" wrong are closed,
+  each with tests:
+  - A `.canvasModules` row and a calendar row with *different* Canvas
+    assignment ids are never collapsed into one card ("Lab 3 Report" no
+    longer hides behind "Lab 3").
+  - A Gradescope assignment's own name no longer counts as its status, on
+    the list row or on the detail page ("Graded Problem Set 3" with no
+    submission stays on the dashboard).
+  - Section-override rows are pinned through `isCompleted` (tests only).
+  - The cold-launch refresh and the flaky-detail-page fix are written and
+    parked (Now). **Not verified on a phone.** Mac tests and an iOS Debug
+    compile only.
 - **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
   merged): the stale-card rules.** The owner's phone filled with tasks
   already taken or never needed ("Take quiz covering assignments 1 and 2"

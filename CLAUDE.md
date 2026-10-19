@@ -413,6 +413,22 @@ fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
+  - **Turned in** (how a card knows, read from the code on 2026-10-18).
+    A card is done when the student swiped it; when Canvas's grades fetch
+    reports its assignment submitted (`submittedCanvasAssignmentIDs`,
+    joined on `Assignment.canvasAssignmentID`, which for a calendar row
+    is the URL fragment, section-override rows included); when Gradescope's
+    scrape says so (`gradescopeSubmitted`, which a paired Canvas card
+    takes on); or when Canvas expects nothing online and the due time has
+    passed. Both services' answers are kept in the ledger, so a relaunch
+    shows what was last seen. The Canvas half needs a saved Canvas login,
+    and with none nothing ever flips (Traps, "a card that stays not done").
+    It runs on activation and on the 5-minute loop, at most every 15
+    minutes, and on iOS not at a cold launch (fix parked, Branches). Since
+    2026-10-18 (`fix/submission-status`) a module-listed assignment whose
+    Canvas id differs from a similar-titled calendar row is its own card
+    instead of hiding behind it, and a Gradescope assignment's own name no
+    longer counts as its status.
 - **Grade Watcher** (`GradeWatcherView`). **Removed from the app by the
   owner on 2026-10-18** (`FeatureFlags.gradeWatcher = false`): no grades
   button, so no route to `GradeWatcherView` or `GradeReportView` in a
@@ -590,11 +606,13 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2230 tests / 206 suites, all green, on `v8-announcements`
-(2026-10-18, `swift test --no-parallel`, on Marco's Mac, 9.4 s, the only
-test run on the machine at the time; the 2026-10-10 figure was
-1975/189 on `v8-launch-prep`). This is the sheet redesign and the
-announcement-task visibility rules applied together.** The same tree compiles for iOS in
+**Current: 2265 tests / 208 suites, all green, on `fix/submission-status`
+(2026-10-18, one commit on `75dc7aa`, `swift test --no-parallel` on
+Marco's Mac, 6.0 s, the only test run on the machine; its base
+`v8-announcements` is 2230/206, re-verified the same day before anything
+changed, and the 2026-10-10 figure was 1975/189 on `v8-launch-prep`).
+The iOS Debug compile (`-destination 'generic/platform=iOS'`) ended in
+BUILD SUCCEEDED.** The same tree compiles for iOS in
 Debug (for the connected phone) and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
 extension and `BackgroundRefresh.swift`; `swift test` compiles neither,
@@ -636,6 +654,17 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2265/208 `fix/submission-status`, 2026-10-18, `swift test --no-parallel`
+  as the only run on the machine: 2230/206 plus 35 tests, nothing removed.
+  Two new suites (`GradescopeTitleStatusTests`,
+  `SectionOverrideCompletionTests`), six tests in
+  `AssignmentDeduplicatorTests` and the detail-page tests in
+  `GradescopeTests`. The title and id-veto tests were checked by
+  neutering each fix and watching them fail; the table-layout and
+  override pins pass on the old code too, and their comments say so. A
+  third suite, `LaunchRefreshStructureTests`, left with the cold-launch
+  fix for `parked/launch-submission-refresh` (2233/207 there);
+  `parked/gradescope-unverified-submission` is 2240/206.
 - 2230/206 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as the
   only run on the machine: the next two entries applied together.
   2190/202 plus 17 (the rules) plus 19 (the sheet) plus 4 new in
@@ -1524,6 +1553,53 @@ itself.
   and hiding every Ed task whose post is older than 14 days whatever its
   due date, which would take "Project due Dec 1", pinned on Oct 1, off
   the dashboard on Oct 20.
+- **A card that stays "not done" after a real submission is usually a
+  missing session, not a detection bug.** Marco's PHYS 0151 prelab,
+  2026-10-18: handed in, still on the dashboard. Canvas submission state
+  has exactly one source, the cookie-authenticated grades fetch
+  (`AutoSyncCoordinator.refreshCanvasGrades`), and it returns at its
+  first guard (`canUseGradeWatcher`) when no Canvas login is saved, while
+  the cookieless calendar feed keeps the dashboard looking alive. The
+  phone's state fits that: no saved login from 2026-10-10
+  (`edTabCheckedAtByCanvasCourseV1` frozen at 14:23 UTC that day, no
+  `debugRenewalLogV1` entry after 22:48 UTC; read by an earlier session,
+  and the fix for the missing banner is `parked/missing-login-banner`).
+  Whether that was this card's cause is not confirmed: it is not recorded
+  whether Marco signed in again, or whether the prelab went to Canvas or
+  Gradescope. Gradescope has the same shape and a worse ending: an empty
+  Gradescope cookie set (24 hours without a successful sync) flips
+  `isGradescopeConnected` off inside
+  `AutoSyncCoordinator.syncConnectedServices` with no notice, and only the
+  onboarding connect button ever turns it back on, so Gradescope status
+  freezes for good (`needsGradescopeConnection` exists and nothing shows
+  it). Read the session state first (Commands, the device reads;
+  `submissionDiagnosticLines` on a DEBUG build). The wrong fixes:
+  loosening `indicatesSubmitted` (a teacher's zero on a missing item would
+  read as handed in) and shortening throttles (a fetch that never runs is
+  not helped by running it more often).
+- **A keyword scan must not read the item's own name.** Gradescope has no
+  student API, so `GradescopeHTMLParser` decides "submitted" by scanning
+  text for words like "graded", "submitted", "resubmit" and "uploaded",
+  and the title cell was part of that text: "Graded Problem Set 3" whose
+  status said "No Submission" read as handed in, its reminders
+  cancelled. The detail-page check (`isCompletedAssignmentPage`) did the
+  same with the page's heading, so fixing the row alone would have been
+  undone one request later. Since 2026-10-18 both blank the title first
+  (`removingTitle`), except a title that is itself part of a negative
+  phrase ("Not"), where blanking would turn "Not Submitted" into
+  "Submitted". The wrong fix is a longer negative-word list: it fights one
+  title at a time.
+- **Two Canvas assignment ids are two assignments, whatever the titles
+  say.** `collapseCanvasDuplicates`' title/date pass hid module "Lab 3
+  Report" (id 222) behind calendar "Lab 3" (id 111): a 0.667 title match,
+  due hours apart. Assignment 222's own submission then reached no card,
+  and a swipe on it was carried onto "Lab 3". Since 2026-10-18 that pass
+  skips a pair whose ids are both known and differ; a row with no id is
+  still matched by title as before. Ticks carried before the fix stay
+  (Known gaps). The wrong fix is retuning `isLikelyDuplicate`, which moves
+  every other dedup path for a problem that exists only when both ids are
+  known. Gradescope rows carry no Canvas id, so the Canvas↔Gradescope
+  pairing cannot use this veto.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -1554,6 +1630,9 @@ it holds work that exists nowhere else.
 |---|---|
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
+| `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR, not merged.** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
+| `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
+| `parked/gradescope-unverified-submission` | **Parked, do not merge without Marco's say.** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
@@ -1576,6 +1655,59 @@ none is a ship line.
 
 ## Known gaps
 
+- **Turned-in state: what the 2026-10-18 review left open** (read from
+  the code on `fix/submission-status`; none of it seen on a phone).
+  Owner answers still unknown: whether Marco signed in to Canvas again
+  after 2026-10-10, where the prelab was handed in, and whether his phone
+  shows "not saving on this phone".
+  - **Cold launch on iOS.** No Canvas or Gradescope status is fetched
+    until the first activation or the first 5-minute tick
+    (`ContentView.refresh`; its own comment says `onChange(of:
+    scenePhase)` skips the initial phase). The ledger seeds what was last
+    seen, so only submissions since the last refresh read late. Fix parked
+    on `parked/launch-submission-refresh` (Branches).
+  - **A flaky Gradescope detail page** turns a submitted row back to not
+    done until the next good scrape (`refineCompletionStatus` swallows the
+    error; `StoredAssignment` copies the flag on every reconcile). Fix
+    parked on `parked/gradescope-unverified-submission`.
+  - **Gradescope disconnects itself for good** after 24 hours without a
+    successful sync, silently (Traps). In `AutoSyncCoordinator`, not
+    touched.
+  - **Reminders and the loud 10-minute alert fire for work handed in while
+    the app is closed.** Only a foreground `refresh()` or a swipe re-plans
+    them (`NotificationScheduler.reschedule` cancels and re-adds
+    everything); `LHFBackgroundRefresh.run()` posts "turned in" notices but
+    never reschedules, and the silent-renewal refetch
+    (`performSilentCanvasRenewal`) doesn't either. Background code is off
+    limits.
+  - **Canvas partial failure.** When one site of a class fails and another
+    succeeds, the 15-minute throttle arms for both and the failed one keeps
+    its old snapshot (`GradeWatcherStore` `fetchedAny`).
+  - **Conservative misses, left alone:** `excused` is never read; an
+    external-tool assignment graded by passback with no `submitted_at`
+    reads not submitted; a teacher's "missing" outranks a real
+    `submitted_at`.
+  - **A module row matched only by title** is written `canvasSubmitted`
+    but restored as not done at relaunch until the next fetch
+    (`AssignmentStore.submittedCanvasAssignmentIDs` reads only
+    `canvasAssignmentID`).
+  - **Un-ticking does not stick when a hidden twin is ticked**: the twin
+    re-carries onto the card on the next rebuild (`carryCompletion`;
+    `markActive` clears only the card's own id and `linkedID`).
+  - **Submissions don't carry to a displaced twin.** An undated Canvas or
+    Gradescope exam hidden behind a dated syllabus or announcement card
+    loses its submitted state; `carryCompletion` moves swipes only.
+  - **Canvas↔Gradescope fuzzy pairing** can join "Lab 3" with "Lab 3
+    Report" (0.667 within 26 hours), so one side's submission marks the
+    other done. "HW 5 Part A" / "Part B" sit right at 0.6.
+  - **Ticks carried by the old module collapse** before 2026-10-18 stay on
+    the calendar row; the ledger cannot tell a carried tick from a swipe.
+  - **Is the ledger on disk?** A 2026-10-18 `devicectl` listing of the App
+    Group showed no `Assignments.store`, which lives at the container root
+    (`AssignmentStore.makeDefault`). With the plist present and the store
+    absent, the app is on its in-memory fallback and shows "not saving on
+    this phone"; a failed listing (CoreDeviceError 7000) proves neither.
+    Settle it on the phone before trusting any completion fix.
 - **A failed Canvas announcement read is retried on every sync.** Only the
   Ed pass waits (`edTaskRetryInterval`, six hours, per post). A Canvas
   post whose AI-assist call fails is left unread and asked for again on
