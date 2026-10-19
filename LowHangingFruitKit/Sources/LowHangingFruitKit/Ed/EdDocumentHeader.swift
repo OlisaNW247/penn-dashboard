@@ -139,6 +139,13 @@ public struct EdDocumentHeader: Sendable, Equatable {
     /// the staff addressed to the class as news.
     public var isAnnouncementOrPinned: Bool { isAnnouncement || isPinned }
 
+    /// A staff-authored non-question post, which `EdThreadFilter` files under
+    /// the reason "staff post" (not "staff": that is only the word the text
+    /// uses where provenance matters). Not listed as news, but it is the
+    /// third kind the Announcement Watcher reads, because a TA's "HW3 moved
+    /// to Monday" is exactly such a post.
+    public var isStaffPost: Bool { reason == "staff post" }
+
     public static func parse(_ text: String) -> EdDocumentHeader {
         let lineEnd = text.firstIndex(of: "\n") ?? text.endIndex
         let firstLine = text[..<lineEnd]

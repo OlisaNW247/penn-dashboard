@@ -13,6 +13,9 @@ import Testing
 /// `AssignmentStore.reconcile(_:source:)`, and the two Settings-facing
 /// defaults (`announcementWatcherEnabled`, `announcementAIEnabled`).
 ///
+/// (Stale below the first sentence: `syncAnnouncements()` now has test seams
+/// and is exercised end to end by `AnnouncementLogSyncTests` and, for Ed
+/// posts, by `AnnouncementWatcherEdTests` at the bottom of this file.)
 /// `syncAnnouncements()` itself is NOT exercised here — same reasoning
 /// `ModuleReadingImportTests` gives for not exercising
 /// `refreshCourseIntel(cookies:)`'s network path: it needs a non-empty cookie
@@ -436,6 +439,281 @@ struct AnnouncementWatcherWiringTests {
             #expect(defaults.object(forKey: Self.processedIDsKey) == nil)
 
             #expect(defaults.integer(forKey: Self.extractionVersionKey) == 2)
+        }
+    }
+}
+
+/// `syncAnnouncements()` reading Ed Discussion posts, end to end with no
+/// network: the Canvas fetch and the extractor choice are the per-instance
+/// seams `announcementFetchForTesting` / `announcementExtractorForTesting`,
+/// and the Ed posts are `.ed` documents placed in `courseKnowledge`, the
+/// store the Ed sync fills. The wiring above could not run the sync; this
+/// suite follows `AnnouncementEdSyncTests`' harness (a seeded id -> code map,
+/// course codes unique to the suite) but leaves the announcement log off, so
+/// it touches neither Application Support nor any seen-ids key.
+///
+/// The one shared write is the extraction pipeline's own
+/// `processedAnnouncementIDsV1` (the sync cannot be pointed elsewhere), backed
+/// up and restored the way `AnnouncementLogSyncTests` does; it and the repair
+/// version are pinned before the `AppState` exists so its one-time sweep is a
+/// no-op. Every id and class code here is unique to this suite.
+@MainActor
+@Suite("Announcement watcher: Ed posts", .serialized)
+struct AnnouncementWatcherEdTests {
+    private static let day: TimeInterval = 24 * 60 * 60
+    private static let processedKey = "processedAnnouncementIDsV1"
+    private static let extractionVersionKey = "announcementExtractionVersionV1"
+    private static let course = (id: "9401", code: "ANWED 9401")
+    private static let hiddenCourse = (id: "9402", code: "ANWED 9402")
+
+    private final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var sources: [AnnouncementSourceText] = []
+        func record(_ source: AnnouncementSourceText) {
+            lock.lock(); defer { lock.unlock() }
+            sources.append(source)
+        }
+        var all: [AnnouncementSourceText] {
+            lock.lock(); defer { lock.unlock() }
+            return sources
+        }
+        var ids: [String] { all.map(\.announcementID) }
+    }
+
+    /// Records what reached it and finds one task per announcement, always
+    /// with the same title, so two announcements about "the same thing" can
+    /// be built without a second extractor.
+    private struct FindsOneTask: AnnouncementAssignmentExtractor {
+        let seen: Seen
+        let title: String
+        let dueAt: Date?
+        func extract(from announcement: AnnouncementSourceText, now: Date) async throws -> [ExtractedAssignment] {
+            seen.record(announcement)
+            return [ExtractedAssignment(title: title, dueAt: dueAt, kind: .submission)]
+        }
+    }
+
+    @MainActor
+    private final class Harness {
+        let state: AppState
+        let seen = Seen()
+        var canvasResponse: [CanvasAnnouncement] = []
+        init(state: AppState) { self.state = state }
+
+        var finds: [Assignment] { state.assignmentStore?.assignments(source: .canvasAnnouncement) ?? [] }
+    }
+
+    private func withHarness(
+        taskTitle: String = "Sign up for a Verbal Assessment #2 slot",
+        taskDue: Date? = nil,
+        _ body: @MainActor (Harness) async throws -> Void
+    ) async throws {
+        let shared = UserDefaults.lhf
+        let backup = [Self.processedKey, Self.extractionVersionKey].map { ($0, shared.object(forKey: $0)) }
+        defer {
+            for (key, value) in backup {
+                if let value { shared.set(value, forKey: key) } else { shared.removeObject(forKey: key) }
+            }
+        }
+        shared.set(2, forKey: Self.extractionVersionKey)
+        shared.removeObject(forKey: Self.processedKey)
+
+        let state = AppState(assignmentStore: try AssignmentStore(inMemory: true))
+        state.forceFixtureDataForTesting(false)
+        let courses = [Self.course, Self.hiddenCourse]
+        state.canvasItems = courses.map { course in
+            Assignment(
+                source: .canvas, sourceID: "seed-\(course.id)", kind: .assignment,
+                course: course.code, title: "Seed \(course.code)", dueAt: nil,
+                url: URL(string: "https://canvas.upenn.edu/courses/\(course.id)/assignments/1")
+            )
+        }
+        state.setCourse(Self.course.code, selected: true)
+        state.setCourse(Self.hiddenCourse.code, selected: false)
+        defer {
+            for course in courses {
+                state.restoreCourse(course.code)
+                state.setCourse(course.code, selected: true)
+                state.coursePreferences.setCanvasCourseID(course.code, nil)
+            }
+        }
+
+        let harness = Harness(state: state)
+        let seen = harness.seen
+        state.announcementFetchForTesting = { [harness] _, _, _ in harness.canvasResponse }
+        state.announcementExtractorForTesting = { _ in FindsOneTask(seen: seen, title: taskTitle, dueAt: taskDue) }
+        try await body(harness)
+    }
+
+    private func edDoc(
+        _ thread: String,
+        reason: String = "announcement",
+        title: String = "Verbal Assessment #2 Sign-Ups",
+        body: String = "Sign-ups for Verbal Assessment #2 are open on the course site. Please sign up by Friday.",
+        daysAgo: Double = 1,
+        courseID: String = AnnouncementWatcherEdTests.course.id,
+        courseCode: String = AnnouncementWatcherEdTests.course.code
+    ) -> CourseDocument {
+        AnnouncementEdRowsTests.edDocument(
+            thread: thread, courseID: courseID, course: courseCode, reason: reason,
+            body: body, daysAgo: daysAgo, title: title,
+            url: URL(string: "https://edstem.org/us/courses/77/discussion/\(thread)"), now: Date()
+        )
+    }
+
+    // MARK: A post becomes a find
+
+    @Test("an Ed announcement with a sign-up sentence becomes a find with the Ed id, the class code and the Ed thread URL, extracted from the body and not the header")
+    func edPostBecomesFind() async throws {
+        try await withHarness { h in
+            let document = edDoc("9400501")
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [document])
+            // No Canvas announcements at all: the Ed post alone must be
+            // enough to run the extraction.
+            h.canvasResponse = []
+            await h.state.syncAnnouncements(now: Date())
+
+            let find = try #require(h.finds.first)
+            #expect(h.finds.count == 1)
+            #expect(find.sourceID == "announcement-ed:9401:9400501-0")
+            #expect(find.source == .canvasAnnouncement)
+            #expect(find.course == Self.course.code)
+            #expect(find.url == URL(string: "https://edstem.org/us/courses/77/discussion/9400501"))
+            #expect(find.title == "Sign up for a Verbal Assessment #2 slot")
+            #expect(h.state.announcementItems.map(\.sourceID) == [find.sourceID])
+
+            // What the extractor was given: Ed's id, the title, and a body
+            // with no `[ed · …]` header line in it.
+            let source = try #require(h.seen.all.first)
+            #expect(source.announcementID == "ed:9401:9400501")
+            #expect(source.courseCode == Self.course.code)
+            #expect(source.title == "Verbal Assessment #2 Sign-Ups")
+            #expect(!source.body.contains("[ed"))
+            #expect(source.body.hasPrefix("Sign-ups for Verbal Assessment #2"))
+
+            #expect(h.state.processedAnnouncementIDs == ["ed:9401:9400501"])
+            // The sheet's "task found" tag joins on this id.
+            #expect(AnnouncementRecord.announcementID(fromFindSourceID: find.sourceID) == document.id)
+        }
+    }
+
+    @Test("a staff post is read as well, and a pinned one")
+    func staffAndPinnedPostsAreRead() async throws {
+        try await withHarness { h in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
+                edDoc("9400511", reason: "staff post", title: "HW3 moved", body: "HW3 is now due Monday."),
+                edDoc("9400512", reason: "pinned", title: "Office hours", body: "Bring your laptop to office hours."),
+            ])
+            await h.state.syncAnnouncements(now: Date())
+            #expect(Set(h.seen.ids) == ["ed:9401:9400511", "ed:9401:9400512"])
+        }
+    }
+
+    // MARK: Dedup and gates
+
+    @Test("a processed Ed post is not extracted again")
+    func processedEdPostIsNotReextracted() async throws {
+        try await withHarness { h in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400521")])
+            await h.state.syncAnnouncements(now: Date())
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.seen.ids == ["ed:9401:9400521"])
+            #expect(h.finds.count == 1)
+        }
+    }
+
+    @Test("an informational Ed post is marked processed and makes no find, and never reaches the extractor")
+    func informationalEdPostIsProcessedWithoutAFind() async throws {
+        try await withHarness { h in
+            #expect(HeuristicAnnouncementExtractor.isLikelyInformational(title: "Recording is up", body: "See Canvas."))
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
+                edDoc("9400531", title: "Recording is up", body: "See Canvas."),
+            ])
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.seen.ids.isEmpty)
+            #expect(h.finds.isEmpty)
+            #expect(h.state.processedAnnouncementIDs == ["ed:9401:9400531"])
+        }
+    }
+
+    @Test("a question, a student post, a private post, a headerless one, an image-only one, an old one, a hidden class's and a Canvas-kind document never reach the extractor")
+    func nothingElseIsRead() async throws {
+        try await withHarness { h in
+            let now = Date()
+            let headerless = CourseDocument(
+                courseID: Self.course.id, course: Self.course.code, kind: .ed, sourceID: "9400546",
+                title: "Anyone free to study?", url: nil,
+                text: "Anyone free to study for the midterm? Sign up here.",
+                updatedAt: now.addingTimeInterval(-Self.day), fetchedAt: now
+            )
+            let canvasKind = CourseDocument(
+                courseID: Self.course.id, course: Self.course.code, kind: .announcement, sourceID: "9400548",
+                title: "Canvas doc", url: nil,
+                text: "[ed · announcement] Please sign up by Friday.",
+                updatedAt: now.addingTimeInterval(-Self.day), fetchedAt: now
+            )
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
+                edDoc("9400541", reason: "student or question"),
+                edDoc("9400542", reason: "question"),
+                edDoc("9400543", reason: "private"),
+                edDoc("9400544", body: "- [image]"),
+                edDoc("9400545", daysAgo: 20),
+                headerless,
+                edDoc("9400547", courseID: Self.hiddenCourse.id, courseCode: Self.hiddenCourse.code),
+                canvasKind,
+            ])
+            await h.state.syncAnnouncements(now: now)
+            #expect(h.seen.ids.isEmpty)
+            #expect(h.finds.isEmpty)
+            #expect(h.state.processedAnnouncementIDs.isEmpty)
+        }
+    }
+
+    // MARK: Twins
+
+    @Test("a Canvas announcement and an Ed post about the same task make one find, the Canvas one")
+    func canvasAndEdTwinsMakeOneFind() async throws {
+        try await withHarness { h in
+            let now = Date()
+            h.canvasResponse = [
+                CanvasAnnouncement(
+                    id: "9400601", courseID: Self.course.id,
+                    title: "Verbal Assessment #2 Sign-Ups",
+                    message: "Please sign up for a slot by Friday.",
+                    postedAt: now.addingTimeInterval(-2 * Self.day),
+                    url: URL(string: "https://canvas.upenn.edu/courses/9401/discussion_topics/9400601")
+                ),
+            ]
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400602")])
+            await h.state.syncAnnouncements(now: now)
+
+            #expect(h.finds.map(\.sourceID) == ["announcement-9400601-0"])
+            // Both were read; the Ed one found a task and lost it as a twin,
+            // which is still a completed parse.
+            #expect(Set(h.seen.ids) == ["9400601", "ed:9401:9400602"])
+            #expect(h.state.processedAnnouncementIDs == ["9400601", "ed:9401:9400602"])
+        }
+    }
+
+    @Test("an Ed post that restates a find made on an earlier sync is dropped too")
+    func edTwinOfAnEarlierFindIsDropped() async throws {
+        try await withHarness { h in
+            let now = Date()
+            h.canvasResponse = [
+                CanvasAnnouncement(
+                    id: "9400611", courseID: Self.course.id,
+                    title: "Verbal Assessment #2 Sign-Ups",
+                    message: "Please sign up for a slot by Friday.",
+                    postedAt: now.addingTimeInterval(-2 * Self.day), url: nil
+                ),
+            ]
+            await h.state.syncAnnouncements(now: now)
+            #expect(h.finds.map(\.sourceID) == ["announcement-9400611-0"])
+
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400612")])
+            await h.state.syncAnnouncements(now: now)
+            #expect(h.finds.map(\.sourceID) == ["announcement-9400611-0"])
+            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400612"))
         }
     }
 }

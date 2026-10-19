@@ -307,6 +307,133 @@ struct AnnouncementLogTests {
         #expect(AnnouncementRecord.announcementID(fromFindSourceID: "hw-12-0") == nil)
     }
 
+    @Test("an Ed find's sourceID keeps the colons of its id, and the last hyphen still splits off the index")
+    @MainActor
+    func edFindJoin() throws {
+        let document = AnnouncementEdRowsTests.edDocument(thread: "501", courseID: "9301", course: "ANED 9301")
+        #expect(document.id == "ed:9301:501")
+        let announcement = try #require(AppState.edAnnouncementsForExtraction(from: [document]).first)
+        #expect(announcement.id == "ed:9301:501")
+
+        let found = AppState.announcementAssignments(
+            from: [
+                ExtractedAssignment(title: "A", dueAt: nil, kind: .submission),
+                ExtractedAssignment(title: "B", dueAt: nil, kind: .preparation),
+            ],
+            announcement: announcement,
+            courseCode: "ANED 9301"
+        )
+        #expect(found.map(\.sourceID) == ["announcement-ed:9301:501-0", "announcement-ed:9301:501-1"])
+        for item in found {
+            #expect(AnnouncementRecord.announcementID(fromFindSourceID: item.sourceID) == "ed:9301:501")
+        }
+        // The id the list row carries is the same string, which is the whole
+        // join: the sheet's "task found" tag compares exactly these two.
+        let row = try #require(AnnouncementRecord.edRecord(from: document, now: Date()))
+        #expect(row.id == "ed:9301:501")
+        #expect(AnnouncementRecord.announcementID(fromFindSourceID: found[0].sourceID) == row.id)
+        #expect(row.isEd)
+    }
+
+    @Test("the Ed adapter keeps announcement, pinned and staff posts with text, builds the Canvas shape from the body not the header, and drops the rest")
+    func edAdapterSelection() throws {
+        let now = Date()
+        func doc(_ thread: String, _ reason: String, body: String = "Sign-ups are open until Friday.", daysAgo: Double? = 2) -> CourseDocument {
+            AnnouncementEdRowsTests.edDocument(
+                thread: thread, reason: reason, body: body, daysAgo: daysAgo,
+                title: "Verbal Assessment #2 Sign-Ups", now: now, posted: nil
+            )
+        }
+        let announcement = doc("1", "announcement")
+        let pinned = doc("2", "pinned")
+        let staff = doc("3", "staff post")
+        let question = doc("4", "student or question")
+        let privatePost = doc("5", "private")
+        let imageOnly = doc("6", "announcement", body: "- [image]")
+        let undated = doc("7", "announcement", daysAgo: nil)
+        let headerless = CourseDocument(
+            courseID: "9301", course: "ANED 9301", kind: .ed, sourceID: "8", title: "t", url: nil,
+            text: "Sign up by Friday.", updatedAt: now, fetchedAt: now
+        )
+        let canvasDoc = CourseDocument(
+            courseID: "9301", course: "ANED 9301", kind: .announcement, sourceID: "9", title: "t", url: nil,
+            text: "[ed · announcement] Sign up by Friday.", updatedAt: now, fetchedAt: now
+        )
+
+        let kept = AppState.edAnnouncementsForExtraction(
+            from: [announcement, pinned, staff, question, privatePost, imageOnly, undated, headerless, canvasDoc, announcement]
+        )
+        #expect(kept.map(\.id) == [announcement.id, pinned.id, staff.id])
+
+        let first = try #require(kept.first)
+        #expect(first.courseID == "9301")
+        #expect(first.title == "Verbal Assessment #2 Sign-Ups")
+        #expect(first.message == "Sign-ups are open until Friday.")
+        #expect(!first.message.contains("[ed"))
+        #expect(first.url == announcement.url)
+        #expect(first.postedAt == announcement.updatedAt)
+    }
+
+    @Test("the Ed adapter dates a post by its header's posting day when there is one, not by last activity")
+    func edAdapterUsesPostingDay() throws {
+        let now = Date()
+        let document = AnnouncementEdRowsTests.edDocument(
+            reason: "announcement", daysAgo: 1, now: now, posted: "2026-10-05"
+        )
+        let kept = try #require(AppState.edAnnouncementsForExtraction(from: [document]).first)
+        let expected = try #require(EdDocumentHeader.parse(document.text).postedAt)
+        #expect(kept.postedAt == expected)
+        #expect(kept.postedAt != document.updatedAt)
+    }
+
+    @Test("an Ed find that restates a Canvas find is dropped, and a different task or the same title in another class is kept")
+    @MainActor
+    func edTwinsAreDropped() {
+        let dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+        func makeFind(_ sourceID: String, _ title: String, course: String = "CIS 2400", due: Date? = dueDate) -> Assignment {
+            Assignment(source: .canvasAnnouncement, sourceID: sourceID, kind: .assignment,
+                       course: course, title: title, dueAt: due, url: nil)
+        }
+        let canvasFind = makeFind("announcement-100-0", "Sign up for Verbal Assessment 2")
+        let sameThing = makeFind("announcement-ed:9301:501-0", "Sign up for Verbal Assessment 2")
+        let different = makeFind("announcement-ed:9301:502-0", "Bring a laptop to recitation")
+        let otherClass = makeFind("announcement-ed:9302:503-0", "Sign up for Verbal Assessment 2", course: "CIS 1200")
+
+        let kept = AppState.droppingAnnouncementTwins([sameThing, different, otherClass], against: [canvasFind])
+        #expect(kept.map(\.sourceID) == [different.sourceID, otherClass.sourceID])
+
+        // A post re-extracted after the processed set was lost does not
+        // suppress itself with the rows it already made.
+        #expect(AppState.droppingAnnouncementTwins([sameThing], against: [sameThing]).map(\.sourceID) == [sameThing.sourceID])
+
+        // Two tasks of one post are not twins of each other: the pool is not
+        // grown inside a call.
+        let a = makeFind("announcement-ed:9301:504-0", "Submit the form")
+        let b = makeFind("announcement-ed:9301:504-1", "Submit the form")
+        #expect(AppState.droppingAnnouncementTwins([a, b], against: []).count == 2)
+    }
+
+    @Test("an Ed find goes through the dashboard duplicate filter unchanged: a Canvas assignment with the same title and due collapses it")
+    @MainActor
+    func edFindCollapsesOntoCanvasAssignment() throws {
+        let due = Date(timeIntervalSince1970: 1_800_000_000)
+        let document = AnnouncementEdRowsTests.edDocument(
+            reason: "staff post", body: "HW6 is out, due Oct 28.", title: "HW6 released"
+        )
+        let announcement = try #require(AppState.edAnnouncementsForExtraction(from: [document]).first)
+        let finds = AppState.announcementAssignments(
+            from: [ExtractedAssignment(title: "Homework 6", dueAt: due, kind: .submission)],
+            announcement: announcement,
+            courseCode: "ANED 9301"
+        )
+        let canvasHomework = Assignment(
+            source: .canvas, sourceID: "hw6", kind: .assignment,
+            course: "ANED 9301", title: "HW 6", dueAt: due, url: nil
+        )
+        #expect(AppState.filteringAnnouncementDuplicates(finds, against: [canvasHomework]).isEmpty)
+        #expect(AppState.filteringAnnouncementDuplicates(finds, against: []).count == 1)
+    }
+
     // MARK: Read state and megaphone rules
 
     private func scratchDefaults() -> (UserDefaults, String) {

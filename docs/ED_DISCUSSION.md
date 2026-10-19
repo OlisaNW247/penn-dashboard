@@ -117,6 +117,10 @@ no main-frame script can see Ed at all.
 
 ## Phase 2
 
+**Built 2026-10-19 (blind, not compiled): `syncAnnouncements` feeds the
+synced announcement, pinned and staff `ed` documents through the Canvas
+loop (`edAnnouncementsForExtraction`).**
+
 Announcement Watcher reads `ed` documents through the same gate it uses for
 Canvas announcements, so a TA's "HW3 due Friday moved to Monday" becomes a
 dashboard item.

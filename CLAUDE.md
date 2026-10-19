@@ -85,7 +85,9 @@ password, no name. Two things go through it:
   context document and matched excerpts, and are answered by a model via
   OpenRouter under LHF's own key (see the ask section below). The
   Announcement Watcher's AI assist is routed the same way, only for
-  announcements that an on-device gate judges could carry a task. It is on
+  announcements that an on-device gate judges could carry a task, and since
+  2026-10-19 (written without a compiler) the same pipeline reads the synced
+  Ed announcement, pinned and staff posts, never a student's. It is on
   by default, and a student can turn it off under Profile → notifications,
   which `docs/PRIVACY.md` promises. Neither questions nor answers are
   stored, only per-user daily request counts and token totals.
@@ -200,7 +202,13 @@ fastest way for a new session to know what exists.
     documents (`EdDocumentHeader`), never written to that file, and the
     list follows `$courseKnowledge` without the sync calling it.
     Extraction, including the AI assist, still only ever sees the last
-    14 days. The badge counts unread finds, announcements and Ed rows;
+    14 days; since 2026-10-19 (written without a compiler) that includes
+    the Ed announcement, pinned and staff posts on the phone, read by the
+    same loop as Canvas's (`edAnnouncementsForExtraction`; processed key
+    `ed:{canvasCourse}:{thread}`; a find's `sourceID` is
+    `announcement-ed:{canvasCourse}:{thread}-{n}`, still
+    `.canvasAnnouncement`, its link the Ed thread). An Ed find that
+    restates an earlier find is dropped (`droppingAnnouncementTwins`). The badge counts unread finds, announcements and Ed rows;
     rows unread when opened are tagged NEW (`AnnouncementReadState`), and
     the first fill of each kind on an install counts as already seen.
   - **todo**: overdue plus the next two days. For someone who signed up
@@ -392,16 +400,19 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1975 tests / 189 suites, all green, on `v8-launch-prep`
-(2026-10-10, `swift test --no-parallel`, on Marco's Mac, 4.1 s, the only
-test run on the machine at the time).** The same tree compiles for iOS in
-Debug and Release (`xcodebuild -destination 'generic/platform=iOS'
-CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
-extension and `BackgroundRefresh.swift`; `swift test` compiles neither,
-so a change in `LHFWidget/` or behind `#if os(iOS)` needs that
-`xcodebuild` before it counts as compiled. `v8` itself is 1539/154,
-re-verified on this Mac at `e2672eb` on 2026-10-09 before anything was
-changed. Hold the rule:
+**Current: 1986 tests / 189 suites, all green, on `v8` at `7324669`
+(2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 5.3 s).** That is
+the launch-prep merge (1975) plus the Ed posting-date fix (11). The same
+tree compiles for iOS in Debug (built to Olisa's iPhone the same day);
+`xcodebuild -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
+build` is what builds the widget extension and `BackgroundRefresh.swift`,
+which `swift test` compiles neither of, so a change in `LHFWidget/` or
+behind `#if os(iOS)` needs that `xcodebuild` before it counts as
+compiled. **Uncompiled on top (2026-10-19, Ed posts through the
+Announcement Watcher):** the diff predicts about 2010 / 190 (a new
+`AnnouncementWatcherEdTests` suite plus pure tests in
+`AnnouncementLogTests` and `EdDocumentHeaderTests`); a prediction until
+the Mac reports it. Hold the rule:
 a change that lowers the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
@@ -436,6 +447,9 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 1986/189 `v8`, 2026-10-19: the launch-prep merge plus the Ed
+  posting-date fix (`EdDocumentHeaderTests`, `AnnouncementEdRowsTests`,
+  `EdIngestionTests`, `EdClientTests`).
 - 1975/189 `v8-launch-prep`, 2026-10-10: `v8`'s 1539 plus 436, nothing
   removed. By commit, so a later drop can be traced: source links +25;
   the 10-minute reminder +17; the sign-up rule +43, and +16 when it was

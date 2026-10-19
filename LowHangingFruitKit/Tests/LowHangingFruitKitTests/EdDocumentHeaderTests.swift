@@ -54,6 +54,12 @@ struct EdDocumentHeaderTests {
         #expect(parsed("pinned").isAnnouncementOrPinned)
         #expect(parsed("pinned").isPinned)
         #expect(!parsed("staff post").isAnnouncementOrPinned)
+        // The reason the builder writes for a staff non-question post is
+        // "staff post", not "staff": the Announcement Watcher keys on it.
+        #expect(parsed("staff post").isStaffPost)
+        #expect(!parsed("announcement").isStaffPost)
+        #expect(!parsed("pinned").isStaffPost)
+        #expect(!EdDocumentHeader.parse("no header here").isStaffPost)
         #expect(!EdDocumentHeader.parse("no header here").isAnnouncementOrPinned)
     }
 

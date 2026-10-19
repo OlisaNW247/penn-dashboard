@@ -173,9 +173,10 @@ Roughly in priority order.
   server path of ask, and announcement AI assist are Penn-only because the
   backend keys course material by numeric Canvas course id. Namespacing it
   by Canvas origin unlocks them everywhere.
-- **Ed Discussion, phase 2.** The Announcement Watcher reading `ed`
-  documents through the same gate as Canvas announcements, once phase 1
-  has completed a sync on a device (`docs/ED_DISCUSSION.md`).
+- **Ed Discussion, phase 2: verify on a device.** Built 2026-10-19, blind
+  and not compiled: the Announcement Watcher reads `ed` documents through
+  the same loop as Canvas announcements (`docs/ED_DISCUSSION.md`). Needs a
+  compile, a test run, and a phone with a synced Ed class.
 - **Canvas access tokens**, the day Penn issues an OAuth developer key or
   lifts the student-token restriction. The plumbing is built and gated off
   (`FeatureFlags.canvasAccessTokens`).

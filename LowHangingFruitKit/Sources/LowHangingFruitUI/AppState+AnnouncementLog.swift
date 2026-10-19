@@ -82,6 +82,99 @@ extension AppState {
         }
     }
 
+    /// The Ed Discussion posts the Announcement Watcher reads, in the one shape
+    /// its loop already takes: a `CanvasAnnouncement`.
+    ///
+    /// **Why a `CanvasAnnouncement` and not a new source type.** The loop in
+    /// `syncAnnouncements`, its test seams, `announcementAssignments` and the
+    /// ledger rows it mints (`Assignment.Source.canvasAnnouncement`) read
+    /// five fields, and an Ed post has all five. A new `Assignment.Source`
+    /// would ripple through the ledger, the dedup and the placement code,
+    /// which all key on `.canvasAnnouncement`, for a difference nothing
+    /// downstream cares about; a second copy of the gate-and-extract loop
+    /// would drift from the first. The rejected fixes are both.
+    ///
+    /// **The id is the document's own id**, `ed:{canvasCourse}:{thread}`, the
+    /// same string the "all announcements" list uses for the row
+    /// (`AnnouncementRecord.edRecord`). That is what makes the sheet's "task
+    /// found" tag join (`announcementID(fromFindSourceID:)` against the row's
+    /// id) work for Ed, and the course in it keeps one thread cross-listed to
+    /// two Canvas classes from being one dedup key. It cannot collide with a
+    /// Canvas id, which is decimal digits.
+    ///
+    /// **Which posts.** The ones the list already keeps (an announcement or a
+    /// pinned post with text in it) plus a staff post, so a TA's "HW3 moved
+    /// to Monday" is read. Student, private and question threads are never
+    /// documents at all (`EdThreadFilter`), and a document whose header says
+    /// anything else, or has no header, is left alone here too: the whitelist
+    /// is the second lock, not the only one. Nothing leaves the phone that
+    /// the pooled copy has not already put on the server.
+    ///
+    /// **Header never reaches a gate.** `title` is the thread title and
+    /// `message` is `EdDocumentHeader.body`, never the raw `text`: its first
+    /// line, `[ed · pinned] Homework / Hw 3 · posted 2026-10-12`, would be
+    /// scored by the informational and task gates as if the poster had
+    /// written it.
+    ///
+    /// **Dated or not at all.** The date is the posting day from the header,
+    /// else the document's `updatedAt` (Ed's last-activity time, only a
+    /// fallback for a document synced before the token existed). Canvas
+    /// leaves an undated announcement in the window because its fetch already
+    /// was one; an Ed document has no such fetch, so an undated one is
+    /// dropped rather than extracted on every sync's say-so. Ed's `url` is the
+    /// thread's page, so "open" on a find lands on Ed.
+    nonisolated static func edAnnouncementsForExtraction(
+        from documents: [CourseDocument]
+    ) -> [CanvasAnnouncement] {
+        var seen = Set<String>()
+        var result: [CanvasAnnouncement] = []
+        for document in documents where document.kind == .ed {
+            let header = EdDocumentHeader.parse(document.text)
+            guard header.isAnnouncementOrPinned || header.isStaffPost,
+                  !EdDocumentHeader.carriesNoText(document.text),
+                  let postedAt = header.postedAt ?? document.updatedAt,
+                  seen.insert(document.id).inserted
+            else { continue }
+            result.append(CanvasAnnouncement(
+                id: document.id,
+                courseID: document.courseID,
+                title: document.title,
+                message: header.body,
+                postedAt: postedAt,
+                url: document.url
+            ))
+        }
+        return result
+    }
+
+    /// Drops an Ed find that restates a find already made, from Canvas this
+    /// run or an earlier one. `filteringAnnouncementDuplicates` compares a
+    /// find with the dashboard's *coursework*; nothing compared two
+    /// announcement finds with each other, because one Canvas post is
+    /// extracted once. An Ed post and a Canvas announcement saying the same
+    /// thing ("Verbal Assessment #2 sign-ups open") are two posts, so
+    /// without this the sheet would list the task twice.
+    ///
+    /// Candidate by candidate, not as a batch: the pool grows with the
+    /// survivors of earlier posts but not of this one, so two genuinely
+    /// separate tasks in one post are never collapsed into each other (the
+    /// Canvas path never does that either). A pool entry with the
+    /// candidate's own id is skipped, so a post re-extracted after the
+    /// processed set was lost does not suppress itself. The pool is whatever
+    /// the caller has built or stored first, so Canvas, extracted earlier in
+    /// the loop, wins over Ed.
+    static func droppingAnnouncementTwins(
+        _ candidates: [Assignment],
+        against pool: [Assignment]
+    ) -> [Assignment] {
+        candidates.filter { candidate in
+            !filteringAnnouncementDuplicates(
+                [candidate],
+                against: pool.filter { $0.id != candidate.id }
+            ).isEmpty
+        }
+    }
+
     /// The records the sheet lists (`nonisolated`: a pure rule that tests and
     /// non-UI callers reach without the main actor, CLAUDE.md's `decidedText`
     /// trap): those of classes that are still selected

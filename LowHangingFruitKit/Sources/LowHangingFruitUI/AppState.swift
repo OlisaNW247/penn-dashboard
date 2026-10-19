@@ -4529,6 +4529,13 @@ final class AppState: ObservableObject {
     /// wrong version is widening the window and filtering nothing: every
     /// 15-to-60-day-old post would be extracted once, and on the AI path
     /// that is a bill and an upload nobody asked for.
+    ///
+    /// **Ed Discussion posts are read here too** (since 2026-10-19, written
+    /// without a compiler): announcement, pinned and staff posts of the
+    /// synced `ed` documents go through the very same gates, extractor choice
+    /// and AI opt-out as a Canvas announcement. The wrong version was a second
+    /// pass or a new `Assignment.Source`; neither is needed, and the first
+    /// would copy the gates to drift. See `edAnnouncementsForExtraction`.
     func syncAnnouncements(now: Date = Date()) async {
         guard !isUsingFixtureData else { return }
         guard let store = assignmentStore else { return }
@@ -4592,7 +4599,20 @@ final class AppState: ObservableObject {
         // nothing new to extract still updates the list.
         recordFetchedAnnouncements(fetched, courseCodesByID: courseCodesByID, now: now)
 
-        let unprocessed = Self.announcementsEligibleForExtraction(fetched, now: now)
+        // The Ed Discussion posts already on the phone ride the same loop as
+        // Canvas's announcements, appended after them (see
+        // `edAnnouncementsForExtraction` for what they are and why they are
+        // dressed as `CanvasAnnouncement`s). They must join before the
+        // emptiness guard: a quiet Canvas week with a TA's "HW3 moved to
+        // Monday" on Ed is exactly the case this exists for. Same 14-day
+        // window, same processed set (keyed `ed:{course}:{thread}`), same
+        // commit below. Ed is read from `courseKnowledge`, not fetched, so
+        // it costs nothing on the network; it does follow the Canvas fetch
+        // (a failed fetch returns above and Ed waits for the next sync,
+        // which is the cheaper of two honest choices: splitting the guard
+        // would let the Ed half run on a Canvas session that is not usable).
+        let edPosts = Self.edAnnouncementsForExtraction(from: courseKnowledge.documents)
+        let unprocessed = Self.announcementsEligibleForExtraction(fetched + edPosts, now: now)
             .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else { return }
 
@@ -4675,9 +4695,19 @@ final class AppState: ObservableObject {
                 continue
             }
 
-            let candidates = Self.announcementAssignments(
+            var candidates = Self.announcementAssignments(
                 from: extracted, announcement: announcement, courseCode: courseCode
             )
+            // An Ed post can restate a Canvas announcement (or the reverse
+            // order, from an earlier sync): drop the Ed find whose course,
+            // title and due date match a find already made. Canvas finds are
+            // untouched, so this changes nothing for them; Canvas is
+            // extracted first and so wins.
+            if announcement.id.hasPrefix(AnnouncementRecord.edIDPrefix) {
+                candidates = Self.droppingAnnouncementTwins(
+                    candidates, against: collected + announcementItems
+                )
+            }
             // Keep every extraction on the ledger. Duplicate suppression is a
             // dashboard presentation rule; the announcements page remains a
             // complete, inspectable inbox even when official coursework wins.

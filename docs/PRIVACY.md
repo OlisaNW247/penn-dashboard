@@ -113,8 +113,11 @@ on-device alone:
   announcements, pinned posts, and posts written by the instructor or TAs.
   Student posts and questions, private posts, and anonymous posts never
   leave your phone, and no author's name is ever recorded. The kept posts
-  are pooled per class exactly like a syllabus. You never type an Ed
-  password or token; the Ed session the app receives is stored in this
+  are pooled per class exactly like a syllabus. Since 2026-10-19 the
+  Announcement Watcher's "AI assist" (described below) also reads these Ed
+  posts, never a student's, to find tasks and due dates, and turning that
+  toggle off stops it for Ed as well. You never type an Ed password or
+  token; the Ed session the app receives is stored in this
   phone's Keychain like your Canvas session and deleted with it.
 
   **What is never included:** your grades, completions, submission state, your
