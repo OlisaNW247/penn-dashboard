@@ -376,6 +376,16 @@ read-only, from the App Group plist:
 xcrun devicectl device copy from --device <CoreDevice id> --domain-type appGroupDataContainer --domain-identifier group.com.lhf.lowhangingfruit --source Library/Preferences/group.com.lhf.lowhangingfruit.plist --destination /tmp/lhf.plist
 ```
 
+Since 2026-10-19 (blind) that plist also holds one-line summaries of the
+last announcement sync (`lastAnnouncementSyncSummaryV1`: where it exited,
+Canvas and Ed counts, eligible, finds, errors, processed) and the last
+course-material sync (`lastCourseKnowledgeSyncSummaryV1`: outcome,
+courses, documents, manifest, upload, the Ed status line); a DEBUG build
+shows both under Profile → testing → sign-in diagnostics. Counts and
+words only, never a title, id, body or URL. They exist because on
+2026-10-19 the Announcement Watcher produced no Ed finds on Olisa's phone
+and nothing on the device said where the sync had stopped.
+
 Crash reports come off the phone the same way (`--domain-type
 systemCrashLogs`, files named `Smooth-<date>.ips`; list them with
 `xcrun devicectl device info files --device <id> --domain-type systemCrashLogs`).

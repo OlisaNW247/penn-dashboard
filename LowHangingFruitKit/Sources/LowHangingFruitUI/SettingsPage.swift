@@ -571,6 +571,19 @@ struct SettingsPage: View {
                     .font(.lhfSecondary(12))
                     .foregroundStyle(.secondary)
             }
+            syncSummaryRow(label: "announcements", icon: "megaphone", summary: state.lastAnnouncementSyncSummary)
+            syncSummaryRow(label: "course material", icon: "books.vertical", summary: state.lastCourseKnowledgeSyncSummary)
+        }
+    }
+
+    /// One read-only line of the last announcement or course-material sync
+    /// (counts and words only; see `AppState.lastAnnouncementSyncSummary`).
+    private func syncSummaryRow(label: String, icon: String, summary: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(label, systemImage: icon)
+            Text(summary ?? "not run yet")
+                .font(.lhfSecondary(12))
+                .foregroundStyle(.secondary)
         }
     }
     #endif

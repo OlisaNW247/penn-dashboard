@@ -463,6 +463,9 @@ struct AnnouncementWatcherEdTests {
     private static let day: TimeInterval = 24 * 60 * 60
     private static let processedKey = "processedAnnouncementIDsV1"
     private static let extractionVersionKey = "announcementExtractionVersionV1"
+    /// Written by every `syncAnnouncements` (`lastAnnouncementSyncSummaryV1`),
+    /// so it is backed up and restored with the other two.
+    private static let summaryKey = "lastAnnouncementSyncSummaryV1"
     private static let course = (id: "9401", code: "ANWED 9401")
     private static let hiddenCourse = (id: "9402", code: "ANWED 9402")
 
@@ -509,7 +512,7 @@ struct AnnouncementWatcherEdTests {
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
-        let backup = [Self.processedKey, Self.extractionVersionKey].map { ($0, shared.object(forKey: $0)) }
+        let backup = [Self.processedKey, Self.extractionVersionKey, Self.summaryKey].map { ($0, shared.object(forKey: $0)) }
         defer {
             for (key, value) in backup {
                 if let value { shared.set(value, forKey: key) } else { shared.removeObject(forKey: key) }
@@ -715,5 +718,105 @@ struct AnnouncementWatcherEdTests {
             #expect(h.finds.map(\.sourceID) == ["announcement-9400611-0"])
             #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400612"))
         }
+    }
+
+    // MARK: What the last run says about itself
+
+    @Test("after a run with one Ed post the summary reads the counts, behind the time and the extractor")
+    func summaryAfterAnEdFind() async throws {
+        try await withHarness { h in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400701")])
+            let now = Date()
+            await h.state.syncAnnouncements(now: now)
+
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("ok \u{00B7} canvas 0 \u{00B7} ed 1 \u{00B7} eligible 1 \u{00B7} finds 1 \u{00B7} errors 0 \u{00B7} processed 1"))
+            #expect(summary.hasPrefix(AppState.diagnosticStamp(now) + " \u{00B7} extractor injected \u{00B7} "))
+            // Counts and words only: nothing of the post got in.
+            #expect(!summary.contains("Verbal"))
+            #expect(!summary.contains("9400701"))
+            #expect(!summary.contains("http"))
+        }
+    }
+
+    @Test("a second run with nothing new says so, with the two fetch counts")
+    func summaryWhenNothingIsNew() async throws {
+        try await withHarness { h in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400711")])
+            await h.state.syncAnnouncements(now: Date())
+            await h.state.syncAnnouncements(now: Date())
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("nothing new \u{00B7} canvas 0 \u{00B7} ed 1"))
+        }
+    }
+
+    @Test("a fetch that throws is recorded by its error kind alone, and nothing is extracted")
+    func summaryWhenTheFetchThrows() async throws {
+        try await withHarness { h in
+            h.state.announcementFetchForTesting = { _, _, _ in throw URLError(.notConnectedToInternet) }
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400721")])
+            await h.state.syncAnnouncements(now: Date())
+
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("canvas fetch failed: URLError -1009"))
+            #expect(h.seen.ids.isEmpty)
+        }
+    }
+
+    @Test("a run with no selected course records why it stopped")
+    func summaryWhenNoCourseIsSelected() async throws {
+        try await withHarness { h in
+            h.state.setCourse(Self.course.code, selected: false)
+            await h.state.syncAnnouncements(now: Date())
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("skipped: no selected courses"))
+        }
+    }
+}
+
+/// The pure parts of the two sync summaries (`AppState.diagnosticStamp`,
+/// `errorKindForSummary`, `scrubbedForSummary`, `courseKnowledgeSkipSummary`).
+/// None touches `UserDefaults`.
+@Suite("Sync summaries")
+struct SyncSummaryFormatTests {
+    @Test("the stamp is the renewal summary's format, in the zone given")
+    func stampFormat() {
+        let utc = TimeZone(identifier: "UTC")!
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let stamp = AppState.diagnosticStamp(date, timeZone: utc)
+        #expect(stamp == "2027-01-15 08:00")
+        let renewal = AppState.renewalSummary(kind: .renewed, at: date, context: .foreground, timeZone: utc)
+        #expect(renewal.contains(stamp))
+    }
+
+    @Test("an error is reduced to a kind: a status, a URLError code or a type name, never its text")
+    func errorKinds() {
+        #expect(AppState.errorKindForSummary(URLError(.timedOut)) == "URLError -1001")
+        let url = URL(string: "https://canvas.upenn.edu/api/v1/secret?token=abc")!
+        #expect(AppState.errorKindForSummary(CanvasAnnouncementsClient.Error.http(status: 503, url: url)) == "http 503")
+        #expect(AppState.errorKindForSummary(CanvasAnnouncementsClient.Error.sessionExpired) == "sessionExpired")
+    }
+
+    @Test("anything URL-shaped is scrubbed from persisted text, and long text is cut")
+    func scrubbing() {
+        #expect(AppState.scrubbedForSummary("ed launch ended at https://x.edu/a?b=c today") == "ed launch ended at <url> today")
+        #expect(AppState.scrubbedForSummary("connected: CIS 2400") == "connected: CIS 2400")
+        #expect(AppState.scrubbedForSummary(String(repeating: "a", count: 300)).count == 123)
+    }
+
+    @Test("a skip keeps the last real run's line behind it, and a skip after a skip does not stack")
+    func skipKeepsTheLastRun() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let stamp = AppState.diagnosticStamp(date)
+        let run = "2027-01-15 07:00 \u{00B7} ok \u{00B7} courses 3"
+
+        let first = AppState.courseKnowledgeSkipSummary(previous: run, at: date, reason: "not stale")
+        #expect(first == "\(stamp) \u{00B7} skipped: not stale | last run: \(run)")
+        let second = AppState.courseKnowledgeSkipSummary(previous: first, at: date, reason: "already syncing")
+        #expect(second == "\(stamp) \u{00B7} skipped: already syncing | last run: \(run)")
+
+        let bare = AppState.courseKnowledgeSkipSummary(previous: nil, at: date, reason: "not stale")
+        #expect(bare == "\(stamp) \u{00B7} skipped: not stale")
+        #expect(AppState.courseKnowledgeSkipSummary(previous: bare, at: date, reason: "not stale") == bare)
     }
 }

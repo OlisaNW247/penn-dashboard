@@ -795,6 +795,8 @@ final class AppState: ObservableObject {
         self.autoLoginDisabledReason = UserDefaults.lhf.string(forKey: Self.autoLoginDisabledReasonKey)
         self.autoLoginAwaitingDuo = UserDefaults.lhf.bool(forKey: Self.autoLoginAwaitingDuoKey)
         self.lastSilentRenewalSummary = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalSummaryKey)
+        self.lastAnnouncementSyncSummary = UserDefaults.lhf.string(forKey: Self.lastAnnouncementSyncSummaryKey)
+        self.lastCourseKnowledgeSyncSummary = UserDefaults.lhf.string(forKey: Self.lastCourseKnowledgeSyncSummaryKey)
         self.lastSilentRenewalAttemptAt = (UserDefaults.lhf.object(forKey: Self.lastSilentRenewalAttemptAtKey) as? Double)
             .map { Date(timeIntervalSince1970: $0) }
         self.lastSilentRenewalAttemptOutcome = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
@@ -1988,6 +1990,25 @@ final class AppState: ObservableObject {
     /// name or a credential. Persisted; cleared on Canvas disconnect.
     @Published private(set) var lastSilentRenewalSummary: String?
 
+    /// Backs `lastAnnouncementSyncSummary`. Per-device state like the
+    /// renewal summary's key, so it is absent from `CloudPrefsMirror`.
+    private static let lastAnnouncementSyncSummaryKey = "lastAnnouncementSyncSummaryV1"
+
+    /// "<yyyy-MM-dd HH:mm> · <what the last `syncAnnouncements` did>", written
+    /// at every exit of that method so a run that stopped early says where
+    /// (found 2026-10-19: a phone with no Ed finds and nothing on the device
+    /// said whether the fetch, a guard or the extractor was the reason).
+    /// Counts and words only; never a title, id, body or URL. Persisted so a
+    /// background wake's answer survives to be read off the App Group plist;
+    /// shown only in the DEBUG "sign-in diagnostics" disclosure.
+    @Published private(set) var lastAnnouncementSyncSummary: String?
+
+    /// Backs `lastCourseKnowledgeSyncSummary`, which is written from
+    /// `AppState+CourseKnowledge.swift` and so is not `private(set)`
+    /// (`private` is file-scoped); its key lives in that file. The same
+    /// rules as `lastAnnouncementSyncSummary`.
+    @Published var lastCourseKnowledgeSyncSummary: String?
+
     /// When the last real (network-touching) silent renewal finished, for
     /// the retry policy. Not set by `.notAttempted` or `.abortedByLoginPane`.
     private var lastSilentRenewalAttemptAt: Date?
@@ -2131,6 +2152,44 @@ final class AppState: ObservableObject {
         formatter.timeZone = timeZone
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return "\(kind.rawValue) \u{00B7} \(formatter.string(from: date)) \u{00B7} \(context.rawValue)"
+    }
+
+    /// The time prefix of the two sync summaries, in `renewalSummary`'s exact
+    /// format (pinned POSIX locale, "yyyy-MM-dd HH:mm").
+    nonisolated static func diagnosticStamp(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// An error reduced to its kind, for a persisted summary: a status code
+    /// or a type name, never `localizedDescription` (which for Canvas's own
+    /// errors carries a URL path).
+    nonisolated static func errorKindForSummary(_ error: Error) -> String {
+        if let canvas = error as? CanvasAnnouncementsClient.Error {
+            switch canvas {
+            case .sessionExpired: return "sessionExpired"
+            case let .http(status, _): return "http \(status)"
+            case .notHTTP: return "notHTTP"
+            case .invalidURL: return "invalidURL"
+            case .decodingFailed: return "decodingFailed"
+            }
+        }
+        if let url = error as? URLError { return "URLError \(url.code.rawValue)" }
+        return String(describing: type(of: error))
+    }
+
+    /// Drops anything URL-shaped (a token holding "://" or "?") from a line
+    /// that is about to be persisted, and caps its length. Defence in depth
+    /// for text that was written elsewhere (the Ed coordinator's status line).
+    nonisolated static func scrubbedForSummary(_ text: String, limit: Int = 120) -> String {
+        let words = text.split(separator: " ", omittingEmptySubsequences: true).map { word -> String in
+            (word.contains("://") || word.contains("?" as Character)) ? "<url>" : String(word)
+        }
+        let joined = words.joined(separator: " ")
+        return joined.count > limit ? String(joined.prefix(limit)) + "..." : joined
     }
 
     /// Reads the outcome back out of a summary line (the text before the
@@ -3494,6 +3553,11 @@ final class AppState: ObservableObject {
         // under it.
         processedAnnouncementIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
+        // The two DEBUG sync summaries describe the account just left.
+        lastAnnouncementSyncSummary = nil
+        UserDefaults.lhf.removeObject(forKey: Self.lastAnnouncementSyncSummaryKey)
+        lastCourseKnowledgeSyncSummary = nil
+        UserDefaults.lhf.removeObject(forKey: Self.lastCourseKnowledgeSyncSummaryKey)
         // The backend identity (`BackendIdentityStore`) is deliberately left
         // alone here, by the same precedent Gradescope's login already sets:
         // it is not a Canvas-session-derived credential. It is the anonymous
@@ -4537,22 +4601,24 @@ final class AppState: ObservableObject {
     /// pass or a new `Assignment.Source`; neither is needed, and the first
     /// would copy the gates to drift. See `edAnnouncementsForExtraction`.
     func syncAnnouncements(now: Date = Date()) async {
-        guard !isUsingFixtureData else { return }
-        guard let store = assignmentStore else { return }
+        guard !isUsingFixtureData else { return noteAnnouncementSync("skipped: fixture", at: now) }
+        guard let store = assignmentStore else { return noteAnnouncementSync("skipped: no store", at: now) }
 
         // A usable Canvas access token authenticates the
         // `CanvasAnnouncementsClient` fetch below on its own, so an empty
         // cookie array alone is no longer "nothing to sync with." A test
         // that supplies its own fetch needs neither.
         let cookies = announcementFetchForTesting == nil ? SessionCookieStore.load(service: .canvas) : []
-        guard announcementFetchForTesting != nil || !cookies.isEmpty || hasCanvasCredentials else { return }
+        guard announcementFetchForTesting != nil || !cookies.isEmpty || hasCanvasCredentials else {
+            return noteAnnouncementSync("skipped: no canvas session", at: now)
+        }
 
         // id -> code, filtered to the courses the class picker has selected —
         // exactly `selectedCanvasCourseIDs()`'s existing contract (Grade
         // Watcher uses the same map for the same "never fetch a hidden
         // course" reason).
         let courseCodesByID = selectedCanvasCourseIDs()
-        guard !courseCodesByID.isEmpty else { return }
+        guard !courseCodesByID.isEmpty else { return noteAnnouncementSync("skipped: no selected courses", at: now) }
 
         // THE WINDOW MUST HAVE AN END. Canvas's announcements API defaults
         // `end_date` to 28 days after `start_date`, so a request that sends
@@ -4592,7 +4658,9 @@ final class AppState: ObservableObject {
             // surfaces plenty loudly already through `refreshGradeWatcher`'s
             // and `refreshCanvasSessionExpiredState`'s own paths; this method
             // doesn't need to pile on. The log is left exactly as it was.
-            return
+            // (It is recorded, though, in `lastAnnouncementSyncSummary`: the
+            // error's kind only, never its text.)
+            return noteAnnouncementSync("canvas fetch failed: \(Self.errorKindForSummary(error))", at: now)
         }
 
         // Before the early return below and before every gate: a fetch with
@@ -4614,10 +4682,16 @@ final class AppState: ObservableObject {
         let edPosts = Self.edAnnouncementsForExtraction(from: courseKnowledge.documents)
         let unprocessed = Self.announcementsEligibleForExtraction(fetched + edPosts, now: now)
             .filter { !processedAnnouncementIDs.contains($0.id) }
-        guard !unprocessed.isEmpty else { return }
+        guard !unprocessed.isEmpty else {
+            return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)", at: now)
+        }
 
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
+        // Only for `lastAnnouncementSyncSummary`: which extractors ran, and
+        // how many failed (those announcements stay unprocessed).
+        var extractorsUsed: Set<String> = []
+        var extractorErrors = 0
 
         for announcement in unprocessed {
             guard let courseCode = courseCodesByID[announcement.courseID] else {
@@ -4672,6 +4746,7 @@ final class AppState: ObservableObject {
             let extractor: any AnnouncementAssignmentExtractor
             if let announcementExtractorForTesting {
                 extractor = announcementExtractorForTesting(announcement)
+                extractorsUsed.insert("injected")
             } else if announcementAIEnabled,
                canvasInstallation.id == CanvasInstallation.penn.id,
                let client = BackendServices.client,
@@ -4679,8 +4754,10 @@ final class AppState: ObservableObject {
                    title: announcement.title, body: announcement.message
                ) {
                 extractor = BackendAnnouncementExtractor(client: client)
+                extractorsUsed.insert("backend")
             } else {
                 extractor = HeuristicAnnouncementExtractor(meetings: meetings)
+                extractorsUsed.insert("heuristic")
             }
 
             let extracted: [ExtractedAssignment]
@@ -4692,6 +4769,7 @@ final class AppState: ObservableObject {
                 // announcement — leave it unprocessed so the next sync tries
                 // again, the same reasoning as the unmapped-course branch
                 // above.
+                extractorErrors += 1
                 continue
             }
 
@@ -4730,6 +4808,22 @@ final class AppState: ObservableObject {
         if !collected.isEmpty || !newlyProcessedIDs.isEmpty {
             rebuildDashboardItems()
         }
+        let used = extractorsUsed.isEmpty ? "none" : extractorsUsed.sorted().joined(separator: "+")
+        noteAnnouncementSync(
+            "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)"
+                + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
+                + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)",
+            at: now
+        )
+    }
+
+    /// Records what the last `syncAnnouncements` did (see
+    /// `lastAnnouncementSyncSummary`): the time, then `detail`, which the
+    /// caller builds from counts and fixed words only.
+    private func noteAnnouncementSync(_ detail: String, at now: Date) {
+        let summary = "\(Self.diagnosticStamp(now)) \u{00B7} \(detail)"
+        lastAnnouncementSyncSummary = summary
+        UserDefaults.lhf.set(summary, forKey: Self.lastAnnouncementSyncSummaryKey)
     }
 
     /// Folds the enrolled-course list into `canvasCourseIDsByCode` — the map

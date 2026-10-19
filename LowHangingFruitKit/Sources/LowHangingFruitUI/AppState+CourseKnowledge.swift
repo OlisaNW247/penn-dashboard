@@ -135,6 +135,9 @@ extension AppState {
     ///   Ed until the window lapsed (2026-10-09).
     static let courseKnowledgeSyncVersion = 4
     private static let courseKnowledgeSyncVersionKey = "courseKnowledgeSyncVersionV1"
+    /// Backs `lastCourseKnowledgeSyncSummary` (declared in `AppState.swift`).
+    /// Internal, not `private`, because `AppState.init` reads it.
+    static let lastCourseKnowledgeSyncSummaryKey = "lastCourseKnowledgeSyncSummaryV1"
 
     var courseKnowledgeIsStale: Bool {
         if UserDefaults.lhf.integer(forKey: Self.courseKnowledgeSyncVersionKey) < Self.courseKnowledgeSyncVersion {
@@ -239,6 +242,10 @@ extension AppState {
             finishedAt: nil
         )
 
+        // Set by the two `catch` blocks that mean the collector itself threw;
+        // read only by the one-line summary the `defer` below persists.
+        var failure: String?
+
         isCourseKnowledgeSyncing = true
         // `trace` is a local `var`, mutated throughout the run below; `defer`
         // captures it by reference, so whatever it holds at each `return`
@@ -249,6 +256,7 @@ extension AppState {
             isCourseKnowledgeSyncing = false
             trace.finishedAt = Date()
             lastCourseKnowledgeSyncTrace = trace
+            noteCourseKnowledgeRun(trace, failure: failure)
         }
 
         // The collector merges each course it re-fetches with itself as the
@@ -306,6 +314,7 @@ extension AppState {
             } catch {
                 courseKnowledgeNotice = error.localizedDescription
                 trace.collectorErrors = [error.localizedDescription]
+                failure = Self.errorKindForSummary(error)
             }
             return
         }
@@ -443,6 +452,7 @@ extension AppState {
         } catch {
             courseKnowledgeNotice = error.localizedDescription
             trace.collectorErrors.append(error.localizedDescription)
+            failure = Self.errorKindForSummary(error)
         }
     }
 
@@ -506,6 +516,56 @@ extension AppState {
             skippedReason: reason,
             finishedAt: now
         )
+        let summary = Self.courseKnowledgeSkipSummary(previous: lastCourseKnowledgeSyncSummary, at: now, reason: reason)
+        lastCourseKnowledgeSyncSummary = summary
+        UserDefaults.lhf.set(summary, forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+    }
+
+    /// Persists the one-line summary of a run that got past the guards (see
+    /// `lastCourseKnowledgeSyncSummary`):
+    /// "<time> · ok|failed: <error kind> · courses N · fetched F · docs D ·
+    /// manifest ok|failed|none · uploaded U · errors E · ed notes M · ed:
+    /// <status line>". Counts and fixed words only; the Ed status line is the
+    /// coordinator's own sentence (class codes, host and path at most) run
+    /// through `scrubbedForSummary`. The collector's error strings are
+    /// counted, never copied. `docs` is every document on the phone after the
+    /// run, `errors` the collector's, `ed notes` the Ed coordinator's.
+    private func noteCourseKnowledgeRun(_ trace: CourseKnowledgeSyncTrace, failure: String?) {
+        let finished = trace.finishedAt ?? Date()
+        let edNotes = trace.collectorErrors.filter { $0.hasPrefix("ed: ") }.count
+        let errors = failure == nil ? trace.collectorErrors.count - edNotes : trace.collectorErrors.count
+        let outcome = failure.map { "failed: \($0)" } ?? "ok"
+        let manifest = trace.manifestSucceeded ? "ok" : (trace.manifestError != nil ? "failed" : "none")
+        let ed = edDiscussionStatus.map { Self.scrubbedForSummary($0) } ?? "none"
+        let summary = "\(Self.diagnosticStamp(finished)) \u{00B7} \(outcome)"
+            + " \u{00B7} courses \(trace.courseIDs.count) \u{00B7} fetched \(trace.fullyFetched.count)"
+            + " \u{00B7} docs \(courseKnowledge.documents.count) \u{00B7} manifest \(manifest)"
+            + " \u{00B7} uploaded \(trace.uploadedDocuments)\(trace.uploadError == nil ? "" : " (failed)")"
+            + " \u{00B7} errors \(errors) \u{00B7} ed notes \(edNotes) \u{00B7} ed: \(ed)"
+        lastCourseKnowledgeSyncSummary = summary
+        UserDefaults.lhf.set(summary, forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+    }
+
+    /// The summary for a run a guard turned away. The refresh loop calls
+    /// `refreshCourseKnowledge` every few minutes and nearly every call is a
+    /// "not stale" skip, so a skip that simply replaced the summary would
+    /// bury the one real run's line within minutes (the reason
+    /// `lastCourseKnowledgeSyncSkip` is kept apart from the trace). The skip
+    /// is therefore written in front, and the previous real run's line is
+    /// carried behind it: "<time> · skipped: <reason> | last run: <that
+    /// run's line>". Pure, for tests.
+    nonisolated static func courseKnowledgeSkipSummary(previous: String?, at date: Date, reason: String) -> String {
+        let marker = " | last run: "
+        var lastRun: String?
+        if let previous {
+            if let range = previous.range(of: marker) {
+                lastRun = String(previous[range.upperBound...])
+            } else if !previous.contains(" \u{00B7} skipped: ") {
+                lastRun = previous
+            }
+        }
+        let head = "\(diagnosticStamp(date)) \u{00B7} skipped: \(reason)"
+        return lastRun.map { head + marker + $0 } ?? head
     }
 
     func clearCourseKnowledge() {
