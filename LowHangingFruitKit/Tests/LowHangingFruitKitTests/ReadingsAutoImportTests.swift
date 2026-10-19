@@ -51,7 +51,7 @@ struct ReadingsAutoImportTests {
 
     // Defaults an hour into the future rather than to the instant of
     // construction — see `CourseContentDashboardTests.item`'s doc comment
-    // for why: since 2026-08-27's `isExpiredEvent` fix (`due < now`, no day
+    // for why: since 2026-08-27's `isExpired` fix (`due < now`, no day
     // rounding), a `.event` fixture literally due "now" is measurably in
     // the past by the time `rebuildDashboardItems` captures its own later
     // `now`, and `excludeHidesEventItemsFromDashboard` below relies on this

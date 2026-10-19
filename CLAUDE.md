@@ -211,6 +211,10 @@ fastest way for a new session to know what exists.
     restates an earlier find is dropped (`droppingAnnouncementTwins`). The badge counts unread finds, announcements and Ed rows;
     rows unread when opened are tagged NEW (`AnnouncementReadState`), and
     the first fill of each kind on an install counts as already seen.
+    Since 2026-10-19 (written without a compiler) an announcement or Ed
+    task vanishes from todo, all, the widget and ask at its due time and
+    is never shown as overdue (`AppState.isExpired`); the ledger row
+    stays, and a completed one still reaches prev.
   - **todo**: overdue plus the next two days. For someone who signed up
     on or after the 2026-10-09 build, unfinished Canvas/Gradescope work
     that was already more than 7 days overdue at their first sync is
@@ -410,19 +414,20 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 1986 tests / 189 suites, all green, on `v8` at `7324669`
-(2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 5.3 s).** That is
-the launch-prep merge (1975) plus the Ed posting-date fix (11). The same
-tree compiles for iOS in Debug (built to Olisa's iPhone the same day);
-`xcodebuild -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
-build` is what builds the widget extension and `BackgroundRefresh.swift`,
-which `swift test` compiles neither of, so a change in `LHFWidget/` or
-behind `#if os(iOS)` needs that `xcodebuild` before it counts as
-compiled. **Uncompiled on top (2026-10-19, Ed posts through the
-Announcement Watcher):** the diff predicts about 2010 / 190 (a new
-`AnnouncementWatcherEdTests` suite plus pure tests in
-`AnnouncementLogTests` and `EdDocumentHeaderTests`); a prediction until
-the Mac reports it. Hold the rule:
+**Current: 2008 tests / 191 suites, all green, on `v8` at `5da7507`
+(2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 6.5 s).** That is
+the launch-prep merge (1975), the Ed posting-date fix (11), Ed posts
+through the Announcement Watcher (12), the sync summaries (8) and the
+first-error line (2). The same tree compiles for iOS in Debug (built to
+Olisa's iPhone the same day); `xcodebuild -destination
+'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` is what builds the
+widget extension and `BackgroundRefresh.swift`, which `swift test`
+compiles neither of, so a change in `LHFWidget/` or behind `#if os(iOS)`
+needs that `xcodebuild` before it counts as compiled. **Uncompiled on
+top (2026-10-19, announcement and Ed tasks vanish at their due time):**
+the diff predicts about 2015 / 192 (`AnnouncementFindExpiryTests`, plus
+one each in `DashboardFilterTests` and `LedgerWidgetReaderTests`); a
+prediction until the Mac reports it. Hold the rule:
 a change that lowers the count has lost work. Investigate rather than accept it, and when a
 count drops on purpose (a feature removed with its tests), say which tests
 and why in the commit.
@@ -457,6 +462,10 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2008/191 `v8`, 2026-10-19 (afternoon): Ed posts through the
+  Announcement Watcher (`AnnouncementWatcherEdTests`,
+  `AnnouncementLogTests`), the sync summaries and the first-error line
+  (`SyncSummaryFormatTests`).
 - 1986/189 `v8`, 2026-10-19: the launch-prep merge plus the Ed
   posting-date fix (`EdDocumentHeaderTests`, `AnnouncementEdRowsTests`,
   `EdIngestionTests`, `EdClientTests`).

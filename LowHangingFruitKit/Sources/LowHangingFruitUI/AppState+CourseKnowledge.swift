@@ -170,7 +170,7 @@ extension AppState {
         // `droppingSignupBacklog`: ask must not answer "what's overdue" with the
         // work the dashboard is withholding from a new student (`SignupBacklog`).
         let pool = droppingSignupBacklog(
-            canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+            canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
                 + effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
                 + manualAssignments.map { $0.asAssignment() }
         )

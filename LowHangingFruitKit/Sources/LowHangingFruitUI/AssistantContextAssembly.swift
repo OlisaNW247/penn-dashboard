@@ -95,9 +95,10 @@ extension AppState {
         // included here — as work, which is what those rows are — rather than
         // in the `announcements:` parameter; see the note above.
         // Minus the sign-up backlog (`SignupBacklog`), so the server path and the
-        // on-device path (`assistantWorkItems()`) agree with the dashboard.
+        // on-device path (`assistantWorkItems()`) agree with the dashboard. Past-due
+        // announcement finds are left out for the same reason (`isExpired`).
         let pool = droppingSignupBacklog(
-            canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+            canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
         )
         let work = pool.map { assignment in
             AssistantContextDocument.WorkFacts(

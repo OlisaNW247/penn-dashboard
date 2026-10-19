@@ -117,14 +117,38 @@ struct DashboardFilterTests {
                        title: "Reading", dueAt: dueAt, url: nil)
         }
 
-        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: minutesAgoSameDay), now: now))
-        #expect(AppState.isExpiredEvent(dated(kind: .event, dueAt: yesterday), now: now))
-        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: minutesFromNowSameDay), now: now))
-        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: tomorrow), now: now))
-        #expect(!AppState.isExpiredEvent(dated(kind: .event, dueAt: nil), now: now))
+        #expect(AppState.isExpired(dated(kind: .event, dueAt: minutesAgoSameDay), now: now))
+        #expect(AppState.isExpired(dated(kind: .event, dueAt: yesterday), now: now))
+        #expect(!AppState.isExpired(dated(kind: .event, dueAt: minutesFromNowSameDay), now: now))
+        #expect(!AppState.isExpired(dated(kind: .event, dueAt: tomorrow), now: now))
+        #expect(!AppState.isExpired(dated(kind: .event, dueAt: nil), now: now))
         // A last-week assignment has something to submit, so it's overdue, not expired.
         let lastWeek = calendar.date(byAdding: .day, value: -7, to: now)!
-        #expect(!AppState.isExpiredEvent(dated(kind: .assignment, dueAt: lastWeek), now: now))
+        #expect(!AppState.isExpired(dated(kind: .assignment, dueAt: lastWeek), now: now))
+    }
+
+    @Test("expired announcement finds: a dated .canvasAnnouncement item of any kind expires at its due time; real Canvas and Gradescope work and the student's own tasks never do")
+    func expiredAnnouncementFindBoundaries() {
+        let now = Date()
+        func make(_ source: Assignment.Source, kind: Assignment.Kind = .assignment, dueAt: Date?) -> Assignment {
+            Assignment(source: source, sourceID: "x", kind: kind, course: "CIS 1200",
+                       title: "Submit the form", dueAt: dueAt, url: nil)
+        }
+        let aMinuteAgo = now.addingTimeInterval(-60)
+        let anHourFromNow = now.addingTimeInterval(3600)
+
+        #expect(AppState.isExpired(make(.canvasAnnouncement, dueAt: aMinuteAgo), now: now))
+        #expect(AppState.isExpired(make(.canvasAnnouncement, kind: .quiz, dueAt: aMinuteAgo), now: now))
+        #expect(!AppState.isExpired(make(.canvasAnnouncement, dueAt: anHourFromNow), now: now))
+        #expect(!AppState.isExpired(make(.canvasAnnouncement, dueAt: nil), now: now), "undated finds are never expired")
+        // Ed posts carry the same source, so they are covered by the same line.
+        let ed = Assignment(source: .canvasAnnouncement, sourceID: "announcement-ed:9401:55-0", kind: .assignment,
+                            course: "CIS 1200", title: "Sign up", dueAt: aMinuteAgo, url: nil)
+        #expect(AppState.isExpired(ed, now: now))
+        // Everything else with something to hand in keeps its overdue behaviour.
+        for source in [Assignment.Source.canvas, .canvasModules, .gradescope, .manual] {
+            #expect(!AppState.isExpired(make(source, dueAt: aMinuteAgo), now: now), "\(source) stays overdue")
+        }
     }
 
     @Test("deselecting a course hides it; everything is selected by default")
@@ -180,5 +204,186 @@ struct DashboardFilterTests {
         #expect(state.visibleCourseCodes().contains("CIS 1200"))
         #expect(state.isCourseSelected("CIS 1200"))
         #expect(state.deletedCourseCodes().isEmpty)
+    }
+}
+
+/// The owner's rule (2026-10-19): a task the Announcement Watcher found, in a
+/// Canvas announcement or an Ed post, disappears at its due time and is never
+/// overdue. These go through a real `AppState` and `DashboardViewModel`, because
+/// the rule has to hold in todo, all, the megaphone's finds, the assessments
+/// bucket, the widget snapshot and the assistant's pool, and a pure test of
+/// `isExpired` cannot see a list that forgot to call it.
+///
+/// **Hermetic setup.** The announcement rows are put on the ledger and read back
+/// by a second `AppState` over the same in-memory store, the way a relaunch
+/// reads them (`announcementItems` is `private(set)`). The first `AppState` runs
+/// the one-time extraction repair on an empty ledger and so claims the version
+/// before there is anything for it to purge; seeding the rows before any
+/// `AppState` existed would let that repair delete them on a machine that has
+/// never run the app. Edits go to a scratch suite, as in `DueDateEditTests`.
+///
+/// **Two clocks.** The dashboard rebuilds take an explicit `now` a day ahead of
+/// the real clock, which is how a Canvas item gets past the first-launch
+/// submission hold (`submissionHoldWindow`, five minutes from `launchedAt`) with
+/// no network. The functions that read `Date()` themselves
+/// (`assistantWorkItems`, `widgetNextDueItems`' inputs) are tested with times
+/// relative to the real clock instead.
+@MainActor
+@Suite("Dashboard filtering: announcement finds expire")
+struct AnnouncementFindExpiryTests {
+    private static let course = "ANNEXP 0001"
+
+    @MainActor
+    private struct Harness {
+        let state: AppState
+        let store: AssignmentStore
+        let defaults: UserDefaults
+        let suite: String
+
+        init(finds: [Assignment]) throws {
+            suite = "lhf.announcement-expiry.\(UUID().uuidString)"
+            defaults = UserDefaults(suiteName: suite)!
+            store = try AssignmentStore(inMemory: true)
+            _ = AppState(assignmentStore: store, dueDateEditsDefaults: defaults)
+            store.upsert(finds)
+            state = AppState(assignmentStore: store, dueDateEditsDefaults: defaults)
+            state.forceFixtureDataForTesting(false)
+        }
+
+        func tearDown() { defaults.removePersistentDomain(forName: suite) }
+
+        func rebuild(at now: Date) { state.rebuildDashboardItemsForTesting(now: now) }
+    }
+
+    private func find(_ id: String, _ title: String, due: Date?, kind: Assignment.Kind = .assignment) -> Assignment {
+        Assignment(source: .canvasAnnouncement, sourceID: id, kind: kind,
+                   course: Self.course, title: title, dueAt: due, url: nil)
+    }
+
+    private func ids(_ sections: [DashSection]) -> Set<String> {
+        Set(sections.flatMap(\.items).map(\.id))
+    }
+
+    @Test("a find due one minute ago is not in todo, all, the megaphone's lists or the widget; the same find due in an hour is")
+    func pastDueFindVanishes() throws {
+        // "Submit ..." files a find on the main dashboard; "Read ..." files it in
+        // the megaphone's finds (`announcementDashboardPlacement`).
+        let now = Date().addingTimeInterval(86_400)
+        let pastMain = find("past-main", "Submit the past reflection", due: now.addingTimeInterval(-60))
+        let soonMain = find("soon-main", "Submit the upcoming reflection", due: now.addingTimeInterval(3600))
+        let pastFind = find("past-read", "Read past chapter 4", due: now.addingTimeInterval(-60))
+        let soonFind = find("soon-read", "Read upcoming chapter 5", due: now.addingTimeInterval(3600))
+        let h = try Harness(finds: [pastMain, soonMain, pastFind, soonFind])
+        defer { h.tearDown() }
+        try #require(h.state.announcementItems.count == 4, "the seeded rows were read back")
+        h.rebuild(at: now)
+
+        let vm = DashboardViewModel()
+        vm.bind(to: h.state)
+        let todo = ids(vm.todoSections(now: now))
+        let all = ids(vm.allSections(now: now))
+        #expect(!todo.contains(pastMain.id))
+        #expect(!all.contains(pastMain.id))
+        #expect(todo.contains(soonMain.id))
+        #expect(all.contains(soonMain.id))
+
+        let page = Set(h.state.announcementPageItems.map(\.id))
+        let finds = Set(h.state.announcementFinds.map(\.id))
+        #expect(!page.contains(pastMain.id) && !page.contains(pastFind.id))
+        #expect(!finds.contains(pastMain.id) && !finds.contains(pastFind.id))
+        #expect(page.contains(soonMain.id))
+        #expect(finds.contains(soonFind.id))
+
+        // Not overdue anywhere: the overdue section holds neither.
+        let overdue = Set(vm.todoSections(now: now).filter { $0.id == "overdue" }.flatMap(\.items).map(\.id))
+        #expect(overdue.isDisjoint(with: [pastMain.id, pastFind.id]))
+
+        // The ledger still has every row: this is display only.
+        #expect(h.store.assignments(source: .canvasAnnouncement).count == 4)
+    }
+
+    @Test("a past-due find titled like an exam does not slip through the assessments bucket, but a real Canvas quiz that is overdue still shows")
+    func pastDueExamTitledFindVanishes() throws {
+        let now = Date().addingTimeInterval(86_400)
+        let pastQuiz = find("past-quiz", "Quiz 5 take-home, submit online", due: now.addingTimeInterval(-60))
+        let h = try Harness(finds: [pastQuiz])
+        defer { h.tearDown() }
+        try #require(h.state.announcementItems.count == 1)
+        let realQuiz = Assignment(source: .canvas, sourceID: "real-quiz", kind: .quiz, course: Self.course,
+                                  title: "Quiz 4", dueAt: now.addingTimeInterval(-60), url: nil)
+        h.state.canvasItems = h.store.reconcile([realQuiz], source: .canvas).items
+        h.rebuild(at: now)
+
+        #expect(AppState.isAssessment(pastQuiz), "premise: this title lands in the assessments bucket")
+        #expect(!h.state.assessments.map(\.id).contains(pastQuiz.id))
+        #expect(h.state.assessments.map(\.id).contains(realQuiz.id))
+        #expect(!h.state.widgetNextDueItems().contains { $0.title == pastQuiz.title })
+    }
+
+    @Test("a real Canvas assignment due one minute ago is still overdue in todo")
+    func realCanvasWorkStaysOverdue() throws {
+        let now = Date().addingTimeInterval(86_400)
+        let pastFind = find("past", "Submit the past reflection", due: now.addingTimeInterval(-60))
+        let h = try Harness(finds: [pastFind])
+        defer { h.tearDown() }
+        let late = Assignment(source: .canvas, sourceID: "late", kind: .assignment, course: Self.course,
+                              title: "Problem Set 4", dueAt: now.addingTimeInterval(-60), url: nil)
+        h.state.canvasItems = h.store.reconcile([late], source: .canvas).items
+        h.rebuild(at: now)
+
+        let vm = DashboardViewModel()
+        vm.bind(to: h.state)
+        let overdue = Set(vm.todoSections(now: now).filter { $0.id == "overdue" }.flatMap(\.items).map(\.id))
+        #expect(overdue.contains(late.id))
+        #expect(!overdue.contains(pastFind.id))
+    }
+
+    @Test("a completed find due yesterday is still in prev, and an unfinished one that passed is not there or anywhere")
+    func completedFindStaysInPrev() throws {
+        let now = Date().addingTimeInterval(86_400)
+        let done = find("done", "Submit the finished reflection", due: now.addingTimeInterval(-86_400))
+        let neverDone = find("never", "Submit the forgotten reflection", due: now.addingTimeInterval(-86_400))
+        let h = try Harness(finds: [done, neverDone])
+        defer { h.tearDown() }
+        try #require(h.state.announcementItems.count == 2)
+        h.state.markCompleted(done, at: now.addingTimeInterval(-3600))
+        h.rebuild(at: now)
+
+        let vm = DashboardViewModel()
+        vm.bind(to: h.state)
+        #expect(ids(vm.doneSections(now: now)).contains(done.id))
+        #expect(!ids(vm.doneSections(now: now)).contains(neverDone.id), "an unfinished find never reaches prev")
+        #expect(!ids(vm.todoSections(now: now)).contains(done.id))
+        #expect(!ids(vm.todoSections(now: now)).contains(neverDone.id))
+        #expect(!ids(vm.allSections(now: now)).contains(neverDone.id))
+        #expect(h.store.assignments(source: .canvasAnnouncement).count == 2, "nothing was deleted")
+    }
+
+    @Test("ask's pools drop a past-due unfinished find but keep a completed one and an upcoming one")
+    func askPoolsFollowTheRule() throws {
+        let now = Date()
+        let past = find("past", "Submit the past reflection", due: now.addingTimeInterval(-60))
+        let soon = find("soon", "Submit the upcoming reflection", due: now.addingTimeInterval(3600))
+        let done = find("done", "Submit the finished reflection", due: now.addingTimeInterval(-86_400))
+        let h = try Harness(finds: [past, soon, done])
+        defer { h.tearDown() }
+        try #require(h.state.announcementItems.count == 3)
+        // `allCourseCodes()` is built from the Canvas, Gradescope and module
+        // pools only, so the context document has no section for a class that
+        // exists only as announcement finds; a Canvas row puts the class in.
+        let anchor = Assignment(source: .canvas, sourceID: "anchor", kind: .assignment, course: Self.course,
+                                title: "Anchor homework", dueAt: now.addingTimeInterval(7 * 86_400), url: nil)
+        h.state.canvasItems = h.store.reconcile([anchor], source: .canvas).items
+        h.state.markCompleted(done, at: now.addingTimeInterval(-3600))
+
+        let open = Set(h.state.announcementItemsStillOpen(now: now).map(\.id))
+        #expect(open == [soon.id, done.id])
+
+        let work = Set(h.state.assistantWorkItems().map(\.id))
+        #expect(!work.contains(past.id))
+        #expect(work.contains(soon.id))
+        let document = h.state.assistantContextDocument()
+        #expect(document.contains("Submit the upcoming reflection"), "premise: the document does list this class's work")
+        #expect(!document.contains("Submit the past reflection"))
     }
 }

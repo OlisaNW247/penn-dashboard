@@ -1441,6 +1441,21 @@ final class AppState: ObservableObject {
         return pool.filter { !backlog.hides($0, isFinished: isCompleted($0)) }
     }
 
+    /// `announcementItems` without the finds that have passed, for readers that
+    /// build their own pool from the raw arrays (the assistant, both paths) and
+    /// would otherwise answer "what's overdue" with work the dashboard no
+    /// longer shows (`isExpired`, 2026-10-19). A completed find is kept so ask
+    /// still knows it was done; only an unfinished, past-due one goes. Display
+    /// and answering only: the ledger rows are untouched.
+    ///
+    /// The effect on the server path's context document is that it changes once
+    /// when a find expires, exactly as it would if the row had been edited. It
+    /// does not make the document read a clock (the byte-stability trap): the
+    /// clock is read here, in assembly, and the document builder is unchanged.
+    func announcementItemsStillOpen(now: Date = Date()) -> [Assignment] {
+        announcementItems.filter { isCompleted($0) || !Self.isExpired($0, now: now) }
+    }
+
     /// Test seam: `rebuildDashboardItems()` is private, and the sign-up
     /// decision and filter are part of it. A test that has reconciled a feed
     /// through the instance's store and put the result in `canvasItems` calls
@@ -4452,7 +4467,7 @@ final class AppState: ObservableObject {
     ///
     /// `ExtractedTaskKind.preparation` becomes `Assignment.Kind.event` —
     /// `.event` is the dashboard's "nothing to hand in" kind (`isCompleted`,
-    /// `isExpiredEvent`, `DashboardViewModel.showsNothingToSubmit` all key off
+    /// `isExpired`, `DashboardViewModel.showsNothingToSubmit` all key off
     /// it), which is exactly what "the slides discussed today have been
     /// posted" or "read chapter 4 before Friday" are: visible until the
     /// moment they describe has passed, never OVERDUE. `.submission` becomes
@@ -5820,10 +5835,29 @@ final class AppState: ObservableObject {
         return due <= now.addingTimeInterval(dashboardWindow)
     }
 
-    /// An `.event`-kind item (a reading, a lecture, an exam date with nothing
-    /// to submit) has no submission to be late on, so it can never sit in
-    /// OVERDUE — the product rule is that it is gone the moment it starts, or
-    /// was due. This used to be a calendar-day comparison
+    /// Whether an item has simply passed and should leave the dashboard rather
+    /// than sit in OVERDUE. Two kinds of item, one rule (`dueAt < now`):
+    ///
+    /// 1. **`.event` kind** (a reading, a lecture, an exam date with nothing
+    ///    to submit). It has no submission to be late on, so it can never be
+    ///    overdue.
+    /// 2. **`.canvasAnnouncement` source** (2026-10-19, the owner's rule). These
+    ///    are the Announcement Watcher's finds, from Canvas announcements and
+    ///    from Ed posts (which carry the same source). They are tasks guessed
+    ///    out of prose, not the professor's gradebook, so one that has passed
+    ///    is noise rather than debt: it disappears at its due time instead of
+    ///    turning red. Real Canvas and Gradescope work and the student's own
+    ///    tasks are untouched and stay overdue.
+    ///
+    /// This is a display rule only. The wrong fix is deleting the ledger row
+    /// or marking it complete when it expires: either loses the student's
+    /// record ("nothing the student did is ever lost") and a completion would
+    /// make prev claim work was finished that never was. The row stays; a
+    /// completed find still reaches prev, because prev reads completed work
+    /// and never goes through this filter.
+    ///
+    /// For an `.event`, the product rule is that it is gone the moment it
+    /// starts, or was due. This used to be a calendar-day comparison
     /// (`startOfDay(due) < startOfDay(now)`), which left a 10:45am class
     /// showing as "late" in OVERDUE for the rest of the afternoon — exactly
     /// the state this function exists to prevent, just delayed by however
@@ -5842,8 +5876,9 @@ final class AppState: ObservableObject {
     /// the list at that time instead of at midnight, which is exactly the
     /// case the owner's device pass caught. Undated events are still never
     /// expired, since there's no due time to compare against.
-    static func isExpiredEvent(_ assignment: Assignment, now: Date = Date()) -> Bool {
-        guard assignment.kind == .event, let due = assignment.dueAt else { return false }
+    static func isExpired(_ assignment: Assignment, now: Date = Date()) -> Bool {
+        guard assignment.kind == .event || assignment.source == .canvasAnnouncement,
+              let due = assignment.dueAt else { return false }
         return due < now
     }
 
@@ -6208,7 +6243,7 @@ final class AppState: ObservableObject {
             !self.isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && self.isCourseSelected(item.course)
-                && !Self.isExpiredEvent(item, now: now)
+                && !Self.isExpired(item, now: now)
                 && !self.archivedAssignmentIDs.contains(item.id)
                 && Self.withinTermCap(
                     item,
@@ -6364,16 +6399,25 @@ final class AppState: ObservableObject {
         // matches the exam/quiz regex (`isAssessment` is title-based, and a
         // readings-course opt-in can surface something titled e.g. "Reading
         // quiz prep") — they're opted-in content, always coursework.
-        assessments = verifiedIncomplete.filter { $0.kind != .event && Self.isAssessment($0) }
+        // `isExpired` is applied here too, though for a non-event it can only
+        // ever match an announcement find: one titled like an exam or quiz
+        // ("Midterm review quiz") is an assessment by `isAssessment`, takes
+        // this bucket instead of `coursework` below, and would otherwise keep
+        // showing as overdue (todo, all and the widget snapshot all read this
+        // array). A real Canvas or Gradescope quiz is not matched, so its
+        // overdue behaviour is unchanged.
+        assessments = verifiedIncomplete.filter {
+            $0.kind != .event && Self.isAssessment($0) && !Self.isExpired($0, now: now)
+        }
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped. An `.event` (reading,
         // lecture, exam date) has nothing to submit, so once its due time has
         // passed it isn't "overdue" — it's just gone from the dashboard (see
-        // `isExpiredEvent`).
+        // `isExpired`, which also covers the Announcement Watcher's finds).
         let coursework = verifiedIncomplete
             .filter { $0.kind == .event || !Self.isAssessment($0) }
-            .filter { !Self.isExpiredEvent($0, now: now) }
+            .filter { !Self.isExpired($0, now: now) }
             // The per-class "items with nothing to submit" toggle
             // (`CoursePreferences.nothingToSubmitEnabled`) — this is the one
             // place its "hidden, not just silent" promise is actually

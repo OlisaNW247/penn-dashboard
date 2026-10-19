@@ -123,9 +123,11 @@ public enum LedgerWidgetReader {
             if isAgedOut(row, now: now) { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's
-            // isExpiredEvent: they drop off the moment their due time passes,
-            // not at the end of their calendar day.
-            if isExpiredEvent(row, now: now) { continue }
+            // isExpired: they drop off the moment their due time passes,
+            // not at the end of their calendar day. The same goes for the
+            // Announcement Watcher's finds (2026-10-19): guesses from prose,
+            // never debt.
+            if isExpired(row, now: now) { continue }
             if !seenIDs.insert(row.id).inserted { continue }
             if hidden.contains(row.course) || deleted.contains(row.course) { continue }
             guard let due = row.dueAt else { continue }
@@ -159,13 +161,23 @@ public enum LedgerWidgetReader {
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
     }
 
-    /// Mirrors `AppState.isExpiredEvent`: an `.event`-kind row drops off the
-    /// moment its due time passes (`due < now`), not at the end of its
-    /// calendar day — the widget must not keep advertising a class that
-    /// already started just because midnight hasn't arrived yet. Undated
-    /// events are never expired.
-    private static func isExpiredEvent(_ row: StoredAssignment, now: Date) -> Bool {
-        guard row.kindRaw == Assignment.Kind.event.rawValue, let due = row.dueAt else { return false }
+    /// Mirrors `AppState.isExpired`: a row drops off the moment its due time
+    /// passes (`due < now`), not at the end of its calendar day, when it is
+    ///
+    /// 1. an `.event`-kind row: the widget must not keep advertising a class
+    ///    that already started just because midnight hasn't arrived yet; or
+    /// 2. an announcement find (`sourceRaw` is `canvasAnnouncement`, which Ed
+    ///    posts carry too): extracted from prose, so a passed one is noise,
+    ///    not overdue work (the owner's rule, 2026-10-19).
+    ///
+    /// Undated rows are never expired. Display only: the ledger row stays, and
+    /// the wrong fix would be deleting or completing it. Both copies of this
+    /// predicate must stay in step; this one exists because `AppState`'s is
+    /// main-actor-isolated and the widget cannot call it.
+    private static func isExpired(_ row: StoredAssignment, now: Date) -> Bool {
+        let isEvent = row.kindRaw == Assignment.Kind.event.rawValue
+        let isAnnouncementFind = row.sourceRaw == Assignment.Source.canvasAnnouncement.rawValue
+        guard isEvent || isAnnouncementFind, let due = row.dueAt else { return false }
         return due < now
     }
 }

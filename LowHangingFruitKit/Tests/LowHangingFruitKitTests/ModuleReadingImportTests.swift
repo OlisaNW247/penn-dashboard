@@ -78,7 +78,7 @@ struct ModuleReadingImportTests {
             let store = try! AssignmentStore(inMemory: true)
             // Due an hour from now, not literally `Date()` — see
             // `CourseContentDashboardTests.item`'s doc comment: since
-            // 2026-08-27's `isExpiredEvent` fix (`due < now`, no day
+            // 2026-08-27's `isExpired` fix (`due < now`, no day
             // rounding), a fixture due at the instant of construction is
             // measurably in the past by the time `AppState.init`'s own
             // later `rebuildDashboardItems` captures `now`, and this test

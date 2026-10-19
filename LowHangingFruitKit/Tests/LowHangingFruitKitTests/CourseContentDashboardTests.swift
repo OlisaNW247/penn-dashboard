@@ -54,7 +54,7 @@ struct CourseContentDashboardTests {
     }
 
     // `dueAt` defaults an hour into the future, not to `Date()` at the
-    // instant of construction. `AppState.isExpiredEvent` compares against
+    // instant of construction. `AppState.isExpired` compares against
     // `now: Date()` captured later — inside `rebuildDashboardItems`, itself
     // called after the item is built, the ledger is touched, and often an
     // `AppState` is constructed — and since 2026-08-27's fix (`due < now`,

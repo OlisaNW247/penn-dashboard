@@ -111,6 +111,33 @@ struct LedgerWidgetReaderTests {
         #expect(titles.contains("Overdue pset"))
     }
 
+    @Test("an announcement find drops off the moment it is due and is never listed as overdue, while a Canvas assignment due at the same time stays (2026-10-19)")
+    func pastDueAnnouncementFindsAreDropped() throws {
+        let (store, url) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date()
+        func find(_ id: String, title: String, due: Date) -> Assignment {
+            Assignment(source: .canvasAnnouncement, sourceID: id, kind: .assignment,
+                       course: "CIS 3200", title: title, dueAt: due, url: nil)
+        }
+        // Ed posts carry the same source, with an `announcement-ed:` id.
+        store.upsert([
+            find("announcement-1-0", title: "Passed announcement task", due: now.addingTimeInterval(-60)),
+            find("announcement-ed:9:5-0", title: "Passed Ed task", due: now.addingTimeInterval(-86_400)),
+            find("announcement-2-0", title: "Upcoming announcement task", due: now.addingTimeInterval(3600)),
+        ])
+        _ = store.reconcile([
+            canvas("9", title: "Overdue pset", due: now.addingTimeInterval(-60)),
+        ], source: .canvas)
+
+        let snapshot = try #require(LedgerWidgetReader.snapshot(storeURL: url, now: now))
+        let titles = Set(snapshot.items.map(\.title))
+        #expect(!titles.contains("Passed announcement task"))
+        #expect(!titles.contains("Passed Ed task"))
+        #expect(titles.contains("Upcoming announcement task"))
+        #expect(titles.contains("Overdue pset"))
+    }
+
     @Test("the list is capped so a widget never over-reads")
     func capped() throws {
         let (store, url) = try makeStore()

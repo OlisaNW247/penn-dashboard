@@ -250,6 +250,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-19 (`v8`, written without a compiler).** Announcement and Ed
+  tasks (`.canvasAnnouncement`) disappear at their due time instead of
+  turning overdue, in todo, all, the megaphone, the widget, and ask; the
+  ledger is untouched and completed ones stay in prev (`AppState.isExpired`).
+
 - **2026-10-09/10 (`v8-launch-prep`).** Marco's launch-prep list, on top
   of `v8`. Nothing in sign-in or the sync changed.
   - **Links.** An opened card has "open in canvas" / "open in
