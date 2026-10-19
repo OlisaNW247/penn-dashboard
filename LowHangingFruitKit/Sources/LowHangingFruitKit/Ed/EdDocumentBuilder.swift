@@ -24,10 +24,17 @@ public enum EdDocumentBuilder {
 
     /// A one-line header, then the body as plain text.
     ///
-    /// The header, `[ed · pinned] Homework / Hw 3`, tells a model reading an
+    /// The header, `[ed · pinned] Homework / Hw 3 · posted 2026-10-12`, tells a model reading an
     /// excerpt where it came from and how much to trust it ("announcement"
     /// outranks a pinned FAQ), and puts the category words into the keyword
-    /// index. It never names the author. The body is the XML `document`; the
+    /// index. It never names the author. The last token is the day the thread
+    /// was *created* (US Eastern, `yyyy-MM-dd`), because the document's own
+    /// `updatedAt` is Ed's last-activity time and says nothing about when a
+    /// post went up; `EdDocumentHeader` reads it back. It is a fixed calendar
+    /// day, never relative and never the clock, so the text stays byte-stable
+    /// for the prompt cache. A thread whose `createdAt` is the epoch default
+    /// (a hand-built thread; Ed always sends one) gets no token rather than
+    /// a post "from 1970". The body is the XML `document`; the
     /// older `content` field is only a fallback, for a thread whose document
     /// is missing or comes out empty.
     public static func text(for thread: EdThread, decision: EdThreadDecision) -> String {
@@ -37,6 +44,9 @@ public enum EdDocumentBuilder {
             if let subcategory = nonEmpty(thread.subcategory) {
                 header += " / " + subcategory
             }
+        }
+        if thread.createdAt.timeIntervalSince1970 > 0 {
+            header += " " + EdDocumentHeader.postedMarker + EdDocumentHeader.postedDayString(thread.createdAt)
         }
 
         var body = ""

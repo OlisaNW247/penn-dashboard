@@ -157,19 +157,26 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
     ///   keeps, not news (`EdDocumentHeader.isAnnouncementOrPinned`);
     /// - it must carry text, not only `[image]` placeholders
     ///   (`EdDocumentHeader.carriesNoText`);
-    /// - it must be dated, and within the log's 60 days. `updatedAt` is the
-    ///   thread's last-activity date, and a row with no date has no place in
-    ///   a newest-first window.
+    /// - it must be dated, and within the log's 60 days. The date is the day
+    ///   the thread was posted, from the header's `· posted` token
+    ///   (`EdDocumentHeader.postedAt`), else the document's `updatedAt`. That
+    ///   is the thread's last-activity date, which Ed moves on every edit,
+    ///   reply and pin, so on its own it listed a Monday post as Saturday's;
+    ///   it is only the fallback for a document synced before the token
+    ///   existed. A row with no date has no place in a newest-first window.
+    ///   The 60 days are measured on this same date, as `pruned` measures
+    ///   them (`sortDate`), so an old thread bumped today does not appear
+    ///   here only to be dropped one step later.
     ///
     /// Pure: reads the document and nothing else, never fetches, and never
     /// changes what Ed keeps. The snippet is the body after the bracketed
     /// header line, so `[ed · pinned] Homework / Hw 3` never shows.
     public static func edRecord(from document: CourseDocument, now: Date) -> AnnouncementRecord? {
-        guard document.kind == .ed,
-              let posted = document.updatedAt,
+        guard document.kind == .ed else { return nil }
+        let header = EdDocumentHeader.parse(document.text)
+        guard let posted = header.postedAt ?? document.updatedAt,
               posted >= now.addingTimeInterval(-AnnouncementLogStore.retention)
         else { return nil }
-        let header = EdDocumentHeader.parse(document.text)
         guard header.isAnnouncementOrPinned,
               !EdDocumentHeader.carriesNoText(document.text)
         else { return nil }

@@ -29,9 +29,10 @@ struct AnnouncementEdRowsTests {
         daysAgo: Double? = 2,
         title: String = "Midterm moved",
         url: URL? = URL(string: "https://edstem.org/us/courses/1/discussion/501"),
-        now: Date = AnnouncementEdRowsTests.now
+        now: Date = AnnouncementEdRowsTests.now,
+        posted: String? = nil
     ) -> CourseDocument {
-        let header = "[ed · \(reason)]" + (category.map { " " + $0 } ?? "")
+        let header = "[ed · \(reason)]" + (category.map { " " + $0 } ?? "") + (posted.map { " · posted " + $0 } ?? "")
         return CourseDocument(
             courseID: courseID, course: course, kind: .ed, sourceID: thread,
             title: title, url: url,
@@ -84,6 +85,60 @@ struct AnnouncementEdRowsTests {
         #expect(row(daysAgo: 59) != nil)
         #expect(row(daysAgo: 0) != nil)
         #expect(row(daysAgo: nil) == nil)
+    }
+
+    // MARK: The date on a row
+
+    /// 2026-10-19 12:00 UTC, the Monday of the phone screenshot.
+    private static let oct19 = Date(timeIntervalSince1970: 1_792_411_200)
+
+    private static func utcCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private static func easternCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        return calendar
+    }
+
+    @Test("a row shows the day in the header's posted token, not the thread's last-activity date; one without the token falls back to updatedAt")
+    func rowDateIsPostingDay() throws {
+        // updatedAt is 2026-10-17 (a reply landed); the thread was posted on the 12th.
+        let bumped = Self.edDocument(thread: "1", daysAgo: 2, now: Self.oct19, posted: "2026-10-12")
+        let legacy = Self.edDocument(thread: "2", daysAgo: 2, now: Self.oct19)
+        let bumpedRow = try #require(AnnouncementRecord.edRecord(from: bumped, now: Self.oct19))
+        let legacyRow = try #require(AnnouncementRecord.edRecord(from: legacy, now: Self.oct19))
+        #expect(bumped.updatedAt == legacy.updatedAt)
+
+        for calendar in [Self.utcCalendar(), Self.easternCalendar()] {
+            let us = Locale(identifier: "en_US")
+            #expect(bumpedRow.postedLabel(now: Self.oct19, calendar: calendar, locale: us) == "oct 12")
+            #expect(legacyRow.postedLabel(now: Self.oct19, calendar: calendar, locale: us) == "oct 17")
+        }
+        #expect(bumpedRow.postedAt != bumped.updatedAt)
+        #expect(legacyRow.postedAt == legacy.updatedAt)
+    }
+
+    @Test("rows sort on the posting day: a long-ago thread bumped yesterday sits below a newer post")
+    func rowsSortOnPostingDay() {
+        let oldButBumped = Self.edDocument(thread: "1", daysAgo: 1, now: Self.oct19, posted: "2026-10-05")
+        let newerPost = Self.edDocument(thread: "2", daysAgo: 4, now: Self.oct19, posted: "2026-10-15")
+        let legacy = Self.edDocument(thread: "3", daysAgo: 2, now: Self.oct19)
+        let rows = AnnouncementRecord.edRecords(from: [oldButBumped, newerPost, legacy], now: Self.oct19)
+        #expect(rows.map(\.id) == [legacy.id, newerPost.id, oldButBumped.id])
+    }
+
+    @Test("the 60 days are measured on the posting day; a token with no updatedAt still dates the row")
+    func windowUsesPostingDay() {
+        // Posted 2026-08-01 (79 days before the 19th), bumped two days ago.
+        let stale = Self.edDocument(thread: "1", daysAgo: 2, now: Self.oct19, posted: "2026-08-01")
+        #expect(AnnouncementRecord.edRecord(from: stale, now: Self.oct19) == nil)
+        // Posted inside the window, updatedAt missing entirely.
+        let undatedOnWire = Self.edDocument(thread: "2", daysAgo: nil, now: Self.oct19, posted: "2026-10-12")
+        #expect(AnnouncementRecord.edRecord(from: undatedOnWire, now: Self.oct19)?.postedAt != nil)
     }
 
     @Test("an Ed row's snippet is the body only: no [ed · header, no [image] marks, and a plain-text < is not eaten as a tag")

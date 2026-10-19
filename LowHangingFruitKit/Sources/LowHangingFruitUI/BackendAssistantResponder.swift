@@ -470,13 +470,20 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// undated one. A syllabus has no "posted" day, and a policy that has
     /// been edited since is not news.
     ///
+    /// For an Ed post the date is the day it was posted, read from the
+    /// document's header (`CourseDocument.shownPostedAt`), not `updatedAt`:
+    /// that is Ed's last-activity time, and the label said "posted Oct 15"
+    /// for a thread written on Sep 29 and merely replied to on the 15th, which
+    /// the model then repeated as fact. A document from before the header
+    /// carried a date falls back to `updatedAt`.
+    ///
     /// Reads `askedAt` and never the clock: the same inputs always give the
     /// same text. The excerpts sit after the cache breakpoint, so a date here
     /// cannot disturb the cached prefix, but "the same question, the same
     /// bytes" is what lets this be tested and traced.
     static func postedLabel(for document: CourseDocument, askedAt: Date) -> String? {
         guard document.kind == .ed || document.kind == .announcement,
-              let posted = document.updatedAt
+              let posted = document.shownPostedAt
         else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = excerptTimeZone

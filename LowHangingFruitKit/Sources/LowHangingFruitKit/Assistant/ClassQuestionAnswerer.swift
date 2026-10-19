@@ -286,12 +286,15 @@ public struct ClassQuestionAnswerer: Sendable {
     private func recentAnnouncements(_ parsed: ParsedQuestion) -> AssistantAnswer {
         // Canvas announcements and Ed announcements/pinned posts in one list,
         // newest first by their own date. Equal dates fall back to the id so
-        // the order never depends on the sort's choice between ties.
+        // the order never depends on the sort's choice between ties. "Their
+        // own date" is the one shown beside each line, the day an Ed post was
+        // posted (`shownPostedAt`), not Ed's last-activity time: sorting on
+        // one and printing the other would list dates out of order.
         let announcements = Self.announcementDocuments(in: context.knowledge)
             .filter { doc in parsed.course.map { CourseMatcher.sameCourse(doc.course, as: $0) } ?? true }
             .sorted { lhs, rhs in
-                let l = lhs.updatedAt ?? lhs.fetchedAt
-                let r = rhs.updatedAt ?? rhs.fetchedAt
+                let l = lhs.shownPostedAt ?? lhs.fetchedAt
+                let r = rhs.shownPostedAt ?? rhs.fetchedAt
                 return l != r ? l > r : lhs.id < rhs.id
             }
         let scope = parsed.course.map { " for \($0.code)" } ?? ""
@@ -302,7 +305,7 @@ public struct ClassQuestionAnswerer: Sendable {
         var lines = ["Latest announcements\(scope):"]
         let top = Array(announcements.prefix(3))
         for (index, doc) in top.enumerated() {
-            let when = doc.updatedAt.map { " (" + DateText.dayOnly($0, calendar: context.calendar) + ")" } ?? ""
+            let when = doc.shownPostedAt.map { " (" + DateText.dayOnly($0, calendar: context.calendar) + ")" } ?? ""
             let body = firstSentence(of: bodyText(of: doc), limit: 160)
             lines.append("\(index + 1). \(doc.course) · \(doc.title)\(when): \(body)")
         }

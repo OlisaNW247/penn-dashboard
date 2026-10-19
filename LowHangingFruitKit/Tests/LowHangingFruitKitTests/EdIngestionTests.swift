@@ -428,6 +428,18 @@ struct EdDocumentBuilderTests {
         #expect(EdDocumentBuilder.text(for: t, decision: decision) == "[ed · announcement] General\nHello\nthere")
     }
 
+    @Test("the header ends with the day the thread was created, in US Eastern, and never the last-activity day")
+    func headerCarriesCreationDay() throws {
+        let created = try instant("2026-10-12T15:30:00Z")
+        let t = EdThread(
+            id: 7, userID: 1, type: "announcement", title: "T",
+            document: "<document><paragraph>Happy Monday!</paragraph></document>",
+            category: "General", createdAt: created, updatedAt: try instant("2026-10-17T03:00:00Z")
+        )
+        let text = EdDocumentBuilder.text(for: t, decision: EdThreadFilter.decide(t, authorRole: nil))
+        #expect(text == "[ed · announcement] General · posted 2026-10-12\nHappy Monday!")
+    }
+
     @Test("a thread with no body at all is just its header")
     func headerOnly() {
         let t = thread(1, type: "announcement")

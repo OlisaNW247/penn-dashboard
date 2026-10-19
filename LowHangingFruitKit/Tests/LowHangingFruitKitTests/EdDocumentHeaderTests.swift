@@ -12,18 +12,18 @@ struct EdDocumentHeaderTests {
     private static let paragraph = "<document version=\"2.0\"><paragraph>Bring ID.</paragraph></document>"
 
     /// The three threads the filter keeps, with the reason it gives each.
-    private static func keptThread(_ reason: String, document: String? = paragraph, category: String? = "Homework", subcategory: String? = "Hw 3") -> (EdThread, EdThreadDecision) {
+    private static func keptThread(_ reason: String, document: String? = paragraph, category: String? = "Homework", subcategory: String? = "Hw 3", createdAt: Date = Date(timeIntervalSince1970: 0)) -> (EdThread, EdThreadDecision) {
         let thread: EdThread
         let role: String?
         switch reason {
         case "announcement":
-            thread = EdThread(id: 1, userID: 7, type: "announcement", title: "A", document: document, category: category, subcategory: subcategory)
+            thread = EdThread(id: 1, userID: 7, type: "announcement", title: "A", document: document, category: category, subcategory: subcategory, createdAt: createdAt)
             role = nil
         case "pinned":
-            thread = EdThread(id: 2, userID: 7, type: "post", title: "P", document: document, category: category, subcategory: subcategory, isPinned: true)
+            thread = EdThread(id: 2, userID: 7, type: "post", title: "P", document: document, category: category, subcategory: subcategory, isPinned: true, createdAt: createdAt)
             role = nil
         default:
-            thread = EdThread(id: 3, userID: 7, type: "post", title: "S", document: document, category: category, subcategory: subcategory)
+            thread = EdThread(id: 3, userID: 7, type: "post", title: "S", document: document, category: category, subcategory: subcategory, createdAt: createdAt)
             role = "ta"
         }
         return (thread, EdThreadFilter.decide(thread, authorRole: role))
@@ -109,6 +109,99 @@ struct EdDocumentHeaderTests {
         let header = EdDocumentHeader.parse(text)
         #expect(header.reason == nil)
         #expect(header.body == text)
+    }
+
+    // MARK: - The posting date
+
+    /// The given UTC time, built from components so no formatter's locale is
+    /// involved in the expectation.
+    private static func utc(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))!
+    }
+
+    /// Noon US Eastern on the given day: what the parser must return. October
+    /// is EDT, so this is 16:00 UTC.
+    private static func easternNoon(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
+    }
+
+    @Test("the builder writes the creation day as a posted token, and the parser reads it back as noon Eastern of that day")
+    func postedTokenRoundTrips() {
+        for reason in ["announcement", "pinned", "staff post"] {
+            let (thread, decision) = Self.keptThread(reason, createdAt: Self.utc(2026, 10, 12, 15, 30))
+            let text = EdDocumentBuilder.text(for: thread, decision: decision)
+            #expect(text == "[ed · \(reason)] Homework / Hw 3 · posted 2026-10-12\nBring ID.")
+            let header = EdDocumentHeader.parse(text)
+            #expect(header.reason == reason)
+            #expect(header.category == "Homework / Hw 3")
+            #expect(header.postedAt == Self.easternNoon(2026, 10, 12))
+            #expect(header.body == "Bring ID.")
+        }
+    }
+
+    @Test("a thread with no category still carries the token, and the category stays nil")
+    func postedTokenWithoutCategory() {
+        let (thread, decision) = Self.keptThread("announcement", category: nil, subcategory: nil, createdAt: Self.utc(2026, 10, 12, 9))
+        let text = EdDocumentBuilder.text(for: thread, decision: decision)
+        #expect(text == "[ed · announcement] · posted 2026-10-12\nBring ID.")
+        let header = EdDocumentHeader.parse(text)
+        #expect(header.reason == "announcement")
+        #expect(header.category == nil)
+        #expect(header.postedAt == Self.easternNoon(2026, 10, 12))
+        #expect(header.body == "Bring ID.")
+
+        let (bare, bareDecision) = Self.keptThread("pinned", document: nil, category: nil, subcategory: nil, createdAt: Self.utc(2026, 10, 12, 12))
+        #expect(EdDocumentBuilder.text(for: bare, decision: bareDecision) == "[ed · pinned] · posted 2026-10-12")
+    }
+
+    @Test("the day is the Eastern day, whatever the device zone: 01:30 UTC on the 13th is the 12th, 03:30 UTC on the 12th is the 11th (both EDT)")
+    func postedDayIsEastern() {
+        // A Monday 9:30 PM EDT post is Tuesday in UTC; it must read Monday.
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 10, 13, 1, 30)) == "2026-10-12")
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 10, 12, 3, 30)) == "2026-10-11")
+        // 03:59 UTC is 11:59 PM EDT the day before; 04:00 UTC is midnight EDT.
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 10, 13, 3, 59)) == "2026-10-12")
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 10, 13, 4, 0)) == "2026-10-13")
+        // Winter is EST (UTC-5): 04:30 UTC on Jan 6 is still the 5th.
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 1, 6, 4, 30)) == "2026-01-05")
+        #expect(EdDocumentHeader.postedDayString(Self.utc(2026, 1, 5, 12)) == "2026-01-05")
+    }
+
+    @Test("the epoch default of a hand-built thread gets no token rather than a post from 1970")
+    func epochCreatedAtOmitsToken() {
+        let (thread, decision) = Self.keptThread("pinned")
+        let text = EdDocumentBuilder.text(for: thread, decision: decision)
+        #expect(text == "[ed · pinned] Homework / Hw 3\nBring ID.")
+        #expect(EdDocumentHeader.parse(text).postedAt == nil)
+    }
+
+    @Test("a header written before the token existed parses exactly as before, with no postedAt")
+    func oldHeaderHasNoPostedAt() {
+        let header = EdDocumentHeader.parse("[ed · pinned] Homework / Hw 3\nBring ID.")
+        #expect(header == EdDocumentHeader(reason: "pinned", category: "Homework / Hw 3", body: "Bring ID."))
+        #expect(header.postedAt == nil)
+        #expect(EdDocumentHeader.parse("[ed · announcement]").postedAt == nil)
+        #expect(EdDocumentHeader.parse("no header · posted 2026-10-12").postedAt == nil)
+    }
+
+    @Test("a malformed or impossible date is nil and leaves the category and body alone")
+    func malformedPostedToken() {
+        for bad in ["2026-13-45", "2026-02-31", "yesterday", "2026-10-1", "20261012", "2026-10-12T09:00", "", "0000-00-00"] {
+            let text = "[ed · pinned] Homework · posted \(bad)\nBring ID."
+            let header = EdDocumentHeader.parse(text)
+            #expect(header.postedAt == nil, "\(bad)")
+            #expect(header.reason == "pinned")
+            #expect(header.category?.hasPrefix("Homework") == true)
+            #expect(header.body == "Bring ID.")
+        }
+        // A category that merely contains the separator is not a token.
+        let dotted = EdDocumentHeader.parse("[ed · pinned] Labs · Week 3\nBring ID.")
+        #expect(dotted.category == "Labs · Week 3")
+        #expect(dotted.postedAt == nil)
     }
 
     // MARK: - carriesNoText

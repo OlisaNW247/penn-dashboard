@@ -214,6 +214,26 @@ struct EdIngestionDocumentTests {
         #expect(doc.updatedAt == thread.createdAt)
     }
 
+    @Test("the document's header carries the creation day while updatedAt stays the last-activity time")
+    func documentCarriesPostingDay() throws {
+        let created = now.addingTimeInterval(-7 * 86_400)
+        let bumped = now.addingTimeInterval(-86_400)
+        let thread = EdThread(
+            id: 901, userID: 7, courseID: 101, type: "announcement", title: "Welcome",
+            content: "<p>Hello class</p>", isPrivate: false,
+            createdAt: created, updatedAt: bumped
+        )
+        let doc = try #require(
+            EdIngestion.documents(course: course, edCourseID: 101, response: staffResponse([thread]), now: now).first
+        )
+        let header = EdDocumentHeader.parse(doc.text)
+        #expect(doc.updatedAt == bumped)
+        #expect(doc.text.contains(" · posted " + EdDocumentHeader.postedDayString(created)))
+        let posted = try #require(header.postedAt)
+        #expect(EdDocumentHeader.postedDayString(posted) == EdDocumentHeader.postedDayString(created))
+        #expect(header.body == "Hello class")
+    }
+
     @Test("a student post yields no document")
     func studentPostDropped() {
         let student = EdThread(
