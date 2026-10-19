@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-18, on `v8-ann-rules` (off `v8`).
+Last updated 2026-10-19, on `v8-loud-alert-actions` (off
+`v8-announcements` at `75dc7aa`).
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
@@ -43,6 +44,13 @@ These block shipping, or would make shipping risky.
   6. The widget when caught up ("all clear") and at a due time.
   7. A fresh install in mid-semester: old overdue work withheld, "N
      older hidden · show" at the foot of prev.
+- **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
+  With an item due in about 11 minutes: the three buzzes arrive Time
+  Sensitive; "turned in" from the lock screen stops the next buzz and
+  the card is done after unlock, also when the app was force-quit first;
+  "open in canvas" lands on the assignment (Canvas Student may take the
+  link, as it does from the card). Nothing about the alert has been heard
+  on a device yet.
 - **Decide the three sync questions** (Marco and Olisa; nothing here is
   merged, because Marco said not to touch the sync):
   1. Pass `until:` where `CourseKnowledgeCollector` fetches
@@ -250,6 +258,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-19 (`v8-loud-alert-actions`, off `v8-announcements` at
+  `75dc7aa`, pushed 2026-10-19, not merged): "Berserk mode" is the loud 10-minute alert,
+  now with buttons.** Marco: right before an assignment goes unsubmitted
+  it "goes berserk and forces you to notice and either fix it or do
+  something about it". Each buzz has **"turned in"** (silences the rest,
+  then marks the item done as a swipe does) and **"open in canvas"** (or
+  "open in gradescope"). The notification delegate is now installed at
+  launch, so a tap that cold-launches the app is not lost. **Not on a
+  phone**: Mac tests and an iOS Debug compile only (`CLAUDE.md` → Test
+  baseline).
 - **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
   merged): the stale-card rules.** The owner's phone filled with tasks
   already taken or never needed ("Take quiz covering assignments 1 and 2"

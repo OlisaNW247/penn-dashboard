@@ -475,6 +475,27 @@ fastest way for a new session to know what exists.
      item that has the alert. It needs the Time Sensitive entitlement in
      `App/LHFApp.entitlements` (iOS only); without it iOS delivers them as
      ordinary notifications and says nothing. Never heard on a phone yet.
+     The owner calls it **"Berserk mode"** (2026-10-19: right before an
+     assignment goes unsubmitted it "goes berserk and forces you to notice
+     and either fix it or do something about it"), and since 2026-10-19
+     (`v8-loud-alert-actions`, not on a phone) each buzz carries two
+     buttons: **"turned in"**, which silences that item's remaining
+     buzzes at the tap and then marks it done exactly as a swipe does once
+     the dashboard has loaded, and **"open in canvas"**, the card's own
+     link ("open in gradescope" for a Gradescope-only item; manual work and
+     Ed finds get "turned in" only). Both open the app (`.foreground`), on
+     purpose: handling "turned in" without opening it would run app code
+     off screen, the path that has crashed on every background wake. The
+     one notification delegate (`NotificationResponseDelegate`) is
+     installed in `LHFApp.init`, because iOS hands a button tap that
+     cold-launches the app only to a delegate assigned before launch
+     finishes; the old one was assigned at the first reschedule, too late.
+     Taps wait in a queue (`NotificationActionInbox`) until the dashboard
+     is bound, so none is lost or applied to an empty list; a waiting
+     "open" expires after 2 minutes (a Mac with its window closed would
+     otherwise open Canvas days later), a waiting "turned in" never does,
+     because it is the student's own claim. Rules in
+     `LoudAlertActions.swift`.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -590,11 +611,13 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2230 tests / 206 suites, all green, on `v8-announcements`
-(2026-10-18, `swift test --no-parallel`, on Marco's Mac, 9.4 s, the only
-test run on the machine at the time; the 2026-10-10 figure was
-1975/189 on `v8-launch-prep`). This is the sheet redesign and the
-announcement-task visibility rules applied together.** The same tree compiles for iOS in
+**Current: 2269 tests / 207 suites, all green, on `v8-loud-alert-actions`
+(2026-10-19, one commit on `75dc7aa`, `swift test --no-parallel` on
+Marco's Mac, 9.8 s, the only test run on the machine; its base
+`v8-announcements` is 2230/206, re-verified the same day before anything
+changed, and the 2026-10-10 figure was 1975/189 on `v8-launch-prep`).
+The iOS Debug compile (`-destination 'generic/platform=iOS'`), which is
+what compiles `App/LHFApp.swift`, ended in BUILD SUCCEEDED.** The same tree compiles for iOS in
 Debug (for the connected phone) and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which is what builds the widget
 extension and `BackgroundRefresh.swift`; `swift test` compiles neither,
@@ -636,6 +659,13 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2269/207 `v8-loud-alert-actions`, 2026-10-19, `swift test --no-parallel`
+  as the only run on the machine: 2230/206 plus 39 tests, nothing removed.
+  One new suite (`LoudAlertActionTests`: categories, labels, parsing,
+  the bound-before-drain inbox, staleness, silencing at the tap, and
+  source scans of `LHFApp.init` and the scheduler's delegate) and new
+  request tests in `LoudAlertTests`. Each review fix was reverted in turn
+  and its own test was seen failing.
 - 2230/206 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as the
   only run on the machine: the next two entries applied together.
   2190/202 plus 17 (the rules) plus 19 (the sheet) plus 4 new in
@@ -1554,6 +1584,7 @@ it holds work that exists nowhere else.
 |---|---|
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
+| `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR, not merged.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch (What the app does → Profile → reminders). Separate from `fix/submission-status`, which branches from the same commit. Mac tests and an iOS Debug compile only; never on a phone. Sign-in and sync files are byte-identical to `75dc7aa`. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
@@ -1576,6 +1607,16 @@ none is a ship line.
 
 ## Known gaps
 
+- **The loud alert's buttons are proven on the Mac only** (2026-10-19,
+  `v8-loud-alert-actions`). Unverified on a device: that a lock-screen
+  "turned in" stops buzzes 2 and 3 in time, that a tap which
+  cold-launches a force-quit app reaches the dashboard, and that
+  `openURL` from a cold launch is honoured (iOS may ignore an open
+  issued before the scene is active). Two limits by design: a "turned in"
+  for an item the dashboard no longer lists only silences and re-plans,
+  it completes nothing; and the alert still fires for work handed in while the app was
+  closed, because only a foreground refresh re-plans it (the background
+  wake is off limits).
 - **A failed Canvas announcement read is retried on every sync.** Only the
   Ed pass waits (`edTaskRetryInterval`, six hours, per post). A Canvas
   post whose AI-assist call fails is left unread and asked for again on

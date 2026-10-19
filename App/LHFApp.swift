@@ -16,6 +16,12 @@ struct LHFApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // On both platforms, and here rather than from a view or the
+        // scheduler: a tap on a loud alert's button can be what launches the
+        // app, and iOS delivers that response only to a delegate (and
+        // categories) in place before launch finishes. See
+        // `LoudAlertActions.categories`.
+        NotificationResponseRouter.install()
         #if canImport(BackgroundTasks) && os(iOS)
         LHFBackgroundRefresh.register()
         LHFBackgroundRefresh.scheduleNext()

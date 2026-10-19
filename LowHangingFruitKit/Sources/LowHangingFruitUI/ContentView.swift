@@ -31,6 +31,16 @@ struct ContentView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
+
+    /// Where taps on a loud alert's buttons wait for this view
+    /// (`NotificationResponseRouter`); drained by `takeLoudAlertActions()`.
+    @ObservedObject private var actionInbox = NotificationActionInbox.shared
+    /// Set in `.onAppear` once `vm` holds the dashboard's items, and read by
+    /// `takeLoudAlertActions()`. Until then nothing is taken, because a tap
+    /// handled against an empty `vm.items` completes nothing and re-plans the
+    /// reminders from an empty list (see `NotificationActionInbox.drain`).
+    @State private var isDashboardBound = false
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
@@ -213,9 +223,26 @@ struct ContentView: View {
             // to the (empty, un-synced) real store. No network, no login.
             if state.isPreviewMode {
                 vm.loadSampleData()
+                // Dropped, not acted on: the sample data is not the student's
+                // work (`LoudAlertActions.disposition`).
+                isDashboardBound = true
+                takeLoudAlertActions()
                 return
             }
             vm.bind(to: state)
+            // After the bind, never before: on a cold launch caused by a tap
+            // on a loud alert's button the action is already waiting, and the
+            // item it names is only in `vm.items` once the view model has
+            // loaded. The flag is what makes "never before" true for the
+            // `.onChange` below too, which can fire between this view's first
+            // render and this closure.
+            isDashboardBound = true
+            takeLoudAlertActions()
+        }
+        // Every later tap, with the dashboard already on screen.
+        .onChange(of: actionInbox.queue) { _, queue in
+            guard !queue.isEmpty else { return }
+            takeLoudAlertActions()
         }
         .task {
             // Read Duo's trust cookie once up front. The loop below sleeps
@@ -372,6 +399,46 @@ struct ContentView: View {
     private func rescheduleNotifications() {
         guard scheduler.isEnabled else { return }
         Task { await scheduler.reschedule(from: vm.items) }
+    }
+
+    /// Acts on the taps on a loud alert's buttons that are waiting, oldest
+    /// first, once the dashboard is bound.
+    ///
+    /// The actions are drained out of the inbox before anything runs, so
+    /// nothing here can be reached a second time for the same tap, however
+    /// many times this view appears. What to do with each is decided by the
+    /// pure `LoudAlertActions.dispositions`; this only carries it out.
+    ///
+    /// "turned in" is the swipe's own two calls, `vm.complete` and then
+    /// `rescheduleNotifications()` (see the timeline's `onComplete`), plus
+    /// taking the item's already-delivered alerts out of Notification Center.
+    /// The re-plan is what keeps a completed item's buzzes from coming back:
+    /// a completed item gets no alert. It runs once at the end of the batch,
+    /// not once per action, and only if some "turned in" was handled.
+    private func takeLoudAlertActions() {
+        let actions = actionInbox.drain(isDashboardBound: isDashboardBound, now: Date())
+        guard !actions.isEmpty else { return }
+
+        let dispositions = LoudAlertActions.dispositions(
+            for: actions, items: vm.items, isPreviewMode: state.isPreviewMode)
+        for disposition in dispositions {
+            switch disposition {
+            case .drop:
+                break
+            case .complete(let item):
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    vm.complete(item)
+                }
+                scheduler.clearDeliveredLoudAlerts(forAssignmentID: item.assignment.id)
+            case .clearOnly(let assignmentID):
+                scheduler.clearDeliveredLoudAlerts(forAssignmentID: assignmentID)
+            case .open(let url):
+                openURL(url)
+            }
+        }
+        if dispositions.contains(where: \.needsReplan) {
+            rescheduleNotifications()
+        }
     }
 
     // MARK: Canvas session banner

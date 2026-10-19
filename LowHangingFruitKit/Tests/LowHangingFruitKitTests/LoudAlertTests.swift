@@ -411,6 +411,134 @@ struct LoudAlertTests {
         }
     }
 
+    // MARK: The buttons
+
+    private static let canvasPage = "https://canvas.upenn.edu/courses/1/assignments/77"
+    private static let gradescopePage = "https://www.gradescope.com/courses/123/assignments/456"
+
+    /// One item of each kind the buttons tell apart. The plain `assignment`
+    /// fixture above has no URL, which is the manual-work case already.
+    private func buttonItems(due: Date) -> [String: DashItem] {
+        [
+            "canvas": linked(.canvas, "cv", url: Self.canvasPage, due: due),
+            "gradescope": linked(.gradescope, "course-123-assignment-456", url: Self.gradescopePage, due: due),
+            "pair": linked(.canvas, "pr", url: Self.canvasPage,
+                           linkedID: "gradescope:course-123-assignment-456", due: due),
+            "manual": linked(.manual, "mine", url: nil, due: due),
+        ]
+    }
+
+    @Test("A Canvas item gets the Canvas category and its page; a Gradescope-only item the Gradescope one; a pair Canvas; manual work turned-in only")
+    func buttonsByLinkKind() throws {
+        try withScheduler { scheduler, prefs, now in
+            let items = buttonItems(due: now + 2 * 3600)
+            let expected: [(key: String, category: String, url: String?)] = [
+                ("canvas", LoudAlertActions.canvasCategoryID, Self.canvasPage),
+                ("gradescope", LoudAlertActions.gradescopeCategoryID, Self.gradescopePage),
+                ("pair", LoudAlertActions.canvasCategoryID, Self.canvasPage),
+                ("manual", LoudAlertActions.turnedInOnlyCategoryID, nil),
+            ]
+            for (key, category, url) in expected {
+                let item = try #require(items[key])
+                let requests = scheduler.plannedRequests(from: [item], now: now, preferences: prefs)
+                let loud = loudRequests(requests)
+                #expect(loud.count == 3, "\(key): the alert itself is unchanged")
+                for request in loud {
+                    #expect(request.content.categoryIdentifier == category, "\(key)")
+                    let info = request.content.userInfo
+                    #expect(info[LoudAlertActions.assignmentIDKey] as? String == item.assignment.id, "\(key)")
+                    #expect(info[LoudAlertActions.linkURLKey] as? String == url, "\(key)")
+                    #expect(info.count == (url == nil ? 1 : 2), "\(key): nothing else rides along")
+                }
+            }
+        }
+    }
+
+    /// The "open" button must lead where the card's own link does. A feed
+    /// stores a calendar-month URL for an assignment, and `sourceLinks`
+    /// rewrites it to the assignment's page on the way out; the button takes
+    /// the rewritten one, not the stored one.
+    @Test("The URL is the card's own link: a calendar-shaped feed URL is rewritten to the assignment page")
+    func urlIsTheCardsLink() throws {
+        try withScheduler { scheduler, prefs, now in
+            let item = linked(
+                .canvas, "cal",
+                url: "https://canvas.upenn.edu/calendar?include_contexts=course_1&month=09&year=2026#assignment_77",
+                due: now + 2 * 3600)
+            let cardLink = try #require(item.assignment.sourceLinks.first)
+            #expect(cardLink.url.absoluteString == Self.canvasPage)
+
+            let loud = loudRequests(scheduler.plannedRequests(from: [item], now: now, preferences: prefs))
+            #expect(loud.count == 3)
+            #expect(loud.allSatisfy {
+                $0.content.userInfo[LoudAlertActions.linkURLKey] as? String == cardLink.url.absoluteString
+            })
+        }
+    }
+
+    @Test("All three buzzes of one item carry the same category and userInfo")
+    func threeBuzzesAgree() throws {
+        try withScheduler { scheduler, prefs, now in
+            for (key, item) in buttonItems(due: now + 2 * 3600) {
+                let loud = loudRequests(scheduler.plannedRequests(from: [item], now: now, preferences: prefs))
+                #expect(loud.count == 3, "\(key)")
+                let first = try #require(loud.first)
+                for request in loud {
+                    #expect(request.content.categoryIdentifier == first.content.categoryIdentifier, "\(key)")
+                    #expect((request.content.userInfo as NSDictionary).isEqual(to: first.content.userInfo), "\(key)")
+                }
+            }
+        }
+    }
+
+    /// Partway through the alert the remaining buzzes are re-planned; they
+    /// must keep their buttons, or the second and third would arrive bare.
+    @Test("A re-plan partway through the alert keeps the buttons on what is left")
+    func buttonsSurviveARePlan() {
+        withScheduler { scheduler, prefs, now in
+            let due = now + 2 * 3600
+            let item = linked(.canvas, "cv", url: Self.canvasPage, due: due)
+            let afterOne = scheduler.plannedRequests(
+                from: [item], now: due.addingTimeInterval(-Self.lead + 1), preferences: prefs)
+            let loud = loudRequests(afterOne)
+            #expect(loud.map(\.identifier) == ["loud:canvas:cv:2", "loud:canvas:cv:3"])
+            #expect(loud.allSatisfy { $0.content.categoryIdentifier == LoudAlertActions.canvasCategoryID })
+            #expect(loud.allSatisfy { $0.content.userInfo[LoudAlertActions.linkURLKey] as? String == Self.canvasPage })
+        }
+    }
+
+    @Test("Ordinary reminders and the other notices carry no category and no userInfo")
+    func othersHaveNoButtons() {
+        withScheduler(leadTimes: Set(LeadOffset.offered)) { scheduler, prefs, now in
+            let items = [
+                linked(.canvas, "cv", url: Self.canvasPage, due: now + 5 * 86_400),
+                linked(.gradescope, "course-123-assignment-456", url: Self.gradescopePage, due: now + 5 * 86_400),
+            ]
+            let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
+            let ordinary = dueRequests(requests)
+            #expect(!ordinary.isEmpty, "the fixture must plan some ordinary reminders for this to mean anything")
+            #expect(ordinary.allSatisfy { $0.content.categoryIdentifier.isEmpty && $0.content.userInfo.isEmpty })
+
+            let turnedIn = NotificationScheduler.turnedInRequests([(title: "Turned in", body: "HW 1")])
+            #expect(turnedIn.count == 1)
+            #expect(turnedIn.allSatisfy { $0.content.categoryIdentifier.isEmpty && $0.content.userInfo.isEmpty })
+        }
+    }
+
+    /// What the planner schedules and what "turned in" clears are one list,
+    /// or a delivered buzz would outlive the tick.
+    @Test("The identifiers cleared on \"turned in\" are exactly the ones the planner schedules")
+    func clearedIdentifiersMatchPlanned() {
+        withScheduler { scheduler, prefs, now in
+            let item = linked(.canvas, "cv", url: Self.canvasPage, due: now + 2 * 3600)
+            let planned = loudRequests(scheduler.plannedRequests(from: [item], now: now, preferences: prefs))
+                .map(\.identifier)
+            let cleared = NotificationScheduler.loudIdentifiers(forAssignmentID: item.assignment.id)
+            #expect(cleared == ["loud:canvas:cv:1", "loud:canvas:cv:2", "loud:canvas:cv:3"])
+            #expect(planned == cleared)
+        }
+    }
+
     // MARK: - Fixture
 
     private func withScratchDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
@@ -478,6 +606,20 @@ struct LoudAlertTests {
                 kind: .assignment, course: course, title: "Weekly reading",
                 dueAt: due, url: nil
             ),
+            dueOverride: nil, isCompleted: false, completedAt: nil
+        )
+    }
+
+    /// An item from any source, with a page of its own and optionally the
+    /// Gradescope twin the deduplicator would have recorded.
+    private func linked(
+        _ source: Assignment.Source, _ sourceID: String, url: String?,
+        linkedID: String? = nil, due: Date
+    ) -> DashItem {
+        DashItem(
+            assignment: Assignment(source: source, sourceID: sourceID, kind: .assignment,
+                                   course: "CIS 1200", title: "HW \(sourceID)", dueAt: due,
+                                   url: url.flatMap(URL.init(string:)), linkedID: linkedID),
             dueOverride: nil, isCompleted: false, completedAt: nil
         )
     }

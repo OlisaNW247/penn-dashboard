@@ -47,7 +47,6 @@ final class NotificationScheduler: ObservableObject {
 
     // Lazy so launch on an unbundled binary never touches the notification center.
     private lazy var center = UNUserNotificationCenter.current()
-    private let foregroundDelegate = ForegroundPresentationDelegate()
 
     /// Where the global reminder settings are read and written.
     ///
@@ -134,7 +133,10 @@ final class NotificationScheduler: ObservableObject {
 
     @discardableResult
     func requestAuthorization() async -> Bool {
-        center.delegate = foregroundDelegate
+        // The same shared object `NotificationResponseRouter.install()` set at
+        // launch, never one of this class's own: a second delegate assigned
+        // here would replace the one that routes the loud alert's buttons.
+        center.delegate = NotificationResponseDelegate.shared
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
         await refreshAuthStatus()
         return granted
@@ -231,7 +233,7 @@ final class NotificationScheduler: ObservableObject {
         guard isEnabled else { cancelAll(); return }
         await refreshAuthStatus()
         guard authStatus == .authorized || authStatus == .provisional else { return }
-        center.delegate = foregroundDelegate
+        center.delegate = NotificationResponseDelegate.shared
         cancelAll()
         for request in plannedRequests(from: items, now: now) {
             try? await center.add(request)
@@ -741,12 +743,19 @@ final class NotificationScheduler: ObservableObject {
     /// `com.apple.developer.usernotifications.time-sensitive` entitlement
     /// (`App/LHFApp.entitlements`); without it iOS silently delivers these as
     /// ordinary notifications, with no error to notice.
+    ///
+    /// **The only notifications with buttons.** Each carries a category and a
+    /// `userInfo` naming its item and, when it has one, the page to open
+    /// (`LoudAlertActions.buttons(for:)`), and all three of one item carry the
+    /// same, so whichever buzz the student taps offers the same choices.
+    /// Ordinary reminders, grade notices and "turned in" notices set neither.
     private static func loudRequests(
         for alert: LoudAlert,
         now: Date,
         nameOverrides: [String: String]
     ) -> [UNNotificationRequest] {
         let assignment = alert.item.assignment
+        let buttons = LoudAlertActions.buttons(for: assignment)
         return alert.pending.map { number, fire in
             let content = UNMutableNotificationContent()
             content.title = assignment.displayCourse(overrides: nameOverrides)
@@ -755,11 +764,39 @@ final class NotificationScheduler: ObservableObject {
             content.threadIdentifier = "loud:\(assignment.id)"
             content.sound = .default
             content.interruptionLevel = .timeSensitive
+            content.categoryIdentifier = buttons.categoryID
+            content.userInfo = LoudAlertActions.userInfo(assignmentID: assignment.id, url: buttons.url)
             let trigger = UNTimeIntervalNotificationTrigger(
                 timeInterval: fire.timeIntervalSince(now), repeats: false)
-            return UNNotificationRequest(identifier: "loud:\(assignment.id):\(number)",
+            return UNNotificationRequest(identifier: loudIdentifier(assignmentID: assignment.id, number: number),
                                          content: content, trigger: trigger)
         }
+    }
+
+    /// The identifier of the `number`-th (1...`loudAlertCount`) notification of
+    /// an item's loud alert. One definition, shared by the planner and by
+    /// `clearDeliveredLoudAlerts`, so what is planned and what is cleared
+    /// cannot drift apart.
+    nonisolated static func loudIdentifier(assignmentID: String, number: Int) -> String {
+        "loud:\(assignmentID):\(number)"
+    }
+
+    /// Every identifier an item's loud alert can have had.
+    nonisolated static func loudIdentifiers(forAssignmentID assignmentID: String) -> [String] {
+        (1...loudAlertCount).map { loudIdentifier(assignmentID: assignmentID, number: $0) }
+    }
+
+    /// Takes an item's already-delivered loud notifications out of
+    /// Notification Center, for when the student has just said it is handed in
+    /// (the alert's "turned in" button). The ones still pending are not
+    /// handled here: the re-plan that follows (`reschedule` cancels everything
+    /// and re-adds only what is still wanted) drops them, because a completed
+    /// item gets no alert. Without this the first buzz's stack would sit on
+    /// the lock screen, telling the student about work they have just
+    /// finished.
+    func clearDeliveredLoudAlerts(forAssignmentID assignmentID: String) {
+        center.removeDeliveredNotifications(
+            withIdentifiers: Self.loudIdentifiers(forAssignmentID: assignmentID))
     }
 
     /// The longest assignment name a reminder shows before it is cut. A lock
@@ -865,14 +902,5 @@ final class NotificationScheduler: ObservableObject {
         let f = DateFormatter()
         f.dateFormat = "EEE, MMM d 'at' h:mm a"
         return f.string(from: date)
-    }
-}
-
-/// Shows banners even when the app is in the foreground.
-private final class ForegroundPresentationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
     }
 }
