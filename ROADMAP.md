@@ -80,11 +80,9 @@ These block shipping, or would make shipping risky.
   any dismissal"); one ring with the app force-quit first; and, once the
   2026-10-20 build is on the phone, the new Live Activity (the Dynamic
   Island card, seen; the lock-screen card, not yet) and the in-app
-  takeover screen (seen once; try the three roads in). Before any TestFlight
-  build from this tree: `otool -L` on the Release archive's
-  `LHFWidgetExtension.appex` must show AlarmKit as `weak` (the widget
-  now imports it; the app's own link was weak in Debug and unchecked in
-  Release).
+  takeover screen (seen once; try the three roads in). The `otool -L`
+  check on the widget's AlarmKit link passed on the 3.1.0 Release archive
+  (2026-10-20: `weak`).
 - **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
   With an item due in about 11 minutes: the three buzzes arrive Time
   Sensitive; "turned in" from the lock screen stops the next buzz and

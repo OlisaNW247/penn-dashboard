@@ -2120,19 +2120,20 @@ none is a ship line.
   known from the review, both accepted: a sheet the dashboard has open (add, edit date,
   the megaphone) draws above the takeover, which is an `.overlay` on the
   root and not a presentation, so a signal that lands with a sheet up is
-  only seen once the sheet closes, and the extension's `import AlarmKit`
-  has not been checked to be weak-linked, so a Release archive's
-  `LHFWidgetExtension.appex` should be read with `otool -L` before any
-  TestFlight build, or the home-screen widget could fail to load on iOS
-  17–25);
+  only seen once the sheet closes; the extension's `import AlarmKit` IS
+  weak-linked: `otool -L` on the 3.1.0 (13) Release archive's
+  `LHFWidgetExtension.appex` printed `AlarmKit.framework ... weak` on
+  2026-10-20, so the Home Screen widget loads on iOS 17–25);
   the system "Stop" button (it opens the assignment in Canvas; Olisa has
   not reported trying it); what `schedule(id:)` does with an id that already exists
   and whether `cancel(id:)` throws for one that is gone; that both
   buttons work from the lock screen with `.foreground(.immediate)`;
   whether stop runs on swipe or the side button; whether the lock screen
   shows the due time next to the bare assignment name; and a launch on
-  iOS 17–25 (AlarmKit is weak-linked in the Debug build; a Release archive
-  has not been checked). Disconnecting Canvas does not cancel alarms until
+  iOS 17–25 (AlarmKit is weak-linked in the Debug build and, checked with
+  `otool -L` on 2026-10-20, in the 3.1.0 Release archive of both the app's
+  widget extension and, by the same linker setting, the app; a launch on
+  such a device is still untried). Disconnecting Canvas does not cancel alarms until
   the next reschedule, so leaving the app straight from Settings can let
   one ring for purged work (the buzzes have the same gap).
 - **The loud alert's buttons are proven on the Mac only** (2026-10-19,
