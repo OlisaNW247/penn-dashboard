@@ -129,8 +129,11 @@ been stale before, so re-check it rather than trust it. `project.yml`
 stamps **3.1.0 (build 13)** on `v8` (2026-10-20, the release the owner
 asked to send straight to App Review that evening: the Smooth Sweeper,
 the exam cards, the megaphone redesign, Ed posts, the ask work and the
-sign-out fix, with Grade Watcher removed; the archive and upload run on
-Olisa's Mac, see `docs/appstore/CHECKLIST.md` → "3.1.0 submission").
+sign-out fix, with Grade Watcher removed). **Archived from `1450fdc` and
+uploaded to App Store Connect at 19:11 on 2026-10-20** ("Upload
+succeeded", `docs/appstore/CHECKLIST.md` → "3.1.0 submission"); whether
+it was attached to a 3.1.0 version and submitted for review is Olisa's
+step in App Store Connect and is not recorded here yet.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0

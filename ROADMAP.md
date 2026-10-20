@@ -60,10 +60,11 @@ These block shipping, or would make shipping risky.
      older hidden · show" at the foot of prev.
 - **Ship 3.1.0 (13)** (stamped 2026-10-20; the owner's call that evening:
   straight to App Review, no TestFlight round, the song kept under a
-  licence he says he holds). The steps are `docs/appstore/CHECKLIST.md`
-  → "3.1.0 submission": confirm no build 13 in App Store Connect,
-  archive, check the widget links AlarmKit weakly (`otool -L`), export
-  (uploads), then in App Store Connect paste the 3.1.0 What's New and
+  licence he says he holds). **Build 13 was archived from `1450fdc` and
+  uploaded at 19:11 that evening** (tests green, the widget's AlarmKit
+  link confirmed weak). Left to do, in App Store Connect by hand
+  (`docs/appstore/CHECKLIST.md` → "3.1.0 submission", step 5): create
+  version 3.1.0, attach build 13, paste the 3.1.0 What's New and
   the rewritten Description from `LISTING.md`, the 3.1.0 review notes,
   drop any grades screenshot, submit. Raise the `update-manifest` floor
   only once it is downloadable, with Olisa's word. Two decisions the
