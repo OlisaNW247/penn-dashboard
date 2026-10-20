@@ -32,11 +32,12 @@ These block shipping, or would make shipping risky.
   stopped; the Berserk alarm, the exam cards and the megaphone sheet are
   the things to look at. Where the two sides' tests could disagree:
   `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
-- **Deploy `sync` and `ask` for the section details** (2026-10-20; needs
-  Olisa's go, `ask` is production): `node
-  backend/scripts/deploy-function.mjs sync --also ask`, then ask "where
-  is my CIS 2400 lecture" on the phone about an hour later, once the
-  catalog rows have refetched.
+- **Try the section details on a phone** (deployed 2026-10-20): ask
+  "where is my CIS 2400 lecture" once the catalog rows have refetched
+  (`select count(*) filter (where components::text like '%"room"%') from
+  catalog_courses` through the Management API says how many have). Note
+  `deploy-function.mjs`'s `--also` only bundles a second directory into
+  one upload; each slug is its own deploy.
 
 - **Look at the launch-prep work on a phone** (`v8-launch-prep`). Marco's
   phone has builds up to `b5ed8a1`; everything after is compiled for iOS
@@ -290,13 +291,13 @@ Kept so nobody rebuilds them blind.
 ## Done recently
 
 - **2026-10-20: ask can say where and when each section meets** (backend
-  only, on `v8`, **not deployed**). `sync` keeps each registrar section's
+  only, on `v8`; deployed the same day, `sync` v9 and `ask` v10). `sync` keeps each registrar section's
   room and instructors from Penn Labs, and `ask`'s COURSE STRUCTURE block
   lists every section's days, times, room and instructors with the
   student's own marked. Asked for after ask answered "where is my CIS 2400
   midterm" with no room; an exam room still has to come from an
   announcement, and this gives the lecture, lab and recitation rooms.
-  Deno 366/0. Goes live when Olisa says to deploy `sync` and `ask`.
+  Deno 366/0. Not yet seen answering on a phone.
 - **2026-10-20 (`v8-merge-loud-alert`, written without a compiler, then
   compiled green on Olisa's Mac the same morning, 2397 / 214, and built to
   the phone): Olisa's `v8` and Marco's `v8-loud-alert-actions` merged.**

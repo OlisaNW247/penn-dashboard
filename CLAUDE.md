@@ -1201,9 +1201,9 @@ client problem. The pieces, all exercised by tests:
   collected (Known gaps). Those are in the course-material sync, which
   Marco has said not to touch (`parked/ask-course-sync-fixes`).
 - **Where and when each section meets** is the one thing the server adds
-  on its own (2026-10-20, in the code on `v8`; **not deployed**, so the
-  live `ask` and `sync` still run the old version until Olisa says to
-  deploy both). `sync` already fetched each enrolled course's registrar
+  on its own (2026-10-20; deployed the same day at Olisa's word, `sync`
+  version 9 and `ask` version 10, about 13:40 UTC; the catalog rows
+  refetch with rooms on each install's next manifest call). `sync` already fetched each enrolled course's registrar
   sections from Penn Labs' public Penn Courses API (the public mirror of
   Path@Penn) into `catalog_courses.components`; it now keeps each
   meeting's `room` and each section's `instructorsBySection`, and `ask`'s
