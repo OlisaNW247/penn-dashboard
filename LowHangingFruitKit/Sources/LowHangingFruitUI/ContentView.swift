@@ -31,6 +31,16 @@ struct ContentView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
+
+    /// Where taps on a loud alert's buttons wait for this view
+    /// (`NotificationResponseRouter`); drained by `takeLoudAlertActions()`.
+    @ObservedObject private var actionInbox = NotificationActionInbox.shared
+    /// Set in `.onAppear` once `vm` holds the dashboard's items, and read by
+    /// `takeLoudAlertActions()`. Until then nothing is taken, because a tap
+    /// handled against an empty `vm.items` completes nothing and re-plans the
+    /// reminders from an empty list (see `NotificationActionInbox.drain`).
+    @State private var isDashboardBound = false
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
@@ -114,9 +124,6 @@ struct ContentView: View {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
                         addInlineButton
-                        if state.showsAnnouncementsButton {
-                            announcementFindsButton
-                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
@@ -188,6 +195,13 @@ struct ContentView: View {
             // that moment (see `NotificationScheduler.liveItems`). Captures
             // the view model itself, not this struct.
             scheduler.liveItems = { [vm] in vm.items }
+            // Berserk alarms never ring for preview or demo data. The scheduler
+            // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
+            // probe rather than a flag copied in here, where it would go stale
+            // the moment a student entered preview mode. It asks AppState's own
+            // `isUsingFixtureData` (preview mode, and the DEBUG demo launch)
+            // rather than keeping a second opinion about what is fixture data.
+            scheduler.fixtureDataProbe = { [state] in state.isUsingFixtureData }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-LHFDemoData") {
@@ -216,9 +230,29 @@ struct ContentView: View {
             // to the (empty, un-synced) real store. No network, no login.
             if state.isPreviewMode {
                 vm.loadSampleData()
+                // Entering preview takes back any alarm the student's real
+                // work had scheduled; later reschedules keep cancelling them.
+                scheduler.cancelAlarms()
+                // Dropped, not acted on: the sample data is not the student's
+                // work (`LoudAlertActions.disposition`).
+                isDashboardBound = true
+                takeLoudAlertActions()
                 return
             }
             vm.bind(to: state)
+            // After the bind, never before: on a cold launch caused by a tap
+            // on a loud alert's button the action is already waiting, and the
+            // item it names is only in `vm.items` once the view model has
+            // loaded. The flag is what makes "never before" true for the
+            // `.onChange` below too, which can fire between this view's first
+            // render and this closure.
+            isDashboardBound = true
+            takeLoudAlertActions()
+        }
+        // Every later tap, with the dashboard already on screen.
+        .onChange(of: actionInbox.queue) { _, queue in
+            guard !queue.isEmpty else { return }
+            takeLoudAlertActions()
         }
         .task {
             // Read Duo's trust cookie once up front. The loop below sleeps
@@ -258,11 +292,17 @@ struct ContentView: View {
             AddAssignmentSheet()
                 .environmentObject(state)
         }
-        .sheet(isPresented: $showAnnouncementFinds) {
+        // `onDismiss` replans reminders: a found card can be finished or have
+        // its date edited in the sheet, and the dashboard's own sheets do the
+        // same on the way out.
+        .sheet(isPresented: $showAnnouncementFinds, onDismiss: rescheduleNotifications) {
             AnnouncementFindsView(
-                items: state.announcementPageItems,
-                records: state.announcementRecordsOnPage,
-                newIDs: announcementNewIDs
+                found: state.announcementFoundCards(),
+                records: state.announcementSheetRecords(),
+                newIDs: announcementNewIDs,
+                courses: filterableCourses,
+                onComplete: { state.markCompleted($0.assignment) },
+                onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) }
             )
         }
         // The one-ask "include this class's readings?" popup that used to
@@ -325,26 +365,36 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
+    /// The megaphone, in the header (it was a 38pt control in the row under
+    /// it until 2026-10-18). Same circle as `navButton`; only the action
+    /// differs.
     private var announcementFindsButton: some View {
         Button { openAnnouncements() } label: {
-            Image(systemName: "megaphone.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothAnnouncementAccent)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothAnnouncementFill))
-                // See `addInlineButton`: 44pt hit region, 38pt drawing.
-                .contentShape(Circle().inset(by: -3))
+            // Marigold, the owner's pick (2026-10-18). The circle is a fill
+            // under an ink glyph, so the pastel is safe here; the sheet's own
+            // teal accent is unchanged.
+            headerCircle(icon: "megaphone.fill", color: .smoothMarigold)
                 // Unread only: the total never went down, so after the first
                 // week it said nothing. No badge at all once everything's
                 // been seen.
+                //
+                // Sits on the circle's upper-right rim, not in the square
+                // frame's corner: at the corner (the 38pt button's
+                // placement) a badge floats clear of a 48pt circle, whose
+                // corners are empty. The 2pt offsets leave it overhanging
+                // the 48pt frame by 2pt, which nothing above or beside it
+                // clips (the profile button is 10pt away). A capsule, not a
+                // circle, so "12" and "99+" widen it rather than overflow it.
                 .overlay(alignment: .topTrailing) {
                     if unreadAnnouncementCount > 0 {
-                        Text("\(unreadAnnouncementCount)")
-                            .font(.lhfMono(8, weight: .semibold))
+                        Text(AnnouncementSheetCopy.badgeText(unreadAnnouncementCount))
+                            .font(.lhfMono(9, weight: .semibold))
                             .foregroundStyle(Color.smoothPaper)
-                            .frame(minWidth: 14, minHeight: 14)
-                            .background(Circle().fill(Color.smoothTomato))
-                            .offset(x: 3, y: -3)
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .background(Capsule().fill(Color.smoothTomato))
+                            .offset(x: 2, y: -2)
                             .transition(.scale.combined(with: .opacity))
                             .accessibilityHidden(true)
                     }
@@ -359,6 +409,46 @@ struct ContentView: View {
     private func rescheduleNotifications() {
         guard scheduler.isEnabled else { return }
         Task { await scheduler.reschedule(from: vm.items) }
+    }
+
+    /// Acts on the taps on a loud alert's buttons that are waiting, oldest
+    /// first, once the dashboard is bound.
+    ///
+    /// The actions are drained out of the inbox before anything runs, so
+    /// nothing here can be reached a second time for the same tap, however
+    /// many times this view appears. What to do with each is decided by the
+    /// pure `LoudAlertActions.dispositions`; this only carries it out.
+    ///
+    /// "turned in" is the swipe's own two calls, `vm.complete` and then
+    /// `rescheduleNotifications()` (see the timeline's `onComplete`), plus
+    /// taking the item's already-delivered alerts out of Notification Center.
+    /// The re-plan is what keeps a completed item's buzzes from coming back:
+    /// a completed item gets no alert. It runs once at the end of the batch,
+    /// not once per action, and only if some "turned in" was handled.
+    private func takeLoudAlertActions() {
+        let actions = actionInbox.drain(isDashboardBound: isDashboardBound, now: Date())
+        guard !actions.isEmpty else { return }
+
+        let dispositions = LoudAlertActions.dispositions(
+            for: actions, items: vm.items, isPreviewMode: state.isPreviewMode)
+        for disposition in dispositions {
+            switch disposition {
+            case .drop:
+                break
+            case .complete(let item):
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    vm.complete(item)
+                }
+                scheduler.clearDeliveredLoudAlerts(forAssignmentID: item.assignment.id)
+            case .clearOnly(let assignmentID):
+                scheduler.clearDeliveredLoudAlerts(forAssignmentID: assignmentID)
+            case .open(let url):
+                openURL(url)
+            }
+        }
+        if dispositions.contains(where: \.needsReplan) {
+            rescheduleNotifications()
+        }
     }
 
     // MARK: Canvas session banner
@@ -468,6 +558,12 @@ struct ContentView: View {
             Spacer(minLength: 12)
 
             HStack(spacing: 10) {
+                // Where the grades button used to be (Grade Watcher was removed
+                // 2026-10-18, `FeatureFlags.gradeWatcher`). Always here, even
+                // with nothing to list: a control that appears and disappears
+                // with the sync leaves the header a different shape on every
+                // launch, and the sheet says "no announcements" by itself.
+                announcementFindsButton
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
@@ -494,17 +590,25 @@ struct ContentView: View {
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.smoothInk)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(color.opacity(0.18)))
-                .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
-                .contentShape(Circle())
+            headerCircle(icon: icon, color: color)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
+    }
+
+    /// The header's 48pt circle, shared by the push buttons above and the
+    /// megaphone (which presents a sheet, so it is a `Button`, not a
+    /// `NavigationLink`). One drawing, so the buttons cannot drift apart in
+    /// size, fill or stroke.
+    private func headerCircle(icon: String, color: Color) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.smoothInk)
+            .frame(width: 48, height: 48)
+            .background(Circle().fill(color.opacity(0.18)))
+            .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
+            .contentShape(Circle())
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope

@@ -37,11 +37,16 @@ final class NotificationScheduler: ObservableObject {
     /// detects a new submission. Defaults ON (unlike reminders): the
     /// feature was requested as always-on, so the toggle exists to opt OUT.
     @Published private(set) var turnedInEnabled: Bool
+    /// Whether an unsubmitted assignment gets the "loud" 10-minute alert (three
+    /// Time Sensitive notifications a few seconds apart; see `loudAlerts`).
+    /// Defaults ON for everyone, like `turnedInEnabled`: the owner asked for
+    /// "make sure you don't miss any assignments", so the switch exists to
+    /// opt OUT, and a missing key must read as on.
+    @Published private(set) var loudAlertEnabled: Bool
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
     // Lazy so launch on an unbundled binary never touches the notification center.
     private lazy var center = UNUserNotificationCenter.current()
-    private let foregroundDelegate = ForegroundPresentationDelegate()
 
     /// Where the global reminder settings are read and written.
     ///
@@ -55,13 +60,64 @@ final class NotificationScheduler: ObservableObject {
     /// (`NotificationScheduler()`) working unchanged.
     private let defaults: UserDefaults
 
+    // MARK: Berserk mode: the loud alert as a real alarm
+
+    /// Asks the dashboard whether it is showing fixture data: preview mode, or
+    /// the DEBUG `-LHFDemoData` launch (`AppState.isUsingFixtureData`, the
+    /// app's one definition of that). Registered once by `ContentView` beside
+    /// `liveItems`, and read afresh at every reschedule, so it cannot go stale
+    /// the way a flag copied in at one moment would (a student can enter
+    /// preview mode long after launch). Nil until the dashboard has appeared,
+    /// which reads as "not fixture data".
+    var fixtureDataProbe: (() -> Bool)?
+
+    /// Stands in for AlarmKit in tests, which must never touch `AlarmManager`.
+    /// Nil in the app, where `activeAlarmBackend()` supplies the real one.
+    var alarmBackendOverride: (any BerserkAlarmBackend)?
+
+    /// Stands in for the notification center in tests, which cannot touch it
+    /// (`UNUserNotificationCenter.current()` traps in an unbundled test
+    /// binary). Nil in the app, where the scheduler is its own sink.
+    var notificationSinkOverride: (any PendingNotificationSink)?
+
+    /// Stands in for the system's notification permission in tests, for the
+    /// same reason. Nil in the app.
+    var authStatusOverride: UNAuthorizationStatus?
+
+    /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
+    private let reschedulePasses = RescheduleSerializer<[DashItem]>()
+
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
     private static let turnedInKey     = "notif.turnedInEnabled"
+    private static let loudAlertKey    = "notif.loudAlertEnabled"
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
     static let maxPending = 60
     static let horizonDays = 14
+
+    // MARK: The loud 10-minute alert's shape
+
+    /// How long before the due time the first of the three fires.
+    nonisolated static let loudAlertLead: TimeInterval = 600
+    /// The gap between one notification of the alert and the next.
+    nonisolated static let loudAlertSpacing: TimeInterval = 3
+    /// How many notifications make up one alert.
+    nonisolated static let loudAlertCount = 3
+    /// The most items that get an alert in one plan: 10 items is 30 requests,
+    /// half the budget. Loud alerts are planned first and nearest-due first,
+    /// so with this ceiling a busy fortnight cannot spend all sixty slots on
+    /// three buzzes apiece and leave the day-before and hour-before reminders
+    /// for everything else unscheduled.
+    ///
+    /// There is deliberately no shorter "imminent only" window in front of this
+    /// cap: items are considered out to `horizonDays`, like every other
+    /// reminder. A shorter window (48 hours, say) means an alert exists only
+    /// if the app happened to re-plan inside it, so a student who
+    /// does not open the app in the two days before a deadline would get the
+    /// ordinary reminders and never the loud one, which defeats the point of
+    /// it. The nearest ten are the ones the cap keeps.
+    nonisolated static let maxLoudItems = 10
 
     init(defaults: UserDefaults = .lhf) {
         self.defaults = defaults
@@ -84,6 +140,8 @@ final class NotificationScheduler: ObservableObject {
         // Default ON when never set — `bool(forKey:)` alone would read a
         // missing key as false and silently disable the feature for everyone.
         self.turnedInEnabled = d.object(forKey: Self.turnedInKey) as? Bool ?? true
+        // Same missing-key-means-on rule as above, for the same reason.
+        self.loudAlertEnabled = d.object(forKey: Self.loudAlertKey) as? Bool ?? true
 
         #if DEBUG
         // Screenshot seam: show the reminders feature fully expanded (in-memory
@@ -97,12 +155,16 @@ final class NotificationScheduler: ObservableObject {
     // MARK: Authorization
 
     func refreshAuthStatus() async {
+        if let authStatusOverride { authStatus = authStatusOverride; return }
         authStatus = await center.notificationSettings().authorizationStatus
     }
 
     @discardableResult
     func requestAuthorization() async -> Bool {
-        center.delegate = foregroundDelegate
+        // The same shared object `NotificationResponseRouter.install()` set at
+        // launch, never one of this class's own: a second delegate assigned
+        // here would replace the one that routes the loud alert's buttons.
+        center.delegate = NotificationResponseDelegate.shared
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
         await refreshAuthStatus()
         return granted
@@ -119,6 +181,7 @@ final class NotificationScheduler: ObservableObject {
             _ = await requestAuthorization()
         } else {
             cancelAll()
+            cancelAlarms()
         }
     }
 
@@ -140,6 +203,14 @@ final class NotificationScheduler: ObservableObject {
     func setTurnedInEnabled(_ on: Bool) {
         turnedInEnabled = on
         defaults.set(on, forKey: Self.turnedInKey)
+    }
+
+    /// Saves the loud-alert switch. Like `setOffset`, re-planning is the
+    /// caller's job (`rescheduleAfterPreferenceChange()`): the alerts already
+    /// pending stay pending until it runs.
+    func setLoudAlertEnabled(_ on: Bool) {
+        loudAlertEnabled = on
+        defaults.set(on, forKey: Self.loudAlertKey)
     }
 
     // MARK: Reschedule (idempotent)
@@ -186,16 +257,39 @@ final class NotificationScheduler: ObservableObject {
 
     /// Cancels all app-scheduled reminders and re-adds them from the current items.
     /// Completed / submitted / too-old / rescheduled items drop off automatically.
+    ///
+    /// **One pass at a time.** A pass awaits in several places (the permission
+    /// refresh, the alarm permission prompt, every `center.add`, AlarmKit), and
+    /// the main actor is free at each, so before this a second `reschedule`
+    /// could start in the middle of the first and the two would fight over the
+    /// same notifications and the same alarm ids. Now a call that arrives
+    /// during a pass records its items as the latest and returns; the running
+    /// pass runs once more with the latest items before it finishes
+    /// (`RescheduleSerializer`). So a call can return before its own items are
+    /// applied, but they are always applied next, by the pass that is already
+    /// running, whose caller is still awaiting. The rerun takes a fresh `now`;
+    /// only the first pass uses the `now` passed in.
+    ///
+    /// See `applyReminders` for what one pass does, and why in that order.
     func reschedule(from items: [DashItem], now: Date = Date()) async {
         lastScheduledItems = items
-        guard isEnabled else { cancelAll(); return }
-        await refreshAuthStatus()
-        guard authStatus == .authorized || authStatus == .provisional else { return }
-        center.delegate = foregroundDelegate
-        cancelAll()
-        for request in plannedRequests(from: items, now: now) {
-            try? await center.add(request)
+        var firstPassNow: Date? = now
+        await reschedulePasses.submit(items) { items in
+            let passNow = firstPassNow ?? Date()
+            firstPassNow = nil
+            await self.performReschedule(from: items, now: passNow)
         }
+    }
+
+    private func performReschedule(from items: [DashItem], now: Date) async {
+        let sink: any PendingNotificationSink = notificationSinkOverride ?? self
+        guard isEnabled else { sink.removeAllPending(); cancelAlarms(); return }
+        await refreshAuthStatus()
+        // Reminders that cannot be delivered are not reminders the student
+        // asked to hear from: with notifications refused there is no loud
+        // alert to replace, so an alarm left over from an earlier state goes.
+        guard authStatus == .authorized || authStatus == .provisional else { cancelAlarms(); return }
+        await applyReminders(from: items, now: now, sink: sink)
     }
 
     /// Re-plans from `lastScheduledItems` after the student changed a per-course
@@ -236,12 +330,37 @@ final class NotificationScheduler: ObservableObject {
     /// Safe against `reschedule`'s `cancelAll()`, which only clears *pending*
     /// requests: these have no trigger and are delivered on arrival.
     func notifyGradeChanges(_ changes: [AssignmentStore.ScoreChange]) async {
+        let changes = Self.gradeNoticesToPost(changes)
         guard isEnabled, !changes.isEmpty else { return }
         await refreshAuthStatus()
         guard authStatus == .authorized || authStatus == .provisional else { return }
         for request in Self.gradeRequests(changes) {
             try? await center.add(request)
         }
+    }
+
+    /// Which of the detected grade changes may be announced: all of them while
+    /// Grade Watcher is on, none once the owner has removed it
+    /// (`FeatureFlags.gradeWatcher`, 2026-10-18). A student with no grades
+    /// screen must not be told a grade posted, a notice that would lead
+    /// nowhere.
+    ///
+    /// This is the only place the flag is read for notices, and it sits at the
+    /// posting point on purpose. Both drains (`ContentView.announceGradeChanges`
+    /// and the menu-bar copy in `LHFScenes`) still empty
+    /// `AppState.pendingGradeChanges`, so nothing piles up while the flag is
+    /// off, and the grade fetch that fills that list is untouched: it is also
+    /// the source of auto-submitted state and "turned in" notices, which stay
+    /// exactly as they were. The wrong fix is to stop detecting changes in
+    /// `AppState.notifiableGradeChanges` or to skip the fetch.
+    ///
+    /// `nonisolated` and parameterised on the flag so a test can pin both
+    /// values without recompiling; the app passes the real flag.
+    nonisolated static func gradeNoticesToPost(
+        _ changes: [AssignmentStore.ScoreChange],
+        gradeWatcherEnabled: Bool = FeatureFlags.gradeWatcher
+    ) -> [AssignmentStore.ScoreChange] {
+        gradeWatcherEnabled ? changes : []
     }
 
     /// Pure request-building, so the wording and the collapse rule are testable
@@ -358,7 +477,8 @@ final class NotificationScheduler: ObservableObject {
     /// Identifiers use the `turnedin:` prefix, which does not collide with
     /// any scheme already in use here: due-date reminders are
     /// `due:<assignment id>:<offset>` (built/removed in `plannedRequests` /
-    /// `reschedule`'s `cancelAll()`), and grade alerts are
+    /// `reschedule`'s `cancelAll()`), loud 10-minute alerts are
+    /// `loud:<assignment id>:<1...3>`, and grade alerts are
     /// `grade:<assignment id>:<earned>`
     /// or `grade:batch:<timestamp>`. A random UUID per call additionally
     /// guarantees two confirmations for the same assignment (e.g. a
@@ -435,10 +555,37 @@ final class NotificationScheduler: ObservableObject {
     /// problem set outranks a weekly reading scheduled to the same minute) and
     /// then on the request identifier, so the same inputs always produce the
     /// same plan — `Set<LeadOffset>` has no iteration order to rely on.
+    ///
+    /// # The loud alerts come out of the same sixty
+    ///
+    /// The loud 10-minute alert (`loudAlerts`) is planned first and its
+    /// requests are subtracted from the budget before the round-robin above
+    /// divides what is left. That order is the priority the owner asked for:
+    /// the work due soonest is the work that can still be missed, so it is
+    /// never the thing the cut falls on. `maxLoudItems` keeps that priority
+    /// from becoming a monopoly, and `horizonDays` bounds how far ahead the
+    /// alert looks, the same limit the plain reminders use. Returned
+    /// loud-first, nearest-due first, so
+    /// `reschedule` adds the requests that matter most before the rest.
+    ///
+    /// # Berserk mode: `loudAlertsAsAlarms`
+    ///
+    /// When the loud alert is delivered as an AlarmKit alarm instead
+    /// (`BerserkAlarmPlan`), the three buzzes must not also go out. Passing
+    /// `true` leaves exactly the loud buzzes out of the result and changes
+    /// nothing else: the same items are still chosen by `loudAlerts`, so they
+    /// still get no plain "10 minutes before" reminder (the alarm replaces it
+    /// just as the buzzes did), and the budget is still divided as if the
+    /// buzzes were there, so every other request is the one that was planned
+    /// before. The wrong fix is to hand the freed slots to the round-robin:
+    /// that would make the same student's other reminders differ with the
+    /// delivery mode, and a fallback to buzzes after an AlarmKit error could
+    /// then push the plan over the cap. `false` is today's output, untouched.
     func plannedRequests(
         from items: [DashItem],
         now: Date = Date(),
-        preferences: CoursePreferencesStore? = nil
+        preferences: CoursePreferencesStore? = nil,
+        loudAlertsAsAlarms: Bool = false
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
@@ -447,6 +594,14 @@ final class NotificationScheduler: ObservableObject {
         // projection for the widget), so the two cannot disagree.
         let nameOverrides = prefs.courseNameOverrides
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
+
+        let loud = loudAlerts(from: items, now: now, horizon: horizon, preferences: prefs)
+        // Only items that really get the alert, not everything that qualified:
+        // an item the `maxLoudItems` cut dropped keeps its plain 10-minute
+        // reminder, if the student asked for one, because otherwise it would
+        // have neither.
+        let loudItemIDs = Set(loud.map(\.item.id))
+        let loudRequests = loud.flatMap { Self.loudRequests(for: $0, now: now, nameOverrides: nameOverrides) }
 
         var byCourse: [String: [Candidate]] = [:]
         for item in items {
@@ -487,6 +642,10 @@ final class NotificationScheduler: ObservableObject {
             // candidates below.
             for offset in prefs.effectiveLeadOffsets(for: course, global: leadOffsets)
             where LeadOffset.offered.contains(offset) {
+                // The loud alert IS the 10-minute reminder for this item, only
+                // louder. Scheduling the plain one beside it would put a fourth
+                // "Due in 10 minutes" on the lock screen at the same instant.
+                if offset == .m10, loudItemIDs.contains(item.id) { continue }
                 let fire = due.addingTimeInterval(-Double(offset.rawValue))
                 guard fire > now else { continue }
                 byCourse[course, default: []]
@@ -494,7 +653,9 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        let budget = Self.maxPending
+        // The budget is spent on the buzzes whether or not they are emitted;
+        // see `loudAlertsAsAlarms` above.
+        let budget = Self.maxPending - loudRequests.count
         let calendar = Calendar.current
 
         let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
@@ -536,7 +697,200 @@ final class NotificationScheduler: ObservableObject {
                                          content: content, trigger: trigger)
         }
 
-        return requests
+        return (loudAlertsAsAlarms ? [] : loudRequests) + requests
+    }
+
+    // MARK: The loud 10-minute alert
+
+    /// One item's loud alert: which of its three notifications are still ahead.
+    private struct LoudAlert {
+        let item: DashItem
+        /// The notifications that have not fired yet, each with its fixed
+        /// position (1...3) so the identifier means the same thing on every
+        /// pass. Never empty.
+        let pending: [(number: Int, fire: Date)]
+    }
+
+    /// Which items get the loud alert, nearest-due first, capped at
+    /// `maxLoudItems`.
+    ///
+    /// An item qualifies when it is
+    /// - not completed, and has a due time still ahead and inside the
+    ///   `horizon` the plain reminders use (`horizonDays`), not a shorter one
+    ///   of its own (see `maxLoudItems` for why);
+    /// - not something that takes no submission: `showsNothingToSubmit`
+    ///   already covers Canvas's no-submission assignments, calendar events,
+    ///   modules readings and announcement "preparation" tasks (all `.event`),
+    ///   and `RecurringTask.isOccurrence` covers the weekly readings and
+    ///   check-ins, which `.event` does not;
+    /// - not an exam the app found (`Assignment.isFoundExam`): an exam is a
+    ///   sitting to show up for, not work left unsubmitted, and it keeps its
+    ///   ordinary lead-time reminders. A syllabus exam is `.event` and is
+    ///   already out by the line above. The announcement extractors, though,
+    ///   file every exam they recognise as a *submission* (an assessment noun is
+    ///   one, `AnnouncementTaskClassifier.taskKind`), so an exam announced in
+    ///   prose is `.assignment` and would be the one card this alert is least
+    ///   for. A feed exam is not covered by this line: Canvas knows whether it
+    ///   takes a submission, and the line above already says so;
+    /// - in a class whose reminders are not switched off.
+    ///
+    /// Those are the predicates the dashboard and the ordinary planner already
+    /// use, reused rather than restated, so "does this take a submission?"
+    /// cannot have a third answer.
+    ///
+    /// **A class's lead-time choices do not gate it.** A class set to "no
+    /// reminder times" has opted out of the lead-time reminders, not of being
+    /// warned about unsubmitted work; only the class's reminders-off switch
+    /// silences the alert.
+    ///
+    /// **Each notification is judged on its own fire time, not the item's.**
+    /// The planner re-runs on every sync and activation, and an app that
+    /// re-plans in the six seconds between the first and third notification
+    /// would, if the item were judged by its first fire time, find it already
+    /// past, cancel the two still pending and re-add nothing. The remaining
+    /// notifications are kept instead.
+    private func loudAlerts(
+        from items: [DashItem],
+        now: Date,
+        horizon: Date,
+        preferences prefs: CoursePreferencesStore
+    ) -> [LoudAlert] {
+        guard loudAlertEnabled else { return [] }
+
+        var alerts: [LoudAlert] = []
+        for item in items {
+            guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
+            guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { continue }
+            guard !item.isFoundExam else { continue }
+            guard prefs.notificationsEnabled(item.assignment.course) else { continue }
+
+            let first = due.addingTimeInterval(-Self.loudAlertLead)
+            let pending = (1...Self.loudAlertCount)
+                .map { (number: $0, fire: first.addingTimeInterval(Double($0 - 1) * Self.loudAlertSpacing)) }
+                .filter { $0.fire > now }
+            guard !pending.isEmpty else { continue }
+            alerts.append(LoudAlert(item: item, pending: pending))
+        }
+
+        // Nearest first, and the id after that, so the cut is a function of
+        // the inputs rather than of the order the dashboard happened to list
+        // two items due at the same minute.
+        alerts.sort { lhs, rhs in
+            let l = lhs.pending[0].fire, r = rhs.pending[0].fire
+            if l != r { return l < r }
+            return lhs.item.id < rhs.item.id
+        }
+        return Array(alerts.prefix(Self.maxLoudItems))
+    }
+
+    /// The alarms Berserk mode would schedule: one per item `loudAlerts`
+    /// selects, whose alarm time (due minus 10 minutes) is still ahead.
+    ///
+    /// **The selection is `loudAlerts`, not a copy of it.** Which work
+    /// qualifies (not done, nothing-to-submit and recurring and found exams
+    /// out, the class's switch, the nearest ten) has one definition, so the
+    /// alarm and the buzzes can never disagree about which items to shout
+    /// about. The alarm adds only its own timing rule on top
+    /// (`BerserkAlarmPlan.alarms`).
+    ///
+    /// Pure: reads the per-course store and builds values, so a test can drive
+    /// it without AlarmKit. Empty while the loud-alert switch is off, because
+    /// `loudAlerts` is.
+    func plannedAlarms(
+        from items: [DashItem],
+        now: Date = Date(),
+        preferences: CoursePreferencesStore? = nil
+    ) -> [PlannedAlarm] {
+        let prefs = resolvedPreferences(preferences)
+        let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
+        let selection = loudAlerts(from: items, now: now, horizon: horizon, preferences: prefs)
+            .map(\.item)
+        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides)
+    }
+
+    /// The notifications of one item's alert, in the voice of the ordinary
+    /// reminders.
+    ///
+    /// **Why three notifications and not one.** iOS gives an app no way to set
+    /// a vibration pattern, so "a triple buzz" can only be three notifications
+    /// a few seconds apart. They share one `threadIdentifier`, scoped to the
+    /// item rather than the class, so they sit on the lock screen as one stack
+    /// with a count instead of three loose banners, and not inside the class's
+    /// stack of ordinary reminders, where they would be buried among them.
+    ///
+    /// **Why a time-interval trigger.** The ordinary reminders use a calendar
+    /// trigger built from year-to-minute components, so they land up to 59
+    /// seconds early and cannot tell 12:00:03 from 12:00:06. Three
+    /// notifications 3 seconds apart need second precision, and
+    /// `UNTimeIntervalNotificationTrigger` is the trigger documented to have
+    /// it. The tempting fix is to add `.second` to the calendar components, but
+    /// whether the system honours them is exactly what nothing here can check
+    /// without a device. The price of the interval trigger is that it is
+    /// measured from the moment each request is added, not from `now`, so a
+    /// plan that takes a second to hand over fires a second late; against a
+    /// ten-minute lead that is nothing. `fire > now` is guaranteed by the
+    /// caller, because the initialiser traps on an interval that is not
+    /// positive.
+    ///
+    /// Always `.timeSensitive`, whatever `DueState` says: that is the whole
+    /// point of the alert. It needs the
+    /// `com.apple.developer.usernotifications.time-sensitive` entitlement
+    /// (`App/LHFApp.entitlements`); without it iOS silently delivers these as
+    /// ordinary notifications, with no error to notice.
+    ///
+    /// **The only notifications with buttons.** Each carries a category and a
+    /// `userInfo` naming its item and, when it has one, the page to open
+    /// (`LoudAlertActions.buttons(for:)`), and all three of one item carry the
+    /// same, so whichever buzz the student taps offers the same choices.
+    /// Ordinary reminders, grade notices and "turned in" notices set neither.
+    private static func loudRequests(
+        for alert: LoudAlert,
+        now: Date,
+        nameOverrides: [String: String]
+    ) -> [UNNotificationRequest] {
+        let assignment = alert.item.assignment
+        let buttons = LoudAlertActions.buttons(for: assignment)
+        return alert.pending.map { number, fire in
+            let content = UNMutableNotificationContent()
+            content.title = assignment.displayCourse(overrides: nameOverrides)
+            content.body = reminderBody(assignmentTitle: assignment.title,
+                                        headline: LeadOffset.m10.headline)
+            content.threadIdentifier = "loud:\(assignment.id)"
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            content.categoryIdentifier = buttons.categoryID
+            content.userInfo = LoudAlertActions.userInfo(assignmentID: assignment.id, url: buttons.url)
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: fire.timeIntervalSince(now), repeats: false)
+            return UNNotificationRequest(identifier: loudIdentifier(assignmentID: assignment.id, number: number),
+                                         content: content, trigger: trigger)
+        }
+    }
+
+    /// The identifier of the `number`-th (1...`loudAlertCount`) notification of
+    /// an item's loud alert. One definition, shared by the planner and by
+    /// `clearDeliveredLoudAlerts`, so what is planned and what is cleared
+    /// cannot drift apart.
+    nonisolated static func loudIdentifier(assignmentID: String, number: Int) -> String {
+        "loud:\(assignmentID):\(number)"
+    }
+
+    /// Every identifier an item's loud alert can have had.
+    nonisolated static func loudIdentifiers(forAssignmentID assignmentID: String) -> [String] {
+        (1...loudAlertCount).map { loudIdentifier(assignmentID: assignmentID, number: $0) }
+    }
+
+    /// Takes an item's already-delivered loud notifications out of
+    /// Notification Center, for when the student has just said it is handed in
+    /// (the alert's "turned in" button). The ones still pending are not
+    /// handled here: the re-plan that follows (`reschedule` cancels everything
+    /// and re-adds only what is still wanted) drops them, because a completed
+    /// item gets no alert. Without this the first buzz's stack would sit on
+    /// the lock screen, telling the student about work they have just
+    /// finished.
+    func clearDeliveredLoudAlerts(forAssignmentID assignmentID: String) {
+        center.removeDeliveredNotifications(
+            withIdentifiers: Self.loudIdentifiers(forAssignmentID: assignmentID))
     }
 
     /// The longest assignment name a reminder shows before it is cut. A lock
@@ -562,8 +916,22 @@ final class NotificationScheduler: ObservableObject {
     /// and a string rule has no business inheriting an actor (CLAUDE.md, the
     /// `decidedText` trap).
     nonisolated static func reminderBody(assignmentTitle: String, headline: String) -> String {
-        var name = assignmentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = reminderName(assignmentTitle)
         guard !name.isEmpty else { return headline }
+        let endsSentence = name.last.map { ".!?\u{2026}:;,".contains($0) } ?? false
+        return endsSentence ? "\(name) \(headline)" : "\(name). \(headline)"
+    }
+
+    /// An assignment's name as a reminder shows it: trimmed, and cut at a word
+    /// boundary with an ellipsis when longer than `reminderTitleLimit`. Empty
+    /// for a blank name.
+    ///
+    /// Split out of `reminderBody` so the Berserk alarm's title follows the
+    /// very same rule rather than a second copy of it (`BerserkAlarmPlan`);
+    /// `reminderBody` calls this, so its output is unchanged.
+    nonisolated static func reminderName(_ assignmentTitle: String) -> String {
+        var name = assignmentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "" }
         if name.count > reminderTitleLimit {
             let head = name.prefix(reminderTitleLimit)
             // Back up to the last space so the cut never lands inside a word;
@@ -571,8 +939,7 @@ final class NotificationScheduler: ObservableObject {
             let cut = head.lastIndex(where: \.isWhitespace).map { head[head.startIndex..<$0] } ?? head
             name = cut.trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
         }
-        let endsSentence = name.last.map { ".!?\u{2026}:;,".contains($0) } ?? false
-        return endsSentence ? "\(name) \(headline)" : "\(name). \(headline)"
+        return name
     }
 
     /// Stable, unique per (assignment, lead time) — the property `reschedule`'s
@@ -645,11 +1012,16 @@ final class NotificationScheduler: ObservableObject {
     }
 }
 
-/// Shows banners even when the app is in the foreground.
-private final class ForegroundPresentationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+/// The scheduler is the notification center's sink in the app. In its own
+/// file-scope extension because `center` is private to this file.
+extension NotificationScheduler: PendingNotificationSink {
+    func prepare() {
+        // The same shared object `NotificationResponseRouter.install()` set at
+        // launch, never one of this class's own.
+        center.delegate = NotificationResponseDelegate.shared
     }
+
+    func removeAllPending() { cancelAll() }
+
+    func add(_ request: UNNotificationRequest) async { try? await center.add(request) }
 }

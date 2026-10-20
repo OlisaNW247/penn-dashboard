@@ -46,7 +46,12 @@ public enum AssignmentDeduplicator {
     /// identical) for the pair to still be considered a duplicate (rule 3
     /// above). "~24h" per the design brief, with a little slack for
     /// timezone/rounding differences between the two platforms' feeds.
-    private static let similarTitleDueDateTolerance: TimeInterval = 26 * 3600
+    ///
+    /// Public because the announcement dedup in `AppState` reuses it as the
+    /// answer to "are these two dates the same day's task": one tolerance for
+    /// the fuzzy title tier here, for announcement twins there, and for whether
+    /// a completion may follow a twin, so the three cannot drift apart.
+    public static let similarTitleDueDateTolerance: TimeInterval = 26 * 3600
 
     /// Minimum Jaccard similarity (over normalized token sets) for two
     /// non-identical titles to even be considered for the due-date-gated

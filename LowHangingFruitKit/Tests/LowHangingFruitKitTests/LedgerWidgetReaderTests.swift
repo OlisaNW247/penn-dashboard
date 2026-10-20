@@ -120,7 +120,10 @@ struct LedgerWidgetReaderTests {
             Assignment(source: .canvasAnnouncement, sourceID: id, kind: .assignment,
                        course: "CIS 3200", title: title, dueAt: due, url: nil)
         }
-        // Ed posts carry the same source, with an `announcement-ed:` id.
+        // Ed finds carry the same source: `ed-` ids from the Ed pass, and the
+        // `announcement-ed:` ids the Canvas loop wrote for one day (2026-10-19)
+        // before the two were merged, which survive on a phone as inert rows.
+        // The widget reads `sourceRaw` and the date, never the id.
         store.upsert([
             find("announcement-1-0", title: "Passed announcement task", due: now.addingTimeInterval(-60)),
             find("announcement-ed:9:5-0", title: "Passed Ed task", due: now.addingTimeInterval(-86_400)),

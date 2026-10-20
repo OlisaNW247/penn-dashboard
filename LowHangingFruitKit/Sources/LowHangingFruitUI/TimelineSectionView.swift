@@ -32,7 +32,8 @@ struct TimelineSectionView: View {
                     item: item,
                     onComplete: { onComplete(item) },
                     onEdit: { onEdit(item) },
-                    onRemove: { onRemove(item) }
+                    onRemove: { onRemove(item) },
+                    isExamOverride: item.examStyleOverride
                 )
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .move(edge: .top)),

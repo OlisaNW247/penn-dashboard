@@ -55,9 +55,15 @@ struct VisualStructureTests {
 
         #expect(add.contains("smoothTomato"))
         #expect(!add.contains("smoothAnnouncement"))
-        #expect(announcements.contains("smoothAnnouncementAccent"))
-        #expect(announcements.contains("smoothAnnouncementFill"))
+        // The megaphone is drawn by the header's shared 48pt circle
+        // (2026-10-18), which tints with the colour it is handed instead of
+        // using the 38pt button's separate `smoothAnnouncementFill`. The owner
+        // made that colour marigold the same day; the sheet's own teal accent
+        // was left alone.
+        #expect(announcements.contains("smoothMarigold"))
+        #expect(!announcements.contains("smoothAnnouncement"))
         #expect(!announcements.contains("smoothGrape"))
+        #expect(!add.contains("smoothMarigold"))
     }
 
     @Test("backend deletion failure is visible without restoring sync clutter")

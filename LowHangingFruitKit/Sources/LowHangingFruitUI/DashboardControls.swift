@@ -111,10 +111,15 @@ struct ClassFilterMenu: View {
                 }
             }
         } label: {
+            // Cobalt as the fill and its ink partner for the glyph, the same
+            // pairing as the add button beside it (tomato). The glyph used to
+            // be the cobalt pastel itself on a 16% tint of it, which left the
+            // control barely blue at a glance; the pastels are fills, and
+            // type or glyphs on them use their ink.
             DashCircleIcon(
                 systemName: selection == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill",
-                foreground: Color.smoothCobalt,
-                fill: Color.smoothCobalt.opacity(selection == nil ? 0.16 : 0.28)
+                foreground: Color.smoothCobaltInk,
+                fill: Color.smoothCobalt.opacity(selection == nil ? 0.30 : 0.46)
             )
         }
         .menuStyle(.button)
@@ -131,6 +136,11 @@ struct ClassFilterMenu: View {
 /// Shown under the control row only while a class filter is on.
 struct ClassFilterChip: View {
     let name: String
+    /// The chip's tint and the colour of its type. Cobalt, as on the
+    /// dashboard, unless the caller has a class to show in its own colour
+    /// (the megaphone sheet passes `courseAccent(for:)` and its ink partner).
+    var accent: Color = .smoothCobalt
+    var ink: Color = .smoothCobalt
     let onClear: () -> Void
 
     var body: some View {
@@ -142,10 +152,10 @@ struct ClassFilterChip: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
             }
-            .foregroundStyle(Color.smoothCobalt)
+            .foregroundStyle(ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Capsule().fill(Color.smoothCobalt.opacity(0.14)))
+            .background(Capsule().fill(accent.opacity(0.14)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

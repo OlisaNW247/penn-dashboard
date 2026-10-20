@@ -34,7 +34,12 @@ final class NotificationSchedulerTests: XCTestCase {
             return XCTFail("could not open a scratch defaults suite")
         }
         defer { UserDefaults.standard.removePersistentDomain(forName: name) }
-        body(NotificationScheduler(defaults: defaults), CoursePreferencesStore(defaults: defaults))
+        let scheduler = NotificationScheduler(defaults: defaults)
+        // Off: the loud 10-minute alert is on by default and would add its own
+        // requests to items due soon; these tests pin the ordinary layer, and
+        // `LoudAlertTests` covers the alert.
+        scheduler.setLoudAlertEnabled(false)
+        body(scheduler, CoursePreferencesStore(defaults: defaults))
     }
 
     private func item(_ id: String, due: Date?, completed: Bool = false) -> DashItem {

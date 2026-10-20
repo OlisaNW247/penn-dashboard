@@ -14,8 +14,9 @@ import Testing
 /// defaults (`announcementWatcherEnabled`, `announcementAIEnabled`).
 ///
 /// (Stale below the first sentence: `syncAnnouncements()` now has test seams
-/// and is exercised end to end by `AnnouncementLogSyncTests` and, for Ed
-/// posts, by `AnnouncementWatcherEdTests` at the bottom of this file.)
+/// and is exercised end to end by `AnnouncementLogSyncTests` and, for its
+/// summaries and retry cap, by `AnnouncementWatcherSyncTests` at the bottom of
+/// this file.)
 /// `syncAnnouncements()` itself is NOT exercised here — same reasoning
 /// `ModuleReadingImportTests` gives for not exercising
 /// `refreshCourseIntel(cookies:)`'s network path: it needs a non-empty cookie
@@ -234,7 +235,12 @@ struct AnnouncementWatcherWiringTests {
         }
     }
 
-    @Test("announcement routing keeps direct assessments on the dashboard and moves preparation or materials to finds")
+    // Rewritten 2026-10-18 with the owner's decision that every task found in
+    // an announcement is a dashboard card: preparation ("read", "bring",
+    // "review", a practice exam) used to be `.find` here and is `.main` now.
+    // What stays `.find` is wording that reports something done (slides or
+    // grades posted), which is information and not a task.
+    @Test("announcement routing puts every task on the dashboard and keeps only informational wording in finds")
     func announcementRoutingSeparatesOwedWorkFromFinds() {
         func placement(_ title: String, kind: Assignment.Kind = .assignment) -> AppState.AnnouncementDashboardPlacement {
             AppState.announcementDashboardPlacement(for: Assignment(
@@ -246,24 +252,31 @@ struct AnnouncementWatcherWiringTests {
         #expect(placement("Take midterm 1") == .main)
         #expect(placement("Take mid term 1 by Thursday") == .main)
         #expect(placement("Take mid-term 1 by Thursday") == .main)
-        #expect(placement("Take the practice mid term by Thursday") == .find)
-        #expect(placement("Practice midterm") == .find)
-        #expect(placement("Practice mid term") == .find)
-        #expect(placement("Review p sets") == .find)
-        #expect(placement("Bring Arches cover paper") == .find)
-        #expect(placement("Read chapter 4", kind: .event) == .find)
-        #expect(placement("Slides have been posted", kind: .assignment) == .find)
+        // Preparation tasks are cards too.
+        #expect(placement("Take the practice mid term by Thursday") == .main)
+        #expect(placement("Practice midterm") == .main)
+        #expect(placement("Practice mid term") == .main)
+        #expect(placement("Review p sets") == .main)
+        #expect(placement("Bring Arches cover paper") == .main)
+        #expect(placement("Read chapter 4", kind: .event) == .main)
         #expect(placement("Quiz 2", kind: .event) == .main)
         #expect(placement("Test 1", kind: .event) == .main)
         #expect(placement("Assessment 3", kind: .event) == .main)
         #expect(placement("Mid term 1", kind: .event) == .main)
-        #expect(placement("Take the practice test", kind: .assignment) == .find)
+        #expect(placement("Take the practice test", kind: .assignment) == .main)
+        // Wording that reports something done is information, whatever kind
+        // an older backend persisted it as.
+        #expect(placement("Slides have been posted", kind: .assignment) == .find)
+        #expect(placement("Slides have been posted", kind: .event) == .find)
         #expect(placement("Quiz grades posted", kind: .assignment) == .find)
     }
 
     // MARK: - Item 5: ledger partition guarantee + dashboard visibility
 
-    @Test("preparation announcement rows surface only in finds and survive a .canvas-source reconcile")
+    // Rewritten 2026-10-18: this pinned "a preparation row is a find, never a
+    // dashboard card", the rule the owner reversed. The ledger-partition half
+    // of the test is unchanged.
+    @Test("preparation announcement rows are dashboard cards and survive a .canvas-source reconcile")
     func announcementRowsSurviveCanvasReconcileAndSurfaceOnDashboard() {
         withRestoredDefaults {
             // Pinned to the current repair version so `AppState.init`'s
@@ -295,8 +308,8 @@ struct AnnouncementWatcherWiringTests {
 
             let state = AppState(assignmentStore: store)
             let dashboardItems = state.assignments + state.laterAssignments + state.assessments
-            #expect(!dashboardItems.contains { $0.title == "Bring a signed permission form" })
-            #expect(state.announcementFinds.contains { $0.title == "Bring a signed permission form" })
+            #expect(dashboardItems.contains { $0.title == "Bring a signed permission form" })
+            #expect(!state.announcementFinds.contains { $0.title == "Bring a signed permission form" })
 
             // A `.canvas`-source reconcile for the same course must not disturb
             // the `.canvasAnnouncement` row — `reconcile` partitions existing
@@ -443,23 +456,29 @@ struct AnnouncementWatcherWiringTests {
     }
 }
 
-/// `syncAnnouncements()` reading Ed Discussion posts, end to end with no
-/// network: the Canvas fetch and the extractor choice are the per-instance
-/// seams `announcementFetchForTesting` / `announcementExtractorForTesting`,
-/// and the Ed posts are `.ed` documents placed in `courseKnowledge`, the
-/// store the Ed sync fills. The wiring above could not run the sync; this
-/// suite follows `AnnouncementEdSyncTests`' harness (a seeded id -> code map,
-/// course codes unique to the suite) but leaves the announcement log off, so
-/// it touches neither Application Support nor any seen-ids key.
+/// `syncAnnouncements()` end to end with no network: the Canvas fetch and the
+/// extractor choice are the per-instance seams `announcementFetchForTesting` /
+/// `announcementExtractorForTesting`. Covers the sync's own limits and
+/// diagnostics: the one-line summary it writes at every exit, the per-id
+/// retry cap, the quota stop and the extraction back-off.
 ///
-/// The one shared write is the extraction pipeline's own
-/// `processedAnnouncementIDsV1` (the sync cannot be pointed elsewhere), backed
-/// up and restored the way `AnnouncementLogSyncTests` does; it and the repair
-/// version are pinned before the `AppState` exists so its one-time sweep is a
-/// no-op. Every id and class code here is unique to this suite.
+/// (This suite was `AnnouncementWatcherEdTests` until the merge of
+/// 2026-10-20, when the Ed posts it fed through this loop moved to their own
+/// pass, `syncEdAnnouncementTasks`, tested by `EdAnnouncementTaskTests`. The
+/// tests that drove Ed posts through `syncAnnouncements`, or pinned the
+/// `announcement-ed:` find id they got, were deleted; the summary and
+/// retry-cap tests were kept and rewritten to use Canvas announcements.)
+///
+/// The announcement log is left off, so the suite touches neither Application
+/// Support nor any seen-ids key. The one shared write is the extraction
+/// pipeline's own `processedAnnouncementIDsV1` (the sync cannot be pointed
+/// elsewhere), backed up and restored the way `AnnouncementLogSyncTests` does;
+/// it and the repair version are pinned before the `AppState` exists so its
+/// one-time sweep is a no-op. Every id and class code here is unique to this
+/// suite.
 @MainActor
-@Suite("Announcement watcher: Ed posts", .serialized)
-struct AnnouncementWatcherEdTests {
+@Suite("Announcement watcher: sync summary and retry cap", .serialized)
+struct AnnouncementWatcherSyncTests {
     private static let day: TimeInterval = 24 * 60 * 60
     private static let processedKey = "processedAnnouncementIDsV1"
     private static let extractionVersionKey = "announcementExtractionVersionV1"
@@ -556,189 +575,82 @@ struct AnnouncementWatcherEdTests {
         try await body(harness)
     }
 
-    private func edDoc(
-        _ thread: String,
-        reason: String = "announcement",
+    /// One Canvas announcement of the suite's class, posted `daysAgo` days
+    /// before the real clock (the tests run the sync at `Date()` or later, all
+    /// inside the 14-day extraction window).
+    private func post(
+        _ id: String,
         title: String = "Verbal Assessment #2 Sign-Ups",
-        body: String = "Sign-ups for Verbal Assessment #2 are open on the course site. Please sign up by Friday.",
+        message: String = "Sign-ups for Verbal Assessment #2 are open on the course site. Please sign up by Friday.",
         daysAgo: Double = 1,
-        courseID: String = AnnouncementWatcherEdTests.course.id,
-        courseCode: String = AnnouncementWatcherEdTests.course.code
-    ) -> CourseDocument {
-        AnnouncementEdRowsTests.edDocument(
-            thread: thread, courseID: courseID, course: courseCode, reason: reason,
-            body: body, daysAgo: daysAgo, title: title,
-            url: URL(string: "https://edstem.org/us/courses/77/discussion/\(thread)"), now: Date()
+        courseID: String = AnnouncementWatcherSyncTests.course.id
+    ) -> CanvasAnnouncement {
+        CanvasAnnouncement(
+            id: id, courseID: courseID, title: title, message: message,
+            postedAt: Date().addingTimeInterval(-daysAgo * Self.day),
+            url: URL(string: "https://canvas.upenn.edu/courses/\(courseID)/discussion_topics/\(id)")
         )
     }
 
-    // MARK: A post becomes a find
+    // MARK: Ed posts are not this loop's
 
-    @Test("an Ed announcement with a sign-up sentence becomes a find with the Ed id, the class code and the Ed thread URL, extracted from the body and not the header")
-    func edPostBecomesFind() async throws {
+    @Test("Ed posts on the phone are left to the Ed pass: the Canvas sync neither reads nor counts them")
+    func edPostsAreNotReadHere() async throws {
         try await withHarness { h in
-            let document = edDoc("9400501")
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [document])
-            // No Canvas announcements at all: the Ed post alone must be
-            // enough to run the extraction.
+            let ed = AnnouncementEdRowsTests.edDocument(
+                thread: "9400501", courseID: Self.course.id, course: Self.course.code, reason: "announcement",
+                body: "Sign-ups for Verbal Assessment #2 are open. Please sign up by Friday.",
+                daysAgo: 1, title: "Verbal Assessment #2 Sign-Ups", now: Date()
+            )
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [ed])
             h.canvasResponse = []
             await h.state.syncAnnouncements(now: Date())
 
-            let find = try #require(h.finds.first)
-            #expect(h.finds.count == 1)
-            #expect(find.sourceID == "announcement-ed:9401:9400501-0")
-            #expect(find.source == .canvasAnnouncement)
-            #expect(find.course == Self.course.code)
-            #expect(find.url == URL(string: "https://edstem.org/us/courses/77/discussion/9400501"))
-            #expect(find.title == "Sign up for a Verbal Assessment #2 slot")
-            #expect(h.state.announcementItems.map(\.sourceID) == [find.sourceID])
-
-            // What the extractor was given: Ed's id, the title, and a body
-            // with no `[ed · …]` header line in it.
-            let source = try #require(h.seen.all.first)
-            #expect(source.announcementID == "ed:9401:9400501")
-            #expect(source.courseCode == Self.course.code)
-            #expect(source.title == "Verbal Assessment #2 Sign-Ups")
-            #expect(!source.body.contains("[ed"))
-            #expect(source.body.hasPrefix("Sign-ups for Verbal Assessment #2"))
-
-            #expect(h.state.processedAnnouncementIDs == ["ed:9401:9400501"])
-            // The sheet's "task found" tag joins on this id.
-            #expect(AnnouncementRecord.announcementID(fromFindSourceID: find.sourceID) == document.id)
-        }
-    }
-
-    @Test("a staff post is read as well, and a pinned one")
-    func staffAndPinnedPostsAreRead() async throws {
-        try await withHarness { h in
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
-                edDoc("9400511", reason: "staff post", title: "HW3 moved", body: "HW3 is now due Monday."),
-                edDoc("9400512", reason: "pinned", title: "Office hours", body: "Bring your laptop to office hours."),
-            ])
-            await h.state.syncAnnouncements(now: Date())
-            #expect(Set(h.seen.ids) == ["ed:9401:9400511", "ed:9401:9400512"])
-        }
-    }
-
-    // MARK: Dedup and gates
-
-    @Test("a processed Ed post is not extracted again")
-    func processedEdPostIsNotReextracted() async throws {
-        try await withHarness { h in
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400521")])
-            await h.state.syncAnnouncements(now: Date())
-            await h.state.syncAnnouncements(now: Date())
-            #expect(h.seen.ids == ["ed:9401:9400521"])
-            #expect(h.finds.count == 1)
-        }
-    }
-
-    @Test("an informational Ed post is marked processed and makes no find, and never reaches the extractor")
-    func informationalEdPostIsProcessedWithoutAFind() async throws {
-        try await withHarness { h in
-            #expect(HeuristicAnnouncementExtractor.isLikelyInformational(title: "Recording is up", body: "See Canvas."))
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
-                edDoc("9400531", title: "Recording is up", body: "See Canvas."),
-            ])
-            await h.state.syncAnnouncements(now: Date())
-            #expect(h.seen.ids.isEmpty)
-            #expect(h.finds.isEmpty)
-            #expect(h.state.processedAnnouncementIDs == ["ed:9401:9400531"])
-        }
-    }
-
-    @Test("a question, a student post, a private post, a headerless one, an image-only one, an old one, a hidden class's and a Canvas-kind document never reach the extractor")
-    func nothingElseIsRead() async throws {
-        try await withHarness { h in
-            let now = Date()
-            let headerless = CourseDocument(
-                courseID: Self.course.id, course: Self.course.code, kind: .ed, sourceID: "9400546",
-                title: "Anyone free to study?", url: nil,
-                text: "Anyone free to study for the midterm? Sign up here.",
-                updatedAt: now.addingTimeInterval(-Self.day), fetchedAt: now
-            )
-            let canvasKind = CourseDocument(
-                courseID: Self.course.id, course: Self.course.code, kind: .announcement, sourceID: "9400548",
-                title: "Canvas doc", url: nil,
-                text: "[ed · announcement] Please sign up by Friday.",
-                updatedAt: now.addingTimeInterval(-Self.day), fetchedAt: now
-            )
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [
-                edDoc("9400541", reason: "student or question"),
-                edDoc("9400542", reason: "question"),
-                edDoc("9400543", reason: "private"),
-                edDoc("9400544", body: "- [image]"),
-                edDoc("9400545", daysAgo: 20),
-                headerless,
-                edDoc("9400547", courseID: Self.hiddenCourse.id, courseCode: Self.hiddenCourse.code),
-                canvasKind,
-            ])
-            await h.state.syncAnnouncements(now: now)
             #expect(h.seen.ids.isEmpty)
             #expect(h.finds.isEmpty)
             #expect(h.state.processedAnnouncementIDs.isEmpty)
+            let summary = try #require(h.state.lastAnnouncementSyncSummary)
+            #expect(summary.hasSuffix("nothing new \u{00B7} canvas 0"))
+            #expect(!summary.contains("ed "))
         }
     }
 
-    // MARK: Twins
+    // MARK: Gates
 
-    @Test("a Canvas announcement and an Ed post about the same task make one find, the Canvas one")
-    func canvasAndEdTwinsMakeOneFind() async throws {
+    @Test("an informational announcement is marked processed and makes no find, and never reaches the extractor")
+    func informationalPostIsProcessedWithoutAFind() async throws {
         try await withHarness { h in
-            let now = Date()
-            h.canvasResponse = [
-                CanvasAnnouncement(
-                    id: "9400601", courseID: Self.course.id,
-                    title: "Verbal Assessment #2 Sign-Ups",
-                    message: "Please sign up for a slot by Friday.",
-                    postedAt: now.addingTimeInterval(-2 * Self.day),
-                    url: URL(string: "https://canvas.upenn.edu/courses/9401/discussion_topics/9400601")
-                ),
-            ]
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400602")])
-            await h.state.syncAnnouncements(now: now)
-
-            #expect(h.finds.map(\.sourceID) == ["announcement-9400601-0"])
-            // Both were read; the Ed one found a task and lost it as a twin,
-            // which is still a completed parse.
-            #expect(Set(h.seen.ids) == ["9400601", "ed:9401:9400602"])
-            #expect(h.state.processedAnnouncementIDs == ["9400601", "ed:9401:9400602"])
+            #expect(HeuristicAnnouncementExtractor.isLikelyInformational(title: "Recording is up", body: "See Canvas."))
+            h.canvasResponse = [post("9400531", title: "Recording is up", message: "See Canvas.")]
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.seen.ids.isEmpty)
+            #expect(h.finds.isEmpty)
+            #expect(h.state.processedAnnouncementIDs == ["9400531"])
         }
     }
 
-    @Test("an Ed post that restates a find made on an earlier sync is dropped too")
-    func edTwinOfAnEarlierFindIsDropped() async throws {
+    @Test("a processed announcement is not extracted again")
+    func processedPostIsNotReextracted() async throws {
         try await withHarness { h in
-            let now = Date()
-            h.canvasResponse = [
-                CanvasAnnouncement(
-                    id: "9400611", courseID: Self.course.id,
-                    title: "Verbal Assessment #2 Sign-Ups",
-                    message: "Please sign up for a slot by Friday.",
-                    postedAt: now.addingTimeInterval(-2 * Self.day), url: nil
-                ),
-            ]
-            await h.state.syncAnnouncements(now: now)
-            #expect(h.finds.map(\.sourceID) == ["announcement-9400611-0"])
-
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400612")])
-            await h.state.syncAnnouncements(now: now)
-            #expect(h.finds.map(\.sourceID) == ["announcement-9400611-0"])
-            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400612"))
+            h.canvasResponse = [post("9400521")]
+            await h.state.syncAnnouncements(now: Date())
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.seen.ids == ["9400521"])
+            #expect(h.finds.count == 1)
         }
     }
 
     // MARK: What the last run says about itself
 
-    @Test("after a run with one Ed post the summary reads the counts, behind the time and the extractor")
-    func summaryAfterAnEdFind() async throws {
+    @Test("after a run with one announcement the summary reads the counts, behind the time and the extractor")
+    func summaryAfterAFind() async throws {
         try await withHarness { h in
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400701")])
+            h.canvasResponse = [post("9400701")]
             let now = Date()
             await h.state.syncAnnouncements(now: now)
 
             let summary = try #require(h.state.lastAnnouncementSyncSummary)
-            #expect(summary.hasSuffix("ok \u{00B7} canvas 0 \u{00B7} ed 1 \u{00B7} eligible 1 \u{00B7} finds 1 \u{00B7} errors 0 \u{00B7} processed 1"))
+            #expect(summary.hasSuffix("ok \u{00B7} canvas 1 \u{00B7} eligible 1 \u{00B7} finds 1 \u{00B7} errors 0 \u{00B7} processed 1"))
             #expect(summary.hasPrefix(AppState.diagnosticStamp(now) + " \u{00B7} extractor injected \u{00B7} "))
             // Counts and words only: nothing of the post got in.
             #expect(!summary.contains("Verbal"))
@@ -747,14 +659,14 @@ struct AnnouncementWatcherEdTests {
         }
     }
 
-    @Test("a second run with nothing new says so, with the two fetch counts")
+    @Test("a second run with nothing new says so, with the fetch count")
     func summaryWhenNothingIsNew() async throws {
         try await withHarness { h in
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400711")])
+            h.canvasResponse = [post("9400711")]
             await h.state.syncAnnouncements(now: Date())
             await h.state.syncAnnouncements(now: Date())
             let summary = try #require(h.state.lastAnnouncementSyncSummary)
-            #expect(summary.hasSuffix("nothing new \u{00B7} canvas 0 \u{00B7} ed 1"))
+            #expect(summary.hasSuffix("nothing new \u{00B7} canvas 1"))
         }
     }
 
@@ -762,7 +674,6 @@ struct AnnouncementWatcherEdTests {
     func summaryWhenTheFetchThrows() async throws {
         try await withHarness { h in
             h.state.announcementFetchForTesting = { _, _, _ in throw URLError(.notConnectedToInternet) }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400721")])
             await h.state.syncAnnouncements(now: Date())
 
             let summary = try #require(h.state.lastAnnouncementSyncSummary)
@@ -782,13 +693,13 @@ struct AnnouncementWatcherEdTests {
     func summaryNamesTheFirstExtractorError() async throws {
         try await withHarness { h in
             h.state.announcementExtractorForTesting = { _ in ThrowsError(error: BackendError.http(502)) }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400731")])
+            h.canvasResponse = [post("9400731")]
             await h.state.syncAnnouncements(now: Date())
             let failed = try #require(h.state.lastAnnouncementSyncSummary)
             #expect(failed.hasSuffix("errors 1 \u{00B7} processed 0 \u{00B7} first error: http 502"))
         }
         try await withHarness { h in
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400732")])
+            h.canvasResponse = [post("9400732")]
             await h.state.syncAnnouncements(now: Date())
             let clean = try #require(h.state.lastAnnouncementSyncSummary)
             #expect(clean.hasSuffix("errors 0 \u{00B7} processed 1"))
@@ -834,20 +745,20 @@ struct AnnouncementWatcherEdTests {
         try await withHarness { h in
             let seen = h.seen
             h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.http(502)) }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400801")])
+            h.canvasResponse = [post("9400801")]
             let t0 = Date()
             // Two hours apart so the back-off each failed run sets has lapsed.
             await h.state.syncAnnouncements(now: t0)
-            #expect(attempts()["ed:9401:9400801"] == 1)
+            #expect(attempts()["9400801"] == 1)
             #expect(h.state.processedAnnouncementIDs.isEmpty)
             await h.state.syncAnnouncements(now: t0.addingTimeInterval(2 * 3600))
-            #expect(attempts()["ed:9401:9400801"] == 2)
+            #expect(attempts()["9400801"] == 2)
             #expect(h.state.processedAnnouncementIDs.isEmpty)
             let second = try #require(h.state.lastAnnouncementSyncSummary)
             #expect(!second.contains("gave up"))
 
             await h.state.syncAnnouncements(now: t0.addingTimeInterval(4 * 3600))
-            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400801"))
+            #expect(h.state.processedAnnouncementIDs.contains("9400801"))
             #expect(attempts().isEmpty)
             #expect(h.finds.isEmpty)
             #expect(seen.ids.count == 3)
@@ -861,18 +772,18 @@ struct AnnouncementWatcherEdTests {
         try await withHarness { h in
             let seen = h.seen
             h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.transport) }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400811")])
+            h.canvasResponse = [post("9400811")]
             let t0 = Date()
             await h.state.syncAnnouncements(now: t0)
             await h.state.syncAnnouncements(now: t0.addingTimeInterval(2 * 3600))
-            #expect(attempts()["ed:9401:9400811"] == 2)
+            #expect(attempts()["9400811"] == 2)
 
             h.state.announcementExtractorForTesting = { _ in
                 FindsOneTask(seen: seen, title: "Sign up for a Verbal Assessment #2 slot", dueAt: nil)
             }
             await h.state.syncAnnouncements(now: t0.addingTimeInterval(4 * 3600))
             #expect(h.finds.count == 1)
-            #expect(h.state.processedAnnouncementIDs.contains("ed:9401:9400811"))
+            #expect(h.state.processedAnnouncementIDs.contains("9400811"))
             #expect(attempts().isEmpty)
             let summary = try #require(h.state.lastAnnouncementSyncSummary)
             #expect(!summary.contains("gave up"))
@@ -886,7 +797,7 @@ struct AnnouncementWatcherEdTests {
             h.state.announcementExtractorForTesting = { _ in
                 RecordsThenThrows(seen: seen, error: BackendError.quotaExceeded(resetAt: nil))
             }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400821"), edDoc("9400822")])
+            h.canvasResponse = [post("9400821"), post("9400822")]
             await h.state.syncAnnouncements(now: Date())
 
             #expect(seen.ids.count == 1)
@@ -903,7 +814,7 @@ struct AnnouncementWatcherEdTests {
         try await withHarness { h in
             let seen = h.seen
             h.state.announcementExtractorForTesting = { _ in RecordsThenThrows(seen: seen, error: BackendError.http(500)) }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400831"), edDoc("9400832")])
+            h.canvasResponse = [post("9400831"), post("9400832")]
             let t0 = Date()
             await h.state.syncAnnouncements(now: t0)
             #expect(seen.ids.count == 2)
@@ -932,12 +843,12 @@ struct AnnouncementWatcherEdTests {
         try await withHarness { h in
             let seen = h.seen
             h.state.announcementExtractorForTesting = { announcement in
-                if announcement.id.hasSuffix("9400841") {
+                if announcement.id == "9400841" {
                     return RecordsThenThrows(seen: seen, error: BackendError.http(500))
                 }
                 return FindsOneTask(seen: seen, title: "Sign up for a Verbal Assessment #2 slot", dueAt: nil)
             }
-            h.state.courseKnowledge = CourseKnowledgeBase(documents: [edDoc("9400841"), edDoc("9400842")])
+            h.canvasResponse = [post("9400841"), post("9400842")]
             await h.state.syncAnnouncements(now: Date())
             #expect(seen.ids.count == 2)
             #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil)

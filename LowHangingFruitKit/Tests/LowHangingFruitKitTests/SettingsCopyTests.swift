@@ -5,7 +5,9 @@ import Testing
 /// The copy cut of 2026-10-10 ("I still get way too much text"): the Profile
 /// page prints one fixed line for any sync failure instead of the system
 /// error text, and the sign-in status prose that used to sit under the
-/// accounts rows lives behind one collapsed debug-only disclosure.
+/// accounts rows renders in debug builds only. (Between 2026-10-10 and
+/// 2026-10-18 it sat inside one collapsed disclosure; the co-owner asked for it
+/// back in plain view under the canvas row, still debug-only.)
 @Suite("Settings copy cut")
 struct SettingsCopyTests {
     private static let allClear =
@@ -55,7 +57,7 @@ struct SettingsCopyTests {
 
     // MARK: Sign-in prose is out of the student's page
 
-    @Test("sign-in status and ed status render only inside the collapsed debug disclosure")
+    @Test("sign-in status and ed status render only in debug builds, under their account rows")
     func signInProseIsDebugOnly() throws {
         let source = try uiSource("SettingsPage.swift")
         guard !source.isEmpty else { return }
@@ -63,23 +65,70 @@ struct SettingsCopyTests {
         let bodyEnd = try #require(source.range(of: ".formStyle(.grouped)", range: bodyStart.upperBound..<source.endIndex))
         let body = String(source[bodyStart.lowerBound..<bodyEnd.upperBound])
 
-        let debugStart = try #require(body.range(of: "#if DEBUG"))
-        let studentPage = String(body[..<debugStart.lowerBound])
-        let debugPage = String(body[debugStart.lowerBound...])
+        // What a student's page contains: the body with every `#if DEBUG`
+        // block removed. None of the sign-in prose may be left in it.
+        let studentPage = GradeWatcherRemovalTests.strippingDebugBlocks(body)
         #expect(!studentPage.contains("signInHealthRows"))
         #expect(!studentPage.contains("edDiscussionStatus"))
         #expect(!studentPage.contains("ed discussion"))
-        #expect(debugPage.contains("signInDiagnosticsGroup"))
 
-        // The group itself exists only in a debug build, and starts collapsed
-        // (a `DisclosureGroup` with no `isExpanded` binding does).
-        let groupDecl = try #require(source.range(of: "private var signInDiagnosticsGroup"))
-        let beforeDecl = String(source[..<groupDecl.lowerBound])
-        let lastIf = try #require(beforeDecl.range(of: "#if DEBUG", options: .backwards))
+        // In a debug build the health lines follow the canvas row and the ed
+        // row follows the gradescope row, as at ba75e97.
+        let canvas = try #require(body.range(of: "label: \"canvas\""))
+        let health = try #require(body.range(of: "signInHealthRows"))
+        let gradescope = try #require(body.range(of: "label: \"gradescope\""))
+        let ed = try #require(body.range(of: "edDiscussionStatusRow"))
+        #expect(canvas.lowerBound < health.lowerBound)
+        #expect(health.lowerBound < gradescope.lowerBound)
+        #expect(gradescope.lowerBound < ed.lowerBound)
+
+        // The collapsed disclosure is gone, so nothing shows twice.
+        #expect(!source.contains("signInDiagnosticsGroup"))
+        #expect(!source.contains("DisclosureGroup(\"sign-in diagnostics\")"))
+
+        // Both rows are declared only in a debug build.
+        for name in ["private var signInHealthRows", "private var edDiscussionStatusRow"] {
+            let decl = try #require(source.range(of: name))
+            let beforeDecl = String(source[..<decl.lowerBound])
+            let lastIf = try #require(beforeDecl.range(of: "#if DEBUG", options: .backwards))
+            let lastEndif = beforeDecl.range(of: "#endif", options: .backwards)
+            #expect(lastEndif == nil || lastEndif!.lowerBound < lastIf.lowerBound,
+                    "\(name) is declared outside #if DEBUG")
+        }
+    }
+
+    // MARK: Sign in to canvas
+
+    @Test("the sign-in row shows for a canvas connected without a saved login, never in preview")
+    func signInToCanvasRule() {
+        #expect(SettingsPage.showsSignInToCanvas(isLinkOnly: true, isPreviewMode: false))
+        #expect(!SettingsPage.showsSignInToCanvas(isLinkOnly: false, isPreviewMode: false))
+        #expect(!SettingsPage.showsSignInToCanvas(isLinkOnly: true, isPreviewMode: true))
+        #expect(!SettingsPage.showsSignInToCanvas(isLinkOnly: false, isPreviewMode: true))
+    }
+
+    @Test("the sign-in row ships in Release and restarts onboarding at the canvas step")
+    func signInToCanvasRowShips() throws {
+        let source = try uiSource("SettingsPage.swift")
+        guard !source.isEmpty else { return }
+        let bodyStart = try #require(source.range(of: "var body: some View"))
+        let bodyEnd = try #require(source.range(of: ".formStyle(.grouped)", range: bodyStart.upperBound..<source.endIndex))
+        let body = String(source[bodyStart.lowerBound..<bodyEnd.upperBound])
+        let studentPage = GradeWatcherRemovalTests.strippingDebugBlocks(body)
+        let canvas = try #require(studentPage.range(of: "label: \"canvas\""))
+        let row = try #require(studentPage.range(of: "signInToCanvasRow"))
+        let gradescope = try #require(studentPage.range(of: "label: \"gradescope\""))
+        #expect(canvas.lowerBound < row.lowerBound && row.lowerBound < gradescope.lowerBound)
+
+        let declStart = try #require(source.range(of: "private var signInToCanvasRow"))
+        let decl = String(source[declStart.lowerBound...].prefix(500))
+        #expect(decl.contains("Button(\"sign in to canvas\")"))
+        #expect(decl.contains("state.restartOnboarding(for: .canvas)"))
+        // Declared outside any `#if DEBUG`.
+        let beforeDecl = String(source[..<declStart.lowerBound])
+        let lastIf = beforeDecl.range(of: "#if DEBUG", options: .backwards)
         let lastEndif = beforeDecl.range(of: "#endif", options: .backwards)
-        #expect(lastEndif == nil || lastEndif!.lowerBound < lastIf.lowerBound,
-                "signInDiagnosticsGroup is declared outside #if DEBUG")
-        #expect(source.contains("DisclosureGroup(\"sign-in diagnostics\")"))
+        #expect(lastIf == nil || (lastEndif != nil && lastIf!.lowerBound < lastEndif!.lowerBound))
     }
 
     private func uiSource(_ filename: String) throws -> String {

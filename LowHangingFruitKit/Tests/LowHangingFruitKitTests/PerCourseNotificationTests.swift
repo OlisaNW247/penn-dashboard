@@ -394,6 +394,10 @@ struct PerCourseNotificationTests {
         defer { UserDefaults.standard.removePersistentDomain(forName: name) }
 
         let scheduler = NotificationScheduler(defaults: defaults)
+        // Off: the loud 10-minute alert is on by default and draws on the same
+        // 60-request budget this suite counts exactly. It is covered, budget
+        // included, by `LoudAlertTests`.
+        scheduler.setLoudAlertEnabled(false)
         for offset in LeadOffset.allCases {
             scheduler.setOffset(offset, on: global.contains(offset))
         }

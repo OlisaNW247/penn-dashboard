@@ -121,12 +121,21 @@ public enum LedgerWidgetReader {
                 continue
             }
             if isAgedOut(row, now: now) { continue }
+            // An announcement row flagged gone is a task whose post Canvas
+            // stopped returning: the dashboard hides it, so the widget does too.
+            // Aging no longer removes such a row (it is exempt, see
+            // `AssignmentStore.isAgedOut`), so without this line it would sit in
+            // the widget for good.
+            if row.sourceRaw == Assignment.Source.canvasAnnouncement.rawValue, row.isGoneFromFeed { continue }
             // `.event` rows (readings, lectures, exam dates) have nothing to
             // submit, so they never go "overdue" — mirrors AppState's
             // isExpired: they drop off the moment their due time passes,
             // not at the end of their calendar day. The same goes for the
-            // Announcement Watcher's finds (2026-10-19): guesses from prose,
-            // never debt.
+            // Announcement Watcher's and Ed pass's finds (2026-10-19): guesses
+            // from prose, never debt. For those this is the dated half of
+            // `AppState.isHiddenAnnouncementTask`, which is the one rule the
+            // app itself applies; see `isExpired` below for why the rest of it
+            // is not here.
             if isExpired(row, now: now) { continue }
             if !seenIDs.insert(row.id).inserted { continue }
             if hidden.contains(row.course) || deleted.contains(row.course) { continue }
@@ -150,30 +159,38 @@ public enum LedgerWidgetReader {
 
     /// Mirrors `AssignmentStore.isAgedOut` — kept here rather than shared
     /// because that one is main-actor-isolated. Both must stay in step; the
-    /// rule is "finished or archived work never ages, otherwise gone + long
-    /// overdue does". The archived clause is redundant here — the filter chain
-    /// above already dropped those rows — and is kept anyway so the two copies
-    /// of this predicate remain literally the same rule, which is the only
-    /// property that makes duplicating it survivable.
+    /// rule is "finished or archived work never ages, announcement rows never
+    /// age, otherwise gone + long overdue does". The archived clause is
+    /// redundant here — the filter chain above already dropped those rows — and
+    /// is kept anyway so the two copies of this predicate remain literally the
+    /// same rule, which is the only property that makes duplicating it
+    /// survivable.
     private static func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
         guard !row.isFinished, !row.isArchived else { return false }
+        guard row.sourceRaw != Assignment.Source.canvasAnnouncement.rawValue else { return false }
         guard row.isGoneFromFeed, let due = row.dueAt else { return false }
         return due < now.addingTimeInterval(-AssignmentStore.goneGracePeriod)
     }
 
-    /// Mirrors `AppState.isExpired`: a row drops off the moment its due time
-    /// passes (`due < now`), not at the end of its calendar day, when it is
+    /// A row drops off the moment its due time passes (`due < now`), not at
+    /// the end of its calendar day, when it is
     ///
-    /// 1. an `.event`-kind row: the widget must not keep advertising a class
-    ///    that already started just because midnight hasn't arrived yet; or
+    /// 1. an `.event`-kind row, mirroring `AppState.isExpired`: the widget
+    ///    must not keep advertising a class that already started just because
+    ///    midnight hasn't arrived yet; or
     /// 2. an announcement find (`sourceRaw` is `canvasAnnouncement`, which Ed
-    ///    posts carry too): extracted from prose, so a passed one is noise,
-    ///    not overdue work (the owner's rule, 2026-10-19).
+    ///    finds carry too): extracted from prose, so a passed one is noise,
+    ///    not overdue work (the owner's rule, 2026-10-19). In the app this is
+    ///    `AppState.isHiddenAnnouncementTask`, which also judges same-day
+    ///    reminders and undated tasks by the post's date. The widget has no
+    ///    post dates (a separate process reading the ledger), so it keeps only
+    ///    that rule's dated half, and the published snapshot, which the app
+    ///    builds with the whole rule, wins whenever there is one.
     ///
     /// Undated rows are never expired. Display only: the ledger row stays, and
-    /// the wrong fix would be deleting or completing it. Both copies of this
-    /// predicate must stay in step; this one exists because `AppState`'s is
-    /// main-actor-isolated and the widget cannot call it.
+    /// the wrong fix would be deleting or completing it. This copy exists
+    /// because `AppState`'s are main-actor-isolated and the widget cannot call
+    /// them.
     private static func isExpired(_ row: StoredAssignment, now: Date) -> Bool {
         let isEvent = row.kindRaw == Assignment.Kind.event.rawValue
         let isAnnouncementFind = row.sourceRaw == Assignment.Source.canvasAnnouncement.rawValue

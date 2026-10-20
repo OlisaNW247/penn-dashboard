@@ -127,28 +127,49 @@ struct DashboardFilterTests {
         #expect(!AppState.isExpired(dated(kind: .assignment, dueAt: lastWeek), now: now))
     }
 
-    @Test("expired announcement finds: a dated .canvasAnnouncement item of any kind expires at its due time; real Canvas and Gradescope work and the student's own tasks never do")
+    // Rewritten 2026-10-20 in the merge of the two lines of work. The owner's
+    // rule of 2026-10-19 ("an announcement or Ed task disappears at its due
+    // time and is never overdue") used to live in `isExpired`; the other line
+    // had written it as `isHiddenAnnouncementTask` (which also judges same-day
+    // reminders and undated tasks), so the announcement half of `isExpired`
+    // was removed and this test asks the one rule that remains. The cases are
+    // the same; `isExpired` is now pinned to be the `.event` rule alone.
+    @Test("expired announcement finds: a dated .canvasAnnouncement item of any kind is hidden at its due time; real Canvas and Gradescope work and the student's own tasks never are")
     func expiredAnnouncementFindBoundaries() {
         let now = Date()
         func make(_ source: Assignment.Source, kind: Assignment.Kind = .assignment, dueAt: Date?) -> Assignment {
             Assignment(source: source, sourceID: "x", kind: kind, course: "CIS 1200",
                        title: "Submit the form", dueAt: dueAt, url: nil)
         }
+        func hidden(_ item: Assignment) -> Bool {
+            AppState.isHiddenAnnouncementTask(item, dueAt: item.dueAt, postedAt: nil, now: now)
+        }
         let aMinuteAgo = now.addingTimeInterval(-60)
         let anHourFromNow = now.addingTimeInterval(3600)
 
-        #expect(AppState.isExpired(make(.canvasAnnouncement, dueAt: aMinuteAgo), now: now))
-        #expect(AppState.isExpired(make(.canvasAnnouncement, kind: .quiz, dueAt: aMinuteAgo), now: now))
-        #expect(!AppState.isExpired(make(.canvasAnnouncement, dueAt: anHourFromNow), now: now))
-        #expect(!AppState.isExpired(make(.canvasAnnouncement, dueAt: nil), now: now), "undated finds are never expired")
-        // Ed posts carry the same source, so they are covered by the same line.
-        let ed = Assignment(source: .canvasAnnouncement, sourceID: "announcement-ed:9401:55-0", kind: .assignment,
-                            course: "CIS 1200", title: "Sign up", dueAt: aMinuteAgo, url: nil)
-        #expect(AppState.isExpired(ed, now: now))
+        #expect(hidden(make(.canvasAnnouncement, dueAt: aMinuteAgo)))
+        #expect(hidden(make(.canvasAnnouncement, kind: .quiz, dueAt: aMinuteAgo)))
+        #expect(!hidden(make(.canvasAnnouncement, dueAt: anHourFromNow)))
+        #expect(!hidden(make(.canvasAnnouncement, dueAt: nil)), "an undated find with no post date is never hidden")
+        // Ed finds carry the same source, so they are covered by the same line.
+        let ed = Assignment(source: .canvasAnnouncement,
+                            sourceID: AnnouncementRecord.edFindSourceID(courseID: "9401", threadID: "55", index: 0),
+                            kind: .assignment, course: "CIS 1200", title: "Sign up", dueAt: aMinuteAgo, url: nil)
+        #expect(hidden(ed))
         // Everything else with something to hand in keeps its overdue behaviour.
         for source in [Assignment.Source.canvas, .canvasModules, .gradescope, .manual] {
+            #expect(!hidden(make(source, dueAt: aMinuteAgo)), "\(source) stays overdue")
             #expect(!AppState.isExpired(make(source, dueAt: aMinuteAgo), now: now), "\(source) stays overdue")
         }
+        // `isExpired` is the `.event` rule alone: the announcement half is
+        // `isHiddenAnnouncementTask`'s, so the two never both apply.
+        #expect(!AppState.isExpired(make(.canvasAnnouncement, dueAt: aMinuteAgo), now: now))
+        // And an `.event` that is itself an announcement task (a "bring a
+        // form" task, a syllabus exam) is left to the announcement rule too,
+        // so exactly one of the two judges it.
+        let prepTask = make(.canvasAnnouncement, kind: .event, dueAt: aMinuteAgo)
+        #expect(!AppState.isExpired(prepTask, now: now))
+        #expect(hidden(prepTask))
     }
 
     @Test("deselecting a course hides it; everything is selected by default")
@@ -212,7 +233,8 @@ struct DashboardFilterTests {
 /// overdue. These go through a real `AppState` and `DashboardViewModel`, because
 /// the rule has to hold in todo, all, the megaphone's finds, the assessments
 /// bucket, the widget snapshot and the assistant's pool, and a pure test of
-/// `isExpired` cannot see a list that forgot to call it.
+/// the rule (`isHiddenAnnouncementTask` since the 2026-10-20 merge; it was
+/// `isExpired`) cannot see a list that forgot to call it.
 ///
 /// **Hermetic setup.** The announcement rows are put on the ledger and read back
 /// by a second `AppState` over the same in-memory store, the way a relaunch
@@ -266,8 +288,10 @@ struct AnnouncementFindExpiryTests {
 
     @Test("a find due one minute ago is not in todo, all, the megaphone's lists or the widget; the same find due in an hour is")
     func pastDueFindVanishes() throws {
-        // "Submit ..." files a find on the main dashboard; "Read ..." files it in
-        // the megaphone's finds (`announcementDashboardPlacement`).
+        // "Submit ..." files a find on the main dashboard; wording that reads as
+        // information ("slides posted") files it in the megaphone's finds
+        // (`announcementDashboardPlacement`; since 2026-10-18 a "Read ..." task
+        // is a card too, so it no longer stands for the second kind).
         //
         // The four titles share no words on purpose. The rebuild drops an
         // announcement find that looks like another one
@@ -280,8 +304,8 @@ struct AnnouncementFindExpiryTests {
         let now = Date().addingTimeInterval(86_400)
         let pastMain = find("past-main", "Submit geology field report", due: now.addingTimeInterval(-60))
         let soonMain = find("soon-main", "Upload haiku portfolio", due: now.addingTimeInterval(3600))
-        let pastFind = find("past-read", "Read Beowulf prologue", due: now.addingTimeInterval(-60))
-        let soonFind = find("soon-read", "Watch thermodynamics lecture", due: now.addingTimeInterval(3600))
+        let pastFind = find("past-read", "Slides posted for the Beowulf unit", due: now.addingTimeInterval(-60))
+        let soonFind = find("soon-read", "Recording available for thermodynamics", due: now.addingTimeInterval(3600))
         let h = try Harness(finds: [pastMain, soonMain, pastFind, soonFind])
         defer { h.tearDown() }
         try #require(h.state.announcementItems.count == 4, "the seeded rows were read back")

@@ -29,6 +29,7 @@ public struct SourceLink: Equatable, Sendable, Identifiable {
 
     public static let canvasLabel = "open in canvas"
     public static let gradescopeLabel = "open in gradescope"
+    public static let edLabel = "open in ed"
 }
 
 /// Reads the numeric Canvas course id out of a Canvas URL. Lives in the Kit so
@@ -96,10 +97,13 @@ extension Assignment {
             return [SourceLink(url: gradescope, label: SourceLink.gradescopeLabel)]
 
         case .canvasAnnouncement:
-            // The stored URL is the announcement's own Canvas `html_url`; there
-            // is nothing better to derive.
+            // The stored URL is the post's own page (a Canvas `html_url`, or
+            // the Ed thread for a task found in an Ed post); there is nothing
+            // better to derive. The label follows the origin, so an Ed link
+            // never claims to open Canvas.
             guard let url, Self.isSafeWebURL(url) else { return [] }
-            return [SourceLink(url: url, label: SourceLink.canvasLabel)]
+            let label = announcementOrigin == .ed ? SourceLink.edLabel : SourceLink.canvasLabel
+            return [SourceLink(url: url, label: label)]
 
         case .manual, .canvasSuggestion:
             return []

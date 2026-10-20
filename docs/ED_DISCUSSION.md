@@ -117,13 +117,26 @@ no main-frame script can see Ed at all.
 
 ## Phase 2
 
-**Built 2026-10-19 (blind, not compiled): `syncAnnouncements` feeds the
-synced announcement, pinned and staff `ed` documents through the Canvas
-loop (`edAnnouncementsForExtraction`).**
+**Built twice, merged 2026-10-20 (blind, not compiled): the Announcement
+Watcher reads the synced `ed` documents for tasks.** Two lines of work built
+this on 2026-10-18/19. One fed announcement, pinned and staff posts through
+the Canvas loop in `syncAnnouncements` (`edAnnouncementsForExtraction`, finds
+named `announcement-ed:{course}:{thread}-{n}`). The other, which stayed, is
+its own pass, `syncEdAnnouncementTasks` (`AppState+EdAnnouncementTasks.swift`):
+announcements and pinned posts only, a class re-checked after every network
+call, a six-hour retry clock per failed post, finds named
+`ed-{course}-{thread}-{n}`. The merge took the second and gave it what the
+first had: the header's posting day as the post's date and window
+(`edPostDate`), a twin check against finds already made
+(`droppingAnnouncementTwins`), a stop on a quota refusal, and a one-line
+`lastEdTaskSyncSummaryV1`. A staff post that is neither an announcement nor
+pinned is therefore no longer read for tasks. Rows the first version wrote
+stay on a phone as inert `.canvasAnnouncement` rows (their processed ids are
+the same, so nothing is read twice) and leave the dashboard by the ordinary
+rule.
 
-Announcement Watcher reads `ed` documents through the same gate it uses for
-Canvas announcements, so a TA's "HW3 due Friday moved to Monday" becomes a
-dashboard item.
+A TA's "HW3 due Friday moved to Monday", if it is an announcement or pinned,
+becomes a dashboard item through the same gates as a Canvas announcement.
 
 ## Privacy rules for this feature
 

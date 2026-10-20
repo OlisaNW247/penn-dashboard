@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-09-16_
+_Last updated: 2026-10-20_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -40,6 +40,13 @@ stored.
   announcements and pinned posts, taken from the course material already on
   your phone (described below); showing them makes no new request and sends
   nothing.
+- **Tasks found in announcements.** When an announcement says to do
+  something by a date (and, for a class that uses Ed Discussion, when an Ed
+  announcement or pinned post does), the app turns it into a card on your
+  list. The card and a task you check off stay on this phone with the rest of
+  your work list, and a task leaves your list once its date has passed. The
+  only thing that can leave the phone is the post's text, and only if AI
+  assist is on (see "What is sent to our server").
 - **Due dates you change.** If you edit an assignment's due date, the new
   date is saved on this phone and used for your list, your reminders and the
   widget. It is never uploaded: a question you ask "the tree" is sent with
@@ -113,12 +120,10 @@ on-device alone:
   announcements, pinned posts, and posts written by the instructor or TAs.
   Student posts and questions, private posts, and anonymous posts never
   leave your phone, and no author's name is ever recorded. The kept posts
-  are pooled per class exactly like a syllabus. Since 2026-10-19 the
-  Announcement Watcher's "AI assist" (described below) also reads these Ed
-  posts, never a student's, to find tasks and due dates, and turning that
-  toggle off stops it for Ed as well. You never type an Ed password or
+  are pooled per class exactly like a syllabus. You never type an Ed password or
   token; the Ed session the app receives is stored in this
-  phone's Keychain like your Canvas session and deleted with it.
+  phone's Keychain like your Canvas session and deleted with it. (The
+  "AI assist" switch below also covers these posts.)
 
   **What is never included:** your grades, completions, submission state, your
   work list, your name, or anything else specific to you. Only the shared,
@@ -136,6 +141,17 @@ on-device alone:
   it off in Settings). With it on, extracting a task and due date from an
   announcement's text works the same way — the announcement
   text goes to the same server and model, and the result isn't stored either.
+  Each of these requests carries the post's title and body, the post's id (a
+  Canvas announcement's id, or the Ed thread's), the class code and the post's
+  date, and nothing else about you.
+  Since 2026-10-18 the same switch covers Ed Discussion announcements and
+  pinned posts for classes that use it (Penn): such a post's title and body
+  (never an author's name, which the app does not keep) go to the same server
+  and model, with the class code, the post's id and the date, once, only when
+  an on-device check says the text could contain a task, and only for a class
+  you have not hidden. It is text the app already pools per class (see
+  above), and the result isn't stored either. With the switch off, Canvas and
+  Ed posts are read on the phone and nothing is sent.
 
   Grade Watcher can also ask the server how a class's Canvas assignment
   groups line up with its syllabus categories. That request carries the
@@ -180,8 +196,8 @@ the meantime.
   infrastructure provider; they don't get a separate copy for their own use
   beyond running the service.
 - **OpenRouter**, and the AI model providers it routes to, process the
-  questions "the tree" is asked (and, if AI assist is on, announcement text)
-  in order to generate an answer. We send every request with OpenRouter's
+  questions "the tree" is asked (and, if AI assist is on, announcement and
+  Ed post text) in order to generate an answer. We send every request with OpenRouter's
   data-collection-deny setting turned on, which instructs providers on that
   route not to retain or train on the request. We don't control what
   OpenRouter or upstream providers do beyond honoring that setting, but it's

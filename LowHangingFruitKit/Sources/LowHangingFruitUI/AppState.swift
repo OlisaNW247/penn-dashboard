@@ -76,14 +76,19 @@ final class AppState: ObservableObject {
     /// announcement-derived task actually reaches the dashboard buckets
     /// instead of sitting in the ledger unseen.
     @Published private(set) var announcementItems: [Assignment] = []
-    /// Every currently relevant extracted announcement mention, including
-    /// dashboard candidates and copies suppressed by structured coursework.
-    /// The dedicated announcements page reads this undeduplicated collection.
+    /// Every currently relevant extracted announcement mention (Canvas, Ed
+    /// and the syllabus's exams), including dashboard candidates and copies
+    /// suppressed by structured coursework. Unfinished and in a class that is
+    /// still selected, but not yet narrowed to what is still ahead: the
+    /// megaphone sheet reads `announcementFoundItems(now:)`, which drops what
+    /// is hidden by the dashboard's rule (`isHiddenAnnouncementTask`) and
+    /// collapses second copies.
     @Published private(set) var announcementPageItems: [Assignment] = []
-    /// The megaphone sheet's "all announcements" list: every Canvas
-    /// announcement logged in the last 60 days for a class that is still
+    /// The announcement log as stored: every Canvas announcement logged in
+    /// the last 60 days (plus the Ed rows) for a class that is still
     /// selected, newest first. Plain announcements, not extracted tasks; the
-    /// finds above are the tasks. Backed by `AnnouncementLogStore` and
+    /// finds above are the tasks. The megaphone sheet lists only the past 7
+    /// days of it (`announcementSheetRecords(now:)`). Backed by `AnnouncementLogStore` and
     /// maintained by `AppState+AnnouncementLog.swift`, whose methods write
     /// these, so (like `courseKnowledge`) they are internal rather than
     /// `private(set)`: `private` is file-scoped.
@@ -114,10 +119,33 @@ final class AppState: ObservableObject {
     /// the shipping app.
     var announcementFetchForTesting: AnnouncementFetch?
     var announcementExtractorForTesting: (@MainActor (CanvasAnnouncement) -> any AnnouncementAssignmentExtractor)?
-    /// Useful preparation and reference tasks found in announcements, kept
-    /// outside the owed-work dashboard. These remain ledger-backed through
+    /// Tasks found in announcements whose wording reads as information rather
+    /// than something to do ("grades posted"), kept off the dashboard and
+    /// listed only in the megaphone. These remain ledger-backed through
     /// `announcementItems`; this is only the current, de-duplicated view.
+    /// (Preparation tasks used to land here too; since 2026-10-18 they are
+    /// cards like any other task, see `announcementDashboardPlacement`.)
     @Published private(set) var announcementFinds: [Assignment] = []
+    /// The live run of the Ed task pass (`AppState+EdAnnouncementTasks.swift`)
+    /// and whether the course knowledge changed again while it ran. Stored
+    /// here because an extension cannot add stored properties.
+    var edTaskPassTask: Task<Void, Never>?
+    var edTaskPassNeedsRerun = false
+    /// Watches `courseKnowledge` for new Ed posts to read tasks from. Separate
+    /// from `announcementKnowledgeSubscription`, which only refreshes the
+    /// megaphone's list.
+    var edTaskKnowledgeSubscription: AnyCancellable?
+    /// The same three for the syllabus-exam pass
+    /// (`AppState+SyllabusExams.swift`). Its own, not the Ed ones: that pass is
+    /// switched by `FeatureFlags.edDiscussion` and this one must not be.
+    var syllabusExamPassTask: Task<Void, Never>?
+    var syllabusExamPassNeedsRerun = false
+    var syllabusExamKnowledgeSubscription: AnyCancellable?
+    /// Test seam: runs on the main actor after the syllabus pass has read the
+    /// material and before it looks the classes up again to decide what to
+    /// write, which is the one moment "Canvas was disconnected during the read"
+    /// can be staged. Nil in the shipping app.
+    var syllabusExamComputedHookForTesting: (@MainActor () -> Void)?
     /// Canvas ∪ Gradescope with cross-posted pairs collapsed — the same pool the
     /// incomplete buckets below are filtered out of, but kept whole so callers
     /// that need completed work (the Done tab) see one item per assignment
@@ -812,6 +840,7 @@ final class AppState: ObservableObject {
         self.lastSilentRenewalSummary = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalSummaryKey)
         self.lastAnnouncementSyncSummary = UserDefaults.lhf.string(forKey: Self.lastAnnouncementSyncSummaryKey)
         self.lastCourseKnowledgeSyncSummary = UserDefaults.lhf.string(forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+        self.lastEdTaskSyncSummary = UserDefaults.lhf.string(forKey: Self.lastEdTaskSyncSummaryKey)
         self.lastSilentRenewalAttemptAt = (UserDefaults.lhf.object(forKey: Self.lastSilentRenewalAttemptAtKey) as? Double)
             .map { Date(timeIntervalSince1970: $0) }
         self.lastSilentRenewalAttemptOutcome = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
@@ -954,7 +983,11 @@ final class AppState: ObservableObject {
             // query, so last session's extracted tasks are on the dashboard
             // from the first frame, before `syncAnnouncements()` has had a
             // chance to run again this launch.
-            self.announcementItems = persisted.filter { $0.source == .canvasAnnouncement }
+            self.announcementItems = Self.announcementRowsToShow(
+                persisted.filter { $0.source == .canvasAnnouncement },
+                gone: store.goneFromFeedIDs(source: .canvasAnnouncement),
+                completed: completion.ids
+            )
             // One-time repair for the extractor rewrite that added
             // `HeuristicAnnouncementExtractor.isLikelyInformational` /
             // `.mightContainTask` and `ExtractedTaskKind` — see
@@ -1026,6 +1059,26 @@ final class AppState: ObservableObject {
         // is what filters it by class selection, so the megaphone is right on
         // the first frame.
         loadAnnouncementLog()
+
+        // Tasks found in Ed posts (`AppState+EdAnnouncementTasks.swift`): read
+        // once now, for any post already on the phone from an earlier sync,
+        // and again whenever the course material changes. Not under the test
+        // runner, where nothing may start work on its own: an `AppState` there
+        // gets the knowledge a test hands it, and a test calls the pass itself.
+        if !SharedDefaults.isTestRunner {
+            observeKnowledgeForEdTasks()
+            scheduleEdAnnouncementTaskPass()
+        }
+
+        // Exams named in a class's syllabus (`AppState+SyllabusExams.swift`),
+        // on the same terms: once now for the material already on the phone,
+        // and again whenever it changes. Beside the Ed hook and not inside it,
+        // because the Ed pass is behind `FeatureFlags.edDiscussion` and exams
+        // are not an Ed feature.
+        if !SharedDefaults.isTestRunner {
+            observeKnowledgeForSyllabusExams()
+            scheduleSyllabusExamPass()
+        }
 
         // The student's edited due dates, read back before the first rebuild:
         // that rebuild publishes the widget snapshot (which carries them) and
@@ -1264,12 +1317,15 @@ final class AppState: ObservableObject {
 
         let purged = store.purgeIncomplete(source: .canvasAnnouncement)
         if purged > 0 {
-            announcementItems = store.assignments(source: .canvasAnnouncement)
+            reloadAnnouncementItems(from: store)
         }
         processedAnnouncementIDs = []
         defaults.removeObject(forKey: Self.processedAnnouncementIDsKey)
         defaults.removeObject(forKey: Self.announcementExtractionAttemptsKey)
         defaults.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
+        // Everything is about to be read again, so no post is waiting out a
+        // failed read any longer.
+        defaults.removeObject(forKey: Self.edTaskRetryAfterKey)
 
         defaults.set(Self.announcementExtractionVersion, forKey: Self.announcementExtractionVersionKey)
     }
@@ -1458,19 +1514,33 @@ final class AppState: ObservableObject {
         return pool.filter { !backlog.hides($0, isFinished: isCompleted($0)) }
     }
 
-    /// `announcementItems` without the finds that have passed, for readers that
-    /// build their own pool from the raw arrays (the assistant, both paths) and
-    /// would otherwise answer "what's overdue" with work the dashboard no
-    /// longer shows (`isExpired`, 2026-10-19). A completed find is kept so ask
-    /// still knows it was done; only an unfinished, past-due one goes. Display
-    /// and answering only: the ledger rows are untouched.
+    /// `announcementItems` without the finds the dashboard keeps off itself
+    /// (`isHiddenAnnouncementTask`), for readers that build their own pool from
+    /// the raw arrays (the assistant, both paths) and would otherwise answer
+    /// "what's overdue" with work the dashboard no longer shows (2026-10-19).
+    /// A completed find is kept so ask still knows it was done; only an
+    /// unfinished one the rule hides goes. Display and answering only: the
+    /// ledger rows are untouched.
+    ///
+    /// The rule is asked of the feed date (`dueAt`), not the student's edit
+    /// (`effectiveDueDate(for:)`), on purpose: the context document keeps the
+    /// feed date because `docs/PRIVACY.md` promises due-date edits never leave
+    /// the phone, and whether a card is in the document must not betray one.
+    /// The cost is that a task the student moved into the future is hidden
+    /// from ask once its feed date passes, as before the merge.
     ///
     /// The effect on the server path's context document is that it changes once
     /// when a find expires, exactly as it would if the row had been edited. It
     /// does not make the document read a clock (the byte-stability trap): the
     /// clock is read here, in assembly, and the document builder is unchanged.
     func announcementItemsStillOpen(now: Date = Date()) -> [Assignment] {
-        announcementItems.filter { isCompleted($0) || !Self.isExpired($0, now: now) }
+        let postDates = announcementPostDates(for: announcementItems)
+        return announcementItems.filter { item in
+            isCompleted(item) || !Self.isHiddenAnnouncementTask(
+                item, dueAt: item.dueAt, postedAt: postDates.postedAt(for: item),
+                firstSeenAt: postDates.firstSeenAt(for: item), now: now
+            )
+        }
     }
 
     /// Test seam: `rebuildDashboardItems()` is private, and the sign-up
@@ -2034,6 +2104,17 @@ final class AppState: ObservableObject {
     /// background wake's answer survives to be read off the App Group plist;
     /// shown only in the DEBUG "sign-in diagnostics" disclosure.
     @Published private(set) var lastAnnouncementSyncSummary: String?
+
+    /// Backs `lastEdTaskSyncSummary`. Per-device state, like the others.
+    static let lastEdTaskSyncSummaryKey = "lastEdTaskSyncSummaryV1"
+
+    /// "<yyyy-MM-dd HH:mm> · <what the last `syncEdAnnouncementTasks` did>",
+    /// the Ed pass's counterpart of `lastAnnouncementSyncSummary` (eligible,
+    /// finds, errors, processed, first error kind). Counts and words only.
+    /// Written from `AppState+EdAnnouncementTasks.swift`, so not
+    /// `private(set)` (`private` is file-scoped); shown only in the DEBUG
+    /// "sign-in diagnostics" disclosure.
+    @Published var lastEdTaskSyncSummary: String?
 
     /// Backs `lastCourseKnowledgeSyncSummary`, which is written from
     /// `AppState+CourseKnowledge.swift` and so is not `private(set)`
@@ -3610,11 +3691,17 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.removeObject(forKey: Self.processedAnnouncementIDsKey)
         UserDefaults.lhf.removeObject(forKey: Self.announcementExtractionAttemptsKey)
         UserDefaults.lhf.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
-        // The two DEBUG sync summaries describe the account just left.
+        // The three DEBUG sync summaries describe the account just left.
         lastAnnouncementSyncSummary = nil
         UserDefaults.lhf.removeObject(forKey: Self.lastAnnouncementSyncSummaryKey)
         lastCourseKnowledgeSyncSummary = nil
         UserDefaults.lhf.removeObject(forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+        lastEdTaskSyncSummary = nil
+        UserDefaults.lhf.removeObject(forKey: Self.lastEdTaskSyncSummaryKey)
+        // The two guards that live beside it describe this account's posts too
+        // (misses toward "deleted", Ed posts waiting out a failed read).
+        UserDefaults.lhf.removeObject(forKey: Self.announcementMissCountsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.edTaskRetryAfterKey)
         // The backend identity (`BackendIdentityStore`) is deliberately left
         // alone here, by the same precedent Gradescope's login already sets:
         // it is not a Canvas-session-derived credential. It is the anonymous
@@ -4541,24 +4628,220 @@ final class AppState: ObservableObject {
         _ candidates: [Assignment],
         against existing: [Assignment]
     ) -> [Assignment] {
+        resolvingAnnouncementDuplicates(candidates, against: existing).survivors
+    }
+
+    /// One dropped candidate and what it collapsed into, with both dates, so the
+    /// caller can decide whether the student's tick on the hidden one still
+    /// means anything on the one that is shown (`completionFollows`).
+    struct AnnouncementTwin {
+        let hiddenID: String
+        let survivorID: String
+        let hiddenDue: Date?
+        let survivorDue: Date?
+    }
+
+    /// `filteringAnnouncementDuplicates` plus the other half of the answer:
+    /// which survivor (or existing item) each dropped candidate collapsed
+    /// into (`absorbed`), and which undated feed exams a dated candidate took
+    /// the place of (`displaced`). The rebuild needs the pairs to carry a
+    /// completion across, the way it already does for the Canvas/Modules and
+    /// override collapses: a candidate the student ticked off must not lose
+    /// that tick because a twin now represents it.
+    ///
+    /// A candidate that is itself announcement-derived is compared with another
+    /// announcement-derived item in **both** directions. The one-directional
+    /// check strips a leading imperative ("Submit", "Take") from the
+    /// announcement side only, which is right against a structured Canvas
+    /// title but leaves two announcement titles unequal when one is worded
+    /// "Submit PS3" and the other "PS3": the same task announced on Canvas and
+    /// again on Ed. Against feed items the check stays one-directional, so
+    /// nothing that deduplicated before deduplicates differently now.
+    ///
+    /// **Two announcements are one task only on the same day.** Against a feed
+    /// item the title heuristic tolerates 21 days between dates, because a feed
+    /// date is Canvas's own and an announcement restating it can be loose. Two
+    /// *announcements* are two people's prose, and "Submit weekly reflection"
+    /// posted for Oct 6 and again for Oct 20 is two weeks of reflections, not
+    /// one: collapsed, the earlier one survived, went past on the 7th and
+    /// off the dashboard, and left the live one hidden behind it. So a pair of announcement-derived
+    /// rows needs dates within `AssignmentDeduplicator.similarTitleDueDateTolerance`
+    /// (about a day) or one side undated, whatever the titles say. Exams are the
+    /// one exception, below.
+    ///
+    /// **Exams are matched by what they are, not by how the title reads.**
+    /// A midterm reaches the dashboard as a Canvas item ("Midterm 1"), as an
+    /// announcement ("Take Midterm 1 on Thursday") and as a syllabus line
+    /// ("Midterm: Oct 23"), and the title heuristic above cannot join all of
+    /// those: it needs the words to line up, and an unnumbered "Midterm" does
+    /// not line up with "Midterm 1" by design. `ExamDetection.isSameSitting`
+    /// joins them by exam identity and date (see there for the rules), across
+    /// dates on purpose: a rescheduled exam is still the one exam, so a found
+    /// exam is dropped when the class already shows that sitting, and the order
+    /// the caller offers candidates in (`announcementDedupOrder`) decides who
+    /// that is: a real feed item first because it is in `existing`, then an
+    /// announcement, then the syllabus, so the announced date replaces the
+    /// syllabus's. The completion of a sitting does not cross a reschedule
+    /// (`completionFollows`).
+    ///
+    /// **An undated feed exam does not hide a dated twin.** A Canvas "Midterm 1"
+    /// with no due date (common for exams graded by hand) used to win outright,
+    /// and the card read "no date" while the syllabus knew the day. When every
+    /// twin a dated exam candidate has is an undated real item of the same
+    /// sitting, the candidate stays and those items are `displaced`: the
+    /// caller drops them from the dashboard instead of copying a date onto a
+    /// feed row, which would be a fact the feed never said. Any dated feed twin
+    /// still wins, as before.
+    static func resolvingAnnouncementDuplicates(
+        _ candidates: [Assignment],
+        against existing: [Assignment]
+    ) -> (survivors: [Assignment], absorbed: [AnnouncementTwin], displaced: [AnnouncementTwin]) {
         var comparisonPool = existing
         var survivors: [Assignment] = []
+        var absorbed: [AnnouncementTwin] = []
+        var displaced: [AnnouncementTwin] = []
+        // Identities are read once per row, not once per pair: the pool is
+        // every item the student has and most candidates are not exams.
+        //
+        // An announcement-derived row counts as an exam here only when its
+        // title leads with one (`ExamDetection.leadingExamIdentity`). Every
+        // candidate is announcement-derived, and "Bring a calculator to the
+        // exam" names an exam without being one: matched by identity it would
+        // be absorbed into the exam card, or worse, absorb the syllabus's
+        // midterm and leave a calculator reminder where the midterm was. A feed
+        // item's title is the name of a Canvas object, so any exam in it is its
+        // exam.
+        var identities: [String: ExamIdentity?] = [:]
+        func examIdentity(of item: Assignment) -> ExamIdentity? {
+            if let known = identities[item.id] { return known }
+            let identity = item.source == .canvasAnnouncement
+                ? ExamDetection.leadingExamIdentity(title: item.title, course: item.course)
+                : ExamDetection.examIdentity(title: item.title, course: item.course)
+            identities[item.id] = .some(identity)
+            return identity
+        }
         for candidate in candidates {
-            let isDuplicate = comparisonPool.contains { other in
-                announcementCoursesMatch(candidate.course, other.course) &&
-                    AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
-                        announcementTitle: candidate.title,
-                        announcementDue: candidate.dueAt,
-                        existingTitle: other.title,
-                        existingDue: other.dueAt
-                    )
+            let candidateExam = examIdentity(of: candidate)
+            func sameSitting(_ other: Assignment) -> Bool {
+                guard let candidateExam, let otherExam = examIdentity(of: other) else { return false }
+                return ExamDetection.isSameSitting(
+                    candidateExam, due: candidate.dueAt, otherExam, due: other.dueAt
+                )
             }
-            if !isDuplicate {
+            let twins = comparisonPool.filter { other in
+                guard announcementCoursesMatch(candidate.course, other.course) else { return false }
+                if sameSitting(other) { return true }
+                let otherIsAnnouncement = other.source == .canvasAnnouncement
+                if otherIsAnnouncement,
+                   !announcementDatesCompatible(candidate.dueAt, other.dueAt) { return false }
+                if AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                    announcementTitle: candidate.title,
+                    announcementDue: candidate.dueAt,
+                    existingTitle: other.title,
+                    existingDue: other.dueAt
+                ) { return true }
+                guard otherIsAnnouncement else { return false }
+                return AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                    announcementTitle: other.title,
+                    announcementDue: other.dueAt,
+                    existingTitle: candidate.title,
+                    existingDue: candidate.dueAt
+                )
+            }
+            guard let twin = twins.first else {
                 survivors.append(candidate)
                 comparisonPool.append(candidate)
+                continue
+            }
+            let displaceable: (Assignment) -> Bool = { item in
+                item.dueAt == nil
+                    && [Assignment.Source.canvas, .canvasModules, .gradescope].contains(item.source)
+                    && sameSitting(item)
+            }
+            if candidate.dueAt != nil, candidateExam != nil, twins.allSatisfy(displaceable) {
+                for item in twins {
+                    displaced.append(AnnouncementTwin(
+                        hiddenID: item.id, survivorID: candidate.id,
+                        hiddenDue: item.dueAt, survivorDue: candidate.dueAt
+                    ))
+                }
+                let gone = Set(twins.map(\.id))
+                comparisonPool.removeAll { gone.contains($0.id) }
+                survivors.append(candidate)
+                comparisonPool.append(candidate)
+            } else {
+                absorbed.append(AnnouncementTwin(
+                    hiddenID: candidate.id, survivorID: twin.id,
+                    hiddenDue: candidate.dueAt, survivorDue: twin.dueAt
+                ))
             }
         }
-        return survivors
+        return (survivors, absorbed, displaced)
+    }
+
+    /// Whether two dates could be one task's: either is missing, or they are
+    /// within `AssignmentDeduplicator.similarTitleDueDateTolerance`.
+    nonisolated static func announcementDatesCompatible(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        guard let lhs, let rhs else { return true }
+        return abs(lhs.timeIntervalSince(rhs)) <= AssignmentDeduplicator.similarTitleDueDateTolerance
+    }
+
+    /// Whether a tick on `hidden` may follow onto `survivor`: only when the two
+    /// are the same task on the same day (`announcementDatesCompatible`). Two
+    /// rows can be one card without being one piece of work: a rescheduled
+    /// exam is one sitting on the dashboard, and "I did the Oct 6 one" says
+    /// nothing about the Oct 30 one. Carrying across the gap would mark a
+    /// future sitting done on the strength of the student's tick on the old
+    /// date, and a completion is the one fact in the ledger that cannot be
+    /// re-derived from anything. Undated on either side is compatible: a tick
+    /// on a task that never had a date is about the task.
+    nonisolated static func completionFollows(from hidden: AnnouncementTwin) -> Bool {
+        announcementDatesCompatible(hidden.hiddenDue, hidden.survivorDue)
+    }
+
+    /// The order announcement candidates are offered to
+    /// `resolvingAnnouncementDuplicates`, so that when two of them are the same
+    /// task the same one survives on every rebuild. The first in the list wins,
+    /// and `announcementItems` comes out of the ledger in no particular order,
+    /// so without this the card the student sees (and ticks off) could be the
+    /// Canvas copy on one rebuild and the Ed copy on the next.
+    ///
+    /// Dated before undated (an announcement that names the day is worth more
+    /// than a twin that does not), then the syllabus after every announcement,
+    /// then Canvas before Ed (the post the class has always had, and the one
+    /// whose link opens Canvas), then by id.
+    ///
+    /// The syllabus comes after the announcements because an announcement is
+    /// newer and is where a reschedule is announced, so when both name the same
+    /// exam the announcement's date is the one the class sees. It comes after
+    /// *dating*, not before it, so an announcement that names the exam without
+    /// a day ("the midterm will be in class") cannot hide the syllabus row that
+    /// has one: it is the undated twin that goes, as for any other pair.
+    ///
+    /// `hidden` is the ids the dashboard keeps off the dashboard
+    /// (`isHiddenAnnouncementTask`: past, aged out, or a same-day reminder),
+    /// and they go last of all. Hiding is decided after the duplicate check,
+    /// so without this a hidden twin could be the survivor and take a live
+    /// copy of the same task off the dashboard with it. A live twin that
+    /// outlives a hidden one is the card the student can still act on.
+    nonisolated static func announcementDedupOrder(
+        _ items: [Assignment], hidden: Set<String> = []
+    ) -> [Assignment] {
+        items.sorted { lhs, rhs in
+            let lhsHidden = hidden.contains(lhs.id)
+            let rhsHidden = hidden.contains(rhs.id)
+            if lhsHidden != rhsHidden { return !lhsHidden }
+            let lhsDated = lhs.dueAt != nil
+            let rhsDated = rhs.dueAt != nil
+            if lhsDated != rhsDated { return lhsDated }
+            let lhsSyllabus = lhs.announcementOrigin == .syllabus
+            let rhsSyllabus = rhs.announcementOrigin == .syllabus
+            if lhsSyllabus != rhsSyllabus { return !lhsSyllabus }
+            let lhsEd = lhs.announcementOrigin == .ed
+            let rhsEd = rhs.announcementOrigin == .ed
+            if lhsEd != rhsEd { return !lhsEd }
+            return lhs.id < rhs.id
+        }
     }
 
     /// Announcement rows can be keyed by a raw Canvas descriptor while the
@@ -4602,27 +4885,116 @@ final class AppState: ObservableObject {
         case find
     }
 
-    /// The dashboard is a debt list, not a transcript of every useful thing a
-    /// professor mentioned. Preparation/reference language therefore routes
-    /// to the quieter announcement-finds inbox even if an older backend model
-    /// persisted it as `.assignment`. A direct "take" instruction for an
-    /// assessment remains owed work. Keeping this decision at rebuild time is
-    /// what repairs old ledger rows without deleting or rewriting them.
+    /// Whether a task found in an announcement is a card on the dashboard
+    /// (`.main`) or listed only in the megaphone (`.find`).
+    ///
+    /// **Changed 2026-10-18 (owner's call): every task is a card.** Until then
+    /// only owed work ("submit", "take the quiz") was `.main`, and preparation
+    /// ("read chapter 4", "bring a calculator", a practice exam) was `.find`,
+    /// on the reasoning that the dashboard is a debt list and not a transcript
+    /// of everything a professor mentioned. The owner wants those tasks on the
+    /// dashboard too, so the only thing left for `.find` is a row whose own
+    /// wording reads as information ("grades posted"): the extractors discard a
+    /// post like that before they run, and this is what still holds back the
+    /// odd sentence that gets through. The kind of task no longer decides
+    /// placement, so a preparation task that an older backend persisted as
+    /// `.assignment` needs no repair here. Evaluated at rebuild time, so old
+    /// ledger rows follow without being deleted or rewritten.
+    ///
+    /// Whether a *class* shows these cards at all is the separate, per-class
+    /// "announcements on dashboard" switch, applied by the caller.
+    ///
+    /// An exam out of the syllabus is always a card: its title is the exam's
+    /// name, written by the app and not by a professor, so there is no prose
+    /// for the informational check to misread, and it is not a megaphone find
+    /// (`announcementPageItems` leaves it out).
     static func announcementDashboardPlacement(for item: Assignment) -> AnnouncementDashboardPlacement {
-        if AnnouncementTaskClassifier.isInformational(item.title) {
-            return .find
+        if item.announcementOrigin == .syllabus { return .main }
+        return AnnouncementTaskClassifier.isInformational(item.title) ? .find : .main
+    }
+
+    /// The announcement rows worth keeping in memory: every row still in its
+    /// post's window, plus the ones the student finished. A row whose post
+    /// Canvas stopped returning (`syncAnnouncements`'s deletion check) is
+    /// hidden, but a completion is the student's own record of what they did
+    /// and stays visible in prev however the post fared.
+    nonisolated static func announcementRowsToShow(
+        _ rows: [Assignment],
+        gone: Set<String>,
+        completed: Set<String>
+    ) -> [Assignment] {
+        rows.filter { !gone.contains($0.id) || completed.contains($0.id) }
+    }
+
+    /// Re-reads `announcementItems` from the ledger, minus rows flagged gone
+    /// that the student never finished.
+    func reloadAnnouncementItems(from store: AssignmentStore) {
+        announcementItems = Self.announcementRowsToShow(
+            store.assignments(source: .canvasAnnouncement),
+            gone: store.goneFromFeedIDs(source: .canvasAnnouncement),
+            completed: completedAssignmentIDs
+        )
+    }
+
+    /// What an announcement pass calls after it has written to the ledger:
+    /// re-read the rows and rebuild the dashboard. The rebuild itself is
+    /// private to this file, and the Ed pass lives in another.
+    func applyAnnouncementLedgerChange() {
+        if let store = assignmentStore { reloadAnnouncementItems(from: store) }
+        rebuildDashboardItems()
+    }
+
+    /// Records announcement ids as read by an extractor (successfully, or with
+    /// nothing found: both are a completed parse), so they are never sent
+    /// again. One ratchet for Canvas ids (digits) and Ed document ids
+    /// (`ed:…`): the two cannot collide, and sharing the set means every place
+    /// that already clears it (the extraction repair, disconnecting Canvas)
+    /// clears Ed's as well.
+    func recordProcessedAnnouncementIDs(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        processedAnnouncementIDs.formUnion(ids)
+        UserDefaults.lhf.set(Array(processedAnnouncementIDs), forKey: Self.processedAnnouncementIDsKey)
+    }
+
+    /// Which extractor reads one post: the test seam, the backend's AI assist,
+    /// or the free on-device heuristic. Shared by the Canvas sync below and the
+    /// Ed pass, so the toggle, the Penn gate and the on-device "could this
+    /// carry a task" gate apply to both identically. Built per post, not per
+    /// batch: the AI path pays for a post only when its own text could plausibly
+    /// carry a task, which is a per-post question.
+    func announcementExtractor(
+        for announcement: CanvasAnnouncement,
+        courseCode: String
+    ) -> any AnnouncementAssignmentExtractor {
+        if let announcementExtractorForTesting {
+            return announcementExtractorForTesting(announcement)
         }
-        switch AnnouncementTaskClassifier.taskKind(in: item.title) {
-        case .some(.submission):
-            return .main
-        case .some(.preparation):
-            return .find
-        case nil:
-            // Preserve a backend's structured answer for unknown wording, but
-            // never let known informational/preparation prose inherit a stale
-            // `.assignment` classification from an older extraction.
-            return item.kind == .event ? .find : .main
+        if announcementAIEnabled,
+           canvasInstallation.id == CanvasInstallation.penn.id,
+           let client = BackendServices.client,
+           HeuristicAnnouncementExtractor.mightContainTask(
+               title: announcement.title, body: announcement.message
+           ) {
+            return BackendAnnouncementExtractor(client: client)
         }
+        // `meetings` comes from the course catalog `SyncPlanner.applyCatalog`
+        // folds into `courseKnowledge` (`AppState+CourseKnowledge.swift`) --
+        // empty when this course has no synced catalog entry yet, which the
+        // heuristic extractor's own default already tolerates.
+        let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
+        return HeuristicAnnouncementExtractor(meetings: meetings)
+    }
+
+    /// The word a sync summary uses for the extractor `announcementExtractor`
+    /// picked: "injected" (a test's), "backend" (the AI assist) or "heuristic"
+    /// (on-device). Words only, for `lastAnnouncementSyncSummary` and
+    /// `lastEdTaskSyncSummary`.
+    nonisolated static func announcementExtractorLabel(
+        _ extractor: any AnnouncementAssignmentExtractor,
+        injected: Bool
+    ) -> String {
+        if injected { return "injected" }
+        return extractor is HeuristicAnnouncementExtractor ? "heuristic" : "backend"
     }
 
     /// Fetches recent Canvas course announcements, extracts candidate tasks
@@ -4651,12 +5023,16 @@ final class AppState: ObservableObject {
     /// 15-to-60-day-old post would be extracted once, and on the AI path
     /// that is a bill and an upload nobody asked for.
     ///
-    /// **Ed Discussion posts are read here too** (since 2026-10-19, written
-    /// without a compiler): announcement, pinned and staff posts of the
-    /// synced `ed` documents go through the very same gates, extractor choice
-    /// and AI opt-out as a Canvas announcement. The wrong version was a second
-    /// pass or a new `Assignment.Source`; neither is needed, and the first
-    /// would copy the gates to drift. See `edAnnouncementsForExtraction`.
+    /// **Ed Discussion posts are not read here.** They have their own pass,
+    /// `syncEdAnnouncementTasks` (`AppState+EdAnnouncementTasks.swift`), which
+    /// shares this loop's extractor choice (`announcementExtractor`), its
+    /// informational gate, its processed-id ratchet and its twin check
+    /// (`droppingAnnouncementTwins`). For one day (2026-10-19) this loop read
+    /// them too, as `CanvasAnnouncement`s with `ed:` ids; the two merged lines
+    /// of work kept the pass, because it files the find under the Ed thread
+    /// (`AnnouncementRecord.edFindSourceID`) and checks the class afresh after
+    /// each network call. The retry cap, the quota stop and the back-off
+    /// below are this loop's; the Ed pass has its own retry clock.
     func syncAnnouncements(now: Date = Date()) async {
         guard !isUsingFixtureData else { return noteAnnouncementSync("skipped: fixture", at: now) }
         guard let store = assignmentStore else { return noteAnnouncementSync("skipped: no store", at: now) }
@@ -4724,23 +5100,17 @@ final class AppState: ObservableObject {
         // nothing new to extract still updates the list.
         recordFetchedAnnouncements(fetched, courseCodesByID: courseCodesByID, now: now)
 
-        // The Ed Discussion posts already on the phone ride the same loop as
-        // Canvas's announcements, appended after them (see
-        // `edAnnouncementsForExtraction` for what they are and why they are
-        // dressed as `CanvasAnnouncement`s). They must join before the
-        // emptiness guard: a quiet Canvas week with a TA's "HW3 moved to
-        // Monday" on Ed is exactly the case this exists for. Same 14-day
-        // window, same processed set (keyed `ed:{course}:{thread}`), same
-        // commit below. Ed is read from `courseKnowledge`, not fetched, so
-        // it costs nothing on the network; it does follow the Canvas fetch
-        // (a failed fetch returns above and Ed waits for the next sync,
-        // which is the cheaper of two honest choices: splitting the guard
-        // would let the Ed half run on a Canvas session that is not usable).
-        let edPosts = Self.edAnnouncementsForExtraction(from: courseKnowledge.documents)
-        let unprocessed = Self.announcementsEligibleForExtraction(fetched + edPosts, now: now)
+        // Also before the early return below: whether a post has been
+        // deleted has nothing to do with whether there is a new one to read.
+        let presenceChanged = reconcileAnnouncementPresence(
+            fetched: fetched, requestedCourseIDs: Set(courseIDs), window: window, store: store, now: now
+        )
+
+        let unprocessed = Self.announcementsEligibleForExtraction(fetched, now: now)
             .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else {
-            return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)", at: now)
+            if presenceChanged { applyAnnouncementLedgerChange() }
+            return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count)", at: now)
         }
 
         // THE QUOTA IS SHARED WITH ASK, so a persistent extractor failure must
@@ -4753,9 +5123,13 @@ final class AppState: ObservableObject {
         // times is given up on; and a quota refusal stops the run without
         // counting against any announcement. The wrong fix is marking a
         // failed id processed at once: a network blip would then eat it.
+        // (Ed Discussion posts are read by their own pass, which has its own
+        // retry clock: `AppState+EdAnnouncementTasks.swift`.)
         let defaults = UserDefaults.lhf
         if let until = defaults.object(forKey: Self.announcementExtractionBackoffUntilKey) as? Double {
             if now.timeIntervalSince1970 < until {
+                // The list and the deletion judgement above already ran.
+                if presenceChanged { applyAnnouncementLedgerChange() }
                 return noteAnnouncementSync(
                     "skipped: extraction backoff until \(Self.backoffClockStamp(Date(timeIntervalSince1970: until)))",
                     at: now
@@ -4818,36 +5192,12 @@ final class AppState: ObservableObject {
                 postedAt: announcement.postedAt
             )
 
-            // Built per announcement now, not once for the batch — the
-            // extractor choice used to be picked once outside this loop so a
-            // mid-batch key removal or toggle flip couldn't split one run
-            // across backends. That reasoning doesn't apply once the AI path
-            // has its own per-announcement gate below: the whole point of
-            // `mightContainTask` is that the model is only ever paid for an
-            // announcement whose text could plausibly carry a task, which is
-            // a per-announcement question by construction, not something a
-            // single batch-wide choice could express. `meetings` comes from
-            // the course catalog `SyncPlanner.applyCatalog` folds into
-            // `courseKnowledge` (`AppState+CourseKnowledge.swift`) — empty
-            // when this course has no synced catalog entry yet, which the
-            // heuristic extractor's own default already tolerates.
-            let meetings = courseKnowledge.catalogEntry(forCourseCode: courseCode)?.meetings ?? []
-            let extractor: any AnnouncementAssignmentExtractor
-            if let announcementExtractorForTesting {
-                extractor = announcementExtractorForTesting(announcement)
-                extractorsUsed.insert("injected")
-            } else if announcementAIEnabled,
-               canvasInstallation.id == CanvasInstallation.penn.id,
-               let client = BackendServices.client,
-               HeuristicAnnouncementExtractor.mightContainTask(
-                   title: announcement.title, body: announcement.message
-               ) {
-                extractor = BackendAnnouncementExtractor(client: client)
-                extractorsUsed.insert("backend")
-            } else {
-                extractor = HeuristicAnnouncementExtractor(meetings: meetings)
-                extractorsUsed.insert("heuristic")
-            }
+            // Built per announcement, not once for the batch -- see
+            // `announcementExtractor(for:courseCode:)`.
+            let extractor = announcementExtractor(for: announcement, courseCode: courseCode)
+            extractorsUsed.insert(
+                Self.announcementExtractorLabel(extractor, injected: announcementExtractorForTesting != nil)
+            )
 
             let extracted: [ExtractedAssignment]
             let countsTowardBackoff = !(extractor is HeuristicAnnouncementExtractor)
@@ -4885,19 +5235,9 @@ final class AppState: ObservableObject {
                 continue
             }
 
-            var candidates = Self.announcementAssignments(
+            let candidates = Self.announcementAssignments(
                 from: extracted, announcement: announcement, courseCode: courseCode
             )
-            // An Ed post can restate a Canvas announcement (or the reverse
-            // order, from an earlier sync): drop the Ed find whose course,
-            // title and due date match a find already made. Canvas finds are
-            // untouched, so this changes nothing for them; Canvas is
-            // extracted first and so wins.
-            if announcement.id.hasPrefix(AnnouncementRecord.edIDPrefix) {
-                candidates = Self.droppingAnnouncementTwins(
-                    candidates, against: collected + announcementItems
-                )
-            }
             // Keep every extraction on the ledger. Duplicate suppression is a
             // dashboard presentation rule; the announcements page remains a
             // complete, inspectable inbox even when official coursework wins.
@@ -4911,15 +5251,11 @@ final class AppState: ObservableObject {
 
         if !collected.isEmpty {
             store.upsert(collected)
-            announcementItems = store.assignments(source: .canvasAnnouncement)
         }
-        if !newlyProcessedIDs.isEmpty {
-            processedAnnouncementIDs.formUnion(newlyProcessedIDs)
-            UserDefaults.lhf.set(Array(processedAnnouncementIDs), forKey: Self.processedAnnouncementIDsKey)
-            // A processed id (found, found nothing, informational, or given
-            // up on) has no use for a counter.
-            for id in newlyProcessedIDs { attempts.removeValue(forKey: id) }
-        }
+        recordProcessedAnnouncementIDs(newlyProcessedIDs)
+        // A processed id (found, found nothing, informational, or given up
+        // on) has no use for a counter.
+        for id in newlyProcessedIDs { attempts.removeValue(forKey: id) }
         if attempts.isEmpty {
             defaults.removeObject(forKey: Self.announcementExtractionAttemptsKey)
         } else {
@@ -4931,12 +5267,12 @@ final class AppState: ObservableObject {
                 forKey: Self.announcementExtractionBackoffUntilKey
             )
         }
-        if !collected.isEmpty || !newlyProcessedIDs.isEmpty {
-            rebuildDashboardItems()
+        if !collected.isEmpty || !newlyProcessedIDs.isEmpty || presenceChanged {
+            applyAnnouncementLedgerChange()
         }
         let used = extractorsUsed.isEmpty ? "none" : extractorsUsed.sorted().joined(separator: "+")
         noteAnnouncementSync(
-            "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count) \u{00B7} ed \(edPosts.count)"
+            "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count)"
                 + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
                 + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)"
                 + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? "")
@@ -4961,6 +5297,150 @@ final class AppState: ObservableObject {
         let summary = "\(Self.diagnosticStamp(now)) \u{00B7} \(detail)"
         lastAnnouncementSyncSummary = summary
         UserDefaults.lhf.set(summary, forKey: Self.lastAnnouncementSyncSummaryKey)
+    }
+
+    /// Hides the cards of a Canvas post Canvas has stopped returning, and
+    /// brings them back if it returns. True when any row changed.
+    ///
+    /// **What counts as deleted.** The fetch is a window (`window`), not a
+    /// census, so a post missing from it proves nothing by itself: it may be
+    /// older than the window, or the response may be partial. A post counts as
+    /// missing only when the log remembers it (`announcementLogRecords`, which
+    /// holds the posted date) and that date lies inside the window we asked
+    /// for, a day clear of its start to cover clock skew at the edge, for a
+    /// class this fetch covered. A post the log never saw, or saw without a
+    /// date, is never judged.
+    ///
+    /// **An empty fetch judges nothing**, the same refusal `reconcile` makes
+    /// for a source that suddenly returns no items: a response with no
+    /// announcements at all is far likelier a blip or a lapsed session than
+    /// every post in every class being deleted at once. (A failed fetch never
+    /// reaches here: `syncAnnouncements` returns on a throw.)
+    ///
+    /// **A class that returned nothing is not judged, and one miss is not
+    /// deletion.** The fetch is paged (`CanvasAnnouncementsClient` stops at 50
+    /// pages and refuses a `Link` header that leaves the host), and a response
+    /// that is cut short looks exactly like a response with some posts deleted.
+    /// So a class's posts are judged only if this very fetch returned at least
+    /// one post for that class, and a post must be missing from two judged
+    /// fetches in a row before its rows are flagged
+    /// (`advanceAnnouncementMisses`; the counts are in `UserDefaults.lhf`, keyed
+    /// by post id, and a post seen again starts over). It is a cheap guard, not
+    /// proof: a fetch that is truncated the same way every time would still be
+    /// believed on its second run, which is why the flag is reversible.
+    ///
+    /// **Flagged, never deleted.** The rows get `isGoneFromFeed` through
+    /// `AssignmentStore.markGoneFromFeed`; their completions are untouched, and
+    /// a row the student finished stays visible in prev
+    /// (`announcementRowsToShow`). A post that comes back is restored. That
+    /// sentence was only a comment until 2026-10-18: `AssignmentStore.isAgedOut`
+    /// deleted every unfinished flagged row 14 days after its date, through
+    /// `reconcile`'s prune on each Canvas sync, and `markPresentInFeed` cannot
+    /// restore a row that is gone. Announcement rows are now exempt from aging
+    /// by name (CLAUDE.md, Traps).
+    ///
+    /// The log is the evidence, so this does nothing while the log is off (the
+    /// test-runner default) or cleared. Ed posts are never judged here: see
+    /// `AppState+EdAnnouncementTasks.swift`.
+    private func reconcileAnnouncementPresence(
+        fetched: [CanvasAnnouncement],
+        requestedCourseIDs: Set<String>,
+        window: (since: Date, until: Date),
+        store: AssignmentStore,
+        now: Date
+    ) -> Bool {
+        guard let presence = Self.announcementPresence(
+            fetched: fetched,
+            requestedCourseIDs: requestedCourseIDs,
+            known: announcementLogRecords,
+            window: window
+        ) else { return false }
+
+        let defaults = UserDefaults.lhf
+        let advanced = Self.advanceAnnouncementMisses(
+            counts: defaults.dictionary(forKey: Self.announcementMissCountsKey) as? [String: Int] ?? [:],
+            missing: presence.missing
+        )
+        if advanced.counts.isEmpty {
+            defaults.removeObject(forKey: Self.announcementMissCountsKey)
+        } else {
+            defaults.set(advanced.counts, forKey: Self.announcementMissCountsKey)
+        }
+
+        let rows = store.assignments(source: .canvasAnnouncement)
+        let alreadyGone = store.goneFromFeedIDs(source: .canvasAnnouncement)
+        var toHide: Set<String> = []
+        var toRestore: Set<String> = []
+        for row in rows {
+            guard let announcementID = AnnouncementRecord.announcementID(fromFindSourceID: row.sourceID) else {
+                continue
+            }
+            if advanced.confirmed.contains(announcementID) {
+                toHide.insert(row.id)
+            } else if presence.returned.contains(announcementID), alreadyGone.contains(row.id) {
+                toRestore.insert(row.id)
+            }
+        }
+        let hidden = store.markGoneFromFeed(ids: toHide)
+        let restored = store.markPresentInFeed(ids: toRestore, now: now)
+        return hidden + restored > 0
+    }
+
+    /// How many judged fetches in a row a post must be missing from before its
+    /// rows are flagged gone.
+    nonisolated static let announcementMissesToFlag = 2
+    private static let announcementMissCountsKey = "announcementMissCountsV1"
+
+    /// The pure half of the two-miss rule. `counts` is what was saved after the
+    /// previous judged fetch (post id -> consecutive misses) and `missing` is
+    /// what this one proved missing. Returns the counts to save and the posts
+    /// that have now been missing `announcementMissesToFlag` times.
+    ///
+    /// Only posts missing *now* keep a count: anything else (seen again, or no
+    /// longer judged because it drifted out of the window) starts over, so the
+    /// misses really are consecutive, and the saved dictionary cannot grow
+    /// past the posts currently in doubt.
+    nonisolated static func advanceAnnouncementMisses(
+        counts: [String: Int],
+        missing: Set<String>
+    ) -> (counts: [String: Int], confirmed: Set<String>) {
+        var next: [String: Int] = [:]
+        for id in missing { next[id] = (counts[id] ?? 0) + 1 }
+        let confirmed = Set(next.filter { $0.value >= announcementMissesToFlag }.map(\.key))
+        return (next, confirmed)
+    }
+
+    /// The pure half of `reconcileAnnouncementPresence`: which known Canvas
+    /// posts a fetch proves missing, and which it returned. Nil when the
+    /// fetch is empty (nothing can be judged from it).
+    ///
+    /// A class is judged only if the fetch returned at least one of its posts.
+    /// `requestedCourseIDs` says which classes were *asked for*, which is not
+    /// the same thing: a class whose pages were cut off, or whose request was
+    /// refused halfway, was asked for and returned nothing, and "returned
+    /// nothing" is the signature of a failure at least as often as of every
+    /// post in a class being deleted at once. (The cost: a class whose last
+    /// post is deleted keeps its cards until another post appears. That is the
+    /// cheaper mistake.)
+    nonisolated static func announcementPresence(
+        fetched: [CanvasAnnouncement],
+        requestedCourseIDs: Set<String>,
+        known: [AnnouncementRecord],
+        window: (since: Date, until: Date)
+    ) -> (missing: Set<String>, returned: Set<String>)? {
+        guard !fetched.isEmpty else { return nil }
+        let returned = Set(fetched.map(\.id))
+        let judgedCourseIDs = Set(fetched.map(\.courseID)).intersection(requestedCourseIDs)
+        let earliest = window.since.addingTimeInterval(24 * 60 * 60)
+        let missing = known.filter { record in
+            guard !record.isEd,
+                  judgedCourseIDs.contains(record.courseID),
+                  !returned.contains(record.id),
+                  let posted = record.postedAt
+            else { return false }
+            return posted >= earliest && posted <= window.until
+        }
+        return (Set(missing.map(\.id)), returned)
     }
 
     /// Folds the enrolled-course list into `canvasCourseIDsByCode` — the map
@@ -5925,25 +6405,41 @@ final class AppState: ObservableObject {
         return due <= now.addingTimeInterval(dashboardWindow)
     }
 
-    /// Whether an item has simply passed and should leave the dashboard rather
-    /// than sit in OVERDUE. Two kinds of item, one rule (`dueAt < now`):
+    /// Whether an `.event`-kind item (a reading, a lecture, an exam date with
+    /// nothing to submit) has simply passed and should leave the dashboard
+    /// rather than sit in OVERDUE. It has no submission to be late on, so it
+    /// can never be overdue.
     ///
-    /// 1. **`.event` kind** (a reading, a lecture, an exam date with nothing
-    ///    to submit). It has no submission to be late on, so it can never be
-    ///    overdue.
-    /// 2. **`.canvasAnnouncement` source** (2026-10-19, the owner's rule). These
-    ///    are the Announcement Watcher's finds, from Canvas announcements and
-    ///    from Ed posts (which carry the same source). They are tasks guessed
-    ///    out of prose, not the professor's gradebook, so one that has passed
-    ///    is noise rather than debt: it disappears at its due time instead of
-    ///    turning red. Real Canvas and Gradescope work and the student's own
-    ///    tasks are untouched and stay overdue.
+    /// **Only `.event`. A task found in an announcement is not judged here.**
+    /// Until the 2026-10-20 merge this also matched every
+    /// `.canvasAnnouncement` item (the owner's rule of 2026-10-19: an
+    /// announcement or Ed task disappears at its due time and is never
+    /// overdue). The other line of work, Marco's, had by then written the same
+    /// rule with more to it (`isHiddenAnnouncementTask`: the date the card
+    /// shows, a student's edit included; same-day "be there" reminders; an
+    /// undated task after a week), and two rules for one thing would drift
+    /// apart. So the announcement half was removed from here, and each place
+    /// it applied is covered by exactly one of the two:
+    ///
+    /// - the dashboard's buckets, the megaphone's found list, the badge and
+    ///   ask's work pool (`announcementItemsStillOpen`) ask
+    ///   `isHiddenAnnouncementTask`;
+    /// - the widget's ledger fallback (`LedgerWidgetReader.isExpired`), a
+    ///   separate-process copy that cannot call `AppState`, keeps its own
+    ///   `dueAt < now` clause for announcement rows, which is the dated half
+    ///   of that rule (it has no post dates for the rest).
+    ///
+    /// An `.event` that is itself a task found in an announcement (a
+    /// "bring a form" preparation task, a syllabus exam) has source
+    /// `.canvasAnnouncement` and is left to `isHiddenAnnouncementTask` alone:
+    /// asked of both, the two would disagree the moment the student edits its
+    /// date, because this one reads the feed date and that one the card's.
     ///
     /// This is a display rule only. The wrong fix is deleting the ledger row
     /// or marking it complete when it expires: either loses the student's
     /// record ("nothing the student did is ever lost") and a completion would
     /// make prev claim work was finished that never was. The row stays; a
-    /// completed find still reaches prev, because prev reads completed work
+    /// completed item still reaches prev, because prev reads completed work
     /// and never goes through this filter.
     ///
     /// For an `.event`, the product rule is that it is gone the moment it
@@ -5967,7 +6463,7 @@ final class AppState: ObservableObject {
     /// case the owner's device pass caught. Undated events are still never
     /// expired, since there's no due time to compare against.
     static func isExpired(_ assignment: Assignment, now: Date = Date()) -> Bool {
-        guard assignment.kind == .event || assignment.source == .canvasAnnouncement,
+        guard assignment.kind == .event, assignment.source != .canvasAnnouncement,
               let due = assignment.dueAt else { return false }
         return due < now
     }
@@ -6261,6 +6757,12 @@ final class AppState: ObservableObject {
         // ledger invariant as the Canvas/Modules collapses above: if the user
         // completed the announcement-shaped copy before the structured row
         // arrived, that work must follow the surviving identity.
+        //
+        // Only between copies of the same day's task: the title heuristic
+        // tolerates 21 days against a feed item, which is right for hiding a
+        // restatement and wrong for passing a tick along, because "I did the
+        // one due the 6th" is not "I did the one due the 20th"
+        // (`completionFollows`).
         for announcementItem in announcementItems {
             if let survivor = realItems.first(where: { other in
                 Self.announcementCoursesMatch(announcementItem.course, other.course)
@@ -6270,24 +6772,66 @@ final class AppState: ObservableObject {
                         existingTitle: other.title,
                         existingDue: other.dueAt
                     )
-            }) {
+            }), Self.announcementDatesCompatible(announcementItem.dueAt, survivor.dueAt) {
                 carryCompletion(from: announcementItem.id, to: survivor.id)
             }
         }
-        let mainAnnouncementItems = Self.filteringAnnouncementDuplicates(
-            announcementItems.filter {
+        // Canvas and Ed announcements share this pool (`announcementItems`),
+        // so the same task announced in both places, or announced in one and
+        // already a Canvas assignment, collapses to one card here. The order
+        // fixes which twin survives (`announcementDedupOrder`), and a tick on
+        // the one that is hidden follows onto the one that is shown, as in
+        // the collapses above.
+        //
+        // A found exam is a candidate whatever the class's "announcements on
+        // dashboard" switch says: that switch is about tasks professors
+        // mention in passing, and a midterm is not one. Exams show for every
+        // class the student has not hidden (`isCourseSelected`, applied below
+        // like everything else).
+        //
+        // Rows the dashboard is about to keep off it (`isHiddenAnnouncementTask`)
+        // are offered last (`announcementDedupOrder(hidden:)`): that is decided
+        // after this, and a survivor that has already gone by would take its
+        // twin's live copy off the dashboard with it.
+        let postDates = announcementPostDates(for: announcementItems)
+        let hiddenAnnouncementIDs = Set(announcementItems.filter {
+            Self.isHiddenAnnouncementTask(
+                $0, dueAt: effectiveDueDate(for: $0), postedAt: postDates.postedAt(for: $0),
+                firstSeenAt: postDates.firstSeenAt(for: $0), now: now
+            )
+        }.map(\.id))
+        let announcementResolution = Self.resolvingAnnouncementDuplicates(
+            Self.announcementDedupOrder(announcementItems.filter {
                 Self.announcementDashboardPlacement(for: $0) == .main
-                    && announcementAssignmentsOnDashboard(for: $0.course)
-            },
+                    && ($0.isFoundExam || announcementAssignmentsOnDashboard(for: $0.course))
+            }, hidden: hiddenAnnouncementIDs),
             against: realItems
         )
+        for pair in announcementResolution.absorbed + announcementResolution.displaced
+        where Self.completionFollows(from: pair) {
+            carryCompletion(from: pair.hiddenID, to: pair.survivorID)
+        }
+        let mainAnnouncementItems = announcementResolution.survivors
+        // Undated feed exams a dated twin took the place of: out of the pool
+        // below, so the card is the one with the date. The ledger rows are
+        // untouched, and they come back the moment the twin goes.
+        let displacedFeedIDs = Set(announcementResolution.displaced.map(\.hiddenID))
         let secondaryAnnouncementItems = Self.filteringAnnouncementDuplicates(
-            announcementItems.filter { Self.announcementDashboardPlacement(for: $0) == .find },
+            Self.announcementDedupOrder(announcementItems.filter {
+                Self.announcementDashboardPlacement(for: $0) == .find
+            }),
             against: realItems + mainAnnouncementItems
         )
 
-        let canvasPool = structuredCanvasItems + mainAnnouncementItems
-        let canvasRelevant = canvasPool.filter { $0.isAssignment || Self.isAssessment($0) || includesAsOptedInContent($0) }
+        let canvasPool = structuredCanvasItems.filter { !displacedFeedIDs.contains($0.id) } + mainAnnouncementItems
+        let gradescopePool = gradescopeItems.filter { !displacedFeedIDs.contains($0.id) }
+        // A found exam is admitted outright. Its kind is `.event` when the
+        // syllabus found it, and a course whose readings are switched off
+        // (`includesAsOptedInContent`) or a title the assessment regex does
+        // not know ("Test 2") would otherwise drop it here.
+        let canvasRelevant = canvasPool.filter {
+            $0.isAssignment || Self.isAssessment($0) || $0.isFoundExam || includesAsOptedInContent($0)
+        }
         // Collapse anything a professor posted on BOTH Canvas and Gradescope
         // (same course, matching title/due date — see `AssignmentDeduplicator`)
         // into a single Canvas-anchored item before it ever reaches the
@@ -6299,7 +6843,7 @@ final class AppState: ObservableObject {
         let storedPairings = assignmentStore?.confirmedPairings() ?? []
         let pairings = AssignmentDeduplicator.matchPairs(
             canvasItems: canvasRelevant,
-            gradescopeItems: gradescopeItems,
+            gradescopeItems: gradescopePool,
             confirmedPairings: storedPairings
         )
         assignmentStore?.recordPairings(pairings)
@@ -6307,7 +6851,7 @@ final class AppState: ObservableObject {
         // isn't run a second time inside `merge`.
         let dedupedCoursework = AssignmentDeduplicator.merge(
             canvasItems: canvasRelevant,
-            gradescopeItems: gradescopeItems,
+            gradescopeItems: gradescopePool,
             confirmedPairings: pairings
         )
         mergedCoursework = dedupedCoursework
@@ -6329,11 +6873,16 @@ final class AppState: ObservableObject {
         for key in coursePreferences.archivedCourseKeys {
             archivedCourseTerms[key] = coursePreferences.archivedTerm(for: key)
         }
+        // `hiddenAnnouncementIDs` is `isHiddenAnnouncementTask` already asked of
+        // every announcement row above, with the date the card shows, so a
+        // past-due find is off both lists here as it is off todo and all.
+        // (`isExpired` is not asked: every row here is `.canvasAnnouncement`,
+        // which it leaves to that rule.)
         let isVisibleAnnouncement: (Assignment) -> Bool = { item in
             !self.isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && self.isCourseSelected(item.course)
-                && !Self.isExpired(item, now: now)
+                && !hiddenAnnouncementIDs.contains(item.id)
                 && !self.archivedAssignmentIDs.contains(item.id)
                 && Self.withinTermCap(
                     item,
@@ -6342,6 +6891,15 @@ final class AppState: ObservableObject {
                     archivedCourseTerms: archivedCourseTerms
                 )
         }
+        // The megaphone's found list is built from this
+        // (`announcementFoundItems`, which also leaves out what
+        // `isHiddenAnnouncementTask` keeps off the dashboard).
+        // Since 2026-10-18 it takes an exam out of the syllabus as well: it
+        // was found in no announcement, and an earlier version left it off
+        // because a row with no post behind it opened to nothing and counted
+        // as an unread find, but the owner wants every exam the class has
+        // found in one place, rendered as the exam card it is on the
+        // dashboard (whose "from syllabus" line says where it came from).
         announcementPageItems = announcementItems
             .filter(isVisibleAnnouncement)
             .sorted(by: Self.byDueDate)
@@ -6485,27 +7043,61 @@ final class AppState: ObservableObject {
             }
         }
 
+        // The per-class "items with nothing to submit" toggle
+        // (`CoursePreferences.nothingToSubmitEnabled`): off for a course, an
+        // `.event` item (reading, lecture, calendar event, a preparation task
+        // found in an announcement) or a Canvas assignment cached as requiring
+        // no submission is not shown. This is the one place its "hidden, not
+        // just silent" promise is enforced; see `coursework` below for the
+        // full reasoning. A closure so the `coursework` filter and any other
+        // caller share one definition.
+        //
+        // A found exam passes whatever the switch says. A syllabus exam is
+        // `.event` (a sitting, nothing to hand in) and would be the first thing
+        // the switch hid, but the switch is for readings and check-ins: an
+        // exam that vanished from a class because its "nothing to submit" box
+        // was unticked would read as the app losing the midterm.
+        let passesNothingToSubmitGate: (Assignment) -> Bool = { item in
+            item.isFoundExam
+                || self.coursePreferences.nothingToSubmitEnabled(item.course)
+                || !(item.kind == .event || self.requiresNoSubmission(item))
+        }
+
+        // Announcement-derived tasks whose date has passed leave the
+        // dashboard here, before any bucket below is built, and appear
+        // nowhere: not todo, not all, not prev (a finished one reaches prev
+        // through the completed pool, which this never looks at). So do an
+        // undated one a week after its post and a same-day "be there"
+        // reminder. They are not `isExpired`'s "gone the moment it
+        // happens", and they are not parked in prev as "past" either, which is
+        // what this used to do and what filled the owner's prev with tasks
+        // already taken. They go by the date the card shows (the student's
+        // edit, if any), so moving a task into the future brings it back. The
+        // ledger rows are untouched. See `isHiddenAnnouncementTask`.
+        let live = verifiedIncomplete.filter {
+            !Self.isHiddenAnnouncementTask(
+                $0, dueAt: effectiveDueDate(for: $0), postedAt: postDates.postedAt(for: $0),
+                firstSeenAt: postDates.firstSeenAt(for: $0), now: now
+            )
+        }
+
         // `.event` items never land in Assessments even when their title
         // matches the exam/quiz regex (`isAssessment` is title-based, and a
         // readings-course opt-in can surface something titled e.g. "Reading
         // quiz prep") — they're opted-in content, always coursework.
-        // `isExpired` is applied here too, though for a non-event it can only
-        // ever match an announcement find: one titled like an exam or quiz
-        // ("Midterm review quiz") is an assessment by `isAssessment`, takes
-        // this bucket instead of `coursework` below, and would otherwise keep
-        // showing as overdue (todo, all and the widget snapshot all read this
-        // array). A real Canvas or Gradescope quiz is not matched, so its
-        // overdue behaviour is unchanged.
-        assessments = verifiedIncomplete.filter {
-            $0.kind != .event && Self.isAssessment($0) && !Self.isExpired($0, now: now)
-        }
+        // The announcement finds that have passed are already out of `live`
+        // (`isHiddenAnnouncementTask`), which is the one rule for a task found
+        // in a post; `isExpired` is the event rule alone. A real Canvas or
+        // Gradescope quiz is never matched by either, so its overdue behaviour
+        // is unchanged.
+        assessments = live.filter { $0.kind != .event && Self.isAssessment($0) }
 
         // Near (overdue + this week) and later partition the coursework with no
         // gap, so nothing incomplete is silently dropped. An `.event` (reading,
         // lecture, exam date) has nothing to submit, so once its due time has
         // passed it isn't "overdue" — it's just gone from the dashboard (see
-        // `isExpired`, which also covers the Announcement Watcher's finds).
-        let coursework = verifiedIncomplete
+        // `isExpired`, the `.event` rule; an announcement find is `live`'s).
+        let coursework = live
             .filter { $0.kind == .event || !Self.isAssessment($0) }
             .filter { !Self.isExpired($0, now: now) }
             // The per-class "items with nothing to submit" toggle
@@ -6528,18 +7120,25 @@ final class AppState: ObservableObject {
             // never has to gate a hidden item — it only ever plans from
             // `vm.items`, which `DashboardViewModel` builds from these two
             // arrays, so an item dropped here simply never reaches it.
-            .filter { item in
-                coursePreferences.nothingToSubmitEnabled(item.course)
-                    || !(item.kind == .event || requiresNoSubmission(item))
-            }
+            .filter(passesNothingToSubmitGate)
         assignments = coursework.filter { Self.isNearOrOverdue($0, now: now) }
         laterAssignments = coursework.filter { !Self.isNearOrOverdue($0, now: now) }
         // Stale edited due dates go here, once the pool for this rebuild is
         // known; `pruneDueDateEdits` holds the rule and its guards. Before the
         // snapshot below so the widget never publishes an edit that was just
         // dropped.
+        //
+        // Announcement rows come from the ledger and not from `announcementItems`:
+        // that array drops the rows of a post Canvas stopped returning (they are
+        // flagged gone and hidden), and an edit on a hidden row is a student's
+        // fact about a task that comes back when the post does. Only a row that
+        // has left the ledger altogether should lose its edit. The store is the
+        // source of the whole ledger because `isAgedOut` exempts these rows, so
+        // "in the store" and "left the ledger" are the same question.
+        let announcementLedgerRows = assignmentStore?.assignments(source: .canvasAnnouncement)
+            ?? announcementItems
         pruneDueDateEdits(
-            against: canvasItems + gradescopeItems + moduleReadingItems + announcementItems
+            against: canvasItems + gradescopeItems + moduleReadingItems + announcementLedgerRows
                 + recurringAssignments + manualItems
         )
         publishWidgetSnapshot()

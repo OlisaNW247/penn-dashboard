@@ -125,10 +125,24 @@ struct SettingsPage: View {
                                connected: state.isCanvasConnected,
                                working: state.isLoading || state.isCanvasDiscoveryLoading,
                                disconnect: .canvas)
+                    signInToCanvasRow
+                    // Debug builds only (see `signInHealthRows`): back directly
+                    // under the canvas row, where they sat before the copy cut
+                    // of 2026-10-10 moved them into a collapsed disclosure.
+                    // The co-owner asked for them in plain view again. A
+                    // Release build never compiles them, so no student sees
+                    // any of it.
+                    #if DEBUG
+                    signInHealthRows
+                    #endif
                     accountRow(label: "gradescope",
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
+                    #if DEBUG
+                    edDiscussionStatusRow
+                    syncSummaryRows
+                    #endif
                     stayLoggedInRows
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
@@ -171,7 +185,6 @@ struct SettingsPage: View {
             Section {
                 simulateCanvasLogoutRow
                 probeEdDiscussionRow
-                signInDiagnosticsGroup
             } header: {
                 SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
             }
@@ -269,6 +282,20 @@ struct SettingsPage: View {
                             .foregroundStyle(Color.v2SpineAmber)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    // Not a lead time: it is its own switch because it is a
+                    // different kind of reminder (three Time Sensitive
+                    // notifications seconds apart for work not yet handed in)
+                    // and a student who wants no 10-minute reminder at all
+                    // still has to be able to find it. Changing it re-plans,
+                    // like the lead times above.
+                    Toggle("loud 10-minute alert", isOn: Binding(
+                        get: { scheduler.loudAlertEnabled },
+                        set: {
+                            scheduler.setLoudAlertEnabled($0)
+                            scheduler.rescheduleAfterPreferenceChange()
+                        }
+                    ))
 
                     Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
                         get: { scheduler.turnedInEnabled },
@@ -508,11 +535,15 @@ struct SettingsPage: View {
     /// summaries are outcome words and times, never a cookie value, URL or
     /// credential.
     ///
-    /// Since the copy cut of 2026-10-10 these lines render only inside
-    /// `signInDiagnosticsGroup`, in debug builds. A student read them as a
-    /// "whole yap about Canvas" under the accounts rows, and the one thing
-    /// they can act on, a rejected password, still has its own line and its
-    /// "update password" button in `stayLoggedInRows`.
+    /// Debug builds only, directly under the canvas account row. The copy
+    /// cut of 2026-10-10 moved them into a collapsed "sign-in diagnostics"
+    /// disclosure because a student read them as a "whole yap about Canvas";
+    /// on 2026-10-18 the co-owner asked for them back in plain view, as they
+    /// were at `ba75e97`. The `#if DEBUG` is what keeps a student from ever
+    /// seeing them, so the wrong fix is un-gating them, and the other wrong
+    /// fix is deleting the strings: `SignInHealthTests` pins them. The one
+    /// thing a student can act on, a rejected password, has its own line and
+    /// its "update password" button in `stayLoggedInRows`.
     @ViewBuilder
     private var signInHealthRows: some View {
         if showsSignInHealth {
@@ -536,10 +567,11 @@ struct SettingsPage: View {
         state.isCanvasConnected && state.canvasInstallation.id == CanvasInstallation.penn.id
     }
 
-    /// The Ed Discussion status that used to sit in the accounts section.
-    /// Read-only on purpose: Ed is signed in through the Canvas login with
-    /// nothing for the student to do, so a button here would have nothing to
-    /// press. Penn only, since ingestion is (`refreshCourseKnowledge`).
+    /// The Ed Discussion status, under the gradescope row in debug builds
+    /// (where it sat at `ba75e97`). Read-only on purpose: Ed is signed in
+    /// through the Canvas login with nothing for the student to do, so a
+    /// button here would have nothing to press. Penn only, since ingestion is
+    /// (`refreshCourseKnowledge`).
     private var showsEdDiscussionStatus: Bool {
         FeatureFlags.edDiscussion && state.canvasInstallation.id == CanvasInstallation.penn.id
     }
@@ -556,28 +588,22 @@ struct SettingsPage: View {
         }
     }
 
-    /// One collapsed line holding every sign-in status the accounts section
-    /// no longer prints: the PennKey password / Duo / last-silent-sign-in
-    /// lines and the Ed Discussion status. Collapsed by default so a debug
-    /// build looks like a release build until the owner opens it.
-    /// `docs/SIGNOUT_VERIFICATION.md` tells the reader to copy these lines.
-    private var signInDiagnosticsGroup: some View {
-        DisclosureGroup("sign-in diagnostics") {
-            if showsSignInHealth || showsEdDiscussionStatus {
-                signInHealthRows
-                edDiscussionStatusRow
-            } else {
-                Text("nothing to show until canvas is connected")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(.secondary)
-            }
-            syncSummaryRow(label: "announcements", icon: "megaphone", summary: state.lastAnnouncementSyncSummary)
-            syncSummaryRow(label: "course material", icon: "books.vertical", summary: state.lastCourseKnowledgeSyncSummary)
-        }
+    /// The last announcement sync, Ed task pass and course-material sync, one
+    /// read-only line each (counts and words only; see
+    /// `AppState.lastAnnouncementSyncSummary`, `lastEdTaskSyncSummary`,
+    /// `lastCourseKnowledgeSyncSummary`). Debug builds only, with the other
+    /// sign-in diagnostics: they were first inside a collapsed "sign-in
+    /// diagnostics" disclosure (2026-10-19), and when the accounts section took
+    /// those rows back into plain view (2026-10-18, the other line of work) they
+    /// came along. They must never be reachable from a Release build: a
+    /// student reads them as a "whole yap".
+    @ViewBuilder
+    private var syncSummaryRows: some View {
+        syncSummaryRow(label: "announcements", icon: "megaphone", summary: state.lastAnnouncementSyncSummary)
+        syncSummaryRow(label: "ed tasks", icon: "bubble.left.and.text.bubble.right", summary: state.lastEdTaskSyncSummary)
+        syncSummaryRow(label: "course material", icon: "books.vertical", summary: state.lastCourseKnowledgeSyncSummary)
     }
 
-    /// One read-only line of the last announcement or course-material sync
-    /// (counts and words only; see `AppState.lastAnnouncementSyncSummary`).
     private func syncSummaryRow(label: String, icon: String, summary: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Label(label, systemImage: icon)
@@ -587,6 +613,43 @@ struct SettingsPage: View {
         }
     }
     #endif
+
+    /// Whether the accounts section offers "sign in to canvas": Canvas counts
+    /// as connected (a calendar feed is saved) but no login session is, and
+    /// this is not the reviewer's preview. Pure so a test can pin it.
+    ///
+    /// `isLinkOnly` is `AppState.canvasIsLinkOnly`, which already excludes
+    /// fixture data; preview is checked again here because the section hides
+    /// every account row in preview and "exit preview" is that mode's only
+    /// way out.
+    nonisolated static func showsSignInToCanvas(isLinkOnly: Bool, isPreviewMode: Bool) -> Bool {
+        isLinkOnly && !isPreviewMode
+    }
+
+    /// A way back into the Canvas login when none is saved. It ships in
+    /// Release. In this state `SessionCookieStore.isExpired` is false (it
+    /// needs something saved to call it expired), so the dashboard raises no
+    /// "reconnect canvas" banner, and Grade Watcher's own "reconnect canvas"
+    /// button, the only other route here, went away with the grades button on
+    /// 2026-10-18. Without this row a student whose saved session was deleted,
+    /// or who pasted a calendar link, has a dashboard that still lists work
+    /// from the feed and no way to get the login back (auto-submitted state,
+    /// "turned in" notices and ask's course material all need it) short of
+    /// disconnecting Canvas and starting over. The wrong fix is to make the
+    /// "canvas" row itself reconnect: that row's tap means disconnect once
+    /// Canvas shows "connected", and it must keep meaning that.
+    ///
+    /// Same hand-off as `accountRow`: leave the page, then restart onboarding
+    /// at the Canvas step.
+    @ViewBuilder
+    private var signInToCanvasRow: some View {
+        if Self.showsSignInToCanvas(isLinkOnly: state.canvasIsLinkOnly, isPreviewMode: state.isPreviewMode) {
+            Button("sign in to canvas") {
+                dismiss()
+                state.restartOnboarding(for: .canvas)
+            }
+        }
+    }
 
     /// "Stay signed in" repair row, inside the "accounts" section. The
     /// password itself is only ever entered in `PennKeyCredentialsSheet`,

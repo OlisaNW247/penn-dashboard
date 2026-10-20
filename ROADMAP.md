@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-10, on `v8`.
+Last updated 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
+with Marco's `v8-loud-alert-actions`; not compiled).
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
@@ -24,14 +25,24 @@ from `v8` goes to TestFlight.
 
 These block shipping, or would make shipping risky.
 
+- **Compile and test the merge of 2026-10-20** (`v8-merge-loud-alert`).
+  Written with no Swift toolchain. On a Mac, alone on the machine:
+  `swift test --no-parallel` (predicted 2393 / 213; any lower count has
+  lost work) and `xcodebuild -destination 'generic/platform=iOS'
+  CODE_SIGNING_ALLOWED=NO build`. Then, if a phone is at hand, the DEBUG
+  rows under Profile → accounts (announcements, ed tasks, course
+  material) say where each sync stopped. Where the two sides' tests could
+  disagree: `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
+
 - **Look at the launch-prep work on a phone** (`v8-launch-prep`). Marco's
   phone has builds up to `b5ed8a1`; everything after is compiled for iOS
   and tested on the Mac only. In order of how much could be wrong:
   1. The megaphone: Canvas announcements reach today (re-read
      `announcement-log.json` off the phone; the first install showed the
      28-day-window bug), Ed rows for an Ed-only class, row layout.
-  2. Profile → accounts with no sign-in prose, and the collapsed
-     "sign-in diagnostics" in the DEBUG section.
+  2. Profile → accounts with no sign-in prose in a Release build. (On a
+     DEBUG build the sign-in lines are in plain view under the canvas row
+     again since 2026-10-18; the collapsed "sign-in diagnostics" is gone.)
   3. An opened card: "open in canvas" opens without collapsing the card;
      "edit date" survives a force-quit; "delete" / "stop repeating" on
      your own tasks.
@@ -42,6 +53,28 @@ These block shipping, or would make shipping risky.
   6. The widget when caught up ("all clear") and at a due time.
   7. A fresh install in mid-semester: old overdue work withheld, "N
      older hidden · show" at the foot of prev.
+- **Take the song out of the alarm before any release build.**
+  `App/berserk-alarm.caf` is 13 seconds of Ed Motta's "Seis da Tarde",
+  for Marco's own phone. Delete it and its four `project.pbxproj` lines
+  before archiving (the alarm then uses the default tone), or license
+  it. Pushed to the public repo on 2026-10-19 at Marco's say (he
+  accepted the copyright risk); removing it later leaves it in history.
+- **Ring the Berserk alarm on a phone** (`v8-loud-alert-actions`, iOS 26).
+  Allow alarms at the prompt; edit a real Canvas card's date to about 11
+  minutes out; lock the phone. One minute later it should ring full
+  screen through silent mode. Check "turned in" (card done after unlock)
+  and the system "Stop" (opens the assignment in Canvas). Then decide:
+  keep "Stop opens Canvas", or make Stop only stop (`CLAUDE.md` → Traps,
+  "an alarm's stop is any dismissal"). Also try one with the app
+  force-quit first, and look at what the lock screen shows besides the
+  name.
+- **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
+  With an item due in about 11 minutes: the three buzzes arrive Time
+  Sensitive; "turned in" from the lock screen stops the next buzz and
+  the card is done after unlock, also when the app was force-quit first;
+  "open in canvas" lands on the assignment (Canvas Student may take the
+  link, as it does from the card). Nothing about the alert has been heard
+  on a device yet.
 - **Decide the three sync questions** (Marco and Olisa; nothing here is
   merged, because Marco said not to touch the sync):
   1. Pass `until:` where `CourseKnowledgeCollector` fetches
@@ -173,10 +206,12 @@ Roughly in priority order.
   server path of ask, and announcement AI assist are Penn-only because the
   backend keys course material by numeric Canvas course id. Namespacing it
   by Canvas origin unlocks them everywhere.
-- **Ed Discussion, phase 2: verify on a device.** Built 2026-10-19, blind
-  and not compiled: the Announcement Watcher reads `ed` documents through
-  the same loop as Canvas announcements (`docs/ED_DISCUSSION.md`). Needs a
-  compile, a test run, and a phone with a synced Ed class.
+- **Ed Discussion, phase 2: verify on a device.** Built twice on
+  2026-10-18/19 and merged into one pass on 2026-10-20, blind and not
+  compiled: the Announcement Watcher reads `ed` announcements and pinned
+  posts through `syncEdAnnouncementTasks` (`docs/ED_DISCUSSION.md`). Needs
+  a compile, a test run, and a phone with a synced Ed class. The DEBUG
+  "ed tasks" row under Profile → accounts says what the last run did.
 - **Canvas access tokens**, the day Penn issues an OAuth developer key or
   lifts the student-token restriction. The plumbing is built and gated off
   (`FeatureFlags.canvasAccessTokens`).
@@ -250,10 +285,190 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-10-19 (`v8`, written without a compiler).** Announcement and Ed
-  tasks (`.canvasAnnouncement`) disappear at their due time instead of
-  turning overdue, in todo, all, the megaphone, the widget, and ask; the
-  ledger is untouched and completed ones stay in prev (`AppState.isExpired`).
+- **2026-10-20 (`v8-merge-loud-alert`, written without a compiler):
+  Olisa's `v8` and Marco's `v8-loud-alert-actions` merged.** Not compiled
+  and not run; predicted 2393 tests / 213 suites (`CLAUDE.md` → Test
+  baseline). Both lines had built the same two things:
+  - **One Ed task pass.** Marco's (`syncEdAnnouncementTasks`) stays;
+    Olisa's feeding of Ed posts through `syncAnnouncements` (and its
+    `edAnnouncementsForExtraction` and `announcement-ed:` find ids) is
+    removed. The survivor gained what the other had: the header's
+    posting day as the post's date and window (`edPostDate`), a twin
+    check against finds already made, a stop on a quota refusal, and a
+    one-line `lastEdTaskSyncSummaryV1` shown beside the other two in the
+    DEBUG rows. Staff posts that are neither announcements nor pinned are
+    no longer read for tasks.
+  - **One past-due rule.** Marco's `isHiddenAnnouncementTask` is the rule
+    for announcement and Ed tasks; `AppState.isExpired` is the `.event`
+    rule alone again. Ask's work pool now follows the rule too
+    (`announcementItemsStillOpen`); the widget's ledger fallback keeps the
+    dated half.
+  - **Kept from Olisa's day:** the work-identity dedup tier ("HW 2" =
+    "Homework 2"), the extraction retry cap, quota stop and one-hour
+    back-off in the Canvas loop, the announcement and course-material
+    sync summaries with the first error's kind, the Ed posting day in the
+    megaphone rows, ask excerpts and the on-device answerer. **Kept from
+    Marco's:** everything else in the entries below, Grade Watcher hidden
+    included.
+  - Merge hazards found and fixed: debug summary rows git had put inside
+    the Release "sign in to canvas" row; the megaphone's past-due lists
+    and one of Marco's tests still naming `isExpiredEvent`.
+- **2026-10-19 (`v8`, written without a compiler; Olisa).** Announcement
+  and Ed tasks (`.canvasAnnouncement`) disappear at their due time instead
+  of turning overdue; the ledger is untouched and completed ones stay in
+  prev. (Where it is implemented changed in the merge above.) Also that
+  day: the Ed posting day shown on rows and used by ask; a one-line
+  summary of each announcement and course-material sync; the retry cap
+  and one-hour back-off for a failing extractor (the shared 40-a-day quota
+  had been emptied in under an hour); the "HW 2" = "Homework 2"
+  identity tier.
+- **2026-10-19 (`v8-loud-alert-actions`, off `v8-announcements` at
+  `75dc7aa`, pushed 2026-10-19, not merged): "Berserk mode" is the loud 10-minute alert,
+  now with buttons.** Marco: right before an assignment goes unsubmitted
+  it "goes berserk and forces you to notice and either fix it or do
+  something about it". Each buzz has **"turned in"** (silences the rest,
+  then marks the item done as a swipe does) and **"open in canvas"** (or
+  "open in gradescope"). The notification delegate is now installed at
+  launch, so a tap that cold-launches the app is not lost. On iOS 26 the
+  buzzes become **one AlarmKit alarm** (Marco: the three buzzes "doesn't
+  quite do enough"): full screen, through silent mode and Focus, with
+  "turned in" as the only button that marks anything done and Stop
+  opening the assignment. Older iPhones, the Mac and a refused permission
+  keep the buzzes. A build from before the review fixes was installed on
+  Marco's iPhone on 2026-10-19, and it rang (once alarms were allowed
+  for Smooth). Then with his own alarm sound, the first 13 seconds of a
+  song faded out and 20% quieter: "this is perfect for berserk mode".
+- **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
+  merged): the stale-card rules.** The owner's phone filled with tasks
+  already taken or never needed ("Take quiz covering assignments 1 and 2"
+  from a Sept 14 Ed post; "Attend the weekly rotation quiz"): "none of
+  these previous ones are honestly helpful". Visibility rules at rebuild
+  time, no row deleted (`CLAUDE.md` → What the app does, "Which
+  announcement tasks show"; Traps):
+  - A past, unfinished announcement task is in todo, all and prev
+    **nowhere**; a finished one stays in prev. The "past" cards in prev
+    (`DashItem.isPast`, `pastItems`, `lapsedAnnouncementItems`) are gone.
+  - An undated one shows until 7 days after its post (log, Ed document, or
+    when the ledger first saw it), then goes the same way.
+  - A same-day "attend / come to / bring / join us / in class today" task,
+    due within 12 hours of the post or on its day, is not a card.
+  - The Ed pass reads only posts dated within the Canvas pass's 14 days,
+    and skips an undated one.
+  - **Open, for Olisa's code:** the Ed document's date is the thread's last
+    *activity*, so a bumped old thread still gets read; carrying
+    `createdAt` through `EdIngestion.documents` would close it.
+  - **Not verified on a phone.** Mac tests (2207) and an iOS compile only.
+  - **Applied to `v8-announcements`** with the sheet redesign below: the
+    megaphone's found list and badge ask the same rule, so they no longer
+    list a task the dashboard hides (that was this entry's open item).
+
+- **2026-10-18 (`v8-announcements`): the megaphone sheet, redesigned.** The
+  owner's notes: "just the most recent announcements from each class… a
+  helpful filter by class… just the past 7 days… I like the summary of
+  them, then the ones that are found, like Midterm 2 looks great like that."
+  - **Two lists, found first.** Found: tasks and exams found in Canvas
+    announcements and Ed posts, the syllabus's exams included, as the
+    dashboard's own cards, only while still ahead (not finished, not hidden
+    by the rule above); hidden when empty. Announcements: Canvas and Ed
+    posts from the past 7 days, newest first, each with its summary and NEW
+    tag. The log still keeps 60 days; the 7 are display only.
+  - **Class filter** over both (the dashboard's menu, default all classes),
+    "back to assignments" instead of "done", and a badge that counts only
+    what the sheet can show.
+  - **Colours.** The header megaphone circle is marigold; the dashboard's
+    class filter is cobalt (ink glyph on a cobalt fill).
+  - **Not verified on a phone.** Mac tests (2230) and an iOS compile only.
+
+- **2026-10-18 (`v8-announcements`, not yet committed): ledger-safety fixes
+  from the review of the announcement-task commit.**
+  - **Aging no longer deletes a flagged announcement row.**
+    `AssignmentStore.isAgedOut` exempts `.canvasAnnouncement` (and the
+    widget's copy of it, which now also hides a flagged one); the test that
+    pinned the deletion pins the opposite. `CLAUDE.md` → Traps.
+  - **Two announcements are one task only on the same day**; a live twin is
+    never hidden behind a lapsed one; a tick carries only between copies of
+    the same day (never across a reschedule); an undated Canvas exam yields
+    to a dated twin.
+  - **A truncated fetch is not a deletion**: a class that returned nothing
+    is not judged, and a post must be missing twice in a row.
+  - **Edited due dates** survive their row being hidden.
+  - **Ed pass**: re-checks the class after the read and before writing,
+    and waits six hours before re-asking for a post whose read failed. The
+    syllabus pass re-checks too.
+  - **`docs/PRIVACY.md`** says the post's id goes with the AI-assist
+    request.
+
+- **2026-10-18 (`v8-announcements`, not yet committed): exam cards.** "If
+  you ever have a midterm, the class finds it from the syllabus or from an
+  announcement. Either way, don't duplicate it." Black in light mode, white
+  in dark (the card style was already merged); this adds the finding and
+  the one-card rule.
+  - **From the syllabus.** `AppState+SyllabusExams.swift` reads each
+    class's syllabus, course home page and course pages in the on-device
+    course knowledge (`SyllabusExamRows`, `SyllabusExamExtractor`) at
+    launch and whenever the material changes, and files one
+    `.canvasAnnouncement` row per exam with a `syllabus-{course}-{exam}` id
+    (no new source, no schema change). A date with no time is stored at the
+    end of its day, as Canvas all-day entries are.
+  - **One card per exam** across Canvas or Gradescope, Canvas and Ed
+    announcements and the syllabus, by exam identity and date
+    (`ExamDetection.isSameSitting`): a feed item first, then an
+    announcement, then the syllabus, so an announced new date replaces the
+    syllabus's. Unnumbered against numbered, and Midterm N against Exam N,
+    only when the days are within one. A tick on the hidden twin follows to
+    the shown card.
+  - **Rules.** Shows for every visible class whatever the "announcements
+    on dashboard" and "nothing to submit" switches say; past and unfinished
+    drops off the dashboard (finished stays in prev);
+    the ordinary reminders, never the loud 10-minute alert; not in the
+    megaphone.
+  - Also in this tree and now described in `CLAUDE.md`: the loud
+    10-minute alert switch (Profile → reminders) and "the vault" PennKey
+    sheet.
+  - **Not verified on a phone**: tested on the Mac (64 new tests, 2164
+    total) and compiled for the connected phone only. Edges are in
+    `CLAUDE.md` → Known gaps.
+
+- **2026-10-18 (`v8-announcements`, not yet committed).** Grade Watcher
+  removed at the owner's call, and the megaphone takes its place.
+  - **Grade Watcher off.** `FeatureFlags.gradeWatcher = false`: no
+    grades button, no "grade posted" notifications. The Canvas grade
+    fetch keeps running on purpose (auto-submitted state, "turned in",
+    the 401 renewal probe, course intel, course knowledge). Code and
+    tests kept; re-enabling is one line.
+  - **Megaphone in the header**, 48pt, left of profile, always shown;
+    out of the control row. Empty list says "no announcements".
+  - **Profile → accounts.** DEBUG sign-in lines back in plain view
+    under the canvas row (the collapsed disclosure is gone); a Release
+    "sign in to canvas" button when Canvas is connected with no saved
+    login.
+  - **Tasks found in announcements are cards** (owner's call), Canvas and
+    Ed alike. Every task, submission or preparation, is a dashboard card
+    for a class whose "announcements on dashboard" switch is on (default);
+    only wording that reports something done ("grades posted") stays in
+    the megaphone. Undated ones sit under "later" in all, like any undated
+    item. Ed announcements and pinned posts are read for tasks by the same
+    extractors and the same "ai assist" switch as Canvas posts, once each
+    (`AppState+EdAnnouncementTasks.swift`); `docs/PRIVACY.md` says so.
+    Rows are `.canvasAnnouncement` with an `ed-` sourceID, so no schema
+    change and an older build reads them as announcement rows.
+  - **Past, not completed.** (Superseded the same day by the next entry
+    up: such a task now leaves the dashboard entirely instead of sitting in
+    prev as "past".) Ordinary Canvas, Gradescope and manual work is
+    untouched.
+  - **Deleted posts.** A Canvas post that stops coming back inside the
+    fetched window has its cards hidden (rows flagged `isGoneFromFeed`; a
+    finished task stays in prev); an empty or failed fetch hides nothing,
+    nor does a class the fetch returned no post for, and a post must be
+    missing twice in a row. The rows are never deleted: until the review
+    pass the same day, the ledger's aging rule deleted a flagged row 14
+    days after its date, so this said "never deleted" and was not true
+    (`CLAUDE.md` → Traps). Not done for Ed, on purpose: see Known gaps in
+    `CLAUDE.md`.
+  - **One card per task** across Canvas, Ed and the feed, with a tick
+    carried to the card that is shown.
+  - **Not verified on a phone yet**: only compiled for the connected
+    phone (Debug) and iOS Release, and tested on the Mac.
 
 - **2026-10-09/10 (`v8-launch-prep`).** Marco's launch-prep list, on top
   of `v8`. Nothing in sign-in or the sync changed.

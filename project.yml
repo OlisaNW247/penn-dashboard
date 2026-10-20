@@ -67,6 +67,13 @@ targets:
         # the App Store Connect listing — Universal Purchase shares one app
         # record, so a mismatch is a review flag, not a second listing.
         LSApplicationCategoryType: public.app-category.education
+        # Berserk mode: the loud 10-minute alert as a real AlarmKit alarm on
+        # iOS 26. AlarmKit refuses to schedule without this string, and iOS
+        # shows it in the one-time permission prompt. Declared here as well as
+        # in App/Info.plist for the same reason as CFBundleName above:
+        # `xcodegen generate` rewrites the .plist from this list. Not on the
+        # widget target, which schedules nothing.
+        NSAlarmKitUsageDescription: "Smooth rings an alarm 10 minutes before work you haven't turned in."
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}

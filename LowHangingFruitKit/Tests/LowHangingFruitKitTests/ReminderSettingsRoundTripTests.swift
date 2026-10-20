@@ -39,6 +39,10 @@ struct ReminderSettingsRoundTripTests {
             #expect(relaunched.leadOffsets.isEmpty, "the defaults must not come back")
             #expect(!relaunched.hasActiveLeadTimes)
 
+            // This is about the lead-time reminders; the loud 10-minute alert
+            // is not one (it ignores lead times by design) and is covered by
+            // `LoudAlertTests`.
+            relaunched.setLoudAlertEnabled(false)
             let now = Date()
             let items = [assignment("CIS 1200", "hw", due: now + 5 * 86_400)]
             let requests = relaunched.plannedRequests(
@@ -60,6 +64,7 @@ struct ReminderSettingsRoundTripTests {
         withScratchDefaults { defaults in
             #expect(defaults.object(forKey: "notif.leadOffsets") == nil)
             let scheduler = NotificationScheduler(defaults: defaults)
+            scheduler.setLoudAlertEnabled(false)   // pins the lead-time defaults only; see `LoudAlertTests`
             #expect(scheduler.leadOffsets == LeadOffset.defaults)
             #expect(scheduler.hasActiveLeadTimes)
 
@@ -209,11 +214,18 @@ struct ReminderSettingsRoundTripTests {
 
     /// A scheduler with the default lead times, a preferences store over the
     /// same scratch suite, and a `now` read once.
+    ///
+    /// The loud 10-minute alert is switched off here: it is on by default, and
+    /// these tests pin the ordinary reminders' title, thread and wording, which
+    /// the alert's own requests (their own thread, per item) would be mixed
+    /// into. The alert is covered by `LoudAlertTests`.
     private func withScheduler(
         _ body: (NotificationScheduler, CoursePreferencesStore, Date) throws -> Void
     ) rethrows {
         try withScratchDefaults { defaults in
-            try body(NotificationScheduler(defaults: defaults),
+            let scheduler = NotificationScheduler(defaults: defaults)
+            scheduler.setLoudAlertEnabled(false)
+            try body(scheduler,
                      CoursePreferencesStore(defaults: defaults),
                      Date())
         }

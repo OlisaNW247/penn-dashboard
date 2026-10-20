@@ -2,7 +2,11 @@ import Combine
 import Foundation
 import LowHangingFruitKit
 
-// The megaphone sheet's "all announcements" list.
+// The megaphone sheet's announcements list.
+//
+// (Since 2026-10-18 the sheet shows only the past 7 days of this log, beside
+// the tasks and exams found in them; `AppState+AnnouncementSheet.swift` holds
+// that rule. The log still keeps 60 days.)
 //
 // The megaphone used to open a list of *tasks* the announcement extractor had
 // pulled out of Canvas posts, and hid itself when there were none. The
@@ -82,78 +86,18 @@ extension AppState {
         }
     }
 
-    /// The Ed Discussion posts the Announcement Watcher reads, in the one shape
-    /// its loop already takes: a `CanvasAnnouncement`.
-    ///
-    /// **Why a `CanvasAnnouncement` and not a new source type.** The loop in
-    /// `syncAnnouncements`, its test seams, `announcementAssignments` and the
-    /// ledger rows it mints (`Assignment.Source.canvasAnnouncement`) read
-    /// five fields, and an Ed post has all five. A new `Assignment.Source`
-    /// would ripple through the ledger, the dedup and the placement code,
-    /// which all key on `.canvasAnnouncement`, for a difference nothing
-    /// downstream cares about; a second copy of the gate-and-extract loop
-    /// would drift from the first. The rejected fixes are both.
-    ///
-    /// **The id is the document's own id**, `ed:{canvasCourse}:{thread}`, the
-    /// same string the "all announcements" list uses for the row
-    /// (`AnnouncementRecord.edRecord`). That is what makes the sheet's "task
-    /// found" tag join (`announcementID(fromFindSourceID:)` against the row's
-    /// id) work for Ed, and the course in it keeps one thread cross-listed to
-    /// two Canvas classes from being one dedup key. It cannot collide with a
-    /// Canvas id, which is decimal digits.
-    ///
-    /// **Which posts.** The ones the list already keeps (an announcement or a
-    /// pinned post with text in it) plus a staff post, so a TA's "HW3 moved
-    /// to Monday" is read. Student, private and question threads are never
-    /// documents at all (`EdThreadFilter`), and a document whose header says
-    /// anything else, or has no header, is left alone here too: the whitelist
-    /// is the second lock, not the only one. Nothing leaves the phone that
-    /// the pooled copy has not already put on the server.
-    ///
-    /// **Header never reaches a gate.** `title` is the thread title and
-    /// `message` is `EdDocumentHeader.body`, never the raw `text`: its first
-    /// line, `[ed · pinned] Homework / Hw 3 · posted 2026-10-12`, would be
-    /// scored by the informational and task gates as if the poster had
-    /// written it.
-    ///
-    /// **Dated or not at all.** The date is the posting day from the header,
-    /// else the document's `updatedAt` (Ed's last-activity time, only a
-    /// fallback for a document synced before the token existed). Canvas
-    /// leaves an undated announcement in the window because its fetch already
-    /// was one; an Ed document has no such fetch, so an undated one is
-    /// dropped rather than extracted on every sync's say-so. Ed's `url` is the
-    /// thread's page, so "open" on a find lands on Ed.
-    nonisolated static func edAnnouncementsForExtraction(
-        from documents: [CourseDocument]
-    ) -> [CanvasAnnouncement] {
-        var seen = Set<String>()
-        var result: [CanvasAnnouncement] = []
-        for document in documents where document.kind == .ed {
-            let header = EdDocumentHeader.parse(document.text)
-            guard header.isAnnouncementOrPinned || header.isStaffPost,
-                  !EdDocumentHeader.carriesNoText(document.text),
-                  let postedAt = header.postedAt ?? document.updatedAt,
-                  seen.insert(document.id).inserted
-            else { continue }
-            result.append(CanvasAnnouncement(
-                id: document.id,
-                courseID: document.courseID,
-                title: document.title,
-                message: header.body,
-                postedAt: postedAt,
-                url: document.url
-            ))
-        }
-        return result
-    }
-
-    /// Drops an Ed find that restates a find already made, from Canvas this
-    /// run or an earlier one. `filteringAnnouncementDuplicates` compares a
-    /// find with the dashboard's *coursework*; nothing compared two
-    /// announcement finds with each other, because one Canvas post is
-    /// extracted once. An Ed post and a Canvas announcement saying the same
-    /// thing ("Verbal Assessment #2 sign-ups open") are two posts, so
-    /// without this the sheet would list the task twice.
+    /// Drops an Ed find that restates a find already made, from Canvas or from
+    /// an earlier Ed post. `filteringAnnouncementDuplicates` compares a find
+    /// with the dashboard's *coursework*; nothing compared two announcement
+    /// finds with each other, because one Canvas post is extracted once. An Ed
+    /// post and a Canvas announcement saying the same thing ("Verbal
+    /// Assessment #2 sign-ups open") are two posts, so without this the sheet
+    /// would list the task twice. Called by the Ed pass
+    /// (`syncEdAnnouncementTasks`, `AppState+EdAnnouncementTasks.swift`) on
+    /// each post's candidates, against the announcement rows already on the
+    /// ledger and the finds of the posts read earlier in the same run. (From
+    /// 2026-10-19 until the merge of 2026-10-20 the Canvas loop called it too,
+    /// when it read Ed posts; it no longer does.)
     ///
     /// Candidate by candidate, not as a batch: the pool grows with the
     /// survivors of earlier posts but not of this one, so two genuinely
@@ -161,8 +105,8 @@ extension AppState {
     /// Canvas path never does that either). A pool entry with the
     /// candidate's own id is skipped, so a post re-extracted after the
     /// processed set was lost does not suppress itself. The pool is whatever
-    /// the caller has built or stored first, so Canvas, extracted earlier in
-    /// the loop, wins over Ed.
+    /// the caller has built or stored first, so a Canvas find already on the
+    /// ledger wins over the Ed one.
     static func droppingAnnouncementTwins(
         _ candidates: [Assignment],
         against pool: [Assignment]
@@ -370,16 +314,31 @@ extension AppState {
 
     // MARK: Megaphone
 
-    /// The megaphone's badge: unread finds plus unread records.
+    /// The megaphone's badge: unread found items plus unread posts, counted
+    /// over exactly the two lists the sheet shows (`announcementFoundItems`,
+    /// `announcementSheetRecords`, see `AppState+AnnouncementSheet.swift`). A
+    /// post from three weeks ago that was never opened, or a September task
+    /// that has since passed, is not on the sheet, so it must not be on the
+    /// badge either: a number the student cannot reduce by looking is the
+    /// failure the unread count was introduced to end.
     var unreadAnnouncementCount: Int {
+        announcementBadgeCount(now: Date())
+    }
+
+    /// `unreadAnnouncementCount` as of `now`, so a test can pin the 7-day
+    /// window and the found list's "not past yet" to a fixed moment.
+    func announcementBadgeCount(now: Date) -> Int {
         AnnouncementReadState.unreadCount(
-            finds: announcementPageItems,
-            records: announcementRecordsOnPage,
+            finds: announcementFoundItems(now: now),
+            records: announcementSheetRecords(now: now),
             seen: announcementSeenIDs
         )
     }
 
-    /// Whether the dashboard shows the megaphone at all.
+    /// Whether there is anything to open. The dashboard no longer asks:
+    /// since 2026-10-18 the megaphone lives in the header and always shows,
+    /// and an empty list says "no announcements" itself. Kept, with its
+    /// tests, as the plain "is the list empty" question.
     var showsAnnouncementsButton: Bool {
         AnnouncementReadState.megaphoneVisible(
             finds: announcementPageItems,
@@ -390,21 +349,28 @@ extension AppState {
     /// Called when the sheet opens. Returns the ids that were unread at that
     /// moment (a find's `Assignment.id`, a record's `recordKey`) so rows can
     /// still say NEW after opening has marked everything seen.
-    func openAnnouncementsSheet() -> Set<String> {
+    ///
+    /// Only what the sheet shows is marked seen (`announcementFoundItems`,
+    /// `announcementSheetRecords`). A post older than the window that was never
+    /// read stays unread in the stored set and is never counted: the window
+    /// only moves forward, so it cannot come back into view.
+    func openAnnouncementsSheet(now: Date = Date()) -> Set<String> {
+        let finds = announcementFoundItems(now: now)
+        let records = announcementSheetRecords(now: now)
         let newIDs = AnnouncementReadState.newIDs(
-            finds: announcementPageItems,
-            records: announcementRecordsOnPage,
+            finds: finds,
+            records: records,
             seen: announcementSeenIDs
         )
         // Rows of a hidden class are not on the page but are still known, so
         // their already-seen state survives the class being shown again.
         let known = knownAnnouncementKeys(canvas: announcementLogRecords)
         if let log = announcementLog {
-            log.readState.markAllSeen(announcementPageItems, records: announcementRecordsOnPage, keeping: known)
+            log.readState.markAllSeen(finds, records: records, keeping: known)
             announcementSeenIDs = log.readState.seenIDs
         } else {
-            announcementSeenIDs = Set(announcementPageItems.map(\.id))
-                .union(announcementRecordsOnPage.map(AnnouncementReadState.key(for:)))
+            announcementSeenIDs = Set(finds.map(\.id))
+                .union(records.map(AnnouncementReadState.key(for:)))
                 .union(announcementSeenIDs.intersection(known))
         }
         return newIDs
