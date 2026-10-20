@@ -63,14 +63,11 @@ struct OnboardingView: View {
     /// what used to live there.
     /// Internal rather than private so `ReconnectPaneTests` can pin
     /// `initialPhase(for:hasChosenSchool:)`.
-    /// `.sweeper`, the Smooth Sweeper switch, is the last page; the walk
-    /// finishes from it and from nowhere else.
     enum Phase: Hashable {
         case schoolSelection
         case canvasLogin
         case gradescopeLogin
         case reminders
-        case sweeper
     }
 
     /// Where the walk starts. A pure rule so it can be tested.
@@ -217,8 +214,6 @@ struct OnboardingView: View {
             gradescopeStep
         case .reminders:
             remindersStep
-        case .sweeper:
-            sweeperStep
         }
     }
 
@@ -226,8 +221,7 @@ struct OnboardingView: View {
     /// still be filling it in when this screen appears, so asking the student
     /// to curate that partial snapshot makes missing classes look intentional.
     /// Class visibility and per-course reminders remain available in Settings
-    /// once the first sync has had time to settle. The only caller is the
-    /// Smooth Sweeper page (`sweeperStep`), the walk's last page.
+    /// once the first sync has had time to settle.
     private func finishOnboarding() {
         OnboardingCourseSetup.markCompleted()
         if reduceMotion {
@@ -532,6 +526,7 @@ struct OnboardingView: View {
                     remindersHeadline
                     leadTimeSection
                     notificationExtrasSection
+                    sweeperSection
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -620,6 +615,41 @@ struct OnboardingView: View {
         }
     }
 
+    /// The loud 10-minute alert under its student-facing name, "Smooth
+    /// Sweeper". The owner first asked for a page of its own (2026-10-20,
+    /// morning) and, seeing it on the phone beside this one, had the two
+    /// combined the same day: it is one more choice about being reminded, so
+    /// it lives with the others. The switch is the same preference Profile →
+    /// reminders shows under the same name (`NotificationScheduler.
+    /// loudAlertEnabled`, on by default), written to the shared scheduler so
+    /// onboarding never keeps a second copy. It never fires while reminders
+    /// are off (`performReschedule` guards on `isEnabled`), which is why it
+    /// sits on the page whose buttons ask for notification permission. The
+    /// limit: a student who taps "skip reminders for now" with the switch on
+    /// has a sweeper that cannot ring until reminders are turned on in
+    /// Profile, exactly as before this section existed. Tomato because that
+    /// is the sweeper's colour (the takeover screen and the alarm's island
+    /// card are tomato).
+    private var sweeperSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
+            Text("an alarm 10 minutes before anything you haven't turned in. if you actually never want to miss an assignment, keep this on.")
+                .font(.lhfSans(14))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
+            notificationOption(
+                title: "Smooth Sweeper",
+                isOn: Binding(
+                    get: { scheduler.loudAlertEnabled },
+                    set: {
+                        scheduler.setLoudAlertEnabled($0)
+                        scheduler.rescheduleAfterPreferenceChange()
+                    }
+                )
+            )
+        }
+    }
+
     private func notificationOption(
         title: String,
         isOn: Binding<Bool>
@@ -643,9 +673,8 @@ struct OnboardingView: View {
     /// "turn on reminders" requests authorization (a no-op if already
     /// granted or denied — see below) and proceeds; "skip reminders for now"
     /// proceeds without ever requesting it, leaving `scheduler.isEnabled`
-    /// however it already was. Both go on to the Smooth Sweeper page
-    /// (`sweeperStep`), which is what ends the walk; class setup is
-    /// intentionally deferred until Canvas has finished its first sync.
+    /// however it already was. Both go straight to the dashboard; class setup
+    /// is intentionally deferred until Canvas has finished its first sync.
     ///
     /// Denial is never treated as an error here. `requestAuthorization`
     /// (inside `scheduler.setEnabled`) resolves immediately either way —
@@ -660,7 +689,7 @@ struct OnboardingView: View {
                 lhfHapticLight()
                 Task {
                     await scheduler.setEnabled(true)
-                    phase = .sweeper
+                    finishOnboarding()
                 }
             } label: {
                 Text("turn on reminders")
@@ -673,7 +702,7 @@ struct OnboardingView: View {
             .buttonStyle(.plain)
 
             Button {
-                phase = .sweeper
+                finishOnboarding()
             } label: {
                 Text("skip reminders for now")
                     .font(.lhfSans(12, weight: .medium))
@@ -720,87 +749,6 @@ struct OnboardingView: View {
         .padding(.horizontal, 24)
         .padding(.top, 18)
         .padding(.bottom, 16)
-        .background(Color.v2Bg)
-    }
-
-    // MARK: - Step 4: Smooth Sweeper (the last page)
-
-    /// The loud 10-minute alert, under its student-facing name, as the walk's
-    /// last page. It writes into the same shared scheduler as Settings, so
-    /// onboarding never keeps a second copy of the preference. The switch
-    /// defaults ON (`NotificationScheduler.loudAlertEnabled`); this page only
-    /// makes that visible instead of leaving it to be found in Profile.
-    private var sweeperStep: some View {
-        VStack(spacing: 0) {
-            topBar(onBack: { phase = .reminders })
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    sweeperHeadline
-                    Text("an alarm 10 minutes before anything you haven't turned in. if you actually never want to miss an assignment, keep this on.")
-                        .font(.lhfSans(15))
-                        .foregroundStyle(Color.v2Ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    notificationOption(
-                        title: "Smooth Sweeper",
-                        isOn: Binding(
-                            get: { scheduler.loudAlertEnabled },
-                            set: {
-                                scheduler.setLoudAlertEnabled($0)
-                                scheduler.rescheduleAfterPreferenceChange()
-                            }
-                        )
-                    )
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
-            }
-
-            sweeperFooter
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.v2Bg.ignoresSafeArea())
-    }
-
-    private var sweeperHeadline: some View {
-        Text("Smooth Sweeper")
-            .font(.lhfSerif(34))
-            .foregroundStyle(Color.v2Ink)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// One button, no skip link: the switch is the choice. The sweeper is
-    /// delivered as a notification or an AlarmKit alarm and never fires while
-    /// reminders are off (`NotificationScheduler.performReschedule` guards on
-    /// `isEnabled`), so a student who skipped reminders on the previous page
-    /// but keeps the sweeper on is asked for notification permission here.
-    /// `setEnabled(true)` is a no-op when the permission was already decided,
-    /// and denial is not an error: the walk finishes on every outcome.
-    private var sweeperFooter: some View {
-        VStack(spacing: 10) {
-            progressDots(current: 4)
-
-            Button {
-                lhfHapticLight()
-                Task {
-                    if scheduler.loudAlertEnabled {
-                        await scheduler.setEnabled(true)
-                    }
-                    finishOnboarding()
-                }
-            } label: {
-                Text("done")
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.v2ToggleActiveTx)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Capsule().fill(Color.v2Ink))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-        .padding(.bottom, 24)
         .background(Color.v2Bg)
     }
 
@@ -861,15 +809,14 @@ struct OnboardingView: View {
         }
     }
 
-    /// Four dots (canvas, gradescope, reminders, Smooth Sweeper), with the
-    /// current step filled in green — the same vocabulary `IntroView.dots`
-    /// uses, just re-tinted: `IntroView` marks
+    /// Three dots, with the current step filled in green — the same
+    /// vocabulary `IntroView.dots` uses, just re-tinted: `IntroView` marks
     /// its current page in ink, this walk marks it in `v2SpineGreen`, the
     /// app's one accent color, to read as progress made rather than merely
     /// "which page."
     private func progressDots(current: Int) -> some View {
         HStack(spacing: 7) {
-            ForEach(1...4, id: \.self) { index in
+            ForEach(1...3, id: \.self) { index in
                 Circle()
                     .fill(index == current ? Color.v2SpineGreen : Color.v2Ink.opacity(0.15))
                     .frame(width: 6, height: 6)

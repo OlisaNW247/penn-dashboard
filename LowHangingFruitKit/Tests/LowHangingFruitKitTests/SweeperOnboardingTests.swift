@@ -1,13 +1,18 @@
 import Foundation
 import Testing
 
-/// The Smooth Sweeper page that ends the onboarding walk, and the name
+/// The Smooth Sweeper switch on the onboarding reminders page, and the name
 /// "Smooth Sweeper" wherever the loud 10-minute alert is named to a student.
+///
+/// It had a page of its own for a few hours on 2026-10-20 (the owner asked
+/// for one, then, seeing it beside the reminders page, had the two combined),
+/// so some of these tests pin what is *gone*: a sweeper phase, a fourth dot,
+/// and a reminders footer that stops one page short of finishing.
 ///
 /// Source scans, in the idiom of `BerserkAlarmTests`: the view is not
 /// compiled into a test that can drive it, so these pin that the pieces are
 /// *there* and wired in the right order, not that they look right on a phone.
-@Suite("Smooth Sweeper onboarding page")
+@Suite("Smooth Sweeper onboarding")
 struct SweeperOnboardingTests {
 
     private static let usage =
@@ -48,69 +53,69 @@ struct SweeperOnboardingTests {
         }
     }
 
-    private var sweeperSlice: String {
+    private var sectionSlice: String {
         get throws {
-            let source = try onboarding()
-            let start = try #require(source.range(of: "private var sweeperStep"))
-            return String(source[start.lowerBound...])
+            try slice(onboarding(), from: "private var sweeperSection", to: "private func notificationOption")
         }
     }
 
-    @Test("Phase declares sweeper after reminders, and stepContent shows sweeperStep")
-    func phaseOrder() throws {
+    @Test("Phase has no sweeper case and stepContent has no sweeper page")
+    func noSweeperPhase() throws {
         let source = try onboarding()
-        let reminders = try #require(source.range(of: "        case reminders\n"))
-        let sweeper = try #require(source.range(of: "        case sweeper\n"))
-        #expect(reminders.lowerBound < sweeper.lowerBound)
+        let phase = try slice(source, from: "enum Phase", to: "/// Where the walk starts")
+        #expect(phase.contains("case reminders\n"))
+        #expect(!phase.contains("sweeper"))
         let content = try slice(source, from: "private var stepContent", to: "private func finishOnboarding")
-        #expect(content.contains("case .sweeper:"))
-        #expect(content.contains("sweeperStep"))
+        #expect(!content.contains(".sweeper"))
+        #expect(!content.contains("sweeperStep"))
     }
 
-    @Test("Both reminders buttons go to the sweeper page and neither finishes the walk")
-    func remindersFooterGoesOn() throws {
+    @Test("The reminders page holds the sweeper section, after the extras")
+    func remindersStepHoldsSection() throws {
+        let step = try slice(onboarding(), from: "private var remindersStep", to: "private var remindersHeadline")
+        let extras = try #require(step.range(of: "notificationExtrasSection"))
+        let section = try #require(step.range(of: "sweeperSection"))
+        #expect(extras.lowerBound < section.lowerBound)
+    }
+
+    @Test("The section has its header, its one body line and a switch bound to loudAlertEnabled that re-plans")
+    func sectionContents() throws {
+        let section = try sectionSlice
+        #expect(section.contains("SmoothSectionHeader(\"smooth sweeper\""))
+        #expect(section.contains("an alarm 10 minutes before anything you haven't turned in. if you actually never want to miss an assignment, keep this on."))
+        #expect(section.contains("notificationOption("))
+        #expect(section.contains("title: \"Smooth Sweeper\""))
+        #expect(section.contains("scheduler.loudAlertEnabled"))
+        #expect(section.contains("scheduler.setLoudAlertEnabled($0)"))
+        #expect(section.contains("scheduler.rescheduleAfterPreferenceChange()"))
+    }
+
+    @Test("Both reminders buttons finish the walk, and neither goes to a sweeper page")
+    func remindersFooterFinishes() throws {
         let footer = try footerSlice
-        #expect(footer.components(separatedBy: "phase = .sweeper").count - 1 == 2)
-        #expect(!footer.contains("finishOnboarding()"))
-        #expect(footer.contains("await scheduler.setEnabled(true)"))
-    }
-
-    @Test("The sweeper switch is bound to loudAlertEnabled and re-plans on change")
-    func switchBinding() throws {
-        let step = try sweeperSlice
-        #expect(step.contains("scheduler.loudAlertEnabled"))
-        #expect(step.contains("scheduler.setLoudAlertEnabled($0)"))
-        #expect(step.contains("scheduler.rescheduleAfterPreferenceChange()"))
-        #expect(step.contains("notificationOption("))
-        #expect(step.contains("title: \"Smooth Sweeper\""))
-    }
-
-    @Test("The sweeper page has its headline, its one body line and a back chevron to reminders")
-    func headlineAndBody() throws {
-        let step = try sweeperSlice
-        #expect(step.contains("Text(\"Smooth Sweeper\")"))
-        #expect(step.contains("an alarm 10 minutes before anything you haven't turned in. if you actually never want to miss an assignment, keep this on."))
-        #expect(step.contains("topBar(onBack: { phase = .reminders })"))
-    }
-
-    @Test("The done button asks for notification permission only when the sweeper is on, then finishes")
-    func doneButton() throws {
-        let step = try sweeperSlice
-        #expect(step.contains("Text(\"done\")"))
-        let gate = try #require(step.range(of: "if scheduler.loudAlertEnabled"))
-        let enable = try #require(step.range(of: "await scheduler.setEnabled(true)"))
-        let finish = try #require(step.range(of: "finishOnboarding()"))
-        #expect(gate.lowerBound < enable.lowerBound)
+        #expect(footer.components(separatedBy: "finishOnboarding()").count - 1 == 2)
+        #expect(!footer.contains("phase = .sweeper"))
+        let enable = try #require(footer.range(of: "await scheduler.setEnabled(true)"))
+        let finish = try #require(footer.range(of: "finishOnboarding()"))
         #expect(enable.lowerBound < finish.lowerBound)
     }
 
-    @Test("The progress dots agree: four dots, and the sweeper page is the fourth")
+    @Test("No leftover of the separate page: no step, headline, footer or done button")
+    func noLeftovers() throws {
+        let source = try onboarding()
+        #expect(!source.contains("sweeperStep"))
+        #expect(!source.contains("sweeperHeadline"))
+        #expect(!source.contains("sweeperFooter"))
+        #expect(!source.contains("Text(\"done\")"))
+    }
+
+    @Test("The progress dots agree: three dots, and the reminders page is the third")
     func progressDots() throws {
         let source = try onboarding()
-        #expect(source.contains("ForEach(1...4, id: \\.self)"))
-        #expect(!source.contains("ForEach(1...3, id: \\.self)"))
+        #expect(source.contains("ForEach(1...3, id: \\.self)"))
+        #expect(!source.contains("ForEach(1...4, id: \\.self)"))
+        #expect(!source.contains("progressDots(current: 4)"))
         #expect(try footerSlice.contains("progressDots(current: 3)"))
-        #expect(try sweeperSlice.contains("progressDots(current: 4)"))
     }
 
     @Test("Settings names the switch Smooth Sweeper, not the loud 10-minute alert")

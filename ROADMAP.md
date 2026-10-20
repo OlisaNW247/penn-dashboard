@@ -303,9 +303,10 @@ Kept so nobody rebuilds them blind.
   version.
 - **2026-10-20: "Smooth Sweeper"** (`v8`, blind): the owner's student-facing
   name for the loud 10-minute alert, on the Profile switch, the takeover
-  heading, the island card and the alarm permission text; and a last
-  onboarding page with that switch (on by default) and "done", after
-  reminders. The walk finishes only from it.
+  heading, the island card and the alarm permission text; and a "smooth
+  sweeper" section with that switch (on by default) at the foot of the
+  reminders page of onboarding. (It was a page of its own for a few
+  hours; the owner saw both on his phone and had them combined.)
 - **2026-10-20: the Berserk takeover screen** (`v8`; seen working on
   Olisa's phone the same day; `CLAUDE.md` → Profile → reminders). The whole window turns tomato the moment Smooth
   is on screen with the alarm ringing, when the app is opened while it

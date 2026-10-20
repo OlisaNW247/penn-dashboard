@@ -165,19 +165,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
   1. school
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo)
   3. Gradescope login (optional)
-  4. reminders
-  5. **Smooth Sweeper** (2026-10-20, blind): the walk's last page and the
-     only one that finishes it. The student-facing name of the loud
-     10-minute alert (Berserk mode, below): a headline, one line ("an
-     alarm 10 minutes before anything you haven't turned in. if you
-     actually never want to miss an assignment, keep this on."), the
-     switch itself (`NotificationScheduler.loudAlertEnabled`, on by
-     default, the same preference Profile → reminders shows), and "done".
-     "done" asks for notification permission first when the switch is on
-     and reminders were skipped on the previous page, because the sweeper
-     never fires while reminders are off. Four progress dots (canvas,
-     gradescope, reminders, sweeper); the school picker has none.
-  6. a per-course setup walk (`OnboardingCourseSetup`)
+  4. reminders, which since 2026-10-20 ends with a **"smooth sweeper"**
+     section under "turned in notifications": one line ("an alarm 10
+     minutes before anything you haven't turned in. if you actually
+     never want to miss an assignment, keep this on.") and the switch
+     itself (`NotificationScheduler.loudAlertEnabled`, on by default, the
+     same preference Profile → reminders shows as "Smooth Sweeper"). It
+     was a page of its own for a few hours that day; the owner saw the two
+     pages on his phone and had them combined. A student who taps "skip
+     reminders for now" with the switch on has a sweeper that cannot ring
+     until reminders are on, as before. Three progress dots (canvas,
+     gradescope, reminders); the school picker has none.
+  5. a per-course setup walk (`OnboardingCourseSetup`)
 
   "Just exploring? preview with sample data" on the first pane is preview
   mode, App Review's only way in (see Known gaps). A reconnect from the
@@ -575,8 +574,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      assignment goes unsubmitted it "goes berserk and forces you to notice
      and either fix it or do something about it"); to students it is
      **"the Smooth Sweeper"** since 2026-10-20 (the Profile switch, the
-     onboarding page, the takeover's heading, the island card's label and
-     the alarm permission text all say so), and since 2026-10-19
+     reminders page of onboarding, the takeover's heading, the island
+     card's label and the alarm permission text all say so), and since 2026-10-19
      (`v8-loud-alert-actions`, not on a phone) each buzz carries two
      buttons: **"turned in"**, which silences that item's remaining
      buzzes at the tap and then marks it done exactly as a swipe does once
