@@ -831,15 +831,20 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2464 tests / 225 suites, all green, on `v8` at `178de76`
+**Current: 2464 tests / 225 suites, all green, on `v8` at `1a4ed6e`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
+the same count, with the sweeper section's copy test pinning two lines
+(the description at 17pt, the nudge in parentheses at 14pt). Green on
+the first run; the phone build of this tree is not yet recorded.**
+Before it: 2464 / 225 at `178de76` (2026-10-20 evening, 8.0 s):
 the same count as `38b578a`, with the nine `SweeperOnboardingTests`
 rewritten for the combined reminders page (no sweeper phase, the section
 under the turned-in switch, three dots), nothing added or removed. Green
 on the first run; the iOS Debug build succeeded on the first try, was
 installed on Olisa's iPhone at 18:49 and launched straight into the
-onboarding harness (`-LHFOnboardingHarness -LHFRemindersOnboardingHarness`).
-How the combined page looks is not yet recorded.**
+onboarding harness (`-LHFOnboardingHarness -LHFRemindersOnboardingHarness`);
+Olisa saw the combined page and asked for the copy split that became
+`1a4ed6e`.
 Before it: 2464 / 225 at `38b578a`
 (2026-10-20, 7.6 s): 2462
 plus 2 in `SettingsCopyTests` (the Profile diagnostics flag is off, and
