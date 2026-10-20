@@ -80,7 +80,15 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async
         -> UNNotificationPresentationOptions {
-        Self.foregroundPresentation
+        // A loud buzz landing while the app is open is a Berserk takeover.
+        // Pure parsing here, then one `await` hop to the main actor: no
+        // main-actor closure is formed in this callback (see `didReceive`).
+        let content = notification.request.content
+        if let assignmentID = LoudAlertActions.berserkSignalAssignmentID(
+            categoryID: content.categoryIdentifier, userInfo: content.userInfo) {
+            await BerserkTakeoverModel.shared.note(.buzz(assignmentID), at: Date())
+        }
+        return Self.foregroundPresentation
     }
 
     /// A tap on a notification or one of its buttons.
@@ -99,8 +107,10 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
     /// directly from here, or to act on the tap (complete the item, reschedule)
     /// in this callback.
     ///
-    /// The default tap and the dismiss action parse to nil and are ignored: a
-    /// plain tap opens the app, as it always has.
+    /// The default tap and the dismiss action parse to nil and are ignored by
+    /// the button handling below: a plain tap opens the app, as it always has.
+    /// A default tap on a *loud* buzz additionally raises the Berserk takeover
+    /// (`BerserkTakeoverModel`), through the same single `await` hop.
     ///
     /// **"turned in" silences the item at the tap itself.** Before anything is
     /// deposited, the item's pending and delivered loud notifications are
@@ -114,6 +124,18 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
     /// active item. "open" does not do this (`identifiersToSilence`).
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
+        // A tap on a loud buzz's body opens the app as it always has, and now
+        // also raises the takeover. A tap on one of its buttons does not: the
+        // student has already chosen, and the action below carries it out.
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            let content = response.notification.request.content
+            if let assignmentID = LoudAlertActions.berserkSignalAssignmentID(
+                categoryID: content.categoryIdentifier, userInfo: content.userInfo) {
+                await BerserkTakeoverModel.shared.note(.buzz(assignmentID), at: Date())
+            }
+            return
+        }
+
         guard let action = LoudAlertActions.action(
             actionIdentifier: response.actionIdentifier,
             userInfo: response.notification.request.content.userInfo

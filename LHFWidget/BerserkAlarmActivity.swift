@@ -11,8 +11,8 @@ import LowHangingFruitKit
 // The alarm itself (the full-screen alert with its "Stop" and "turned in"
 // buttons) is the system's and is scheduled by the app
 // (`BerserkAlarmScheduler`). This file only skins the Live Activity that
-// AlarmKit starts alongside it. It has no buttons and no `widgetURL` on
-// purpose: the two App Intents live in the App target, which a widget
+// AlarmKit starts alongside it. It has no buttons and no tap URL of its own
+// on purpose: the two App Intents live in the App target, which a widget
 // extension cannot reach, and the system alert already carries both buttons.
 // A tap on the activity opens the app, which is the default.
 //

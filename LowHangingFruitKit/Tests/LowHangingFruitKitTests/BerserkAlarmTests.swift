@@ -686,7 +686,10 @@ struct BerserkAlarmTests {
                 #expect(text.contains("@available(iOS 26.0, *)"), "\(url.lastPathComponent)")
             }
         }
-        #expect(importers == ["BerserkAlarmScheduler.swift"])
+        // Two files since 2026-10-20: the scheduler and its alerting extension
+        // (`BerserkAlarmScheduler+Alerting.swift`). A set, because the
+        // enumerator's order is not stable.
+        #expect(Set(importers) == ["BerserkAlarmScheduler.swift", "BerserkAlarmScheduler+Alerting.swift"])
     }
 
     // MARK: - Fixture

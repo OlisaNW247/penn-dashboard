@@ -42,6 +42,13 @@ struct RootCore: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
+                // The Berserk takeover (`BerserkTakeoverHost`) covers the
+                // whole window while an alarm rings or a loud buzz has just
+                // landed. It is applied after the banner so it is above it,
+                // and it is still part of this first child, so the update
+                // wall and the splash, which come later in the ZStack, stay
+                // above it.
+                .berserkTakeoverHost(state: state, scheduler: scheduler)
 
             // Above the app, below the splash: a build under the enforced
             // floor should do nothing at all — including onboarding, which

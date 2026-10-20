@@ -73,7 +73,11 @@ These block shipping, or would make shipping risky.
   any dismissal"); one ring with the app force-quit first; and, once the
   2026-10-20 build is on the phone, the new Live Activity (the Dynamic
   Island and the lock-screen card in tomato with the class, the name and
-  a countdown) and the in-app takeover screen.
+  a countdown) and the in-app takeover screen. Before any TestFlight
+  build from this tree: `otool -L` on the Release archive's
+  `LHFWidgetExtension.appex` must show AlarmKit as `weak` (the widget
+  now imports it; the app's own link was weak in Debug and unchecked in
+  Release).
 - **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
   With an item due in about 11 minutes: the three buzzes arrive Time
   Sensitive; "turned in" from the lock screen stops the next buzz and
@@ -291,6 +295,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-20: the Berserk takeover screen** (`v8`, blind; `CLAUDE.md`
+  → Profile → reminders). The whole window turns tomato the moment Smooth
+  is on screen with the alarm ringing, when the app is opened while it
+  rings, or when a loud buzz is tapped or lands in the foreground: a live
+  countdown, the assignment, the class, "turned in" (through the same
+  inbox as the notification button), "open in canvas", "not yet". iOS
+  does not let an app take the screen while closed; this is the ceiling.
 - **2026-10-20: the Berserk alarm's Live Activity is drawn by the widget
   extension** (`v8`, blind; see `CLAUDE.md` → Profile → reminders). After
   Olisa rang the alarm on his phone and found the unlocked-phone alert "a

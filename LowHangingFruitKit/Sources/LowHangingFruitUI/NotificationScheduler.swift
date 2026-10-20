@@ -233,6 +233,16 @@ final class NotificationScheduler: ObservableObject {
     /// registers `liveItems` as well.
     private var lastScheduledItems: [DashItem] = []
 
+    /// Counts the reschedules that have handed the scheduler a fresh item list.
+    ///
+    /// The Berserk takeover host (`BerserkTakeoverHost`) holds signals it could
+    /// not yet trace to an item, because a cold launch from the lock screen
+    /// raises them before the dashboard has loaded. It learns that the
+    /// dashboard has now handed over its items from this counter, rather than
+    /// from `ContentView`, which is not its to edit. Only the changes matter,
+    /// never the value.
+    @Published private(set) var rescheduleGeneration = 0
+
     /// The dashboard's live item list, registered once by `ContentView`.
     ///
     /// `lastScheduledItems` is only filled by a `reschedule`, and the
@@ -273,6 +283,7 @@ final class NotificationScheduler: ObservableObject {
     /// See `applyReminders` for what one pass does, and why in that order.
     func reschedule(from items: [DashItem], now: Date = Date()) async {
         lastScheduledItems = items
+        rescheduleGeneration += 1
         var firstPassNow: Date? = now
         await reschedulePasses.submit(items) { items in
             let passNow = firstPassNow ?? Date()

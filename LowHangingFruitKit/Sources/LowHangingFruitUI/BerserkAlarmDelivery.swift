@@ -24,6 +24,30 @@ protocol BerserkAlarmBackend: AnyObject {
     func cancelAll()
     /// Stops and cancels the ringing alarms whose ids are in `finished`.
     func stopRinging(among finished: Set<UUID>)
+
+    // The next three exist for the takeover screen (`BerserkTakeover.swift`):
+    // which alarms are ringing right now, so Smooth can cover its window the
+    // moment it is on screen with one going off; and the student's own stop
+    // from inside the app. They have defaults below so a fake that does not
+    // care about the takeover (every delivery test) keeps compiling.
+
+    /// The ids of the alarms ringing right now. Empty where AlarmKit is
+    /// absent; nil when AlarmKit could not be read, which the host treats as
+    /// "judge nothing" rather than "nothing is ringing" (a ringing alarm
+    /// judged silent would be dismissed and remembered as answered).
+    func alertingAlarmIDs() -> [UUID]?
+    /// Every change to which alarms are ringing, while the caller listens.
+    /// Finishes at once where AlarmKit is absent.
+    func alertingUpdates() -> AsyncStream<[UUID]>
+    /// Stops one alarm (the student's own stop from inside the app). Stop,
+    /// then cancel, errors ignored.
+    func stopAlarm(id: UUID)
+}
+
+extension BerserkAlarmBackend {
+    func alertingAlarmIDs() -> [UUID]? { [] }
+    func alertingUpdates() -> AsyncStream<[UUID]> { AsyncStream { $0.finish() } }
+    func stopAlarm(id: UUID) {}
 }
 
 /// Where a reschedule puts its notifications: the notification center in the

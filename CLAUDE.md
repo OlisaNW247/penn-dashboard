@@ -626,8 +626,50 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `v2`: an alarm the previous build scheduled carries the old metadata
      and would ring without the Live Activity, so the first reconcile
      after the update cancels every old alarm and schedules it again once.
-     **(2) a Berserk takeover screen inside the app**, see the next
-     paragraph once it exists.
+     **(2) the Berserk takeover screen inside the app** (2026-10-20,
+     blind; `BerserkTakeover.swift` pure rules and the model,
+     `BerserkTakeoverView.swift`, `BerserkTakeoverHost.swift` applied in
+     `RootCore`, `BerserkAlarmScheduler+Alerting.swift` the AlarmKit
+     questions): the moment Smooth is on screen while an alarm is ringing,
+     or a loud buzz is tapped on its body or lands while Smooth is open,
+     Smooth covers its whole window: full-bleed tomato that breathes
+     (still under Reduce Motion), "Smooth", a live countdown to the due
+     time ("due now" once it passes), the assignment, the class, and three
+     choices: **"turned in"** (stops the alarm, pulls the item's delivered
+     buzzes, and deposits `.turnedIn` in the same inbox a notification
+     button uses, so `ContentView` ticks the card exactly as a swipe
+     does), **"open in canvas"** / **"open in gradescope"** when the item
+     has a page (stops the alarm, opens it), and **"not yet"** (stops the
+     alarm, completes nothing). "turned in" is the only choice that
+     deposits a "turned in"; no dismissal marks work done (the alarm's
+     rule, carried onto the screen). Three roads in: the host listens to
+     AlarmKit's alarm updates while the scene is active and reads the
+     ringing ids on each activation (`alertingAlarmIDs`,
+     `alertingUpdates`, `stopAlarm` on `BerserkAlarmBackend`, defaulted
+     for the Mac and the test fakes), and the notification delegate files
+     a buzz (`LoudAlertActions.berserkSignalAssignmentID`) when a loud
+     buzz lands in the foreground (`willPresent`) or is tapped on its body
+     (`UNNotificationDefaultActionIdentifier`, which `action(...)` still
+     maps to nil; a tap on a button files nothing, the student chose). A
+     ringing alarm is traced back to its item by recomputing
+     `BerserkAlarmPlan.alarmID` for every dashboard item
+     (`alarmIndex`); `Alarm` exposes no metadata. A signal it cannot yet
+     trace waits (a cold launch raises it before the dashboard has
+     loaded) and is resolved again when `NotificationScheduler.
+     rescheduleGeneration` changes, which is how the host learns the
+     dashboard handed over its items without touching `ContentView`. An
+     alarm signal whose alarm stopped ringing is dropped, a buzz is kept
+     two minutes (`buzzLifetime`, the `openLifetime` reasoning), a
+     finished item's signal is dropped, preview and demo data never take
+     over, one assignment is one takeover (alarm over buzz), soonest due
+     first and the rest wait their turn. The screen leaves on its own when
+     its alarm stops ringing (from the lock screen too) or its item is
+     finished; a buzz takeover otherwise waits for a choice. The model
+     remembers answered alarm ids and, for two minutes, answered
+     assignment ids, so buzzes two and three of a "not yet" do not bring
+     it back. The system's own alert still appears on top (the drop-in
+     when unlocked); the takeover is what the student sees underneath and
+     after. Nothing here is proven on a device.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -1987,6 +2029,19 @@ none is a ship line.
   shows it for an alert-only alarm at all, whether the card appears on
   the lock screen beside the full-screen alert or only in the Dynamic
   Island, and whether `AlarmAttributes.metadata` decodes in the extension);
+  the takeover screen of the same day (blind: that `AlarmManager.
+  alarmUpdates` reports `.alerting` while the app is in the foreground,
+  that a tap on the Live Activity or the system alert's body opens the app
+  with the alarm still ringing so the screen appears, and that the three
+  buttons stop the alarm from inside the app; two limits known from the
+  review, both accepted: a sheet the dashboard has open (add, edit date,
+  the megaphone) draws above the takeover, which is an `.overlay` on the
+  root and not a presentation, so a signal that lands with a sheet up is
+  only seen once the sheet closes, and the extension's `import AlarmKit`
+  has not been checked to be weak-linked, so a Release archive's
+  `LHFWidgetExtension.appex` should be read with `otool -L` before any
+  TestFlight build, or the home-screen widget could fail to load on iOS
+  17–25);
   the system "Stop" button (it opens the assignment in Canvas; Olisa has
   not reported trying it); what `schedule(id:)` does with an id that already exists
   and whether `cancel(id:)` throws for one that is gone; that both

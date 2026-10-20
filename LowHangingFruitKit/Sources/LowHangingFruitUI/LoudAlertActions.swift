@@ -203,6 +203,29 @@ enum LoudAlertActions {
         }
     }
 
+    // MARK: Telling the takeover screen
+
+    /// The item a loud buzz is about, when `categoryID` is one of the three
+    /// loud categories and `userInfo` carries a non-empty item id; nil
+    /// otherwise.
+    ///
+    /// This is how a loud buzz tapped on its body
+    /// (`UNNotificationDefaultActionIdentifier`, which `action(...)`
+    /// deliberately still maps to nil) or delivered while the app is open
+    /// becomes a Berserk takeover (`BerserkTakeover.swift`). Ordinary reminders
+    /// carry no category, so they never do. Pure and `nonisolated`, for the
+    /// same reason `action(...)` is: the delegate callback that calls it runs
+    /// on whatever queue iOS picks.
+    nonisolated static func berserkSignalAssignmentID(
+        categoryID: String,
+        userInfo: [AnyHashable: Any]
+    ) -> String? {
+        let loud = [canvasCategoryID, gradescopeCategoryID, turnedInOnlyCategoryID]
+        guard loud.contains(categoryID) else { return nil }
+        guard let id = userInfo[assignmentIDKey] as? String, !id.isEmpty else { return nil }
+        return id
+    }
+
     // MARK: What the dashboard does with it
 
     /// Decides what the dashboard does with `action`, given the items it is
