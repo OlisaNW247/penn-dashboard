@@ -1,10 +1,89 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
-_Last updated: 2026-09-02 — **2.0.1 (build 6)** from `v3.5`._
+_Last updated: 2026-10-20 — **3.1.0 (build 13)** from `v8`, straight to App
+Review._
 
 ---
 
-# 2.0.1 submission (current)
+# 3.1.0 submission (current)
+
+Shipping **3.1.0 / build 13** as the update to the live **3.0.0 / build 11**,
+from `v8`, straight to App Review (owner's decision, 2026-10-20). What ships:
+the Smooth Sweeper (an alarm 10 minutes before anything not turned in: a real
+AlarmKit alarm on iOS 26, with a Dynamic Island card and an in-app takeover
+screen; three Time Sensitive notifications on older iPhones), exam cards,
+the megaphone in the header with Canvas and Ed announcements and the tasks
+found in them, Ed Discussion for Penn classes, a better-searching tree
+(follow-ups, source links, "what's new" questions, section meeting times),
+"open in canvas" / "open in gradescope" on cards, saved due-date edits,
+deleting your own tasks, the sign-out fix, and "the vault". **Grade Watcher
+is hidden** (`FeatureFlags.gradeWatcher = false`), so the listing, the review
+notes and the screenshots must carry no grades claim.
+
+Repo state: version/build stamped **3.1.0 / 13** in `project.yml` and the
+committed pbxproj (app and widget match); **2464 tests / 225 suites green**
+on the owner's Mac (2026-10-20, `swift test --no-parallel`). Build 12 was
+stamped 3.0.1 but never archived or uploaded.
+
+Steps, in order:
+
+1. **Confirm in App Store Connect → TestFlight → Builds that no build 13
+   exists.** ASC refuses a build number it has seen; if 13 is taken, bump
+   `CURRENT_PROJECT_VERSION` by hand in `project.yml` and `project.pbxproj`
+   (app and widget), do not run `xcodegen generate`.
+2. **Archive** (do not export yet):
+
+   ```sh
+   xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+     -configuration Release -destination 'generic/platform=iOS' \
+     -archivePath build/Smooth.xcarchive -allowProvisioningUpdates archive
+   ```
+
+3. **Check the widget links AlarmKit weakly**, after the archive and before
+   the export:
+
+   ```sh
+   otool -L build/Smooth.xcarchive/Products/Applications/Smooth.app/PlugIns/LHFWidgetExtension.appex/LHFWidgetExtension | grep -i alarmkit
+   ```
+
+   It must print a line containing `weak`. If it does not, **stop and do not
+   upload**: the Home Screen widget would fail to load on iOS 17–25.
+4. **Export (this uploads to App Store Connect** with the Apple account
+   signed into Xcode):
+
+   ```sh
+   xcodebuild -exportArchive -archivePath build/Smooth.xcarchive \
+     -exportPath build/export -exportOptionsPlist docs/appstore/ExportOptions.plist \
+     -allowProvisioningUpdates
+   ```
+
+5. **In App Store Connect**: create version **3.1.0**; attach build 13 once
+   it has finished processing; paste the **3.1.0 What's New** from
+   `LISTING.md`; **re-paste the Description** (it changed: no grades, the
+   Sweeper added, the delete-account sentence now says disconnecting Canvas
+   deletes it); replace the review notes with the **3.1.0 block** in
+   `REVIEW_NOTES.md` (add the contact name and email); **check the
+   screenshots for any that show a grades screen and remove them**; confirm
+   the Apple Developer Program License Agreement has no pending acceptance
+   (the Account Holder must accept it, or ASC blocks submission); submit.
+6. **After it is live**, raise the `update-manifest` floor only with the
+   owner's word, and only once 3.1.0 is actually downloadable.
+
+Things to know before pressing submit:
+
+- The Sweeper's alarm sound is a licensed recording the owner holds the
+  licence for (`LISTING.md` → Content rights). `CLAUDE.md` says that file
+  must come out of any archive unless it is licensed, so confirm the licence
+  is in hand.
+- The Sweeper has rung on two phones in a debug build (2026-10-19 and
+  2026-10-20) but a Release archive has not been tried. A reviewer cannot
+  see it in preview mode: the review notes say so.
+- Preview mode ("just exploring? preview with sample data") is still App
+  Review's only way in. Do not remove it.
+
+---
+
+# 2.0.1 submission (shipped, kept for reference)
 
 Shipping **2.0.1 / build 6** as the update to the live **2.0.0 / build 5**:
 the same code plus two submission-tracking fixes (a reconnect prompt when

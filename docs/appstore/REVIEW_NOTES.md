@@ -1,5 +1,50 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
+## To paste for 3.1.0 (13), 2026-10-20
+
+This is the block to paste for 3.1.0. App Store Connect caps Notes at 4,000
+characters. Grade Watcher is hidden in this build, so the walkthrough has no
+Grades item (a claim about an unexposed feature is a Guideline 2.3.1
+problem), and it says plainly that the Smooth Sweeper alarm never rings on
+sample data. Preview mode is still the reviewer's only way in. The block that
+follows it (3.0.0) and the long-form background below are history.
+
+```text
+HOW TO REVIEW WITHOUT A SCHOOL LOGIN
+Sign-in uses each university's own Canvas single sign-on (at Penn: PennKey plus Duo). Only the university can issue those accounts, so we can't provide a demo login. You don't need one:
+
+On the first screen, tap "just exploring? preview with sample data". The same link is at the bottom of the Connect Canvas screen. It loads a fully populated demo with sample classes. No account or network is needed, and it stays across relaunches.
+
+Everything is reachable from the demo:
+1. Dashboard: the todo / all / prev switch. Swipe a card right to complete it; tap it for details. The class filter and + (add a task) sit above the list.
+2. Megaphone: the button in the header. Announcements from the past 7 days and the tasks found in them.
+3. Ask: the "ask about your classes" button. Plain-English questions about your classes; in the demo it answers on the device from sample course material.
+4. Profile: the person button in the header. Name, accounts, appearance, reminders, classes, notifications, sync.
+5. Widget: "Next Due" on the Home or Lock Screen.
+6. Smooth Sweeper: the alarm for unsubmitted work. Its switch is in Profile > reminders. It never rings on sample data, so it can only be seen with real coursework, which needs a school login.
+
+WHAT IT DOES
+A personal dashboard for university students. It reads the student's own Canvas deadlines (their calendar feed and signed-in session) and, optionally, Gradescope, and shows one "what's due next" list with local reminders. The Smooth Sweeper rings 10 minutes before work the student has not turned in.
+
+ALARMS AND NOTIFICATIONS
+The Smooth Sweeper is on by default and has a switch in Profile > reminders. On iOS 26 it asks once for alarm permission (AlarmKit) and rings full screen like the Clock app. On earlier iOS, or if alarm permission is refused, it sends three Time Sensitive local notifications instead; these need notification permission, which is asked when reminders are turned on. Both are only for work that takes a submission and has not been turned in, 10 minutes before it is due. The buttons are "turned in" and "open in canvas".
+
+PRIVACY AND NETWORKING
+- Grades, completions, the work list, the student's name and login cookies stay on the device (cookies in the Keychain, this device only). The alarm and its Live Activity run entirely on the device.
+- At Penn, our small backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, staff posts from a class's Ed Discussion board) per Canvas course, and answers "ask" questions through an AI model via OpenRouter. Questions and answers are not stored, only daily request counts. The announcement "ai assist" is on by default and can be turned off in Profile > notifications. Each install uses an anonymous account (no email, password or name); disconnecting Canvas deletes it and its data on our server.
+- No analytics, tracking, ads or third-party SDKs.
+
+STAY SIGNED IN (PENN ONLY)
+After a student signs in to Canvas at Penn, the app offers to save their PennKey username and password in the device Keychain (this device only, never uploaded), so it can refill Penn's own login page when Canvas signs them out. "Not now" is always available, and nothing is stored unless they save. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off rather than retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
+
+THIRD-PARTY SERVICES (5.2.2)
+Smooth is an independent client for services the student already has an account with. It uses their own credentials to show only their own data, and is not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
+```
+
+_Character count of the block above: 3,807 (limit 4,000), measured on the text between the fences._
+
+What's New: paste the 3.1.0 text from `LISTING.md`.
+
 ## As pasted for 3.0.0 (11), 2026-09-27
 
 App Store Connect caps Notes at 4,000 characters, and the long version

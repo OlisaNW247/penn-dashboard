@@ -1,15 +1,16 @@
 # App Store listing — copy & metadata
 
-_Last updated: 2026-09-15. Rewritten for **3.0.0**: the product is now named
-**Smooth** (display name and copy only — the bundle id stays
-`com.lhf.lowhangingfruit`, and internal names such as module names,
-app-group names, and defaults keys keep their LHF spelling). **Grade Watcher
-is visible again** (`FeatureFlags.gradeWatcher = true`), so the grades copy
-scrubbed out for 2.0.0 is restored below. The version jumps straight to
-**3.0.0** to end the 2.x confusion: every 2.0.0/2.0.1 build was uploaded to
-App Store Connect but never released, so the live App Store listing is still
-**1.2.1** and still carries copy for the old name and the old feature set —
-**every section below has to be re-pasted, not just What's New.**_
+_Last updated: 2026-10-20. Rewritten for **3.1.0** (build 13), going straight
+to App Review from `v8`. The product is **Smooth** (display name and copy
+only — the bundle id stays `com.lhf.lowhangingfruit`, and internal names such
+as module names, app-group names, and defaults keys keep their LHF spelling).
+**Grade Watcher is hidden again** (`FeatureFlags.gradeWatcher = false`, since
+2026-10-18): there is no grades button and no grades screen, so every grades
+claim in the Promotional text, Description and FEATURES has been scrubbed. A
+claim or a screenshot of an unexposed feature is a Guideline 2.3.1 rejection,
+so check the screenshots in App Store Connect for any grades screen too.
+Live on the store is **3.0.0 (11)**, whose copy still carries the grades
+claims, so **every section below has to be re-pasted, not just What's New.**_
 
 Fill these into App Store Connect. Character limits noted; all copy below is
 within limits.
@@ -38,9 +39,7 @@ within limits.
 
 ## Promotional text (≤170, editable anytime)
 
-Every Canvas deadline in one calm list, soonest first — now with your real
-grades, answers to questions about your classes, and a dark mode worth
-staying up for. (159)
+Every Canvas deadline in one calm list, soonest first — now with an alarm for anything you haven't turned in, and answers to questions about your classes. (154)
 
 ## Description
 
@@ -54,6 +53,15 @@ Connect Canvas once and Smooth fills itself in: what's due, when, for which
 class, colored so a glance is enough. Swipe to check something off. Anything
 you've already submitted on Canvas files itself away without you touching it.
 
+THE SMOOTH SWEEPER
+Ten minutes before anything you haven't turned in, Smooth rings. On iOS 26 it's
+a real alarm: full screen on the lock screen, through silent mode and Focus,
+with "turned in" and Stop buttons, and a live countdown in the Dynamic Island.
+Open the app while it rings and Smooth takes the whole screen: "turned in,"
+"open in canvas," or "not yet." On older iPhones it's three loud Time
+Sensitive notifications with "turned in" and "open in canvas" buttons. It's on
+by default, with a switch in Profile.
+
 NOT JUST PROBLEM SETS
 A week of school isn't only things you upload. Smooth picks up readings, class
 sessions, and everything else on your Canvas calendar — including readings a
@@ -61,62 +69,90 @@ professor buries in the Modules page — and tags anything you don't hand in
 with a plain "nothing to submit," so you always know whether a deadline wants
 a file or just you. Those never turn red for being late. They just pass.
 
-YOUR CLASSES, YOUR RULES
-Rename a class, hide one, give each its own reminder times, or silence the
-readings while keeping the reminders that matter. When the term ends, archive
-it in a tap — nothing is deleted, and Done keeps the whole record of what you
-got through.
-
-KNOW WHERE YOU STAND
-Grade Watcher reads your Canvas grades and regroups them into your syllabus's
-own categories, not whatever the assignment groups happen to be called — and
-you can fix the map if it guesses wrong. It also tells you how much of your
-grade is actually decided so far, which is usually the number you wanted: it's
-the difference between a bad week and a bad semester.
+THE MEGAPHONE
+Tap it for the past week of announcements from Canvas and Ed Discussion, and
+the tasks hiding inside them. Those tasks land on your list as cards too, for
+any class where you leave that switched on. Exams named in a syllabus or an
+announcement get one black card each, never duplicated.
 
 JUST ASK
-"When's my next exam?" "What's the late policy in 2400?" Ask in plain English
-on the tree and get an answer out of your own course material — syllabus,
-pages, assignment instructions, announcements. An AI model writes the answer;
-offline or over the daily limit, Smooth answers from what's already on your
-phone instead.
+"When's my next exam?" "What's the late policy in 2400?" "Anything new on Ed
+this week?" Ask in plain English on the tree and get an answer out of your own
+course material, with tappable links to its sources. Follow-ups work, and at
+Penn it knows where and when each section meets. An AI model writes the
+answer; offline or over the daily limit, Smooth answers from what's already on
+your phone instead.
 
 FEATURES
-• One chronological list of everything due, sorted by what's next
-• Urgency colors at a glance — overdue, today, this week, later
-• This Week / All / Done views
-• Readings and class sessions from Canvas — calendar and Modules — with a clear
-  "nothing to submit" label
-• Swipe to complete; tap a card for details
-• Home Screen and Lock Screen widget showing what's due next
-• Per-class notification controls: reminder times, mute, and an
-  "items with nothing to submit" switch
-• Add your own one-off or weekly-recurring tasks
-• Optional local reminders before each due date
-• Grade Watcher: grades regrouped by your syllabus's categories, with what
-  share of your grade is decided so far
-• Ask questions about your classes in plain English on "the tree"
-• Announcement Watcher: turns a Canvas announcement into a task, with an
-  optional AI assist (on by default, switch it off anytime in Settings)
-• Semester rollover: archive last term's classes without losing your history
-• Light and dark appearance, including a full after-sunset dark mode
+• One chronological list of everything due, soonest first
+• todo / all / prev views, and a filter by class
+• Swipe to complete; tap a card for details, or to open it in Canvas or
+  Gradescope
+• Add your own one-off or weekly tasks; delete them or stop repeating
 • Adjust any due date by hand when your professor moves it
+• Per-class reminder times and switches
+• Home Screen and Lock Screen widget showing what's due next
+• Ed Discussion (Penn): announcements, pinned threads and staff posts feed the
+  tree and the megaphone
+• Announcement Watcher with an optional AI assist (on by default, off anytime
+  in Profile)
+• Stays signed in to Canvas at Penn
+• Light and dark appearance, including a full after-sunset dark mode
 
 PRIVATE BY DESIGN
-Your grades, your work, your name, and your Canvas and Gradescope logins stay
-on your phone. Smooth talks to your school's Canvas, to Gradescope if you
-connect it, and to one small server of ours. That server does two things:
-it pools the course material everyone in a class can already see — syllabi,
-pages, assignment instructions, announcements — so a classmate who installs
+Your work, your completions, your name, and your Canvas and Gradescope logins
+stay on your phone, and the alarm runs entirely on it. Smooth talks to your
+school's Canvas, to Gradescope if you connect it, and to one small server of
+ours. That server does two things: it pools the course material everyone in a
+class can already see — syllabi, pages, assignment instructions,
+announcements, staff posts on Ed Discussion — so a classmate who installs
 tomorrow gets the class instantly, and it answers what you ask on the tree.
 Nothing personal goes into that pool. Questions and answers aren't kept. No
-tracking, no ads, no third-party SDKs, and a button in Settings that deletes
-your account from our server whenever you want.
+tracking, no ads, no third-party SDKs, and when you disconnect Canvas, Smooth
+deletes your account and its data from our server.
 
 Smooth is an independent app and is not affiliated with or endorsed by
-Instructure (Canvas), Turnitin (Gradescope), or any university.
+Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
-## What's New in 3.0.0 (release notes, ≤4000)
+_Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
+
+## What's New in 3.1.0 (release notes, ≤4000)
+
+Meet the Smooth Sweeper, and a lot of smaller things that make the list
+smarter.
+
+• The Smooth Sweeper: 10 minutes before anything you haven't turned in, Smooth
+  rings. On iOS 26 it's a real alarm, full screen on the lock screen and
+  through silent mode and Focus, with "turned in" and Stop buttons and a live
+  countdown in the Dynamic Island. Open Smooth while it rings and you get a
+  full-screen choice: "turned in," "open in canvas," or "not yet." On older
+  iPhones it's three loud Time Sensitive notifications with "turned in" and
+  "open in canvas" buttons. On by default; the switch is in Profile →
+  reminders and on the reminders page of setup
+• Exam cards: exams named in a syllabus or an announcement show up as black
+  cards, one per exam, never duplicated
+• The megaphone moved to the header: Canvas and Ed Discussion announcements
+  from the past week, plus the tasks found in them, which also appear as cards
+  on your list for classes where that's switched on
+• Ed Discussion (Penn): announcements, pinned threads and staff posts from a
+  class's Ed board now feed the tree and the megaphone
+• The tree is better at finding things: improved search over your course
+  material, follow-up questions, tappable source links under answers, "what's
+  new" questions, and where and when each section meets (Penn)
+• Cards now say "open in canvas" or "open in gradescope"; a due date you edit
+  stays edited; delete your own tasks, or stop repeating a weekly one
+• Smooth stays signed in to Canvas at Penn more reliably, and the saved-PennKey
+  sheet is now "the vault"
+• Grade Watcher is taking a break this release
+• Your work, completions, name and logins still never leave your device — see
+  "Private by design" above
+
+_What's New: about 1,740 characters, within the 4,000 limit._
+
+## What's New in 3.0.0 (live now; kept as history)
+
+The Grade Watcher bullet below is no longer true of the shipping build. Do
+not paste this.
 
 Smooth is the new name for this app (it was Low Hanging Fruit) — and this is
 the biggest update yet.
@@ -142,8 +178,8 @@ the biggest update yet.
 
 **Do not paste this or the 2.0.0 notes below.** Both versions were uploaded to
 App Store Connect and neither was ever released, so no student has seen either
-set of notes. 3.0.0 lands on top of the live 1.2.1 and its notes above are the
-only ones to paste.
+set of notes. 3.0.0 landed on top of the live 1.2.1; the 3.1.0 notes
+above are the only ones to paste now.
 
 Two fixes for work you've already turned in:
 
@@ -176,7 +212,7 @@ load, not just the assignments.
 
 ## Keywords (≤100, comma-separated, no spaces)
 
-canvas,assignments,deadlines,homework,grades,planner,college,syllabus,readings,reminders,gpa,due
+canvas,assignments,deadlines,homework,alarm,planner,college,syllabus,readings,reminders,exams,due
 
 <!-- 93 of 100. "student" was dropped when the app name became "Smooth for
      Students": Apple already indexes the name, so spending a keyword slot on
@@ -184,7 +220,10 @@ canvas,assignments,deadlines,homework,grades,planner,college,syllabus,readings,r
      freed room. "smooth" is likewise absent on purpose — the name covers
      it. -->
 
-<!-- 97 characters, within the 100-char limit. -->
+<!-- 97 characters, within the 100-char limit. For 3.1.0 "grades" and
+     "gpa" became "alarm" and "exams": Grade Watcher is hidden in this
+     build, and a keyword for a feature the app does not show is the same
+     2.3.1 metadata risk as a description that claims it. -->
 
 ## URLs
 
@@ -216,6 +255,12 @@ The app displays the user's own content from third-party services (Canvas,
 optionally Gradescope), accessed with the user's own credentials. See
 `REVIEW_NOTES.md` for the position on Guideline 5.2.2.
 
+The Smooth Sweeper alarm (new in 3.1.0) plays a bundled recording as its
+sound. It is a licensed recording and the owner holds the licence for it. If
+App Store Connect's content-rights questions ask about third-party audio,
+answer accordingly. (`CLAUDE.md` says the file must come out of any archive
+unless it is licensed: confirm the licence is in hand before uploading.)
+
 ## Export compliance
 
 - Uses non-exempt encryption? → **No** (already declared via
@@ -223,13 +268,12 @@ optionally Gradescope), accessed with the user's own credentials. See
 
 ## Build / version
 
-- Marketing version: **3.0.0**
-- Build: **9** (must exceed the live **1.2.1** — it does; every 2.0.0/2.0.1
-  build was uploaded but never released, so 1.2.1 is still the version App
-  Review and App Store Connect compare against. It is 9 because builds 7
-  and 8 both went up to App Store Connect — 8 was the one Apple rejected
-  under 2.1(a) on 2026-09-16 for having no demo mode — and ASC refuses a
-  build number it has seen before, whatever became of that upload.)
+- Marketing version: **3.1.0**
+- Build: **13** (must exceed the live **3.0.0 (11)**; App Store Connect
+  refuses a build number it has already seen. Build 12 was stamped in the tree
+  as 3.0.1 but never archived or uploaded, and builds 7–10 of 3.0.0 went up
+  earlier, so **before archiving, confirm in App Store Connect → TestFlight →
+  Builds that no build 13 exists**, and pick the next number if one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  already 3.0.0 / 9 in the committed project.
+  3.1.0 / 13 in `project.yml` and the committed project.

@@ -126,9 +126,14 @@ mode, the S app mark, and bundled type registered at runtime by
 id `6783911002`, released about 2026-10-01; confirmed on the store page by
 Olisa 2026-10-09, with 1.2.1 live before it from 2026-09-04). This line has
 been stale before, so re-check it rather than trust it. `project.yml`
-stamps **3.0.1 (build 12)** on `v8` (2026-10-09, the sign-out fix below;
-not yet archived). The `update-manifest` floor is still 1.2.1; raising it
-to 3.0.0 is Olisa's call. Builds 7–9 of 3.0.0
+stamps **3.1.0 (build 13)** on `v8` (2026-10-20, the release the owner
+asked to send straight to App Review that evening: the Smooth Sweeper,
+the exam cards, the megaphone redesign, Ed posts, the ask work and the
+sign-out fix, with Grade Watcher removed; the archive and upload run on
+Olisa's Mac, see `docs/appstore/CHECKLIST.md` → "3.1.0 submission").
+3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
+archived. The `update-manifest` floor is still 1.2.1; raising it
+to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
 2.1(a), see Known gaps). Build 10 was uploaded 2026-09-16 at 9:54 AM,
 from before stay-signed-in existed, and attached to that rejected
@@ -622,12 +627,15 @@ Keep this current. It is the fastest way for a new session to know what exists.
      CAF), played from the main bundle
      because that is the only place developers report AlarmKit's
      `.named` finding a sound; without the file it is the default tone.
-     **It is commercial music: fine on the owner's own phone, but it must
-     come out (the file plus its four `project.pbxproj` lines) before any
-     archive, TestFlight or App Store build unless it is licensed.** It
-     is in the public repo since 2026-10-19: the owner chose to push it,
-     saying he accepts the copyright risk, after being told the repo is
-     public and that git history keeps it. Files: `BerserkAlarmPlan.swift` (pure rules),
+     **It is commercial music. On 2026-10-20, asked before the 3.1.0
+     archive whether it should come out, Olisa said it ships: "Keep it, I
+     have a licence."** As with Roobert (Visual language, above), there is
+     deliberately no licence file in the repo; the licence is Olisa's to
+     produce if it is ever asked for. Until that answer, the rule here was
+     that the file and its four `project.pbxproj` lines had to come out
+     before any archive. It is in the public repo since 2026-10-19: the
+     owner chose to push it, saying he accepts the copyright risk, after
+     being told the repo is public and that git history keeps it. Files: `BerserkAlarmPlan.swift` (pure rules),
      `BerserkAlarmDelivery.swift`, `BerserkAlarmScheduler.swift`
      (AlarmKit, iOS 26 only).
      **Rang on Olisa's iPhone on 2026-10-20** (the merged build): full

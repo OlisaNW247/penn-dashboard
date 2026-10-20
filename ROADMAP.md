@@ -58,12 +58,19 @@ These block shipping, or would make shipping risky.
   6. The widget when caught up ("all clear") and at a due time.
   7. A fresh install in mid-semester: old overdue work withheld, "N
      older hidden · show" at the foot of prev.
-- **Take the song out of the alarm before any release build.**
-  `App/berserk-alarm.caf` is 13 seconds of Ed Motta's "Seis da Tarde",
-  for Marco's own phone. Delete it and its four `project.pbxproj` lines
-  before archiving (the alarm then uses the default tone), or license
-  it. Pushed to the public repo on 2026-10-19 at Marco's say (he
-  accepted the copyright risk); removing it later leaves it in history.
+- **Ship 3.1.0 (13)** (stamped 2026-10-20; the owner's call that evening:
+  straight to App Review, no TestFlight round, the song kept under a
+  licence he says he holds). The steps are `docs/appstore/CHECKLIST.md`
+  → "3.1.0 submission": confirm no build 13 in App Store Connect,
+  archive, check the widget links AlarmKit weakly (`otool -L`), export
+  (uploads), then in App Store Connect paste the 3.1.0 What's New and
+  the rewritten Description from `LISTING.md`, the 3.1.0 review notes,
+  drop any grades screenshot, submit. Raise the `update-manifest` floor
+  only once it is downloadable, with Olisa's word. Two decisions the
+  memory asked for before a release were not taken and ship as they
+  stand: the ask summary carries completion state while
+  `docs/PRIVACY.md` says it does not, and the anonymous-post sentence
+  (both below).
 - **Ring the Berserk alarm on a phone, the rest of it.** Done on Olisa's
   iPhone on 2026-10-20: full screen on the lock screen, the song once,
   "turned in" marked the card done. Still to try, with a real card's
@@ -106,8 +113,10 @@ These block shipping, or would make shipping risky.
   promises anonymous Ed posts never leave the phone; `EdThreadFilter`
   does not look at `isAnonymous`. Change the keep-rule or the sentence
   (`CLAUDE.md` → Known gaps).
-- **Ship 3.0.1 (12), the sign-out fix** (`v8`, 2026-10-09, blind;
-  `docs/SIGNOUT_INVESTIGATION.md`). 3.0.0 (11) went live about 2026-10-01
+- **The sign-out fix ships inside 3.1.0 (13)** without the TestFlight
+  week this item asked for (owner's call, 2026-10-20). What it was:
+  3.0.1 (12), `v8`, 2026-10-09, blind;
+  `docs/SIGNOUT_INVESTIGATION.md`. 3.0.0 (11) went live about 2026-10-01
   and students with a saved PennKey password were still signed out,
   most likely because every manual reconnect purged Duo's trust. A
   three-slice review of that commit found two blockers in the background
