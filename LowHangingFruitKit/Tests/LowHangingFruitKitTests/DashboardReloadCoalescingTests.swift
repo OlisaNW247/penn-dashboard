@@ -11,34 +11,38 @@ import Testing
 @Suite("Dashboard view model: publishes are coalesced into one reload", .serialized)
 struct DashboardReloadCoalescingTests {
 
-    /// Lets the main run loop deliver what is waiting (the Combine sink is
-    /// `receive(on: RunLoop.main)` and the reload is a main-actor task), which
-    /// a test that never suspends would otherwise starve.
-    private func pumpMainRunLoop(for seconds: TimeInterval) {
-        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    /// Lets the main-actor tasks the sink enqueues run. Yielding is what
+    /// gives them a turn; a nested `RunLoop.main.run(until:)` does not, which
+    /// is why the first version of this test counted zero reloads on a view
+    /// model that was reloading fine on the phone (2026-10-20). The sleep is
+    /// a margin, not the mechanism.
+    private func settle() async throws {
+        for _ in 0..<32 { await Task.yield() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        for _ in 0..<32 { await Task.yield() }
     }
 
     @Test("three synchronous publishes cause exactly one reload, and a later publish still gets its own")
-    func burstIsOneReload() throws {
+    func burstIsOneReload() async throws {
         let state = AppState(assignmentStore: try AssignmentStore(inMemory: true))
         let vm = DashboardViewModel()
         vm.bind(to: state)
 
         // Let anything the new `AppState` publishes on its own settle, so the
         // count below is the burst's and not start-up noise.
-        pumpMainRunLoop(for: 0.3)
+        try await settle()
         let before = vm.publishedReloadCount
 
         state.objectWillChange.send()
         state.objectWillChange.send()
         state.objectWillChange.send()
-        pumpMainRunLoop(for: 0.3)
+        try await settle()
         #expect(vm.publishedReloadCount - before == 1)
 
         // The flag was cleared before the reload ran, so the next change is
         // not swallowed.
         state.objectWillChange.send()
-        pumpMainRunLoop(for: 0.3)
+        try await settle()
         #expect(vm.publishedReloadCount - before == 2)
     }
 }

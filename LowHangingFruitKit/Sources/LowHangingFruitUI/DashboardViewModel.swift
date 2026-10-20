@@ -172,9 +172,18 @@ final class DashboardViewModel: ObservableObject {
         // (empty) real store.
         if usingSampleData { return }
         reload()
+        // No `receive(on: RunLoop.main)` here any more: `AppState` is
+        // main-actor, so its publishes already arrive on the main actor, and
+        // the deferral that hop used to provide is now the main-actor task in
+        // `scheduleReloadFromRealData`. A run-loop hop also cannot be
+        // observed from a swift-testing main-actor test (a nested
+        // `RunLoop.main.run` never drains main-actor tasks), which is how the
+        // first version of `DashboardReloadCoalescingTests` saw zero reloads
+        // against a view model that worked on the phone.
         cancellable = state.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.scheduleReloadFromRealData() }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleReloadFromRealData() }
+            }
     }
 
     /// True from the first publish of a burst until the one reload that
@@ -190,9 +199,9 @@ final class DashboardViewModel: ObservableObject {
     /// `DashItem` and republish `items`, which re-evaluates the dashboard's
     /// `body` that many times for one change (2026-10-20, the lag after the
     /// merge). `objectWillChange` fires *before* the property is set, but the
-    /// sink is delivered on a later run-loop turn, and the reload below runs on
-    /// a turn after that, so by then the whole synchronous burst has landed and
-    /// the single reload reads the finished state. The flag is cleared before
+    /// sink only enqueues a main-actor task, and the reload runs in a task
+    /// enqueued after that, so by then the whole synchronous burst has landed
+    /// and the single reload reads the finished state. The flag is cleared before
     /// the reload runs, so a publish that arrives after it (during it, or on
     /// the next turn) is not swallowed: it schedules the next reload. The
     /// wrong version clears the flag after reloading, which drops exactly that
