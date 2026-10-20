@@ -730,8 +730,12 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2397 tests / 214 suites, all green, on `v8` at `a3ede70`
-(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 7.7 s): the merge
+**Current: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
+(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
+plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
+`RecencyIntent` table and the newest-posts-first excerpt rule), nothing
+removed. Not yet built to the phone.** Before it: 2397 / 214 at `a3ede70`
+(2026-10-20, 7.7 s): the merge
 of Olisa's `v8` (2033/192 at `2b46ce7`, 2026-10-19) and Marco's
 `v8-loud-alert-actions` (2332/209, 2026-10-19), both branching from
 `beed156` (1975/189).** The count is exactly what the merge predicted
@@ -1189,7 +1193,7 @@ client problem. The pieces, all exercised by tests:
   boundary; Ed posts and announcements carry "posted Oct 3"; image-only
   Ed posts are skipped. It was four passages cut at 700 until
   2026-10-10, which dropped the tail of nearly every passage.
-- **"What's new" questions** (`RecencyIntent`, 2026-10-20, blind). BM25
+- **"What's new" questions** (`RecencyIntent`, 2026-10-20, compiled green, not yet on a phone). BM25
   has no idea what "recent" means: asked "what have been the recent staff
   posts on Ed for my cis 2620 class", the phone sent the posts whose text
   said "staff" (Aug 28 to Oct 7) and left out the two newest (Oct 12 and
@@ -2011,12 +2015,11 @@ none is a ship line.
   for a document synced before that (until its thread is fetched again),
   where a Sept 14 thread somebody replied to on Oct 15 can still be
   extracted. Both are blind. The day is noon US Eastern, not a minute.
-- **The "what's new" excerpt rule is blind** (`RecencyIntent`,
-  `AskRecencyExcerptTests`, 2026-10-20): written in the cloud container
-  with no Swift toolchain, after the owner showed the tree naming Oct 7
-  as the newest CIS 2620 Ed post on Oct 20. Compile and run `swift test
-  --no-parallel` on a Mac first; then ask the same two questions on the
-  phone. The "today" window is a day back from the asking moment, and Ed
+- **The "what's new" excerpt rule has not been asked on a phone**
+  (`RecencyIntent`, `AskRecencyExcerptTests`, 2026-10-20): written in the
+  cloud container, compiled green on Olisa's Mac the same day (2409/216),
+  after the owner showed the tree naming Oct 7 as the newest CIS 2620 Ed
+  post on Oct 20. Ask the same two questions on the phone. The "today" window is a day back from the asking moment, and Ed
   posting days are stamped noon Eastern, so "today" can include
   yesterday's post.
 - **ask and the widget after the 2026-10-20 merge (blind).** ask's work

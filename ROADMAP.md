@@ -291,7 +291,7 @@ Kept so nobody rebuilds them blind.
 ## Done recently
 
 - **2026-10-20: "what's new on ed" gets the newest posts** (`RecencyIntent`,
-  blind, needs a compile): a recency question puts the newest dated Ed
+  2409/216 green on Olisa's Mac, not yet on a phone): a recency question puts the newest dated Ed
   posts and announcements first in the excerpts, within the window named.
   Asked for after the tree listed Aug 28 to Oct 7 posts as "recent" and
   missed Oct 12 and Oct 18.
