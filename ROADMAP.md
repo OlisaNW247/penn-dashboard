@@ -72,8 +72,8 @@ These block shipping, or would make shipping risky.
   that or make Stop only stop, `CLAUDE.md` → Traps, "an alarm's stop is
   any dismissal"); one ring with the app force-quit first; and, once the
   2026-10-20 build is on the phone, the new Live Activity (the Dynamic
-  Island and the lock-screen card in tomato with the class, the name and
-  a countdown) and the in-app takeover screen. Before any TestFlight
+  Island card, seen; the lock-screen card, not yet) and the in-app
+  takeover screen (seen once; try the three roads in). Before any TestFlight
   build from this tree: `otool -L` on the Release archive's
   `LHFWidgetExtension.appex` must show AlarmKit as `weak` (the widget
   now imports it; the app's own link was weak in Debug and unchecked in
@@ -295,15 +295,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-10-20: the Berserk takeover screen** (`v8`, blind; `CLAUDE.md`
-  → Profile → reminders). The whole window turns tomato the moment Smooth
+- **2026-10-20: the Berserk takeover screen** (`v8`; seen working on
+  Olisa's phone the same day; `CLAUDE.md` → Profile → reminders). The whole window turns tomato the moment Smooth
   is on screen with the alarm ringing, when the app is opened while it
   rings, or when a loud buzz is tapped or lands in the foreground: a live
   countdown, the assignment, the class, "turned in" (through the same
   inbox as the notification button), "open in canvas", "not yet". iOS
   does not let an app take the screen while closed; this is the ceiling.
 - **2026-10-20: the Berserk alarm's Live Activity is drawn by the widget
-  extension** (`v8`, blind; see `CLAUDE.md` → Profile → reminders). After
+  extension** (`v8`; the tomato island card seen on Olisa's phone the same
+  day; see `CLAUDE.md` → Profile → reminders). After
   Olisa rang the alarm on his phone and found the unlocked-phone alert "a
   little alarm notification drop in": the Dynamic Island and the
   lock-screen card are now Smooth's (tomato, class, assignment, live

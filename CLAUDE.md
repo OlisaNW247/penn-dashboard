@@ -669,7 +669,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
      assignment ids, so buzzes two and three of a "not yet" do not bring
      it back. The system's own alert still appears on top (the drop-in
      when unlocked); the takeover is what the student sees underneath and
-     after. Nothing here is proven on a device.
+     after. **Both pieces seen on Olisa's iPhone the same day** (build of
+     `8d00e62`, 11:25): it rang, the Dynamic Island showed the tomato
+     card, and the takeover worked. Which road in he used, and the
+     lock-screen card, are not recorded.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -811,8 +814,8 @@ test rewritten (`alarmKitIsGuarded` now expects two guarded files).
 Green on the first run. The iOS Debug `xcodebuild` (the widget
 extension's Live Activity and the AlarmKit extension) also succeeded on
 the first try and was installed on Olisa's iPhone at 11:25 the same
-day; whether the Live Activity and the takeover appear is not yet
-recorded.** Before it: 2414 / 217 at `edff9ac`
+day; Olisa then rang it: the island showed the tomato card and the
+takeover worked.** Before it: 2414 / 217 at `edff9ac`
 (2026-10-20 afternoon, 8.4 s):
 2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
 `DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
@@ -2041,12 +2044,12 @@ none is a ship line.
   shows it for an alert-only alarm at all, whether the card appears on
   the lock screen beside the full-screen alert or only in the Dynamic
   Island, and whether `AlarmAttributes.metadata` decodes in the extension);
-  the takeover screen of the same day (blind: that `AlarmManager.
-  alarmUpdates` reports `.alerting` while the app is in the foreground,
-  that a tap on the Live Activity or the system alert's body opens the app
-  with the alarm still ringing so the screen appears, and that the three
-  buttons stop the alarm from inside the app; two limits known from the
-  review, both accepted: a sheet the dashboard has open (add, edit date,
+  the takeover screen of the same day (seen working once on Olisa's phone
+  at 11:25, "the island showed the tomato card, takeover worked"; not
+  recorded: which road in, whether the lock-screen card appears beside
+  the full-screen alert, whether `alarmUpdates` raised it with the app
+  already open, and which of the three buttons were tried; two limits
+  known from the review, both accepted: a sheet the dashboard has open (add, edit date,
   the megaphone) draws above the takeover, which is an `.overlay` on the
   root and not a presentation, so a signal that lands with a sheet up is
   only seen once the sheet closes, and the extension's `import AlarmKit`
