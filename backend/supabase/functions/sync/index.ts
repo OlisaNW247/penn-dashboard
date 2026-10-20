@@ -9,7 +9,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { catalogCode, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
+import { academicSemester, catalogCode, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
 import type { CourseProfileWire } from "../_shared/profile.ts";
 import { candidateFromLink, olderThan, SEVEN_DAYS_MS, websitesPendingCourses } from "../_shared/websites.ts";
 import {
@@ -137,6 +137,12 @@ async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSumm
   const uniqueCodes = [...new Set(catalogCodeByCourseID.values())];
   const existingByCode = await selectCatalogCoursesByCodes(serviceClient, uniqueCodes);
   const now = new Date();
+  const semester = academicSemester(now);
+  // `uniqueCodes` keeps first-seen order of the manifest's courses, so the
+  // slice is deterministic for a given manifest. A code whose fetch keeps
+  // failing (a 404 for a course not offered this semester) is attempted
+  // again and occupies one of the capped slots on every call; that is
+  // pre-existing, and rarer now that the right semester is asked for.
   const codesToFetch = uniqueCodes
     .filter((code) => catalogNeedsFetch(existingByCode.get(code), now))
     .slice(0, MAX_CATALOG_FETCHES_PER_MANIFEST);
@@ -144,7 +150,7 @@ async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSumm
 
   const fetchResults = await Promise.allSettled(
     codesToFetch.map((code) =>
-      fetchCatalogCourse({ fetchImpl: fetch, catalogCode: code, timeoutMs: CATALOG_FETCH_TIMEOUT_MS })
+      fetchCatalogCourse({ fetchImpl: fetch, catalogCode: code, semester, timeoutMs: CATALOG_FETCH_TIMEOUT_MS })
     ),
   );
 
@@ -209,7 +215,7 @@ async function handleManifest(
   // student's own catalog/course data out of the function logs.
   let catalog: CatalogEntryWire[] = [];
   try {
-    catalog = await selectCatalogEntriesForCourses(serviceClient, courseIDs);
+    catalog = await selectCatalogEntriesForCourses(serviceClient, courseIDs, academicSemester(new Date()));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("sync: catalog entries failed", message);

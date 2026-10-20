@@ -1041,8 +1041,9 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
-- Deno: 366 passed, 0 failed (2026-10-20, the section-details change, in
-  the cloud container with Deno 2.9.7 and `--no-check`; 350 before it).
+- Deno: 370 passed, 0 failed (2026-10-20, the semester fix; 366 after the
+  section-details change the same day, 350 before it; in the cloud
+  container with Deno 2.9.7 and `--no-check`).
   `deno check` is clean under Deno 2.1.4 (`--no-lock`, the edge runtime's
   generation) and under 2.9 reports three pre-existing `Timeout` is not
   assignable to `number` errors (`quota.ts`, `outcomes.ts`), which are
@@ -1237,7 +1238,10 @@ client problem. The pieces, all exercised by tests:
   its meetings, which `dbRowToCatalogRow` detects by key presence (a
   present `room: null` is a real online section) and `catalogNeedsFetch`
   refetches on the next manifest, so every enrolled course re-reads
-  within about an hour of the deploy. The system instructions say the
+  within about an hour of the deploy. Since the same afternoon the fetch
+  names the semester (`academicSemester`, Traps: Penn Labs' `current`
+  had rolled to Spring 2027) and a row from another semester is
+  refetched and never served. The system instructions say the
   block never holds an exam room: those come from announcements and Ed
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
@@ -1815,6 +1819,24 @@ itself.
   "stopButton … will no longer be used"), so the system shows "Stop"; a
   stop that opens Canvas is a known, accepted surprise pending the
   owner's verdict on a phone.
+- **Penn Labs' "current" semester is the one open for registration, not
+  the one in session.** The catalog fetched
+  `penncoursereview.com/api/base/current/courses/{code}/`, and around
+  2026-10-15 Penn Labs flipped `current` to `2027A` for advance
+  registration. Every refetch after that stored Spring 2027 sections
+  (rooms, times, instructors) under the fall course's code, and a
+  fall-only course (CIS 2620) 404ed and kept its old row, which the
+  legacy-row rule then retried on every manifest call. Found 2026-10-20
+  within an hour of shipping section rooms to ask, because CIS 2620's
+  row never refetched while the five that did all said `2027A`. The tell
+  is the `semester` column disagreeing with the calendar. The fix asks
+  for the semester explicitly (`academicSemester(now)`, by date in New
+  York: A to May 20, B to Aug 15, then C), refetches a row whose semester
+  differs, and never serves one (`rowsForSemester`) to ask or to the app.
+  The wrong fix is a fallback to `current` when the explicit semester
+  404s, which reintroduces the wrong semester silently. The app sends no
+  Canvas term (`courses.term` is null for every row), so the date is the
+  only signal the server has.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so

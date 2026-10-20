@@ -374,8 +374,20 @@ told `ask` that, so a question about "the class" could get answered from
 whichever component's syllabus text happened to be retrieved.
 
 Source: Penn Labs' public Penn Courses API (the backend behind Penn Course
-Review), `GET https://penncoursereview.com/api/base/current/courses/{DEPT-NNNN}/`,
-no auth, no key. `{DEPT-NNNN}` is the Canvas course code with its space
+Review), `GET https://penncoursereview.com/api/base/{semester}/courses/{DEPT-NNNN}/`,
+no auth, no key. `{semester}` is always explicit, from `_shared/catalog.ts`'s
+`academicSemester(now)`: the calendar date in America/New_York decides it
+(Jan 1 - May 20 -> `YYYYA` spring, May 21 - Aug 15 -> `YYYYB` summer,
+Aug 16 - Dec 31 -> `YYYYC` fall; e.g. `2026C`). The date decides because the
+app does not send the Canvas term (`courses.term` is null) and Penn Labs'
+`current` is whatever is open for registration, not what is in session; there
+is no fallback to `current`. A row whose `semester` differs from
+`academicSemester(now)` is refetched on the next manifest call however fresh
+it is, and is never served: `ask` drops it from COURSE STRUCTURE and the
+manifest's `catalog` omits it (`rowsForSemester`). Rollover incident,
+2026-10-15: Penn Labs flipped `current` to `2027A` for advance registration,
+so refetches stored Spring 2027 rooms and times for Fall 2026 students, and
+fall-only courses (CIS 2620) 404ed and kept stale rows. `{DEPT-NNNN}` is the Canvas course code with its space
 replaced by a dash (`PHYS 0151` -> `PHYS-0151`; see `_shared/catalog.ts`'s
 `catalogCode`). Review-score fields the response also carries
 (`course_quality`, `instructor_quality`, `difficulty`, `work_required`, at

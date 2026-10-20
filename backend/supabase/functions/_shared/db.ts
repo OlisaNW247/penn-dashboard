@@ -14,7 +14,9 @@ import type {
 } from "./manifest.ts";
 import {
   catalogEntryWire,
+  academicSemester,
   catalogIsStale,
+  rowsForSemester,
   type CatalogComponent,
   type CatalogCourseRow,
   type CatalogMeeting,
@@ -455,6 +457,13 @@ export function catalogNeedsFetch(existing: CatalogCourseRow | undefined, now: D
   if (existing === undefined) return true;
   if (existing.componentsLackMeetings) return true;
   if (existing.componentsLackSectionDetails) return true;
+  // Around 2026-10-15 Penn Labs flipped its `current` semester to 2027A
+  // while students were still in Fall 2026, and refetches stored Spring
+  // rows. A row for the wrong semester is worse than a missing one for the
+  // same reason a legacy row is: it answers, with next semester's rooms and
+  // times, and nothing marks it as wrong. It is refetched however fresh it
+  // is (and never served meanwhile: see `rowsForSemester`).
+  if (existing.semester !== academicSemester(now)) return true;
   return catalogIsStale(existing.fetchedAt, now);
 }
 
@@ -557,6 +566,7 @@ export async function selectCatalogCoursesForCourseIDs(
 export async function selectCatalogEntriesForCourses(
   client: SupabaseClient,
   courseIDs: string[],
+  semester: string,
 ): Promise<CatalogEntryWire[]> {
   if (courseIDs.length === 0) return [];
 
@@ -571,7 +581,12 @@ export async function selectCatalogEntriesForCourses(
   if (linked.length === 0) return [];
 
   const uniqueCodes = [...new Set(linked.map((row) => row.catalog_code))];
-  const byCode = await selectCatalogCoursesByCodes(client, uniqueCodes);
+  // Rows stored for another semester are dropped, not served: see
+  // `rowsForSemester`.
+  const byCode = new Map(
+    rowsForSemester([...(await selectCatalogCoursesByCodes(client, uniqueCodes)).values()], semester)
+      .map((row) => [row.catalogCode, row] as const),
+  );
 
   const entries: CatalogEntryWire[] = [];
   for (const row of linked) {

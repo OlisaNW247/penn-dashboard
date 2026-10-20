@@ -124,6 +124,17 @@ Deno.test("catalogNeedsFetch: false for a fresh, current-shaped row", () => {
   assert.equal(catalogNeedsFetch(row, NOW), false);
 });
 
+Deno.test("catalogNeedsFetch: a fresh row for another semester is refetched, a fresh row for this one is not", () => {
+  const components = [
+    { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [], instructorsBySection: {} },
+  ];
+  const now = new Date("2026-10-20T14:00:00Z");
+  const spring = dbRowToCatalogRow(baseDBRow({ semester: "2027A", fetched_at: "2026-10-20T13:00:00Z", components }));
+  const fall = dbRowToCatalogRow(baseDBRow({ semester: "2026C", fetched_at: "2026-10-20T13:00:00Z", components }));
+  assert.equal(catalogNeedsFetch(spring, now), true);
+  assert.equal(catalogNeedsFetch(fall, now), false);
+});
+
 Deno.test("catalogNeedsFetch: true for a legacy row even though it was fetched moments ago (nowhere near stale)", () => {
   const legacyComponents = [
     { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"] },

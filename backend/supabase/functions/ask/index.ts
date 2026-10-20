@@ -26,7 +26,7 @@ import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
 import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
-import { activityForSection, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
+import { academicSemester, activityForSection, rowsForSemester, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
 import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
 import { applyContextTrim, extractProbeOverrides, readProbeTag } from "../_shared/probe.ts";
@@ -292,7 +292,7 @@ export async function handleAsk(
     // concurrently.
     const [{ profiles, ownSectionsByCatalogCode }, catalog] = await Promise.all([
       timed("profiles", () => loadCourseProfiles(serviceClient, enrolledIDs)),
-      timed("catalog", () => loadCatalogCourses(serviceClient, enrolledIDs)),
+      timed("catalog", () => loadCatalogCourses(serviceClient, enrolledIDs, body.askedAt)),
     ]);
 
     // `contextTrimChars` is the one override that lets a canary harness
@@ -571,9 +571,17 @@ async function loadCourseProfiles(
 async function loadCatalogCourses(
   serviceClient: SupabaseClient,
   enrolledIDs: string[],
+  askedAt: string,
 ): Promise<CatalogCourseRow[]> {
   try {
-    return await selectCatalogCoursesForCourseIDs(serviceClient, enrolledIDs);
+    const rows = await selectCatalogCoursesForCourseIDs(serviceClient, enrolledIDs);
+    // A row stored for another semester answers with that semester's rooms
+    // and times (Penn Labs' `current` flipped to 2027A on 2026-10-15), so it
+    // is never put in the prompt; no row is better than a wrong one. The
+    // semester is judged at the request's own `askedAt`, and at the server
+    // clock only if that is unparseable.
+    const parsed = new Date(askedAt);
+    return rowsForSemester(rows, academicSemester(Number.isNaN(parsed.getTime()) ? new Date() : parsed));
   } catch (err) {
     console.error("ask: catalog lookup failed", err instanceof Error ? err.message : String(err));
     return [];

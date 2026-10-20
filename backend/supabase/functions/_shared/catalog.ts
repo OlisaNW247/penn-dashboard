@@ -429,7 +429,7 @@ function gradeModesFromAttributes(attributes: unknown[]): string[] {
 
 /**
  * Validates and maps one Penn Labs course response
- * (`GET .../api/base/current/courses/{DEPT-NNNN}/`) into a
+ * (`GET .../api/base/{semester}/courses/{DEPT-NNNN}/`) into a
  * `CatalogCourseRow`. Returns `undefined` for anything that doesn't even
  * have the two fields this whole table is keyed and gated on (`id`,
  * `semester`) -- everything else (`description`, `prerequisites`,
@@ -473,10 +473,64 @@ export function parsePennLabsCourse(json: unknown): CatalogCourseRow | undefined
 }
 
 // ---------------------------------------------------------------------
+// academicSemester / rowsForSemester
+// ---------------------------------------------------------------------
+
+/**
+ * Penn's semester code for the calendar date `now` falls on in
+ * America/New_York: `YYYYA` spring (Jan 1 - May 20), `YYYYB` summer
+ * (May 21 - Aug 15), `YYYYC` fall (Aug 16 - Dec 31).
+ *
+ * The date decides it because nothing better is available here: the app does
+ * not send the Canvas term (`courses.term` is null for every row), and Penn
+ * Labs' own `current` semester is whatever a person there has opened for
+ * registration, not what is in session. Around 2026-10-15 they flipped
+ * `current` to `2027A` (Spring 2027, advance registration) while students
+ * were still in Fall 2026, and every refetch since stored next semester's
+ * rooms, times and instructors; a fall-only course such as CIS 2620 simply
+ * 404ed and kept its stale row. So this asks for the semester explicitly
+ * (`fetchCatalogCourse`) and never trusts `current`.
+ *
+ * The boundaries are approximate on purpose (Penn's real term dates move a
+ * few days a year); they only need to fall in the gaps between terms. `now`
+ * is a parameter, never read internally, like `catalogIsStale`. The local
+ * date is taken in New York, not UTC: 23:30 on Dec 31 there is already
+ * January 1 in UTC, and must still be `YYYYC`.
+ */
+export function academicSemester(now: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(now);
+  const part = (type: string): number => Number(parts.find((p) => p.type === type)?.value);
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  if (month < 5 || (month === 5 && day <= 20)) return `${year}A`;
+  if (month < 8 || (month === 8 && day <= 15)) return `${year}B`;
+  return `${year}C`;
+}
+
+/** Only the rows stored for `semester`. A row from another semester is worse
+ *  than a missing one: it answers, with next (or last) semester's rooms, so
+ *  neither `ask` nor the manifest's `catalog` may hand it out. Shared by
+ *  both call sites and the tests. */
+export function rowsForSemester(rows: CatalogCourseRow[], semester: string): CatalogCourseRow[] {
+  return rows.filter((row) => row.semester === semester);
+}
+
+// ---------------------------------------------------------------------
 // fetchCatalogCourse
 // ---------------------------------------------------------------------
 
 export interface FetchCatalogCourseOptions {
+  /** Penn's semester code to ask for ("2026C"), from `academicSemester`.
+   *  Required, with no fallback to Penn Labs' `current`: see the doc comment
+   *  on `academicSemester` for why `current` is the wrong semester to trust,
+   *  and note that a fallback would bring that wrong answer back silently. */
+  semester: string;
   /** Injected, never the global `fetch`, so `catalog.test.ts` can exercise
    *  every branch (404, timeout, malformed JSON, network failure) with a
    *  fake -- the same discipline `openrouter.ts` holds itself to and for
@@ -487,7 +541,7 @@ export interface FetchCatalogCourseOptions {
   timeoutMs: number;
 }
 
-const PENN_LABS_BASE_URL = "https://penncoursereview.com/api/base/current/courses";
+const PENN_LABS_BASE_URL = "https://penncoursereview.com/api/base";
 
 /** Identifies this app to Penn Labs' operators the way any well-behaved
  *  anonymous API consumer should, per the brief -- the endpoint takes no
@@ -515,7 +569,7 @@ export async function fetchCatalogCourse(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const response = await options.fetchImpl(`${PENN_LABS_BASE_URL}/${options.catalogCode}/`, {
+    const response = await options.fetchImpl(`${PENN_LABS_BASE_URL}/${options.semester}/courses/${options.catalogCode}/`, {
       method: "GET",
       headers: { "User-Agent": USER_AGENT },
       signal: controller.signal,

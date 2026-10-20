@@ -8,7 +8,9 @@ import {
   activityForSection,
   catalogCode,
   catalogEntryWire,
+  academicSemester,
   catalogIsStale,
+  rowsForSemester,
   fetchCatalogCourse,
   parsePennLabsCourse,
   siteLabel,
@@ -166,19 +168,30 @@ Deno.test("fetchCatalogCourse: parses a successful response and sends the requir
   let capturedHeaders: Headers | undefined;
   const fetchImpl: typeof fetch = async (input, init) => {
     capturedHeaders = new Headers(init?.headers);
-    assert.equal(String(input), "https://penncoursereview.com/api/base/current/courses/PHYS-0151/");
+    assert.equal(String(input), "https://penncoursereview.com/api/base/2026C/courses/PHYS-0151/");
     return jsonResponse(fixture);
   };
 
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", timeoutMs: 2500 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", semester: "2026C", timeoutMs: 2500 });
   assert.ok(row);
   assert.equal(row.catalogCode, "PHYS-0151");
   assert.ok(capturedHeaders?.get("User-Agent")?.startsWith("LowHangingFruit/1"));
 });
 
+Deno.test("fetchCatalogCourse: asks Penn Labs for the explicit semester, never `current`", async () => {
+  let url = "";
+  const fetchImpl: typeof fetch = async (input) => {
+    url = String(input);
+    return new Response("not found", { status: 404 });
+  };
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "CIS-2620", semester: "2026C", timeoutMs: 2500 });
+  assert.equal(row, undefined);
+  assert.equal(url, "https://penncoursereview.com/api/base/2026C/courses/CIS-2620/");
+});
+
 Deno.test("fetchCatalogCourse: a 404 comes back as undefined, never throws", async () => {
   const fetchImpl: typeof fetch = async () => new Response("not found", { status: 404 });
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "ZZZZ-9999", timeoutMs: 2500 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "ZZZZ-9999", semester: "2026C", timeoutMs: 2500 });
   assert.equal(row, undefined);
 });
 
@@ -186,7 +199,7 @@ Deno.test("fetchCatalogCourse: a thrown network error comes back as undefined, n
   const fetchImpl: typeof fetch = async () => {
     throw new TypeError("network down");
   };
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", timeoutMs: 2500 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", semester: "2026C", timeoutMs: 2500 });
   assert.equal(row, undefined);
 });
 
@@ -195,19 +208,19 @@ Deno.test("fetchCatalogCourse: a request that never settles times out to undefin
     new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
     });
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", timeoutMs: 10 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", semester: "2026C", timeoutMs: 10 });
   assert.equal(row, undefined);
 });
 
 Deno.test("fetchCatalogCourse: a 200 with a non-JSON body comes back as undefined", async () => {
   const fetchImpl: typeof fetch = async () => new Response("<html>not json</html>", { status: 200 });
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", timeoutMs: 2500 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", semester: "2026C", timeoutMs: 2500 });
   assert.equal(row, undefined);
 });
 
 Deno.test("fetchCatalogCourse: a 200 with JSON that isn't a course comes back as undefined", async () => {
   const fetchImpl: typeof fetch = async () => jsonResponse({ nothing: "useful" });
-  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", timeoutMs: 2500 });
+  const row = await fetchCatalogCourse({ fetchImpl, catalogCode: "PHYS-0151", semester: "2026C", timeoutMs: 2500 });
   assert.equal(row, undefined);
 });
 
@@ -762,4 +775,33 @@ Deno.test("catalogEntryWire: output does not carry rooms or instructors (wire sh
   assert.ok(!JSON.stringify(wire).includes("DRLB"));
   assert.ok(!JSON.stringify(wire).includes("Harnish"));
   assert.deepEqual(Object.keys(wire.meetings[0]).sort(), ["activity", "endMinutes", "sectionID", "startMinutes", "weekday"]);
+});
+
+// ---------------------------------------------------------------------
+// academicSemester / rowsForSemester
+// ---------------------------------------------------------------------
+
+Deno.test("academicSemester: fall, spring, summer by New York calendar date", () => {
+  assert.equal(academicSemester(new Date("2026-10-20T14:00:00Z")), "2026C");
+  assert.equal(academicSemester(new Date("2026-01-15T17:00:00Z")), "2026A");
+  // 2026-05-20 23:00 New York (EDT, UTC-4) is already 03:00Z on the 21st.
+  assert.equal(academicSemester(new Date("2026-05-21T03:00:00Z")), "2026A");
+  assert.equal(academicSemester(new Date("2026-05-21T16:00:00Z")), "2026B");
+  assert.equal(academicSemester(new Date("2026-08-15T16:00:00Z")), "2026B");
+  assert.equal(academicSemester(new Date("2026-08-16T16:00:00Z")), "2026C");
+  // 2026-12-31 23:30 New York (EST) is 2027-01-01 04:30Z: still fall 2026.
+  assert.equal(academicSemester(new Date("2027-01-01T04:30:00Z")), "2026C");
+  assert.equal(academicSemester(new Date("2027-01-01T05:30:00Z")), "2027A");
+});
+
+Deno.test("rowsForSemester: keeps the asked semester and drops every other", () => {
+  const base = parsePennLabsCourse({ id: "CIS-2620", semester: "2026C" })!;
+  const rows: CatalogCourseRow[] = [
+    base,
+    { ...base, catalogCode: "CIS-1200", semester: "2027A" },
+    { ...base, catalogCode: "PHYS-0151", semester: "2026C" },
+  ];
+  assert.deepEqual(rowsForSemester(rows, "2026C").map((r) => r.catalogCode), ["CIS-2620", "PHYS-0151"]);
+  assert.deepEqual(rowsForSemester(rows, "2027A").map((r) => r.catalogCode), ["CIS-1200"]);
+  assert.deepEqual(rowsForSemester(rows, "2026B"), []);
 });
