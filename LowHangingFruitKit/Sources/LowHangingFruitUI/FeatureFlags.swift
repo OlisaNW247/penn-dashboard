@@ -43,6 +43,24 @@ enum FeatureFlags {
     /// Canvas credential", which the fetch above uses.
     static let gradeWatcher = false
 
+    /// **The debug diagnostics on Profile are off.** Owner, 2026-10-20: "I
+    /// just don't want the debug diagnostics to be visible to the user in
+    /// this version." They are the sign-in health lines under the canvas
+    /// row, the ed discussion status row and the three sync summaries
+    /// ("announcements", "ed tasks", "course material") under gradescope,
+    /// and the "testing (debug build only)" section at the foot of the page
+    /// (the canvas-logout simulation and the Ed probe), all in
+    /// `SettingsPage`. A Release build never compiled any of them; this
+    /// flag also hides them from a DEBUG build, which is the one the owner
+    /// was looking at. Nothing is deleted: the views, their state and the
+    /// strings `SignInHealthTests` pins are all still there, so flipping
+    /// this to true brings every row back in a DEBUG build, and a Release
+    /// build still shows none of them. The facts themselves stay readable
+    /// off the phone from the App Group plist (CLAUDE.md, Commands). The
+    /// wrong fix is un-gating a row from `#if DEBUG` instead of flipping
+    /// this: a student would then read it.
+    static let profileDiagnostics = false
+
     /// **Canvas personal access tokens are off.** The whole mint-at-login
     /// path (`CanvasAccessTokenMinter`, `CanvasAccessTokenStore`, the
     /// `accessToken:` parameter on every `/api/v1` client) was built on

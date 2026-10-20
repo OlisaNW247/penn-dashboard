@@ -537,7 +537,15 @@ Keep this current. It is the fastest way for a new session to know what exists.
      the canvas row, the ed row under gradescope) at the co-owner's
      request, still `#if DEBUG`. The disclosure is gone. The three sync
      summary rows (announcements, ed tasks, course material) sit under the
-     ed row, also `#if DEBUG`. A Release build shows none of it. The
+     ed row, also `#if DEBUG`, and so does a "testing (debug build only)"
+     section at the foot of the page (simulate a Canvas logout, probe Ed).
+     **Since 2026-10-20 every one of those rows is also behind
+     `FeatureFlags.profileDiagnostics`, which is off** (the owner, looking
+     at a DEBUG build: "I just don't want the debug diagnostics to be
+     visible to the user in this version"); nothing was deleted, so
+     flipping the flag brings them back in a DEBUG build, and the same
+     facts stay readable off the phone from the App Group plist
+     (Commands). A Release build never showed any of it. The
      strings and `SignInHealthTests` remain.
   3. appearance (light / dark; there is no "system" option and the
      default is light, whatever this file said before 2026-10-10)
@@ -789,9 +797,12 @@ blind: eligible, finds, errors, processed, first error; a run with nothing
 to read is written in front of the last real line, "| last run:") and the
 last course-material sync (`lastCourseKnowledgeSyncSummaryV1`: outcome,
 courses, documents, manifest, upload, the Ed status line); a DEBUG build
-shows the three as "announcements", "ed tasks" and "course material" rows
-in Profile → accounts, under the ed discussion row (they were in a
-"sign-in diagnostics" disclosure before the merge, which no longer exists).
+with `FeatureFlags.profileDiagnostics` flipped to true shows the three as
+"announcements", "ed tasks" and "course material" rows in Profile →
+accounts, under the ed discussion row (they were in a "sign-in
+diagnostics" disclosure before the merge, which no longer exists, and in
+plain view until the owner hid them on 2026-10-20); with the flag off,
+as it is, this plist copy is the only way to read them.
 Counts and words only, never a title, id, body or URL. They exist because
 on 2026-10-19 the Announcement Watcher produced no Ed finds on Olisa's
 phone and nothing on the device said where the sync had stopped.

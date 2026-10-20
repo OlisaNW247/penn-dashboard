@@ -57,6 +57,46 @@ struct SettingsCopyTests {
 
     // MARK: Sign-in prose is out of the student's page
 
+    @Test("the profile diagnostics are switched off, and the flag is the one way back")
+    func profileDiagnosticsAreOff() {
+        #expect(FeatureFlags.profileDiagnostics == false)
+    }
+
+    @Test("every diagnostic row is still defined, and each call site sits behind FeatureFlags.profileDiagnostics")
+    func diagnosticsAreGatedNotDeleted() throws {
+        let source = try uiSource("SettingsPage.swift")
+        guard !source.isEmpty else { return }
+
+        // Nothing was deleted on 2026-10-20: the flag hides the rows, it does
+        // not remove them.
+        for name in ["private var signInHealthRows", "private var edDiscussionStatusRow",
+                     "private var syncSummaryRows", "private func syncSummaryRow(",
+                     "private var probeEdDiscussionRow", "private var simulateCanvasLogoutRow"] {
+            #expect(source.contains(name), "\(name) was deleted instead of gated")
+        }
+
+        // Whitespace collapsed, so the scan does not care about indentation.
+        let flat = source.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let gate = "if FeatureFlags.profileDiagnostics {"
+        #expect(flat.components(separatedBy: gate).count - 1 == 4,
+                "expected exactly four gated call sites in SettingsPage.swift")
+        #expect(flat.contains("\(gate) signInHealthRows }"))
+        #expect(flat.contains("\(gate) edDiscussionStatusRow }"))
+        #expect(flat.contains("\(gate) syncSummaryRows }"))
+        #expect(flat.contains("\(gate) Section { simulateCanvasLogoutRow probeEdDiscussionRow }"))
+
+        // Gated inside `#if DEBUG`, never instead of it: a Release build must
+        // not compile any of them whatever the flag says.
+        let bodyStart = try #require(source.range(of: "var body: some View"))
+        let bodyEnd = try #require(source.range(of: ".formStyle(.grouped)", range: bodyStart.upperBound..<source.endIndex))
+        let body = String(source[bodyStart.lowerBound..<bodyEnd.upperBound])
+        let studentPage = GradeWatcherRemovalTests.strippingDebugBlocks(body)
+        for name in ["profileDiagnostics", "signInHealthRows", "edDiscussionStatusRow",
+                     "syncSummaryRows", "probeEdDiscussionRow", "simulateCanvasLogoutRow"] {
+            #expect(!studentPage.contains(name), "\(name) is reachable from a Release build's page")
+        }
+    }
+
     @Test("sign-in status and ed status render only in debug builds, under their account rows")
     func signInProseIsDebugOnly() throws {
         let source = try uiSource("SettingsPage.swift")

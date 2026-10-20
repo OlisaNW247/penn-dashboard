@@ -295,6 +295,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-20: the debug diagnostics are off the Profile page** (`v8`,
+  blind): the sign-in health lines, the ed status row, the three sync
+  summaries and the "testing" section are behind
+  `FeatureFlags.profileDiagnostics = false`, nothing deleted. The owner
+  saw them on his DEBUG build and did not want them visible in this
+  version.
 - **2026-10-20: "Smooth Sweeper"** (`v8`, blind): the owner's student-facing
   name for the loud 10-minute alert, on the Profile switch, the takeover
   heading, the island card and the alarm permission text; and a last

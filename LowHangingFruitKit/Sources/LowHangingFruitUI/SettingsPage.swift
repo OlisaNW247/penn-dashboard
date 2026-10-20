@@ -132,16 +132,30 @@ struct SettingsPage: View {
                     // The co-owner asked for them in plain view again. A
                     // Release build never compiles them, so no student sees
                     // any of it.
+                    //
+                    // Since 2026-10-20 they are also behind
+                    // `FeatureFlags.profileDiagnostics`, off at the owner's
+                    // request ("I just don't want the debug diagnostics to be
+                    // visible to the user in this version"); flipping the
+                    // flag brings them back in a debug build.
                     #if DEBUG
-                    signInHealthRows
+                    if FeatureFlags.profileDiagnostics {
+                        signInHealthRows
+                    }
                     #endif
                     accountRow(label: "gradescope",
                                connected: state.isGradescopeConnected,
                                working: state.isGradescopeLoading,
                                disconnect: .gradescope)
+                    // Same flag as the sign-in lines above: the ed status and
+                    // the three sync summaries are off since 2026-10-20.
                     #if DEBUG
-                    edDiscussionStatusRow
-                    syncSummaryRows
+                    if FeatureFlags.profileDiagnostics {
+                        edDiscussionStatusRow
+                    }
+                    if FeatureFlags.profileDiagnostics {
+                        syncSummaryRows
+                    }
                     #endif
                     stayLoggedInRows
                     if let backendDataDeletionError {
@@ -181,14 +195,22 @@ struct SettingsPage: View {
             // compile out of every Release build and are the owner's only way
             // to run the Ed Discussion recon probe (docs/ED_DISCUSSION.md,
             // phase 0) and the silent-renewal simulation on a real device.
+            //
+            // Since 2026-10-20 the whole section is behind
+            // `FeatureFlags.profileDiagnostics`, off at the owner's request:
+            // he does not want the debug diagnostics visible in this
+            // version. Flip the flag to get the section back in a debug
+            // build; the rows below are untouched.
             #if DEBUG
-            Section {
-                simulateCanvasLogoutRow
-                probeEdDiscussionRow
-            } header: {
-                SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
+            if FeatureFlags.profileDiagnostics {
+                Section {
+                    simulateCanvasLogoutRow
+                    probeEdDiscussionRow
+                } header: {
+                    SmoothSectionHeader("testing (debug build only)", accent: .smoothCobalt)
+                }
+                .smoothSectionBackground(.smoothCobalt)
             }
-            .smoothSectionBackground(.smoothCobalt)
             #endif
         }
         .formStyle(.grouped)
@@ -528,6 +550,10 @@ struct SettingsPage: View {
     }
 
     #if DEBUG
+    // Every row in this block is off since 2026-10-20 behind
+    // `FeatureFlags.profileDiagnostics` (see the call sites in `body`); the
+    // views stay so the flag is a one-line way back.
+
     /// Read-only sign-in health (Penn only, shown while Canvas is connected):
     /// is a PennKey password saved, is Duo trusting this phone, and how the
     /// last silent sign-in went. The old troubleshooting section was removed
