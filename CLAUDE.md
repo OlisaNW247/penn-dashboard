@@ -800,14 +800,24 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2414 tests / 217 suites, all green, on `v8` at `edff9ac`
-(2026-10-20 afternoon, `swift test --no-parallel`, on Olisa's Mac, 8.4 s):
+**Current: 2453 tests / 224 suites, all green, on `v8` at `8d00e62`
+(2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.2 s):
+2414 plus 7 in `BerserkAlarmActivityTests` (the Live Activity's plan
+fields, the v2 id namespace, the plist, project and pbxproj entries, the
+widget wiring) and 32 in `BerserkTakeoverTests` (seven suites: which
+signal gets the screen, what a choice does, when it leaves, reading a
+loud buzz, the model, the source wiring), nothing removed; one existing
+test rewritten (`alarmKitIsGuarded` now expects two guarded files).
+Green on the first run. The iOS `xcodebuild` (the widget extension's
+Live Activity and the AlarmKit extension) was not yet run at the time
+of writing.** Before it: 2414 / 217 at `edff9ac`
+(2026-10-20 afternoon, 8.4 s):
 2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
 `DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
 `47a946c` failed only the coalescing test, which pumped `RunLoop.main`
 from a main-actor test and so never saw the main-actor reload task;
 `edff9ac` dropped the view model's `receive(on: RunLoop.main)` hop (its
-publishes are main-actor already) and made the test yield instead.**
+publishes are main-actor already) and made the test yield instead.
 Before it: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
 (2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
 plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
