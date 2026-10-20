@@ -15,6 +15,7 @@ import Testing
 /// new summary key live in the shared defaults domain, so they are backed up
 /// and restored, and every thread id and class code here is unique to this
 /// suite (`EDMERGE 9601`, threads 96xxxxx).
+extension AnnouncementExtractionSuites {
 @MainActor
 @Suite("Ed announcement tasks: merged behaviour", .serialized)
 struct EdAnnouncementTaskMergeTests {
@@ -23,6 +24,8 @@ struct EdAnnouncementTaskMergeTests {
     private static let processedKey = "processedAnnouncementIDsV1"
     private static let retryKey = "edTaskRetryAfterV1"
     private static let summaryKey = "lastEdTaskSyncSummaryV1"
+    private static let attemptsKey = "announcementExtractionAttemptsV1"
+    private static let backoffKey = "announcementExtractionBackoffUntilV1"
     private static let courseID = "9601"
     private static let code = "EDMERGE 9601"
 
@@ -87,7 +90,10 @@ struct EdAnnouncementTaskMergeTests {
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
-        let keys = [Self.extractionVersionKey, Self.processedKey, Self.retryKey, Self.summaryKey]
+        let keys = [
+            Self.extractionVersionKey, Self.processedKey, Self.retryKey, Self.summaryKey,
+            Self.attemptsKey, Self.backoffKey,
+        ]
         let saved = keys.map { ($0, shared.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -95,7 +101,9 @@ struct EdAnnouncementTaskMergeTests {
             }
         }
         shared.set(2, forKey: Self.extractionVersionKey)
-        for key in [Self.processedKey, Self.retryKey, Self.summaryKey] { shared.removeObject(forKey: key) }
+        for key in [Self.processedKey, Self.retryKey, Self.summaryKey, Self.attemptsKey, Self.backoffKey] {
+            shared.removeObject(forKey: key)
+        }
 
         let store = try AssignmentStore(inMemory: true)
         let state = AppState(assignmentStore: store)
@@ -212,6 +220,32 @@ struct EdAnnouncementTaskMergeTests {
         }
     }
 
+    @Test("an Ed post that moves an exam the syllabus names is not dropped as the syllabus's twin; the announced date is the one filed")
+    func movedExamIsNotTheSyllabusTwin() async throws {
+        let post = document(
+            "9600321", title: "Midterm 1 moved",
+            body: "Midterm 1 has moved to November 3. Please plan around it."
+        )
+        let announced = ExtractedAssignment(
+            title: "Midterm 1", dueAt: Self.now.addingTimeInterval(20 * Self.day), kind: .submission
+        )
+        try await withHarness(documents: [post], extractor: { Extractor(log: $0, tasks: [announced]) }) { h in
+            // The syllabus's row for the same exam, an earlier date.
+            h.store.upsert([Assignment(
+                source: .canvasAnnouncement,
+                sourceID: AnnouncementRecord.syllabusFindSourceID(courseID: Self.courseID, examKey: "midterm-1"),
+                kind: .event, course: Self.code, title: "Midterm 1",
+                dueAt: Self.now.addingTimeInterval(5 * Self.day), url: nil
+            )])
+            h.state.applyAnnouncementLedgerChange()
+
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            #expect(h.edRows.map(\.title) == ["Midterm 1"], "the announced date is written beside the syllabus's")
+            #expect(h.edRows.first?.dueAt == announced.dueAt)
+            #expect(h.state.processedAnnouncementIDs.contains(post.id))
+        }
+    }
+
     // MARK: Quota
 
     @Test("a quota refusal ends the run: the second post is not sent, no retry clock starts, nothing is marked read, and the summary names the kind")
@@ -230,6 +264,8 @@ struct EdAnnouncementTaskMergeTests {
             #expect(h.edRows.isEmpty)
             let summary = try #require(h.state.lastEdTaskSyncSummary)
             #expect(summary.hasSuffix("eligible 2 \u{00B7} finds 0 \u{00B7} errors 1 \u{00B7} processed 0 \u{00B7} first error: quota"))
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil, "and it does not start the back-off")
+            #expect(UserDefaults.lhf.object(forKey: Self.attemptsKey) == nil, "or any counter")
 
             // Both are tried again on the next pass.
             await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(60))
@@ -251,6 +287,65 @@ struct EdAnnouncementTaskMergeTests {
             #expect(UserDefaults.lhf.object(forKey: Self.retryKey) != nil)
             let summary = try #require(h.state.lastEdTaskSyncSummary)
             #expect(summary.contains("errors 2"))
+        }
+    }
+
+    // MARK: The shared quota's limits
+
+    @Test("a post whose extraction fails three times is given up on: read, no find, no counter left, and the summary says so; under the cap it keeps its six-hour wait")
+    func threeFailuresGiveUp() async throws {
+        struct Failure: Error {}
+        let doc = document("9600701")
+        try await withHarness(documents: [doc], extractor: { Extractor(log: $0, error: Failure()) }) { h in
+            let wait = AppState.edTaskRetryInterval
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            #expect(UserDefaults.lhf.dictionary(forKey: Self.attemptsKey) as? [String: Int] == [doc.id: 1])
+            #expect(!h.state.processedAnnouncementIDs.contains(doc.id))
+
+            // Inside the wait it is not asked for again.
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(wait / 2))
+            #expect(h.calls.all.count == 1)
+
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(wait + 1))
+            #expect(UserDefaults.lhf.dictionary(forKey: Self.attemptsKey) as? [String: Int] == [doc.id: 2])
+            #expect(!h.state.processedAnnouncementIDs.contains(doc.id))
+
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(2 * wait + 2))
+            #expect(h.calls.all.count == 3)
+            #expect(h.state.processedAnnouncementIDs.contains(doc.id))
+            #expect(h.edRows.isEmpty)
+            #expect(UserDefaults.lhf.object(forKey: Self.attemptsKey) == nil)
+            let summary = try #require(h.state.lastEdTaskSyncSummary)
+            // (The kind of an error that is not a backend or URL error is its
+            // type name, so only the shape of the line is pinned.)
+            #expect(summary.contains("errors 1 \u{00B7} processed 1 \u{00B7} first error: "))
+            #expect(summary.hasSuffix(" \u{00B7} gave up 1"))
+        }
+    }
+
+    @Test("a run in which every extraction failed sets the shared back-off; while it is set the pass skips with a line and calls nothing; after it, the pass reads again and clears it")
+    func backoffAfterAnAllFailedRun() async throws {
+        struct Failure: Error {}
+        let first = document("9600711")
+        let second = document("9600712", title: "Second")
+        try await withHarness(documents: [first], extractor: { Extractor(log: $0, error: Failure()) }) { h in
+            await h.state.syncEdAnnouncementTasks(now: Self.now)
+            let until = Self.now.addingTimeInterval(AppState.announcementExtractionBackoff)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) as? Double == until.timeIntervalSince1970)
+
+            // A new post arrives inside the hour: not sent anywhere.
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [first, second])
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(30 * 60))
+            #expect(h.calls.all.count == 1)
+            let skipped = try #require(h.state.lastEdTaskSyncSummary)
+            #expect(skipped.contains("skipped: extraction backoff until \(AppState.backoffClockStamp(until))"))
+
+            let calls = h.calls
+            h.state.announcementExtractorForTesting = { _ in Extractor(log: calls, tasks: [Self.labReport]) }
+            await h.state.syncEdAnnouncementTasks(now: Self.now.addingTimeInterval(61 * 60))
+            #expect(h.calls.all == [first.id, second.id])
+            #expect(h.edRows.count == 1)
+            #expect(UserDefaults.lhf.object(forKey: Self.backoffKey) == nil)
         }
     }
 
@@ -291,4 +386,5 @@ struct EdAnnouncementTaskMergeTests {
             #expect(summary.hasSuffix("skipped: fixture"))
         }
     }
+}
 }

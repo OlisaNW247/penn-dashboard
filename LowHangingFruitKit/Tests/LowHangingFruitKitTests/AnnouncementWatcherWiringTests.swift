@@ -476,6 +476,7 @@ struct AnnouncementWatcherWiringTests {
 /// it and the repair version are pinned before the `AppState` exists so its
 /// one-time sweep is a no-op. Every id and class code here is unique to this
 /// suite.
+extension AnnouncementExtractionSuites {
 @MainActor
 @Suite("Announcement watcher: sync summary and retry cap", .serialized)
 struct AnnouncementWatcherSyncTests {
@@ -856,6 +857,34 @@ struct AnnouncementWatcherSyncTests {
         }
     }
 
+    @Test("a Canvas post restating a task the Ed pass already filed adds no second row, and a different task still does")
+    func canvasPostRestatingAnEdFindAddsNoRow() async throws {
+        try await withHarness { h in
+            h.state.assignmentStore?.upsert([Assignment(
+                source: .canvasAnnouncement,
+                sourceID: AnnouncementRecord.edFindSourceID(courseID: Self.course.id, threadID: "9400901", index: 0),
+                kind: .assignment, course: Self.course.code, title: "Sign up for a Verbal Assessment #2 slot",
+                dueAt: nil, url: nil
+            )])
+            h.state.applyAnnouncementLedgerChange()
+            try #require(h.finds.count == 1)
+
+            h.canvasResponse = [post("9400902")]
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.seen.ids == ["9400902"])
+            #expect(h.finds.count == 1, "the Ed copy stays the only row")
+            #expect(h.state.processedAnnouncementIDs.contains("9400902"), "and the Canvas post still counts as read")
+
+            let seen = h.seen
+            h.state.announcementExtractorForTesting = { _ in
+                FindsOneTask(seen: seen, title: "Bring a laptop to recitation", dueAt: nil)
+            }
+            h.canvasResponse = [post("9400903")]
+            await h.state.syncAnnouncements(now: Date())
+            #expect(h.finds.count == 2)
+        }
+    }
+
     @Test("a run with no selected course records why it stopped")
     func summaryWhenNoCourseIsSelected() async throws {
         try await withHarness { h in
@@ -865,6 +894,7 @@ struct AnnouncementWatcherSyncTests {
             #expect(summary.hasSuffix("skipped: no selected courses"))
         }
     }
+}
 }
 
 /// The pure parts of the two sync summaries (`AppState.diagnosticStamp`,

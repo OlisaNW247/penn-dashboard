@@ -328,7 +328,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
        `AppState.isExpired` widened to every `.canvasAnnouncement` item, was
        removed in the 2026-10-20 merge: `isExpired` is the `.event` rule
        for feed items alone again, and leaves an `.event` that is itself an
-       announcement task to this rule, so no item is judged by both). Where
+       unlinked announcement task to this rule, so no item is judged by
+       both; one linked to a Gradescope twin keeps the event rule). Where
        it is asked: the
        dashboard's coursework and assessments buckets (`live` in
        `rebuildDashboardItems`), both announcement lists
@@ -367,21 +368,28 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `syncEdAnnouncementTasks`; both pick their extractor with
     `announcementExtractor(for:courseCode:)`, share the informational gate
     and the "ai assist" switch, and record what they read in
-    `processedAnnouncementIDs`. The Ed pass keeps its own limits: a failed
-    post waits six hours (`edTaskRetryAfterV1`), and a quota refusal ends
-    its run without starting any clock. It also drops an Ed task that
-    restates a task already on the ledger or earlier in the run, before
-    writing it (`droppingAnnouncementTwins`; the post still counts as read);
-    the reverse order, Ed first and Canvas later, is left to the dashboard's
-    own twin collapse. The Canvas loop's limits protect the quota `ask`
-    shares (on 2026-10-19 one failing extractor re-sent the same 13 posts
-    every 15 minutes and emptied it): a post that fails extraction three
-    times is marked read with no find (`announcementExtractionAttemptsV1`,
-    "gave up N"), a quota refusal ends the run touching no counter, and a
-    run in which every backend extraction failed backs the extractor off for
-    an hour (`announcementExtractionBackoffUntilV1`; the list is still
-    refreshed). Both Canvas keys clear with the processed ids, on
-    disconnect and in the extraction repair. Staff posts that are neither
+    `processedAnnouncementIDs`. The limits protect the quota `ask` shares (on
+    2026-10-19 one failing extractor re-sent the same 13 posts every 15
+    minutes and emptied it): a post that fails extraction three times is
+    marked read with no find (`announcementExtractionAttemptsV1`, "gave up
+    N"), a quota refusal ends the run touching no counter, and a run in
+    which every backend extraction failed backs the extractor off for an
+    hour (`announcementExtractionBackoffUntilV1`; in the Canvas loop the
+    list is still refreshed). **Both passes obey all three, on the same two
+    keys** (the Ed pass since the review of 2026-10-20, blind; Ed ids are
+    `ed:…` and Canvas ids digits, so the counters cannot meet, and one
+    back-off serves one quota). The Ed pass also keeps Marco's own six-hour
+    wait (`edTaskRetryAfterV1`) for a failed post under the cap. Both keys
+    clear with the processed ids, on disconnect and in the extraction repair.
+    **Twins are dropped at write time by both passes**
+    (`droppingAnnouncementTwins`; the post still counts as read): an Ed task
+    that restates a task on the ledger or earlier in the run, and a Canvas
+    task that restates an Ed find already on the ledger (the Canvas loop
+    compares only against Ed finds, not against other Canvas posts). A
+    syllabus exam row is never in the comparison pool, so an Ed or Canvas
+    post that *moves* an exam is filed, not dropped as the syllabus's twin;
+    the dashboard then shows the announced date (`announcementDedupOrder`
+    offers the syllabus last). Staff posts that are neither
     announcements nor pinned are no longer read for tasks (the Canvas loop
     read them for one day).
   - **Exam cards** (2026-10-18, owner's call; not yet on a phone). "If
@@ -715,7 +723,10 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Last verified counts, one per line of work. The merged count below them
-is a prediction, not a run.**
+is a prediction, not a run.** (The three suites that write the shared
+extraction keys, `EdAnnouncementTaskTests`, `EdAnnouncementTaskMergeTests`
+and `AnnouncementWatcherSyncTests`, are nested under one serialized parent,
+`AnnouncementExtractionSuites`, so a parallel run cannot interleave them.)
 - **`v8` (Olisa's line): 2033 tests / 192 suites, all green, at `2b46ce7`**
   (2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 6.0 s). That is
   the launch-prep merge (1975), the Ed posting-date fix (11), Ed posts
@@ -732,10 +743,13 @@ is a prediction, not a run.**
   (`-destination 'generic/platform=iOS'`), which is what compiles
   `App/LHFApp.swift`, ended in BUILD SUCCEEDED. Both lines branch from
   `v8` at `beed156` (1975/189).
-- **`v8-merge-loud-alert` (the two merged, 2026-10-20): predicted 2393
-  tests / 213 suites, NOT RUN.** 1975 plus Marco's 357 plus Olisa's 58 is
+- **`v8-merge-loud-alert` (the two merged, 2026-10-20): predicted 2397
+  tests / 214 suites, NOT RUN.** 1975 plus Marco's 357 plus Olisa's 58 is
   2390; the merge's own net is +3 tests and +1 suite (see the history
-  entry below for what was deleted and added). There is no Swift toolchain
+  entry below for what was deleted and added), and the review of
+  2026-10-20 added 4 tests (a moved exam is not the syllabus's twin; the Ed
+  pass's three-strike cap and its back-off; a Canvas post restating an Ed
+  find) and the parent suite: +4 and +1. There is no Swift toolchain
   where the merge was written, so nothing in it has been compiled; the
   first thing to do with this branch on a Mac is `swift test
   --no-parallel` and then `xcodebuild -destination
@@ -783,7 +797,15 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
-- **2393/213 predicted, not run**, `v8-merge-loud-alert`, 2026-10-20: the
+- **2397/214 predicted, not run**, `v8-merge-loud-alert`, 2026-10-20 (2393/213
+  at the merge commit, then +4 tests and the parent suite
+  `AnnouncementExtractionSuites` from the review: `movedExamIsNotTheSyllabusTwin`
+  and `threeFailuresGiveUp` and `backoffAfterAnAllFailedRun` in
+  `EdAnnouncementTaskMergeTests`, `canvasPostRestatingAnEdFindAddsNoRow` in
+  `AnnouncementWatcherSyncTests`; the harnesses of
+  `EdAnnouncementTaskTests` and `EdAnnouncementTaskMergeTests` now also back
+  up and clear the retry counters and the back-off, which the Ed pass writes
+  with a fixed test clock): the
   merge of `v8` (Olisa) and `v8-loud-alert-actions` (Marco). Arithmetic:
   1975/189 (common base) + 357/20 (Marco) + 58/3 (Olisa) = 2390/212, then
   the merge's own changes. **Deleted on purpose (6, none of Marco's):** in

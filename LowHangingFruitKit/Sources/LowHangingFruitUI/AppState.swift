@@ -637,11 +637,11 @@ final class AppState: ObservableObject {
     /// (`[String: Int]`, announcement id -> failed attempts). Device-local
     /// like `processedAnnouncementIDsKey`, and cleared with it. See
     /// `syncAnnouncements` for the rules that read it.
-    private static let announcementExtractionAttemptsKey = "announcementExtractionAttemptsV1"
+    static let announcementExtractionAttemptsKey = "announcementExtractionAttemptsV1"
     /// Backs the run-level extraction back-off: a `Double`
     /// (`timeIntervalSince1970`) before which `syncAnnouncements` sends
     /// nothing to the extractor. Cleared with the processed set.
-    private static let announcementExtractionBackoffUntilKey = "announcementExtractionBackoffUntilV1"
+    static let announcementExtractionBackoffUntilKey = "announcementExtractionBackoffUntilV1"
     /// A failing announcement is given up on (marked processed, no find) at
     /// this many failed extractions. A quota refusal never counts.
     static let announcementExtractionMaxAttempts = 3
@@ -5235,8 +5235,14 @@ final class AppState: ObservableObject {
                 continue
             }
 
-            let candidates = Self.announcementAssignments(
-                from: extracted, announcement: announcement, courseCode: courseCode
+            // A task the Ed pass already filed for the same thing is not filed
+            // again, whichever pass read its post first. Only Ed finds are in
+            // the pool: Canvas posts are not compared with each other here
+            // (the ledger keeps every Canvas extraction), and a syllabus exam
+            // is excluded by the helper itself.
+            let candidates = Self.droppingAnnouncementTwins(
+                Self.announcementAssignments(from: extracted, announcement: announcement, courseCode: courseCode),
+                against: announcementItems.filter { $0.announcementOrigin == .ed }
             )
             // Keep every extraction on the ledger. Duplicate suppression is a
             // dashboard presentation rule; the announcements page remains a
@@ -6429,7 +6435,7 @@ final class AppState: ObservableObject {
     ///   `dueAt < now` clause for announcement rows, which is the dated half
     ///   of that rule (it has no post dates for the rest).
     ///
-    /// An `.event` that is itself a task found in an announcement (a
+    /// An `.event` that is itself an unlinked task found in an announcement (a
     /// "bring a form" preparation task, a syllabus exam) has source
     /// `.canvasAnnouncement` and is left to `isHiddenAnnouncementTask` alone:
     /// asked of both, the two would disagree the moment the student edits its
@@ -6463,7 +6469,12 @@ final class AppState: ObservableObject {
     /// case the owner's device pass caught. Undated events are still never
     /// expired, since there's no due time to compare against.
     static func isExpired(_ assignment: Assignment, now: Date = Date()) -> Bool {
-        guard assignment.kind == .event, assignment.source != .canvasAnnouncement,
+        // Only an *unlinked* announcement row is left to `isHiddenAnnouncementTask`
+        // (it judges `source == .canvasAnnouncement && linkedID == nil`); one
+        // linked to a Gradescope twin stands for a real assignment and falls
+        // back to this rule rather than to no rule at all.
+        let judgedByAnnouncementRule = assignment.source == .canvasAnnouncement && assignment.linkedID == nil
+        guard assignment.kind == .event, !judgedByAnnouncementRule,
               let due = assignment.dueAt else { return false }
         return due < now
     }

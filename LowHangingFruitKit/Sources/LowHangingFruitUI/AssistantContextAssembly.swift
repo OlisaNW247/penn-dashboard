@@ -96,7 +96,7 @@ extension AppState {
         // in the `announcements:` parameter; see the note above.
         // Minus the sign-up backlog (`SignupBacklog`), so the server path and the
         // on-device path (`assistantWorkItems()`) agree with the dashboard. Past-due
-        // announcement finds are left out for the same reason (`isExpired`).
+        // announcement finds are left out for the same reason (`isHiddenAnnouncementTask`).
         let pool = droppingSignupBacklog(
             canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
         )

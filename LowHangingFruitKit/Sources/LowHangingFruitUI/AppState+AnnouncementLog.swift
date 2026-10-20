@@ -95,9 +95,19 @@ extension AppState {
     /// would list the task twice. Called by the Ed pass
     /// (`syncEdAnnouncementTasks`, `AppState+EdAnnouncementTasks.swift`) on
     /// each post's candidates, against the announcement rows already on the
-    /// ledger and the finds of the posts read earlier in the same run. (From
-    /// 2026-10-19 until the merge of 2026-10-20 the Canvas loop called it too,
-    /// when it read Ed posts; it no longer does.)
+    /// ledger and the finds of the posts read earlier in the same run, and by
+    /// the Canvas loop (`syncAnnouncements`) against the Ed finds already on
+    /// the ledger only, so whichever of an Ed/Canvas pair is read second
+    /// writes no second row (ask's pool reads the ledger rows, not the
+    /// dashboard's collapsed cards). The Canvas loop does not compare Canvas
+    /// posts with each other: the ledger keeps those.
+    ///
+    /// **A syllabus exam row is never in the pool.** `isSameSitting` matches
+    /// an exam across dates, so "Midterm 1 moved to Nov 3" would be dropped as
+    /// a twin of the syllabus's "Midterm 1, Oct 23" and its post marked read.
+    /// The announced date is meant to replace the syllabus's (the dashboard
+    /// offers syllabus rows last, `announcementDedupOrder`), so the syllabus
+    /// row must not suppress it at write time.
     ///
     /// Candidate by candidate, not as a batch: the pool grows with the
     /// survivors of earlier posts but not of this one, so two genuinely
@@ -114,7 +124,7 @@ extension AppState {
         candidates.filter { candidate in
             !filteringAnnouncementDuplicates(
                 [candidate],
-                against: pool.filter { $0.id != candidate.id }
+                against: pool.filter { $0.id != candidate.id && $0.announcementOrigin != .syllabus }
             ).isEmpty
         }
     }

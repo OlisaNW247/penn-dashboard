@@ -14,6 +14,7 @@ import Testing
 /// The processed-ids ratchet is shared with the Canvas path and lives in the
 /// shared defaults domain, so it is backed up and restored; every thread id and
 /// class code here is unique to this suite.
+extension AnnouncementExtractionSuites {
 @MainActor
 @Suite("Ed announcement tasks", .serialized)
 struct EdAnnouncementTaskTests {
@@ -21,6 +22,12 @@ struct EdAnnouncementTaskTests {
     private static let extractionVersionKey = "announcementExtractionVersionV1"
     private static let processedKey = "processedAnnouncementIDsV1"
     private static let retryKey = "edTaskRetryAfterV1"
+    /// The pass honours and writes the Canvas loop's failure counters and
+    /// back-off (2026-10-20 merge), so they are backed up, cleared and
+    /// restored like the others: a back-off left behind here, dated by this
+    /// suite's fixed clock, would silence every later run.
+    private static let attemptsKey = "announcementExtractionAttemptsV1"
+    private static let backoffKey = "announcementExtractionBackoffUntilV1"
 
     // MARK: Fixtures
 
@@ -88,7 +95,7 @@ struct EdAnnouncementTaskTests {
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
-        let keys = [Self.extractionVersionKey, Self.processedKey, Self.retryKey]
+        let keys = [Self.extractionVersionKey, Self.processedKey, Self.retryKey, Self.attemptsKey, Self.backoffKey]
         let saved = keys.map { ($0, shared.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -98,6 +105,8 @@ struct EdAnnouncementTaskTests {
         shared.set(2, forKey: Self.extractionVersionKey)
         shared.removeObject(forKey: Self.processedKey)
         shared.removeObject(forKey: Self.retryKey)
+        shared.removeObject(forKey: Self.attemptsKey)
+        shared.removeObject(forKey: Self.backoffKey)
 
         let store = try AssignmentStore(inMemory: true)
         let state = AppState(assignmentStore: store)
@@ -578,4 +587,5 @@ struct EdAnnouncementTaskTests {
             h.state.forceFixtureDataForTesting(false)
         }
     }
+}
 }

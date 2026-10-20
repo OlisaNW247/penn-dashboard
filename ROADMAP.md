@@ -27,7 +27,7 @@ These block shipping, or would make shipping risky.
 
 - **Compile and test the merge of 2026-10-20** (`v8-merge-loud-alert`).
   Written with no Swift toolchain. On a Mac, alone on the machine:
-  `swift test --no-parallel` (predicted 2393 / 213; any lower count has
+  `swift test --no-parallel` (predicted 2397 / 214; any lower count has
   lost work) and `xcodebuild -destination 'generic/platform=iOS'
   CODE_SIGNING_ALLOWED=NO build`. Then, if a phone is at hand, the DEBUG
   rows under Profile → accounts (announcements, ed tasks, course
@@ -287,7 +287,7 @@ Kept so nobody rebuilds them blind.
 
 - **2026-10-20 (`v8-merge-loud-alert`, written without a compiler):
   Olisa's `v8` and Marco's `v8-loud-alert-actions` merged.** Not compiled
-  and not run; predicted 2393 tests / 213 suites (`CLAUDE.md` → Test
+  and not run; predicted 2397 tests / 214 suites (`CLAUDE.md` → Test
   baseline). Both lines had built the same two things:
   - **One Ed task pass.** Marco's (`syncEdAnnouncementTasks`) stays;
     Olisa's feeding of Ed posts through `syncAnnouncements` (and its

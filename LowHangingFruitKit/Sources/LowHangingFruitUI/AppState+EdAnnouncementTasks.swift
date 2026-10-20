@@ -54,7 +54,10 @@ import LowHangingFruitKit
 //    and a backend that is down would be asked again each time, spending the
 //    student's quota on a request that was just refused. Each such post is
 //    retried no sooner than `edTaskRetryInterval` later (persisted, so a
-//    relaunch does not reset it).
+//    relaunch does not reset it). The Canvas loop's limits on the shared quota
+//    apply as well, on the same keys: a post that fails three times is given
+//    up on (read, no find), and a run in which every extraction failed sets
+//    the hour's back-off, during which this pass is skipped.
 //  - **A quota refusal ends the run** (`BackendError.quotaExceeded`, the daily
 //    cap `ask` shares): every further call would be refused too, and it is
 //    not the post's fault, so no post gets a retry clock for it and the rest
@@ -192,10 +195,38 @@ extension AppState {
             return noteEdTaskSkip("nothing eligible \u{00B7} ed documents \(edDocuments)", at: now)
         }
 
+        // THE QUOTA IS SHARED WITH ASK, and with the Canvas loop, so the Canvas
+        // loop's two limits apply here too (see the comment in
+        // `syncAnnouncements`): while a back-off is set the run is skipped, and
+        // a post whose extraction fails three times (non-quota) is given up on,
+        // marked read with no find. They sit beside this pass's own six-hour
+        // wait per failed post, which still governs a post under the cap. The
+        // keys are the Canvas loop's: a post id here is `ed:…` and a Canvas id
+        // is digits, so the counters cannot meet, and one back-off for one
+        // shared quota is the point.
+        let defaults = UserDefaults.lhf
+        if let until = defaults.object(forKey: Self.announcementExtractionBackoffUntilKey) as? Double {
+            if now.timeIntervalSince1970 < until {
+                return noteEdTaskSkip(
+                    "extraction backoff until \(Self.backoffClockStamp(Date(timeIntervalSince1970: until)))",
+                    at: now
+                )
+            }
+            defaults.removeObject(forKey: Self.announcementExtractionBackoffUntilKey)
+        }
+        var attempts = defaults.dictionary(forKey: Self.announcementExtractionAttemptsKey) as? [String: Int] ?? [:]
+
         // Only for `lastEdTaskSyncSummary`: how many reads failed, and the
         // kind (never the text) of the first failure.
         var extractionErrors = 0
         var firstError: String?
+        var gaveUpCount = 0
+        // Backend-or-injected extractions started and failed (not quota); the
+        // heuristic cannot throw and is not counted. All-failed starts the
+        // back-off.
+        var attemptedExtractions = 0
+        var failedExtractions = 0
+        var quotaRefused = false
         // What each post produced, kept apart from the ledger until the whole
         // loop is done: every iteration awaits, so any of them can be the one
         // during which Canvas is disconnected, and the rows of the posts read
@@ -246,6 +277,8 @@ extension AppState {
             let extractor = announcementExtractor(for: standIn, courseCode: courseCode)
 
             let extracted: [ExtractedAssignment]
+            let countsTowardBackoff = !(extractor is HeuristicAnnouncementExtractor)
+            if countsTowardBackoff { attemptedExtractions += 1 }
             do {
                 extracted = try await extractor.extract(from: source, now: now)
             } catch {
@@ -259,10 +292,22 @@ extension AppState {
                     // Not this post's fault, and every further call would be
                     // refused too: end the run, and touch no retry clock. The
                     // posts read before this one are kept below.
+                    quotaRefused = true
                     break
                 }
-                // Left unread, and left alone for a while: see the header.
-                retryAfter[document.id] = now.addingTimeInterval(Self.edTaskRetryInterval)
+                if countsTowardBackoff { failedExtractions += 1 }
+                let failures = (attempts[document.id] ?? 0) + 1
+                if failures >= Self.announcementExtractionMaxAttempts {
+                    // Given up on: read, no find. The class is checked again
+                    // before this is committed, like any other result.
+                    retryAfter[document.id] = nil
+                    gaveUpCount += 1
+                    results.append((document, courseCode, []))
+                } else {
+                    attempts[document.id] = failures
+                    // Left unread, and left alone for a while: see the header.
+                    retryAfter[document.id] = now.addingTimeInterval(Self.edTaskRetryInterval)
+                }
                 continue
             }
             // The await was a network call. Is the class still wanted?
@@ -287,6 +332,9 @@ extension AppState {
         // are never collapsed into one. The dropped post is still processed.
         var collected: [Assignment] = []
         for result in wanted {
+            // (The helper leaves syllabus exam rows out of the pool: an Ed post
+            // that moves an exam must not be dropped as a twin of the
+            // syllabus's date.)
             collected += Self.droppingAnnouncementTwins(result.rows, against: announcementItems + collected)
         }
 
@@ -294,13 +342,28 @@ extension AppState {
             store.upsert(collected, now: now)
         }
         recordProcessedAnnouncementIDs(processed)
+        // A processed id (found, found nothing, informational, or given up on)
+        // has no use for a counter.
+        for id in processed { attempts.removeValue(forKey: id) }
+        if attempts.isEmpty {
+            defaults.removeObject(forKey: Self.announcementExtractionAttemptsKey)
+        } else {
+            defaults.set(attempts, forKey: Self.announcementExtractionAttemptsKey)
+        }
+        if !quotaRefused, attemptedExtractions > 0, failedExtractions == attemptedExtractions {
+            defaults.set(
+                now.addingTimeInterval(Self.announcementExtractionBackoff).timeIntervalSince1970,
+                forKey: Self.announcementExtractionBackoffUntilKey
+            )
+        }
         if !collected.isEmpty || !processed.isEmpty {
             applyAnnouncementLedgerChange()
         }
         noteEdTaskSync(
             "eligible \(eligible.count) \u{00B7} finds \(collected.count) \u{00B7} errors \(extractionErrors)"
                 + " \u{00B7} processed \(processed.count)"
-                + (firstError.map { " \u{00B7} first error: \($0)" } ?? ""),
+                + (firstError.map { " \u{00B7} first error: \($0)" } ?? "")
+                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : ""),
             at: now
         )
     }
@@ -321,10 +384,19 @@ extension AppState {
 
     /// A run that stopped before reading anything. Same carrying-forward rule
     /// as the course-material sync's skips (`courseKnowledgeSkipSummary`).
+    ///
+    /// **Debug builds only.** The pass runs after every change to the course
+    /// material and nearly every run lands here, and each call would publish
+    /// and persist a string that differs from the last only by its timestamp,
+    /// invalidating every view observing `AppState` for a line that only the
+    /// DEBUG diagnostics rows ever show. A real run (`noteEdTaskSync`) is rare
+    /// and is written in every build.
     private func noteEdTaskSkip(_ reason: String, at now: Date) {
+        #if DEBUG
         let summary = Self.courseKnowledgeSkipSummary(previous: lastEdTaskSyncSummary, at: now, reason: reason)
         lastEdTaskSyncSummary = summary
         UserDefaults.lhf.set(summary, forKey: Self.lastEdTaskSyncSummaryKey)
+        #endif
     }
 
     // MARK: Triggering
