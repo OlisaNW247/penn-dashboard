@@ -74,6 +74,13 @@ targets:
         # `xcodegen generate` rewrites the .plist from this list. Not on the
         # widget target, which schedules nothing.
         NSAlarmKitUsageDescription: "Smooth rings an alarm 10 minutes before work you haven't turned in."
+        # Berserk mode's alarm shows a Live Activity (the Dynamic Island and the
+        # lock screen card, drawn by the widget extension). Without this key
+        # iOS shows no Live Activity for the alarm at all, and says nothing.
+        # Declared here as well as in App/Info.plist for the same reason as
+        # NSAlarmKitUsageDescription above: `xcodegen generate` rewrites the
+        # .plist from this list. App target only; the extension only draws it.
+        NSSupportsLiveActivities: true
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}

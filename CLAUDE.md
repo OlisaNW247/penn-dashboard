@@ -605,6 +605,29 @@ Keep this current. It is the fastest way for a new session to know what exists.
      public and that git history keeps it. Files: `BerserkAlarmPlan.swift` (pure rules),
      `BerserkAlarmDelivery.swift`, `BerserkAlarmScheduler.swift`
      (AlarmKit, iOS 26 only).
+     **Rang on Olisa's iPhone on 2026-10-20** (the merged build): full
+     screen on the lock screen, the song once, "turned in" marked the
+     card done after unlock. Olisa's verdict on the look: when the phone
+     is unlocked it is "a little alarm notification drop in", and he
+     wanted the whole screen to be Smooth. iOS allows no app to draw its
+     own screen while closed, so the answer is two pieces (2026-10-20,
+     blind): **(1) the alarm's Live Activity is drawn by the widget
+     extension** (`LHFWidget/BerserkAlarmActivity.swift`, iOS 26 only,
+     added to the bundle under `#available`): the Dynamic Island when the
+     phone is unlocked and the lock-screen card, in tomato with the class,
+     the assignment and a live countdown to the due time; no buttons and
+     no `widgetURL` (the system alert keeps "Stop" and "turned in", and a
+     tap opens the app). It needs `NSSupportsLiveActivities` in
+     `project.yml` and `App/Info.plist` (app target only), and the
+     metadata type both targets decode, `BerserkAlarmMetadata`
+     (assignment id, class, title, due moment, page URL), now lives in the
+     Kit (`Sources/LowHangingFruitKit/Alarms/`), because the widget links
+     the Kit and not `LowHangingFruitUI`. The alarm id namespace is
+     `v2`: an alarm the previous build scheduled carries the old metadata
+     and would ring without the Live Activity, so the first reconcile
+     after the update cancels every old alarm and schedules it again once.
+     **(2) a Berserk takeover screen inside the app**, see the next
+     paragraph once it exists.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -1955,11 +1978,17 @@ none is a ship line.
   not ring because alarms were not allowed for Smooth; after he allowed
   them, it rang. The review-fixed build with the song rang the same day,
   so AlarmKit does find a sound in the main bundle on 26.6; the owner:
-  "this is perfect for berserk mode". Which buttons he tried, and whether
-  the 13-second clip loops or plays once, are not recorded. Still unverified,
-  and not answerable from the SDK: that an alert-only alarm needs no
-  widget/Live Activity configuration (Apple requires one for countdown
-  alarms only); what `schedule(id:)` does with an id that already exists
+  "this is perfect for berserk mode". Then on Olisa's iPhone on
+  2026-10-20 (the merged build, 2397/214): it rang full screen on the lock
+  screen, the song played once (it does not loop), and "turned in" marked
+  the card done after unlock. Still unverified,
+  and not answerable from the SDK: the Live Activity of 2026-10-20
+  (`LHFWidget/BerserkAlarmActivity.swift`, blind: whether the system
+  shows it for an alert-only alarm at all, whether the card appears on
+  the lock screen beside the full-screen alert or only in the Dynamic
+  Island, and whether `AlarmAttributes.metadata` decodes in the extension);
+  the system "Stop" button (it opens the assignment in Canvas; Olisa has
+  not reported trying it); what `schedule(id:)` does with an id that already exists
   and whether `cancel(id:)` throws for one that is gone; that both
   buttons work from the lock screen with `.foreground(.immediate)`;
   whether stop runs on swipe or the side button; whether the lock screen

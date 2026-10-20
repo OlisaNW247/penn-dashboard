@@ -13,6 +13,7 @@
 		4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */; };
 		42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */; };
+		5E9A2C4B8D1F36070A8B3C5D /* BerserkAlarmActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */; };
 		7EBFF15B18E4FD732FFE5CD6 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */; };
 		C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */; };
 		CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */; };
@@ -54,6 +55,7 @@
 		81469103D4BF3FC55D12744D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		91DB2A6DDA741DE34D50D036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextDueWidget.swift; sourceTree = "<group>"; };
+		A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BerserkAlarmActivity.swift; sourceTree = "<group>"; };
 		AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LHFApp.entitlements; sourceTree = "<group>"; };
 		B2FB5A48F750018E0BC603A6 /* Smooth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smooth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5231672329B97276105F09B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -124,6 +126,7 @@
 		FADA5631D722E4F4DFE0E4F8 /* LHFWidget */ = {
 			isa = PBXGroup;
 			children = (
+				A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */,
 				3E88A5FCA88FE663462B6EAA /* Info.plist */,
 				1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */,
 				9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */,
@@ -254,6 +257,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5E9A2C4B8D1F36070A8B3C5D /* BerserkAlarmActivity.swift in Sources */,
 				42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */,
 				C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */,
 				384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */,

@@ -64,15 +64,16 @@ These block shipping, or would make shipping risky.
   before archiving (the alarm then uses the default tone), or license
   it. Pushed to the public repo on 2026-10-19 at Marco's say (he
   accepted the copyright risk); removing it later leaves it in history.
-- **Ring the Berserk alarm on a phone** (`v8-loud-alert-actions`, iOS 26).
-  Allow alarms at the prompt; edit a real Canvas card's date to about 11
-  minutes out; lock the phone. One minute later it should ring full
-  screen through silent mode. Check "turned in" (card done after unlock)
-  and the system "Stop" (opens the assignment in Canvas). Then decide:
-  keep "Stop opens Canvas", or make Stop only stop (`CLAUDE.md` → Traps,
-  "an alarm's stop is any dismissal"). Also try one with the app
-  force-quit first, and look at what the lock screen shows besides the
-  name.
+- **Ring the Berserk alarm on a phone, the rest of it.** Done on Olisa's
+  iPhone on 2026-10-20: full screen on the lock screen, the song once,
+  "turned in" marked the card done. Still to try, with a real card's
+  date edited to about 13 minutes out and the phone locked: the system
+  "Stop" (today it opens the assignment in Canvas; decide whether to keep
+  that or make Stop only stop, `CLAUDE.md` → Traps, "an alarm's stop is
+  any dismissal"); one ring with the app force-quit first; and, once the
+  2026-10-20 build is on the phone, the new Live Activity (the Dynamic
+  Island and the lock-screen card in tomato with the class, the name and
+  a countdown) and the in-app takeover screen.
 - **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
   With an item due in about 11 minutes: the three buzzes arrive Time
   Sensitive; "turned in" from the lock screen stops the next buzz and
@@ -290,6 +291,14 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-20: the Berserk alarm's Live Activity is drawn by the widget
+  extension** (`v8`, blind; see `CLAUDE.md` → Profile → reminders). After
+  Olisa rang the alarm on his phone and found the unlocked-phone alert "a
+  little alarm notification drop in": the Dynamic Island and the
+  lock-screen card are now Smooth's (tomato, class, assignment, live
+  countdown), the metadata type moved to the Kit so the widget can decode
+  it, `NSSupportsLiveActivities` is set, and the alarm id namespace is
+  `v2` so alarms scheduled by the previous build are rescheduled once.
 - **2026-10-20: the dashboard freeze** (2414/217 green on Olisa's Mac;
   not yet felt on the phone): the megaphone badge was recomputed in `ContentView.body`
   with a ledger fetch and an all-pairs regex scan per read. Now stored

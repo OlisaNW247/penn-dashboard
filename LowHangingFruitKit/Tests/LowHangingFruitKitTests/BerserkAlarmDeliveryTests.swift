@@ -804,6 +804,9 @@ struct BerserkAlarmDeliveryTests {
     private func planAlarm(_ id: String) -> PlannedAlarm {
         let fire = Date(timeIntervalSince1970: 1_800_000_000)
         return PlannedAlarm(id: BerserkAlarmPlan.alarmID(assignmentID: id, fireDate: fire),
-                            assignmentID: id, fireDate: fire, title: id, link: nil)
+                            assignmentID: id, fireDate: fire, title: id,
+                            course: "CIS 1200",
+                            dueAt: fire.addingTimeInterval(NotificationScheduler.loudAlertLead),
+                            link: nil)
     }
 }

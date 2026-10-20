@@ -4,6 +4,7 @@ import SwiftUI
 import ActivityKit
 import AlarmKit
 import AppIntents
+import LowHangingFruitKit
 
 // Berserk mode, the AlarmKit half. iOS 26 only, and not compiled at all for the
 // macOS slice `swift test` builds: every AlarmKit, ActivityKit and
@@ -39,15 +40,6 @@ public enum BerserkAlarmIntents {
     @MainActor public static var factory: Factory?
 }
 
-/// What an alarm carries along with it. AlarmKit hands this back to the app's
-/// own code (and a widget extension, if there were one); nothing reads it
-/// today, but an alarm with no metadata is an alarm nobody can attribute.
-@available(iOS 26.0, *)
-struct BerserkAlarmMetadata: AlarmMetadata {
-    var assignmentID: String
-    var url: String?
-}
-
 enum BerserkAlarmError: Error {
     /// `BerserkAlarmIntents.factory` is nil, so the buttons cannot be made.
     case noIntentFactory
@@ -60,8 +52,12 @@ enum BerserkAlarmError: Error {
 /// `BerserkAlarmEngine`, where a test can reach it.
 ///
 /// **Alert presentation only.** The alarm has no countdown and no paused
-/// state, so there is no Live Activity UI to provide and no widget extension
-/// is needed (Apple requires one only for the countdown presentation).
+/// state. Since 2026-10-20 the widget extension does supply a Live Activity
+/// for it (`LHFWidget/BerserkAlarmActivity.swift`): not because AlarmKit
+/// requires one for an alert-only alarm (it requires one only for the
+/// countdown presentation), but so the Dynamic Island and the lock screen
+/// card look like Smooth while it rings. The metadata it draws from is
+/// `BerserkAlarmMetadata`, in the Kit, which both targets import.
 @available(iOS 26.0, *)
 @MainActor
 final class BerserkAlarmScheduler: BerserkAlarmBackend, BerserkAlarmStore {
@@ -138,6 +134,9 @@ final class BerserkAlarmScheduler: BerserkAlarmBackend, BerserkAlarmStore {
         let attributes = AlarmAttributes(
             presentation: presentation(for: planned),
             metadata: BerserkAlarmMetadata(assignmentID: planned.assignmentID,
+                                           course: planned.course,
+                                           title: planned.title,
+                                           dueAt: planned.dueAt,
                                            url: planned.link?.url.absoluteString),
             tintColor: Color.smoothTomato)
 

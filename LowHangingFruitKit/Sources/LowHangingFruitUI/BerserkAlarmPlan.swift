@@ -73,6 +73,13 @@ struct PlannedAlarm: Equatable, Sendable {
     let fireDate: Date
     /// The assignment's name, trimmed the way a reminder's body trims it.
     let title: String
+    /// The class as the card shows it (`Assignment.displayCourse`, with the
+    /// student's renames applied). Drawn by the alarm's Live Activity, which
+    /// has no other way to learn it.
+    let course: String
+    /// The due moment, fire date plus `NotificationScheduler.loudAlertLead`.
+    /// The Live Activity counts down to this, not to the alarm.
+    let dueAt: Date
     /// Nil for manual work and Ed finds, which have no page of their own.
     let link: Link?
 
@@ -188,6 +195,8 @@ enum BerserkAlarmPlan {
                 assignmentID: assignment.id,
                 fireDate: fire,
                 title: name.isEmpty ? assignment.displayCourse(overrides: nameOverrides) : name,
+                course: assignment.displayCourse(overrides: nameOverrides),
+                dueAt: due,
                 link: link)
         }
     }
@@ -213,9 +222,22 @@ enum BerserkAlarmPlan {
     /// a SHA-256 value 5 would be a lie a UUID tool would believe. The date is
     /// taken at millisecond precision so floating-point noise in a parsed date
     /// cannot rename an alarm.
+    ///
+    /// **Why the namespace says `v2`.** Alarms persist in AlarmKit across app
+    /// updates, with the attributes they were scheduled with. An alarm the
+    /// previous build scheduled carries the old metadata type (assignment id
+    /// and URL only) and would ring without the Live Activity, because the
+    /// widget decodes `BerserkAlarmMetadata` with its course, title and due
+    /// moment. A new namespace gives every alarm a new id, so the first
+    /// reconcile after the update finds the old ids unwanted, cancels them, and
+    /// schedules each alarm again once under the new attributes. The wrong fix
+    /// is leaving `v1` and hoping the first ring after the update is not the
+    /// one that matters: it is the one the student relies on, and it would be
+    /// the plain Apple alert. Bump the number again whenever the metadata's
+    /// shape changes.
     nonisolated static func alarmID(assignmentID: String, fireDate: Date) -> UUID {
         let millis = Int64((fireDate.timeIntervalSince1970 * 1000).rounded())
-        let name = "lhf.berserk-alarm.v1|\(assignmentID.utf8.count)|\(assignmentID)|\(millis)"
+        let name = "lhf.berserk-alarm.v2|\(assignmentID.utf8.count)|\(assignmentID)|\(millis)"
         var bytes = Array(SHA256.hash(data: Data(name.utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x80
         bytes[8] = (bytes[8] & 0x3F) | 0x80

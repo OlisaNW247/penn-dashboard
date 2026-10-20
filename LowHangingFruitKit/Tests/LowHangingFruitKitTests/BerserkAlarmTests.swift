@@ -200,7 +200,10 @@ struct BerserkAlarmTests {
     private func planned(_ id: String, at offset: TimeInterval = 0) -> PlannedAlarm {
         let fireDate = fire.addingTimeInterval(offset)
         return PlannedAlarm(id: BerserkAlarmPlan.alarmID(assignmentID: id, fireDate: fireDate),
-                            assignmentID: id, fireDate: fireDate, title: id, link: nil)
+                            assignmentID: id, fireDate: fireDate, title: id,
+                            course: "CIS 1200",
+                            dueAt: fireDate.addingTimeInterval(NotificationScheduler.loudAlertLead),
+                            link: nil)
     }
 
     @Test("Nothing desired and nothing existing: nothing to do")
