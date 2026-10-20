@@ -888,10 +888,18 @@ struct AnnouncementWatcherSyncTests {
     @Test("a run with no selected course records why it stopped")
     func summaryWhenNoCourseIsSelected() async throws {
         try await withHarness { h in
-            h.state.setCourse(Self.course.code, selected: false)
+            // The per-instance seam, not `setCourse(…, selected: false)`: the
+            // hidden keys and the course-id cache are shared with every suite
+            // running alongside, and another suite's selected class in the
+            // cache made this sync fetch (it read "nothing new · canvas 0").
+            h.state.selectedCanvasCourseIDsForTesting = [:]
+            final class Called: @unchecked Sendable { var value = false }
+            let called = Called()
+            h.state.announcementFetchForTesting = { _, _, _ in called.value = true; return [] }
             await h.state.syncAnnouncements(now: Date())
             let summary = try #require(h.state.lastAnnouncementSyncSummary)
             #expect(summary.hasSuffix("skipped: no selected courses"))
+            #expect(!called.value, "a run with no selected course never calls Canvas")
         }
     }
 }

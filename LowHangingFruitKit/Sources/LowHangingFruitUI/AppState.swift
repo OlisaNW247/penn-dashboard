@@ -6884,16 +6884,19 @@ final class AppState: ObservableObject {
         for key in coursePreferences.archivedCourseKeys {
             archivedCourseTerms[key] = coursePreferences.archivedTerm(for: key)
         }
-        // `hiddenAnnouncementIDs` is `isHiddenAnnouncementTask` already asked of
-        // every announcement row above, with the date the card shows, so a
-        // past-due find is off both lists here as it is off todo and all.
-        // (`isExpired` is not asked: every row here is `.canvasAnnouncement`,
-        // which it leaves to that rule.)
+        // These two lists are the sheet's *input*, deliberately not filtered by
+        // `isHiddenAnnouncementTask`: the megaphone judges them at display time
+        // (`announcementFoundItems(now:)`, which asks the rule of the date each
+        // card shows), so the page keeps a past row the sheet will not show
+        // (`AnnouncementSheetTests`). The one rule is asked there, at the sheet,
+        // and in `live` above for the dashboard; filtering here too would be
+        // the same rule one level early. (`isExpired` stays as it was on this
+        // line for an `.event` the announcement rule does not judge.)
         let isVisibleAnnouncement: (Assignment) -> Bool = { item in
             !self.isCompleted(item)
                 && !Self.isTooOld(item, now: now)
                 && self.isCourseSelected(item.course)
-                && !hiddenAnnouncementIDs.contains(item.id)
+                && !Self.isExpired(item, now: now)
                 && !self.archivedAssignmentIDs.contains(item.id)
                 && Self.withinTermCap(
                     item,
@@ -7976,8 +7979,18 @@ final class AppState: ObservableObject {
     /// selected set. Drives Grade Watcher (docs/grades.md Decision 4) so a
     /// hidden course is never fetched.
     func selectedCanvasCourseIDs() -> [String: String] {
-        canvasCourseIDs().filter { isCourseSelected($0.value) }
+        if let selectedCanvasCourseIDsForTesting { return selectedCanvasCourseIDsForTesting }
+        return canvasCourseIDs().filter { isCourseSelected($0.value) }
     }
+
+    /// Per-instance test seam: the id -> code map `selectedCanvasCourseIDs()`
+    /// returns, ignoring the shared course cache and the shared hidden-class
+    /// keys. Without it a test of "no course is selected" reads whatever
+    /// every concurrently running suite has left in `canvasCourseIDsByCode`
+    /// (every `rebuildDashboardItems` over feed items with course URLs writes
+    /// it) and in the hidden keys (`courseSelection` un-hides them all), which
+    /// is the shared-defaults trap.
+    var selectedCanvasCourseIDsForTesting: [String: String]?
 
     /// Pulls a Canvas course id out of an ICS item's URL. Canvas emits two
     /// shapes: a direct `/courses/<id>/assignments/<id>` link, and — for items

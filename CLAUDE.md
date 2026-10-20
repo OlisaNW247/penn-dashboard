@@ -332,8 +332,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
        both; one linked to a Gradescope twin keeps the event rule). Where
        it is asked: the
        dashboard's coursework and assessments buckets (`live` in
-       `rebuildDashboardItems`), both announcement lists
-       (`hiddenAnnouncementIDs`), the megaphone's found list and badge, and
+       `rebuildDashboardItems`), the megaphone's found list and badge (at the
+       sheet, `announcementFoundItems(now:)`, not in the lists' input: see
+       "Where the two announcement lists are judged" below), and
        ask's work pool (`announcementItemsStillOpen`, asked of the *feed*
        date, because the context document keeps it). The one place that
        cannot is the widget's ledger fallback (`LedgerWidgetReader`, another
@@ -353,6 +354,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
        (`AnnouncementClassReminder`). "HW 3 due tonight" stays, and so does
        a found exam. This one needs the post's *own* date: the first-seen
        fallback is not the post's time.
+    **Where the two announcement lists are judged.** `announcementPageItems`
+    and `announcementFinds` are the megaphone's *input* and are deliberately
+    not filtered by this rule in `isVisibleAnnouncement`: the sheet judges
+    them at display time (`announcementFoundItems(now:)`, the badge), so the
+    page keeps a past row the sheet will not show (`AnnouncementSheetTests`;
+    the merge briefly filtered one level too early, which that test caught).
     Feed items (Canvas, Gradescope, manual) are never judged by any of it.
     The Ed pass reads only posts dated within the 14 days the Canvas pass
     uses, and skips a post with no date (`edDocumentsEligibleForTasks`); the
@@ -744,7 +751,11 @@ and `AnnouncementWatcherSyncTests`, are nested under one serialized parent,
   `App/LHFApp.swift`, ended in BUILD SUCCEEDED. Both lines branch from
   `v8` at `beed156` (1975/189).
 - **`v8-merge-loud-alert` (the two merged, 2026-10-20): predicted 2397
-  tests / 214 suites, NOT RUN.** 1975 plus Marco's 357 plus Olisa's 58 is
+  tests / 214 suites.** First compile and run at `bc9d368` on Olisa's Mac:
+  2397 / 214, exactly the prediction, with two failures (a no-selected-courses
+  test that read other suites' leftovers in the shared course cache, and the
+  megaphone page list filtered a level too early); both fixed afterwards,
+  not yet re-run. 1975 plus Marco's 357 plus Olisa's 58 is
   2390; the merge's own net is +3 tests and +1 suite (see the history
   entry below for what was deleted and added), and the review of
   2026-10-20 added 4 tests (a moved exam is not the syllabus's twin; the Ed

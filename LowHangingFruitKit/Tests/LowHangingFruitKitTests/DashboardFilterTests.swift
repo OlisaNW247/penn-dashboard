@@ -320,12 +320,15 @@ struct AnnouncementFindExpiryTests {
         #expect(todo.contains(soonMain.id))
         #expect(all.contains(soonMain.id))
 
-        let page = Set(h.state.announcementPageItems.map(\.id))
-        let finds = Set(h.state.announcementFinds.map(\.id))
-        #expect(!page.contains(pastMain.id) && !page.contains(pastFind.id))
-        #expect(!finds.contains(pastMain.id) && !finds.contains(pastFind.id))
-        #expect(page.contains(soonMain.id))
-        #expect(finds.contains(soonFind.id))
+        // The megaphone judges its lists at display time: the page keeps the
+        // past rows (`AnnouncementSheetTests`), the found list and the badge
+        // do not show them.
+        let found = Set(h.state.announcementFoundItems(now: now).map(\.id))
+        #expect(!found.contains(pastMain.id) && !found.contains(pastFind.id))
+        #expect(found.contains(soonMain.id))
+        #expect(found.contains(soonFind.id))
+        #expect(h.state.announcementBadgeCount(now: now) == found.count, "the badge counts exactly what the sheet shows")
+        #expect(found.count == 2)
 
         // Not overdue anywhere: the overdue section holds neither.
         let overdue = Set(vm.todoSections(now: now).filter { $0.id == "overdue" }.flatMap(\.items).map(\.id))
