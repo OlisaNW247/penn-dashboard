@@ -735,7 +735,15 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Predicted after the freeze fix of 2026-10-20 (afternoon, blind): 2414 tests / 217 suites: 2409 plus 4 in `AnnouncementSheetBadgeTests` and 1 in the new `DashboardReloadCoalescingTests`. NOT RUN; replace this sentence with the real count.** Last verified: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
+**Current: 2414 tests / 217 suites, all green, on `v8` at `edff9ac`
+(2026-10-20 afternoon, `swift test --no-parallel`, on Olisa's Mac, 8.4 s):
+2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
+`DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
+`47a946c` failed only the coalescing test, which pumped `RunLoop.main`
+from a main-actor test and so never saw the main-actor reload task;
+`edff9ac` dropped the view model's `receive(on: RunLoop.main)` hop (its
+publishes are main-actor already) and made the test yield instead.**
+Before it: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
 (2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
 plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
 `RecencyIntent` table and the newest-posts-first excerpt rule), nothing
@@ -2067,12 +2075,9 @@ none is a ship line.
   for a document synced before that (until its thread is fetched again),
   where a Sept 14 thread somebody replied to on Oct 15 can still be
   extracted. Both are blind. The day is noon US Eastern, not a minute.
-- **The freeze fix of 2026-10-20 is blind** (the stored badge, the static
-  regexes, the identity buckets, the coalesced reload; see the trap). Not
-  compiled when written; the riskiest lines are the `@MainActor` nested
-  `AnnouncementCourseIdentities` struct, the `[weak self]` Task in the
-  view model's sink, and the `RunLoop` pump in
-  `DashboardReloadCoalescingTests`. Whether it cures the lag on the
+- **The freeze fix of 2026-10-20 compiled green (2414/217) but has not
+  been felt on the phone** (the stored badge, the static regexes, the
+  identity buckets, the coalesced reload; see the trap). Whether it cures the lag on the
   owner's phone is unknown: no profile was taken before the change, so
   if the lag persists, take one (`xcrun xctrace record --template 'Time
   Profiler'`) before guessing again. `announcementAssignmentsOnDashboard(for:)`
