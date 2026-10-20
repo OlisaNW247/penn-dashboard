@@ -633,7 +633,16 @@ struct OnboardingView: View {
     private var sweeperSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
-            Text("an alarm 10 minutes before anything you haven't turned in. if you actually never want to miss an assignment, keep this on.")
+            // Two lines, not one (owner, 2026-10-20, from the phone): the
+            // description is the first sentence alone, larger and in ink,
+            // and the nudge sits under it in parentheses at the smaller
+            // secondary size, so the page says what the sweeper is before
+            // it says what to do about it.
+            Text("an alarm 10 minutes before anything you haven't turned in.")
+                .font(.lhfSans(17))
+                .foregroundStyle(Color.v2Ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("(if you actually never want to miss an assignment, keep this on.)")
                 .font(.lhfSans(14))
                 .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)

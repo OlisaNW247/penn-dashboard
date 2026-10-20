@@ -166,9 +166,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo)
   3. Gradescope login (optional)
   4. reminders, which since 2026-10-20 ends with a **"smooth sweeper"**
-     section under "turned in notifications": one line ("an alarm 10
-     minutes before anything you haven't turned in. if you actually
-     never want to miss an assignment, keep this on.") and the switch
+     section under "turned in notifications": a line in ink ("an alarm
+     10 minutes before anything you haven't turned in."), a smaller
+     line under it in parentheses ("(if you actually never want to miss
+     an assignment, keep this on.)") and the switch
      itself (`NotificationScheduler.loudAlertEnabled`, on by default, the
      same preference Profile → reminders shows as "Smooth Sweeper"). It
      was a page of its own for a few hours that day; the owner saw the two
