@@ -73,7 +73,8 @@ Deno.test("dbRowToCatalogRow: a current-shaped component (meetings present) leav
       sectionCount: 1,
       credits: 1.5,
       sectionIDs: ["PHYS-0151-401"],
-      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 600, endMinutes: 660 }],
+      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 600, endMinutes: 660, room: null }],
+      instructorsBySection: {},
     },
   ];
 
@@ -116,7 +117,7 @@ Deno.test("catalogNeedsFetch: false for a fresh, current-shaped row", () => {
     baseDBRow({
       fetched_at: "2026-09-09T11:00:00Z",
       components: [
-        { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [] },
+        { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [], instructorsBySection: {} },
       ],
     }),
   );
@@ -138,7 +139,7 @@ Deno.test("catalogNeedsFetch: true for an ordinarily-stale current-shaped row", 
     baseDBRow({
       fetched_at: "2026-08-01T00:00:00Z", // well over 7 days before NOW
       components: [
-        { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [] },
+        { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [], instructorsBySection: {} },
       ],
     }),
   );
@@ -210,4 +211,75 @@ Deno.test("profileRowToWire: a profile value that isn't a JSON object at all deg
   const wire = profileRowToWire(baseProfileDBRow({ profile: "not an object" }));
   assert.deepEqual(wire.gradingWeights, []);
   assert.deepEqual(wire.components, []);
+});
+
+// ---------------------------------------------------------------------
+// rooms and instructors: legacy detection is by key presence
+// ---------------------------------------------------------------------
+
+Deno.test("dbRowToCatalogRow: meetings without a room key (and no instructorsBySection) set componentsLackSectionDetails and normalize to room: null / {}", () => {
+  const legacy = [
+    {
+      activity: "LEC",
+      label: "Lecture",
+      sectionCount: 1,
+      credits: 1.5,
+      sectionIDs: ["PHYS-0151-401"],
+      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 600, endMinutes: 660 }],
+    },
+  ] as unknown as CatalogCourseDBRow["components"];
+  const row = dbRowToCatalogRow(baseDBRow({ components: legacy }));
+  assert.equal(row.componentsLackMeetings, false);
+  assert.equal(row.componentsLackSectionDetails, true);
+  assert.equal(row.components[0].meetings[0].room, null);
+  assert.deepEqual(row.components[0].instructorsBySection, {});
+});
+
+Deno.test("catalogNeedsFetch: true for a row lacking section details even when fetched moments ago", () => {
+  const legacy = [
+    {
+      activity: "LEC",
+      label: "Lecture",
+      sectionCount: 1,
+      credits: 1.5,
+      sectionIDs: ["PHYS-0151-401"],
+      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 600, endMinutes: 660 }],
+      instructorsBySection: {},
+    },
+  ] as unknown as CatalogCourseDBRow["components"];
+  const row = dbRowToCatalogRow(baseDBRow({ fetched_at: "2026-09-09T11:59:00Z", components: legacy }));
+  assert.equal(row.componentsLackSectionDetails, true); // room key absent
+  assert.equal(catalogNeedsFetch(row, NOW), true);
+
+  const noInstructorsKey = [
+    {
+      activity: "LEC",
+      label: "Lecture",
+      sectionCount: 1,
+      credits: 1.5,
+      sectionIDs: ["PHYS-0151-401"],
+      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 600, endMinutes: 660, room: "A1" }],
+    },
+  ] as unknown as CatalogCourseDBRow["components"];
+  const row2 = dbRowToCatalogRow(baseDBRow({ fetched_at: "2026-09-09T11:59:00Z", components: noInstructorsKey }));
+  assert.equal(row2.componentsLackSectionDetails, true); // instructorsBySection key absent
+  assert.equal(catalogNeedsFetch(row2, NOW), true);
+});
+
+Deno.test("catalogNeedsFetch: a present room: null and instructorsBySection: {} are real facts, not legacy, and a fresh row is not refetched", () => {
+  const current: CatalogCourseDBRow["components"] = [
+    {
+      activity: "ONL",
+      label: "Online",
+      sectionCount: 1,
+      credits: 1,
+      sectionIDs: ["ONLN-0100-001"],
+      meetings: [{ sectionID: "ONLN-0100-001", weekday: 2, startMinutes: 600, endMinutes: 660, room: null }],
+      instructorsBySection: {},
+    },
+  ];
+  const row = dbRowToCatalogRow(baseDBRow({ fetched_at: "2026-09-09T11:00:00Z", components: current }));
+  assert.equal(row.componentsLackSectionDetails, false);
+  assert.equal(row.components[0].meetings[0].room, null);
+  assert.equal(catalogNeedsFetch(row, NOW), false);
 });

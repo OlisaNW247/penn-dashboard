@@ -25,14 +25,18 @@ from `v8` goes to TestFlight.
 
 These block shipping, or would make shipping risky.
 
-- **Compile and test the merge of 2026-10-20** (`v8-merge-loud-alert`).
-  Written with no Swift toolchain. On a Mac, alone on the machine:
-  `swift test --no-parallel` (predicted 2397 / 214; any lower count has
-  lost work) and `xcodebuild -destination 'generic/platform=iOS'
-  CODE_SIGNING_ALLOWED=NO build`. Then, if a phone is at hand, the DEBUG
-  rows under Profile → accounts (announcements, ed tasks, course
-  material) say where each sync stopped. Where the two sides' tests could
-  disagree: `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
+- **Check the merge of 2026-10-20 on the phone** (it compiled green,
+  2397 / 214, and was installed on Olisa's iPhone that morning; nothing in
+  it has been watched running yet). The DEBUG rows under Profile →
+  accounts (announcements, ed tasks, course material) say where each sync
+  stopped; the Berserk alarm, the exam cards and the megaphone sheet are
+  the things to look at. Where the two sides' tests could disagree:
+  `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
+- **Deploy `sync` and `ask` for the section details** (2026-10-20; needs
+  Olisa's go, `ask` is production): `node
+  backend/scripts/deploy-function.mjs sync --also ask`, then ask "where
+  is my CIS 2400 lecture" on the phone about an hour later, once the
+  catalog rows have refetched.
 
 - **Look at the launch-prep work on a phone** (`v8-launch-prep`). Marco's
   phone has builds up to `b5ed8a1`; everything after is compiled for iOS
@@ -285,10 +289,18 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-10-20 (`v8-merge-loud-alert`, written without a compiler):
-  Olisa's `v8` and Marco's `v8-loud-alert-actions` merged.** Not compiled
-  and not run; predicted 2397 tests / 214 suites (`CLAUDE.md` → Test
-  baseline). Both lines had built the same two things:
+- **2026-10-20: ask can say where and when each section meets** (backend
+  only, on `v8`, **not deployed**). `sync` keeps each registrar section's
+  room and instructors from Penn Labs, and `ask`'s COURSE STRUCTURE block
+  lists every section's days, times, room and instructors with the
+  student's own marked. Asked for after ask answered "where is my CIS 2400
+  midterm" with no room; an exam room still has to come from an
+  announcement, and this gives the lecture, lab and recitation rooms.
+  Deno 366/0. Goes live when Olisa says to deploy `sync` and `ask`.
+- **2026-10-20 (`v8-merge-loud-alert`, written without a compiler, then
+  compiled green on Olisa's Mac the same morning, 2397 / 214, and built to
+  the phone): Olisa's `v8` and Marco's `v8-loud-alert-actions` merged.**
+  Both lines had built the same two things:
   - **One Ed task pass.** Marco's (`syncEdAnnouncementTasks`) stays;
     Olisa's feeding of Ed posts through `syncAnnouncements` (and its
     `edAnnouncementsForExtraction` and `announcement-ed:` find ids) is

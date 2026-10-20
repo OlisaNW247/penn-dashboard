@@ -290,7 +290,7 @@ export async function handleAsk(
     // Same reasoning as above: `loadCourseProfiles` and `loadCatalogCourses`
     // both depend only on `enrolledIDs`, not on each other, so they also run
     // concurrently.
-    const [profiles, catalog] = await Promise.all([
+    const [{ profiles, ownSectionsByCatalogCode }, catalog] = await Promise.all([
       timed("profiles", () => loadCourseProfiles(serviceClient, enrolledIDs)),
       timed("catalog", () => loadCatalogCourses(serviceClient, enrolledIDs)),
     ]);
@@ -306,6 +306,7 @@ export async function handleAsk(
     const messages = buildMessages({
       contextDocument,
       catalog,
+      ownSectionsByCatalogCode,
       profiles,
       history: body.history,
       excerpts: body.excerpts,
@@ -492,12 +493,19 @@ async function loadEnrolledCourseIDs(
  * case rather than the course being absent, so the model still sees that
  * a lecture site and a lab site both exist even before either has a
  * profile of its own.
+ *
+ * Also returns `ownSectionsByCatalogCode` (catalog code -> the section
+ * numbers the student is enrolled in, sorted), derived from the very same
+ * `courses` rows rather than a fourth query: the COURSE STRUCTURE block
+ * lists every registrar section of a course, and this is what lets it mark
+ * the student's own. A failed courses lookup leaves it `{}`, so nothing is
+ * marked rather than the request failing.
  */
 async function loadCourseProfiles(
   serviceClient: SupabaseClient,
   enrolledIDs: string[],
-): Promise<Record<string, unknown>> {
-  if (enrolledIDs.length === 0) return {};
+): Promise<{ profiles: Record<string, unknown>; ownSectionsByCatalogCode: Record<string, string[]> }> {
+  if (enrolledIDs.length === 0) return { profiles: {}, ownSectionsByCatalogCode: {} };
 
   const { data: courseRows, error: courseError } = await serviceClient
     .from("courses")
@@ -505,7 +513,7 @@ async function loadCourseProfiles(
     .in("course_id", enrolledIDs);
   if (courseError || !courseRows) {
     console.error("ask: courses lookup failed", courseError?.message);
-    return {};
+    return { profiles: {}, ownSectionsByCatalogCode: {} };
   }
   const courses = courseRows as Array<{
     course_id: string;
@@ -537,13 +545,21 @@ async function loadCourseProfiles(
   }
 
   const profiles: Record<string, unknown> = {};
+  const ownSections = new Map<string, Set<string>>();
   for (const row of courses) {
+    if (row.catalog_code && row.section) {
+      const set = ownSections.get(row.catalog_code) ?? new Set<string>();
+      set.add(row.section);
+      ownSections.set(row.catalog_code, set);
+    }
     const catalogRow = row.catalog_code ? catalogByCode.get(row.catalog_code) : undefined;
     const activity = row.section && catalogRow ? activityForSection(catalogRow, row.section) : undefined;
     const label = siteLabel(row.code, row.section ?? undefined, activity);
     profiles[label] = profileByCourseID.get(row.course_id) ?? null;
   }
-  return profiles;
+  const ownSectionsByCatalogCode: Record<string, string[]> = {};
+  for (const [code, sections] of ownSections) ownSectionsByCatalogCode[code] = [...sections].sort();
+  return { profiles, ownSectionsByCatalogCode };
 }
 
 /** `catalog_courses` rows reachable from `enrolledIDs` through

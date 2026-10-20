@@ -30,6 +30,18 @@ export interface CatalogMeeting {
   weekday: number;
   startMinutes: number;
   endMinutes: number;
+  /** Penn Labs' own `room` string for this meeting ("DRLB LAB"), or `null`
+   *  when the registrar states none -- an online section, or a meeting
+   *  whose room is not yet assigned. Penn Labs sends both `null` and `""`
+   *  for that case and they mean the same thing, so `parseMeetings`
+   *  collapses both to `null`; a `null` here is therefore a *fact* ("no
+   *  room is listed"), never "this row predates the field" -- see
+   *  `componentsLackSectionDetails` on `CatalogCourseRow` for how the
+   *  second case is told apart (by the key being absent from the stored
+   *  json, not by the value being null). Deliberately not on
+   *  `CatalogEntryMeetingWire`: the app has no use for it, and the wire
+   *  shape the iOS client decodes does not change. */
+  room: string | null;
 }
 
 /** One registrar activity group -- every section of a given `activity`
@@ -52,6 +64,17 @@ export interface CatalogComponent {
   credits: number | null;
   sectionIDs: string[];
   meetings: CatalogMeeting[];
+  /** Section id (`"PHYS-0151-151"`, the same ids `sectionIDs` holds) -> the
+   *  instructor names Penn Labs lists for it, each list deduped and sorted
+   *  alphabetically so that two fetches of an unchanged section store (and
+   *  later render) the same bytes whatever order Penn Labs happened to
+   *  return its `instructors` array in. A section with no named
+   *  instructor ("Staff" is a name, but an empty list is not) simply has no
+   *  key. A record keyed by section rather than a field on each meeting
+   *  because instructors teach a *section*, not a weekly slot; repeating
+   *  them on every `CatalogMeeting` would store a MWF lecture's professor
+   *  three times. */
+  instructorsBySection: Record<string, string[]>;
 }
 
 /** Mirrors `catalog_courses` (see the `20260907120000_catalog.sql`
@@ -100,6 +123,17 @@ export interface CatalogCourseRow {
    *  defaults to false so every other construction site in this file
    *  (`parsePennLabsCourse`, fixtures in `catalog.test.ts`) is unaffected. */
   componentsLackMeetings?: boolean;
+  /** Same idea as `componentsLackMeetings`, one shape change later: true
+   *  when at least one stored meeting has no `room` key, or at least one
+   *  stored component has no `instructorsBySection` key -- a row written
+   *  before rooms and instructors were kept. The test is the *presence of
+   *  the key*, never the value: `room: null` is a real, permanent answer
+   *  for an online section, and `instructorsBySection: {}` is a real answer
+   *  for a course Penn Labs lists no instructor for, so testing for
+   *  null/empty would make every such course look legacy and refetch on
+   *  every manifest call forever. Derived at read time by
+   *  `_shared/db.ts`'s `dbRowToCatalogRow`, never persisted. */
+  componentsLackSectionDetails?: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -144,6 +178,7 @@ interface RawSection {
   activity: string;
   credits: number | null;
   meetings: CatalogMeeting[];
+  instructors: string[];
 }
 
 /** Penn Labs' letter for each day of the week, mapped to the `Calendar`
@@ -202,10 +237,16 @@ function parseMeetings(sectionID: string, value: unknown): CatalogMeeting[] {
     const startMinutes = pennLabsTimeToMinutes(item["start"]);
     const endMinutes = pennLabsTimeToMinutes(item["end"]);
     if (startMinutes === undefined || endMinutes === undefined) continue;
+    // A blank room is "none listed", the same as null: Penn Labs sends
+    // either for an online section, and storing `""` would make
+    // `structureBlock` print an empty clause. Never fall back to a guessed
+    // room -- a wrong room sends a student to the wrong building.
+    const roomValue = item["room"];
+    const room = typeof roomValue === "string" && roomValue.trim().length > 0 ? roomValue.trim() : null;
     for (const letter of day) {
       const weekday = WEEKDAY_LETTERS.get(letter);
       if (weekday === undefined) continue;
-      meetings.push({ sectionID, weekday, startMinutes, endMinutes });
+      meetings.push({ sectionID, weekday, startMinutes, endMinutes, room });
     }
   }
   return meetings;
@@ -271,6 +312,24 @@ function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Instructor names from one section's raw `instructors` array
+ *  (`[{ id, name }]`), non-empty trimmed strings only, deduped and sorted so
+ *  the stored list is byte-stable. An entry without a usable `name` is
+ *  skipped rather than rendered as "undefined"; the numeric `id` is Penn
+ *  Labs' own and is deliberately not kept. */
+function readInstructorNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names = new Set<string>();
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const name = item["name"];
+    if (typeof name !== "string") continue;
+    const trimmed = name.trim();
+    if (trimmed.length > 0) names.add(trimmed);
+  }
+  return [...names].sort();
+}
+
 /** Reads `raw.sections` (an array of Penn Labs section objects) down to
  *  just the fields component grouping needs, dropping anything malformed
  *  rather than failing the whole course -- a single garbled section in an
@@ -285,7 +344,13 @@ function readSections(value: unknown): RawSection[] {
     const activity = item["activity"];
     if (typeof id !== "string" || id.length === 0) continue;
     if (typeof activity !== "string" || activity.length === 0) continue;
-    sections.push({ id, activity, credits: asNumberOrNull(item["credits"]), meetings: parseMeetings(id, item["meetings"]) });
+    sections.push({
+      id,
+      activity,
+      credits: asNumberOrNull(item["credits"]),
+      meetings: parseMeetings(id, item["meetings"]),
+      instructors: readInstructorNames(item["instructors"]),
+    });
   }
   return sections;
 }
@@ -320,6 +385,9 @@ function buildComponents(sections: RawSection[]): CatalogComponent[] {
       credits,
       sectionIDs: group.map((section) => section.id),
       meetings: group.flatMap((section) => section.meetings),
+      instructorsBySection: Object.fromEntries(
+        group.filter((section) => section.instructors.length > 0).map((section) => [section.id, section.instructors]),
+      ),
     });
   }
 
@@ -521,6 +589,142 @@ function componentPhrase(component: CatalogComponent, courseCredits: number | nu
   return `${component.label} (${component.sectionCount} ${noun}${creditsPhrase})`;
 }
 
+// ---------------------------------------------------------------------
+// The "Sections:" sentence: where and when each registrar section meets,
+// and who teaches it.
+// ---------------------------------------------------------------------
+
+/** The most sections one component lists before the rest collapse into
+ *  "and N more sections". A big lecture course can have dozens of
+ *  recitations; naming all of them would put hundreds of bytes of mostly
+ *  irrelevant rooms into the cached prefix of every question. The student's
+ *  own sections are exempt from the cap (see `sectionsSentence`), because a
+ *  cap that could cut the one section the student asked about would make the
+ *  sentence worse than not having it. */
+const MAX_SECTIONS_PER_COMPONENT = 8;
+
+const WEEKDAY_ABBREVIATIONS: readonly string[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The number a student calls a section by -- the last dash-separated token
+ *  of the registrar id ("PHYS-0151-151" -> "151"). It is the same number
+ *  `courses.section` stores and `siteLabel` prints as "(section 151)", which
+ *  is what lets the model join the Sections sentence to the profile labels. */
+function sectionDisplayNumber(sectionID: string): string {
+  const dash = sectionID.lastIndexOf("-");
+  return dash >= 0 ? sectionID.slice(dash + 1) : sectionID;
+}
+
+/** Minutes after local midnight -> "3:30 PM"-style parts. Returned split so
+ *  a range can print one AM/PM when both ends share it. Pure arithmetic, no
+ *  `Date`: a clock or a locale would make the cached prefix drift. */
+function clockParts(minutes: number): { text: string; period: "AM" | "PM" } {
+  const wrapped = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const hour24 = Math.floor(wrapped / 60);
+  const minute = wrapped % 60;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return { text: `${hour12}:${String(minute).padStart(2, "0")}`, period: hour24 < 12 ? "AM" : "PM" };
+}
+
+function timeRange(startMinutes: number, endMinutes: number): string {
+  const start = clockParts(startMinutes);
+  const end = clockParts(endMinutes);
+  return start.period === end.period
+    ? `${start.text}–${end.text} ${end.period}`
+    : `${start.text} ${start.period}–${end.text} ${end.period}`;
+}
+
+/** One section's schedule text: "Mon, Wed, Fri 10:00–10:59 AM, DRLB A1,
+ *  Diana Van Winkle". Meetings with the same start, end and room merge into
+ *  one day list (Penn Labs already sends `MWF` as one meeting, but a section
+ *  can also list the same slot as separate rows); different spans are
+ *  joined with " and ". The room is printed once at the end when every span
+ *  is in the same room (the overwhelmingly common case, and the shape the
+ *  prompt promises); only when spans genuinely differ in room does each span
+ *  carry its own, because attaching one room to a section whose Monday and
+ *  Wednesday are in different buildings would be a wrong answer to "where is
+ *  it". */
+function sectionScheduleText(
+  meetings: CatalogMeeting[],
+  instructors: string[],
+): string {
+  const parts: string[] = [];
+  if (meetings.length === 0) {
+    parts.push("time not listed");
+  } else {
+    const groups = new Map<string, { days: Set<number>; start: number; end: number; room: string | null }>();
+    for (const meeting of meetings) {
+      const key = `${meeting.startMinutes}|${meeting.endMinutes}|${meeting.room ?? ""}`;
+      const group = groups.get(key);
+      if (group) {
+        group.days.add(meeting.weekday);
+      } else {
+        groups.set(key, {
+          days: new Set([meeting.weekday]),
+          start: meeting.startMinutes,
+          end: meeting.endMinutes,
+          room: meeting.room ?? null,
+        });
+      }
+    }
+    const ordered = [...groups.values()]
+      .map((group) => ({ ...group, dayList: [...group.days].sort((a, b) => a - b) }))
+      .sort((a, b) =>
+        a.dayList[0] - b.dayList[0] || a.start - b.start || a.end - b.end || (a.room ?? "").localeCompare(b.room ?? "")
+      );
+    const sameRoomEverywhere = ordered.every((group) => group.room === ordered[0].room);
+    const spans = ordered.map((group) => {
+      const days = group.dayList.map((day) => WEEKDAY_ABBREVIATIONS[day - 1] ?? `day ${day}`).join(", ");
+      const span = `${days} ${timeRange(group.start, group.end)}`;
+      return !sameRoomEverywhere && group.room !== null ? `${span}, ${group.room}` : span;
+    });
+    parts.push(spans.join(" and "));
+    if (sameRoomEverywhere && ordered[0].room !== null) parts.push(ordered[0].room);
+  }
+  if (instructors.length > 0) parts.push(instructors.join(", "));
+  return parts.join(", ");
+}
+
+/** The "Sections: ..." sentence for one course, or `undefined` when no
+ *  component lists a section (nothing to say). Components follow the same
+ *  activity order `buildComponents` stores (lecture, then lab, ...), sorted
+ *  again here so the text does not depend on the order a jsonb array came
+ *  back in; sections within a component are sorted by id, and the student's
+ *  own sections (`ownSections`, bare numbers like "401") are always listed,
+ *  first, ahead of the others in id order up to `MAX_SECTIONS_PER_COMPONENT`. */
+function sectionsSentence(row: CatalogCourseRow, ownSections: ReadonlySet<string>): string | undefined {
+  const components = [...row.components].sort((a, b) =>
+    activitySortKey(a.activity).localeCompare(activitySortKey(b.activity))
+  );
+  const items: string[] = [];
+  for (const component of components) {
+    const ids = [...new Set(component.sectionIDs)].sort();
+    if (ids.length === 0) continue;
+    const label = component.label.length > 0 ? component.label : component.activity;
+    const own = ids.filter((id) => ownSections.has(sectionDisplayNumber(id)));
+    const others = ids.filter((id) => !ownSections.has(sectionDisplayNumber(id)));
+    const room = Math.max(0, MAX_SECTIONS_PER_COMPONENT - own.length);
+    const shown = [...own, ...others.slice(0, room)];
+    const cut = others.length - Math.min(others.length, room);
+    for (const id of shown) {
+      const number = sectionDisplayNumber(id);
+      const mark = ownSections.has(number) ? " (the student's section)" : "";
+      const meetings = (component.meetings ?? []).filter((meeting) => meeting.sectionID === id);
+      items.push(`${number} ${label}${mark} — ${sectionScheduleText(meetings, component.instructorsBySection?.[id] ?? [])}`);
+    }
+    if (cut > 0) items.push(`and ${cut} more ${cut === 1 ? "section" : "sections"}`);
+  }
+  return items.length > 0 ? `Sections: ${items.join("; ")}.` : undefined;
+}
+
+export interface StructureBlockOptions {
+  /** Catalog code ("PHYS-0151") -> the student's own section numbers in it
+   *  (["401", "151"]), as `courses.section` stores them. Marks those
+   *  sections "(the student's section)" and exempts them from the
+   *  per-component cap. Absent for a course the student has no section
+   *  recorded for; nothing is then marked. */
+  ownSectionsByCatalogCode?: Record<string, string[]>;
+}
+
 /**
  * Renders `rows` into the fixed-format text block `ask/index.ts` splices
  * into the prompt as "COURSE STRUCTURE (from the Penn registrar via Penn
@@ -534,14 +738,16 @@ function componentPhrase(component: CatalogComponent, courseCredits: number | nu
  *
  * One paragraph per course, in this fixed field order: title and overall
  * credits, then the components sentence (omitted entirely when a course
- * has no section data at all -- there's nothing to say), then grade modes
+ * has no section data at all -- there's nothing to say), then the
+ * "Sections:" sentence (each section's weekly days, times, room and
+ * instructors; omitted on the same condition), then grade modes
  * (omitted when none), then prerequisites (omitted when empty, per the
  * brief), then a whitespace-collapsed, 600-character-capped description
  * (omitted when empty). A course with only a title and nothing else still
  * gets a one-sentence paragraph rather than being dropped, so its presence
  * in `courseIDs` is never silently invisible to the model.
  */
-export function structureBlock(rows: CatalogCourseRow[]): string {
+export function structureBlock(rows: CatalogCourseRow[], options: StructureBlockOptions = {}): string {
   if (rows.length === 0) return "";
 
   const sorted = [...rows].sort((a, b) => a.catalogCode.localeCompare(b.catalogCode));
@@ -556,6 +762,9 @@ export function structureBlock(rows: CatalogCourseRow[]): string {
       const phrases = row.components.map((component) => componentPhrase(component, row.credits)).join(", ");
       sentences.push(`Components: ${phrases}.`);
     }
+
+    const sections = sectionsSentence(row, new Set(options.ownSectionsByCatalogCode?.[row.catalogCode] ?? []));
+    if (sections !== undefined) sentences.push(sections);
 
     if (row.gradeModes.length > 0) {
       sentences.push(`Grade modes offered: ${row.gradeModes.join(", ")}.`);

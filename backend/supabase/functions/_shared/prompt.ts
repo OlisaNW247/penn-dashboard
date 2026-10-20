@@ -74,6 +74,17 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `rule (grading, attendance, late work) as if it were the whole course's `
   + `rule without saying it's the lab's.`,
 
+  `The COURSE STRUCTURE block's "Sections:" sentence lists each registrar `
+  + `section's weekly meeting days, times, room and instructors, from the `
+  + `registrar. Use it to answer where and when a lecture, lab or recitation `
+  + `meets and who teaches it. The student's own section is marked "(the `
+  + `student's section)" and its number matches the section number in the `
+  + `site label in COURSE PROFILES; prefer it over the other sections when `
+  + `the student asks about "my" lecture, lab or recitation. The block never `
+  + `holds exam rooms or one-off room changes; those come only from the `
+  + `document or the retrieved excerpts, so say you don't have them rather `
+  + `than answering with the weekly room.`,
+
   `The student's message may also carry a RETRIEVED EXCERPTS section: `
   + `short passages from their course materials (syllabus prose, `
   + `announcements, assignment descriptions, course pages) that the app `
@@ -121,6 +132,13 @@ export interface BuildMessagesInput {
    *  answered for, simply contributes nothing here rather than blocking
    *  the rest of the prompt. */
   catalog: CatalogCourseRow[];
+  /** Catalog code ("PHYS-0151") -> the section numbers the student is
+   *  enrolled in for it (["401", "151"]), from the same `courses` rows
+   *  `ask/index.ts`'s `loadCourseProfiles` reads. Optional: `structureBlock`
+   *  then simply marks no section as the student's own. A plain value
+   *  input, never read from a clock or the database here, so the prompt
+   *  stays a pure function of its arguments. */
+  ownSectionsByCatalogCode?: Record<string, string[]>;
   /** Site label (`_shared/catalog.ts`'s `siteLabel`, e.g. "PHYS 0151 —
    *  lecture site (section 401)") -> profile JSON (or `null`), one entry
    *  per enrolled Canvas course the caller resolved. Keyed by label
@@ -173,7 +191,9 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
   // described twice in one COURSE STRUCTURE block, identically, which is
   // both wasted prefix and reads as a copy-paste bug rather than the two
   // sites the COURSE PROFILES block below already distinguishes by label.
-  const structure = structureBlock(dedupeByCatalogCode(input.catalog));
+  const structure = structureBlock(dedupeByCatalogCode(input.catalog), {
+    ownSectionsByCatalogCode: input.ownSectionsByCatalogCode,
+  });
   if (structure.length > 0) {
     messages.push({
       role: "system",

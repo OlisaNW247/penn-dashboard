@@ -29,8 +29,9 @@ const PHYS_CATALOG: CatalogCourseRow = {
       credits: 1.5,
       sectionIDs: ["PHYS-0151-401"],
       meetings: [
-        { sectionID: "PHYS-0151-401", weekday: 3, startMinutes: 10 * 60 + 15, endMinutes: 11 * 60 + 44 },
+        { sectionID: "PHYS-0151-401", weekday: 3, startMinutes: 10 * 60 + 15, endMinutes: 11 * 60 + 44, room: null },
       ],
+      instructorsBySection: {},
     },
     {
       activity: "LAB",
@@ -39,8 +40,9 @@ const PHYS_CATALOG: CatalogCourseRow = {
       credits: 0,
       sectionIDs: ["PHYS-0151-151"],
       meetings: [
-        { sectionID: "PHYS-0151-151", weekday: 2, startMinutes: 15 * 60 + 30, endMinutes: 17 * 60 + 29 },
+        { sectionID: "PHYS-0151-151", weekday: 2, startMinutes: 15 * 60 + 30, endMinutes: 17 * 60 + 29, room: null },
       ],
+      instructorsBySection: {},
     },
   ],
   source: "penn-labs",
@@ -50,7 +52,7 @@ const PHYS_CATALOG: CatalogCourseRow = {
 const PHYS_CATALOG_NO_MEETINGS: CatalogCourseRow = {
   ...PHYS_CATALOG,
   components: [
-    { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [] },
+    { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["PHYS-0151-401"], meetings: [], instructorsBySection: {} },
   ],
 };
 
@@ -246,14 +248,15 @@ Deno.test("classMeetingsBlock: formats every weekday abbreviation correctly", ()
         credits: null,
         sectionIDs: ["X-1"],
         meetings: [
-          { sectionID: "X-1", weekday: 1, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 2, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 3, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 4, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 5, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 6, startMinutes: 600, endMinutes: 660 },
-          { sectionID: "X-1", weekday: 7, startMinutes: 600, endMinutes: 660 },
+          { sectionID: "X-1", weekday: 1, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 2, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 3, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 4, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 5, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 6, startMinutes: 600, endMinutes: 660, room: null },
+          { sectionID: "X-1", weekday: 7, startMinutes: 600, endMinutes: 660, room: null },
         ],
+        instructorsBySection: {},
       },
     ],
   };

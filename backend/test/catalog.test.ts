@@ -253,8 +253,8 @@ const PHYS_ROW: CatalogCourseRow = {
   gradeModes: ["Standard Letter Grade", "Pass/Fail"],
   attributes: [],
   components: [
-    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["PHYS-0151-401", "PHYS-0151-402"], meetings: [] },
-    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["PHYS-0151-151", "PHYS-0151-152", "PHYS-0151-153"], meetings: [] },
+    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["PHYS-0151-401", "PHYS-0151-402"], meetings: [], instructorsBySection: {} },
+    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["PHYS-0151-151", "PHYS-0151-152", "PHYS-0151-153"], meetings: [], instructorsBySection: {} },
   ],
   source: "penn-labs",
   fetchedAt: "2026-09-07T12:00:00Z",
@@ -269,6 +269,8 @@ Deno.test("structureBlock: renders the fixed field order, collapsing whitespace 
   assert.equal(
     block,
     `PHYS-0151 "Principles II" — 1.5 CU. Components: Lecture (2 sections), Lab (3 sections). `
+    + `Sections: 401 Lecture — time not listed; 402 Lecture — time not listed; `
+    + `151 Lab — time not listed; 152 Lab — time not listed; 153 Lab — time not listed. `
     + `Grade modes offered: Standard Letter Grade, Pass/Fail. Prerequisites: MATH 1410 or equivalent. `
     + `Description: Electric and magnetic fields.`,
   );
@@ -311,9 +313,9 @@ Deno.test("structureBlock: states component credits only when they differ from t
   const row = {
     ...PHYS_ROW,
     components: [
-      { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["X-1"], meetings: [] },
-      { activity: "LAB", label: "Lab", sectionCount: 1, credits: 0, sectionIDs: ["X-2"], meetings: [] },
-      { activity: "REC", label: "Recitation", sectionCount: 1, credits: 0.5, sectionIDs: ["X-3"], meetings: [] },
+      { activity: "LEC", label: "Lecture", sectionCount: 1, credits: 1.5, sectionIDs: ["X-1"], meetings: [], instructorsBySection: {} },
+      { activity: "LAB", label: "Lab", sectionCount: 1, credits: 0, sectionIDs: ["X-2"], meetings: [], instructorsBySection: {} },
+      { activity: "REC", label: "Recitation", sectionCount: 1, credits: 0.5, sectionIDs: ["X-3"], meetings: [], instructorsBySection: {} },
     ],
   };
   const block = structureBlock([row]);
@@ -589,4 +591,175 @@ Deno.test("siteLabel: section present but activity unknown/unresolved omits the 
 
 Deno.test("siteLabel: an activity code with no named word lowercases the raw code", () => {
   assert.equal(siteLabel("CIS 1200", "501", "STU"), "CIS 1200 — stu site (section 501)");
+});
+
+// ---------------------------------------------------------------------
+// rooms and instructors (parsePennLabsCourse) and the Sections sentence
+// ---------------------------------------------------------------------
+
+Deno.test("parsePennLabsCourse: keeps the fixture's room and instructor for LAB-151", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const lab = row.components.find((c) => c.activity === "LAB");
+  assert.ok(lab);
+  const meeting = lab.meetings.find((m) => m.sectionID === "PHYS-0151-151");
+  assert.ok(meeting);
+  assert.equal(meeting.room, "DRLB LAB");
+  assert.deepEqual(lab.instructorsBySection["PHYS-0151-151"], ["Peter Harnish"]);
+  const lec = row.components.find((c) => c.activity === "LEC");
+  assert.ok(lec);
+  assert.deepEqual(lec.instructorsBySection["PHYS-0151-401"], ["Diana Van Winkle"]);
+});
+
+Deno.test("parsePennLabsCourse: a blank, whitespace or missing room is null; instructors are trimmed, deduped and sorted", () => {
+  const row = parsePennLabsCourse({
+    id: "TEST-0001",
+    semester: "2026C",
+    sections: [
+      {
+        id: "TEST-0001-001",
+        activity: "REC",
+        meetings: [
+          { day: "M", start: 9.0, end: 9.5, room: "" },
+          { day: "T", start: 9.0, end: 9.5, room: "   " },
+          { day: "W", start: 9.0, end: 9.5 },
+          { day: "R", start: 9.0, end: 9.5, room: null },
+          { day: "F", start: 9.0, end: 9.5, room: " Towne 100 " },
+        ],
+        instructors: [{ id: 1, name: "Zed Last" }, { id: 2, name: "Amy First" }, { id: 3, name: "Zed Last" }, { id: 4, name: "" }, { id: 5 }],
+      },
+    ],
+  });
+  assert.ok(row);
+  const rooms = row.components[0].meetings.map((m) => m.room);
+  assert.deepEqual(rooms, [null, null, null, null, "Towne 100"]);
+  assert.deepEqual(row.components[0].instructorsBySection["TEST-0001-001"], ["Amy First", "Zed Last"]);
+});
+
+Deno.test("parsePennLabsCourse: a section with no instructors has no instructorsBySection key", () => {
+  const row = parsePennLabsCourse({
+    id: "TEST-0001",
+    semester: "2026C",
+    sections: [{ id: "TEST-0001-001", activity: "LEC", meetings: [], instructors: [] }, { id: "TEST-0001-002", activity: "LEC" }],
+  });
+  assert.ok(row);
+  assert.deepEqual(row.components[0].instructorsBySection, {});
+});
+
+Deno.test("structureBlock: renders the fixture's lab lines with day, time, room and instructor", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const block = structureBlock([row]);
+  assert.ok(block.includes("151 Lab — Mon 3:30–5:29 PM, DRLB LAB, Peter Harnish"), block);
+  assert.ok(block.includes("152 Lab — Tue 1:45–3:44 PM, DRLB LAB, Peter Harnish"), block);
+  assert.ok(block.includes("Sections: "), block);
+  // Merged MWF lecture days, one room, one instructor.
+  // The fixture's lecture end is the (synthetic) decimal 10.99, which
+  // `pennLabsTimeToMinutes` reads as 10h99m = 11:39; real Penn Labs data
+  // never has minutes above 59, so this pins the merge and formatting only.
+  assert.ok(block.includes("401 Lecture — Mon, Wed, Fri 10:00–11:39 AM, DRLB A1, Diana Van Winkle"), block);
+});
+
+function sectionedRow(sectionNumbers: string[], overrides: Partial<CatalogCourseRow> = {}): CatalogCourseRow {
+  const ids = sectionNumbers.map((n) => `TEST-0001-${n}`);
+  return {
+    catalogCode: "TEST-0001",
+    semester: "2026C",
+    title: "Test",
+    description: "",
+    credits: 1,
+    prerequisites: "",
+    crosslistings: [],
+    gradeModes: [],
+    attributes: [],
+    components: [{
+      activity: "REC",
+      label: "Recitation",
+      sectionCount: ids.length,
+      credits: null,
+      sectionIDs: ids,
+      meetings: ids.map((id) => ({ sectionID: id, weekday: 3, startMinutes: 600, endMinutes: 650, room: null })),
+      instructorsBySection: {},
+    }],
+    source: "penn-labs",
+    fetchedAt: "2026-09-07T00:00:00Z",
+    ...overrides,
+  };
+}
+
+Deno.test("structureBlock: marks the student's own sections", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const block = structureBlock([row], { ownSectionsByCatalogCode: { "PHYS-0151": ["401", "151"] } });
+  assert.ok(block.includes("401 Lecture (the student's section) — "), block);
+  assert.ok(block.includes("151 Lab (the student's section) — "), block);
+  assert.ok(!block.includes("152 Lab (the student's section)"), block);
+  assert.ok(!block.includes("402 Lecture (the student's section)"), block);
+});
+
+Deno.test("structureBlock: caps a component at 8 sections but always keeps the student's own, and says how many were cut", () => {
+  const numbers = Array.from({ length: 12 }, (_, i) => String(201 + i)); // 201..212
+  const block = structureBlock([sectionedRow(numbers)], { ownSectionsByCatalogCode: { "TEST-0001": ["212"] } });
+  assert.ok(block.includes("212 Recitation (the student's section) — "), block);
+  // own first, then 201..207 (8 total), then the remainder summary.
+  assert.ok(block.indexOf("212 Recitation") < block.indexOf("201 Recitation"), block);
+  assert.ok(block.includes("207 Recitation"), block);
+  assert.ok(!block.includes("208 Recitation"), block);
+  assert.ok(block.includes("; and 4 more sections."), block);
+
+  const uncapped = structureBlock([sectionedRow(numbers.slice(0, 8))]);
+  assert.ok(!uncapped.includes("more section"), uncapped);
+});
+
+Deno.test("structureBlock: omits the room clause for a null room and the instructors clause when none", () => {
+  const block = structureBlock([sectionedRow(["201"])]);
+  assert.ok(block.includes("Sections: 201 Recitation — Tue 10:00–10:50 AM."), block);
+});
+
+Deno.test("structureBlock: a section with no meetings is listed as time not listed", () => {
+  const row = sectionedRow(["201"]);
+  row.components[0].meetings = [];
+  assert.ok(structureBlock([row]).includes("201 Recitation — time not listed."));
+});
+
+Deno.test("structureBlock: formats times across noon and midnight, merging same-span days in weekday order and splitting different spans", () => {
+  const row = sectionedRow(["201"]);
+  row.components[0].meetings = [
+    { sectionID: "TEST-0001-201", weekday: 6, startMinutes: 10 * 60, endMinutes: 12 * 60 + 29, room: "Hall" },
+    { sectionID: "TEST-0001-201", weekday: 2, startMinutes: 10 * 60, endMinutes: 12 * 60 + 29, room: "Hall" },
+    { sectionID: "TEST-0001-201", weekday: 4, startMinutes: 0, endMinutes: 59, room: "Hall" },
+  ];
+  assert.ok(
+    structureBlock([row]).includes("201 Recitation — Mon, Fri 10:00 AM–12:29 PM and Wed 12:00–12:59 AM, Hall."),
+    structureBlock([row]),
+  );
+});
+
+Deno.test("structureBlock: byte-stable whatever order sections, meetings and components arrive in", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const shuffled: CatalogCourseRow = {
+    ...row,
+    components: [...row.components].reverse().map((c) => ({
+      ...c,
+      sectionIDs: [...c.sectionIDs].reverse(),
+      meetings: [...c.meetings].reverse(),
+    })),
+  };
+  const options = { ownSectionsByCatalogCode: { "PHYS-0151": ["401", "151"] } };
+  const a = structureBlock([row], options);
+  assert.equal(structureBlock([row], options), a);
+  const b = structureBlock([shuffled], options);
+  // The Components sentence follows stored order by design; the Sections
+  // sentence must not.
+  assert.equal(b.slice(b.indexOf("Sections: ")), a.slice(a.indexOf("Sections: ")));
+});
+
+Deno.test("catalogEntryWire: output does not carry rooms or instructors (wire shape unchanged)", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const wire = catalogEntryWire(row, "c1");
+  assert.ok(!JSON.stringify(wire).includes("DRLB"));
+  assert.ok(!JSON.stringify(wire).includes("Harnish"));
+  assert.deepEqual(Object.keys(wire.meetings[0]).sort(), ["activity", "endMinutes", "sectionID", "startMinutes", "weekday"]);
 });

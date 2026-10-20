@@ -1037,8 +1037,15 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
-- Deno: 324 at the last recorded run (2026-09-15). Re-run
-  `deno task test` before trusting it.
+- Deno: 366 passed, 0 failed (2026-10-20, the section-details change, in
+  the cloud container with Deno 2.9.7 and `--no-check`; 350 before it).
+  `deno check` is clean under Deno 2.1.4 (`--no-lock`, the edge runtime's
+  generation) and under 2.9 reports three pre-existing `Timeout` is not
+  assignable to `number` errors (`quota.ts`, `outcomes.ts`), which are
+  the newer toolchain's `setTimeout` types and not defects. The container
+  cannot reach `penncoursereview.com`, so the live Penn Labs shape was
+  checked against Penn Labs' own serializer source and the fixture, not a
+  live call.
 
 Nothing under `backend/` is exercised by `swift test`, and the live backend
 path has only ever been exercised by hand on a device.
@@ -1193,6 +1200,25 @@ client problem. The pieces, all exercised by tests:
   newest pages get their bodies, and no announcement has ever been
   collected (Known gaps). Those are in the course-material sync, which
   Marco has said not to touch (`parked/ask-course-sync-fixes`).
+- **Where and when each section meets** is the one thing the server adds
+  on its own (2026-10-20, in the code on `v8`; **not deployed**, so the
+  live `ask` and `sync` still run the old version until Olisa says to
+  deploy both). `sync` already fetched each enrolled course's registrar
+  sections from Penn Labs' public Penn Courses API (the public mirror of
+  Path@Penn) into `catalog_courses.components`; it now keeps each
+  meeting's `room` and each section's `instructorsBySection`, and `ask`'s
+  COURSE STRUCTURE block renders a "Sections:" sentence per course: every
+  section's days, times, room and instructors, the student's own section
+  marked "(the student's section)" (from `courses.section`, the number in
+  the site label), at most 8 sections per component with the student's
+  always included. A stored row written before this has no `room` key on
+  its meetings, which `dbRowToCatalogRow` detects by key presence (a
+  present `room: null` is a real online section) and `catalogNeedsFetch`
+  refetches on the next manifest, so every enrolled course re-reads
+  within about an hour of the deploy. The system instructions say the
+  block never holds an exam room: those come from announcements and Ed
+  posts, which the phone's search has to find. Nothing new leaves the
+  phone; the section number was already sent.
 
 ### Stay signed in (Penn only)
 

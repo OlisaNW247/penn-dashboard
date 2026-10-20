@@ -383,6 +383,15 @@ both the course and section level) are Penn Labs' own aggregated Penn
 Course Review data, not the registrar's, and are never stored -- out of
 scope for this table on purpose.
 
+What is kept from each section: its activity (lecture, lab, ...), credits,
+and weekly meetings (weekday, start and end minutes after local midnight,
+and the meeting's `room`, `null` when Penn Labs gives none or an empty
+string -- an online section), plus each section's instructor names, stored
+per component as `instructorsBySection` (section id -> names, trimmed,
+deduped, sorted for byte stability; a section with no named instructor has
+no key). Rooms and instructors feed only `ask`'s structure block; the
+`CatalogEntryWire` the app receives is unchanged.
+
 Storage: `catalog_courses`, one row per registrar course code (not one per
 Canvas course id, and not one per enrolled student -- a registrar course is
 the same fact for every semester's offering and every student in it).
@@ -407,7 +416,14 @@ since `components` is jsonb and a row can predate a shape change such as
 6104d86 adding `meetings`; a row that needed that normalization
 (`componentsLackMeetings`) is refetched on the next manifest call even when
 otherwise fresh, so a legacy row gets replaced rather than answering forever
-without a schedule.
+without a schedule. The same rule covers rooms and instructors
+(`componentsLackSectionDetails`): a stored meeting with no `room` key, or a
+component with no `instructorsBySection` key, marks a row written before
+those were kept, and it is refetched even when fresh. The test is key
+*presence*, never null-ness: a stored `room: null` or
+`instructorsBySection: {}` is a real answer (an online section, no listed
+instructor), and testing the value would refetch such a course on every
+manifest call forever.
 
 Structure block: `ask`'s prompt carries a `COURSE STRUCTURE (from the Penn
 registrar via Penn Labs)` system block, built by `_shared/catalog.ts`'s
@@ -421,6 +437,27 @@ cached prefix: title and overall credits, then each component ("Lecture
 component when no section states one), then grade modes offered, then
 prerequisites, then a 600-character description. Empty when no enrolled
 course has a resolved, fetched catalog row.
+
+After the components sentence each course gets one `Sections:` sentence
+(omitted when the course lists no sections), for example `Sections: 151 Lab
+— Mon 3:30–5:29 PM, DRLB LAB, Peter Harnish; 401 Lecture (the student's
+section) — Mon, Wed, Fri 10:00–10:59 AM, DRLB A1, Diana Van Winkle.` Each
+item is the section number (the last dash-separated token of its id, the
+number in the profile block's "(section 151)" site label), the component's
+label, then days, times, room and instructors. Components follow activity
+order and sections are sorted by id; meetings with the same span merge into
+one weekday-ordered day list and different spans are joined with "and";
+times are 12-hour with one AM/PM when both ends share it; the room clause is
+dropped for a null room, the instructor clause when none, and a section with
+no meetings reads "time not listed". At most 8 sections are listed per
+component, then `and N more sections`; the student's own sections are always
+listed (first) and marked "(the student's section)". `ask` derives those
+from the same `courses` rows (`section`, `catalog_code`) it already reads
+for the profile labels, enrolled ids only, and passes them to
+`structureBlock` as `ownSectionsByCatalogCode`. The block holds the weekly
+pattern only: never exam rooms or one-off room changes, which the system
+instructions tell the model come only from the context document or
+excerpts.
 
 Manifest exchange: alongside `structureBlock`'s prose for `ask`, `sync`'s
 manifest response also carries a `catalog` array (`CatalogEntryWire`, see

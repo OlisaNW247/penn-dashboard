@@ -17,6 +17,7 @@ import {
   catalogIsStale,
   type CatalogComponent,
   type CatalogCourseRow,
+  type CatalogMeeting,
   type CatalogEntryWire,
 } from "./catalog.ts";
 import { sanitizeProfile, type CourseProfileWire, type GradingWeight, type ProfileComponent } from "./profile.ts";
@@ -348,24 +349,53 @@ function catalogRowToDBRow(row: CatalogCourseRow): CatalogCourseDBRow {
  * `activity`/`label`/`sectionCount`/`credits` are read straight through --
  * every catalog shape that has ever existed carried those, so there is
  * nothing to default there.
+ *
+ * The same thing happened a second time when rooms and instructors were
+ * added: a meeting written before then has no `room` key and a component
+ * has no `instructorsBySection` key. Those are normalized to `room: null`
+ * and `{}` so every reader can rely on the shape, and `lacksSectionDetails`
+ * reports that it happened. It is decided by whether the *key is present*,
+ * never by the value: a stored `room: null` is a real fact (an online
+ * section lists no room) and `instructorsBySection: {}` is a real fact (no
+ * instructor listed), so a null/empty test would call every such course
+ * legacy and `catalogNeedsFetch` would refetch it from Penn Labs on every
+ * manifest call forever. A fresh fetch always writes both keys, so a row
+ * with the keys never gets flagged again. The wrong shortcut is treating
+ * the normalized `null`/`{}` as "missing": after normalization the two
+ * cases are indistinguishable, which is why the flag is computed from the
+ * raw json before the defaults are filled in.
  */
-function normalizeCatalogComponents(raw: unknown): { components: CatalogComponent[]; lacksMeetings: boolean } {
-  if (!Array.isArray(raw)) return { components: [], lacksMeetings: false };
+function normalizeCatalogComponents(
+  raw: unknown,
+): { components: CatalogComponent[]; lacksMeetings: boolean; lacksSectionDetails: boolean } {
+  if (!Array.isArray(raw)) return { components: [], lacksMeetings: false, lacksSectionDetails: false };
   let lacksMeetings = false;
+  let lacksSectionDetails = false;
   const components = raw.map((entry) => {
     const component = (entry ?? {}) as Partial<CatalogComponent> & Record<string, unknown>;
     const hasMeetings = Array.isArray(component.meetings);
     if (!hasMeetings) lacksMeetings = true;
+    const hasInstructors = typeof component.instructorsBySection === "object" &&
+      component.instructorsBySection !== null && !Array.isArray(component.instructorsBySection);
+    if (!hasInstructors) lacksSectionDetails = true;
+    const meetings = hasMeetings
+      ? (component.meetings as unknown[]).map((meeting) => {
+        const record = (meeting ?? {}) as Record<string, unknown>;
+        if (!("room" in record)) lacksSectionDetails = true;
+        return { ...record, room: typeof record["room"] === "string" ? record["room"] : null } as unknown as CatalogMeeting;
+      })
+      : [];
     return {
       activity: component.activity ?? "",
       label: component.label ?? "",
       sectionCount: component.sectionCount ?? 0,
       credits: component.credits ?? null,
       sectionIDs: Array.isArray(component.sectionIDs) ? component.sectionIDs : [],
-      meetings: hasMeetings ? (component.meetings as CatalogComponent["meetings"]) : [],
+      meetings,
+      instructorsBySection: hasInstructors ? (component.instructorsBySection as Record<string, string[]>) : {},
     };
   });
-  return { components, lacksMeetings };
+  return { components, lacksMeetings, lacksSectionDetails };
 }
 
 // Exported (unlike most of this file's row<->wire mappers) so
@@ -374,7 +404,7 @@ function normalizeCatalogComponents(raw: unknown): { components: CatalogComponen
 // just the round-trip) is exactly what the fix in this commit needs a
 // test to pin down.
 export function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
-  const { components, lacksMeetings } = normalizeCatalogComponents(row.components);
+  const { components, lacksMeetings, lacksSectionDetails } = normalizeCatalogComponents(row.components);
   return {
     catalogCode: row.catalog_code,
     semester: row.semester,
@@ -390,6 +420,7 @@ export function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
     fetchedAt: row.fetched_at,
     syllabusURL: row.syllabus_url ?? undefined,
     componentsLackMeetings: lacksMeetings,
+    componentsLackSectionDetails: lacksSectionDetails,
   };
 }
 
@@ -411,10 +442,19 @@ export function dbRowToCatalogRow(row: CatalogCourseDBRow): CatalogCourseRow {
  * present or visibly absent (not silently wrong), so a legacy row must be
  * refetched even when it was fetched five minutes ago and is nowhere near
  * `catalogIsStale`.
+ *
+ * `componentsLackSectionDetails` short-circuits the same way, for a row
+ * written before rooms and instructors were kept: it answers, but `ask`
+ * would tell a student "no room is listed" for a lecture whose room we simply
+ * never stored. Whether a row is in that state is decided by key presence
+ * in the stored json (see `normalizeCatalogComponents`), not by `room`
+ * being null, so a genuinely roomless online section does not refetch
+ * every hour.
  */
 export function catalogNeedsFetch(existing: CatalogCourseRow | undefined, now: Date): boolean {
   if (existing === undefined) return true;
   if (existing.componentsLackMeetings) return true;
+  if (existing.componentsLackSectionDetails) return true;
   return catalogIsStale(existing.fetchedAt, now);
 }
 

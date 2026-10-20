@@ -23,8 +23,8 @@ const PHYS_CATALOG_ROW: CatalogCourseRow = {
   gradeModes: [],
   attributes: [],
   components: [
-    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["a", "b"], meetings: [] },
-    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["c", "d", "e"], meetings: [] },
+    { activity: "LEC", label: "Lecture", sectionCount: 2, credits: 1.5, sectionIDs: ["a", "b"], meetings: [], instructorsBySection: {} },
+    { activity: "LAB", label: "Lab", sectionCount: 3, credits: null, sectionIDs: ["c", "d", "e"], meetings: [], instructorsBySection: {} },
   ],
   source: "penn-labs",
   fetchedAt: "2026-09-07T00:00:00Z",
@@ -214,4 +214,35 @@ Deno.test("buildMessages: COURSE STRUCTURE block renders a shared catalog code o
   assert.ok(structureMessage);
   const occurrences = structureMessage.content.split("PHYS-0151").length - 1;
   assert.equal(occurrences, 1);
+});
+
+Deno.test("buildMessages puts the Sections sentence, with the student's own section marked, inside COURSE STRUCTURE", () => {
+  const catalog: CatalogCourseRow[] = [{
+    ...PHYS_CATALOG_ROW,
+    components: [{
+      activity: "LEC",
+      label: "Lecture",
+      sectionCount: 1,
+      credits: 1.5,
+      sectionIDs: ["PHYS-0151-401"],
+      meetings: [{ sectionID: "PHYS-0151-401", weekday: 2, startMinutes: 10 * 60, endMinutes: 10 * 60 + 59, room: "DRLB A1" }],
+      instructorsBySection: { "PHYS-0151-401": ["Diana Van Winkle"] },
+    }],
+  }];
+  const messages = buildMessages({ ...BASE_INPUT, catalog, ownSectionsByCatalogCode: { "PHYS-0151": ["401"] } });
+  const structure = messages[2].content;
+  assert.ok(structure.startsWith("COURSE STRUCTURE (from the Penn registrar via Penn Labs):\n"));
+  assert.ok(
+    structure.includes("Sections: 401 Lecture (the student's section) — Mon 10:00–10:59 AM, DRLB A1, Diana Van Winkle."),
+    structure,
+  );
+  // Without the option nothing is marked.
+  const plain = buildMessages({ ...BASE_INPUT, catalog })[2].content;
+  assert.ok(plain.includes("Sections: 401 Lecture — Mon"), plain);
+});
+
+Deno.test("SYSTEM_INSTRUCTIONS explains the Sections sentence, including that exam rooms are not in it", () => {
+  assert.ok(SYSTEM_INSTRUCTIONS.includes('"Sections:" sentence'));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("exam rooms or one-off room changes"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("(the student's section)"));
 });
