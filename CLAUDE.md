@@ -820,7 +820,13 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2453 tests / 224 suites, all green, on `v8` at `8d00e62`
+**Current: 2462 tests / 225 suites, all green, on `v8` at `8584900`
+(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 9.3 s): 2453
+plus the 9 source-scan tests of `SweeperOnboardingTests` (the Smooth
+Sweeper page and the rename), nothing removed; `usageDescriptionInBothPlaces`
+in `BerserkAlarmTests` pins the new permission text. Green on the first
+run; the phone build of this tree is not yet recorded.** Before it: 2453
+/ 224 at `8d00e62`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.2 s):
 2414 plus 7 in `BerserkAlarmActivityTests` (the Live Activity's plan
 fields, the v2 id namespace, the plist, project and pbxproj entries, the
@@ -832,7 +838,7 @@ Green on the first run. The iOS Debug `xcodebuild` (the widget
 extension's Live Activity and the AlarmKit extension) also succeeded on
 the first try and was installed on Olisa's iPhone at 11:25 the same
 day; Olisa then rang it: the island showed the tomato card and the
-takeover worked.** Before it: 2414 / 217 at `edff9ac`
+takeover worked. Before it: 2414 / 217 at `edff9ac`
 (2026-10-20 afternoon, 8.4 s):
 2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
 `DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
