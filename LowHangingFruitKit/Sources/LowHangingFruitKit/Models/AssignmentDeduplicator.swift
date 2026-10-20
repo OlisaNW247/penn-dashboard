@@ -738,6 +738,25 @@ public enum AssignmentDeduplicator {
 
     // MARK: - Title normalization
 
+    // Compiled once. `normalize` runs on both titles of every same-course
+    // pair in the duplicate checks, and each of these used to be re-compiled
+    // by `replacingOccurrences(of:with:options: .regularExpression)` on every
+    // call, four times a title. Literals known to be valid, so `try!` can only
+    // trap on a typo the first test run catches. The replacements contain no
+    // `$` or `\`, so template and literal replacement are the same thing.
+    private static let nonWordRegex = try! NSRegularExpression(pattern: #"[^a-z0-9\s]"#)
+    private static let problemSetRegex = try! NSRegularExpression(pattern: #"\bproblem\s+sets?\b"#)
+    private static let midTermRegex = try! NSRegularExpression(pattern: #"\bmid\s+terms?\b"#)
+    private static let whitespaceRunRegex = try! NSRegularExpression(pattern: #"\s+"#)
+
+    private static func replacing(_ regex: NSRegularExpression, in text: String, with template: String) -> String {
+        regex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(location: 0, length: text.utf16.count),
+            withTemplate: template
+        )
+    }
+
     /// Reduces a title to a token sequence for comparison: lowercase,
     /// punctuation stripped to spaces, common prefixes canonicalized (`hw` /
     /// `homework` / `ps` / `problem set(s)` → `hw`; `lab`/`labs` → `lab`;
@@ -750,12 +769,12 @@ public enum AssignmentDeduplicator {
     /// tolerances — see the type doc comment).
     static func normalize(_ raw: String) -> [String] {
         var s = raw.lowercased()
-        s = s.replacingOccurrences(of: #"[^a-z0-9\s]"#, with: " ", options: .regularExpression)
+        s = replacing(nonWordRegex, in: s, with: " ")
         // Phrase-level collapses before word-splitting, so multi-word phrases
         // line up with their single-word abbreviations.
-        s = s.replacingOccurrences(of: #"\bproblem\s+sets?\b"#, with: "hw", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"\bmid\s+terms?\b"#, with: "midterm", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        s = replacing(problemSetRegex, in: s, with: "hw")
+        s = replacing(midTermRegex, in: s, with: "midterm")
+        s = replacing(whitespaceRunRegex, in: s, with: " ")
             .trimmingCharacters(in: .whitespaces)
 
         guard !s.isEmpty else { return [] }

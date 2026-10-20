@@ -90,6 +90,10 @@ extension AppState {
         // snapshot said; without this the home screen would show the old date
         // until the next sync or completion happened to rebuild the dashboard.
         publishWidgetSnapshot()
+        // A moved date can put a found task past, or bring one back, and the
+        // found list judges it by the date the card shows. The badge is stored
+        // now, so it hears about it here.
+        refreshAnnouncementBadge()
     }
 
     /// Forgets every edited due date belonging to one recurring task's

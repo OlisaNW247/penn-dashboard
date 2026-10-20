@@ -96,6 +96,24 @@ final class AppState: ObservableObject {
     /// Ids the student has already seen in the megaphone sheet (finds and
     /// records both; see `AnnouncementReadState`). Mirrors the persisted set.
     @Published var announcementSeenIDs: Set<String> = []
+    /// The megaphone's badge, stored. It used to be computed on every read,
+    /// and the dashboard's `body` reads it two to four times per evaluation
+    /// (and `body` re-evaluates on every `objectWillChange`): each read ran
+    /// the found list (a ledger fetch for post dates, the exam and duplicate
+    /// checks, an all-pairs pass that parses a course code per pair) and the
+    /// sheet's record list, so a single rebuild's burst of publishes did that
+    /// work dozens of times on the main thread (2026-10-20, the lag after the
+    /// merge). It is now recomputed only where an input moves
+    /// (`refreshAnnouncementBadge`, called at the end of a rebuild, after the
+    /// Ed and page lists change, after the seen set is written, and from the
+    /// dashboard's periodic refresh so the 7-day window and "not past yet"
+    /// advance while the app sits open). `announcementBadgeCount(now:)` stays
+    /// the pure computation. The wrong version is a cache keyed on a clock
+    /// read in `body`, which still computes once per publish.
+    /// Internal rather than `private(set)`, like its neighbours: `private` is
+    /// file-scoped and the writer lives in `AppState+AnnouncementLog.swift`.
+    /// Read `unreadAnnouncementCount`; write only through `refreshAnnouncementBadge`.
+    @Published var announcementBadge: Int = 0
     /// Every stored record, before the class-selection filter.
     var announcementLogRecords: [AnnouncementRecord] = []
     /// Ed Discussion announcements and pinned posts, derived from
@@ -4696,7 +4714,18 @@ final class AppState: ObservableObject {
         _ candidates: [Assignment],
         against existing: [Assignment]
     ) -> (survivors: [Assignment], absorbed: [AnnouncementTwin], displaced: [AnnouncementTwin]) {
-        var comparisonPool = existing
+        // The comparison pool, bucketed by course identity. A candidate can
+        // only be the twin of an item of its own class (the first test of the
+        // old all-pairs filter was `announcementCoursesMatch`, an equality of
+        // identities), so each candidate scans its own class's bucket and not
+        // every item the student has, and each course string is parsed once
+        // (`CourseCode.parse` per pair was the cost). Order inside a bucket is
+        // the old pool's order, so `twins.first` is the same twin as before.
+        var courseIdentities = AnnouncementCourseIdentities()
+        var poolByIdentity: [String: [Assignment]] = [:]
+        for item in existing {
+            poolByIdentity[courseIdentities.identity(of: item.course), default: []].append(item)
+        }
         var survivors: [Assignment] = []
         var absorbed: [AnnouncementTwin] = []
         var displaced: [AnnouncementTwin] = []
@@ -4721,6 +4750,7 @@ final class AppState: ObservableObject {
             return identity
         }
         for candidate in candidates {
+            let candidateIdentity = courseIdentities.identity(of: candidate.course)
             let candidateExam = examIdentity(of: candidate)
             func sameSitting(_ other: Assignment) -> Bool {
                 guard let candidateExam, let otherExam = examIdentity(of: other) else { return false }
@@ -4728,8 +4758,7 @@ final class AppState: ObservableObject {
                     candidateExam, due: candidate.dueAt, otherExam, due: other.dueAt
                 )
             }
-            let twins = comparisonPool.filter { other in
-                guard announcementCoursesMatch(candidate.course, other.course) else { return false }
+            let twins = (poolByIdentity[candidateIdentity] ?? []).filter { other in
                 if sameSitting(other) { return true }
                 let otherIsAnnouncement = other.source == .canvasAnnouncement
                 if otherIsAnnouncement,
@@ -4750,7 +4779,7 @@ final class AppState: ObservableObject {
             }
             guard let twin = twins.first else {
                 survivors.append(candidate)
-                comparisonPool.append(candidate)
+                poolByIdentity[candidateIdentity, default: []].append(candidate)
                 continue
             }
             let displaceable: (Assignment) -> Bool = { item in
@@ -4765,10 +4794,12 @@ final class AppState: ObservableObject {
                         hiddenDue: item.dueAt, survivorDue: candidate.dueAt
                     ))
                 }
+                // Every twin is in the candidate's own bucket (that is how it
+                // became a twin), so that is the only place to remove from.
                 let gone = Set(twins.map(\.id))
-                comparisonPool.removeAll { gone.contains($0.id) }
+                poolByIdentity[candidateIdentity]?.removeAll { gone.contains($0.id) }
                 survivors.append(candidate)
-                comparisonPool.append(candidate)
+                poolByIdentity[candidateIdentity, default: []].append(candidate)
             } else {
                 absorbed.append(AnnouncementTwin(
                     hiddenID: candidate.id, survivorID: twin.id,
@@ -4841,6 +4872,24 @@ final class AppState: ObservableObject {
             let rhsEd = rhs.announcementOrigin == .ed
             if lhsEd != rhsEd { return !lhsEd }
             return lhs.id < rhs.id
+        }
+    }
+
+    /// A memo of `announcementCourseIdentity` for one pass over many items.
+    /// Parsing a course descriptor is the expensive part of comparing two
+    /// items' classes, and a rebuild compares every announcement row with
+    /// every item the student has, so a pass reads each distinct course string
+    /// once and then looks identities up. Same results as calling
+    /// `announcementCourseIdentity` directly; made per pass, never kept.
+    @MainActor
+    struct AnnouncementCourseIdentities {
+        private var known: [String: String] = [:]
+
+        mutating func identity(of raw: String) -> String {
+            if let hit = known[raw] { return hit }
+            let made = AppState.announcementCourseIdentity(raw)
+            known[raw] = made
+            return made
         }
     }
 
@@ -6774,15 +6823,25 @@ final class AppState: ObservableObject {
         // restatement and wrong for passing a tick along, because "I did the
         // one due the 6th" is not "I did the one due the 20th"
         // (`completionFollows`).
+        //
+        // The real items are bucketed by course identity once, each course
+        // string parsed once, so an announcement scans its own class's items
+        // (in their old order, so `first` is the same item) and not all of
+        // them with a course parse per pair.
+        var courseIdentities = AnnouncementCourseIdentities()
+        var realByIdentity: [String: [Assignment]] = [:]
+        for item in realItems {
+            realByIdentity[courseIdentities.identity(of: item.course), default: []].append(item)
+        }
         for announcementItem in announcementItems {
-            if let survivor = realItems.first(where: { other in
-                Self.announcementCoursesMatch(announcementItem.course, other.course)
-                    && AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
-                        announcementTitle: announcementItem.title,
-                        announcementDue: announcementItem.dueAt,
-                        existingTitle: other.title,
-                        existingDue: other.dueAt
-                    )
+            let sameClass = realByIdentity[courseIdentities.identity(of: announcementItem.course)] ?? []
+            if let survivor = sameClass.first(where: { other in
+                AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                    announcementTitle: announcementItem.title,
+                    announcementDue: announcementItem.dueAt,
+                    existingTitle: other.title,
+                    existingDue: other.dueAt
+                )
             }), Self.announcementDatesCompatible(announcementItem.dueAt, survivor.dueAt) {
                 carryCompletion(from: announcementItem.id, to: survivor.id)
             }
@@ -7156,6 +7215,9 @@ final class AppState: ObservableObject {
                 + recurringAssignments + manualItems
         )
         publishWidgetSnapshot()
+        // Last, after the lists the badge reads are all assigned, and once
+        // for the whole rebuild (it assigns only when the number changed).
+        refreshAnnouncementBadge(now: now)
     }
 
     /// The widget's five soonest dated items, from the same arrays the

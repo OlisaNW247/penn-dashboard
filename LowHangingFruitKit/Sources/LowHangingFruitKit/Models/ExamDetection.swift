@@ -115,12 +115,17 @@ public enum ExamDetection {
     /// with is an identity bug (CLAUDE.md, "Course identity").
     static func normalizedCourse(_ raw: String) -> String {
         let compact = String(raw.lowercased().filter { $0.isLetter || $0.isNumber })
-        return compact.replacingOccurrences(
-            of: #"(?<=[a-z])0+(?=\d)"#,
-            with: "",
-            options: .regularExpression
+        return leadingZerosRegex.stringByReplacingMatches(
+            in: compact,
+            range: NSRange(location: 0, length: compact.utf16.count),
+            withTemplate: ""
         )
     }
+
+    /// Compiled once: `normalizedCourse` runs for both sides of every
+    /// candidate pair in the duplicate checks. A literal known to be valid, so
+    /// `try!` can only trap on a typo the first test run catches.
+    private static let leadingZerosRegex = try! NSRegularExpression(pattern: #"(?<=[a-z])0+(?=\d)"#)
 
     // MARK: - Mentions
 

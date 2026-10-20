@@ -290,6 +290,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-20: the dashboard freeze** (blind, needs a compile; predicted
+  2414/217): the megaphone badge was recomputed in `ContentView.body`
+  with a ledger fetch and an all-pairs regex scan per read. Now stored
+  and refreshed at data changes; regexes cached; one course parse per
+  item per rebuild; one view-model reload per burst. `CLAUDE.md` → Traps.
 - **2026-10-20: "what's new on ed" gets the newest posts** (`RecencyIntent`,
   2409/216 green on Olisa's Mac, not yet on a phone): a recency question puts the newest dated Ed
   posts and announcements first in the excerpts, within the window named.

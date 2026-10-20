@@ -250,7 +250,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     older post. Rows unread when opened are tagged NEW
     (`AnnouncementReadState`, which marks only the shown rows seen), and
     the first fill of each kind on an install counts as already seen. The
-    badge caps at "99+" (VoiceOver still gets the true count).
+    badge caps at "99+" (VoiceOver still gets the true count). Since
+    2026-10-20 (afternoon, blind) the count is stored
+    (`AppState.announcementBadge`, written by `refreshAnnouncementBadge`
+    at the end of every rebuild, after every change to the log, the Ed
+    records or the seen set, after a due-date edit, and on the 5-minute
+    refresh) rather than computed on every read: see the freeze trap.
   - **todo**: overdue plus the next two days. Tasks found in
     announcements are cards here and in all (see the bullet after prev).
     For someone who signed up
@@ -730,7 +735,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
+**Predicted after the freeze fix of 2026-10-20 (afternoon, blind): 2414 tests / 217 suites: 2409 plus 4 in `AnnouncementSheetBadgeTests` and 1 in the new `DashboardReloadCoalescingTests`. NOT RUN; replace this sentence with the real count.** Last verified: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
 (2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
 plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
 `RecencyIntent` table and the newest-posts-first excerpt rule), nothing
@@ -1837,6 +1842,31 @@ itself.
   404s, which reintroduces the wrong semester silently. The app sends no
   Canvas term (`courses.term` is null for every row), so the date is the
   only signal the server has.
+- **A badge computed in `body` turned the merge into a freezing app.**
+  On 2026-10-20 the owner reported the phone "lagging and freezing a
+  lot" after the merge. `ContentView.unreadAnnouncementCount` read
+  `AppState.unreadAnnouncementCount` two to four times per `body`
+  evaluation, and since the merge that computed property rebuilt both
+  megaphone lists on every read: `announcementPostDates` (a full ledger
+  fetch whenever any candidate lacks a post date), the visibility rules,
+  and `resolvingAnnouncementDuplicates`, an all-pairs scan whose course
+  match ran `CourseCode.parse` (four regex compiles) per pair. `body`
+  re-evaluates on every `AppState` publish, and a rebuild publishes about
+  eight properties, each of which also queued its own
+  `DashboardViewModel.reload`. At beed156 the badge was a read of stored
+  arrays; the redesign made it a recompute and nothing measured it. Found
+  by a read-only audit of beed156..HEAD, not by a profile. Four fixes,
+  blind: the badge is stored and refreshed at data changes; the
+  `CourseCode`, `AssignmentDeduplicator.normalize` and
+  `ExamDetection.normalizedCourse` regexes are `static let`s; each
+  rebuild parses every item's course identity once and buckets the
+  comparison pool by it (safe because `announcementCoursesMatch` was
+  already a plain equality of `announcementCourseIdentity`); and the view
+  model coalesces a burst of publishes into one reload. The wrong fix is
+  caching only inside `body`: the rebuild itself was tens of thousands of
+  regex compiles per call. The rule: never put a computation that reads
+  the ledger or scans all pairs in a SwiftUI `body` or a property `body`
+  reads; store it and refresh it where the data changes.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -2037,6 +2067,16 @@ none is a ship line.
   for a document synced before that (until its thread is fetched again),
   where a Sept 14 thread somebody replied to on Oct 15 can still be
   extracted. Both are blind. The day is noon US Eastern, not a minute.
+- **The freeze fix of 2026-10-20 is blind** (the stored badge, the static
+  regexes, the identity buckets, the coalesced reload; see the trap). Not
+  compiled when written; the riskiest lines are the `@MainActor` nested
+  `AnnouncementCourseIdentities` struct, the `[weak self]` Task in the
+  view model's sink, and the `RunLoop` pump in
+  `DashboardReloadCoalescingTests`. Whether it cures the lag on the
+  owner's phone is unknown: no profile was taken before the change, so
+  if the lag persists, take one (`xcrun xctrace record --template 'Time
+  Profiler'`) before guessing again. `announcementAssignmentsOnDashboard(for:)`
+  still parses the configured course keys per announcement item.
 - **The "what's new" excerpt rule has not been asked on a phone**
   (`RecencyIntent`, `AskRecencyExcerptTests`, 2026-10-20): written in the
   cloud container, compiled green on Olisa's Mac the same day (2409/216),

@@ -635,6 +635,12 @@ struct ContentView: View {
         // show a stale read of how long Duo will keep skipping its prompt.
         await state.refreshDuoRememberSummary()
         vm.reload(preservingEdits: true)
+        // The megaphone's badge is stored, not recomputed per read. A sync
+        // rebuilds and refreshes it, but a post that ages out of the 7-day
+        // window, or a found task whose time passes, changes the count with
+        // no data change at all, so the loop that keeps the app alive moves
+        // it too.
+        state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         await announceGradeChanges()
         await announceTurnedIn()

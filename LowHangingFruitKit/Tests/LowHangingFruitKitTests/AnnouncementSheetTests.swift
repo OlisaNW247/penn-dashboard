@@ -471,6 +471,68 @@ struct AnnouncementSheetBadgeTests {
             #expect(h.state.announcementBadgeCount(now: now) == 0)
         }
     }
+
+    // MARK: The badge is stored, not recomputed per read (2026-10-20)
+
+    @Test("a fresh AppState shows no badge, and refreshing stores exactly what the pure count says")
+    func storedBadgeStartsAtZero() async throws {
+        let fresh = AppState(assignmentStore: try AssignmentStore(inMemory: true))
+        #expect(fresh.unreadAnnouncementCount == 0)
+        #expect(fresh.announcementBadge == 0)
+        fresh.refreshAnnouncementBadge(now: Date())
+        #expect(fresh.unreadAnnouncementCount == fresh.announcementBadgeCount(now: Date()))
+
+        try await withHarness { h, now in
+            // The harness's rebuild already stored it; no call from the test.
+            #expect(h.state.unreadAnnouncementCount == 3)
+
+            // Reading does not recompute: a clock that has moved on changes
+            // nothing until something refreshes the stored number.
+            let later = now + 8 * Self.day
+            #expect(h.state.announcementBadgeCount(now: later) == 0)
+            #expect(h.state.unreadAnnouncementCount == 3)
+
+            h.state.refreshAnnouncementBadge(now: later)
+            #expect(h.state.unreadAnnouncementCount == 0)
+            #expect(h.state.unreadAnnouncementCount == h.state.announcementBadgeCount(now: later))
+
+            h.state.refreshAnnouncementBadge(now: now)
+            #expect(h.state.unreadAnnouncementCount == h.state.announcementBadgeCount(now: now))
+            #expect(h.state.unreadAnnouncementCount == 3)
+        }
+    }
+
+    @Test("marking the sheet's rows seen drops the stored badge with no explicit refresh")
+    func openingTheSheetDropsTheStoredBadge() async throws {
+        try await withHarness { h, now in
+            #expect(h.state.unreadAnnouncementCount == 3)
+            _ = h.state.openAnnouncementsSheet(now: now)
+            #expect(h.state.unreadAnnouncementCount == 0)
+            #expect(h.state.unreadAnnouncementCount == h.state.announcementBadgeCount(now: now))
+        }
+    }
+
+    @Test("a rebuild updates the stored badge: finishing a found task lowers it")
+    func rebuildUpdatesTheStoredBadge() async throws {
+        try await withHarness { h, now in
+            #expect(h.state.unreadAnnouncementCount == 3)
+            // `markCompleted` ends in a rebuild; the test never refreshes.
+            h.state.markCompleted(h.rows["upcoming"]!)
+            #expect(h.state.unreadAnnouncementCount == 2)
+
+            h.state.rebuildDashboardItemsForTesting(now: now)
+            #expect(h.state.unreadAnnouncementCount == h.state.announcementBadgeCount(now: now))
+        }
+    }
+
+    @Test("a rebuild at a later moment stores the count as of that moment")
+    func rebuildAtALaterMomentAdvancesTheWindow() async throws {
+        try await withHarness { h, now in
+            #expect(h.state.unreadAnnouncementCount == 3)
+            h.state.rebuildDashboardItemsForTesting(now: now + 8 * Self.day)
+            #expect(h.state.unreadAnnouncementCount == 0)
+        }
+    }
 }
 
 /// The sheet's words and the shape of the view, pinned the way the other UI

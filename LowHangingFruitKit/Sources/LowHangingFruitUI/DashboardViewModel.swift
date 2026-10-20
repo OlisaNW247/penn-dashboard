@@ -174,7 +174,39 @@ final class DashboardViewModel: ObservableObject {
         reload()
         cancellable = state.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.reloadFromRealDataIfNeeded() }
+            .sink { [weak self] in self?.scheduleReloadFromRealData() }
+    }
+
+    /// True from the first publish of a burst until the one reload that
+    /// answers it runs.
+    private var reloadPending = false
+    /// How many reloads the publish path has actually run. Only a test reads
+    /// it, to pin that a burst of publishes is one reload.
+    private(set) var publishedReloadCount = 0
+
+    /// One reload per burst of `AppState` publishes, not one per publish. A
+    /// rebuild assigns around eight `@Published` properties, each of which
+    /// fires `objectWillChange`, and every delivery used to rebuild every
+    /// `DashItem` and republish `items`, which re-evaluates the dashboard's
+    /// `body` that many times for one change (2026-10-20, the lag after the
+    /// merge). `objectWillChange` fires *before* the property is set, but the
+    /// sink is delivered on a later run-loop turn, and the reload below runs on
+    /// a turn after that, so by then the whole synchronous burst has landed and
+    /// the single reload reads the finished state. The flag is cleared before
+    /// the reload runs, so a publish that arrives after it (during it, or on
+    /// the next turn) is not swallowed: it schedules the next reload. The
+    /// wrong version clears the flag after reloading, which drops exactly that
+    /// publish and leaves the dashboard one change behind.
+    private func scheduleReloadFromRealData() {
+        guard !reloadPending else { return }
+        reloadPending = true
+        Task { @MainActor [weak self] in self?.runScheduledReload() }
+    }
+
+    private func runScheduledReload() {
+        reloadPending = false
+        publishedReloadCount += 1
+        reloadFromRealDataIfNeeded()
     }
 
     private func reloadFromRealDataIfNeeded() {

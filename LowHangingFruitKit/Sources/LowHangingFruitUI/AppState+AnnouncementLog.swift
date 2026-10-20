@@ -173,12 +173,15 @@ extension AppState {
             edAnnouncementRecords = []
             announcementSeenIDs = []
             refreshAnnouncementRecordsOnPage()
+            refreshAnnouncementBadge()
             return
         }
         announcementLogRecords = log.store.load(now: now)
         announcementSeenIDs = log.readState.seenIDs
         observeKnowledgeForAnnouncements()
         refreshEdAnnouncementRecords(from: courseKnowledge, now: now)
+        // The seen ids were just replaced from disk, which no list change implies.
+        refreshAnnouncementBadge(now: now)
     }
 
     // MARK: Ed Discussion rows
@@ -200,6 +203,12 @@ extension AppState {
                 MainActor.assumeIsolated {
                     self?.refreshEdAnnouncementRecords(from: knowledge, now: Date())
                 }
+                // The refresh above ran while `self.courseKnowledge` still
+                // held the old value, and the found list reads it for the Ed
+                // posts' dates (`announcementPostDates`), so the badge it just
+                // stored could judge an Ed task by a stale date. Count again
+                // once the property has settled (next main-actor turn).
+                Task { @MainActor [weak self] in self?.refreshAnnouncementBadge() }
             }
     }
 
@@ -213,6 +222,10 @@ extension AppState {
         if next != edAnnouncementRecords { edAnnouncementRecords = next }
         seedEdAnnouncementsIfNeeded()
         refreshAnnouncementRecordsOnPage()
+        // Unconditional, and after the seeding above: the seed writes the seen
+        // set, and an Ed row that reaches the page list unchanged elsewhere
+        // still moves the count. `now` is the sync's, so a test can pin it.
+        refreshAnnouncementBadge(now: now)
     }
 
     /// The first time Ed rows exist on this install, they count as already
@@ -234,6 +247,7 @@ extension AppState {
         log.readState.markSeen(Set(edAnnouncementRecords.map(AnnouncementReadState.key(for:))))
         log.readState.markEdSeeded()
         announcementSeenIDs = log.readState.seenIDs
+        refreshAnnouncementBadge()
     }
 
     /// The seen-set key of every row that could still be listed: all of
@@ -263,7 +277,13 @@ extension AppState {
         // Only when it changed: this runs on every dashboard rebuild, which a
         // completion toggle triggers, and republishing an unchanged array
         // would redraw every view observing `AppState` for nothing.
-        if next != announcementRecordsOnPage { announcementRecordsOnPage = next }
+        // The badge counts these records, so it follows them. Only on a change:
+        // a rebuild ends with its own refresh, and an unchanged list moves
+        // nothing the badge reads.
+        if next != announcementRecordsOnPage {
+            announcementRecordsOnPage = next
+            refreshAnnouncementBadge()
+        }
     }
 
     // MARK: Recording
@@ -320,6 +340,7 @@ extension AppState {
         announcementSeenIDs = log.readState.seenIDs
         announcementLogRecords = kept
         refreshAnnouncementRecordsOnPage()
+        refreshAnnouncementBadge(now: now)
     }
 
     // MARK: Megaphone
@@ -331,8 +352,21 @@ extension AppState {
     /// that has since passed, is not on the sheet, so it must not be on the
     /// badge either: a number the student cannot reduce by looking is the
     /// failure the unread count was introduced to end.
+    ///
+    /// Stored (`announcementBadge`), not computed: the dashboard's `body` reads
+    /// this several times per evaluation and a computed version ran the whole
+    /// found-list pass for each read. Kept current by `refreshAnnouncementBadge`.
     var unreadAnnouncementCount: Int {
-        announcementBadgeCount(now: Date())
+        announcementBadge
+    }
+
+    /// Recomputes the stored badge as of `now` and assigns it only if it
+    /// changed, so an unchanged number does not fire `objectWillChange` and
+    /// redraw every view observing `AppState`. Called wherever an input of the
+    /// count moves (see `announcementBadge`).
+    func refreshAnnouncementBadge(now: Date = Date()) {
+        let next = announcementBadgeCount(now: now)
+        if next != announcementBadge { announcementBadge = next }
     }
 
     /// `unreadAnnouncementCount` as of `now`, so a test can pin the 7-day
@@ -383,6 +417,10 @@ extension AppState {
                 .union(records.map(AnnouncementReadState.key(for:)))
                 .union(announcementSeenIDs.intersection(known))
         }
+        // The count drops the moment the rows are seen: the header's badge
+        // reads the stored number, so it must be brought up to date here
+        // rather than at the next rebuild.
+        refreshAnnouncementBadge(now: now)
         return newIDs
     }
 
@@ -406,5 +444,6 @@ extension AppState {
         }
         seedEdAnnouncementsIfNeeded()
         refreshAnnouncementRecordsOnPage()
+        refreshAnnouncementBadge()
     }
 }

@@ -93,7 +93,7 @@ public enum CourseCode {
         // the term stamp. `firstTermCode` finds the stamp itself; we want the
         // text preceding it.
         let codeRegion: String
-        if let termRange = text.range(of: #"\b20\d{2}(?:10|20|30)\b"#, options: .regularExpression) {
+        if let termRange = firstTermRange(in: text) {
             codeRegion = String(text[text.startIndex..<termRange.lowerBound])
         } else {
             codeRegion = text
@@ -109,15 +109,45 @@ public enum CourseCode {
     /// this runs, so one can never reach the matcher.
     private static let delimiters: Set<Character> = ["-", "\u{2013}", "\u{2014}"]
 
+    // The patterns below are compiled once. `parse` runs for every item on
+    // every dashboard rebuild and inside the duplicate checks' per-pair course
+    // comparison, and these used to be compiled (or, for the term stamp,
+    // re-interpreted by `range(of:options:)`) on every call. Each is a literal
+    // that is known to be valid, so `try!` can only trap on a typo caught by
+    // the first test run, never on input; the old `try?` turned a bad pattern
+    // into a silent "no course code" instead, which is the failure the
+    // comment in `firstPass` warns about.
+
+    /// The term stamp (`202430`), the same pattern `range(of:options:)` was
+    /// given before: `\b20\d{2}(?:10|20|30)\b`.
+    private static let termStampRegex = try! NSRegularExpression(
+        pattern: #"\b20\d{2}(?:10|20|30)\b"#
+    )
+
+    /// DEPT, separator, number. Deliberately not a raw string: the en/em dash
+    /// have to arrive as real characters, and `#"..."#` would pass the escape
+    /// through literally and leave the pattern uncompilable — which fails
+    /// *silently*, because a missing match reads as "no course code found" and
+    /// every descriptor then falls back to its raw form.
+    private static let deptNumberRegex = try! NSRegularExpression(
+        pattern: "\\b([A-Za-z]{2,4})([ \\t]*[-\u{2013}\u{2014}][ \\t]*|[ \\t]*)(\\d{3,4})\\b"
+    )
+
+    /// The registrar section after the course number's dash.
+    private static let sectionRegex = try! NSRegularExpression(
+        pattern: #"\b[A-Z]{2,5}[ -]?\d{3,4}[A-Z]?-(\d{3}[A-Z]?)\b"#
+    )
+
+    /// The first term stamp's range in `text`, as `range(of:options: .regularExpression)`
+    /// returned it.
+    private static func firstTermRange(in text: String) -> Range<String.Index>? {
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        guard let match = termStampRegex.firstMatch(in: text, range: full) else { return nil }
+        return Range(match.range, in: text)
+    }
+
     private static func firstPass(_ text: String) -> String? {
-        // Deliberately not a raw string: the en/em dash have to arrive as real
-        // characters, and `#"..."#` would pass the escape through literally and
-        // leave the pattern uncompilable — which fails *silently* here, because
-        // `try?` turns it into "no course code found" and every descriptor then
-        // falls back to its raw form.
-        guard let regex = try? NSRegularExpression(
-            pattern: "\\b([A-Za-z]{2,4})([ \\t]*[-\u{2013}\u{2014}][ \\t]*|[ \\t]*)(\\d{3,4})\\b"
-        ) else { return nil }
+        let regex = deptNumberRegex
         let nsText = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
 
@@ -162,9 +192,7 @@ public enum CourseCode {
     /// `DEPT NUMBER`.
     private static func extractSection(from rawText: String) -> String? {
         let text = rawText.replacingOccurrences(of: "_", with: "-")
-        guard let regex = try? NSRegularExpression(
-            pattern: #"\b[A-Z]{2,5}[ -]?\d{3,4}[A-Z]?-(\d{3}[A-Z]?)\b"#
-        ) else { return nil }
+        let regex = sectionRegex
         let nsText = text as NSString
         guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: nsText.length))
         else { return nil }
@@ -172,8 +200,7 @@ public enum CourseCode {
     }
 
     private static func firstTermCode(in text: String) -> String? {
-        guard let range = text.range(of: #"\b20\d{2}(?:10|20|30)\b"#, options: .regularExpression)
-        else { return nil }
+        guard let range = firstTermRange(in: text) else { return nil }
         return String(text[range])
     }
 }
