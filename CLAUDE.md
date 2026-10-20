@@ -155,8 +155,9 @@ require an update (`Update/`, below).
 
 ## What the app does
 
-Screen by screen, as of 2026-10-20 on `v8-merge-loud-alert` (Olisa's `v8` and
-Marco's `v8-loud-alert-actions` merged; **not compiled**, see Test baseline).
+Screen by screen, as of 2026-10-20 on `v8` (Olisa's `v8` and Marco's
+`v8-loud-alert-actions` merged; compiled green and on Olisa's phone, see
+Test baseline).
 Keep this current. It is the fastest way for a new session to know what exists.
 
 - **Onboarding.** A three-beat intro (`MissionIntroView`), then
@@ -742,9 +743,9 @@ through the shared defaults), fixed in `a3ede70`. The three suites that
 write the shared extraction keys (`EdAnnouncementTaskTests`,
 `EdAnnouncementTaskMergeTests`, `AnnouncementWatcherSyncTests`) are nested
 under one serialized parent, `AnnouncementExtractionSuites`. The iOS
-build of the merged tree (which is what compiles `App/LHFApp.swift` and
-the AlarmKit intents) had not been run when this was written; Marco's
-side alone built for iOS on 2026-10-19.
+Debug build of the merged tree (which is what compiles `App/LHFApp.swift`
+and the AlarmKit intents) succeeded on Olisa's Mac the same morning and
+was installed on Olisa's iPhone at 09:08.
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which
@@ -1815,7 +1816,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20, in progress when this was written; not compiled.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
+| `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
 | `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit `e3f9af8` on `v8-announcements` at `75dc7aa`; no PR, not merged. The AlarmKit alarm (with its custom sound) is a second commit, pushed the same day.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch, and on iOS 26 a real AlarmKit alarm in place of the buzzes (What the app does → Profile → reminders). A build from before the review fixes was installed on Marco's iPhone on 2026-10-19 at 15:21. Separate from `fix/submission-status`, which branches from the same commit. Sign-in and sync files are byte-identical to `75dc7aa`. |
@@ -1973,7 +1974,7 @@ none is a ship line.
   keeps only the dated half of the rule. A find that passes while the app
   is closed stays in the published widget snapshot until the app next
   republishes.
-- **The merge of 2026-10-20 has not been compiled or run.** Written on a
+- **The merge of 2026-10-20 compiled green (2397/214) and built to Olisa's iPhone the same morning, but none of its behaviour has been checked on the phone yet.** It was Written on a
   machine with no Swift toolchain, from re-reading: the conflicts in
   `AppState.swift` (and the `SettingsPage.swift` rows git merged into the
   wrong place, see Traps), the removal of `edAnnouncementsForExtraction`,
