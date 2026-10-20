@@ -143,7 +143,7 @@ private struct BerserkAlarmHeading: View {
     }
 }
 
-/// The lock screen card: a small "Smooth" label, the class and the
+/// The lock screen card: a small "Smooth Sweeper" label, the class and the
 /// assignment, and the countdown large on the right.
 @available(iOS 26.0, *)
 private struct BerserkAlarmBanner: View {
@@ -153,7 +153,7 @@ private struct BerserkAlarmBanner: View {
     var body: some View {
         let metadata = BerserkAlarmContent.metadata(of: attributes)
         VStack(alignment: .leading, spacing: 6) {
-            Text("Smooth")
+            Text("Smooth Sweeper")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.white.opacity(0.8))
             HStack(alignment: .center, spacing: 12) {

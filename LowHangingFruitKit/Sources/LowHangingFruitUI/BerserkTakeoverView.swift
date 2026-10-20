@@ -24,7 +24,7 @@ struct BerserkTakeoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Smooth")
+            Text("Smooth Sweeper")
                 .font(.lhfWordmark(26))
                 .foregroundStyle(Color.white)
 

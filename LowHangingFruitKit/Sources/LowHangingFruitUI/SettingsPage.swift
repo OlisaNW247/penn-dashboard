@@ -283,13 +283,15 @@ struct SettingsPage: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    // Not a lead time: it is its own switch because it is a
-                    // different kind of reminder (three Time Sensitive
+                    // "Smooth Sweeper" is the owner's name for the loud
+                    // 10-minute alert (2026-10-20); "Berserk" stays in code and
+                    // docs. Not a lead time: it is its own switch because it is
+                    // a different kind of reminder (three Time Sensitive
                     // notifications seconds apart for work not yet handed in)
                     // and a student who wants no 10-minute reminder at all
                     // still has to be able to find it. Changing it re-plans,
                     // like the lead times above.
-                    Toggle("loud 10-minute alert", isOn: Binding(
+                    Toggle("Smooth Sweeper", isOn: Binding(
                         get: { scheduler.loudAlertEnabled },
                         set: {
                             scheduler.setLoudAlertEnabled($0)

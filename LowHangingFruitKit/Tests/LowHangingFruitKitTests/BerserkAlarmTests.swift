@@ -546,7 +546,7 @@ struct BerserkAlarmTests {
         let fromYML = line.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         #expect(!fromYML.isEmpty)
         #expect(fromYML == fromPlist)
-        #expect(fromPlist == "Smooth rings an alarm 10 minutes before work you haven't turned in.")
+        #expect(fromPlist == "The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in.")
     }
 
     /// The pinned mapping of the factory's arguments. Both ids are plain
