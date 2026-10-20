@@ -166,7 +166,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo)
   3. Gradescope login (optional)
   4. reminders
-  5. a per-course setup walk (`OnboardingCourseSetup`)
+  5. **Smooth Sweeper** (2026-10-20, blind): the walk's last page and the
+     only one that finishes it. The student-facing name of the loud
+     10-minute alert (Berserk mode, below): a headline, one line ("an
+     alarm 10 minutes before anything you haven't turned in. if you
+     actually never want to miss an assignment, keep this on."), the
+     switch itself (`NotificationScheduler.loudAlertEnabled`, on by
+     default, the same preference Profile → reminders shows), and "done".
+     "done" asks for notification permission first when the switch is on
+     and reminders were skipped on the previous page, because the sweeper
+     never fires while reminders are off. Four progress dots (canvas,
+     gradescope, reminders, sweeper); the school picker has none.
+  6. a per-course setup walk (`OnboardingCourseSetup`)
 
   "Just exploring? preview with sample data" on the first pane is preview
   mode, App Review's only way in (see Known gaps). A reconnect from the
@@ -537,8 +548,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      class and its body is the assignment's name then the lead phrase
      ("Problem Set 4. Due in 1 hour", `NotificationScheduler.reminderBody`,
      2026-10-09; before that the body was the lead phrase alone). Since
-     2026-10-18 a **"loud 10-minute alert"** switch sits beside them, on
-     by default (`notif.loudAlertEnabled`): for work that takes a
+     2026-10-18 a loud 10-minute alert switch sits beside them, on
+     by default (`notif.loudAlertEnabled`), labelled **"Smooth Sweeper"**
+     since 2026-10-20 (the owner's student-facing name for the whole
+     mode; it was "loud 10-minute alert"; "Berserk" stays in code, tests
+     and this file): for work that takes a
      submission and has not been handed in, three Time Sensitive
      notifications three seconds apart at 10 minutes before the due time
      (`NotificationScheduler.loudAlerts`). Not for anything with nothing
@@ -551,7 +565,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
      ordinary notifications and says nothing. Never heard on a phone yet.
      The owner calls it **"Berserk mode"** (2026-10-19: right before an
      assignment goes unsubmitted it "goes berserk and forces you to notice
-     and either fix it or do something about it"), and since 2026-10-19
+     and either fix it or do something about it"); to students it is
+     **"the Smooth Sweeper"** since 2026-10-20 (the Profile switch, the
+     onboarding page, the takeover's heading, the island card's label and
+     the alarm permission text all say so), and since 2026-10-19
      (`v8-loud-alert-actions`, not on a phone) each buzz carries two
      buttons: **"turned in"**, which silences that item's remaining
      buzzes at the tap and then marks it done exactly as a swipe does once
