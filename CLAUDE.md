@@ -729,44 +729,22 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Last verified counts, one per line of work. The merged count below them
-is a prediction, not a run.** (The three suites that write the shared
-extraction keys, `EdAnnouncementTaskTests`, `EdAnnouncementTaskMergeTests`
-and `AnnouncementWatcherSyncTests`, are nested under one serialized parent,
-`AnnouncementExtractionSuites`, so a parallel run cannot interleave them.)
-- **`v8` (Olisa's line): 2033 tests / 192 suites, all green, at `2b46ce7`**
-  (2026-10-19, `swift test --no-parallel`, on Olisa's Mac, 6.0 s). That is
-  the launch-prep merge (1975), the Ed posting-date fix (11), Ed posts
-  through the Announcement Watcher (12), the sync summaries (8), the
-  first-error line (2), announcement tasks vanishing at their due time
-  (7), the work-identity dedup tier (13) and the extraction retry cap
-  (5). Compiled for iOS in Debug the same day (built to Olisa's iPhone).
-- **`v8-loud-alert-actions` (Marco's line): 2332 tests / 209 suites, all
-  green** (2026-10-19, `e3f9af8` plus the AlarmKit alarm and its custom
-  sound, `swift test --no-parallel` on Marco's Mac, 10.6 s, the only test
-  run on the machine; its base `v8-announcements` is 2230/206,
-  re-verified the same day before anything changed, and the 2026-10-10
-  figure was 1975/189 on `v8-launch-prep`). The iOS Debug compile
-  (`-destination 'generic/platform=iOS'`), which is what compiles
-  `App/LHFApp.swift`, ended in BUILD SUCCEEDED. Both lines branch from
-  `v8` at `beed156` (1975/189).
-- **`v8-merge-loud-alert` (the two merged, 2026-10-20): predicted 2397
-  tests / 214 suites.** First compile and run at `bc9d368` on Olisa's Mac:
-  2397 / 214, exactly the prediction, with two failures (a no-selected-courses
-  test that read other suites' leftovers in the shared course cache, and the
-  megaphone page list filtered a level too early); both fixed afterwards,
-  not yet re-run. 1975 plus Marco's 357 plus Olisa's 58 is
-  2390; the merge's own net is +3 tests and +1 suite (see the history
-  entry below for what was deleted and added), and the review of
-  2026-10-20 added 4 tests (a moved exam is not the syllabus's twin; the Ed
-  pass's three-strike cap and its back-off; a Canvas post restating an Ed
-  find) and the parent suite: +4 and +1. There is no Swift toolchain
-  where the merge was written, so nothing in it has been compiled; the
-  first thing to do with this branch on a Mac is `swift test
-  --no-parallel` and then `xcodebuild -destination
-  'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`. Replace this
-  paragraph with the real count; do not leave a prediction standing as a
-  baseline.
+**Current: 2397 tests / 214 suites, all green, on `v8` at `a3ede70`
+(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 7.7 s): the merge
+of Olisa's `v8` (2033/192 at `2b46ce7`, 2026-10-19) and Marco's
+`v8-loud-alert-actions` (2332/209, 2026-10-19), both branching from
+`beed156` (1975/189).** The count is exactly what the merge predicted
+(1975 + 357 + 58, the merge's own −6 +9, the review's +4 and one parent
+suite). The first compile had two failures, both in how the merge was
+resolved rather than in either side's code (the page list judged one
+level too early; a test whose empty course selection was overwritten
+through the shared defaults), fixed in `a3ede70`. The three suites that
+write the shared extraction keys (`EdAnnouncementTaskTests`,
+`EdAnnouncementTaskMergeTests`, `AnnouncementWatcherSyncTests`) are nested
+under one serialized parent, `AnnouncementExtractionSuites`. The iOS
+build of the merged tree (which is what compiles `App/LHFApp.swift` and
+the AlarmKit intents) had not been run when this was written; Marco's
+side alone built for iOS on 2026-10-19.
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which
@@ -808,7 +786,7 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
-- **2397/214 predicted, not run**, `v8-merge-loud-alert`, 2026-10-20 (2393/213
+- 2397/214 `v8`, 2026-10-20, verified on Olisa's Mac (2393/213
   at the merge commit, then +4 tests and the parent suite
   `AnnouncementExtractionSuites` from the review: `movedExamIsNotTheSyllabusTwin`
   and `threeFailuresGiveUp` and `backoffAfterAnAllFailedRun` in
