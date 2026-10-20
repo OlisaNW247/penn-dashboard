@@ -831,15 +831,20 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2462 tests / 225 suites, all green, on `v8` at `8584900`
-(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 9.3 s): 2453
+**Current: 2464 tests / 225 suites, all green, on `v8` at `38b578a`
+(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 7.6 s): 2462
+plus 2 in `SettingsCopyTests` (the Profile diagnostics flag is off, and
+the rows are gated, not deleted), nothing removed. Green on the first
+run; the phone build of this tree is not yet recorded.** Before it:
+2462 / 225 at `8584900`
+(2026-10-20, 9.3 s): 2453
 plus the 9 source-scan tests of `SweeperOnboardingTests` (the Smooth
 Sweeper page and the rename), nothing removed; `usageDescriptionInBothPlaces`
 in `BerserkAlarmTests` pins the new permission text. Green on the first
 run, and the iOS Debug build succeeded on the first try and was installed
 on Olisa's iPhone at 11:49 (the launch command failed only because the
 phone was locked). The page and the new names are not yet seen on the
-phone.** Before it: 2453
+phone. Before it: 2453
 / 224 at `8d00e62`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.2 s):
 2414 plus 7 in `BerserkAlarmActivityTests` (the Live Activity's plan
