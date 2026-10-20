@@ -808,9 +808,11 @@ widget wiring) and 32 in `BerserkTakeoverTests` (seven suites: which
 signal gets the screen, what a choice does, when it leaves, reading a
 loud buzz, the model, the source wiring), nothing removed; one existing
 test rewritten (`alarmKitIsGuarded` now expects two guarded files).
-Green on the first run. The iOS `xcodebuild` (the widget extension's
-Live Activity and the AlarmKit extension) was not yet run at the time
-of writing.** Before it: 2414 / 217 at `edff9ac`
+Green on the first run. The iOS Debug `xcodebuild` (the widget
+extension's Live Activity and the AlarmKit extension) also succeeded on
+the first try and was installed on Olisa's iPhone at 11:25 the same
+day; whether the Live Activity and the takeover appear is not yet
+recorded.** Before it: 2414 / 217 at `edff9ac`
 (2026-10-20 afternoon, 8.4 s):
 2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
 `DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
