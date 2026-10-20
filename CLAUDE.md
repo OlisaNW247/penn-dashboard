@@ -835,7 +835,10 @@ step in App Store Connect; there is no API key on the dev Mac.
 the same count as `38b578a`, with the nine `SweeperOnboardingTests`
 rewritten for the combined reminders page (no sweeper phase, the section
 under the turned-in switch, three dots), nothing added or removed. Green
-on the first run; the phone build of this tree is not yet recorded.**
+on the first run; the iOS Debug build succeeded on the first try, was
+installed on Olisa's iPhone at 18:49 and launched straight into the
+onboarding harness (`-LHFOnboardingHarness -LHFRemindersOnboardingHarness`).
+How the combined page looks is not yet recorded.**
 Before it: 2464 / 225 at `38b578a`
 (2026-10-20, 7.6 s): 2462
 plus 2 in `SettingsCopyTests` (the Profile diagnostics flag is off, and
