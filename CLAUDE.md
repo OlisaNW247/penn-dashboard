@@ -1189,6 +1189,24 @@ client problem. The pieces, all exercised by tests:
   boundary; Ed posts and announcements carry "posted Oct 3"; image-only
   Ed posts are skipped. It was four passages cut at 700 until
   2026-10-10, which dropped the tail of nearly every passage.
+- **"What's new" questions** (`RecencyIntent`, 2026-10-20, blind). BM25
+  has no idea what "recent" means: asked "what have been the recent staff
+  posts on Ed for my cis 2620 class", the phone sent the posts whose text
+  said "staff" (Aug 28 to Oct 7) and left out the two newest (Oct 12 and
+  Oct 18), so the model reported nothing newer than Oct 7 and, asked
+  about "the past week", still named Oct 7. Now a question with a recency
+  word (recent, latest, newest, lately, what's new, any news) or a time
+  phrase beside a posting noun (today, yesterday, this/past/last week,
+  past N days, this month, with post/announcement/update/news/said/staff/
+  ed/discussion/message/board) makes `excerptBlock` put the newest dated
+  Ed posts and announcements in scope first, newest first, inside the
+  window when one was named (the three newest regardless when the window
+  is empty, so the model can say when the last post was), and BM25 hits
+  fill the rest. Detected on the follow-up-merged query, so "what about
+  in the past week" after that question is a 7-day window. A question
+  with neither leaves the block byte-identical. The wrong fix is a
+  recency boost in BM25 itself, which would push a week-old post above
+  the syllabus for "what is the late policy".
 - **Follow-ups** (`FollowUpRetrieval`). A question that names no course
   searches within the course the nearest earlier question named (up to
   four back), and a question of six words or fewer is searched with the
@@ -1993,6 +2011,14 @@ none is a ship line.
   for a document synced before that (until its thread is fetched again),
   where a Sept 14 thread somebody replied to on Oct 15 can still be
   extracted. Both are blind. The day is noon US Eastern, not a minute.
+- **The "what's new" excerpt rule is blind** (`RecencyIntent`,
+  `AskRecencyExcerptTests`, 2026-10-20): written in the cloud container
+  with no Swift toolchain, after the owner showed the tree naming Oct 7
+  as the newest CIS 2620 Ed post on Oct 20. Compile and run `swift test
+  --no-parallel` on a Mac first; then ask the same two questions on the
+  phone. The "today" window is a day back from the asking moment, and Ed
+  posting days are stamped noon Eastern, so "today" can include
+  yesterday's post.
 - **ask and the widget after the 2026-10-20 merge (blind).** ask's work
   pool now drops what the dashboard hides (`announcementItemsStillOpen`),
   asked of the feed date, so a task the student moved into the future is

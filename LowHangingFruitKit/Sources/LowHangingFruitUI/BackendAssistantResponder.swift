@@ -420,6 +420,21 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         if hits.contains(where: \.isTextlessEdPost) {
             hits = Array(topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }.prefix(excerptLimit))
         }
+        // A question about the newest posts is answered from the newest posts,
+        // not from whichever posts share its words (`RecencyIntent` says why).
+        // They go first, newest first, and the BM25 hits fill what is left, so
+        // a question that does not ask about recency never reaches this branch
+        // and keeps byte-for-byte the excerpts it always had.
+        var recencyFired = false
+        if let intent = RecencyIntent.detect(in: followUp.query) {
+            let picks = recencyPicks(intent: intent, courseIDs: courseIDs, context: context)
+            if !picks.isEmpty {
+                recencyFired = true
+                let picked = Set(picks.map(\.document.id))
+                let fill = hits.filter { !picked.contains($0.document.id) }.prefix(max(excerptLimit - picks.count, 0))
+                hits = picks + Array(fill)
+            }
+        }
         guard !hits.isEmpty else { return ExcerptBlock(text: "", sources: []) }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
@@ -441,6 +456,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         }
         var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
         if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
+        if recencyFired { header.append(recencyExcerptNote) }
         return ExcerptBlock(
             text: (header + lines).joined(separator: "\n"),
             sources: hits.map { ExcerptSource(document: $0.document) }
@@ -454,6 +470,62 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// it. Must not start with `[`: the excerpt lines do, and the tests (and
     /// anything reading the block) tell the two apart by that.
     static let edExcerptNote = "Excerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted."
+
+    /// The line that follows the header (and the Ed note) only when the
+    /// newest-posts rule put documents at the top. Static text: it names no
+    /// date and no count, so the excerpts stay a function of the question and
+    /// `askedAt` alone. It must not start with `[`, like the Ed note.
+    static let recencyExcerptNote = "The newest posts in the window asked about come first, newest first; a post's date is the day it was posted."
+
+    /// The newest dated Ed posts and Canvas announcements in scope, newest
+    /// first, at most `excerptLimit`, each as the first passage of its
+    /// document (a post is short, and its head carries the news).
+    ///
+    /// Scope is the question's course when it has one and every course
+    /// otherwise, with no unscoped retry: BM25 retries a scope that found
+    /// nothing because the scope may have been a wrong guess, but "the newest
+    /// posts in the class I named" has a true empty answer. A post with no
+    /// known date is never picked, since it cannot be placed in a window or
+    /// ordered, and a picture-only Ed post is never picked for the same reason
+    /// the search skips it (`SearchHit.isTextlessEdPost`).
+    ///
+    /// With a window, only posts inside it qualify, measured back from
+    /// `askedAt` (never the clock). If nothing is inside it, the three newest
+    /// posts stand in regardless: the model then sees that the latest post is
+    /// from Oct 18 and can say so, where an empty block would invite it to
+    /// invent a recent one or to claim there are none at all.
+    static func recencyPicks(intent: RecencyIntent, courseIDs: Set<String>?, context: AssistantContext) -> [SearchHit] {
+        let dated: [(document: CourseDocument, posted: Date)] = context.knowledge.documents.compactMap { document -> (document: CourseDocument, posted: Date)? in
+            guard document.kind == .ed || document.kind == .announcement else { return nil }
+            if let courseIDs, !courseIDs.contains(document.courseID) { return nil }
+            if document.kind == .ed, EdDocumentHeader.carriesNoText(document.text) { return nil }
+            guard let posted = document.shownPostedAt else { return nil }
+            return (document, posted)
+        }
+        let newestFirst = dated.sorted { lhs, rhs in
+            if lhs.posted != rhs.posted { return lhs.posted > rhs.posted }
+            if lhs.document.title != rhs.document.title { return lhs.document.title < rhs.document.title }
+            return lhs.document.id < rhs.document.id
+        }
+        var chosen = newestFirst
+        if let days = intent.windowDays {
+            let earliest = context.askedAt.addingTimeInterval(-Double(days) * 86_400)
+            chosen = newestFirst.filter { $0.posted >= earliest }
+            if chosen.isEmpty { chosen = Array(newestFirst.prefix(3)) }
+        }
+        var seen = Set<String>()
+        var hits: [SearchHit] = []
+        for item in chosen {
+            guard hits.count < excerptLimit, seen.insert(item.document.id).inserted,
+                  let passage = PassageChunker.passages(for: item.document).first
+            else { continue }
+            hits.append(SearchHit(
+                passage: passage, document: item.document, score: 0,
+                component: DocumentComponent.component(of: item.document, in: context.knowledge)
+            ))
+        }
+        return hits
+    }
 
     /// Every school the app signs in to (Penn, Brown, Columbia, Cornell,
     /// Dartmouth, Harvard, Princeton, Yale) keeps Eastern time. A date label

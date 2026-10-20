@@ -290,6 +290,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-20: "what's new on ed" gets the newest posts** (`RecencyIntent`,
+  blind, needs a compile): a recency question puts the newest dated Ed
+  posts and announcements first in the excerpts, within the window named.
+  Asked for after the tree listed Aug 28 to Oct 7 posts as "recent" and
+  missed Oct 12 and Oct 18.
 - **2026-10-20: ask can say where and when each section meets** (backend
   only, on `v8`; deployed the same day, `sync` v9 and `ask` v10). `sync` keeps each registrar section's
   room and instructors from Penn Labs, and `ask`'s COURSE STRUCTURE block
