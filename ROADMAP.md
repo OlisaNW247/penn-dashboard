@@ -254,6 +254,21 @@ Roughly in priority order.
 
 Kept so nobody rebuilds them blind.
 
+- **"Connect your own Claude / ChatGPT account" to ask** (researched
+  2026-10-21, nothing built; `docs/AI_ACCOUNT_LINKING.md` is the report).
+  Olisa asked for a smoother path than pasting an API key. Findings: a
+  Claude account link cannot be built at all (Anthropic's legal page bans
+  third-party Claude.ai login, routing through Pro/Max credentials, and
+  even holding a session token; enforced through 2026); OpenAI's "Sign in
+  with ChatGPT" plan usage exists (2026-09-29) but admits only open-source
+  or local apps self-serve, Plus/Pro users, and a loopback redirect with no
+  iOS path. Ranked: keep developer-pays and move `ask` to a cheaper cached
+  model; add iOS 27 Private Cloud Compute (32K context, free under 2M
+  downloads in the Small Business Program) as the on-device responder's
+  upgrade; file OpenAI's interest form; OpenRouter PKCE sign-in and
+  paste-a-key only as opt-in power-user doors, key kept on the phone.
+  Re-check the OpenAI and OpenRouter wording live: those pages were read
+  through mirrors and search snippets from the container.
 - **Course-material sync fixes for ask** (2026-10-09). Written, tested
   (1636/160 on that branch), reviewed, and parked on
   **`parked/ask-course-sync-fixes`** the next day when Marco said not to
