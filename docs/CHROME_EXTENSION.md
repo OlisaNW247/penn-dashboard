@@ -459,3 +459,19 @@ steps come first; everything after step 3 needs the owner's Mac.
 **Everything is built.** What remains is the owner's: run `swift test`,
 build to the phone, apply the migration and deploy `sync`, `pair`,
 `device-sync` and `delete-account`, load the extension, pair, and watch.
+
+- 2026-10-22, about 16:05 UTC, with Olisa's go: **migration applied and
+  four functions deployed** (`sync` v11, `pair` v1, `device-sync` v1,
+  `delete-account` v6). Checked through the Management API: the three
+  tables exist with RLS on and grants for `service_role` only, the kind
+  check takes `file`, and all 709 existing documents read
+  `collector = 'phone'`. Smoke-tested live with throwaway anonymous
+  users: an old phone's manifest (no `client`) answers as before, an
+  unpaired extension gets 403 `not_paired`, a bogus or reused code 404,
+  a claim links, both devices put and the laptop reads both blobs, the
+  laptop's `delete-account` only unpairs it (the phone's token still
+  works afterwards), and the phone's deletes everything. The test users
+  were deleted; no link, blob or pairing row remains. `extract-profile`
+  and `discover-websites` still run the old `requireUser`, so the
+  extension's post-upload calls are treated as an unlinked user's until
+  those two are next deployed; the phone's own calls are unaffected.

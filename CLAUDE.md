@@ -111,10 +111,13 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Eight Edge Functions live in
+(`OnDeviceLanguageModel`). Ten Edge Functions live in
 `backend/supabase/functions/`: `ask`, `ask-canary`, `delete-account`,
-`discover-websites`, `extract-announcement`, `extract-profile`,
-`map-categories`, `sync`.
+`device-sync`, `discover-websites`, `extract-announcement`,
+`extract-profile`, `map-categories`, `pair`, `sync`. `pair` and
+`device-sync` (the Chrome extension's pairing and encrypted sync) and the
+`20261022090000_chrome_extension.sql` migration went live on 2026-10-22
+with Olisa's go (`sync` v11, `delete-account` v6).
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark

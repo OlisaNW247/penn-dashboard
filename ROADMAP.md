@@ -42,11 +42,13 @@ These block shipping, or would make shipping risky.
   3. Load the extension unpacked (`chrome-extension/README.md`), signed
      in to Canvas and Gradescope: the popup should list real work. This
      needs no backend change.
-  4. With the owner's go: apply
-     `backend/supabase/migrations/20261022090000_chrome_extension.sql`,
-     then deploy `sync`, `pair`, `device-sync`, `delete-account`
-     (`deploy-function.mjs`, one slug each). Before the migration, any
-     function deployed from `v8` keeps working (Traps).
+  4. ~~Apply the migration and deploy `sync`, `pair`, `device-sync`,
+     `delete-account`.~~ **Done 2026-10-22 ~16:05 UTC with Olisa's go**
+     (`sync` v11, `pair` v1, `device-sync` v1, `delete-account` v6),
+     smoke-tested live (`docs/CHROME_EXTENSION.md` → Status). Next deploys
+     of `extract-profile` and `discover-websites` pick up the linked-device
+     lookup; until then the extension's follow-up calls to them do
+     nothing.
   5. Pair: "pair with phone" in the popup, point the iPhone camera at
      it, "pair". Tick something on the laptop; it should be ticked on the
      phone within a refresh, and the other way round.
