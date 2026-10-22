@@ -161,3 +161,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cobalt); outlin
 }
 .pair { justify-self: center; }
 .pair.quiet { background: color-mix(in srgb, var(--surface) 58%, transparent); color: var(--ink); border: 1.25px solid color-mix(in srgb, var(--rule) 72%, transparent); line-height: 33px; }
+
+/* QR: always dark on white, in both themes (see core/qr.js toSVG). */
+.qr { width: 220px; height: 220px; padding: 0; border-radius: 14px; overflow: hidden; background: #ffffff; color: #1b1714; box-shadow: 0 1px 4px var(--card-shadow); }
+.qr svg { display: block; width: 100%; height: 100%; }
+.textbtn { justify-self: center; padding: 6px 10px; border: 0; background: transparent; color: var(--muted); font: 500 13px/1 var(--sans); }
+.textbtn:hover { color: var(--ink); }
+.foot { margin-top: 2px; }

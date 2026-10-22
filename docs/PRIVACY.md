@@ -1,13 +1,15 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-20_
+_Last updated: 2026-10-22_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
 the app does with your information.
 
 **In short:** your grades, your work, and your Canvas/Gradescope logins stay on
-your phone. Course materials — syllabi, course pages, assignment descriptions,
+your phone, or, if you pair the Smooth Chrome extension, travel only
+end-to-end encrypted between your own phone and your own laptop, where we
+cannot read them. Course materials — syllabi, course pages, assignment descriptions,
 announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
 ask "the tree" are answered by an AI model running on our server and are not
@@ -26,10 +28,13 @@ stored.
   signed in (optional)" below.
 - **Your grades, completions, and submission state.** What you've turned in,
   what you've checked off, any grade the Grade Watcher has observed — all of it
-  stays local. None of it is uploaded.
+  stays local. None of it is uploaded in readable form; the one exception is
+  the end-to-end encrypted sync with your own paired laptop, described in
+  "The Chrome extension" below.
 - **Your work list and your name.** Assignments you add yourself, due-date
   edits, reminder settings, and the first name you enter never leave the
-  device.
+  device, except encrypted, to your own paired laptop (below). Your name and
+  your reminder settings are never part of that sync.
 - **The widget snapshot.** A small "next due" summary written to a private
   container shared only between the app and its widget on your device.
 - **The announcements list.** The megaphone on the dashboard lists your
@@ -49,8 +54,9 @@ stored.
   assist is on (see "What is sent to our server").
 - **Due dates you change.** If you edit an assignment's due date, the new
   date is saved on this phone and used for your list, your reminders and the
-  widget. It is never uploaded: a question you ask "the tree" is sent with
-  the date Canvas or Gradescope gave, not the one you set.
+  widget. It is never uploaded in readable form (only inside the encrypted
+  sync with your own paired laptop): a question you ask "the tree" is sent
+  with the date Canvas or Gradescope gave, not the one you set.
 - **Your voice.** The mic in "the tree" turns what you say into text on
   this phone, with Apple's on-device speech recognition. The audio never
   leaves the phone and is not kept; only the text you then choose to send
@@ -196,6 +202,38 @@ any reason — no signal, the file is unreachable, anything — the app opens
 normally and relies on the last successful check, kept for up to 30 days, in
 the meantime.
 
+## The Chrome extension (optional, Penn)
+
+Smooth has a Chrome extension for your laptop. It is optional and does
+nothing until you pair it with your phone.
+
+- **It uses the Canvas, Gradescope and Ed Discussion sessions already open in
+  your browser.** It never reads, copies or stores a cookie or a password;
+  Chrome attaches your own session to its requests, the same way it does
+  when you open those sites. Your Canvas calendar feed address is looked up
+  fresh each time and never saved. Your Ed session token is kept only in
+  Chrome's memory and is gone when Chrome closes.
+- **It collects course material your phone can't reach**: every course
+  announcement and every course page, plus Ed announcements, pinned posts and staff posts under the same
+  rule as the phone (never a student's post, never an author's name). That
+  material is pooled per class exactly like the phone's ("What is sent to
+  our server"), so classmates share one copy.
+- **Pairing.** The extension shows a QR code; you scan it with your iPhone and
+  confirm "pair this laptop?" in Smooth. The code carries a secret key made
+  on the laptop. The key goes from the laptop's screen to your phone's camera
+  and is never sent to our server. The server only learns that the
+  extension's anonymous account now belongs with your phone's.
+- **End-to-end encrypted sync.** With that key, your phone and laptop share
+  what you've checked off, due dates you've changed, tasks you've added, and
+  your list of what's due. Each device encrypts its copy (AES-256-GCM) before
+  it leaves, and our server stores only that encrypted copy. We cannot read
+  it, and neither can Supabase. Your name, reminder settings and grades are
+  never part of it.
+- **Unpairing** (from the extension, or Profile → accounts → laptop on the
+  phone) deletes the extension's account and its encrypted copy from our
+  server. Disconnecting Canvas on the phone does the same for every paired
+  laptop, along with everything listed under "Deleting your data".
+
 ## Who we send data to
 
 - **Supabase** hosts our database and server functions. They act as our
@@ -226,14 +264,18 @@ and API access.
 - **Your enrollment list** (which Canvas courses you're synced to) is kept so
   the pooling and quota system work, and is deleted if you delete your
   account.
+- **Encrypted sync copies**, if you paired the Chrome extension: one
+  encrypted copy per device, replaced each time that device syncs, deleted
+  when you unpair or disconnect Canvas. We hold no key to them.
 
 ## Deleting your data
 
 **Disconnecting Canvas** (Profile → accounts → canvas) deletes your class data
 from our server along with your login on the device: your enrollment records,
 your usage counters, and the anonymous account itself, and it removes the
-Ed Discussion session from this phone. The confirmation says
-so before you tap it. It does not delete the shared course material other students
+Ed Discussion session from this phone, and it unpairs every laptop: their
+anonymous accounts and encrypted sync copies are deleted too. The
+confirmation says so before you tap it. It does not delete the shared course material other students
 are still using, because that material was never yours alone — it's the same
 syllabus and assignment pages every enrolled student can already see on
 Canvas. Deleting the app also removes everything stored on your device,

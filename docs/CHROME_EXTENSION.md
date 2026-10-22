@@ -406,3 +406,18 @@ steps come first; everything after step 3 needs the owner's Mac.
   content script. Not yet: the worker calling it, the phone's
   fire-and-forget `extract-profile` / `discover-websites` after an
   upload, and Canvas Files.
+- 2026-10-22: the extension's pairing screen and encrypted sync
+  (`src/deviceSync.js`). Pairing runs in the worker so closing the popup
+  does not kill it; the link lives in `storage.session` only while the QR
+  shows. Each sync pass first asks `pair {action: "status"}`: after the
+  phone unpairs, the server deletes the extension's user and the backend
+  client quietly signs up a fresh, unlinked one, for which `device-sync`
+  answers an empty set rather than an error, so `status` is the only
+  reliable signal (the first draft cleared the key on `unauthorized`,
+  which a transient 401 would also have triggered). Passes run after each
+  refresh and 5 s after a tick, throttled to one per 2 minutes except the
+  tick's. The popup shows the phone's work list beside the laptop's own
+  reads, deduped by id, with the merged completions and due edits
+  applied. The QR in a popup screenshot decoded with OpenCV to the exact
+  link; no iPhone camera has read it. `docs/PRIVACY.md` gains "The Chrome
+  extension" in this commit, the first whose code sends a blob.

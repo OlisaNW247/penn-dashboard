@@ -170,3 +170,63 @@ test("completionOf: later records are not merged here; own id beats linked id", 
   const r = completionOf(x, { "canvas:x": { done: false, at: "2026-10-20T00:00:00.000Z" }, "gradescope:1": { done: true, at: "2026-10-20T00:00:00.000Z" } });
   assert.equal(r.done, false);
 });
+
+// ---- the phone's work list merged into the view ----
+
+const wire = (id, extra = {}) => ({
+  id, course: "CIS 1600", title: "phone " + id, dueAt: at(1).toISOString(), kind: "assignment",
+  source: "manual", url: null, done: false, ...extra,
+});
+
+test("remote: phone-only items appear with the phone's done state", () => {
+  const remote = [{ deviceId: "p", workList: [wire("manual:1"), wire("canvasAnnouncement:2", { done: true })] }];
+  const s = buildState({ stored: [], completions: {}, now: NOW, view: "all", remote });
+  assert.deepEqual(s.items.map((i) => [i.id, i.bucket, i.done]), [
+    ["manual:1", "todo", false], ["canvasAnnouncement:2", "prev", true],
+  ]);
+  assert.equal(s.items.find((i) => i.id === "manual:1").title, "phone manual:1");
+});
+
+test("remote: laptop item wins on fields, merged snapshot wins on done", () => {
+  const stored = [a("100", at(1), { title: "laptop title" })];
+  const id = assignmentID(fromStored(stored[0]));
+  const remote = [{ deviceId: "p", workList: [wire(id, { title: "phone title", done: true })] }];
+  let s = buildState({ stored, completions: {}, now: NOW, view: "all", remote });
+  assert.equal(s.items.length, 1);
+  assert.equal(s.items[0].title, "laptop title");
+  assert.equal(s.items[0].done, false); // the phone's list never overrides a laptop item
+  s = buildState({ stored, completions: { [id]: { done: true, at: NOW.toISOString() } }, now: NOW, view: "prev", remote });
+  assert.deepEqual(s.items.map((i) => i.done), [true]);
+});
+
+test("remote: dedup across phones and against a linked id", () => {
+  const stored = [toStored(makeAssignment({ source: "canvas", sourceID: "5", kind: "assignment", course: "CIS 1600", title: "x", dueAt: at(1), linkedID: "gradescope:7" }))];
+  const remote = [
+    { deviceId: "p1", workList: [wire("gradescope:7"), wire("manual:9", { title: "first" })] },
+    { deviceId: "p2", workList: [wire("manual:9", { title: "second" })] },
+  ];
+  const s = buildState({ stored, completions: {}, now: NOW, view: "all", remote });
+  assert.deepEqual(s.items.map((i) => i.id).sort(), ["canvas:5", "manual:9"]);
+  assert.equal(s.items.find((i) => i.id === "manual:9").title, "first");
+});
+
+test("remote: a completion in the merged snapshot beats the phone's done flag", () => {
+  const remote = [{ deviceId: "p", workList: [wire("manual:1", { done: true })] }];
+  const s = buildState({ stored: [], completions: { "manual:1": { done: false, at: NOW.toISOString() } }, now: NOW, view: "all", remote });
+  assert.equal(s.items[0].done, false);
+});
+
+test("dueEdits move laptop and phone items; a null edit keeps the original date", () => {
+  const stored = [a("100", at(5))];
+  const id = assignmentID(fromStored(stored[0]));
+  const remote = [{ deviceId: "p", workList: [wire("manual:1", { dueAt: at(5).toISOString() })] }];
+  const dueEdits = {
+    [id]: { dueAt: at(0, 3).toISOString(), at: NOW.toISOString() },
+    "manual:1": { dueAt: null, at: NOW.toISOString() },
+  };
+  const s = buildState({ stored, completions: {}, now: NOW, view: "todo", remote, dueEdits });
+  assert.deepEqual(ids(s, "todo"), [id]); // edited into the todo window
+  assert.equal(s.items[0].due, "3h left");
+  const all = buildState({ stored, completions: {}, now: NOW, view: "all", remote, dueEdits });
+  assert.equal(all.items.find((i) => i.id === "manual:1").bucket, "later");
+});

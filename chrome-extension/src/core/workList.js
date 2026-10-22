@@ -128,6 +128,32 @@ export function completionOf(a, completions) {
   return { done: !!a.submitted, at: null };
 }
 
+// ---- the phone's items, merged into the view -------------------------------------
+
+// A due-date edit from the merged snapshot; `dueAt: null` means "edit cleared",
+// so the item keeps its own date. An edit on the item's own id wins over one
+// on its linked id.
+function editedDue(a, base, dueEdits) {
+  const id = a.id ?? assignmentID(a);
+  const e = dueEdits?.[id] ?? (a.linkedID ? dueEdits?.[a.linkedID] : undefined);
+  return e && e.dueAt ? new Date(e.dueAt) : base;
+}
+
+// Items in the phone work lists (remoteWorkListsV1: [{deviceId, workList}])
+// whose id the laptop does not hold, first mention wins. Pure.
+export function remoteItems(remote, laptopIDs = new Set()) {
+  const seen = new Set(laptopIDs);
+  const out = [];
+  for (const r of remote ?? []) {
+    for (const w of r?.workList ?? []) {
+      if (!w || typeof w.id !== "string" || seen.has(w.id)) continue;
+      seen.add(w.id);
+      out.push(w);
+    }
+  }
+  return out;
+}
+
 // ---- the state -----------------------------------------------------------------
 
 // `stored`: workListV1.items. `completions`: snapshot.completions.
@@ -135,12 +161,19 @@ export function completionOf(a, completions) {
 export function buildState({
   stored = [], completions = {}, now = new Date(), view = "todo",
   canvas = "unknown", gradescope = "unknown", paired = false,
+  remote = [], dueEdits = {},
 }) {
   const active = [];
   const finished = [];
+  const laptopIDs = new Set();
   for (const s of stored) {
     const a = fromStored(s);
-    const due = a.dueAt;
+    laptopIDs.add(assignmentID(a));
+    if (a.linkedID) laptopIDs.add(a.linkedID);
+  }
+  for (const s of stored) {
+    const a = fromStored(s);
+    const due = editedDue(a, a.dueAt, dueEdits);
     const c = completionOf(a, completions);
     const row = {
       id: assignmentID(a),
@@ -153,6 +186,20 @@ export function buildState({
     if (c.done) { finished.push(row); continue; }
     if (isTooOld(due, now) || !withinTermCap(a, due, now)) continue;
     active.push(row);
+  }
+
+  // The phone's own work list: what the laptop did not read. Laptop wins on
+  // fields, the merged snapshot on done. The phone already applied its view
+  // rules, so the too-old and term filters are not applied again.
+  for (const w of remoteItems(remote, laptopIDs)) {
+    const rec = completions?.[w.id];
+    const done = rec ? !!rec.done : !!w.done;
+    const due = editedDue({ id: w.id }, w.dueAt ? new Date(w.dueAt) : null, dueEdits);
+    const row = {
+      id: w.id, course: parse(w.course).code, title: w.title, due, done,
+      completedAt: done && rec ? new Date(rec.at) : null,
+    };
+    (done ? finished : active).push(row);
   }
 
   // DashboardViewModel.timelineSections (L284-). Overdue is s<0; "todo" holds

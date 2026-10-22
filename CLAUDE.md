@@ -54,6 +54,12 @@ material by numeric Canvas course id, and two schools' ids would collide.
 on-device; course material is pooled server-side; ask has an on-device
 fallback." Grades, completions, submission state, the work list, the
 student's name, and Canvas/Gradescope cookies never leave the phone. The
+one exception, since 2026-10-22: a student who pairs the Chrome extension
+shares completions, due-date edits, their own tasks and the work list
+with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
+goes from the laptop's screen to the phone's camera and never to the
+server); the server stores ciphertext it cannot read. Name, reminder
+settings and grades are never in it. The
 PennKey password, if the student saves it, stays in this phone's Keychain
 and only ever goes to Penn's login page. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
@@ -870,7 +876,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 431 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+counts): 445 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -882,7 +888,9 @@ Plus 32 for the backend client, the pairing state machine and the QR
 encoder (whose pinned matrices were decoded back to their exact input by
 OpenCV in a scratch venv; that check is not part of `npm test`).
 Plus 28 for the collector and the Ed course matcher, against a fake fetch
-and a fake backend. `node --test` takes
+and a fake backend.
+Plus 14 for the encrypted device sync (a two-device round trip through a
+fake backend) and the popup's merge of the phone's work list. `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`

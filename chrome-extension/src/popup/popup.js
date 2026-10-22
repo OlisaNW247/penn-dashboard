@@ -1,5 +1,6 @@
 import { buildState } from "../core/workList.js";
 import { recordCompletion } from "../core/syncSnapshot.js";
+import { encode, toSVG } from "../core/qr.js";
 import { loadWorkList, loadSnapshot, saveSnapshot, KEYS } from "../adapters/store.js";
 
 // Popup. `render(state, root, handlers)` is pure DOM-from-state: no chrome.*
@@ -53,6 +54,33 @@ function tickIcon(doc) {
   return svg;
 }
 
+// pairing: { kind: "starting" | "showing" | "expired" | "failed", svg? }
+function renderPairing(doc, shell, pairing, on) {
+  const textButton = (text, name) => {
+    const b = el(doc, "button", { className: "textbtn", type: "button", text });
+    b.addEventListener("click", () => on(name));
+    return b;
+  };
+  if (pairing.kind === "showing" && pairing.svg) {
+    const qr = el(doc, "div", { className: "qr", role: "img", "aria-label": "pairing code" });
+    qr.innerHTML = pairing.svg; // generated from module bits only, see core/qr.js
+    shell.append(el(doc, "div", { className: "note" }, [
+      qr,
+      el(doc, "p", { text: "scan with your iphone" }),
+      textButton("cancel", "pairCancel"),
+    ]));
+  } else if (pairing.kind === "expired" || pairing.kind === "failed") {
+    shell.append(el(doc, "div", { className: "note" }, [
+      el(doc, "p", { text: pairing.kind === "expired" ? "code expired" : "couldn't pair" }),
+      el(doc, "button", { className: "pill", type: "button", text: "try again" }),
+      textButton("cancel", "pairCancel"),
+    ]));
+    shell.querySelector(".pill").addEventListener("click", () => on("pair"));
+  } else {
+    shell.append(el(doc, "div", { className: "note" }, [textButton("cancel", "pairCancel")]));
+  }
+}
+
 export function render(state, root, handlers = {}) {
   const doc = root.ownerDocument;
   const on = (name, ...args) => handlers[name] && handlers[name](...args);
@@ -64,6 +92,12 @@ export function render(state, root, handlers = {}) {
     el(doc, "h1", { className: "wordmark", text: "Smooth" }),
     el(doc, "span", { className: "weekday", text: state.weekday || "" }),
   ]));
+
+  if (state.pairing) {
+    renderPairing(doc, shell, state.pairing, on);
+    root.append(shell);
+    return;
+  }
 
   const picker = el(doc, "div", { className: "picker", role: "group", "aria-label": "view" });
   for (const view of VIEWS) {
@@ -119,6 +153,10 @@ export function render(state, root, handlers = {}) {
     const pair = el(doc, "button", { className: "pill pair quiet", type: "button", text: "pair with phone" });
     pair.addEventListener("click", () => on("pair"));
     shell.append(pair);
+  } else {
+    const unpair = el(doc, "button", { className: "textbtn foot", type: "button", text: "unpair" });
+    unpair.addEventListener("click", () => on("unpair"));
+    shell.append(unpair);
   }
 
   root.append(shell);
@@ -133,6 +171,24 @@ async function main() {
   let workList = await loadWorkList();
   let snapshot = await loadSnapshot();
   let stateItems = [];
+  let remote = (await chrome.storage.local.get("remoteWorkListsV1")).remoteWorkListsV1 ?? [];
+  let paired = !!(await chrome.storage.local.get("pairingKeyV1")).pairingKeyV1;
+  const sess = await chrome.storage.session.get(["pairingStateV1", "pairingLinkV1"]);
+  let pairState = sess.pairingStateV1 ?? null;
+  let pairLink = sess.pairingLinkV1 ?? null;
+  let svgFor = { link: null, svg: null };
+
+  const pairingView = () => {
+    if (paired || !pairState) return null;
+    if (pairState.kind === "showing" && pairLink) {
+      if (svgFor.link !== pairLink) {
+        try { svgFor = { link: pairLink, svg: toSVG(encode(pairLink)) }; } catch { return { kind: "failed" }; }
+      }
+      return { kind: "showing", svg: svgFor.svg };
+    }
+    if (pairState.kind === "paired") return null;
+    return { kind: pairState.kind === "unpaired" ? "starting" : pairState.kind };
+  };
 
   const draw = () => {
     const state = buildState({
@@ -141,8 +197,11 @@ async function main() {
       view,
       canvas: workList?.canvas ?? "unknown",
       gradescope: workList?.gradescope ?? "unknown",
-      paired: false,
+      paired,
+      remote,
+      dueEdits: snapshot.dueEdits,
     });
+    state.pairing = pairingView();
     stateItems = state.items;
     render(state, root, handlers);
   };
@@ -155,11 +214,35 @@ async function main() {
       await saveSnapshot(snapshot);
       draw();
     },
-    pair() {}, // inert until pairing lands
+    pair() {
+      pairState = { kind: "starting" };
+      pairLink = null;
+      draw();
+      chrome.runtime.sendMessage({ type: "pair:start" }).catch(() => {});
+    },
+    pairCancel() {
+      pairState = null;
+      pairLink = null;
+      draw();
+      chrome.runtime.sendMessage({ type: "pair:cancel" }).catch(() => {});
+    },
+    async unpair() {
+      if (!confirm("unpair?")) return;
+      const res = await chrome.runtime.sendMessage({ type: "unpair" }).catch(() => null);
+      if (res?.ok) { paired = false; remote = []; draw(); }
+    },
   };
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session") {
+      if (changes.pairingStateV1) pairState = changes.pairingStateV1.newValue ?? null;
+      if (changes.pairingLinkV1) pairLink = changes.pairingLinkV1.newValue ?? null;
+      draw();
+      return;
+    }
     if (area !== "local") return;
+    if (changes.pairingKeyV1) paired = !!changes.pairingKeyV1.newValue;
+    if (changes.remoteWorkListsV1) remote = changes.remoteWorkListsV1.newValue ?? [];
     if (changes[KEYS.workList]) workList = changes[KEYS.workList].newValue ?? null;
     if (changes[KEYS.snapshot]) snapshot = changes[KEYS.snapshot].newValue ?? snapshot;
     draw();
