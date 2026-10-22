@@ -231,3 +231,9 @@ steps come first; everything after step 3 needs the owner's Mac.
   redistributed, so the wordmark is Familjen Grotesk. Loaded unpacked in
   headless Chromium in the container (manifest accepted, worker started,
   popup rendered); not yet in the owner's Chrome.
+- 2026-10-22: `src/core/dedup.js`, a line-for-line port of
+  `AssignmentDeduplicator` (64 tests; the two AppState-bound Swift cases
+  are not portable). One deliberate difference: Swift traps on duplicate
+  Gradescope ids in `merge` (`Dictionary(uniqueKeysWithValues:)`); the
+  port lets the later one win, because a crashed service worker loses the
+  whole run.
