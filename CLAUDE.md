@@ -2190,6 +2190,17 @@ none is a ship line.
 
 ## Known gaps
 
+- **The Chrome extension's Swift half has never compiled** (2026-10-22,
+  written in the cloud container with no toolchain): the `file` document
+  kind, `client` and `acceptsKinds` on the sync requests and the lossy
+  `download` decode (`BackendWire.swift`, 11 tests), and the sync snapshot
+  codec and merge (`Sync/`, 16 tests, among them the shared AES-GCM
+  vector). Predicted: **2512 tests / 229 suites** (2485 / 227 plus 27 / 2).
+  `swift test --no-parallel` on the Mac is the first gate; a different
+  count or a red vector test means the phone and the extension disagree.
+  `SyncSnapshot` uses a hand-written JSON serializer and UTC date
+  formatter on purpose (key order and `Sendable`), so read a failure there
+  as a real disagreement, not flakiness.
 - **The Berserk alarm has rung once, on Marco's iPhone (iOS 26.6,
   2026-10-19, a build from before the review fixes).** The first try did
   not ring because alarms were not allowed for Smooth; after he allowed

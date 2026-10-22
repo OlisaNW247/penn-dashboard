@@ -104,10 +104,14 @@ anything:
    phone does upload pages 1 to 40, and an extension copy of page 41 is the
    same kind), and making the extension's uploads non-complete (then a page
    deleted on Canvas would never leave the pool).
-2. **A `file` kind behind a capability.** `CourseDocument.Kind` is a strict
-   `Codable` enum on the phone, so a `file` document in `download` would
-   fail the whole manifest decode on every 3.1.0 phone in the field. The
-   server sends `file` documents only to a client whose manifest request
+2. **A `file` kind behind a capability.** A 3.1.0 phone tolerates an
+   unknown kind (`CourseDocumentWire.kind` is a `String`, and
+   `document()` returns nil for a kind it cannot name, so the download is
+   dropped quietly). But it never stores what it drops, so it would
+   download every file document again on every hourly sync. (This record
+   first said an unknown kind would fail the whole manifest decode; the
+   Swift side's own reading of `BackendWire.swift` showed it does not.)
+   The server sends `file` documents only to a client whose manifest request
    carries `acceptsKinds` including `"file"`. A new phone build adds the
    case and sends the field; old phones never see a file. Rejected: filing
    PDFs as `page` (it lies about the source, makes every slide deck profile
@@ -317,3 +321,11 @@ steps come first; everything after step 3 needs the owner's Mac.
   the shared vector to the same bytes node's own crypto produced and
   re-encodes its plaintext byte for byte. The details the spec had left
   open are now under "Settled details" above.
+- 2026-10-22: the phone's first pieces, **written without a compiler**:
+  `CourseDocument.Kind.file` (searched like a page; never syllabus,
+  profile or split-course input), `client: "phone"` and `acceptsKinds` on
+  the sync requests, a `download` decode that skips a malformed entry
+  instead of failing the response, and `Sync/SyncSnapshot*.swift` (codec,
+  CryptoKit envelope, merge) pinned to the same vector. Not yet: the
+  `smooth://` scheme, the pairing sheet, the Keychain key, `device-sync`
+  calls, change-time tracking, and applying remote changes.

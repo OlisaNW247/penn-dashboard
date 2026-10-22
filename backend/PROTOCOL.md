@@ -149,8 +149,10 @@ unknown strings are ignored) lists the capability-gated document kinds the
 client can decode. Today that is only `"file"`: documents of kind `file`
 are left out of **both** `download` and `serverManifest` unless `acceptsKinds`
 includes it. Absent means the kinds that existed before the field, which is
-every shipped phone: `CourseDocument.Kind` there is a strict `Codable` enum
-and one unknown kind would fail the whole manifest decode. `client` is
+every shipped phone. A shipped phone drops an unknown kind without
+failing (`CourseDocumentWire.kind` is a string and `document()` returns
+nil), but it never stores what it dropped, so without the gate it would
+download every file document again on every sync. `client` is
 described under Step 2; on the manifest it only matters for the pairing
 check below.
 
