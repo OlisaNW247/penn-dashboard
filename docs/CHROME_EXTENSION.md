@@ -390,3 +390,19 @@ steps come first; everything after step 3 needs the owner's Mac.
   in after-sunset mode, because an inverted code does not scan
   everywhere. **Whether an iPhone camera reads it is unverified** until
   the owner points one at the popup.
+- 2026-10-22: the collector (`src/adapters/collector.js`, with
+  `src/core/edMatch.js` ported from `EdCourseMatcher`). It lists active
+  courses, reads syllabus, every page, modules, assignments and
+  announcements one request at a time with 250 ms between them, stops the
+  whole run on a 429, and treats a truncated page listing as a failed
+  endpoint. Syncing sends `client: "extension"`; in a course it fully
+  fetched, it replaces its holdings of the kinds it re-read from Canvas
+  (assignment, announcement, module, page, and Ed when Ed was read), so a
+  page deleted on Canvas can leave the pool, and keeps every other kind
+  (website crawls, files, syllabus, home) in its complete-set list.
+  Ed's token comes from a content script on `edstem.org` that reads only
+  `localStorage.authToken` (`EdSessionLauncher.swift:207`) and is kept in
+  `chrome.storage.session`; the manifest gains the Ed hosts and that one
+  content script. Not yet: the worker calling it, the phone's
+  fire-and-forget `extract-profile` / `discover-websites` after an
+  upload, and Canvas Files.

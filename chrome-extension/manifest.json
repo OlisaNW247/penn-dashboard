@@ -24,7 +24,16 @@
   "host_permissions": [
     "https://canvas.upenn.edu/*",
     "https://www.gradescope.com/*",
-    "https://ynetfjixexksxqrrkwsg.supabase.co/*"
+    "https://ynetfjixexksxqrrkwsg.supabase.co/*",
+    "https://edstem.org/*",
+    "https://us.edstem.org/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://edstem.org/*"],
+      "js": ["src/content/ed-token.js"],
+      "run_at": "document_idle"
+    }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
