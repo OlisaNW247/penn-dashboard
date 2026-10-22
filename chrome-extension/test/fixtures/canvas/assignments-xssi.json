@@ -1,0 +1,7 @@
+while(1);[{
+  "id": 555, "name": "PSet 3: caches", "due_at": "2026-09-17T03:59:00Z",
+  "html_url": "https://canvas.upenn.edu/courses/1234/assignments/555",
+  "points_possible": 100.0, "updated_at": "2026-09-01T12:00:00Z",
+  "description": "<p>Implement a <b>direct-mapped</b> cache simulator.</p><ul><li>Part A</li><li>Part B</li></ul>",
+  "submission": {"workflow_state": "unsubmitted", "submitted_at": null}
+}]

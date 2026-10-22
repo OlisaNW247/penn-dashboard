@@ -329,3 +329,17 @@ steps come first; everything after step 3 needs the owner's Mac.
   CryptoKit envelope, merge) pinned to the same vector. Not yet: the
   `smooth://` scheme, the pairing sheet, the Keychain key, `device-sync`
   calls, change-time tracking, and applying remote changes.
+- 2026-10-22: step 3, the course-material builders (141 tests): HTML to
+  text and links, the Canvas endpoint URLs, assignment / page / syllabus
+  / announcement / module documents, Ed (decode, staff filter, XML to
+  text, header) and the sync plan, each hash cross-checked against
+  strings a Swift test pins. Deliberate differences from the phone: no
+  page cap (the phone's 40 is exported as `PHONE_MAX_PAGE_BODIES`); a
+  course counts as fully synced only when **every** endpoint succeeded
+  (the phone tolerates one failure in four), because the extension's
+  complete-set report retires every collector's rows; announcements are
+  asked for 200 days back through tomorrow, so the phone's `until:` bug
+  cannot recur; Ed author names and emails are dropped at decode time;
+  upload batches split on the 6 MB budget as well as 200 documents. No
+  `home` document is built: the phone never builds one either, and
+  inventing one would give the two clients different ids.
