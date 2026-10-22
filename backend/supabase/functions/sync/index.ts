@@ -37,9 +37,14 @@ import {
 } from "../_shared/db.ts";
 import {
   diffManifest,
+  filterByAcceptedKinds,
   freshCourses,
   goneIDs,
+  ManifestValidationError,
+  parseAcceptsKinds,
+  parseSyncClient,
   profileStaleCourses,
+  retirableCollector,
   validateCourse,
   validateDocument,
   validateDocumentStub,
@@ -50,6 +55,7 @@ import {
   type DocumentKind,
   type DocumentStub,
   type LinkWire,
+  type SyncClient,
 } from "../_shared/manifest.ts";
 
 // Guards against a pathological or malicious request forcing the function
@@ -167,10 +173,25 @@ async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSumm
   }
 }
 
+/** The request's `client` and, for a manifest, `acceptsKinds`. Failures
+ * become 400s here rather than reaching the generic handler (a
+ * `ManifestValidationError` thrown from the older validators surfaces as a
+ * 500 today; that is pre-existing and left alone so shipped clients see no
+ * change). */
+function parseClientFields(body: Record<string, unknown>): { client: SyncClient; acceptsKinds: string[] } {
+  try {
+    return { client: parseSyncClient(body["client"]), acceptsKinds: parseAcceptsKinds(body["acceptsKinds"]) };
+  } catch (err) {
+    if (err instanceof ManifestValidationError) throw new HttpError(400, "bad_request", err.message);
+    throw err;
+  }
+}
+
 async function handleManifest(
   serviceClient: SupabaseClient,
   userId: string,
   body: Record<string, unknown>,
+  acceptsKinds: string[],
 ): Promise<ManifestResult> {
   const rawCourses = body["courses"];
   const rawStubs = body["documents"];
@@ -190,7 +211,10 @@ async function handleManifest(
 
   const courseIDs = courses.map((course) => course.courseID);
   const liveRows = await selectLiveDocumentsForCourses(serviceClient, courseIDs);
-  const liveWireDocs = liveRows.map(documentRowToWire);
+  // Capability-gated kinds (`file`) are withheld from both `download` and
+  // `serverManifest` unless the client listed them in `acceptsKinds`; see
+  // `filterByAcceptedKinds`. Absent `acceptsKinds` is every shipped phone.
+  const liveWireDocs = filterByAcceptedKinds(liveRows.map(documentRowToWire), acceptsKinds);
 
   const { download, serverManifest } = diffManifest(stubs, liveWireDocs);
 
@@ -243,6 +267,7 @@ async function handleUpload(
   serviceClient: SupabaseClient,
   userId: string,
   body: Record<string, unknown>,
+  client: SyncClient,
 ): Promise<UploadResult> {
   const rawDocuments = body["documents"];
   const rawFullySynced = body["fullySyncedCourses"];
@@ -306,11 +331,17 @@ async function handleUpload(
     kindByID.set(doc.id, doc.kind);
   }
 
-  await upsertDocuments(serviceClient, documents);
+  await upsertDocuments(serviceClient, documents, client);
 
   const nowFullySyncedCourseIDs: string[] = [];
   for (const course of fullySyncedCourses) {
-    const liveIDsNow = await selectLiveDocumentIDsForCourse(serviceClient, course.courseID);
+    // A phone's complete set only speaks for the rows a phone collected;
+    // the extension's speaks for all of them (`retirableCollector`).
+    const liveIDsNow = await selectLiveDocumentIDsForCourse(
+      serviceClient,
+      course.courseID,
+      retirableCollector(client),
+    );
     const idsToMarkGone = goneIDs(liveIDsNow, course.documentIDs);
     await markDocumentsGone(serviceClient, idsToMarkGone);
     nowFullySyncedCourseIDs.push(course.courseID);
@@ -421,17 +452,27 @@ Deno.serve(async (req: Request) => {
       throw new HttpError(405, "method_not_allowed", "sync only accepts POST");
     }
 
-    const { userId, serviceClient } = await requireUser(req);
+    const { userId, deviceOwnerLinked, serviceClient } = await requireUser(req);
     const body = await readJSON<Record<string, unknown>>(req);
     const action = body["action"];
+    const { client, acceptsKinds } = parseClientFields(body);
+
+    // The extension pairs before it syncs, so it is one student with the
+    // phone. An unpaired caller claiming to be the extension would
+    // otherwise become a second, separate student with its own pool of
+    // enrollments and quota. This cannot prove the caller really is the
+    // extension (PROTOCOL.md, Limitations); it only refuses the unpaired.
+    if (client === "extension" && !deviceOwnerLinked) {
+      throw new HttpError(403, "not_paired", "the extension must be paired with a phone before it syncs");
+    }
 
     if (action === "manifest") {
-      const result = await handleManifest(serviceClient, userId, body);
+      const result = await handleManifest(serviceClient, userId, body, acceptsKinds);
       return json(200, result);
     }
 
     if (action === "upload") {
-      const result = await handleUpload(serviceClient, userId, body);
+      const result = await handleUpload(serviceClient, userId, body, client);
       return json(200, result);
     }
 

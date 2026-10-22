@@ -1249,7 +1249,15 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
-- Deno: 370 passed, 0 failed (2026-10-20, the semester fix; 366 after the
+- Deno: 406 passed, 0 failed (2026-10-22, `v8`, the Chrome extension's
+  backend: pairing, linked devices, encrypted sync blobs, the `collector`
+  rule and the `file` kind; in the cloud container with Deno 2.9.8 and
+  `--no-check`, because `deno task test`'s type-check fails under 2.9.8 on
+  three pre-existing `setTimeout` `Timeout`-vs-`number` errors in
+  `quota.ts` and `ask/index.ts`, identical before the change. The four
+  touched functions pass `deno check --no-lock`. The migration and
+  `rls.test.sql` have not run: no Postgres in the container.)
+- Deno before it: 370 passed, 0 failed (2026-10-20, the semester fix; 366 after the
   section-details change the same day, 350 before it; in the cloud
   container with Deno 2.9.7 and `--no-check`).
   `deno check` is clean under Deno 2.1.4 (`--no-lock`, the edge runtime's
@@ -1552,6 +1560,26 @@ itself.
   first.
 
 ## Traps that have already bitten
+
+- **An identity lookup on every call can take every function down.**
+  Since 2026-10-22 `requireUser` (`_shared/auth.ts`) looks the caller up
+  in `device_links` to resolve a paired Chrome extension to its phone. Its
+  first version failed every request on any lookup error, which is right
+  for a real error, but `ask` is redeployed from `v8` often, and one
+  deploy before `20261022090000_chrome_extension.sql` was applied would
+  have answered 502 to every phone. A missing table (`42P01`/`PGRST205`)
+  now means "not linked", which is exactly true; every other error still
+  fails closed. The wrong fix would have been falling back to the token's
+  own id on any error, which silently makes a linked device a stranger.
+- **The complete-set rule belongs to whoever collected the document.**
+  The `sync` upload retires every live document of a fully-synced course
+  the client did not list. The phone never holds announcements, pages
+  past 40 or files, so once the extension uploaded them the phone's next
+  hourly sync would have retired them all. `course_documents.collector`
+  (2026-10-22) limits a phone's report to `collector = 'phone'` rows; the
+  extension's report retires any collector, so it must list every
+  document it holds after applying `download`, as the phone does, or it
+  would retire the server's own `website` crawls.
 
 - **A "flagged, never deleted" doc comment was a delete.** Announcement
   rows hidden because their post vanished get `isGoneFromFeed`

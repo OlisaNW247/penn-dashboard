@@ -4,7 +4,7 @@
 // and so `sync/index.ts` stays a thin wiring layer around it: parse the
 // request, call into here, call into db.ts, respond.
 
-/** The eight document kinds the protocol recognizes. Anything else is a
+/** The nine document kinds the protocol recognizes. Anything else is a
  * bug on the client (a new kind must be added here and in the migration's
  * CHECK constraint together, never just one side). `website` is the one
  * kind never uploaded by the client at all -- it is written directly by
@@ -15,7 +15,12 @@
  * `ed` (Ed Discussion announcements, pinned threads and staff posts, see
  * docs/ED_DISCUSSION.md) is uploaded by the client like `announcement`,
  * is content only, and is never profile input (`PROFILE_RELEVANT_KINDS`
- * below and `selectProfileInput` in profile.ts both leave it out). */
+ * below and `selectProfileInput` in profile.ts both leave it out).
+ * `file` (text the Chrome extension extracted from a Canvas File, see
+ * docs/CHROME_EXTENSION.md) is accepted on upload from any client but is
+ * only ever *sent* to a client whose manifest request lists it in
+ * `acceptsKinds` (`filterByAcceptedKinds` below), and is likewise never
+ * profile input. */
 export type DocumentKind =
   | "home"
   | "syllabus"
@@ -24,7 +29,8 @@ export type DocumentKind =
   | "module"
   | "page"
   | "website"
-  | "ed";
+  | "ed"
+  | "file";
 
 const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "home",
@@ -35,6 +41,7 @@ const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "page",
   "website",
   "ed",
+  "file",
 ];
 
 function isDocumentKind(value: unknown): value is DocumentKind {
@@ -366,6 +373,78 @@ export function diffManifest<T extends { id: string; contentHash: string }>(
   const serverManifest = serverDocs.map((doc) => ({ id: doc.id, contentHash: doc.contentHash }));
 
   return { download, serverManifest };
+}
+
+/** Who is talking to `sync`. Absent on the wire means `phone`: every
+ * shipped build predates the field, so absence must keep meaning what it
+ * always meant. */
+export type SyncClient = "phone" | "extension";
+
+/** `client` on a sync request. Anything other than absent/null, "phone" or
+ * "extension" is refused rather than defaulted: a typo silently becoming
+ * "phone" would make an extension's complete-set report retire only phone
+ * rows, and silently becoming "extension" would do the reverse. */
+export function parseSyncClient(raw: unknown): SyncClient {
+  if (raw === undefined || raw === null) return "phone";
+  if (raw === "phone" || raw === "extension") return raw;
+  throw new ManifestValidationError(`unknown client "${String(raw)}"`);
+}
+
+/** Kinds only a client that says it understands them is sent. `file`
+ * because `CourseDocument.Kind` on the phone is a strict Codable enum: one
+ * unknown kind in `download` fails the whole manifest decode on every
+ * build in the field. The wrong fix would be to gate by client name: a new
+ * phone build and the extension both want `file`, an old phone does not,
+ * and only the client knows which it is. */
+export const CAPABILITY_GATED_KINDS: readonly DocumentKind[] = ["file"];
+
+const MAX_ACCEPTS_KINDS = 32;
+const MAX_ACCEPTS_KIND_LENGTH = 32;
+
+/** `acceptsKinds` on a manifest request. Absent means "the kinds that
+ * existed before this field", i.e. the empty list of extras. Unknown
+ * strings are kept and ignored (a newer client may list kinds this server
+ * has never heard of); only the shape and size are validated. */
+export function parseAcceptsKinds(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_ACCEPTS_KINDS ||
+    raw.some((k) => typeof k !== "string" || k.length > MAX_ACCEPTS_KIND_LENGTH)) {
+    throw new ManifestValidationError(`"acceptsKinds" must be an array of at most ${MAX_ACCEPTS_KINDS} short strings`);
+  }
+  return raw as string[];
+}
+
+/** Drops capability-gated documents the client did not opt into. Applied
+ * to the server's live set *before* `diffManifest`, so a withheld document
+ * is absent from both `download` and `serverManifest` -- a `serverManifest`
+ * entry the client has no row for would read as "delete or re-upload me". */
+export function filterByAcceptedKinds<T extends { kind: string }>(docs: T[], acceptsKinds: readonly string[]): T[] {
+  const gated = CAPABILITY_GATED_KINDS.filter((kind) => !acceptsKinds.includes(kind));
+  if (gated.length === 0) return docs;
+  return docs.filter((doc) => !(gated as readonly string[]).includes(doc.kind));
+}
+
+/** Which rows the complete-set rule may retire for a given reporting
+ * client: the phone only retires rows the phone collected (it cannot see
+ * announcements, pages past its cap or files, so their absence from its
+ * list means nothing); the extension sees everything the phone can and more,
+ * so its list is authoritative for all collectors (`undefined` = no
+ * restriction). */
+export function retirableCollector(client: SyncClient): "phone" | undefined {
+  return client === "phone" ? "phone" : undefined;
+}
+
+/** In-memory form of the same rule, for tests and any caller that already
+ * holds rows; `db.selectLiveDocumentIDsForCourse` applies it in SQL. */
+export function liveIDsRetirableBy<T extends { id: string; kind: string; collector?: string }>(
+  liveRows: T[],
+  client: SyncClient,
+): string[] {
+  const only = retirableCollector(client);
+  return liveRows
+    .filter((row) => row.kind !== "ed")
+    .filter((row) => only === undefined || (row.collector ?? "phone") === only)
+    .map((row) => row.id);
 }
 
 /** Step 2 of sync: for a fully-synced course, any id that is currently

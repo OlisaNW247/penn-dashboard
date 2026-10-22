@@ -237,3 +237,14 @@ steps come first; everything after step 3 needs the owner's Mac.
   Gradescope ids in `merge` (`Dictionary(uniqueKeysWithValues:)`); the
   port lets the later one win, because a crashed service worker loses the
   whole run.
+- 2026-10-22: step 4, the backend, written and tested in the container
+  (406 Deno tests, `--no-check`; the touched functions type-check): the
+  migration, identity resolution in `requireUser`, `client` /
+  `acceptsKinds` / `collector` in `sync`, `pair`, `device-sync`, and the
+  `delete-account` device rule (a linked device only ever unpairs itself).
+  A linked device's blob row is keyed by its own auth user id whatever
+  `deviceId` it sends; `put` echoes the id used. **Not applied, not
+  deployed**: the migration and the deploys of `sync`, `pair`,
+  `device-sync` and `delete-account` each wait for the owner's go. The
+  other functions pick up the new `requireUser` whenever they are next
+  deployed, harmlessly before the migration (Traps).

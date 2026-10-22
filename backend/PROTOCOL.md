@@ -36,6 +36,23 @@ file; when they disagree, this file wins and the code is wrong.
   `Authorization: Bearer {access_token}`, `apikey: {ANON_KEY}`,
   `Content-Type: application/json`. A 401 means refresh and retry once.
 
+### Identity resolution (linked devices)
+
+The Chrome extension signs up as its own anonymous user and is then paired
+to a phone (`pair`, below). After verifying the token, every function looks
+the caller up in `device_links` (one query). `AuthContext` then carries
+`callerUserId` (the token's user), `deviceOwnerLinked` (true for a linked
+device) and `userId`, which is the **owner's** id when the caller is a
+linked device and the caller's own id otherwise. Every function scopes
+enrollments and the ask quota by `userId`, so a linked device is the same
+student as its phone with no per-function change. Only `pair`,
+`device-sync` and `delete-account` read `callerUserId`. A failed lookup
+fails the request (502): treating a linked device as a fresh student would
+be wrong silently. The one exception is the table not existing yet
+(`42P01` / `PGRST205`): then no link can exist and the caller is treated
+as unlinked, so a function deployed before the migration keeps serving
+every phone. Apply the migration before the extension pairs, all the same.
+
 ## Wire types (JSON)
 
 Dates are ISO 8601 strings with fractional seconds allowed
@@ -112,7 +129,7 @@ resolved `catalog_code` to label which site a course's material came from.
 
 ## `sync` — manifest exchange, then upload
 
-### Step 1: `{ "action": "manifest", "courses": [CourseSummaryWire], "documents": [DocumentStub] }`
+### Step 1: `{ "action": "manifest", "courses": [CourseSummaryWire], "documents": [DocumentStub], "acceptsKinds"?: [string], "client"?: "phone" | "extension" }`
 
 Server: upserts `courses`, upserts the caller's `enrollments` for every
 course listed (this is the enrollment proof; see Limitations), then answers
@@ -126,6 +143,16 @@ course listed (this is the enrollment proof; see Limitations), then answers
   "profiles":       [CourseProfileWire] } -- one entry per manifest course with an extracted
                                            -- course_profiles row (see "extract-profile" below)
 ```
+
+`acceptsKinds` (optional, at most 32 strings of at most 32 characters;
+unknown strings are ignored) lists the capability-gated document kinds the
+client can decode. Today that is only `"file"`: documents of kind `file`
+are left out of **both** `download` and `serverManifest` unless `acceptsKinds`
+includes it. Absent means the kinds that existed before the field, which is
+every shipped phone: `CourseDocument.Kind` there is a strict `Codable` enum
+and one unknown kind would fail the whole manifest decode. `client` is
+described under Step 2; on the manifest it only matters for the pairing
+check below.
 
 `profiles` is one per manifest course that has had `extract-profile` build
 it a `course_profiles` row; a course that hasn't been extracted yet (or
@@ -141,7 +168,7 @@ for every course NOT in `coursesFresh` (announcements are fetched for all
 courses in one call regardless; they are cheap and change daily). Local
 merge runs as today.
 
-### Step 2: `{ "action": "upload", "documents": [CourseDocumentWire], "fullySyncedCourses": [FullySyncedCourse], "links"?: [LinkWire] }`
+### Step 2: `{ "action": "upload", "documents": [CourseDocumentWire], "fullySyncedCourses": [FullySyncedCourse], "links"?: [LinkWire], "client"?: "phone" | "extension" }`
 
 `documents` = local docs whose `(id, contentHash)` is not in
 `serverManifest`. `fullySyncedCourses` = the courses the client fetched from
@@ -162,9 +189,23 @@ homepage -- the server does the filtering (`_shared/websites.ts`'s
 `candidateFromLink`), and a link the client's own heuristics would have
 discarded may still score.
 
+`client` (on both steps; absent means `"phone"`, every shipped build; any
+other value is a 400) says which kind of client is reporting. Upload stamps
+`course_documents.collector` (`'phone'` or `'extension'`) on every document
+it upserts, so the row belongs to whoever uploaded it last. `file` is an
+accepted document kind on upload (extracted text of a Canvas File, at most
+200,000 characters like every kind). It is never profile input and does not
+set `profile_stale`.
+
+`client: "extension"` from a caller that is not a linked device is refused
+`403 not_paired`: the extension pairs before it syncs, so it is one student
+with the phone rather than a second one.
+
 Server: upserts docs by id (clearing `gone_at`), sets `gone_at = now()` on
-live docs of a fully-synced course whose id is absent from `documentIDs`,
-sets `courses.last_full_sync_at = now()` for those courses, sets
+live docs of a fully-synced course whose id is absent from `documentIDs`
+(when the reporting `client` is the phone, only docs with
+`collector = 'phone'`; when it is the extension, docs of any collector;
+`ed` is exempt as before), sets `courses.last_full_sync_at = now()` for those courses, sets
 `courses.profile_stale = true` for any course whose set of
 `(id, contentHash)` for kinds `syllabus|home|page|website` changed, and
 scores `links` into `course_websites` candidate rows. Answers
@@ -760,11 +801,65 @@ across every model-calling function, not a separate counter per function.
 A cache hit, or a `mapping: null` response, never calls
 `checkAndConsumeQuota` at all.
 
+## `pair` — link the Chrome extension to a phone
+
+Request `{ "action": ... }`, all POST, all authenticated as the caller's own
+anonymous user. Tables `pairings`, `device_links` (service role only).
+
+- `start` (the extension): the caller must not already be a linked device
+  (else `409 already_paired`). Deletes the caller's older pairings, stores a
+  new code (128 random bits, 22 characters base64url) valid for ten
+  minutes, answers `{ "code", "expiresAt" }`. No per-caller rate limit yet
+  (at most one live code per user, so the table is bounded); add one if
+  anonymous signups are abused.
+- `claim { "code" }` (the phone): the caller must not itself be a linked
+  device (`403 forbidden`) and must not be the code's own user (`403`). An
+  unknown, malformed or expired code is the same `404 pairing_not_found`, so
+  codes cannot be probed. The code is consumed by an atomic delete, then
+  `device_links(device_user_id, owner_user_id = caller)` is inserted.
+  Answers `{ "paired": true }`. A device user that already owns devices, or
+  is already linked, is `409 already_paired`.
+- `status` (the extension): `{ "paired": bool }`.
+- `unpair { "deviceUserId"? }`: from a device, removes its own link, its
+  blob row and its auth user (naming another device is `403`). From the
+  owner, removes the named device (must be theirs, else `404
+  device_not_found`) or all devices when absent. Answers `{ "unpaired": n }`.
+
+The end-to-end key `K` is never sent to the server: the QR carries it in the
+URL fragment between the two devices only.
+
+## `device-sync` — encrypted snapshots between paired devices
+
+Only an owner (a user with at least one linked device) or a linked device
+may call it; anyone else is `403 not_paired`. Table `device_sync_blobs`
+(service role only), keyed `(owner_user_id, device_id)`.
+
+- `put { "deviceId", "ciphertext" }`: `ciphertext` is standard base64 of at
+  most 2 MB decoded (`413` above that), `deviceId` matches
+  `^[A-Za-z0-9_-]{8,64}$`. Upserts the caller's own row and answers
+  `{ "deviceId", "updatedAt" }`. An owner's row is keyed by the `deviceId`
+  it sent. A **linked device's row is keyed by its own user id** whatever
+  `deviceId` it sent, so unpairing can find and delete it; the response
+  carries the id actually used.
+- `get`: `{ "blobs": [{ "deviceId", "ciphertext", "updatedAt" }] }`, every
+  device's row for the owner (a device reads the same set its owner does).
+
+The server never parses, decrypts or logs `ciphertext`; it validates only
+that it is base64 and within the size cap.
+
 ## `delete-account`
 
-Request `{}`. Deletes the caller's `enrollments` and `ask_usage` rows and the
-auth user. Shared course material is untouched (it is not the user's data).
-Response `{ "deleted": true }`.
+Request `{}`. From an owner (any user that is not a linked device): deletes
+the caller's `enrollments` and `ask_usage` rows, every linked device's auth
+user, the device links and every sync blob, then the auth user. Shared
+course material is untouched (it is not the user's data). Response
+`{ "deleted": true }`.
+
+From a **linked device**: never deletes the owner. It behaves as `unpair` of
+that device (link, blob row, auth user) and answers `{ "deleted": true }`.
+Identity resolution makes a device's `userId` its owner's, so the rule is
+decided on `deviceOwnerLinked` (`decideDeleteAccount` in `_shared/devices.ts`),
+and an inconsistent resolution is refused rather than guessed at.
 
 ## Model
 
@@ -785,3 +880,14 @@ the repo, never in the app.
   enrolled student already sees; nothing personal is reachable.
 - Section-specific announcements and per-section due-date overrides are
   shared at the course level in v1.
+- The server cannot verify a client's `client` claim. `client: "extension"`
+  only requires that the caller is a linked device; a tampered phone that is
+  paired could claim it and have its complete-set report retire phone-
+  collected rows too, or a paired extension could claim `"phone"` and retire
+  fewer rows than it should. Neither reaches anything the caller could not
+  already change as that student. The same goes for `acceptsKinds`: it is a
+  capability the client asserts, not one the server checks.
+- Pairing is single use and ten minutes, but the code travels in a QR a
+  custom URL scheme can in principle hand to another app on the phone. It is
+  useless without the phone's own approval and token (`claim`), and links
+  only the claiming phone's account.

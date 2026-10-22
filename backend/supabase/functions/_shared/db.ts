@@ -11,6 +11,7 @@ import type {
   CourseSummaryWire,
   DocumentKind,
   DocumentStub,
+  SyncClient,
 } from "./manifest.ts";
 import {
   catalogEntryWire,
@@ -52,6 +53,9 @@ export interface CourseDocumentRow {
   points_possible: number | null;
   first_seen_at: string;
   gone_at: string | null;
+  /** Who uploaded the row; absent on rows read by the explicit column
+   *  lists above (the default, 'phone', applies in the database). */
+  collector?: "phone" | "extension";
 }
 
 export function documentRowToWire(row: CourseDocumentRow): CourseDocumentWire {
@@ -76,8 +80,16 @@ export function rowToStub(row: Pick<CourseDocumentRow, "id" | "content_hash">): 
   return { id: row.id, contentHash: row.content_hash };
 }
 
-function documentWireToInsertRow(doc: CourseDocumentWire): Omit<CourseDocumentRow, "first_seen_at"> {
+function documentWireToInsertRow(
+  doc: CourseDocumentWire,
+  collector: SyncClient,
+): Omit<CourseDocumentRow, "first_seen_at"> {
   return {
+    // Stamped on every upsert, so the row belongs to whoever uploaded it
+    // last. A phone re-uploading a page the extension had pooled takes
+    // ownership of it, which is right: the phone's next complete-set report
+    // is then entitled to retire it if Canvas drops the page.
+    collector,
     id: doc.id,
     course_id: doc.courseID,
     course_code: doc.course,
@@ -202,7 +214,11 @@ export async function selectLiveDocumentsForCourses(
 /** Just the live ids for one course -- all `goneIDs` needs, and cheap
  * enough to call once per fully-synced course in the upload step without
  * pulling every document's full text along for the ride. */
-export async function selectLiveDocumentIDsForCourse(client: SupabaseClient, courseID: string): Promise<string[]> {
+export async function selectLiveDocumentIDsForCourse(
+  client: SupabaseClient,
+  courseID: string,
+  onlyCollector?: "phone" | "extension",
+): Promise<string[]> {
   // `ed` documents are excluded on purpose, so the complete-set rule in
   // the upload step can never mark them gone. A course's Canvas material
   // is the same for every enrolled student, so one student's full fetch
@@ -213,12 +229,19 @@ export async function selectLiveDocumentIDsForCourse(client: SupabaseClient, cou
   // classmates pooled. The cost is that an Ed thread deleted on Ed stays
   // pooled until a dedicated Ed sync signal exists (PROTOCOL.md, "Ed
   // Discussion documents"). Clients still drop them locally.
-  const { data, error } = await client
+  //
+  // `onlyCollector` is the second exemption (see `retirableCollector` in
+  // manifest.ts): a phone reporting a complete set may only retire rows the
+  // phone collected, since it never sees the extension's announcements,
+  // late pages or files.
+  let query = client
     .from("course_documents")
     .select("id")
     .eq("course_id", courseID)
     .neq("kind", "ed")
     .is("gone_at", null);
+  if (onlyCollector) query = query.eq("collector", onlyCollector);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => (row as { id: string }).id);
 }
@@ -228,9 +251,13 @@ export async function selectLiveDocumentIDsForCourse(client: SupabaseClient, cou
  * `validateDocument`, so this layer does no further shape checking -- its
  * only job is the wire-to-row mapping and staying under Postgres's
  * practical statement size. */
-export async function upsertDocuments(client: SupabaseClient, documents: CourseDocumentWire[]): Promise<void> {
+export async function upsertDocuments(
+  client: SupabaseClient,
+  documents: CourseDocumentWire[],
+  collector: SyncClient = "phone",
+): Promise<void> {
   for (const batch of chunk(documents, UPSERT_BATCH_SIZE)) {
-    const rows = batch.map(documentWireToInsertRow);
+    const rows = batch.map((doc) => documentWireToInsertRow(doc, collector));
     const { error } = await client.from("course_documents").upsert(rows, { onConflict: "id" });
     if (error) throw error;
   }
@@ -1090,13 +1117,173 @@ export async function upsertDirectoryCache(client: SupabaseClient, key: string, 
   if (error) throw error;
 }
 
-/** Deletes the caller's private rows ahead of deleting the auth user
+/** Deletes an owner's private rows ahead of deleting the auth user
  * itself. `courses`/`course_documents`/`course_profiles` are untouched --
- * per PROTOCOL.md, shared course material is not the user's data. */
+ * per PROTOCOL.md, shared course material is not the user's data.
+ *
+ * Also removes the owner's device links and every sync blob. The linked
+ * devices' auth users are deleted by the caller (`delete-account`) from the
+ * ids returned by `selectLinkedDeviceIDs`, read *before* this runs: once
+ * the links are gone there is no way left to find them.
+ *
+ * Only ever call this with the id of the token's own user, never with a
+ * resolved owner id from a linked device's token -- `delete-account`
+ * guards that with `decideDeleteAccount`. */
 export async function deleteUserData(client: SupabaseClient, userId: string): Promise<void> {
   const { error: enrollmentsError } = await client.from("enrollments").delete().eq("user_id", userId);
   if (enrollmentsError) throw enrollmentsError;
 
   const { error: askUsageError } = await client.from("ask_usage").delete().eq("user_id", userId);
   if (askUsageError) throw askUsageError;
+
+  const { error: blobsError } = await client.from("device_sync_blobs").delete().eq("owner_user_id", userId);
+  if (blobsError) throw blobsError;
+
+  const { error: linksError } = await client.from("device_links").delete().eq("owner_user_id", userId);
+  if (linksError) throw linksError;
+}
+
+// ---------------------------------------------------------------------
+// Pairing and device sync (20261022090000_chrome_extension.sql). The
+// decisions live in devices.ts; these are only the queries.
+// ---------------------------------------------------------------------
+
+/** The device user ids linked to an owner. */
+export async function selectLinkedDeviceIDs(client: SupabaseClient, ownerId: string): Promise<string[]> {
+  const { data, error } = await client.from("device_links").select("device_user_id").eq("owner_user_id", ownerId);
+  if (error) throw error;
+  return (data ?? []).map((row) => (row as { device_user_id: string }).device_user_id);
+}
+
+/** Replaces any waiting pairing of this device user with a new one. */
+export async function replacePairing(
+  client: SupabaseClient,
+  deviceUserId: string,
+  code: string,
+  expiresAt: Date,
+): Promise<void> {
+  const { error: deleteError } = await client.from("pairings").delete().eq("device_user_id", deviceUserId);
+  if (deleteError) throw deleteError;
+  const { error } = await client
+    .from("pairings")
+    .insert({ code, device_user_id: deviceUserId, expires_at: expiresAt.toISOString() });
+  if (error) throw error;
+}
+
+export async function selectPairing(
+  client: SupabaseClient,
+  code: string,
+): Promise<{ deviceUserId: string; expiresAt: string } | null> {
+  const { data, error } = await client
+    .from("pairings")
+    .select("device_user_id, expires_at")
+    .eq("code", code)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as { device_user_id: string; expires_at: string };
+  return { deviceUserId: row.device_user_id, expiresAt: row.expires_at };
+}
+
+/** Atomically consumes a pairing: a delete that returns the row, so two
+ * phones claiming one code cannot both win. Returns whether this call was
+ * the one that consumed it. */
+export async function consumePairing(client: SupabaseClient, code: string): Promise<boolean> {
+  const { data, error } = await client.from("pairings").delete().eq("code", code).select("code");
+  if (error) throw error;
+  return (data ?? []).length === 1;
+}
+
+export async function insertDeviceLink(
+  client: SupabaseClient,
+  deviceUserId: string,
+  ownerUserId: string,
+): Promise<"linked" | "already_linked"> {
+  const { error } = await client
+    .from("device_links")
+    .insert({ device_user_id: deviceUserId, owner_user_id: ownerUserId });
+  // 23505 = unique_violation on the device_user_id primary key.
+  if (error?.code === "23505") return "already_linked";
+  if (error) throw error;
+  return "linked";
+}
+
+/** Device user ids among `candidateIDs` (or all, when undefined) that are
+ * linked to this owner. Scoping by owner here is what keeps "the named
+ * device must be theirs" a query fact rather than a caller's promise. */
+export async function selectOwnedDeviceIDs(
+  client: SupabaseClient,
+  ownerId: string,
+  candidateIDs?: string[],
+): Promise<string[]> {
+  let query = client.from("device_links").select("device_user_id").eq("owner_user_id", ownerId);
+  if (candidateIDs) query = query.in("device_user_id", candidateIDs);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((row) => (row as { device_user_id: string }).device_user_id);
+}
+
+/** Cuts the link first (so the device loses access at once), then its
+ * blob row, then the device's auth user. Callers pass ids already proven
+ * to belong to `ownerId`. Failure of the last step leaves an unlinked,
+ * empty anonymous user, which resolves to itself and sees nothing. */
+export async function removeDevices(
+  client: SupabaseClient,
+  ownerId: string,
+  deviceUserIds: string[],
+): Promise<number> {
+  if (deviceUserIds.length === 0) return 0;
+  const { error: linkError } = await client
+    .from("device_links")
+    .delete()
+    .eq("owner_user_id", ownerId)
+    .in("device_user_id", deviceUserIds);
+  if (linkError) throw linkError;
+
+  // A device's blob row is keyed by its own user id (see device-sync).
+  const { error: blobError } = await client
+    .from("device_sync_blobs")
+    .delete()
+    .eq("owner_user_id", ownerId)
+    .in("device_id", deviceUserIds);
+  if (blobError) throw blobError;
+
+  for (const id of deviceUserIds) {
+    const { error } = await client.auth.admin.deleteUser(id);
+    if (error) throw new Error("failed to delete device auth user");
+  }
+  return deviceUserIds.length;
+}
+
+export async function upsertDeviceBlob(
+  client: SupabaseClient,
+  ownerId: string,
+  deviceId: string,
+  ciphertext: string,
+): Promise<string> {
+  const updatedAt = new Date().toISOString();
+  const { error } = await client
+    .from("device_sync_blobs")
+    .upsert(
+      { owner_user_id: ownerId, device_id: deviceId, ciphertext, updated_at: updatedAt },
+      { onConflict: "owner_user_id,device_id" },
+    );
+  if (error) throw error;
+  return updatedAt;
+}
+
+export async function selectDeviceBlobs(
+  client: SupabaseClient,
+  ownerId: string,
+): Promise<Array<{ deviceId: string; ciphertext: string; updatedAt: string }>> {
+  const { data, error } = await client
+    .from("device_sync_blobs")
+    .select("device_id, ciphertext, updated_at")
+    .eq("owner_user_id", ownerId)
+    .order("device_id", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const r = row as { device_id: string; ciphertext: string; updated_at: string };
+    return { deviceId: r.device_id, ciphertext: r.ciphertext, updatedAt: r.updated_at };
+  });
 }

@@ -3,14 +3,20 @@
 // backend/deno.json) or `deno test test/manifest.test.ts` directly. No
 // network, no database -- everything this file imports is pure.
 import {
+  CAPABILITY_GATED_KINDS,
   diffManifest,
+  filterByAcceptedKinds,
   freshCourses,
   goneIDs,
   MAX_LINK_HREF_LENGTH,
+  liveIDsRetirableBy,
   MAX_TEXT_LENGTH,
   ManifestValidationError,
+  parseAcceptsKinds,
   parseDocumentID,
+  parseSyncClient,
   profileStaleCourses,
+  retirableCollector,
   validateCourse,
   validateDocument,
   validateDocumentStub,
@@ -345,4 +351,89 @@ Deno.test("validateLink: rejects an href over MAX_LINK_HREF_LENGTH", () => {
 
 Deno.test("validateLink: rejects a non-object entry", () => {
   assertThrows(() => validateLink("not an object"), ManifestValidationError);
+});
+
+// ---- Chrome extension: client, collector, acceptsKinds ----------------
+
+Deno.test("parseSyncClient: absent means phone, only two values are valid", () => {
+  assertEquals(parseSyncClient(undefined), "phone");
+  assertEquals(parseSyncClient(null), "phone");
+  assertEquals(parseSyncClient("phone"), "phone");
+  assertEquals(parseSyncClient("extension"), "extension");
+  assertThrows(() => parseSyncClient("Extension"), ManifestValidationError);
+  assertThrows(() => parseSyncClient(1), ManifestValidationError);
+});
+
+Deno.test("complete-set: a phone retires only phone-collected rows, never ed", () => {
+  const live = [
+    { id: "page:1:1", kind: "page", collector: "phone" },
+    { id: "announcement:1:2", kind: "announcement", collector: "extension" },
+    { id: "file:1:3", kind: "file", collector: "extension" },
+    { id: "ed:1:4", kind: "ed", collector: "phone" },
+    { id: "page:1:5", kind: "page" }, // a row read without the column: the default is phone
+  ];
+  assertEquals(retirableCollector("phone"), "phone");
+  assertEquals(liveIDsRetirableBy(live, "phone"), ["page:1:1", "page:1:5"]);
+});
+
+Deno.test("complete-set: the extension's report applies to every collector, still not ed", () => {
+  const live = [
+    { id: "page:1:1", kind: "page", collector: "phone" },
+    { id: "announcement:1:2", kind: "announcement", collector: "extension" },
+    { id: "ed:1:4", kind: "ed", collector: "extension" },
+  ];
+  assertEquals(retirableCollector("extension"), undefined);
+  assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1", "announcement:1:2"]);
+});
+
+Deno.test("complete-set composed with goneIDs: a phone sync leaves an extension announcement alive", () => {
+  const live = [
+    { id: "page:1:1", kind: "page", collector: "phone" },
+    { id: "announcement:1:2", kind: "announcement", collector: "extension" },
+  ];
+  // The phone lists only the page it knows about.
+  assertEquals(goneIDs(liveIDsRetirableBy(live, "phone"), ["page:1:1"]), []);
+  // The extension, listing only the announcement, retires the stale page.
+  assertEquals(goneIDs(liveIDsRetirableBy(live, "extension"), ["announcement:1:2"]), ["page:1:1"]);
+});
+
+Deno.test("file is a valid uploaded kind, and is not profile input", () => {
+  const doc = validateDocument(validDocumentInput({ id: "file:100:9", kind: "file", sourceID: "9" }));
+  assertEquals(doc.kind, "file");
+  const before = new Map<string, string>();
+  const after = new Map([["file:100:9", "h"]]);
+  assertEquals([...profileStaleCourses(before, after, () => "file")], []);
+});
+
+Deno.test("parseAcceptsKinds: absent is empty, bad shapes are refused, unknown strings pass through", () => {
+  assertEquals(parseAcceptsKinds(undefined), []);
+  assertEquals(parseAcceptsKinds(["file", "future-kind"]), ["file", "future-kind"]);
+  assertThrows(() => parseAcceptsKinds("file"), ManifestValidationError);
+  assertThrows(() => parseAcceptsKinds([1]), ManifestValidationError);
+  assertThrows(() => parseAcceptsKinds(Array(33).fill("file")), ManifestValidationError);
+});
+
+Deno.test("filterByAcceptedKinds withholds file unless accepted, leaves every other kind", () => {
+  const docs = [
+    { id: "page:1:1", kind: "page" },
+    { id: "file:1:2", kind: "file" },
+    { id: "ed:1:3", kind: "ed" },
+  ];
+  assertEquals(CAPABILITY_GATED_KINDS, ["file"]);
+  assertEquals(filterByAcceptedKinds(docs, []).map((d) => d.id), ["page:1:1", "ed:1:3"]);
+  assertEquals(filterByAcceptedKinds(docs, ["page"]).map((d) => d.id), ["page:1:1", "ed:1:3"]);
+  assertEquals(filterByAcceptedKinds(docs, ["file"]).map((d) => d.id), ["page:1:1", "file:1:2", "ed:1:3"]);
+});
+
+Deno.test("a withheld file is in neither download nor serverManifest", () => {
+  const docs = filterByAcceptedKinds(
+    [
+      { id: "page:1:1", kind: "page", contentHash: "a" },
+      { id: "file:1:2", kind: "file", contentHash: "b" },
+    ],
+    [],
+  );
+  const { download, serverManifest } = diffManifest([], docs);
+  assertEquals(download.map((d) => d.id), ["page:1:1"]);
+  assertEquals(serverManifest.map((d) => d.id), ["page:1:1"]);
 });
