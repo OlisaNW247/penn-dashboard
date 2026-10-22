@@ -220,3 +220,14 @@ steps come first; everything after step 3 needs the owner's Mac.
   `String(hash, radix: 16)` is. `\b` and `\d` are rewritten as Unicode
   lookarounds so JS matches ICU on every case the Swift tests reach.
   Gradescope parsing and dedup are next.
+- 2026-10-22: the shell. `manifest.json` (MV3; `storage` and `alarms`
+  only; Canvas, Gradescope and the Supabase project as hosts; no
+  `cookies`, no content scripts yet), a service worker that only arms an
+  hourly `sync` alarm, and the popup rendered from a sample state by a
+  pure `render(state, root)`. Colours are `RedesignTokens.swift`'s (the
+  prototype's CSS is an older palette); a class's accent uses the phone's
+  own hash, so it matches. Bundled faces are Inter, Familjen Grotesk and
+  Space Mono with their OFL texts; Roobert and Satoshi are not
+  redistributed, so the wordmark is Familjen Grotesk. Loaded unpacked in
+  headless Chromium in the container (manifest accepted, worker started,
+  popup rendered); not yet in the owner's Chrome.
