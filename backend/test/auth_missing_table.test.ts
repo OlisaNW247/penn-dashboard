@@ -1,5 +1,8 @@
-import { assertEquals } from "jsr:@std/assert@1";
 import { isMissingTable } from "../supabase/functions/_shared/auth.ts";
+
+function assertEquals<T>(actual: T, expected: T): void {
+  if (actual !== expected) throw new Error(`expected ${expected}, got ${actual}`);
+}
 
 // requireUser treats a missing device_links table as "not linked" so that a
 // function deployed before the migration keeps serving every phone, and
