@@ -185,6 +185,50 @@ never deleted by a merge, only flagged. The phone applies remote changes
 through the same paths a swipe and an edited date use, so reminders, the
 widget and the Sweeper follow.
 
+### The snapshot (format 1)
+
+Plaintext is UTF-8 JSON; both clients write it and both parse it, so this
+section is the contract and a test vector in each suite pins it.
+
+```
+{ "format": 1,
+  "deviceId": "<the writer's own id>",
+  "writtenAt": "<ISO 8601, UTC, milliseconds>",
+  "completions": { "<assignment id>": { "done": true|false, "at": "<ISO>" } },
+  "dueEdits":    { "<assignment id>": { "dueAt": "<ISO>"|null, "at": "<ISO>" } },
+  "manual":      { "<manual id>": { "title", "course", "dueAt"|null,
+                                    "kind", "repeatsWeekly": bool,
+                                    "removed": bool, "at": "<ISO>" } },
+  "workList":    [ { "id", "course", "title", "dueAt"|null, "kind",
+                     "source", "url"|null, "done": bool } ] }
+```
+
+- Keys are `Assignment.id` (`"source:sourceID"`), which is why the course
+  code, the Canvas id and dedup are exact ports: a key the phone does not
+  know is a completion that never lands.
+- `at` is when that record last changed on its writer. Merge is per key:
+  the later `at` wins, ties go to the larger `deviceId`; un-ticking is a
+  change like ticking (`done: false`), and a removed manual task is a
+  tombstone (`removed: true`) that is never purged, so a stale device
+  cannot resurrect it. A `dueEdits` entry with `dueAt: null` is "edit
+  cleared".
+- `workList` is the writer's own merged dashboard (phone: what todo · all
+  · prev show, announcement tasks and found exams included), read-only to
+  every other device. The extension shows it beside what it reads itself.
+- The phone keeps the change times **outside the SwiftData ledger**, in a
+  file beside the ledger or in `UserDefaults.lhf` (`syncChangeTimesV1`),
+  because `completedAt` is legitimately nil for old completions and a
+  schema change makes an older build fall back to an empty in-memory
+  ledger (Traps). Applying a remote change goes through the same paths a
+  swipe, an edited date and the add sheet use, so reminders, the widget
+  and the Sweeper follow, and never deletes a ledger row.
+- Envelope: AES-256-GCM, a fresh random 12-byte nonce per write, no
+  associated data, sealed bytes `nonce || ciphertext || tag` (CryptoKit's
+  `SealedBox.combined`), sent as standard base64 in `device-sync`'s
+  `ciphertext`. The phone's `deviceId` is a random id made once per
+  install; a linked device's row is keyed by its own auth user id (the
+  server's choice, echoed by `put`).
+
 `docs/PRIVACY.md` changes in the same commit that first sends a blob:
 "Your own data leaves your phone only encrypted, to your own paired
 devices; we cannot read it."
