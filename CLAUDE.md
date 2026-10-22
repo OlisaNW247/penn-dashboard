@@ -2198,7 +2198,12 @@ none is a ship line.
   kind, `client` and `acceptsKinds` on the sync requests and the lossy
   `download` decode (`BackendWire.swift`, 11 tests), and the sync snapshot
   codec and merge (`Sync/`, 16 tests, among them the shared AES-GCM
-  vector). Predicted: **2512 tests / 229 suites** (2485 / 227 plus 27 / 2).
+  vector), and the pairing and sync layer (`Sync/PairingLink`,
+  `SyncChangeLog`, `SyncSnapshotBuilder`, `SyncApplyPlan`,
+  `LowHangingFruitUI/DeviceSyncClient`, `SyncKeyStore`; 50 test
+  functions, 69 cases with the parameterized one expanded). Predicted:
+  **2512 + 50 test functions** and 234 suites; trust the Mac's count, not
+  this one.
   `swift test --no-parallel` on the Mac is the first gate; a different
   count or a red vector test means the phone and the extension disagree.
   `SyncSnapshot` uses a hand-written JSON serializer and UTC date

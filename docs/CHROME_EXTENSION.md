@@ -360,3 +360,17 @@ steps come first; everything after step 3 needs the owner's Mac.
   (worker ran `refresh`, popup rendered seeded states, a tick wrote the
   snapshot); **never run against a signed-in Canvas or Gradescope**, which
   the container cannot reach.
+- 2026-10-22: the phone's pairing and sync layer, **written without a
+  compiler**: `PairingLink` (strict `smooth://pair?c=…#k=…`),
+  `SyncChangeLog` (change times in `UserDefaults.lhf`
+  `syncChangeTimesV1`, the install's `syncDeviceIDV1`), `SyncSnapshotBuilder`
+  (a change with no recorded time is dated the Unix epoch, or a
+  completion's `completedAt`, so any real change elsewhere beats it;
+  "now" would let a stale phone win), `SyncApplyPlan` (actions only where
+  a remote won and the state differs; an unknown id's completion lands on
+  a completion-only ledger row; no action deletes a feed row; adopted
+  remote times are recorded as the remote's, never as now),
+  `DeviceSyncClient` and `SyncKeyStore` (Keychain, this device only).
+  `BackendClient.post` went from private to internal so the client reuses
+  its auth and retry path. Not yet: the scheme, the sheet, and the wiring
+  into `AppState`.
