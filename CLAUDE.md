@@ -548,7 +548,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   `NSSpeechRecognitionUsageDescription`) live in both `project.yml` and
   `App/Info.plist`, pinned by `VoiceDictationTests`. Not on the Mac (its
   sandbox would need the audio-input entitlement, and nothing there is
-  verified). Owner's ask of 2026-10-22: "voice mode for the tree AI";
+  verified). Seen working on Olisa's iPhone the same morning ("mic is
+  working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
@@ -869,8 +870,9 @@ on-device flag, the record category, the lifecycle stops and the
 no-auto-send handler), nothing removed. Green on the first run, the
 count exactly as predicted, and the iOS Debug build (the only thing
 that compiles `VoiceDictationController`, whose body is `#if os(iOS)`)
-succeeded on the first try the same morning. Not yet tried on the
-phone.**
+succeeded on the first try the same morning, was installed on Olisa's
+iPhone, and the mic worked on the first try: "mic is working
+perfectly" (10:39, a dictated question answered).**
 Before it: 2464 / 225 at `1a4ed6e`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
 the same count, with the sweeper section's copy test pinning two lines
@@ -1431,10 +1433,16 @@ client problem. The pieces, all exercised by tests:
   its meetings, which `dbRowToCatalogRow` detects by key presence (a
   present `room: null` is a real online section) and `catalogNeedsFetch`
   refetches on the next manifest, so every enrolled course re-reads
-  within about an hour of the deploy. Since the same afternoon the fetch
-  names the semester (`academicSemester`, Traps: Penn Labs' `current`
-  had rolled to Spring 2027) and a row from another semester is
-  refetched and never served. The system instructions say the
+  within about an hour of the deploy. The same afternoon the fetch was
+  changed to name the semester (`academicSemester`, `396e464`, 14:29 UTC;
+  Traps: Penn Labs' `current` had rolled to Spring 2027) so a row from
+  another semester is refetched and never served. **That commit was
+  never deployed** (found 2026-10-22: `sync` v9 and `ask` v10 are from
+  13:35 UTC, an hour before it, and every row refetched at 14:21 UTC is
+  `2027A`), which is why on 2026-10-22 the tree gave CIS 2400's lecture
+  as 12:00 to 1:29 in NBS AUD, Spring 2027's slot, when the fall section
+  meets 1:45 to 3:15. Deploying `sync` and `ask` is the fix and needs
+  Olisa's go; until then every catalog row served is next semester's. The system instructions say the
   block never holds an exam room: those come from announcements and Ed
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.

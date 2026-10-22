@@ -32,7 +32,14 @@ These block shipping, or would make shipping risky.
   stopped; the Berserk alarm, the exam cards and the megaphone sheet are
   the things to look at. Where the two sides' tests could disagree:
   `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
-- **Try the section details on a phone** (deployed 2026-10-20): ask
+- **Deploy the semester fix for the catalog** (`396e464`, 2026-10-20,
+  never deployed; found 2026-10-22 when the tree gave CIS 2400's Spring
+  2027 lecture time). `sync` v9 and `ask` v10 predate it; every catalog
+  row refetched since 2026-10-15 is `2027A`. `node
+  backend/scripts/deploy-function.mjs sync` then `... ask`, with Olisa's
+  go; then watch `select catalog_code, semester from catalog_courses`
+  flip to `2026C` on the installs' next manifest calls.
+- **Try the section details on a phone** (deployed 2026-10-20 without the semester fix above): ask
   "where is my CIS 2400 lecture" once the catalog rows have refetched
   (`select count(*) filter (where components::text like '%"room"%') from
   catalog_courses` through the Management API says how many have). Note
@@ -326,7 +333,7 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-10-22: voice dictation in ask** (`v8`, 2485/227 green and the iOS build succeeded; not yet tried on the phone):
+- **2026-10-22: voice dictation in ask** (`v8`, 2485/227 green, built and working on Olisa's iPhone the same morning):
   a mic in the composer, on-device recognition only, tap to listen and
   tap send to send. The owner's "voice mode" request; the hands-free
   version is under Next.
