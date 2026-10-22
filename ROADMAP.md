@@ -25,6 +25,18 @@ from `v8` goes to TestFlight.
 
 These block shipping, or would make shipping risky.
 
+- **The Chrome extension** (started 2026-10-22, owner's scope;
+  `docs/CHROME_EXTENSION.md` is the design record and its build order).
+  A helper for the phone: it rides the browser's Canvas, Gradescope and Ed
+  sessions to collect what the phone cannot (every announcement, every
+  page, Canvas Files text, Ed staff posts) into the `sync` pool, and keeps
+  completions, due-date edits and manual tasks in step with the phone,
+  end-to-end encrypted, paired by QR from the phone. Penn only, unpacked.
+  It does not block a phone release; it is here because it is the work in
+  hand. Two server changes must land before it uploads anything (the
+  `collector` column, so the phone's complete-set report cannot retire the
+  extension's documents, and the `file` kind behind `acceptsKinds`, so
+  3.1.0 phones never receive a kind they cannot decode).
 - **Check the merge of 2026-10-20 on the phone** (it compiled green,
   2397 / 214, and was installed on Olisa's iPhone that morning; nothing in
   it has been watched running yet). The DEBUG rows under Profile →

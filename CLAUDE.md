@@ -761,6 +761,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
+- **Chrome extension** (`chrome-extension/`, started 2026-10-22; nothing
+  loaded in a real Chrome yet). A helper for the phone, Penn only, loaded
+  unpacked: it collects course material the phone cannot reach with the
+  browser's own sessions, and syncs the student's completions, edits and
+  manual tasks with the phone, end-to-end encrypted after a QR pairing.
+  What is built and what is only designed: `docs/CHROME_EXTENSION.md` →
+  Status.
 
 ## Commands
 
@@ -1263,6 +1270,7 @@ path has only ever been exercised by hand on a device.
 | `docs/` | Design docs and plain-language explainers |
 | `ROADMAP.md` | The plan: release blockers, next features, parked experiments. Read with this file at the start of every session. |
 | `smooth-prototype/` | Marco's dependency-free HTML/CSS/JS tester for the Smooth redesign. Isolated from the app; `python3 -m http.server 4173 --directory smooth-prototype`. |
+| `chrome-extension/` | The Smooth Chrome extension (MV3, plain ES modules, no build step): a collector and encrypted sync helper for the phone. `docs/CHROME_EXTENSION.md` is its design record; `node --test chrome-extension/test` is its gate. |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
 ## Architecture
