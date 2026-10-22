@@ -9,7 +9,7 @@ The Smooth Chrome extension: a helper for the phone. Design: `docs/CHROME_EXTENS
 3. Load unpacked → pick `~/lhf-app/chrome-extension`.
 4. After a pull, press the reload arrow on the Smooth card.
 
-The popup shows sample data until the readers land.
+The popup reads your Canvas and Gradescope work using the sessions Chrome already has. Sign in to both in the browser first.
 
 ## Test
 

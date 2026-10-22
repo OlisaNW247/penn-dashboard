@@ -1,15 +1,22 @@
-// Service worker skeleton. Collection lands in a later step.
+// Service worker. Thin: it only decides when to run `refresh`.
+import { refresh } from "./run.js";
 
 const SYNC_ALARM = "sync";
 
-function ensureAlarm() {
+function start() {
   chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 60 });
+  refresh();
 }
 
-chrome.runtime.onInstalled.addListener(ensureAlarm);
-chrome.runtime.onStartup.addListener(ensureAlarm);
+chrome.runtime.onInstalled.addListener(start);
+chrome.runtime.onStartup.addListener(start);
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== SYNC_ALARM) return;
-  // Stub: collection lands in a later step.
+  if (alarm.name === SYNC_ALARM) refresh();
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "refresh") return false;
+  refresh().then(() => sendResponse({ ok: true }));
+  return true;
 });

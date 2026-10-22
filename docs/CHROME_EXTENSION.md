@@ -343,3 +343,20 @@ steps come first; everything after step 3 needs the owner's Mac.
   upload batches split on the 6 MB budget as well as 200 documents. No
   `home` document is built: the phone never builds one either, and
   inventing one would give the two clients different ids.
+- 2026-10-22: step 2, the readers and a live popup. Canvas work comes
+  from the student's own calendar feed, found through
+  `/api/v1/users/self/profile` on every run and parsed by the ported ICS
+  parser, so each item has the phone's exact id; the feed URL is a bearer
+  credential and lives in one local variable, never in storage or a log.
+  Gradescope is read page by page, one request at a time. A source that
+  fails keeps its last good list, and a signed-out Canvas shows that list
+  under "sign in to canvas" rather than an empty popup. The views are the
+  phone's (`DashboardViewModel`, `dueText`): todo is overdue plus two
+  days, all is upcoming without overdue, prev is finished work. A tick
+  records into the local snapshot (`snapshotV1`); un-ticking records
+  `done: false`. Left for the phone's own work list to supply once paired:
+  Canvas events, announcement tasks, found exams, manual and recurring
+  tasks, due-date edits, the sign-up backlog. Loaded in headless Chromium
+  (worker ran `refresh`, popup rendered seeded states, a tick wrote the
+  snapshot); **never run against a signed-in Canvas or Gradescope**, which
+  the container cannot reach.
