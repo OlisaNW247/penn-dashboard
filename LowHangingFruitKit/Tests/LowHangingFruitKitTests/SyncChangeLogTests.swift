@@ -72,7 +72,7 @@ import Testing
     @Test func aDamagedEntryCostsOnlyItself() {
         let (log, defaults, name) = makeLog()
         defer { UserDefaults.standard.removePersistentDomain(forName: name) }
-        defaults.set(["completion:good": t0, "completion:bad": "nope"], forKey: SyncChangeLog.changeTimesKey)
+        defaults.set(["completion:good": t0, "completion:bad": "nope"] as [String: Any], forKey: SyncChangeLog.changeTimesKey)
         #expect(log.time(kind: .completion, id: "good") == t0)
         #expect(log.time(kind: .completion, id: "bad") == nil)
     }

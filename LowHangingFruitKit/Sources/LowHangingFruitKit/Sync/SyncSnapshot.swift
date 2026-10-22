@@ -235,18 +235,28 @@ public struct SyncSnapshot: Codable, Sendable, Equatable {
         }
         let workListJSON = "[" + items.joined(separator: ",") + "]"
 
+        // Each map is built on its own line, with explicit types, so the
+        // final literal is plain strings: one literal holding all three
+        // closures is the shape that makes the type-checker give up.
+        let completionsJSON: String = map(completions) { (c: Completion) -> String in
+            obj([("done", bool(c.done)), ("at", date(c.at))])
+        }
+        let dueEditsJSON: String = map(dueEdits) { (e: DueEdit) -> String in
+            obj([("dueAt", date(e.dueAt)), ("at", date(e.at))])
+        }
+        let manualJSON: String = map(manual) { (m: ManualTask) -> String in
+            obj([("title", SyncJSON.string(m.title)), ("course", SyncJSON.string(m.course)),
+                 ("dueAt", date(m.dueAt)), ("kind", SyncJSON.string(m.kind.rawValue)),
+                 ("repeatsWeekly", bool(m.repeatsWeekly)), ("removed", bool(m.removed)),
+                 ("at", date(m.at))])
+        }
         let out = obj([
             ("format", String(format)),
             ("deviceId", SyncJSON.string(deviceId)),
             ("writtenAt", date(writtenAt)),
-            ("completions", map(completions) { obj([("done", bool($0.done)), ("at", date($0.at))]) }),
-            ("dueEdits", map(dueEdits) { obj([("dueAt", date($0.dueAt)), ("at", date($0.at))]) }),
-            ("manual", map(manual) {
-                obj([("title", SyncJSON.string($0.title)), ("course", SyncJSON.string($0.course)),
-                     ("dueAt", date($0.dueAt)), ("kind", SyncJSON.string($0.kind.rawValue)),
-                     ("repeatsWeekly", bool($0.repeatsWeekly)), ("removed", bool($0.removed)),
-                     ("at", date($0.at))])
-            }),
+            ("completions", completionsJSON),
+            ("dueEdits", dueEditsJSON),
+            ("manual", manualJSON),
             ("workList", workListJSON),
         ])
         return Data(out.utf8)

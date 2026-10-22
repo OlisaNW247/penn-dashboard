@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
+Last updated 2026-10-22 on `v8` (the Chrome extension). Before that,
+2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
 with Marco's `v8-loud-alert-actions`; not compiled).
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
@@ -25,19 +26,34 @@ from `v8` goes to TestFlight.
 
 These block shipping, or would make shipping risky.
 
-- **The Chrome extension** (started 2026-10-22, owner's scope;
-  `docs/CHROME_EXTENSION.md` is the design record and its build order).
-  A helper for the phone: it rides the browser's Canvas, Gradescope and Ed
-  sessions to collect what the phone cannot (every announcement, every
-  page, Canvas Files text, Ed staff posts) into the `sync` pool, and keeps
-  completions, due-date edits and manual tasks in step with the phone,
-  end-to-end encrypted, paired by QR from the phone. Penn only, unpacked.
-  It does not block a phone release; it is here because it is the work in
-  hand. Two server changes must land before it uploads anything (the
-  `collector` column, so the phone's complete-set report cannot retire the
-  extension's documents, and the `file` kind behind `acceptsKinds`, so
-  3.1.0 phones, which drop an unknown kind, are not sent every file again
-  on every hourly sync).
+- **The Chrome extension: built 2026-10-22, now the owner's to try**
+  (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
+  Collector, encrypted phone sync with QR pairing, Canvas Files, Penn
+  only, unpacked. The extension's 467 node tests and the backend's 406
+  Deno tests ran in the container; **none of the Swift has compiled**
+  (an independent read found one failing test, fixed, and nothing that
+  should not compile). In this order:
+  1. On the Mac: `cd LowHangingFruitKit && swift test --no-parallel`.
+     Expect about 2575 tests (CLAUDE.md → Known gaps). A red
+     `SyncSnapshotTests` vector test means the phone and the extension
+     disagree on the encrypted format; stop there.
+  2. Build to the phone (Commands). Nothing changes on screen until a
+     laptop is paired.
+  3. Load the extension unpacked (`chrome-extension/README.md`), signed
+     in to Canvas and Gradescope: the popup should list real work. This
+     needs no backend change.
+  4. With the owner's go: apply
+     `backend/supabase/migrations/20261022090000_chrome_extension.sql`,
+     then deploy `sync`, `pair`, `device-sync`, `delete-account`
+     (`deploy-function.mjs`, one slug each). Before the migration, any
+     function deployed from `v8` keeps working (Traps).
+  5. Pair: "pair with phone" in the popup, point the iPhone camera at
+     it, "pair". Tick something on the laptop; it should be ticked on the
+     phone within a refresh, and the other way round.
+  6. Within the hour the collector runs: check `course_documents` for
+     `collector = 'extension'` rows and kind `file` through the
+     Management API (read-only). If no `file` rows ever appear, the
+     download redirect needs a host permission (Known gaps).
 - **Check the merge of 2026-10-20 on the phone** (it compiled green,
   2397 / 214, and was installed on Olisa's iPhone that morning; nothing in
   it has been watched running yet). The DEBUG rows under Profile →
@@ -353,6 +369,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **The Chrome extension** (2026-10-22, `3fa853b` through this commit on
+  `v8`; owner's scope: a helper for the phone). Pure ES-module ports of
+  the phone's parsing (course code, ICS, Gradescope, dedup, document
+  builders, Ed) with 467 node tests; a popup in the Smooth design reading
+  Canvas and Gradescope through the browser's own sessions; a collector
+  for every announcement, page and course PDF plus Ed staff posts; QR
+  pairing and end-to-end encrypted sync of completions, due edits and the
+  student's own tasks; the backend's `collector` rule, `file` kind,
+  `pair` and `device-sync` (406 Deno tests); the phone's half, never
+  compiled. Nothing deployed, nothing loaded in a real Chrome yet.
 - **2026-10-22: voice dictation in ask** (`v8`, 2485/227 green, built and working on Olisa's iPhone the same morning):
   a mic in the composer, on-device recognition only, tap to listen and
   tap send to send. The owner's "voice mode" request; the hands-free

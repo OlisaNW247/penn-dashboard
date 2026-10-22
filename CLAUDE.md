@@ -2249,6 +2249,11 @@ none is a ship line.
   `AppState`, the pass in `ContentView.refresh()` and at launch, the
   laptop row in Profile; 13 tests in `DeviceSyncWiringTests`). Predicted:
   **2512 + 63 test functions**; trust the Mac's count, not this one.
+  An independent read of all of it (2026-10-22) found nothing that should
+  fail to compile and one test that would fail (`profileRow`'s order
+  check: a section's header closure follows its rows in the source),
+  fixed; `canonicalJSON()` was split into typed lets so the type-checker
+  is not handed one literal with three closures.
   `swift test --no-parallel` on the Mac is the first gate; a different
   count or a red vector test means the phone and the extension disagree.
   `SyncSnapshot` uses a hand-written JSON serializer and UTC date

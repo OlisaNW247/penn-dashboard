@@ -217,7 +217,9 @@ struct DeviceSyncWiringTests {
         let stay = try #require(body.range(of: "stayLoggedInRows"))
         let laptop = try #require(body.range(of: "ProfileLaptopRow()"))
         let appearance = try #require(body.range(of: "SmoothSectionHeader(\"appearance\""))
-        #expect(accounts.lowerBound < stay.lowerBound)
+        // The section's header closure follows its content in the source, so
+        // "accounts" is written after the rows it heads.
+        #expect(laptop.lowerBound < accounts.lowerBound)
         #expect(stay.lowerBound < laptop.lowerBound && laptop.lowerBound < appearance.lowerBound)
 
         let row = try uiSource("PairLaptopSheet.swift")
