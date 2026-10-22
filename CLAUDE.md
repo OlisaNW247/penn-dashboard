@@ -861,19 +861,21 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Expected, not yet run: 2485 / 227 after the voice-dictation commit of
-2026-10-22** (2464 plus the 21 tests of `VoiceDictationTests`, two suites:
-the availability table and the draft merge, and source scans of the two
-usage strings, the on-device flag, the record category, the lifecycle
-stops and the no-auto-send handler). Written in the cloud container with
-no toolchain; the controller body is `#if os(iOS)`, so `swift test` does
-not compile it and only the iOS `xcodebuild` does. Treat the line below
-as the last verified baseline until Olisa's Mac has run this tree.
-**Current: 2464 tests / 225 suites, all green, on `v8` at `1a4ed6e`
+**Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`
+(2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
+plus the 21 tests of `VoiceDictationTests` (two suites: the availability
+table and the draft merge; source scans of the two usage strings, the
+on-device flag, the record category, the lifecycle stops and the
+no-auto-send handler), nothing removed. Green on the first run, the
+count exactly as predicted, and the iOS Debug build (the only thing
+that compiles `VoiceDictationController`, whose body is `#if os(iOS)`)
+succeeded on the first try the same morning. Not yet tried on the
+phone.**
+Before it: 2464 / 225 at `1a4ed6e`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
 the same count, with the sweeper section's copy test pinning two lines
 (the description at 17pt, the nudge in parentheses at 14pt). Green on
-the first run; the phone build of this tree is not yet recorded.**
+the first run; the phone build of this tree is not yet recorded.
 Before it: 2464 / 225 at `178de76` (2026-10-20 evening, 8.0 s):
 the same count as `38b578a`, with the nine `SweeperOnboardingTests`
 rewritten for the combined reminders page (no sweeper phase, the section

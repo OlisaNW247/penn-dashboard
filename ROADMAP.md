@@ -326,7 +326,7 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-10-22: voice dictation in ask** (`v8`, blind, not yet compiled):
+- **2026-10-22: voice dictation in ask** (`v8`, 2485/227 green and the iOS build succeeded; not yet tried on the phone):
   a mic in the composer, on-device recognition only, tap to listen and
   tap send to send. The owner's "voice mode" request; the hands-free
   version is under Next.
