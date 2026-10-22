@@ -222,6 +222,18 @@ section is the contract and a test vector in each suite pins it.
   ledger (Traps). Applying a remote change goes through the same paths a
   swipe, an edited date and the add sheet use, so reminders, the widget
   and the Sweeper follow, and never deletes a ledger row.
+- Settled details (2026-10-22, from the two implementations): keys inside
+  `completions`, `dueEdits` and `manual` are written sorted ascending by
+  code point (ids are ASCII, so byte order is the same), with no
+  whitespace, and every date is UTC with exactly three fractional digits.
+  `kind` is an `Assignment.Kind` raw value (`assignment`, `quiz`,
+  `discussion`, `event`, `other`; manual tasks default to `assignment`).
+  `at` is compared as a time, not a string. A record's tie-break id is the
+  `deviceId` of the snapshot it came from. A merge returns the local
+  snapshot's own `deviceId`, `writtenAt` and `workList` with merged
+  records, and the remotes' work lists beside it; merge once over all
+  remotes, not pairwise, since a merged snapshot no longer remembers
+  which device won each tie.
 - Envelope: AES-256-GCM, a fresh random 12-byte nonce per write, no
   associated data, sealed bytes `nonce || ciphertext || tag` (CryptoKit's
   `SealedBox.combined`), sent as standard base64 in `device-sync`'s
@@ -300,3 +312,8 @@ steps come first; everything after step 3 needs the owner's Mac.
   a repeated wall time) is listed in the module's comments and is worth a
   Swift run if a Gradescope date ever disagrees between the phone and the
   laptop. Step 1 is complete.
+- 2026-10-22: `src/core/syncSnapshot.js`: encode/decode, AES-GCM seal and
+  open with WebCrypto, merge, and the record helpers (18 tests). It seals
+  the shared vector to the same bytes node's own crypto produced and
+  re-encodes its plaintext byte for byte. The details the spec had left
+  open are now under "Settled details" above.
