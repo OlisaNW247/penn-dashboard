@@ -32,13 +32,13 @@ These block shipping, or would make shipping risky.
   stopped; the Berserk alarm, the exam cards and the megaphone sheet are
   the things to look at. Where the two sides' tests could disagree:
   `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
-- **Deploy the semester fix for the catalog** (`396e464`, 2026-10-20,
-  never deployed; found 2026-10-22 when the tree gave CIS 2400's Spring
-  2027 lecture time). `sync` v9 and `ask` v10 predate it; every catalog
-  row refetched since 2026-10-15 is `2027A`. `node
-  backend/scripts/deploy-function.mjs sync` then `... ask`, with Olisa's
-  go; then watch `select catalog_code, semester from catalog_courses`
-  flip to `2026C` on the installs' next manifest calls.
+- **Watch the catalog rows flip to `2026C`** after the semester fix was
+  finally deployed (2026-10-22, `sync` v10 and `ask` v11, Olisa's go;
+  `396e464` had sat undeployed since 2026-10-20 and the tree was giving
+  Spring 2027 section times). `select semester, count(*) from
+  catalog_courses group by semester` through the Management API; then
+  ask "when and where is my CIS 2400 lecture" on the phone and expect
+  Tue/Thu 1:45 to 3:14 in AGH 106B.
 - **Try the section details on a phone** (deployed 2026-10-20 without the semester fix above): ask
   "where is my CIS 2400 lecture" once the catalog rows have refetched
   (`select count(*) filter (where components::text like '%"room"%') from

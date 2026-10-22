@@ -1436,13 +1436,15 @@ client problem. The pieces, all exercised by tests:
   within about an hour of the deploy. The same afternoon the fetch was
   changed to name the semester (`academicSemester`, `396e464`, 14:29 UTC;
   Traps: Penn Labs' `current` had rolled to Spring 2027) so a row from
-  another semester is refetched and never served. **That commit was
-  never deployed** (found 2026-10-22: `sync` v9 and `ask` v10 are from
-  13:35 UTC, an hour before it, and every row refetched at 14:21 UTC is
-  `2027A`), which is why on 2026-10-22 the tree gave CIS 2400's lecture
-  as 12:00 to 1:29 in NBS AUD, Spring 2027's slot, when the fall section
-  meets 1:45 to 3:15. Deploying `sync` and `ask` is the fix and needs
-  Olisa's go; until then every catalog row served is next semester's. The system instructions say the
+  another semester is refetched and never served. That commit was not
+  deployed until 2026-10-22 (`sync` v9 and `ask` v10 were from 13:35
+  UTC on the 20th, an hour before it, and every row refetched at 14:21
+  UTC that day was `2027A`), which is why on the morning of 2026-10-22
+  the tree gave CIS 2400's lecture as 12:00 to 1:29 in NBS AUD, Spring
+  2027's slot, when the fall section meets 1:45 to 3:14 in AGH 106B
+  (Penn Labs' `2026C` entry, read from Olisa's Mac). **Deployed with
+  Olisa's go at about 14:55 UTC on 2026-10-22 as `sync` v10 and `ask`
+  v11**; the rows flip to `2026C` on each install's next manifest call. The system instructions say the
   block never holds an exam room: those come from announcements and Ed
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
