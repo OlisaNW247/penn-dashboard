@@ -869,6 +869,12 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Chrome extension (a separate suite; never add it to the Swift or Deno
+counts): 74 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+&& npm test`, node 22 in the cloud container, 0.4 s).** The pure core:
+term, course code, assignment ids, content hash, ICS. `node --test` takes
+a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
+
 **Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`
 (2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
 plus the 21 tests of `VoiceDictationTests` (two suites: the availability

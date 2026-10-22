@@ -211,5 +211,12 @@ steps come first; everything after step 3 needs the owner's Mac.
 
 ## Status
 
-- 2026-10-22: scope settled with the owner, this record written. Nothing
-  built yet.
+- 2026-10-22: scope settled with the owner, this record written.
+- 2026-10-22: step 1, first half: `src/core/` ports of `Term`,
+  `CourseCode`, the `Assignment` ids (`canvasAssignmentID` included), the
+  content hash and the ICS parser, 74 `node --test` tests whose cases name
+  their Swift origin. The FNV-1a hash is pinned to the published 64-bit
+  vectors (no Swift test pins a value) and is unpadded hex, as Swift's
+  `String(hash, radix: 16)` is. `\b` and `\d` are rewritten as Unicode
+  lookarounds so JS matches ICU on every case the Swift tests reach.
+  Gradescope parsing and dedup are next.
