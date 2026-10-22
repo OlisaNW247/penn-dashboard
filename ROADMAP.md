@@ -157,6 +157,14 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **Hands-free voice mode for ask.** Today's mic (2026-10-22) dictates
+  into the composer and the student taps send. The owner's full ask was a
+  "voice mode": a spoken answer (`AVSpeechSynthesizer`, reading the
+  streamed text as it lands), and perhaps listen → send on silence → speak
+  → listen again on its own screen. Decided against auto-send in the first
+  version so a misheard word never sends a question. Build it on
+  `VoiceDictationController`; keep on-device recognition only, and keep
+  `docs/PRIVACY.md`'s "audio never leaves the phone" true.
 Roughly in priority order.
 
 - **Silent renewal follow-ups** (from the 2026-10-09 review, none
@@ -318,6 +326,10 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-22: voice dictation in ask** (`v8`, blind, not yet compiled):
+  a mic in the composer, on-device recognition only, tap to listen and
+  tap send to send. The owner's "voice mode" request; the hands-free
+  version is under Next.
 - **2026-10-20: the debug diagnostics are off the Profile page** (`v8`,
   blind): the sign-in health lines, the ed status row, the three sync
   summaries and the "testing" section are behind

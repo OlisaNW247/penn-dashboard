@@ -30,6 +30,10 @@
 	<string>public.app-category.education</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Smooth listens only while the mic in ask is on, so you can say a question instead of typing it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Your words are turned into text on this phone. Audio never leaves it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

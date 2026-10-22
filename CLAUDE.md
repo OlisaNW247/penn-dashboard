@@ -532,6 +532,25 @@ Keep this current. It is the fastest way for a new session to know what exists.
   answer are links when they can be tied to exactly one document
   (`CitationLinks`, 2026-10-10). Its own canned lines are a few words
   ("Couldn't find that.", "answering from your phone.").
+  Since 2026-10-22 (blind) the composer has a **mic** at its trailing
+  edge on iOS: tap to listen, the words stream into the field
+  (`VoiceDictationRules.merged`: the draft as it was, a space, the
+  transcript), tap again or tap send to stop; nothing is ever sent by the
+  mic itself, because a misheard word must not send a question the
+  student never asked. Recognition is Apple's `Speech` framework with
+  `requiresOnDeviceRecognition = true`, and the mic is hidden outright on
+  a device or language that cannot transcribe locally
+  (`VoiceDictationRules.availability` → `.hidden`), which is what lets
+  `docs/PRIVACY.md` say audio never leaves the phone. The audio session is
+  set to `.record` only while listening and restored afterwards (the
+  `AVAudioSession` trap). A 60-second cap stops a pocket tap. The two
+  usage strings (`NSMicrophoneUsageDescription`,
+  `NSSpeechRecognitionUsageDescription`) live in both `project.yml` and
+  `App/Info.plist`, pinned by `VoiceDictationTests`. Not on the Mac (its
+  sandbox would need the audio-input entitlement, and nothing there is
+  verified). Owner's ask of 2026-10-22: "voice mode for the tree AI";
+  dictate-then-send was the agreed first version, hands-free with spoken
+  answers set aside (`ROADMAP.md` → Next).
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -842,6 +861,14 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Expected, not yet run: 2485 / 227 after the voice-dictation commit of
+2026-10-22** (2464 plus the 21 tests of `VoiceDictationTests`, two suites:
+the availability table and the draft merge, and source scans of the two
+usage strings, the on-device flag, the record category, the lifecycle
+stops and the no-auto-send handler). Written in the cloud container with
+no toolchain; the controller body is `#if os(iOS)`, so `swift test` does
+not compile it and only the iOS `xcodebuild` does. Treat the line below
+as the last verified baseline until Olisa's Mac has run this tree.
 **Current: 2464 tests / 225 suites, all green, on `v8` at `1a4ed6e`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
 the same count, with the sweeper section's copy test pinning two lines
@@ -1559,9 +1586,15 @@ itself.
   dashboard now shows "not saving on this phone" (`StorageHealth`). See
   Known gaps.
 - **`AVAudioSession` is never configured by default**, and `AVPlayer` then
-  activates it as `.soloAmbient`, which stops the user's music. `SplashView` sets
-  `.ambient` + `.mixWithOthers`. The splash clips have **no audio track** — if
-  this resurfaces, muting is not the fix.
+  activates it as `.soloAmbient`, which stops the user's music. `SplashView`
+  used to set `.ambient` + `.mixWithOthers` for its clips (which had **no
+  audio track**; muting was never the fix). The splash and that line are
+  gone from the tree (checked 2026-10-22: no `AVAudioSession` use remained),
+  so the dictation controller (`VoiceDictationController`), the one thing
+  that now touches the session, remembers whatever category it finds, sets
+  `.record` only while listening, and puts the old one back with
+  `.notifyOthersOnDeactivation` on every stop path. Anything that plays
+  audio in future has to live with that or coordinate with it.
 - **Regex patterns needing real Unicode characters must not be raw strings.**
   `#"...\u{2013}..."#` passes the escape through literally, the pattern fails to
   compile, and `try?` turns that into a silent wrong answer.

@@ -51,6 +51,12 @@ stored.
   date is saved on this phone and used for your list, your reminders and the
   widget. It is never uploaded: a question you ask "the tree" is sent with
   the date Canvas or Gradescope gave, not the one you set.
+- **Your voice.** The mic in "the tree" turns what you say into text on
+  this phone, with Apple's on-device speech recognition. The audio never
+  leaves the phone and is not kept; only the text you then choose to send
+  goes anywhere. On a phone or language where on-device recognition is not
+  available, the mic is simply not shown rather than sending audio to a
+  server.
 
 ## Stay signed in (optional)
 
