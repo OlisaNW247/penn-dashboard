@@ -421,3 +421,16 @@ steps come first; everything after step 3 needs the owner's Mac.
   applied. The QR in a popup screenshot decoded with OpenCV to the exact
   link; no iPhone camera has read it. `docs/PRIVACY.md` gains "The Chrome
   extension" in this commit, the first whose code sends a blob.
+- 2026-10-22: Canvas Files (`src/adapters/files.js`, `pdfText.js`,
+  `vendor/pdfjs/`: pdfjs-dist 4.10.38, Apache-2.0, the two minified
+  legacy builds only, 1.8 MB, SHA-256s in `vendor/pdfjs/VERSION`). pdf.js
+  runs in-thread in the module service worker (a service worker has no
+  `Worker`; the worker module is imported statically and registered as
+  `globalThis.pdfjsWorker`), with no eval, no font faces, and no CMap or
+  standard-font fetches, so nothing it does touches the network; the cost
+  is that text in a font needing an external CMap (some CJK) may come out
+  empty. Seen extracting a generated two-page PDF in headless Chromium.
+  Newest first, at most 60 new or changed PDFs per course per run, 25 MB
+  limit, locked and hidden files skipped, scans remembered and skipped,
+  failures never fatal and never part of the complete set. Not yet
+  called by the worker; the download redirect is a Known gap.

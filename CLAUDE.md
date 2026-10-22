@@ -876,7 +876,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 445 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+counts): 458 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -890,7 +890,10 @@ OpenCV in a scratch venv; that check is not part of `npm test`).
 Plus 28 for the collector and the Ed course matcher, against a fake fetch
 and a fake backend.
 Plus 14 for the encrypted device sync (a two-device round trip through a
-fake backend) and the popup's merge of the phone's work list. `node --test` takes
+fake backend) and the popup's merge of the phone's work list.
+Plus 13 for Canvas Files (listing, skips, caps, non-fatal failures) with
+an injected extractor; pdf.js itself is checked only by hand in headless
+Chromium, not by `npm test`. `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`
@@ -2206,6 +2209,16 @@ none is a ship line.
 
 ## Known gaps
 
+- **Whether the extension can download Canvas Files is unknown**
+  (2026-10-22). Canvas redirects a file download to a separate signed
+  file host (Inst-FS for Instructure-hosted Canvas; Penn's not
+  confirmed), and a service-worker fetch with credentials can only read
+  it if that host's CORS allows it or the extension holds a host
+  permission for it. None was added: the host is unknown and a wildcard
+  would be a broad grant shown at install. A failed download is skipped
+  and retried next run, never fatal. The owner's first run says which:
+  if files never appear, read the redirect host off one download in
+  Chrome's network panel and add exactly that host.
 - **The Chrome extension's Swift half has never compiled** (2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

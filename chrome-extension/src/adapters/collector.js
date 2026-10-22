@@ -24,6 +24,7 @@ import {
   decodeAnnouncements, announcementDocument,
   decodeModuleItems, moduleDocuments, linksFromModuleItems, dedupeLinks,
 } from "../core/canvasDocuments.js";
+import { collectFiles } from "./files.js";
 import * as edCore from "../core/ed.js";
 import { match as matchEdCourses } from "../core/edMatch.js";
 import { parse as parseCourseCode } from "../core/courseCode.js";
@@ -295,15 +296,19 @@ function dedupeDocuments(documents) {
 //              omitted means list them from Canvas
 //   edToken    optional Ed session token (from chrome.storage.session)
 //   limits     { delayMs = 250, sleep }  (sleep is for tests)
+//   files      optional { extractText, seen, maxFiles }: the Canvas Files pass (PDF text,
+//              adapters/files.js) after each course's other endpoints. `seen` is
+//              { [courseID]: { [fileID]: updated_at } }. File failures are never listed
+//              in `failures`, so they never affect a course's fully-synced status.
 // Returns { canvas: "in" | "out" | "error", courses, documents, links,
 //           failures: { [courseID]: [endpoint] }, ed, edReadCourseIDs, summary }
 // canvas "out" means the student is signed out of Canvas: nothing is returned
 // (documents is empty) so nothing can be uploaded.
-export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edToken, limits = {}, sleep } = {}) {
+export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edToken, limits = {}, sleep, files } = {}) {
   const when = now === undefined ? new Date() : new Date(now);
   const ctx = makeContext({ fetch: fetchFn, limits, sleep });
   const empty = (canvas) => ({
-    canvas, courses: [], documents: [], links: [], failures: {}, ed: "none", edReadCourseIDs: [],
+    canvas, courses: [], documents: [], links: [], failures: {}, ed: "none", edReadCourseIDs: [], filesSeen: files?.seen ?? {},
     summary: { canvas, ed: "none", courses: 0, documents: 0, links: 0, failedEndpoints: 0, requests: ctx.requests, rateLimited: false },
   });
 
@@ -320,6 +325,8 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   let links = [];
   const failures = {};
   let rateLimited = false;
+  const filesSeen = { ...(files?.seen ?? {}) };
+  const fileCounts = { extracted: 0, empty: 0, failed: 0 };
   for (const course of list) {
     const failed = [];
     if (rateLimited) {
@@ -339,6 +346,18 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
       }
     }
     failures[course.courseID] = failed;
+    if (files && typeof files.extractText === "function" && !rateLimited) {
+      const got = await collectFiles({
+        fetch: fetchFn, courseID: course.courseID, course, extractText: files.extractText,
+        seen: filesSeen[course.courseID] ?? {}, now: when, sleep: sleep ?? limits.sleep,
+        limits: { delayMs: limits.delayMs, maxFiles: files.maxFiles },
+      });
+      ctx.requests += got.counts.requests;
+      filesSeen[course.courseID] = got.seen;
+      documents.push(...got.documents);
+      for (const k of Object.keys(fileCounts)) fileCounts[k] += got.counts[k];
+      if (got.stopped === "rateLimited") rateLimited = true;
+    }
   }
 
   let ed = { status: "none", matched: 0, documents: [], readCourseIDs: [] };
@@ -357,6 +376,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
     failures,
     ed: ed.status,
     edReadCourseIDs: ed.readCourseIDs,
+    filesSeen,
     summary: {
       canvas: "in",
       ed: ed.status,
@@ -368,6 +388,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
       edMatched: ed.matched,
       requests: ctx.requests,
       rateLimited,
+      ...(files ? { files: fileCounts } : {}),
     },
   };
 }
