@@ -164,6 +164,13 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
+  nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
+  the brief for the session that starts it: the standing rules, what the
+  browser has that the phone does not (the student's live Canvas,
+  Gradescope and Ed sessions), the privacy line a laptop copy of the work
+  list would cross, and the five scope questions to put to the owner
+  before the first brief.
 - **Hands-free voice mode for ask.** Today's mic (2026-10-22) dictates
   into the composer and the student taps send. The owner's full ask was a
   "voice mode": a spoken answer (`AVSpeechSynthesizer`, reading the
