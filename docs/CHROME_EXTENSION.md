@@ -292,3 +292,11 @@ steps come first; everything after step 3 needs the owner's Mac.
   `device-sync` and `delete-account` each wait for the owner's go. The
   other functions pick up the new `requireUser` whenever they are next
   deployed, harmlessly before the migration (Traps).
+- 2026-10-22: `src/core/gradescope.js`, `GradescopeHTMLParser` and the
+  fetch-free parts of `GradescopeClient` (51 tests; the two URLSession
+  cases are replaced by pure equivalents). `DateFormatter` is emulated by
+  a small pattern engine; what it does where ICU's behaviour is only
+  inferred (a `yyyy` field reading `26` as year 26, the later instant for
+  a repeated wall time) is listed in the module's comments and is worth a
+  Swift run if a Gradescope date ever disagrees between the phone and the
+  laptop. Step 1 is complete.
