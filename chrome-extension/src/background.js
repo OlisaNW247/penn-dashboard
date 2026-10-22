@@ -3,6 +3,11 @@
 import { refresh } from "./run.js";
 import { defaultBackend } from "./adapters/backend.js";
 import { deviceSyncPass } from "./deviceSync.js";
+import { collectRun } from "./collectRun.js";
+import { handleEdTokenMessage } from "./adapters/collector.js";
+// Static import: this adds ~1.8 MB (pdf.js) to worker start. Accepted, because a
+// module service worker cannot `import()` lazily.
+import { extractPdfText } from "./adapters/pdfText.js";
 import { startPairing, pairingLink, unpair } from "./core/pairing.js";
 
 const SYNC_ALARM = "sync";
@@ -21,11 +26,24 @@ const syncDevices = (force = false) => {
   });
 };
 
+const collect = () => collectRun({
+  fetch: (...a) => fetch(...a),
+  callFunction: defaultBackend().callFunction,
+  storage: chrome.storage.local,
+  sessionStorage: chrome.storage.session,
+  now: () => Date.now(),
+  extractText: extractPdfText,
+});
+
 const refreshThenSync = async () => { await refresh(); await syncDevices(); };
+
+// The hourly pass (and the first one after install/startup) also collects course
+// material; collectRun throttles itself, so a popup refresh never triggers it.
+const alarmPass = async () => { await refreshThenSync(); await collect(); };
 
 function start() {
   chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 60 });
-  refreshThenSync();
+  alarmPass();
 }
 
 // A worker that died mid-pairing leaves a QR nobody is polling for.
@@ -35,7 +53,7 @@ chrome.runtime.onInstalled.addListener(start);
 chrome.runtime.onStartup.addListener(start);
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === SYNC_ALARM) refreshThenSync();
+  if (alarm.name === SYNC_ALARM) alarmPass();
 });
 
 // ---- pairing ----
@@ -70,7 +88,7 @@ async function runPairing() {
     if (ctl.signal.aborted) {
       await chrome.storage.session.remove([PAIRING_STATE, PAIRING_LINK]);
     } else if (final.kind === "paired") {
-      syncDevices(true);
+      syncDevices(true).then(collect);
     }
   } finally {
     pairing = null;
@@ -87,8 +105,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   tickTimer = setTimeout(() => syncDevices(true), 5000);
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message?.type) {
+    case "edToken":
+      handleEdTokenMessage(message, sender, chrome.storage.session).then(sendResponse, () => sendResponse({ ok: false }));
+      return true;
     case "refresh":
       refreshThenSync().then(() => sendResponse({ ok: true }));
       return true;

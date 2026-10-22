@@ -442,3 +442,20 @@ steps come first; everything after step 3 needs the owner's Mac.
   leaving it linked with a key nothing reads. Left open: a sheet already
   on screen can hide the pairing sheet; the Mac's menu-bar loop does not
   sync; `resetAllLoginData` does not forget the key.
+- 2026-10-22: the worker runs the collector (`src/collectRun.js`) after
+  the hourly refresh and device sync, and once right after pairing; never
+  on a popup open. Only when paired; at most hourly; 6 hours of back-off
+  after a rate limit, until local midnight after a quota refusal;
+  holdings and the files-seen map saved even when a run stops halfway;
+  `extract-profile` and `discover-websites` (three courses a call) fired
+  after an upload without waiting, as the phone does. The Ed token
+  listener accepts only `https://edstem.org`. pdf.js is imported with the
+  worker (about 0.6 s to start in headless Chromium). One fresh-profile
+  launch in ten showed a worker with no listeners and was never
+  reproduced; if the extension ever seems dead on first install, reload
+  it once and say so. `docs/PRIVACY.md` now names course files, in this
+  commit, the first that collects them.
+
+**Everything is built.** What remains is the owner's: run `swift test`,
+build to the phone, apply the migration and deploy `sync`, `pair`,
+`device-sync` and `delete-account`, load the extension, pair, and watch.

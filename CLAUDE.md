@@ -890,7 +890,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 458 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+counts): 467 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -907,7 +907,9 @@ Plus 14 for the encrypted device sync (a two-device round trip through a
 fake backend) and the popup's merge of the phone's work list.
 Plus 13 for Canvas Files (listing, skips, caps, non-fatal failures) with
 an injected extractor; pdf.js itself is checked only by hand in headless
-Chromium, not by `npm test`. `node --test` takes
+Chromium, not by `npm test`.
+Plus 9 for the worker's collection run (throttle, back-offs, persistence
+on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`

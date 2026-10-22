@@ -414,8 +414,10 @@ function courseWire(c) {
 //   collected     collectCourseMaterial's result
 //   holdings      { [courseID]: [{ id, contentHash }] } the extension's own record
 //                 (chrome.storage.local `courseHoldingsV1`): ids and hashes only
-// Returns { summary, holdings } where `holdings` is the new record to persist
-// (the input, untouched, when the manifest step did not happen).
+// Returns { summary, holdings, profileStale, websitesPending } where `holdings` is the new
+// record to persist (the input, untouched, when the manifest step did not happen) and the
+// two id lists are the union of the upload answers' lists across batches (empty when no
+// upload happened).
 //
 // What the extension holds for a course after applying `download`, which is
 // what `documentIDs` must list in full or the extension would retire the
@@ -443,7 +445,7 @@ export async function syncCourseMaterial({ callFunction, collected, holdings = {
   };
   if (!collected || collected.canvas !== "in" || collected.courses.length === 0) {
     summary.stopped = collected && collected.canvas !== "in" ? `canvas-${collected.canvas}` : "nothing-to-sync";
-    return { summary, holdings };
+    return { summary, holdings, profileStale: [], websitesPending: [] };
   }
 
   const courseIDs = new Set(collected.courses.map((c) => c.courseID));
@@ -479,7 +481,7 @@ export async function syncCourseMaterial({ callFunction, collected, holdings = {
       documents: stubs,
     });
   } catch (e) {
-    return stop(summary, e, holdings);
+    return { ...stop(summary, e, holdings), profileStale: [], websitesPending: [] };
   }
 
   // Apply download to holdings: stubs only, never text.
@@ -513,16 +515,22 @@ export async function syncCourseMaterial({ callFunction, collected, holdings = {
   request.documents = request.documents.filter((d) => typeof d.text === "string");
   summary.fullySynced = fully.size;
 
+  const profileStale = new Set();
+  const websitesPending = new Set();
+  const withFollowUps = (r) => ({ ...r, profileStale: [...profileStale], websitesPending: [...websitesPending] });
   for (const batch of uploadBatches(request)) {
+    let answer;
     try {
-      await callFunction("sync", batch);
+      answer = await callFunction("sync", batch);
     } catch (e) {
-      return stop(summary, e, newHoldings);
+      return withFollowUps(stop(summary, e, newHoldings));
     }
+    for (const id of Array.isArray(answer?.profileStale) ? answer.profileStale : []) if (typeof id === "string") profileStale.add(id);
+    for (const id of Array.isArray(answer?.websitesPending) ? answer.websitesPending : []) if (typeof id === "string") websitesPending.add(id);
     summary.batches += 1;
     summary.uploaded += batch.documents.length;
   }
-  return { summary, holdings: newHoldings };
+  return withFollowUps({ summary, holdings: newHoldings });
 }
 
 // notPaired is not an error the UI shows (the student has not paired yet);

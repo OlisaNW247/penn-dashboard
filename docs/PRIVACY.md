@@ -214,7 +214,8 @@ nothing until you pair it with your phone.
   fresh each time and never saved. Your Ed session token is kept only in
   Chrome's memory and is gone when Chrome closes.
 - **It collects course material your phone can't reach**: every course
-  announcement and every course page, plus Ed announcements, pinned posts and staff posts under the same
+  announcement, every course page, and the text of PDFs in a course's
+  Files (slides, readings), plus Ed announcements, pinned posts and staff posts under the same
   rule as the phone (never a student's post, never an author's name). That
   material is pooled per class exactly like the phone's ("What is sent to
   our server"), so classmates share one copy.
