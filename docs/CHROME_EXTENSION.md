@@ -434,3 +434,11 @@ steps come first; everything after step 3 needs the owner's Mac.
   limit, locked and hidden files skipped, scans remembered and skipped,
   failures never fatal and never part of the complete set. Not yet
   called by the worker; the download redirect is a Known gap.
+- 2026-10-22: the phone app's wiring, **never compiled** (CLAUDE.md →
+  What the app does → Pair a laptop). Two review changes to the first
+  draft: unpairing no longer clears the change log (a re-pair would have
+  dated every phone record the epoch, so the laptop's stale copy won
+  everything), and pairing a second laptop unlinks the first instead of
+  leaving it linked with a key nothing reads. Left open: a sheet already
+  on screen can hide the pairing sheet; the Mac's menu-bar loop does not
+  sync; `resetAllLoginData` does not forget the key.

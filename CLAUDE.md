@@ -767,6 +767,20 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
+- **Pair a laptop** (2026-10-22, never compiled). Scanning the Chrome
+  extension's QR code with the iPhone camera opens Smooth
+  (`smooth://pair?c=…#k=…`, `.onOpenURL` in `RootCore`) on "pair this
+  laptop?" (`PairLaptopSheet`), Penn installs past onboarding only. On
+  "pair" the phone claims the code under its own token and keeps the key
+  in the Keychain (`SyncKeyStore`). From then on `ContentView.refresh()`
+  runs `deviceSyncPass()` (foreground only, at most every 2 minutes):
+  fetch the laptop's sealed snapshot, merge, apply what the laptop changed
+  through the same paths a swipe, an edited date and the add sheet use
+  (inside `RemoteApplyGate`, so the tap hooks do not re-date them), then
+  seal and put the phone's own. Profile → accounts shows a "laptop" row
+  with "unpair" when paired. Pairing a second laptop unlinks the first.
+  Unpairing keeps the change log; disconnecting Canvas clears it and the
+  key.
 - **Chrome extension** (`chrome-extension/`, started 2026-10-22; nothing
   loaded in a real Chrome yet). A helper for the phone, Penn only, loaded
   unpacked: it collects course material the phone cannot reach with the
@@ -2227,9 +2241,12 @@ none is a ship line.
   vector), and the pairing and sync layer (`Sync/PairingLink`,
   `SyncChangeLog`, `SyncSnapshotBuilder`, `SyncApplyPlan`,
   `LowHangingFruitUI/DeviceSyncClient`, `SyncKeyStore`; 50 test
-  functions, 69 cases with the parameterized one expanded). Predicted:
-  **2512 + 50 test functions** and 234 suites; trust the Mac's count, not
-  this one.
+  functions, 69 cases with the parameterized one expanded), and the app
+  wiring (`AppState+DeviceSync.swift`, `PairLaptopSheet.swift`, the
+  `smooth` URL scheme in `project.yml` and `App/Info.plist`, tap hooks in
+  `AppState`, the pass in `ContentView.refresh()` and at launch, the
+  laptop row in Profile; 13 tests in `DeviceSyncWiringTests`). Predicted:
+  **2512 + 63 test functions**; trust the Mac's count, not this one.
   `swift test --no-parallel` on the Mac is the first gate; a different
   count or a red vector test means the phone and the extension disagree.
   `SyncSnapshot` uses a hand-written JSON serializer and UTC date
