@@ -374,3 +374,19 @@ steps come first; everything after step 3 needs the owner's Mac.
   `BackendClient.post` went from private to internal so the client reuses
   its auth and retry path. Not yet: the scheme, the sheet, and the wiring
   into `AppState`.
+- 2026-10-22: the extension's backend client (`src/adapters/backend.js`:
+  anonymous session in `backendSessionV1`, refresh-and-retry-once on 401,
+  one shared sign-up for concurrent calls, typed `BackendError.kind`), the
+  pairing flow (`src/core/pairing.js`: the key is persisted as
+  `pairingKeyV1` only once `status` says paired, so an abandoned QR leaves
+  nothing behind; unpair keeps the local snapshot, which is the student's
+  own record), and a hand-written QR encoder (`src/core/qr.js`, byte mode,
+  level M, versions 1 to 10), chosen over a second vendored library. 45 of
+  46 test images decoded with OpenCV 4.10 to their exact input, the
+  pairing link among them at every mask; the one miss (version 8, forced
+  mask 3, only at scales 5 to 12) decodes at other scales and with
+  OpenCV's other detector, so it reads as a detector quirk, and the
+  pairing link is version 5. The QR is always drawn dark on white, also
+  in after-sunset mode, because an inverted code does not scan
+  everywhere. **Whether an iPhone camera reads it is unverified** until
+  the owner points one at the popup.

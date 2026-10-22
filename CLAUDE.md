@@ -870,14 +870,17 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 371 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+counts): 403 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
 AES-GCM vector the Swift suite also pins), and the course-material
 builders (141: HTML text, Canvas URLs, Canvas documents, Ed, sync plan).
 Plus 23 for the work list (the phone's todo · all · prev rules and due
-phrases) and the Canvas and Gradescope readers against a fake fetch. `node --test` takes
+phrases) and the Canvas and Gradescope readers against a fake fetch.
+Plus 32 for the backend client, the pairing state machine and the QR
+encoder (whose pinned matrices were decoded back to their exact input by
+OpenCV in a scratch venv; that check is not part of `npm test`). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`
