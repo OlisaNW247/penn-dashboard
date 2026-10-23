@@ -32,11 +32,20 @@ import LowHangingFruitKit
 //    would turn every answer that mentions a deadline into a dashboard card.
 //    Everything else is shared with the other posts: the window, the retry
 //    clock, the processed ids, the informational gate (an informational
-//    staff post is `news`) and the quota limits. One thing is its own: at most
-//    `EdStaffReadBudget.dailyLimit` staff posts are sent to an extractor per
-//    UTC day, newest first, because each is a unit of the student's shared ask
-//    quota spent on a judgment (`EdStaffReadBudget` has the why); the rest wait
-//    untouched for a later run.
+//    staff post is `news`) and the quota limits. Two things are its own. At
+//    most `RelevanceReadBudget.dailyLimit` staff posts are sent to an extractor
+//    per UTC day, newest first, because each is a unit of the student's shared
+//    ask quota spent on a judgment (`RelevanceReadBudget` has the why); the
+//    rest wait untouched for a later run. And no staff post is read at all
+//    until this install has seen the server return a judgment
+//    (`ServerJudgesRelevance`): a staff post is read for that and nothing else,
+//    so before the server judges the read is pure waste, and it would also mark
+//    the post processed, so that it would never be read again once the server
+//    did. Such a post is left exactly as if it did not exist: no budget spent,
+//    not marked processed, no retry clock. A post that was read without a
+//    judgment (before judgments existed, or by an old server) is given one
+//    afterwards by the backfill (`AppState+RelevanceBackfill.swift`), which
+//    runs at the end of this pass.
 //    Only posts dated within the past 14 days, the window a Canvas post gets
 //    (`announcementExtractionWindow`), and a post with no date is skipped: a
 //    post that cannot be placed in time cannot be shown to be inside the
@@ -135,7 +144,7 @@ extension AppState {
     /// The announcements keep their order, so what the pass writes for them
     /// (the twin check goes post by post, the first survivor wins) is exactly
     /// what it was. The staff posts go last and newest first for the daily cap
-    /// (`EdStaffReadBudget`): the budget is spent in reading order, so the ones
+    /// (`RelevanceReadBudget`): the budget is spent in reading order, so the ones
     /// held back are the oldest, and a student whose quota is nearly spent
     /// loses staff-post judgments before announcements. A staff post writes no
     /// row, so where it sits among the announcements changes nothing else.
@@ -188,6 +197,49 @@ extension AppState {
         }
     }
 
+    /// What an extractor is sent for one Ed post, and the Canvas-shaped
+    /// stand-in the extractor choice takes. Shared by the pass and the
+    /// judgment backfill so the two cannot send different text for one post.
+    /// Pure.
+    struct EdReadText {
+        let header: EdDocumentHeader
+        let title: String
+        let body: String
+        let source: AnnouncementSourceText
+        let standIn: CanvasAnnouncement
+    }
+
+    nonisolated static func edReadText(for document: CourseDocument, courseCode: String) -> EdReadText {
+        let header = EdDocumentHeader.parse(document.text)
+        // The `[image]` markers `EdDocumentText` leaves where Ed had a
+        // picture are noise to an extractor, and to the model if it
+        // goes there.
+        let body = header.body.replacingOccurrences(of: "[image]", with: " ")
+        let title = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return EdReadText(
+            header: header,
+            title: title,
+            body: body,
+            source: AnnouncementSourceText(
+                announcementID: document.id,
+                courseCode: courseCode,
+                title: title,
+                body: body,
+                postedAt: edPostDate(document)
+            ),
+            // The extractor choice (and its test seam) takes a Canvas-shaped
+            // value; this is the post in that shape, for that call only.
+            standIn: CanvasAnnouncement(
+                id: document.id,
+                courseID: document.courseID,
+                title: title,
+                message: body,
+                postedAt: edPostDate(document),
+                url: document.url
+            )
+        )
+    }
+
     // MARK: Failed reads wait
 
     /// How long a post whose extraction failed waits before it is tried again.
@@ -219,7 +271,7 @@ extension AppState {
     /// it is asked, on purpose: it is the answer to "is this still wanted",
     /// and a code captured before an `await` is the answer to a question that
     /// may have changed.
-    private func edTaskCourseCode(for document: CourseDocument) -> String? {
+    func edTaskCourseCode(for document: CourseDocument) -> String? {
         guard let code = canvasCourseIDs()[document.courseID], isCourseSelected(code) else { return nil }
         return code
     }
@@ -242,7 +294,16 @@ extension AppState {
             Self.edDocumentsEligibleForTasks(courseKnowledge.documents, now: now, retryAfter: retryAfter)
                 .filter { !processedAnnouncementIDs.contains($0.id) }
         )
-        guard !eligible.isEmpty else {
+        // Until the server is known to judge, a staff post is not worth a read
+        // (see the header), so it does not make a run worth doing either: a
+        // board with only staff posts would otherwise publish a new summary on
+        // every course-material change, forever.
+        let readable = serverJudgesRelevance.isSet
+            ? eligible
+            : eligible.filter { !EdDocumentHeader.parse($0.text).isStaffPost }
+        guard !readable.isEmpty
+            || (serverJudgesRelevance.isSet && !edRelevanceBackfillCandidates(readThisRun: [], now: now).isEmpty)
+        else {
             let edDocuments = courseKnowledge.documents.filter { $0.kind == .ed }.count
             return noteEdTaskSkip("nothing eligible \u{00B7} ed documents \(edDocuments)", at: now)
         }
@@ -300,12 +361,15 @@ extension AppState {
         for document in eligible {
             guard let courseCode = edTaskCourseCode(for: document) else { continue }
 
-            let header = EdDocumentHeader.parse(document.text)
-            // The `[image]` markers `EdDocumentText` leaves where Ed had a
-            // picture are noise to an extractor, and to the model if it
-            // goes there.
-            let body = header.body.replacingOccurrences(of: "[image]", with: " ")
-            let title = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let read = Self.edReadText(for: document, courseCode: courseCode)
+            let header = read.header
+            let body = read.body
+            let title = read.title
+
+            // Checked per post, not once: an announcement earlier in this very
+            // run can be the first answer that carries a judgment, and the
+            // staff posts after it (they are read last) are then worth reading.
+            if header.isStaffPost, !serverJudgesRelevance.isSet { continue }
 
             // The same gate as the Canvas path, for the same reason: a post
             // that only reports something done ("grades posted") has nothing
@@ -315,39 +379,23 @@ extension AppState {
                 continue
             }
 
-            let source = AnnouncementSourceText(
-                announcementID: document.id,
-                courseCode: courseCode,
-                title: title,
-                body: body,
-                postedAt: Self.edPostDate(document)
-            )
-            // The extractor choice (and its test seam) takes a Canvas-shaped
-            // value; this is the post in that shape, for that call only.
-            let standIn = CanvasAnnouncement(
-                id: document.id,
-                courseID: document.courseID,
-                title: title,
-                message: body,
-                postedAt: Self.edPostDate(document),
-                url: document.url
-            )
-            let extractor = announcementExtractor(for: standIn, courseCode: courseCode)
+            let source = read.source
+            let extractor = announcementExtractor(for: read.standIn, courseCode: courseCode)
             let countsTowardBackoff = !(extractor is HeuristicAnnouncementExtractor)
 
             // A staff post costs a unit of the shared daily quota for a
             // judgment alone, so only a few a day are sent
-            // (`EdStaffReadBudget`, which has the why). The posts come in
+            // (`RelevanceReadBudget`, which has the why). The posts come in
             // newest-first order, so the ones held back are the oldest. A post
             // held back is left exactly as it was: no attempt counted, no
             // retry clock, not marked processed, so a later run, or tomorrow,
             // reads it. The free on-device heuristic is not metered.
             if header.isStaffPost, countsTowardBackoff {
-                guard edStaffReadBudget.remaining(on: now) > 0 else {
+                guard relevanceReadBudget.remaining(on: now) > 0 else {
                     heldBackCount += 1
                     continue
                 }
-                edStaffReadBudget.recordCall(on: now)
+                relevanceReadBudget.recordCall(on: now)
             }
 
             let extracted: [ExtractedAssignment]
@@ -357,6 +405,7 @@ extension AppState {
                 let extraction = try await extractor.extractWithRelevance(from: source, now: now)
                 extracted = extraction.assignments
                 relevance = extraction.relevance
+                if relevance != nil { serverJudgesRelevance.markSeen() }
             } catch {
                 extractionErrors += 1
                 if firstError == nil {
@@ -447,12 +496,31 @@ extension AppState {
         if !collected.isEmpty || !processed.isEmpty {
             applyAnnouncementLedgerChange()
         }
+
+        // The judgment backfill (`AppState+RelevanceBackfill.swift`): posts read
+        // before the server judged. After the reads, so the staff posts and
+        // announcements still to read get the budget first, and skipping this
+        // run's own reads, which were just asked. Not while the server is
+        // refusing or failing: the reads above are the evidence, and every call
+        // here would be spent on the same answer.
+        let serverUsable = !quotaRefused && !(attemptedExtractions > 0 && failedExtractions == attemptedExtractions)
+        let backfill = serverUsable
+            ? await backfillRelevance(
+                edRelevanceBackfillCandidates(readThisRun: Set(processed), now: now), now: now
+            )
+            : RelevanceBackfillOutcome()
+        // A run that only looked for backfill and found nothing to do is a
+        // skip, not a summary (see `noteEdTaskSkip`).
+        if readable.isEmpty, !backfill.didWork {
+            return noteEdTaskSkip("nothing eligible \u{00B7} backfill idle", at: now)
+        }
         noteEdTaskSync(
             "eligible \(eligible.count) \u{00B7} finds \(collected.count) \u{00B7} errors \(extractionErrors)"
                 + " \u{00B7} processed \(processed.count)"
                 + (firstError.map { " \u{00B7} first error: \($0)" } ?? "")
                 + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : "")
-                + (heldBackCount > 0 ? " \u{00B7} held back \(heldBackCount)" : ""),
+                + (heldBackCount > 0 ? " \u{00B7} held back \(heldBackCount)" : "")
+                + backfill.summary,
             at: now
         )
     }

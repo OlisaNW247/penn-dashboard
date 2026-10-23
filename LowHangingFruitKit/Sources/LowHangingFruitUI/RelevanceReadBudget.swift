@@ -1,7 +1,12 @@
 import Foundation
 
-/// How many Ed **staff posts** the Ed task pass may send to an extractor in one
-/// UTC day, on this install (`AppState.syncEdAnnouncementTasks`).
+/// How many calls made **only for a relevance judgment** this install may send
+/// to an extractor in one UTC day: an Ed staff post read by the Ed task pass
+/// (`AppState.syncEdAnnouncementTasks`) and a judgment backfill of a post that
+/// was already read for its tasks (`AppState+RelevanceBackfill.swift`), one
+/// shared count. (Named `EdStaffReadBudget` until the backfill joined it; the
+/// defaults key, `edStaffReadsV1`, kept its old name so today's count survives
+/// the update.)
 ///
 /// **Why a cap exists.** `extract-announcement` draws on the same per-student
 /// daily quota as ask (`ASK_DAILY_LIMIT`, 40 by default; `backend/PROTOCOL.md`,
@@ -25,25 +30,25 @@ import Foundation
 /// server's counter rolls over then, and the phone's local midnight would hand
 /// out a second budget in the same server day.
 ///
-/// **What is counted.** One for each staff post sent to a backend-or-injected
-/// extractor, whether the call succeeds or fails (a failed call can still have
-/// been counted by the server, and refusing to count it would make a failing
-/// backend the cheapest way to blow the budget). Not counted: an informational
-/// staff post (judged `news` on the phone with no call), a staff post of a
-/// hidden class, or one read by the free on-device heuristic, none of which
-/// touches the quota. A staff post held back by an exhausted budget is left
+/// **What is counted.** One for each staff post or backfill post sent to a
+/// backend-or-injected extractor, whether the call succeeds or fails (a failed
+/// call can still have been counted by the server, and refusing to count it
+/// would make a failing backend the cheapest way to blow the budget). Not counted: an informational
+/// post (judged `news` on the phone with no call), a post of a hidden class,
+/// or one read by the free on-device heuristic, none of which touches the
+/// quota. A staff post held back by an exhausted budget is left
 /// completely alone: not an attempt, no retry clock, not marked processed. It
 /// is simply still eligible at the next run, which is how the oldest ones are
-/// read on a later day. Announcement and pinned posts and the Canvas path never
-/// consult this.
+/// read on a later day. The first read of an announcement, a pinned post or a
+/// Canvas post never consults this: it is for tasks, and it was always allowed.
 ///
 /// **Where it lives.** The day and the count sit in the preferences tier beside
 /// the pass's retry clock (`edTaskRetryAfterV1`), as one small dictionary.
 /// Under the test runner an `AppState` gets a memory-only budget, so no test
 /// can reach the shared defaults domain; a test that wants to see the stored
-/// form builds one over a scratch suite (`AppState.edStaffReadBudget`).
-final class EdStaffReadBudget {
-    /// Staff-post extractor calls per UTC day, per install.
+/// form builds one over a scratch suite (`AppState.relevanceReadBudget`).
+final class RelevanceReadBudget {
+    /// Judgment-only extractor calls per UTC day, per install.
     static let dailyLimit = 6
     static let key = "edStaffReadsV1"
 
@@ -54,7 +59,7 @@ final class EdStaffReadBudget {
 
     /// - Parameter defaults: where the day and count persist; nil keeps them in
     ///   this object only.
-    init(defaults: UserDefaults?, limit: Int = EdStaffReadBudget.dailyLimit) {
+    init(defaults: UserDefaults?, limit: Int = RelevanceReadBudget.dailyLimit) {
         self.defaults = defaults
         self.limit = limit
     }

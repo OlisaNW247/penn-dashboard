@@ -88,8 +88,15 @@ struct AnnouncementRelevanceSyncTests {
         func sheetIDs(at now: Date) -> [String] { state.announcementSheetRecords(now: now).map(\.id) }
     }
 
+    /// - Parameter serverJudges: whether the install has already seen the
+    ///   server return a judgment (`ServerJudgesRelevance`). On by default:
+    ///   these tests are about what the passes do with judgments, and an Ed
+    ///   staff post is not read at all before the flag is set. The tests of
+    ///   the flag itself, and of the backfill that it switches on, are
+    ///   `RelevanceBackfillTests`.
     private func withHarness(
         canvasItems extra: [Assignment] = [],
+        serverJudges: Bool = true,
         _ body: @MainActor (Harness) async throws -> Void
     ) async throws {
         let shared = UserDefaults.lhf
@@ -117,6 +124,7 @@ struct AnnouncementRelevanceSyncTests {
         let state = AppState(assignmentStore: store)
         state.forceFixtureDataForTesting(false)
         state.enableAnnouncementLogForTesting(directory: directory, defaults: scratch)
+        if serverJudges { state.serverJudgesRelevance.markSeen() }
         // One feed item with its Canvas URL gives the id -> code map the sync
         // fetches by; the rest are real assignments for finds to be twins of.
         state.canvasItems = [
@@ -607,7 +615,7 @@ struct AnnouncementRelevanceSyncTests {
     /// either side before it changes, so a test that steps an hour or a day
     /// from it never straddles midnight by accident.
     private static var noonUTC: Date {
-        Date(timeIntervalSince1970: (Double(EdStaffReadBudget.utcDay(of: Date())) + 0.5) * 86_400)
+        Date(timeIntervalSince1970: (Double(RelevanceReadBudget.utcDay(of: Date())) + 0.5) * 86_400)
     }
 
     /// `count` staff posts, newest first: thread `first`, `first + 1`, ... each
@@ -634,8 +642,8 @@ struct AnnouncementRelevanceSyncTests {
             #expect(h.calls.ids == today.map(\.id), "the six newest, newest first")
             #expect(Set(h.stored.keys) == Set(today.map { AnnouncementReadState.edKey($0.id) }))
             #expect(h.state.processedAnnouncementIDs.isSuperset(of: today.map(\.id)))
-            #expect(h.state.edStaffReadBudget.used(on: now) == 6)
-            #expect(h.state.edStaffReadBudget.remaining(on: now) == 0)
+            #expect(h.state.relevanceReadBudget.used(on: now) == 6)
+            #expect(h.state.relevanceReadBudget.remaining(on: now) == 0)
 
             // The four oldest are untouched: not processed, no attempt counted,
             // no retry clock, no judgment.
@@ -661,8 +669,8 @@ struct AnnouncementRelevanceSyncTests {
             #expect(h.calls.ids == posts.map(\.id), "each post once, the held-back four after the first six")
             #expect(Set(h.stored.keys) == Set(posts.map { AnnouncementReadState.edKey($0.id) }))
             #expect(h.state.processedAnnouncementIDs.isSuperset(of: posts.map(\.id)))
-            #expect(h.state.edStaffReadBudget.used(on: tomorrow) == 4)
-            #expect(h.state.edStaffReadBudget.used(on: now) == 0, "yesterday's count is gone with yesterday")
+            #expect(h.state.relevanceReadBudget.used(on: tomorrow) == 4)
+            #expect(h.state.relevanceReadBudget.used(on: now) == 0, "yesterday's count is gone with yesterday")
         }
     }
 
@@ -684,7 +692,7 @@ struct AnnouncementRelevanceSyncTests {
             await h.state.syncEdAnnouncementTasks(now: now)
 
             #expect(h.calls.ids == ordinary.prefix(6).map(\.id), "no call for an informational post, six for the rest")
-            #expect(h.state.edStaffReadBudget.used(on: now) == 6)
+            #expect(h.state.relevanceReadBudget.used(on: now) == 6)
             // All eight were judged news with no call, and processed.
             for post in informational {
                 #expect(h.stored[AnnouncementReadState.edKey(post.id)] == AnnouncementRelevance(kind: .news))
@@ -722,7 +730,7 @@ struct AnnouncementRelevanceSyncTests {
             #expect(rows.allSatisfy { $0.announcementOrigin == .ed })
             #expect(h.state.processedAnnouncementIDs.isSuperset(of: announcements.map(\.id)))
             // They did not spend the staff budget.
-            #expect(h.state.edStaffReadBudget.used(on: now) == 6)
+            #expect(h.state.relevanceReadBudget.used(on: now) == 6)
         }
     }
 
@@ -736,7 +744,7 @@ struct AnnouncementRelevanceSyncTests {
             await h.state.syncEdAnnouncementTasks(now: now)
 
             #expect(h.calls.ids == [post.id])
-            #expect(h.state.edStaffReadBudget.used(on: now) == 1)
+            #expect(h.state.relevanceReadBudget.used(on: now) == 1)
             #expect(!h.state.processedAnnouncementIDs.contains(post.id))
             #expect(AppState.loadEdTaskRetryAfter()[post.id] != nil)
         }
@@ -746,7 +754,7 @@ struct AnnouncementRelevanceSyncTests {
     func budgetPersists() async throws {
         try await withHarness { h in
             let now = Self.noonUTC
-            h.state.edStaffReadBudget = EdStaffReadBudget(defaults: h.scratch)
+            h.state.relevanceReadBudget = RelevanceReadBudget(defaults: h.scratch)
             let posts = staffPosts(8, first: 9971, now: now)
             h.extractor.relevanceByID = Dictionary(uniqueKeysWithValues: posts.map {
                 ($0.id, AnnouncementRelevance(kind: .event, until: now.addingTimeInterval(Self.day)))
@@ -756,15 +764,15 @@ struct AnnouncementRelevanceSyncTests {
             #expect(h.calls.ids.count == 6)
 
             // A relaunch builds a new budget over the same defaults.
-            let relaunched = EdStaffReadBudget(defaults: h.scratch)
+            let relaunched = RelevanceReadBudget(defaults: h.scratch)
             #expect(relaunched.used(on: now) == 6)
             #expect(relaunched.remaining(on: now.addingTimeInterval(3600)) == 0)
             #expect(relaunched.remaining(on: now.addingTimeInterval(Self.day)) == 6)
-            #expect(h.scratch.dictionary(forKey: EdStaffReadBudget.key) as? [String: Int] == [
-                "day": EdStaffReadBudget.utcDay(of: now), "count": 6,
+            #expect(h.scratch.dictionary(forKey: RelevanceReadBudget.key) as? [String: Int] == [
+                "day": RelevanceReadBudget.utcDay(of: now), "count": 6,
             ])
             // Nothing reached the shared domain.
-            #expect(UserDefaults.lhf.object(forKey: EdStaffReadBudget.key) == nil)
+            #expect(UserDefaults.lhf.object(forKey: RelevanceReadBudget.key) == nil)
         }
     }
 }
