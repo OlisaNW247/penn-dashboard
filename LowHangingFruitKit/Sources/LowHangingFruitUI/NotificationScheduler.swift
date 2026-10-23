@@ -43,6 +43,43 @@ final class NotificationScheduler: ObservableObject {
     /// "make sure you don't miss any assignments", so the switch exists to
     /// opt OUT, and a missing key must read as on.
     @Published private(set) var loudAlertEnabled: Bool
+    @Published private(set) var sweeperMinutes: Int
+    @Published private(set) var sweeperSound: SweeperSound
+    @Published private(set) var sweeperExcludedCourses: Set<String>
+    nonisolated static let sweeperMinuteOptions = [5, 10, 15, 20, 30, 60]
+    var sweeperLead: TimeInterval { TimeInterval(sweeperMinutes * 60) }
+
+    func setSweeperMinutes(_ minutes: Int) {
+        guard Self.sweeperMinuteOptions.contains(minutes) else { return }
+        sweeperMinutes = minutes
+        defaults.set(minutes, forKey: "notif.sweeperMinutes")
+        rescheduleAfterPreferenceChange()
+    }
+
+    func setSweeperSound(_ sound: SweeperSound) {
+        sweeperSound = sound
+        defaults.set(sound.rawValue, forKey: "notif.sweeperSound")
+        rescheduleAfterPreferenceChange()
+    }
+
+    func setSweeperCourse(_ course: String, enabled: Bool) {
+        if enabled { sweeperExcludedCourses.remove(course) }
+        else { sweeperExcludedCourses.insert(course) }
+        defaults.set(Array(sweeperExcludedCourses).sorted(), forKey: "notif.sweeperExcludedCourses")
+        rescheduleAfterPreferenceChange()
+    }
+
+    func excludeSweeperCourses(_ courses: [String]) {
+        sweeperExcludedCourses.formUnion(courses)
+        defaults.set(Array(sweeperExcludedCourses).sorted(), forKey: "notif.sweeperExcludedCourses")
+        rescheduleAfterPreferenceChange()
+    }
+
+    func resetSweeperCourses() {
+        sweeperExcludedCourses = []
+        defaults.removeObject(forKey: "notif.sweeperExcludedCourses")
+        rescheduleAfterPreferenceChange()
+    }
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
     // Lazy so launch on an unbundled binary never touches the notification center.
@@ -142,6 +179,10 @@ final class NotificationScheduler: ObservableObject {
         self.turnedInEnabled = d.object(forKey: Self.turnedInKey) as? Bool ?? true
         // Same missing-key-means-on rule as above, for the same reason.
         self.loudAlertEnabled = d.object(forKey: Self.loudAlertKey) as? Bool ?? true
+        let minutes = d.integer(forKey: "notif.sweeperMinutes")
+        self.sweeperMinutes = Self.sweeperMinuteOptions.contains(minutes) ? minutes : 10
+        self.sweeperSound = SweeperSound(rawValue: d.string(forKey: "notif.sweeperSound") ?? "") ?? .smooth
+        self.sweeperExcludedCourses = Set(d.stringArray(forKey: "notif.sweeperExcludedCourses") ?? [])
 
         #if DEBUG
         // Screenshot seam: show the reminders feature fully expanded (in-memory
@@ -612,7 +653,7 @@ final class NotificationScheduler: ObservableObject {
         // reminder, if the student asked for one, because otherwise it would
         // have neither.
         let loudItemIDs = Set(loud.map(\.item.id))
-        let loudRequests = loud.flatMap { Self.loudRequests(for: $0, now: now, nameOverrides: nameOverrides) }
+        let loudRequests = loud.flatMap { Self.loudRequests(for: $0, now: now, nameOverrides: nameOverrides, minutes: sweeperMinutes, sound: sweeperSound) }
 
         var byCourse: [String: [Candidate]] = [:]
         for item in items {
@@ -656,7 +697,7 @@ final class NotificationScheduler: ObservableObject {
                 // The loud alert IS the 10-minute reminder for this item, only
                 // louder. Scheduling the plain one beside it would put a fourth
                 // "Due in 10 minutes" on the lock screen at the same instant.
-                if offset == .m10, loudItemIDs.contains(item.id) { continue }
+                if TimeInterval(offset.rawValue) == sweeperLead, loudItemIDs.contains(item.id) { continue }
                 let fire = due.addingTimeInterval(-Double(offset.rawValue))
                 guard fire > now else { continue }
                 byCourse[course, default: []]
@@ -773,9 +814,10 @@ final class NotificationScheduler: ObservableObject {
             guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
             guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { continue }
             guard !item.isFoundExam else { continue }
+            guard !sweeperExcludedCourses.contains(item.assignment.course) else { continue }
             guard prefs.notificationsEnabled(item.assignment.course) else { continue }
 
-            let first = due.addingTimeInterval(-Self.loudAlertLead)
+            let first = due.addingTimeInterval(-sweeperLead)
             let pending = (1...Self.loudAlertCount)
                 .map { (number: $0, fire: first.addingTimeInterval(Double($0 - 1) * Self.loudAlertSpacing)) }
                 .filter { $0.fire > now }
@@ -816,7 +858,7 @@ final class NotificationScheduler: ObservableObject {
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
         let selection = loudAlerts(from: items, now: now, horizon: horizon, preferences: prefs)
             .map(\.item)
-        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides)
+        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides, lead: sweeperLead, sound: sweeperSound)
     }
 
     /// The notifications of one item's alert, in the voice of the ordinary
@@ -857,7 +899,9 @@ final class NotificationScheduler: ObservableObject {
     private static func loudRequests(
         for alert: LoudAlert,
         now: Date,
-        nameOverrides: [String: String]
+        nameOverrides: [String: String],
+        minutes: Int,
+        sound: SweeperSound
     ) -> [UNNotificationRequest] {
         let assignment = alert.item.assignment
         let buttons = LoudAlertActions.buttons(for: assignment)
@@ -865,9 +909,9 @@ final class NotificationScheduler: ObservableObject {
             let content = UNMutableNotificationContent()
             content.title = assignment.displayCourse(overrides: nameOverrides)
             content.body = reminderBody(assignmentTitle: assignment.title,
-                                        headline: LeadOffset.m10.headline)
+                                        headline: "Due in \(minutes) minutes")
             content.threadIdentifier = "loud:\(assignment.id)"
-            content.sound = .default
+            content.sound = sound.filename.map { UNNotificationSound(named: UNNotificationSoundName(rawValue: $0)) } ?? .default
             content.interruptionLevel = .timeSensitive
             content.categoryIdentifier = buttons.categoryID
             content.userInfo = LoudAlertActions.userInfo(assignmentID: assignment.id, url: buttons.url)

@@ -387,6 +387,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+Smooth Sweeper settings (2026-10-23, `codex/sweeper-settings`): a separate
+section immediately below Reminders, with 5/10/15/20/30/60-minute timing,
+Smooth (the existing clip), chime, pulse and system audio, bundled-audio
+previews, and an expandable class selection. Defaults remain 10 minutes,
+Smooth and all classes. Choices persist on-device and re-plan alarms and
+fallback notifications; changing audio changes alarm identity so idle alarms
+are replaced. Ordinary reminders keep their own class settings. Chime and
+pulse are original synthesized WAV assets. Validation: iOS Debug build succeeded; 109 targeted tests across five suites passed. Installed over Smooth 3.1.0 (13) and launched on Marco’s iPhone 17 Pro on 2026-10-23. Visual review in the simulator was skipped at the owner’s request; real alarm playback remains for phone testing.
+
+
 - **The Chrome extension** (2026-10-22, `3fa853b` through this commit on
   `v8`; owner's scope: a helper for the phone). Pure ES-module ports of
   the phone's parsing (course code, ICS, Gradescope, dedup, document

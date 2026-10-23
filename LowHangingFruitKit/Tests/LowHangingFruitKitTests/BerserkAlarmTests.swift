@@ -546,7 +546,7 @@ struct BerserkAlarmTests {
         let fromYML = line.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         #expect(!fromYML.isEmpty)
         #expect(fromYML == fromPlist)
-        #expect(fromPlist == "The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in.")
+        #expect(fromPlist == "The Smooth Sweeper rings an alarm before work you haven't turned in, at the time you choose.")
     }
 
     /// The pinned mapping of the factory's arguments. Both ids are plain
@@ -661,9 +661,9 @@ struct BerserkAlarmTests {
     @Test("The alarm glue asks the main bundle for the sound and passes the choice to the configuration")
     func soundGlue() throws {
         let source = try uiSource("BerserkAlarmScheduler.swift")
-        #expect(source.contains("Bundle.main.url(forResource: BerserkAlarmPlan.alarmSoundResource"))
-        #expect(source.contains("BerserkAlarmPlan.alarmSoundName(fileExists: file != nil)"))
-        #expect(source.contains("sound: Self.sound())"))
+        #expect(source.contains("Bundle.main.url(forResource: name"))
+        #expect(source.contains("let name = choice.filename"))
+        #expect(source.contains("sound: Self.sound(planned.sound))"))
         #expect(!source.contains("Bundle.module"), "a package resource bundle is not where AlarmKit looks")
         // The notifications keep their own sound.
         let scheduler = try uiSource("NotificationScheduler.swift")
