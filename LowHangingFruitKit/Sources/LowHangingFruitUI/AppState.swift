@@ -6194,6 +6194,9 @@ final class AppState: ObservableObject {
             .union(coursePreferences.manuallyAddedCourseKeys)
             .union(enrolledKeys)
             .subtracting([Self.unknownCourse])
+            // Never listed, not even toggled off in Settings: a program site
+            // is not a class the student could want back (`NonClassCanvasSite`).
+            .filter { !NonClassCanvasSite.matches($0) }
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
@@ -6259,7 +6262,10 @@ final class AppState: ObservableObject {
     /// False if the course is hidden OR deleted — both keep it out of the
     /// dashboard, notifications, and Grade Watcher (see `selectedCanvasCourseIDs`).
     func isCourseSelected(_ course: String) -> Bool {
-        coursePreferences.isSelected(course)
+        // A program site (`NonClassCanvasSite`, "TAP 2028") is never a class,
+        // whatever its stored switch says, so nothing of it reaches the
+        // dashboard, a reminder or the megaphone.
+        coursePreferences.isSelected(course) && !NonClassCanvasSite.matches(course)
     }
 
     /// Toggle a course on/off. Off = hidden from the dashboard and notifications.

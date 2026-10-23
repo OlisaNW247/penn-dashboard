@@ -198,7 +198,7 @@ struct AnnouncementFindsView: View {
     /// (2026-10-23). A row that scrolls hides the classes past the screen's
     /// edge, so a class you cannot see is a class you cannot pick.
     private var classBubbles: some View {
-        CoursePickerFlowLayout(spacing: 8) {
+        CoursePickerFlowLayout(spacing: 6) {
             bubble(
                 AnnouncementSheetCopy.allBubble, isSelected: selection.isEmpty,
                 accent: .smoothAnnouncementAccent, ink: .smoothAnnouncementAccent, onFill: .smoothPaper
@@ -236,13 +236,15 @@ struct AnnouncementFindsView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
+            // A size down from `CoursePicker`'s chips so a usual term's
+            // classes and "all" fit in one or two rows (the owner's ask).
             Text(label.uppercased())
-                .font(.lhfMono(12, weight: .semibold))
-                .tracking(0.4)
+                .font(.lhfMono(11, weight: .semibold))
+                .tracking(0.3)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? onFill : ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .background(Capsule().fill(isSelected ? accent : accent.opacity(0.14)))
                 .overlay(Capsule().stroke(accent.opacity(isSelected ? 0 : 0.4), lineWidth: 1))
         }

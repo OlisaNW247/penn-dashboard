@@ -273,7 +273,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
        says "no announcements". A find whose real Canvas/Gradescope twin
        is finished leaves the found list too
        (`announcementFindsWithFinishedTwin`). Since 2026-10-23 two rows of
-       class **bubbles** sit at the top, wrapped so every class shows ("all", preset on every open,
+       class **bubbles** sit at the top, wrapped so every class shows
+       (only classes switched on; a program site such as "TAP 2028" is
+       never a class anywhere in the app, `NonClassCanvasSite`) ("all", preset on every open,
        then one per class; tap a class to switch to it, tap more to add
        them, tap a selected one to drop it). With classes selected the
        two lists become **one compiled list**, newest first, each find
@@ -1080,6 +1082,10 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2755/251 `fix/megaphone-every-class`, 2026-10-23 late, `swift test
+  --no-parallel` on Marco's Mac, 23.6 s, green: +3 in `NonClassCanvasSiteTests`
+  ("TAP 2028" is never a class) and the compact two-row bubbles. iOS build
+  succeeds.
 - 2752/250 `fix/megaphone-every-class`, 2026-10-23 evening, `swift test
   --no-parallel` on Marco's Mac, 23.4 s, green, after the class bubbles
   (`AnnouncementSheetBubblesTests`, +20) and `fix/relevance-backfill`
