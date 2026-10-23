@@ -8,8 +8,8 @@ import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import {
   ANNOUNCEMENT_INSTRUCTIONS,
   buildAnnouncementUserContent,
+  buildExtractionResult,
   courseCodesMatch,
-  parseAssignments,
 } from "../_shared/announcement.ts";
 import { selectCatalogCoursesByCodes, selectCoursesForDiscovery, selectEnrolledCourseIDs } from "../_shared/db.ts";
 import type { CatalogCourseRow } from "../_shared/catalog.ts";
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
     // same as `ask` records after a stream actually completes.
     await recordUsage(serviceClient, userId, 0, 0);
 
-    return json(200, { assignments: parseAssignments(text, now) });
+    return json(200, buildExtractionResult(text, now));
   } catch (err) {
     if (err instanceof HttpError) {
       return errorResponse("unauthorized", err.message, err.status);

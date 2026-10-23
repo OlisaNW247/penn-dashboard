@@ -711,12 +711,41 @@ grades it has actually seen post.
 ## `extract-announcement`
 
 Request `{ "announcementID", "courseCode", "title", "message", "postedAt"?, "now": ISO8601 }`.
-Response `{ "assignments": [ { "title", "dueAt"?, "kind" } ] }`, where `kind`
+Response `{ "assignments": [ { "title", "dueAt"?, "kind" } ], "relevance"?: { "kind", "until"?: ISO8601 } }`, where `kind`
 is `"submission"` (handed in or completed on a platform -- homework, a
 quiz, a survey, an upload) or `"preparation"` (read/watch/review/bring/
 prepare, nothing to hand in); the model defaults to `"submission"` when it
 omits or misstates `kind`. Replaces the user-key
 `ClaudeAnnouncementExtractor`. Counted against the same daily quota.
+
+`relevance` is the model's judgment of how long the post *as a whole* stays
+worth listing, independent of whether it yielded any task (an informational
+post has `"assignments": []` and is where it matters most). Its `kind` is
+one of four values, and nothing else is ever returned:
+
+| `kind` | The post is... | `until` |
+|---|---|---|
+| `"event"` | about a dated happening: an exam, a review session, office hours, a room or time change | when the happening is over |
+| `"task"` | mainly about work to do | the latest due date it names, if any |
+| `"standing"` | a resource or policy useful for the rest of the term: a formula sheet, an office-hours schedule, a solutions directory, a grading policy | absent |
+| `"news"` | an FYI that stops mattering within days: grades released, slides posted, a reminder about something already acted on | absent |
+
+`relevance` is **optional and additive**: the key is omitted entirely (never
+`null`) when the model gave none, or gave one the server could not use -- no
+`relevance` object, a `kind` that is not exactly one of the four, or text
+that does not parse. A shipped client that does not know the field ignores
+it (Swift `Decodable` drops unknown keys), so the response to an old client
+is the same one it always got, and a new client must treat a missing
+`relevance` as "no judgment, decide the old way". `until` is an ISO 8601
+datetime and is kept only when it parses as a date within `[now - 1 day,
+now + 200 days]` of the request's `now`; otherwise just `until` is dropped
+and `kind` survives. It is returned as the model wrote it, not
+re-serialised. A bad `relevance` can never fail the request or change
+`assignments` (`_shared/announcement.ts`'s `parseRelevance` and
+`parseAssignments` read the model's text independently). The server does
+not receive anything new for this: the post's title and text were already
+sent, and `relevance` is derived from them in the same model call, with
+nothing stored.
 
 The server resolves `courseCode` against the caller's own enrollments (the
 `courses` row whose `code` matches case-insensitively and ignoring
@@ -897,6 +926,22 @@ when `LHF_PROVIDER_ORDER` is set, `provider.order` from that comma list.
 Fallback model on upstream failure: `LHF_ASK_FALLBACK_MODEL`, default
 `openai/gpt-5.6-luna`. `OPENROUTER_API_KEY` is a function secret, never in
 the repo, never in the app.
+
+The two JSON-mode functions (`extract-announcement`, `extract-profile`) read
+`LHF_MODEL` and `LHF_FALLBACK_MODEL` (same defaults) and go through
+`chatCompletionJSON`, which does two things `ask` does not need. Each request
+body carries `reasoning: { "effort": "low" }` when, and only when, the model
+that body targets has a `z-ai/` id (`_shared/fallback.ts`'s `reasoningFor`;
+the fallback body is built for the fallback model, not copied from the
+primary's). And a primary that answers HTTP 200 with no usable
+`choices[0].message.content` -- null, missing, or empty/whitespace -- gets
+one retry against the fallback model before the function gives up, because
+a thinking model that spends its whole output cap on hidden reasoning
+returns exactly that, and `requestWithFallback` only retries on an HTTP or
+transport failure. If the fallback also has no usable content the call
+fails as an upstream error (502), as a missing body always did. This was
+found on 2026-10-23 when one 255-word Canvas announcement failed twice with
+a 502 on a real phone while a 53-word one succeeded.
 
 ## Limitations recorded on purpose
 
