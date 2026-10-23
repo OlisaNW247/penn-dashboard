@@ -50,7 +50,32 @@ public struct GradescopeClient: Sendable {
         self.session = session
     }
 
+    /// What one scrape found, plus what it could not check.
+    ///
+    /// A list row that does not read "submitted" is confirmed by fetching its
+    /// own detail page (`refineCompletionStatus`). When that fetch fails for a
+    /// reason that does not prove the session dead (a timeout, a 5xx, a
+    /// cancellation) the row used to be returned as plain "not submitted",
+    /// indistinguishable from a page that loaded and showed no submission.
+    /// `unverifiedAssignmentIDs` is the difference: the `Assignment.id` of
+    /// every row whose detail page could not be read, so a caller holding an
+    /// earlier "submitted" for the same row can tell "Gradescope says not
+    /// handed in" from "Gradescope did not answer".
+    public struct FetchReport: Sendable {
+        public let assignments: [Assignment]
+        public let unverifiedAssignmentIDs: Set<String>
+
+        public init(assignments: [Assignment], unverifiedAssignmentIDs: Set<String> = []) {
+            self.assignments = assignments
+            self.unverifiedAssignmentIDs = unverifiedAssignmentIDs
+        }
+    }
+
     public func fetchAssignments() async throws -> [Assignment] {
+        try await fetchAssignmentsReport().assignments
+    }
+
+    public func fetchAssignmentsReport() async throws -> FetchReport {
         let accountURL = baseURL.appendingPathComponent("account")
         let accountHTML = try await fetchHTML(accountURL)
         let result = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
@@ -61,7 +86,7 @@ public struct GradescopeClient: Sendable {
                 courseName: "Gradescope",
                 courseURL: baseURL
             )
-            return try await refineCompletionStatus(assignments).sorted(by: Self.byDueDate)
+            return try await refineCompletionStatus(assignments)
         }
 
         var assignments: [Assignment] = []
@@ -78,12 +103,54 @@ public struct GradescopeClient: Sendable {
                 isFallback: result.isFallback
             ))
         }
-        return try await refineCompletionStatus(assignments).sorted(by: Self.byDueDate)
+        return try await refineCompletionStatus(assignments)
     }
 
-    private func refineCompletionStatus(_ assignments: [Assignment]) async throws -> [Assignment] {
+    /// Keeps a row's last known "submitted" when this scrape could not check
+    /// it. Pure, so it can be tested without a network and applied by whoever
+    /// owns the previous copy of the list.
+    ///
+    /// A row is held at `submitted == true` only when ALL of these hold: this
+    /// scrape returned it as not submitted, its detail page could not be read
+    /// (`unverifiedIDs`), and the copy in `previous` was submitted. Anything
+    /// else is returned untouched, which keeps every explicit negative
+    /// authoritative: a detail page that loaded and does not show completion,
+    /// or a list row that was read as not submitted, is not in `unverifiedIDs`
+    /// and still sets false (a retracted submission self-heals on the next
+    /// good scrape). A new row with no previous copy has nothing to preserve.
+    ///
+    /// Without this, one flaky request turned a submitted assignment back into
+    /// not-done: `StoredAssignment` copies `assignment.submitted` into the
+    /// ledger on every reconcile, so the work came back onto the dashboard and
+    /// its reminders (and the loud 10-minute alert) were planned again until
+    /// the next good scrape. The wrong fix was throwing from
+    /// `refineCompletionStatus` on any detail failure: that discards every
+    /// other row's good result, and the caller reads a throw as "Gradescope
+    /// couldn't refresh". Rows are matched on `Assignment.id`
+    /// ("gradescope:course-<n>-assignment-<n>", built from `source` and
+    /// `sourceID` only), which does not depend on the `course` label the app
+    /// rewrites through `CourseCode`, so matching holds across that
+    /// normalization.
+    public static func preservingUnverifiedSubmissions(
+        fetched: [Assignment],
+        unverifiedIDs: Set<String>,
+        previous: [Assignment]
+    ) -> [Assignment] {
+        guard !unverifiedIDs.isEmpty else { return fetched }
+        let previouslySubmitted = Set(previous.filter(\.submitted).map(\.id))
+        return fetched.map { row in
+            guard !row.submitted,
+                  unverifiedIDs.contains(row.id),
+                  previouslySubmitted.contains(row.id)
+            else { return row }
+            return row.withSubmitted(true)
+        }
+    }
+
+    private func refineCompletionStatus(_ assignments: [Assignment]) async throws -> FetchReport {
         var refined: [Assignment] = []
         refined.reserveCapacity(assignments.count)
+        var unverified: Set<String> = []
 
         for assignment in assignments {
             guard !assignment.submitted, let url = assignment.url else {
@@ -110,11 +177,18 @@ public struct GradescopeClient: Sendable {
                 // unavailable" or the app will keep a dead session forever.
                 throw error
             } catch {
+                // Not proof of anything: the detail page could not be read.
+                // The row stays as the list showed it, and is marked so the
+                // caller does not take that for a confirmed "not submitted".
                 refined.append(assignment)
+                unverified.insert(assignment.id)
             }
         }
 
-        return refined
+        return FetchReport(
+            assignments: refined.sorted(by: Self.byDueDate),
+            unverifiedAssignmentIDs: unverified
+        )
     }
 
     private func fetchHTML(_ url: URL) async throws -> String {
