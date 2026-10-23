@@ -1,22 +1,5 @@
 # LHF (Low Hanging Fruit), shipped as **Smooth**
 
-## 2026-10-23 — automatic Canvas sign-in (release-source worktree)
-
-Based on 96dce92 / App Store 3.1.0 (13). Penn's visible login discloses
-credential saving, captures a submitted pair in memory (exact HTTPS hosts,
-main frame, ten-minute limit), and saves only after Canvas verifies the session.
-The extra password/opt-in sheet is removed from onboarding. The next screen
-says “Canvas connected” / “Disconnect at any time in Settings”; Continue moves
-on. Disconnect still clears credentials. Other schools retain session behavior;
-SSO without a password cannot populate the vault. Keychain failures are surfaced.
-This supersedes the earlier decision against submission capture and descriptions
-of an optional stay-signed-in offer below. Historical release notes remain historical.
-Validation: 40 focused tests passed (including real WebKit synthetic submission,
-origin/lifetime rejection, Keychain error outcomes, and reconnect routing);
-iOS Debug build succeeded. Live PennKey/Duo and password-manager autofill
-still require device validation.
-
-
 ## Start here: every session reads this file, and updates it before it ends
 
 This file and `ROADMAP.md` are the project's memory. Sessions don't remember
@@ -77,8 +60,10 @@ with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
 goes from the laptop's screen to the phone's camera and never to the
 server); the server stores ciphertext it cannot read. Name, reminder
 settings and grades are never in it. The
-PennKey password, saved automatically after a verified Penn Canvas login, stays in this phone's Keychain
-and only ever goes to Penn's login page. There is no analytics, tracking,
+PennKey password is saved automatically (since 2026-10-23) after a verified
+Penn Canvas sign-in inside the app's own login page, with a one-line
+disclosure above that page; it stays in this phone's Keychain
+(this-device-only, never synced) and only ever goes to Penn's login page. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -233,11 +218,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
   "sign in to canvas" button under the canvas row for exactly that state
   (connected, no saved login, not preview), because no banner appears
   there and Grade Watcher's reconnect button is gone. At Penn, the PennKey
-  sheet offered after the Canvas login is **"the vault"** since 2026-10-18
-  (`PennKeyCredentialsSheet`): a vault-door emblem that clunks shut once
-  as the sheet opens (drawn already shut under Reduce Motion), the same
-  one line about the Keychain, the two fields. It was a lock icon under
-  "stay signed in to canvas". Only the look changed.
+  sheet is **"the vault"** since 2026-10-18 (`PennKeyCredentialsSheet`): a
+  vault-door emblem that clunks shut once as the sheet opens (drawn
+  already shut under Reduce Motion), the same one line about the
+  Keychain, the two fields. It was a lock icon under "stay signed in to
+  canvas". Only the look changed. **Since 2026-10-23 (never compiled) it is
+  no longer offered after the Canvas login**: the login saves the PennKey
+  itself ("Stay signed in", below), the onboarding step after a connect is
+  a "Canvas connected" page ("Disconnect at any time in Settings") with
+  Continue, and the vault is only the repair tool Profile → accounts
+  opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **megaphone**
@@ -1655,19 +1645,50 @@ Canvas signs students out from time to time, and reconnecting means PennKey
 student's PennKey username and password and re-fills Penn's login form
 itself.
 
-- **How it turns on.** There is no toggle (removed 2026-09-24, owner's
-  call: everyone should stay signed in). After every *interactive* Canvas
-  login at Penn, while no password is saved, `OnboardingView.canvasConnected`
-  offers `PennKeyCredentialsSheet`. The sheet is titled "the vault" (a
-  vault-door emblem that shuts once as it opens, since 2026-10-18; it
-  showed a lock icon before), then one line ("encrypted in this phone's
-  keychain. never sent to smooth."), and the two fields. "Not now" is always available; nothing is stored unless the
-  student saves. The offer is gated on `CanvasInstallation.penn`: the sheet
-  asks for a PennKey, and other schools must never see it.
+- **How it turns on (since 2026-10-23; the owner's call, never compiled,
+  never run on a device).** There is no toggle and no second password
+  prompt. At Penn, the visible Canvas login shows a one-line disclosure
+  above Penn's page ("Signing in securely saves your PennKey on this device
+  so Smooth can reconnect. Disconnect at any time in Settings."), and
+  `PennKeyLoginCapture` watches that page for one submission of Penn's
+  own login form: main frame only, `https` on `weblogin.pennkey.upenn.edu`
+  or `idp.pennkey.upenn.edu`, under `/idp/`, with the form's action
+  checked the same way. It observes and never alters the submit or the SAML
+  hop. The submitted pair is held in memory only, in the pane's own
+  capture object, **for at most 10 minutes**, and is dropped on a failed or
+  cancelled navigation, a form error, the pane going away, or the timer.
+  It is saved to the Keychain **only after `connectCanvas` has verified the
+  session** (`enableStayLoggedIn`, which now returns whether the Keychain
+  write succeeded and never switches the feature on when it did not). A
+  login whose submission the page never reported (SSO) simply leaves
+  nothing to save, and the confirmation page says Canvas is connected on
+  the current session and that automatic reconnection needs a PennKey
+  password sign-in. The
+  vault (`PennKeyCredentialsSheet`, titled "the vault" since 2026-10-18)
+  remains, but only as a repair tool behind "update password" after Penn
+  rejects a saved password; it is not an offer after a login any more. Penn
+  only: other schools get no capture, and `OnboardingView` builds the
+  capture only for `CanvasInstallation.penn`. The legacy "offered" flag
+  (`hasOfferedStayLoggedIn`) is no longer written, and
+  `AppState.noteStayLoggedInOffered` has no production caller; the flag is
+  kept because the login-is-missing inference at `init` still reads it.
+  Before 2026-10-23 this was an opt-in sheet, shown after every
+  interactive Penn login while no password was saved, with "not now" always
+  available and nothing stored unless the student typed both fields and
+  tapped save (the 2026-09-24 removal of the toggle, and the vault look of
+  2026-10-18, belong to that design). The owner reversed it to remove the
+  retyping and the consent tap, and the privacy promise that came with
+  them; the trade-off is recorded in `docs/PRIVACY.md` ("Automatic Canvas
+  reconnection"), `docs/appstore/REVIEW_NOTES.md` and the Traps entry about
+  access tokens.
 - **Where it lives.** `PennKeyLoginForm` (Kit, pure) recognizes the
   identity provider's form and knows how to fill it.
   `PennKeyCredentialStore` keeps the credentials in the Keychain,
-  this-device-only, never synced.
+  this-device-only, never synced; its `save` updates the existing item in
+  place and falls back to adding one only when none exists, so a refused
+  write keeps the previous credential instead of deleting it first.
+  `PennKeyLoginCapture` (above) is the only reader of what the student
+  typed, and it never goes beyond memory until a connect is verified.
 - **How it's used.** When the visible reconnect pane or the background
   `CanvasSessionRenewer` hits an expired session, the fill happens through
   one seam. `LoginNavigationObserver` auto-fills and submits the IdP form
@@ -1733,7 +1754,9 @@ itself.
   before, every manual reconnect deleted it, which is the most likely
   reason students with a saved password still saw Duo and the banner
   (`docs/SIGNOUT_INVESTIGATION.md`). Disconnecting still purges Duo.
-- **Removal.** Disconnecting Canvas deletes the saved password.
+- **Removal.** Disconnecting Canvas deletes the saved password, and with it
+  any captured pair still in memory (the pane's `onDisappear` finishes the
+  capture).
 - **Verified on a device, 2026-09-27, in the foreground.** On Marco's
   phone, with a real PennKey and Duo, `-LHFAgeCanvasSession` renewed in 8
   seconds, hands-free, and Duo re-issued its trust. Olisa's phone renewed
@@ -2103,7 +2126,15 @@ itself.
   state, not a fix owed here; and scraping the password back out of the
   login page's DOM to synthesize a token is the fix that was considered and
   rejected — it defeats the whole point of a scoped, revocable token by
-  handing the app a full credential anyway.
+  handing the app a full credential anyway. (That rejection stands for
+  minting a token. The broader rule it came from, that the app never reads
+  what the student types into Penn's page, was **reversed by the owner on
+  2026-10-23**: no more retyping into a second sheet, and a PennKey is
+  kept only from a sign-in Canvas has just verified, in memory for at most
+  10 minutes first, then the Keychain, this-device-only, nothing leaving
+  the phone. See "Stay signed in" above. Marco wrote the change; it is
+  uncompiled, so read the old wording as history and the new as intent
+  until a phone has signed in with it.)
 - **The 24-hour cookie rule is what keeps a student signed in; removing it
   signed Marco out.** `fac110d` (2026-09-24) dropped
   `SessionCookieStore.load()`'s rule that treats a no-expiry Canvas cookie
@@ -2437,14 +2468,15 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` v13 deploy before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
 | `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit `e3f9af8` on `v8-announcements` at `75dc7aa`; no PR, not merged. The AlarmKit alarm (with its custom sound) is a second commit, pushed the same day.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch, and on iOS 26 a real AlarmKit alarm in place of the buzzes (What the app does → Profile → reminders). A build from before the review fixes was installed on Marco's iPhone on 2026-10-19 at 15:21. Separate from `fix/submission-status`, which branches from the same commit. Sign-in and sync files are byte-identical to `75dc7aa`. |
-| `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR, not merged.** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
+| `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
 | `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
-| `parked/gradescope-unverified-submission` | **Parked, do not merge without Marco's say.** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
-| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed, not merged.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
+| `parked/gradescope-unverified-submission` | **Was parked; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
+| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
@@ -2469,6 +2501,22 @@ none is a ship line.
 
 ## Known gaps
 
+- **Automatic PennKey capture is uncompiled and has never run on a phone**
+  (2026-10-23, merged on `v8-merge-marco` from `codex/automatic-canvas-login`;
+  Marco's own note says 40 focused tests passed and an iOS Debug build
+  succeeded on his tree at `96dce92`, none of which is `v8`). Unseen: a
+  real PennKey + Duo sign-in through the capture, a password manager's
+  autofill (whether its submit reaches `PennKeyLoginCapture`), the
+  pre-login disclosure line, the "Canvas connected" page, and a later
+  silent renewal with the saved pair (verify with `-LHFAgeCanvasSession`).
+  `docs/appstore/REVIEW_NOTES.md` and `DEMO_VIDEO.md` were rewritten on
+  2026-10-23 to say the app saves the password itself; the App Store
+  privacy label still has to be re-read against that before the next
+  submission, and `docs/PRIVACY.md` (Marco's rewrite) is the student-facing
+  text. `OnboardingView.canvasStep` no longer short-circuits to a
+  "connected" page when Canvas is already connected, so a walk that lands
+  on the Canvas phase again re-mounts the login pane (the back chevron from
+  Gradescope goes to the new connected phase instead).
 - **Whether the extension can download Canvas Files is unknown**
   (2026-10-22). Canvas redirects a file download to a separate signed
   file host (Inst-FS for Instructure-hosted Canvas; Penn's not
@@ -2561,11 +2609,14 @@ none is a ship line.
     (`ContentView.refresh`; its own comment says `onChange(of:
     scenePhase)` skips the initial phase). The ledger seeds what was last
     seen, so only submissions since the last refresh read late. Fix parked
-    on `parked/launch-submission-refresh` (Branches).
+    on `parked/launch-submission-refresh` (Branches); still parked on
+    2026-10-23, because on `v8` it would also run `deviceSyncPass` and the
+    turned-in and grade notices at launch.
   - **A flaky Gradescope detail page** turns a submitted row back to not
     done until the next good scrape (`refineCompletionStatus` swallows the
     error; `StoredAssignment` copies the flag on every reconcile). Fix
-    parked on `parked/gradescope-unverified-submission`.
+    on `parked/gradescope-unverified-submission`, merged into
+    `v8-merge-marco` on 2026-10-23 (not compiled).
   - **Gradescope disconnects itself for good** after 24 hours without a
     successful sync, silently (Traps). In `AutoSyncCoordinator`, not
     touched.

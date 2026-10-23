@@ -14,6 +14,10 @@ with Marco's `v8-loud-alert-actions`; not compiled). Marco's
 at `75dc7aa`) is merged in on `v8-merge-marco` (2026-10-23); his entries
 below keep their own dates and describe `v8-announcements`' state, not
 today's.
+The rest of Marco's branches the plan of 2026-10-23
+(`docs/MERGE_PLAN_MARCO_2026-10-23.md`) names are merged there too, in the
+same order; none of it is compiled yet, and the launch refresh and the
+course-sync salvage are separate briefs, not merges.
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is

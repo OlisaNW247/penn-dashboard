@@ -799,8 +799,11 @@ final class AppState: ObservableObject {
     private static let backgroundDuoStandDownKey = "backgroundDuoStandDownV1"
     /// Backs `hasOfferedStayLoggedIn` — whether the one-time "want Smooth to
     /// remember your PennKey password?" offer has already been shown once,
-    /// right after a successful interactive Canvas login
-    /// (`OnboardingView.canvasConnected`). Never re-offered automatically
+    /// right after a successful interactive Canvas login. **Since 2026-10-23
+    /// nothing shows that offer and nothing sets this key**: the login saves
+    /// the PennKey itself (`PennKeyLoginCapture`, `enableStayLoggedIn`). The
+    /// key stays because an install that took the old offer still carries it,
+    /// and `canvasLoginEverCaptured`'s legacy inference reads it. Never re-offered automatically
     /// after that, on purpose: a sheet a student already dismissed once
     /// (either "not now" or by turning the feature on) reappearing on every
     /// future login would be exactly the kind of repeat interruption this
@@ -2116,9 +2119,9 @@ final class AppState: ObservableObject {
     /// flag for the same reasons their own doc comments give).
     @Published private(set) var autoLoginAwaitingDuo: Bool
     /// Whether the one-time post-login "want Smooth to remember your
-    /// PennKey password?" offer (`OnboardingView.canvasConnected`) has
-    /// already been shown. See `hasOfferedStayLoggedInKey`'s doc comment for
-    /// why this never re-arms itself.
+    /// PennKey password?" offer has already been shown. That offer is gone
+    /// since 2026-10-23 (see `hasOfferedStayLoggedInKey`); the value is only
+    /// read, as legacy evidence of an earlier login.
     @Published private(set) var hasOfferedStayLoggedIn: Bool
 
     /// True only when auto-login actually has something usable to do:
@@ -2249,9 +2252,10 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.set(value, forKey: Self.autoLoginAwaitingDuoKey)
     }
 
-    /// Marks the one-time post-login offer as shown, whether the student
-    /// accepted it, said "not now," or dismissed it any other way — see
-    /// `hasOfferedStayLoggedInKey`'s doc comment.
+    /// Marks the one-time post-login offer as shown. No production caller
+    /// since 2026-10-23, when the offer was replaced by automatic saving
+    /// after a verified login; kept (and still tested) so the legacy flag
+    /// can be written — see `hasOfferedStayLoggedInKey`'s doc comment.
     func noteStayLoggedInOffered() {
         hasOfferedStayLoggedIn = true
         UserDefaults.lhf.set(true, forKey: Self.hasOfferedStayLoggedInKey)
