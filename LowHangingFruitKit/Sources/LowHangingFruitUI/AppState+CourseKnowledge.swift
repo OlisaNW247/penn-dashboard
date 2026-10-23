@@ -133,7 +133,11 @@ extension AppState {
     ///   4: the sync now also reads Ed Discussion (`mergeEdDiscussion`),
     ///   and a device that synced within the hour would otherwise not try
     ///   Ed until the window lapsed (2026-10-09).
-    static let courseKnowledgeSyncVersion = 4
+    ///   5: announcements collected for the current term, 2026-10-23. The
+    ///   collector's request had no end date and so covered only the term
+    ///   before this one; a device that synced within the hour would
+    ///   otherwise wait out the window before collecting its first one.
+    static let courseKnowledgeSyncVersion = 5
     private static let courseKnowledgeSyncVersionKey = "courseKnowledgeSyncVersionV1"
     /// Backs `lastCourseKnowledgeSyncSummary` (declared in `AppState.swift`).
     /// Internal, not `private`, because `AppState.init` reads it.

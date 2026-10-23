@@ -17,9 +17,20 @@
 // every role except service_role.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError } from "./http.ts";
+import { resolveIdentity } from "./devices.ts";
 
 export interface AuthContext {
+  /** The student every enrollment and quota rule scopes to. For a caller
+   *  that is a linked device (the Chrome extension's own anonymous user,
+   *  see `device_links`) this is the OWNER's id, so every function that
+   *  already scopes by `userId` serves the device as the student with no
+   *  other change. For everyone else it is the token's own user. */
   userId: string;
+  /** The token's own user, whoever that resolves to. Only `pair`,
+   *  `device-sync` and `delete-account` should ever need it. */
+  callerUserId: string;
+  /** True when the caller is a device linked to an owner. */
+  deviceOwnerLinked: boolean;
   serviceClient: SupabaseClient;
 }
 
@@ -65,5 +76,32 @@ export async function requireUser(req: Request): Promise<AuthContext> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  return { userId: data.user.id, serviceClient };
+  // One lookup, for every caller: a linked device has a row keyed by its
+  // own user id, everyone else has none. Failing it must fail the request.
+  // Falling back to the token's own id would quietly treat a linked device
+  // as a fresh student with no enrollments and a full ask quota, which is
+  // wrong in a way nobody would notice.
+  const { data: link, error: linkError } = await serviceClient
+    .from("device_links")
+    .select("owner_user_id")
+    .eq("device_user_id", data.user.id)
+    .maybeSingle();
+  //
+  // The one exception is the table not existing at all (Postgres 42P01, or
+  // PostgREST's PGRST205 when its schema cache lacks it). Then no link can
+  // exist, so "not linked" is exactly true, and failing would take `ask`
+  // and `sync` down for every phone if any function were deployed from
+  // `v8` before `20261022090000_chrome_extension.sql` was applied.
+  if (linkError && !isMissingTable(linkError)) {
+    throw new HttpError(502, "upstream", "failed to resolve caller identity");
+  }
+  const ownerUserId = (link as { owner_user_id: string } | null)?.owner_user_id;
+
+  return { ...resolveIdentity(data.user.id, ownerUserId), serviceClient };
+}
+
+/** True for the errors PostgREST returns when `device_links` does not
+ * exist yet; see the lookup in `requireUser`. */
+export function isMissingTable(error: { code?: string | null }): boolean {
+  return error.code === "42P01" || error.code === "PGRST205";
 }

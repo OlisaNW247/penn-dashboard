@@ -158,6 +158,9 @@ struct SettingsPage: View {
                     }
                     #endif
                     stayLoggedInRows
+                    // Only while a pairing key is held; pairing starts from
+                    // the laptop's QR code.
+                    ProfileLaptopRow()
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
                             .font(.lhfSecondary(12))
@@ -235,6 +238,9 @@ struct SettingsPage: View {
                     switch target {
                     case .canvas:
                         state.disconnectCanvas()
+                        // `delete-account` removes the laptop links on the
+                        // server; the key and change times go from this phone.
+                        state.forgetPairedLaptopLocally()
                         deleteServerData()
                     case .gradescope:
                         state.disconnectGradescope()
@@ -243,7 +249,10 @@ struct SettingsPage: View {
                 secondaryButton: .cancel()
             )
         }
-        .task { await scheduler.refreshAuthStatus() }
+        .task {
+            state.refreshPairedLaptop()
+            await scheduler.refreshAuthStatus()
+        }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
     }

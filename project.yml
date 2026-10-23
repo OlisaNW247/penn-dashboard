@@ -81,6 +81,24 @@ targets:
         # NSAlarmKitUsageDescription above: `xcodegen generate` rewrites the
         # .plist from this list. App target only; the extension only draws it.
         NSSupportsLiveActivities: true
+        # Dictation in ask (the mic in the composer, iOS only). iOS kills the app
+        # the moment it asks for the microphone or speech recognition without
+        # these strings. Declared here as well as in App/Info.plist for the same
+        # reason as NSAlarmKitUsageDescription above. App target only. The
+        # speech string states the promise the code keeps: recognition is
+        # requested on-device only, so audio never leaves the phone.
+        NSMicrophoneUsageDescription: "Smooth listens only while the mic in ask is on, so you can say a question instead of typing it."
+        NSSpeechRecognitionUsageDescription: "Your words are turned into text on this phone. Audio never leaves it."
+        # The `smooth://pair?c=...#k=...` link in the Chrome extension's pairing
+        # QR (docs/CHROME_EXTENSION.md, "Pairing"). Declared here as well as in
+        # App/Info.plist for the same reason as NSAlarmKitUsageDescription
+        # above: `xcodegen generate` rewrites the .plist from this list. App
+        # target only; the widget never opens a link.
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Viewer
+            CFBundleURLName: com.lhf.lowhangingfruit.pair
+            CFBundleURLSchemes:
+              - smooth
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}

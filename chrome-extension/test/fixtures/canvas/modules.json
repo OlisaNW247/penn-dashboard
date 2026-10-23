@@ -1,0 +1,11 @@
+[
+  {"id": 1, "name": "Week 2", "items": [
+    {"id": 1, "title": "Lecture 3 slides", "type": "File", "content_id": 71},
+    {"id": 2, "title": "Reading: Chapter 2", "type": "ExternalUrl", "external_url": "https://example.com/chapter-2"}
+  ]},
+  {"id": 2, "name": "Week 3", "items": [
+    {"id": 3, "title": "Lecture 5 slides", "type": "File", "content_id": 72},
+    {"id": 4, "title": "Week 3 overview", "type": "SubHeader"},
+    {"id": 5, "title": "PSet 3", "type": "Assignment", "content_id": 555, "content_details": {"due_at": "2026-09-17T03:59:00Z"}}
+  ]}
+]

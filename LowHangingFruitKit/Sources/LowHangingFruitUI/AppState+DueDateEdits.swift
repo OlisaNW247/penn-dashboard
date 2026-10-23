@@ -83,6 +83,9 @@ extension AppState {
             for id in ids { next.removeValue(forKey: id) }
         }
         guard next != dueDateEdits else { return }
+        // A real change by the student (a no-op returned above), stamped for
+        // device sync under every id it touched, `linkedID` included.
+        recordSyncChange(.dueEdit, ids: ids)
 
         dueDateEdits = next
         dueDateEditStore?.save(next)

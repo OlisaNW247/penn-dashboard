@@ -136,6 +136,11 @@ public enum DocumentComponent: String, Sendable, Hashable, CaseIterable {
         documents.contains { document in
             switch document.kind {
             case .announcement, .ed, .assignment: return false
+            // A slide deck titled "Lab 3 review" in a lecture-only course
+            // would split it, the same false positive an assignment called
+            // "Lab 3" causes; a file is not structure, so it is excluded
+            // with the other kinds that merely mention a component.
+            case .file: return false
             case .syllabus, .home, .page, .module, .website: break
             }
             switch classify(title: document.title, text: document.text) {

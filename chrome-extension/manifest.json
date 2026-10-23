@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Smooth",
+  "version": "0.1.0",
+  "description": "your work, on your laptop too",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://canvas.upenn.edu/*",
+    "https://www.gradescope.com/*",
+    "https://ynetfjixexksxqrrkwsg.supabase.co/*",
+    "https://edstem.org/*",
+    "https://us.edstem.org/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://edstem.org/*"],
+      "js": ["src/content/ed-token.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

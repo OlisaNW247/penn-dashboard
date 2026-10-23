@@ -27,7 +27,44 @@ final class EdDiscussionCoordinator {
         /// handed in (an unchanged thread is not counted).
         var documentsAdded = 0
         var notes: [String] = []
+        /// What the line below says in numbers (2026-10-23), so a test or a
+        /// caller need not parse it. Classes here are Canvas courses:
+        /// `matched` found an Ed course, `read` were read this run,
+        /// `restored` kept their stored Ed documents because they were not
+        /// read, `dropped` had their stored Ed documents removed because Ed
+        /// authoritatively has nothing for them.
+        var matchedClasses = 0
+        var readClasses = 0
+        var restoredClasses = 0
+        var droppedClasses = 0
+        /// The first failure's kind, a fixed word and never a message:
+        /// `noTab`, `tabCheck`, `launch`, `noMatch`, `sessionExpired`,
+        /// `http(code)`, `notHTTP`, `invalidJSON` or `other`.
+        var firstFailure: String?
+        /// "matched 3 · read 1 · restored 2 · dropped 0 · first failure
+        /// sessionExpired · <detail>". The counts lead so that
+        /// `AppState.scrubbedForSummary`'s 120-character cap cuts the detail
+        /// and never the numbers.
         var statusLine: String
+    }
+
+    /// One Canvas class to read from Ed: the Ed course it matched, and the
+    /// single Canvas site the documents are filed under.
+    struct ReadTarget: Sendable, Equatable {
+        let edCourseID: Int
+        let code: String
+        let course: CourseSummary
+    }
+
+    /// What `readTargets` did. Notes are code-and-count sentences only.
+    struct ReadTally: Sendable {
+        var readIDs = Set<String>()
+        var read: [(code: String, edCourseID: Int)] = []
+        var documentsAdded = 0
+        var notes: [String] = []
+        var firstFailure: String?
+        /// The class whose read Ed answered with a 401; the run stopped there.
+        var signedOutCode: String?
     }
 
     /// `[canvasCourseID: launchURL]`; a course with no Ed tab has no entry.
@@ -70,7 +107,8 @@ final class EdDiscussionCoordinator {
     ///   stale answers in ask forever.
     /// - **Not read, so restored:** a matched course whose Ed read failed or
     ///   was skipped (launch failed, throttled, 401, a fetch error, the run
-    ///   stopped by a mid-run 401), and every course when the run never got
+    ///   stopped by a mid-run 401, which also covers every matched course the
+    ///   run had not reached yet), and every course when the run never got
     ///   as far as a match. An unknown is not an absence: a bad network day
     ///   must never erase material that was fine yesterday.
     func sync(
@@ -118,8 +156,8 @@ final class EdDiscussionCoordinator {
         let allIDs = Set(courses.map(\.courseID))
         /// Anything that stops the run before a match is an unknown, not an
         /// absence: restore everything.
-        func unknown(_ report: Report) -> SyncResult {
-            SyncResult(report: report, drop: [], restore: allIDs)
+        func unknown(_ report: Report, failure: String) -> SyncResult {
+            Self.finished(report, drop: [], restore: allIDs, matched: 0, read: 0, failure: failure)
         }
 
         // 1. Find Ed tabs.
@@ -133,10 +171,12 @@ final class EdDiscussionCoordinator {
         guard let firstLaunchURL = courses.compactMap({ launchURLs[$0.courseID] }).first else {
             if report.notes.isEmpty {
                 report.statusLine = "no classes use ed discussion"
-                return SyncResult(report: report, drop: allIDs, restore: [])
+                return Self.finished(report, drop: allIDs, restore: [], matched: 0, read: 0, failure: "noTab")
             }
-            report.statusLine = "ed discussion: \(report.notes[0])"
-            return unknown(report)
+            // Tab checks failed (Canvas unreachable, say): nobody knows
+            // whether a class has Ed, so nothing is dropped.
+            report.statusLine = report.notes[0]
+            return unknown(report, failure: "tabCheck")
         }
 
         // 2. Ed session. A stored session is reused until Ed says 401; only
@@ -156,12 +196,12 @@ final class EdDiscussionCoordinator {
                 // done either way, and the throttle governs what follows.
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.statusLine = "couldn't sign in to ed discussion"
-                return unknown(report)
+                return unknown(report, failure: "launch")
             }
             edAuth = launched
         }
         // Both branches above leave a session or return.
-        guard var auth = edAuth else { return unknown(report) }
+        guard var auth = edAuth else { return unknown(report, failure: "launch") }
 
         // 3. Who am I. A 401 on a STORED session means it died: drop it,
         // launch once more past the throttle, and retry once. A 401 on
@@ -176,12 +216,12 @@ final class EdDiscussionCoordinator {
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.notes.append("ed rejected a fresh launch session")
                 report.statusLine = "couldn't sign in to ed discussion"
-                return unknown(report)
+                return unknown(report, failure: "sessionExpired")
             }
             guard let relaunched = await launchAndStore(url: firstLaunchURL, force: true, notes: &report.notes) else {
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.statusLine = "couldn't sign in to ed discussion"
-                return unknown(report)
+                return unknown(report, failure: "launch")
             }
             auth = relaunched
             sessionIsFromStore = false
@@ -192,12 +232,12 @@ final class EdDiscussionCoordinator {
                 UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
                 report.notes.append("ed rejected the new session: \(Self.describe(error))")
                 report.statusLine = "couldn't sign in to ed discussion"
-                return unknown(report)
+                return unknown(report, failure: Self.failureKind(error))
             }
         } catch {
             report.notes.append("couldn't read ed account: \(Self.describe(error))")
-            report.statusLine = "ed discussion: \(report.notes[0])"
-            return unknown(report)
+            report.statusLine = report.notes[0]
+            return unknown(report, failure: Self.failureKind(error))
         }
         // The session works, so any "dropped" marker is spent.
         UserDefaults.lhf.removeObject(forKey: Self.sessionDroppedKey)
@@ -218,11 +258,15 @@ final class EdDiscussionCoordinator {
             edLinks: [:]
         )
 
-        // 5 and 6. Fetch, convert, merge.
-        let client = EdClient(auth: auth)
-        var matchedTargetIDs = Set<String>()
-        var readIDs = Set<String>()
-        var signedOutMidRun = false
+        // 5. Resolve every match to its Canvas site BEFORE reading any. This
+        // is what makes a mid-run sign-out safe: the matched set is the
+        // whole list, not "the classes the loop reached", so a class the
+        // run never got to is "matched, not read" and is restored below.
+        // (Until 2026-10-23 the set was filled as the loop went, a 401 broke
+        // out of it, and every class after the break fell into `drop`, which
+        // deletes its stored Ed documents: a sign-out on the second of six
+        // classes erased the other four classes' posts.)
+        var targets: [ReadTarget] = []
         for match in matches.sorted(by: { $0.canvasCourseCode < $1.canvasCourseCode }) {
             let sameCode = courses.filter { $0.code == match.canvasCourseCode }
             // One Canvas site gets the documents, never several: the same
@@ -233,54 +277,159 @@ final class EdDiscussionCoordinator {
             guard let target = sameCode.first(where: { launchURLs[$0.courseID] != nil }) ?? sameCode.first else {
                 continue
             }
-            matchedTargetIDs.insert(target.courseID)
             if sameCode.count > 1 {
                 report.notes.append("\(match.canvasCourseCode): \(sameCode.count) canvas sites share this code; ed documents filed under the first")
             }
-            let response: EdThreadsResponse
-            do {
-                response = try await client.threads(courseID: match.edCourseID)
-            } catch EdClient.Error.sessionExpired {
-                // Ed ended the session mid-run. Dropping it means the next
-                // sync relaunches; retrying here would only repeat the 401.
-                // The marker (set only for a session that came from the
-                // store, never one launched this run) lets that next launch
-                // bypass the throttle.
-                Self.dropStoredSession()
-                if sessionIsFromStore {
-                    UserDefaults.lhf.set(true, forKey: Self.sessionDroppedKey)
-                }
-                report.notes.append("ed ended the session while reading \(match.canvasCourseCode)")
-                signedOutMidRun = true
-                break
-            } catch {
-                report.notes.append("couldn't read ed threads for \(match.canvasCourseCode): \(Self.describe(error))")
-                continue
+            targets.append(ReadTarget(edCourseID: match.edCourseID, code: match.canvasCourseCode, course: target))
+        }
+        let matchedTargetIDs = Set(targets.map { $0.course.courseID })
+
+        // 6. Fetch, convert, merge.
+        let client = EdClient(auth: auth)
+        let tally = await Self.readTargets(targets, knowledge: &knowledge, now: now) { edCourseID in
+            try await client.threadsWithinWindow(courseID: edCourseID, now: now)
+        }
+        report.notes.append(contentsOf: tally.notes)
+        report.documentsAdded += tally.documentsAdded
+        report.matched = tally.read
+        var firstFailure = tally.firstFailure
+        if tally.signedOutCode != nil {
+            // Ed ended the session mid-run. Dropping it means the next
+            // sync relaunches; retrying here would only repeat the 401.
+            // The marker (set only for a session that came from the
+            // store, never one launched this run) lets that next launch
+            // bypass the throttle.
+            Self.dropStoredSession()
+            if sessionIsFromStore {
+                UserDefaults.lhf.set(true, forKey: Self.sessionDroppedKey)
             }
-            let documents = EdIngestion.documents(course: target, edCourseID: match.edCourseID, response: response, now: now)
-            report.documentsAdded += Self.mergeEdDocuments(documents, into: &knowledge, course: target, now: now)
-            report.matched.append((code: match.canvasCourseCode, edCourseID: match.edCourseID))
-            readIDs.insert(target.courseID)
         }
 
         if matches.isEmpty {
             report.notes.append("no ed course matched your canvas classes")
+            if firstFailure == nil { firstFailure = "noMatch" }
         }
 
         // 7. Status.
-        if signedOutMidRun {
-            report.statusLine = "ed discussion signed out; reconnecting on the next sync"
+        if tally.signedOutCode != nil {
+            report.statusLine = "signed out; reconnecting next sync"
         } else if report.matched.isEmpty {
-            report.statusLine = "ed discussion: \(report.notes.first ?? "nothing to read")"
+            report.statusLine = report.notes.first ?? "nothing to read"
         } else {
             report.statusLine = "connected: " + report.matched.map { $0.code }.sorted().joined(separator: ", ")
         }
-        // Matched-but-unread keeps its old documents; unmatched is gone.
-        return SyncResult(
-            report: report,
-            drop: allIDs.subtracting(matchedTargetIDs),
-            restore: matchedTargetIDs.subtracting(readIDs)
+        let plan = Self.restoreDropPlan(allIDs: allIDs, matched: matchedTargetIDs, read: tally.readIDs)
+        return Self.finished(
+            report,
+            drop: plan.drop,
+            restore: plan.restore,
+            matched: matchedTargetIDs.count,
+            read: tally.readIDs.count,
+            failure: firstFailure
         )
+    }
+
+    /// Reads each target in order, merging what it reads into `knowledge`.
+    /// The seam the sign-out tests drive: `read` stands for the network.
+    ///
+    /// - A class whose read throws `EdClient.Error.sessionExpired` ends the
+    ///   run: it and every class after it stay unread (the caller restores
+    ///   their stored documents), the classes before it keep what they
+    ///   replaced, and `signedOutCode` names the class. The caller does the
+    ///   session clean-up; this function touches no store or defaults.
+    /// - Any other error is a note and the run goes on to the next class.
+    nonisolated static func readTargets(
+        _ targets: [ReadTarget],
+        knowledge: inout CourseKnowledgeBase,
+        now: Date,
+        read: @Sendable (Int) async throws -> EdThreadsResponse
+    ) async -> ReadTally {
+        var tally = ReadTally()
+        for target in targets {
+            let response: EdThreadsResponse
+            do {
+                response = try await read(target.edCourseID)
+            } catch EdClient.Error.sessionExpired {
+                tally.notes.append("ed ended the session while reading \(target.code)")
+                if tally.firstFailure == nil { tally.firstFailure = "sessionExpired" }
+                tally.signedOutCode = target.code
+                break
+            } catch {
+                tally.notes.append("couldn't read ed threads for \(target.code): \(describe(error))")
+                if tally.firstFailure == nil { tally.firstFailure = failureKind(error) }
+                continue
+            }
+            let documents = EdIngestion.documents(course: target.course, edCourseID: target.edCourseID, response: response, now: now)
+            tally.documentsAdded += mergeEdDocuments(documents, into: &knowledge, course: target.course, now: now)
+            tally.read.append((code: target.code, edCourseID: target.edCourseID))
+            tally.readIDs.insert(target.course.courseID)
+        }
+        return tally
+    }
+
+    /// The restore/drop rule on `sync`, as sets. Matched-but-unread keeps its
+    /// old documents (`restore`, which is every matched class the run did not
+    /// read: a failed read, and every class a mid-run 401 stopped before);
+    /// a class with no Ed match is authoritatively gone (`drop`). The two
+    /// never overlap, and neither holds a class that was read.
+    nonisolated static func restoreDropPlan(
+        allIDs: Set<String>,
+        matched: Set<String>,
+        read: Set<String>
+    ) -> (drop: Set<String>, restore: Set<String>) {
+        (drop: allIDs.subtracting(matched), restore: matched.subtracting(read))
+    }
+
+    /// Stamps the counts onto the report's status line and packages the
+    /// restore/drop decision.
+    private static func finished(
+        _ report: Report,
+        drop: Set<String>,
+        restore: Set<String>,
+        matched: Int,
+        read: Int,
+        failure: String?
+    ) -> SyncResult {
+        var report = report
+        report.matchedClasses = matched
+        report.readClasses = read
+        report.restoredClasses = restore.count
+        report.droppedClasses = drop.count
+        report.firstFailure = failure
+        report.statusLine = statusLine(
+            matched: matched, read: read, restored: restore.count, dropped: drop.count,
+            firstFailure: failure, detail: report.statusLine
+        )
+        return SyncResult(report: report, drop: drop, restore: restore)
+    }
+
+    /// "matched 3 · read 1 · restored 2 · dropped 0 · first failure
+    /// sessionExpired · <detail>". Counts and fixed words only; the detail is
+    /// the coordinator's own short phrase or a list of class codes.
+    nonisolated static func statusLine(
+        matched: Int,
+        read: Int,
+        restored: Int,
+        dropped: Int,
+        firstFailure: String?,
+        detail: String
+    ) -> String {
+        var parts = ["matched \(matched)", "read \(read)", "restored \(restored)", "dropped \(dropped)"]
+        if let firstFailure { parts.append("first failure \(firstFailure)") }
+        if !detail.isEmpty { parts.append(detail) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// An error as one fixed word, for the status line. Never a message: an
+    /// `invalidJSON` payload could hold a thread body.
+    nonisolated static func failureKind(_ error: Error) -> String {
+        guard let edError = error as? EdClient.Error else { return "other" }
+        switch edError {
+        case .sessionExpired: return "sessionExpired"
+        case let .http(status): return "http(\(status))"
+        case .notHTTP: return "notHTTP"
+        case .invalidJSON: return "invalidJSON"
+        }
     }
 
     // MARK: - Pure helpers (tested)

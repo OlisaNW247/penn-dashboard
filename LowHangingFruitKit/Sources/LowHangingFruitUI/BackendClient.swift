@@ -187,7 +187,12 @@ struct BackendClient: Sendable {
     /// call site passes a concrete wire-request struct and never needs to
     /// name its type, so the lighter-weight opaque-parameter spelling reads
     /// the same as the generic `<Body: Encodable>` it desugars to.
-    private func post<T: Decodable>(_ function: String, body: some Encodable) async throws -> T {
+    ///
+    /// Internal rather than private since `DeviceSyncClient` (a separate file
+    /// for the pairing and encrypted-sync functions) calls it: the other
+    /// choice was a second copy of the header, 401-retry and status handling,
+    /// which is the thing that must exist exactly once.
+    func post<T: Decodable>(_ function: String, body: some Encodable) async throws -> T {
         let bodyData: Data
         do {
             bodyData = try BackendJSON.encoder().encode(body)

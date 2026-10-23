@@ -26,6 +26,21 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         /// `announcement`, and never profile or syllabus input (see
         /// `docs/ED_DISCUSSION.md`, `backend/PROTOCOL.md`).
         case ed
+        /// Text the Chrome extension extracted from a Canvas File (a PDF or
+        /// slide deck) in the student's own browser session and uploaded.
+        /// The phone never fetches or parses these: a File needs the
+        /// browser's cookie and a PDF text extractor, neither of which this
+        /// client has, so the documents only ever arrive in a `download`.
+        /// Retrieved and cited like `page` (it is course material under a
+        /// Canvas URL), but never profile or syllabus input, like `ed`:
+        /// lecture slides quote late-policy and exam wording from past
+        /// terms and would pull `extract-profile` toward stale numbers
+        /// (`backend/PROTOCOL.md`'s `sync` section, `docs/CHROME_EXTENSION.md`).
+        /// Nothing on this side keys on that exclusion being enforced
+        /// remotely: `syllabusText(forCourseID:)` and
+        /// `SyllabusExamRows.kindOrder` name their kinds explicitly, so a
+        /// `file` is outside them by construction.
+        case file
 
         /// Human label used in source cards ("From the CIS 2400 syllabus").
         public var label: String {
@@ -38,6 +53,7 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
             case .page:         return "page"
             case .website:      return "course website"
             case .ed:           return "ed discussion"
+            case .file:         return "course file"
             }
         }
     }

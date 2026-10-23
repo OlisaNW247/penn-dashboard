@@ -261,6 +261,11 @@ public struct CourseSearch: Sendable {
         // like a syllabus's late-work words) and of unknown freshness, so
         // it neither gets boosted nor muted — same neutral weight as `.page`.
         case .website: return 1.0
+        // Extracted slide/PDF text is course material like a page: no
+        // policy or recency signal of its own, so the neutral weight. Not
+        // boosted toward syllabus-style questions even though slides often
+        // restate policy; the syllabus itself is the authority for that.
+        case .file: return 1.0
         }
     }
 
