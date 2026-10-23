@@ -594,6 +594,22 @@ public enum AssignmentDeduplicator {
         var candidates: [Candidate] = []
         for moduleItem in moduleItems where !collapsedModuleIDs.contains(moduleItem.id) {
             for canvasItem in canvasByCourse[moduleItem.course] ?? [] {
+                // The ids outrank the heuristic. Pass 1 only joins rows whose
+                // ids are EQUAL; it says nothing about rows whose ids differ,
+                // and "Lab 3 Report" (id 222) beside "Lab 3" (id 111) due two
+                // hours apart is a 0.667 title match. Without this check the
+                // fuzzy pass hid assignment 222 behind assignment 111: 222's
+                // own submission state was then consulted for no card, and a
+                // swipe on the module row was carried onto "Lab 3". Two
+                // different Canvas assignment ids are two different
+                // assignments, whatever their titles look like. The veto
+                // needs BOTH ids: a module row with no id in its url, or an
+                // ICS row that carries none, has nothing to contradict, so the
+                // title/date heuristic still decides exactly as before. The
+                // wrong fix was loosening or tightening `isLikelyDuplicate`'s
+                // thresholds, which shifts every other dedup path for a
+                // problem that only exists when the ids are known.
+                guard !haveConflictingCanvasAssignmentIDs(moduleItem, canvasItem) else { continue }
                 guard isLikelyDuplicate(
                     titleA: moduleItem.title, dueA: moduleItem.dueAt,
                     titleB: canvasItem.title, dueB: canvasItem.dueAt
@@ -624,6 +640,19 @@ public enum AssignmentDeduplicator {
         // input, matching the survivor ordering guarantee above.
         let collapses = moduleItems.compactMap { collapsesByModuleID[$0.id] }
         return (canvasItems, survivors, collapses)
+    }
+
+    /// True when both rows name a Canvas assignment and name different ones.
+    /// Nil on either side is "no opinion", never a conflict.
+    ///
+    /// `collapseCanvasOverrides` needs no call to this: it groups on
+    /// (course, `canvasAssignmentID`), so rows with different ids can never
+    /// share a group. `collapseCanvasDuplicates` pass 1 joins on equal ids,
+    /// so it cannot conflict either. Pass 2, the title/date fallback, is the
+    /// one place a collapse could join two rows with contradicting ids.
+    static func haveConflictingCanvasAssignmentIDs(_ a: Assignment, _ b: Assignment) -> Bool {
+        guard let idA = a.canvasAssignmentID, let idB = b.canvasAssignmentID else { return false }
+        return idA != idB
     }
 
     // MARK: - Canvas ICS section-override collapse

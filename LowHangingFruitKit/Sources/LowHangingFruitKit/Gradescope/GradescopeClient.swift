@@ -93,7 +93,13 @@ public struct GradescopeClient: Sendable {
 
             do {
                 let html = try await fetchHTML(url)
-                if GradescopeHTMLParser.isCompletedAssignmentPage(html) {
+                // The detail page repeats the assignment's own name (heading,
+                // `<title>`), so the keyword scan has the same hazard the list
+                // row has: "Graded Problem Set 3", correctly read as not
+                // submitted from its row, would be flipped back to submitted
+                // here by its own heading. Hand over the title so the scan
+                // blanks it first.
+                if GradescopeHTMLParser.isCompletedAssignmentPage(html, title: assignment.title) {
                     refined.append(assignment.withSubmitted(true))
                 } else {
                     refined.append(assignment)
@@ -366,8 +372,16 @@ public enum GradescopeHTMLParser {
         }
     }
 
-    public static func isCompletedAssignmentPage(_ html: String) -> Bool {
-        isCompletedStatus(in: [cleanText(html)])
+    /// Whether a detail page shows the assignment as handed in. `title`, when
+    /// given, is the assignment's own name: it is blanked from the page text
+    /// before the keyword scan (`removingTitle`), because the page carries the
+    /// name in its heading and `<title>` and a name such as "Graded Problem Set
+    /// 3" is not a status. Nil (the default) scans the page as it always did,
+    /// so callers that have no title keep their behaviour.
+    public static func isCompletedAssignmentPage(_ html: String, title: String? = nil) -> Bool {
+        var text = cleanText(html)
+        if let title { text = removingTitle(title, from: text) }
+        return isCompletedStatus(in: [text])
     }
 
     public static func isLoginPage(_ html: String) -> Bool {
@@ -497,7 +511,35 @@ public enum GradescopeHTMLParser {
 
         let cells = matches(#"<t[dh]\b[^>]*>(.*?)</t[dh]>"#, in: row).map { cleanText($0[0]) }
         let dueAt = dueDate(from: row, cells: cells, referenceDate: referenceDate)
-        let submitted = isCompletedStatus(in: cells) || isCompletedStatus(in: [cleanText(row)])
+        // Status is read from the row with the assignment's OWN NAME taken
+        // out. `isCompletedStatus` is a keyword scan ("graded", "submitted",
+        // "resubmit", "uploaded"...), and the title cell is one of `cells`, so
+        // an assignment called "Graded Problem Set 3" or "Resubmit Lab 2"
+        // read as handed in while its status cell said "No Submission": work
+        // shown done that was never turned in, with its reminders cancelled.
+        // The name is a label the instructor chose, not a status Gradescope
+        // reported, so it must not vote. Blanking it (rather than skipping the
+        // title cell) also covers the whole-row text and any page layout that
+        // puts the name beside the status inside one cell. The wrong fix was
+        // widening the negative-word list ("not graded", "no submission"...)
+        // to out-shout the title: that fights one keyword at a time.
+        //
+        // The same hazard shows from the other side in the whole-row text,
+        // which is all a non-table (window) layout has to scan: a negative
+        // word in the name ("Missing Data Lab") suppresses a genuine
+        // "Submitted" there. A table row does not suffer that, because its
+        // cells are scanned one at a time and a positive status cell wins on
+        // its own, so the table fixtures for it are regression pins and the
+        // window fixtures are the ones the old code failed.
+        //
+        // `scoreValues` below deliberately keeps the unstripped text: it only
+        // fills `scoreEarned`/`scoreMax`, never `submitted`, its patterns are
+        // either a cell that is nothing but a fraction or a score/grade label
+        // followed by one, and changing what it reads would shift existing
+        // score behaviour for a problem this fix is not about.
+        let statusCells = cells.map { removingTitle(title, from: $0) }
+        let statusRow = removingTitle(title, from: cleanText(row))
+        let submitted = isCompletedStatus(in: statusCells) || isCompletedStatus(in: [statusRow])
         let score = scoreValues(in: cells + [cleanText(row)])
 
         return Assignment(
@@ -622,22 +664,79 @@ public enum GradescopeHTMLParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// `text` with every occurrence of `title` blanked to a space: matched
+    /// case-insensitively, with any run of whitespace in the title matching any
+    /// run in the text (both have been through `cleanText`, but a title taken
+    /// from `data-assignment-title` and a cell rendered across tags need not
+    /// share spacing exactly). An occurrence only counts when it is not glued
+    /// to a letter or digit on either side, so a short title ("Lab") never
+    /// eats the middle of a different word ("Labelled"), and "Un" never eats
+    /// the front of "Unsubmitted". Replaced with a space, not nothing, so the
+    /// words either side of the title cannot fuse into a new keyword. An empty
+    /// title leaves the text alone.
+    ///
+    /// **The wrong-direction hazard, and the guard against it.** Blanking is
+    /// meant to remove a false positive, but it can also remove a negation: a
+    /// title of "Not" beside the status "Not Submitted" blanks to " Submitted",
+    /// which the positive list reads as handed in. Work wrongly read as NOT
+    /// submitted merely stays on the dashboard; work wrongly read as submitted
+    /// leaves it with its reminders, which is the failure this app must never
+    /// have. So a title that is itself a whole-word run of any negative phrase
+    /// (`negativeStatusPatterns`: "not", "no", "graded" within "not graded",
+    /// "missing"...) is not blanked at all and the text is returned untouched,
+    /// accepting the old keyword reading for that name. The cost is narrow: an
+    /// assignment titled exactly "Graded" or "Submission" keeps the old
+    /// behaviour. The wrong fix was blanking regardless and trusting that no
+    /// instructor names an assignment "Not".
+    static func removingTitle(_ title: String, from text: String) -> String {
+        let titleWords = title
+            .lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !titleWords.isEmpty else { return text }
+        guard !isWholeWordRunOfNegativePattern(titleWords) else { return text }
+        let words = titleWords.map { NSRegularExpression.escapedPattern(for: $0) }
+        let pattern = #"(?<![\p{L}\p{N}])"# + words.joined(separator: #"\s+"#) + #"(?![\p{L}\p{N}])"#
+        return text.replacingOccurrences(
+            of: pattern, with: " ", options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    /// True when `words` (already lowercased) appear as consecutive whole words
+    /// inside any negative phrase: ["not"] in "not submitted", ["graded"] in
+    /// "not graded", ["not", "graded"] in "not graded". Whole words, so "un"
+    /// is not part of "unsubmitted" (the word boundaries in `removingTitle`
+    /// already keep "Un" from eating that word).
+    private static func isWholeWordRunOfNegativePattern(_ words: [String]) -> Bool {
+        negativeStatusPatterns.contains { pattern in
+            let patternWords = pattern.split(separator: " ").map(String.init)
+            guard words.count <= patternWords.count else { return false }
+            return (0...(patternWords.count - words.count)).contains { start in
+                Array(patternWords[start..<(start + words.count)]) == words
+            }
+        }
+    }
+
+    /// The phrases `isCompletedStatus` reads as "not handed in", checked
+    /// before any positive phrase. Hoisted out of that function unchanged so
+    /// `removingTitle`'s guard reads the very same list and cannot drift.
+    private static let negativeStatusPatterns = [
+        "not submitted",
+        "unsubmitted",
+        "not graded",
+        "ungraded",
+        "no submission",
+        "no submissions",
+        "missing",
+    ]
+
     private static func isCompletedStatus(in texts: [String]) -> Bool {
         texts.contains { text in
             let normalized = text
                 .lowercased()
                 .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
 
-            let negativePatterns = [
-                "not submitted",
-                "unsubmitted",
-                "not graded",
-                "ungraded",
-                "no submission",
-                "no submissions",
-                "missing",
-            ]
-            if negativePatterns.contains(where: normalized.contains) {
+            if negativeStatusPatterns.contains(where: normalized.contains) {
                 return false
             }
 
