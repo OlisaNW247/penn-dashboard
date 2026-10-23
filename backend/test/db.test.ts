@@ -222,6 +222,101 @@ Deno.test("profileRowToWire: a profile value that isn't a JSON object at all deg
   const wire = profileRowToWire(baseProfileDBRow({ profile: "not an object" }));
   assert.deepEqual(wire.gradingWeights, []);
   assert.deepEqual(wire.components, []);
+  assert.deepEqual(wire.examDates, []);
+});
+
+// ---------------------------------------------------------------------
+// profileRowToWire's `examDates`: the syllabus exams `extract-profile`
+// already stored but `sync` never sent. Same jsonb discipline as above, plus
+// the one rule specific to this field -- a `date` leaves the server only as
+// a real `YYYY-MM-DD` day.
+// ---------------------------------------------------------------------
+
+Deno.test("profileRowToWire: maps examDates, keeping a real ISO day and dropping the rest of a date-time", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: {
+      examDates: [
+        { name: "Midterm 1", date: "2026-10-23", text: "Midterm 1: Thursday, October 23" },
+        { name: "Midterm 2", date: "2026-11-20T19:00:00-05:00", text: "Midterm 2, Nov 20, 7pm" },
+        { name: "Final Exam", text: "Date set by the registrar" },
+      ],
+    },
+  }));
+  assert.deepEqual(wire.examDates, [
+    { name: "Midterm 1", date: "2026-10-23", text: "Midterm 1: Thursday, October 23" },
+    { name: "Midterm 2", date: "2026-11-20", text: "Midterm 2, Nov 20, 7pm" },
+    { name: "Final Exam", text: "Date set by the registrar" },
+  ]);
+  assert.ok(!("date" in wire.examDates[2]));
+});
+
+Deno.test("profileRowToWire: an exam whose date isn't a real ISO day goes out undated, not dropped and not guessed", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: {
+      examDates: [
+        { name: "Midterm", date: "October 23", text: "t" },
+        { name: "Quiz-ish", date: "10/23/2026", text: "t" },
+        { name: "Impossible day", date: "2026-02-30", text: "t" },
+        { name: "Impossible month", date: "2026-13-01", text: "t" },
+        { name: "Empty date", date: "", text: "t" },
+        { name: "Not a string", date: 20261023, text: "t" },
+      ],
+    },
+  }));
+  assert.equal(wire.examDates.length, 6);
+  for (const exam of wire.examDates) {
+    assert.ok(!("date" in exam), `${exam.name} should be undated`);
+  }
+});
+
+Deno.test("profileRowToWire: a legacy row lacking examDates entirely yields []", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: { gradingWeights: [{ name: "Final", percent: 100 }] },
+  }));
+  assert.deepEqual(wire.examDates, []);
+  assert.deepEqual(wire.gradingWeights, [{ name: "Final", percent: 100 }]);
+});
+
+Deno.test("profileRowToWire: a malformed examDates value (not an array) yields [], no throw", () => {
+  for (const examDates of ["Midterm Oct 23", { name: "Midterm", date: "2026-10-23", text: "t" }, 7, null]) {
+    const wire = profileRowToWire(baseProfileDBRow({ profile: { examDates } }));
+    assert.deepEqual(wire.examDates, []);
+  }
+});
+
+Deno.test("profileRowToWire: malformed examDates entries are dropped one by one, the good ones kept", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: {
+      examDates: [
+        "Midterm Oct 23",
+        null,
+        42,
+        { date: "2026-10-23", text: "no name" },
+        { name: "No text", date: "2026-10-23" },
+        { name: 7, text: "t" },
+        { name: "   ", date: "2026-10-23", text: "blank name" },
+        { name: "Final Exam", date: "2026-12-15", text: "Final Exam: Dec 15" },
+      ],
+    },
+  }));
+  assert.deepEqual(wire.examDates, [
+    { name: "Final Exam", date: "2026-12-15", text: "Final Exam: Dec 15" },
+  ]);
+});
+
+Deno.test("profileRowToWire: examDates doesn't disturb gradingWeights or components, and carries no other profile field", () => {
+  const wire = profileRowToWire(baseProfileDBRow({
+    profile: {
+      gradingWeights: [{ name: "Final", percent: 100 }],
+      components: [{ name: "Lab", creditUnits: 0.5 }],
+      latePolicy: "24 hours",
+      officeHours: [{ who: "Prof. X", when: "Tue 2-3pm" }],
+      examDates: [{ name: "Final Exam", date: "2026-12-15", text: "Dec 15" }],
+    },
+  }));
+  assert.deepEqual(wire.gradingWeights, [{ name: "Final", percent: 100 }]);
+  assert.deepEqual(wire.components, [{ name: "Lab", creditUnits: 0.5 }]);
+  assert.deepEqual(Object.keys(wire).sort(), ["components", "courseID", "examDates", "extractedAt", "gradingWeights"]);
 });
 
 // ---------------------------------------------------------------------

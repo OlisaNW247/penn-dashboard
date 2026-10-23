@@ -27,12 +27,9 @@ import Foundation
 ///
 /// Rejected alternatives, recorded here because they looked obviously
 /// simpler and are not what shipped:
-/// - **Scraping the password out of the login page's DOM** once the student
-///   types it in by hand: rejected outright. That is keylogging the
-///   student's own PennKey password inside a screen the app's privacy
-///   posture (docs/PRIVACY.md) promises never sees what they type — the only
-///   password this feature ever touches is the one the student explicitly
-///   typed into Smooth's own Settings sheet and asked to be remembered.
+/// - Continuous keystroke collection is not used. The visible Penn login now
+///   explains device-only saving; PennKeyLoginCapture observes submission once,
+///   and only a verified Canvas connection permits saving to Keychain.
 /// - **Retrying a rejected password:** rejected. PennKey/Duo accounts lock
 ///   after a small number of consecutive failures, and a background loop
 ///   that could hammer a wrong password against Penn's IdP is precisely the

@@ -50,7 +50,32 @@ public struct GradescopeClient: Sendable {
         self.session = session
     }
 
+    /// What one scrape found, plus what it could not check.
+    ///
+    /// A list row that does not read "submitted" is confirmed by fetching its
+    /// own detail page (`refineCompletionStatus`). When that fetch fails for a
+    /// reason that does not prove the session dead (a timeout, a 5xx, a
+    /// cancellation) the row used to be returned as plain "not submitted",
+    /// indistinguishable from a page that loaded and showed no submission.
+    /// `unverifiedAssignmentIDs` is the difference: the `Assignment.id` of
+    /// every row whose detail page could not be read, so a caller holding an
+    /// earlier "submitted" for the same row can tell "Gradescope says not
+    /// handed in" from "Gradescope did not answer".
+    public struct FetchReport: Sendable {
+        public let assignments: [Assignment]
+        public let unverifiedAssignmentIDs: Set<String>
+
+        public init(assignments: [Assignment], unverifiedAssignmentIDs: Set<String> = []) {
+            self.assignments = assignments
+            self.unverifiedAssignmentIDs = unverifiedAssignmentIDs
+        }
+    }
+
     public func fetchAssignments() async throws -> [Assignment] {
+        try await fetchAssignmentsReport().assignments
+    }
+
+    public func fetchAssignmentsReport() async throws -> FetchReport {
         let accountURL = baseURL.appendingPathComponent("account")
         let accountHTML = try await fetchHTML(accountURL)
         let result = GradescopeHTMLParser.currentTermCourses(from: accountHTML, baseURL: baseURL)
@@ -61,7 +86,7 @@ public struct GradescopeClient: Sendable {
                 courseName: "Gradescope",
                 courseURL: baseURL
             )
-            return try await refineCompletionStatus(assignments).sorted(by: Self.byDueDate)
+            return try await refineCompletionStatus(assignments)
         }
 
         var assignments: [Assignment] = []
@@ -78,12 +103,54 @@ public struct GradescopeClient: Sendable {
                 isFallback: result.isFallback
             ))
         }
-        return try await refineCompletionStatus(assignments).sorted(by: Self.byDueDate)
+        return try await refineCompletionStatus(assignments)
     }
 
-    private func refineCompletionStatus(_ assignments: [Assignment]) async throws -> [Assignment] {
+    /// Keeps a row's last known "submitted" when this scrape could not check
+    /// it. Pure, so it can be tested without a network and applied by whoever
+    /// owns the previous copy of the list.
+    ///
+    /// A row is held at `submitted == true` only when ALL of these hold: this
+    /// scrape returned it as not submitted, its detail page could not be read
+    /// (`unverifiedIDs`), and the copy in `previous` was submitted. Anything
+    /// else is returned untouched, which keeps every explicit negative
+    /// authoritative: a detail page that loaded and does not show completion,
+    /// or a list row that was read as not submitted, is not in `unverifiedIDs`
+    /// and still sets false (a retracted submission self-heals on the next
+    /// good scrape). A new row with no previous copy has nothing to preserve.
+    ///
+    /// Without this, one flaky request turned a submitted assignment back into
+    /// not-done: `StoredAssignment` copies `assignment.submitted` into the
+    /// ledger on every reconcile, so the work came back onto the dashboard and
+    /// its reminders (and the loud 10-minute alert) were planned again until
+    /// the next good scrape. The wrong fix was throwing from
+    /// `refineCompletionStatus` on any detail failure: that discards every
+    /// other row's good result, and the caller reads a throw as "Gradescope
+    /// couldn't refresh". Rows are matched on `Assignment.id`
+    /// ("gradescope:course-<n>-assignment-<n>", built from `source` and
+    /// `sourceID` only), which does not depend on the `course` label the app
+    /// rewrites through `CourseCode`, so matching holds across that
+    /// normalization.
+    public static func preservingUnverifiedSubmissions(
+        fetched: [Assignment],
+        unverifiedIDs: Set<String>,
+        previous: [Assignment]
+    ) -> [Assignment] {
+        guard !unverifiedIDs.isEmpty else { return fetched }
+        let previouslySubmitted = Set(previous.filter(\.submitted).map(\.id))
+        return fetched.map { row in
+            guard !row.submitted,
+                  unverifiedIDs.contains(row.id),
+                  previouslySubmitted.contains(row.id)
+            else { return row }
+            return row.withSubmitted(true)
+        }
+    }
+
+    private func refineCompletionStatus(_ assignments: [Assignment]) async throws -> FetchReport {
         var refined: [Assignment] = []
         refined.reserveCapacity(assignments.count)
+        var unverified: Set<String> = []
 
         for assignment in assignments {
             guard !assignment.submitted, let url = assignment.url else {
@@ -93,7 +160,13 @@ public struct GradescopeClient: Sendable {
 
             do {
                 let html = try await fetchHTML(url)
-                if GradescopeHTMLParser.isCompletedAssignmentPage(html) {
+                // The detail page repeats the assignment's own name (heading,
+                // `<title>`), so the keyword scan has the same hazard the list
+                // row has: "Graded Problem Set 3", correctly read as not
+                // submitted from its row, would be flipped back to submitted
+                // here by its own heading. Hand over the title so the scan
+                // blanks it first.
+                if GradescopeHTMLParser.isCompletedAssignmentPage(html, title: assignment.title) {
                     refined.append(assignment.withSubmitted(true))
                 } else {
                     refined.append(assignment)
@@ -104,11 +177,18 @@ public struct GradescopeClient: Sendable {
                 // unavailable" or the app will keep a dead session forever.
                 throw error
             } catch {
+                // Not proof of anything: the detail page could not be read.
+                // The row stays as the list showed it, and is marked so the
+                // caller does not take that for a confirmed "not submitted".
                 refined.append(assignment)
+                unverified.insert(assignment.id)
             }
         }
 
-        return refined
+        return FetchReport(
+            assignments: refined.sorted(by: Self.byDueDate),
+            unverifiedAssignmentIDs: unverified
+        )
     }
 
     private func fetchHTML(_ url: URL) async throws -> String {
@@ -366,8 +446,16 @@ public enum GradescopeHTMLParser {
         }
     }
 
-    public static func isCompletedAssignmentPage(_ html: String) -> Bool {
-        isCompletedStatus(in: [cleanText(html)])
+    /// Whether a detail page shows the assignment as handed in. `title`, when
+    /// given, is the assignment's own name: it is blanked from the page text
+    /// before the keyword scan (`removingTitle`), because the page carries the
+    /// name in its heading and `<title>` and a name such as "Graded Problem Set
+    /// 3" is not a status. Nil (the default) scans the page as it always did,
+    /// so callers that have no title keep their behaviour.
+    public static func isCompletedAssignmentPage(_ html: String, title: String? = nil) -> Bool {
+        var text = cleanText(html)
+        if let title { text = removingTitle(title, from: text) }
+        return isCompletedStatus(in: [text])
     }
 
     public static func isLoginPage(_ html: String) -> Bool {
@@ -497,7 +585,35 @@ public enum GradescopeHTMLParser {
 
         let cells = matches(#"<t[dh]\b[^>]*>(.*?)</t[dh]>"#, in: row).map { cleanText($0[0]) }
         let dueAt = dueDate(from: row, cells: cells, referenceDate: referenceDate)
-        let submitted = isCompletedStatus(in: cells) || isCompletedStatus(in: [cleanText(row)])
+        // Status is read from the row with the assignment's OWN NAME taken
+        // out. `isCompletedStatus` is a keyword scan ("graded", "submitted",
+        // "resubmit", "uploaded"...), and the title cell is one of `cells`, so
+        // an assignment called "Graded Problem Set 3" or "Resubmit Lab 2"
+        // read as handed in while its status cell said "No Submission": work
+        // shown done that was never turned in, with its reminders cancelled.
+        // The name is a label the instructor chose, not a status Gradescope
+        // reported, so it must not vote. Blanking it (rather than skipping the
+        // title cell) also covers the whole-row text and any page layout that
+        // puts the name beside the status inside one cell. The wrong fix was
+        // widening the negative-word list ("not graded", "no submission"...)
+        // to out-shout the title: that fights one keyword at a time.
+        //
+        // The same hazard shows from the other side in the whole-row text,
+        // which is all a non-table (window) layout has to scan: a negative
+        // word in the name ("Missing Data Lab") suppresses a genuine
+        // "Submitted" there. A table row does not suffer that, because its
+        // cells are scanned one at a time and a positive status cell wins on
+        // its own, so the table fixtures for it are regression pins and the
+        // window fixtures are the ones the old code failed.
+        //
+        // `scoreValues` below deliberately keeps the unstripped text: it only
+        // fills `scoreEarned`/`scoreMax`, never `submitted`, its patterns are
+        // either a cell that is nothing but a fraction or a score/grade label
+        // followed by one, and changing what it reads would shift existing
+        // score behaviour for a problem this fix is not about.
+        let statusCells = cells.map { removingTitle(title, from: $0) }
+        let statusRow = removingTitle(title, from: cleanText(row))
+        let submitted = isCompletedStatus(in: statusCells) || isCompletedStatus(in: [statusRow])
         let score = scoreValues(in: cells + [cleanText(row)])
 
         return Assignment(
@@ -622,22 +738,79 @@ public enum GradescopeHTMLParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// `text` with every occurrence of `title` blanked to a space: matched
+    /// case-insensitively, with any run of whitespace in the title matching any
+    /// run in the text (both have been through `cleanText`, but a title taken
+    /// from `data-assignment-title` and a cell rendered across tags need not
+    /// share spacing exactly). An occurrence only counts when it is not glued
+    /// to a letter or digit on either side, so a short title ("Lab") never
+    /// eats the middle of a different word ("Labelled"), and "Un" never eats
+    /// the front of "Unsubmitted". Replaced with a space, not nothing, so the
+    /// words either side of the title cannot fuse into a new keyword. An empty
+    /// title leaves the text alone.
+    ///
+    /// **The wrong-direction hazard, and the guard against it.** Blanking is
+    /// meant to remove a false positive, but it can also remove a negation: a
+    /// title of "Not" beside the status "Not Submitted" blanks to " Submitted",
+    /// which the positive list reads as handed in. Work wrongly read as NOT
+    /// submitted merely stays on the dashboard; work wrongly read as submitted
+    /// leaves it with its reminders, which is the failure this app must never
+    /// have. So a title that is itself a whole-word run of any negative phrase
+    /// (`negativeStatusPatterns`: "not", "no", "graded" within "not graded",
+    /// "missing"...) is not blanked at all and the text is returned untouched,
+    /// accepting the old keyword reading for that name. The cost is narrow: an
+    /// assignment titled exactly "Graded" or "Submission" keeps the old
+    /// behaviour. The wrong fix was blanking regardless and trusting that no
+    /// instructor names an assignment "Not".
+    static func removingTitle(_ title: String, from text: String) -> String {
+        let titleWords = title
+            .lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !titleWords.isEmpty else { return text }
+        guard !isWholeWordRunOfNegativePattern(titleWords) else { return text }
+        let words = titleWords.map { NSRegularExpression.escapedPattern(for: $0) }
+        let pattern = #"(?<![\p{L}\p{N}])"# + words.joined(separator: #"\s+"#) + #"(?![\p{L}\p{N}])"#
+        return text.replacingOccurrences(
+            of: pattern, with: " ", options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    /// True when `words` (already lowercased) appear as consecutive whole words
+    /// inside any negative phrase: ["not"] in "not submitted", ["graded"] in
+    /// "not graded", ["not", "graded"] in "not graded". Whole words, so "un"
+    /// is not part of "unsubmitted" (the word boundaries in `removingTitle`
+    /// already keep "Un" from eating that word).
+    private static func isWholeWordRunOfNegativePattern(_ words: [String]) -> Bool {
+        negativeStatusPatterns.contains { pattern in
+            let patternWords = pattern.split(separator: " ").map(String.init)
+            guard words.count <= patternWords.count else { return false }
+            return (0...(patternWords.count - words.count)).contains { start in
+                Array(patternWords[start..<(start + words.count)]) == words
+            }
+        }
+    }
+
+    /// The phrases `isCompletedStatus` reads as "not handed in", checked
+    /// before any positive phrase. Hoisted out of that function unchanged so
+    /// `removingTitle`'s guard reads the very same list and cannot drift.
+    private static let negativeStatusPatterns = [
+        "not submitted",
+        "unsubmitted",
+        "not graded",
+        "ungraded",
+        "no submission",
+        "no submissions",
+        "missing",
+    ]
+
     private static func isCompletedStatus(in texts: [String]) -> Bool {
         texts.contains { text in
             let normalized = text
                 .lowercased()
                 .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
 
-            let negativePatterns = [
-                "not submitted",
-                "unsubmitted",
-                "not graded",
-                "ungraded",
-                "no submission",
-                "no submissions",
-                "missing",
-            ]
-            if negativePatterns.contains(where: normalized.contains) {
+            if negativeStatusPatterns.contains(where: normalized.contains) {
                 return false
             }
 

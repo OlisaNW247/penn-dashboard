@@ -104,6 +104,11 @@ struct CourseKnowledgeSyncTrace: Sendable {
     /// decode failure the client's coding-path detail as well. Defaulted
     /// so the memberwise initializer's existing callers keep compiling.
     var manifestError: String? = nil
+    /// `CourseKnowledgeCollector.Report.partialCourseIDs`, sorted: courses
+    /// fetched this run where something failed, so nothing they held was
+    /// dropped and the server was not told anything of theirs is gone.
+    /// Defaulted for the same reason as `manifestError`.
+    var partial: [String] = []
 }
 
 extension AppState {
@@ -309,11 +314,12 @@ extension AppState {
                 pushGradeWatcherFacts()
                 markCourseKnowledgeSyncVersion()
                 trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
+                trace.partial = report.partialCourseIDs.sorted()
                 trace.collectorErrors = report.errors + ed.notes
-                if report.syncedCourses == 0 {
+                if report.usableCourses == 0 {
                     courseKnowledgeNotice = "couldn't read course materials from canvas. \(report.errors.first ?? "")"
                 } else if !report.errors.isEmpty {
-                    courseKnowledgeNotice = "synced \(report.syncedCourses) courses; some pages were skipped."
+                    courseKnowledgeNotice = "synced \(report.usableCourses) courses; some pages were skipped."
                 } else {
                     courseKnowledgeNotice = nil
                 }
@@ -399,9 +405,10 @@ extension AppState {
             pushGradeWatcherFacts()
             markCourseKnowledgeSyncVersion()
             trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()
+            trace.partial = report.partialCourseIDs.sorted()
             trace.collectorErrors = report.errors + ed.notes
             if !report.errors.isEmpty {
-                courseKnowledgeNotice = "synced \(report.fullyFetchedCourseIDs.count) courses; some pages were skipped."
+                courseKnowledgeNotice = "synced \(report.usableCourses) courses; some pages were skipped."
             } else if manifestSucceeded {
                 courseKnowledgeNotice = nil
             }
@@ -529,8 +536,8 @@ extension AppState {
 
     /// Persists the one-line summary of a run that got past the guards (see
     /// `lastCourseKnowledgeSyncSummary`):
-    /// "<time> · ok|failed: <error kind> · courses N · fetched F · docs D ·
-    /// manifest ok|failed|none · uploaded U · errors E · ed notes M · ed:
+    /// "<time> · ok|failed: <error kind> · courses N · fetched F · partial P ·
+    /// docs D · manifest ok|failed|none · uploaded U · errors E · ed notes M · ed:
     /// <status line>". Counts and fixed words only; the Ed status line is the
     /// coordinator's own sentence (class codes, host and path at most) run
     /// through `scrubbedForSummary`. The collector's error strings are
@@ -545,6 +552,7 @@ extension AppState {
         let ed = edDiscussionStatus.map { Self.scrubbedForSummary($0) } ?? "none"
         let summary = "\(Self.diagnosticStamp(finished)) \u{00B7} \(outcome)"
             + " \u{00B7} courses \(trace.courseIDs.count) \u{00B7} fetched \(trace.fullyFetched.count)"
+            + " \u{00B7} partial \(trace.partial.count)"
             + " \u{00B7} docs \(courseKnowledge.documents.count) \u{00B7} manifest \(manifest)"
             + " \u{00B7} uploaded \(trace.uploadedDocuments)\(trace.uploadError == nil ? "" : " (failed)")"
             + " \u{00B7} errors \(errors) \u{00B7} ed notes \(edNotes) \u{00B7} ed: \(ed)"
@@ -733,7 +741,7 @@ extension AppState {
 
         lines.append("last run:")
         lines.append("  started=\(iso.string(from: trace.startedAt)) forced=\(trace.forced) skipped=\(trace.skippedReason ?? "-")")
-        lines.append("  manifest=\(trace.manifestSucceeded ? "ok" : "failed") error=\(trace.manifestError ?? "-") fresh=\(Self.bracketedList(trace.coursesFresh)) toFetch=\(Self.bracketedList(trace.coursesToFetch)) fullyFetched=\(Self.bracketedList(trace.fullyFetched))")
+        lines.append("  manifest=\(trace.manifestSucceeded ? "ok" : "failed") error=\(trace.manifestError ?? "-") fresh=\(Self.bracketedList(trace.coursesFresh)) toFetch=\(Self.bracketedList(trace.coursesToFetch)) fullyFetched=\(Self.bracketedList(trace.fullyFetched)) partial=\(Self.bracketedList(trace.partial))")
         lines.append("  collector errors=\(trace.collectorErrors.count)")
         for error in trace.collectorErrors.prefix(12) {
             lines.append("    \(error)")

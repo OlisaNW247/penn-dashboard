@@ -90,14 +90,10 @@ final class EdDiscussionCoordinator {
     /// Runs one sync and applies the restore/drop rule below to `knowledge`.
     ///
     /// - Parameter priorEdDocuments: the `.ed` documents the knowledge base
-    ///   held before this Canvas sync ran. `CourseKnowledgeCollector` keeps
-    ///   the `.ed` documents of every course it re-fetches (since 2026-10-23;
-    ///   before that it dropped them, having no idea Ed exists, and saved the
-    ///   result), so `knowledge` normally arrives here still holding them.
-    ///   This is the belt to that brace: a document absent from `knowledge`
-    ///   (a store written by an older build, a pooled download applied since)
-    ///   comes back if its class is restored, and a class is dropped only on
-    ///   the evidence below.
+    ///   held before this Canvas sync ran. `CourseKnowledgeCollector` drops
+    ///   the `.ed` documents of every course it re-fetches (it has no idea
+    ///   Ed exists), so by the time `knowledge` arrives here they may be
+    ///   gone; this is where they come back or are deliberately left gone.
     ///
     /// **The restore/drop rule.** What happens to a course's *previous* Ed
     /// documents depends on what this run learned about that course:
@@ -105,20 +101,22 @@ final class EdDiscussionCoordinator {
     ///   (`mergeEdDocuments`); a thread deleted on Ed's side disappears.
     /// - **Authoritatively gone, so dropped:** a course that did not match
     ///   an Ed course after a *successful* `user()` and match (it dropped
-    ///   its Ed tab, or Ed no longer lists it) **and nothing about that
-    ///   course failed this run**, and every course when no course has an Ed
-    ///   tab and every tab check succeeded. Ed's side says there is nothing
-    ///   there, so keeping the old threads would leave stale answers in ask
-    ///   forever.
+    ///   its Ed tab, or Ed no longer lists it), and every course when no
+    ///   course has an Ed tab and every tab check succeeded. Ed's side says
+    ///   there is nothing there, so keeping the old threads would leave
+    ///   stale answers in ask forever.
     /// - **Not read, so restored:** a matched course whose Ed read failed or
     ///   was skipped (launch failed, throttled, 401, a fetch error, the run
     ///   stopped by a mid-run 401, which also covers every matched course the
-    ///   run had not reached yet), a course whose own Canvas `/tabs` lookup
-    ///   failed this run (whatever the match said: the one request that
-    ///   would have told us whether the class has Ed went unanswered), and
-    ///   every course when the run never got as far as a match. An unknown
-    ///   is not an absence: a bad network day must never erase material
-    ///   that was fine yesterday.
+    ///   run had not reached yet), and every course when the run never got
+    ///   as far as a match. An unknown is not an absence: a bad network day
+    ///   must never erase material that was fine yesterday.
+    /// - **Tab check failed, so restored:** a Canvas course whose `/tabs`
+    ///   request failed this run and that no Ed course matched. Whether it has
+    ///   an Ed tool is unknown, the same as for a class the read never
+    ///   reached (2026-10-23; before, only a run in which *every* tab check
+    ///   failed was treated so, and a single flaky request dropped the
+    ///   class's stored posts while the rest of the run went on).
     func sync(
         courses: [CourseSummary],
         canvasCookies: [HTTPCookie],
@@ -132,6 +130,7 @@ final class EdDiscussionCoordinator {
             canvasCookies: canvasCookies,
             canvasBase: canvasBase,
             knowledge: &knowledge,
+            priorEdDocuments: priorEdDocuments,
             now: now
         )
         Self.droppingEdDocuments(from: &knowledge, courseIDs: result.drop)
@@ -158,6 +157,7 @@ final class EdDiscussionCoordinator {
         canvasCookies: [HTTPCookie],
         canvasBase: URL,
         knowledge: inout CourseKnowledgeBase,
+        priorEdDocuments: [CourseDocument],
         now: Date
     ) async -> SyncResult {
         var report = Report(statusLine: "")
@@ -168,17 +168,19 @@ final class EdDiscussionCoordinator {
             Self.finished(report, drop: [], restore: allIDs, matched: 0, read: 0, failure: failure)
         }
 
-        // 1. Find Ed tabs.
-        let tabs = await findLaunchURLs(
+        // 1. Find Ed tabs. `tabCheckFailed` holds the Canvas courses whose
+        // `/tabs` request failed this run: for them "has Ed" is unknown.
+        var tabCheckFailed = Set<String>()
+        let launchURLs = await findLaunchURLs(
             courses: courses,
             canvasCookies: canvasCookies,
             canvasBase: canvasBase,
             now: now,
-            notes: &report.notes
+            notes: &report.notes,
+            failedCourseIDs: &tabCheckFailed
         )
-        let launchURLs = tabs.urls
         guard let firstLaunchURL = courses.compactMap({ launchURLs[$0.courseID] }).first else {
-            if tabs.failedCourseIDs.isEmpty {
+            if report.notes.isEmpty {
                 report.statusLine = "no classes use ed discussion"
                 return Self.finished(report, drop: allIDs, restore: [], matched: 0, read: 0, failure: "noTab")
             }
@@ -327,14 +329,17 @@ final class EdDiscussionCoordinator {
         } else {
             report.statusLine = "connected: " + report.matched.map { $0.code }.sorted().joined(separator: ", ")
         }
-        // A class whose `/tabs` request failed is unknown, matched or not:
-        // see `restoreDropPlan`. It reaches this point only because another
-        // class's cached launch URL let the run go on.
+        // Courses that hold Ed documents now or held them before this
+        // Canvas sync dropped them: only those have anything to restore.
+        let storedEdIDs = Set(
+            (priorEdDocuments + knowledge.documents).filter { $0.kind == .ed }.map(\.courseID)
+        )
         let plan = Self.restoreDropPlan(
             allIDs: allIDs,
             matched: matchedTargetIDs,
             read: tally.readIDs,
-            unknown: tabs.failedCourseIDs
+            unknown: tabCheckFailed,
+            storedEd: storedEdIDs
         )
         return Self.finished(
             report,
@@ -387,32 +392,38 @@ final class EdDiscussionCoordinator {
     /// The restore/drop rule on `sync`, as sets. Matched-but-unread keeps its
     /// old documents (`restore`, which is every matched class the run did not
     /// read: a failed read, and every class a mid-run 401 stopped before);
-    /// a class with no Ed match is authoritatively gone (`drop`), unless
-    /// something about that class failed this run. The two never overlap, and
-    /// neither holds a class that was read.
+    /// a class with no Ed match is authoritatively gone (`drop`). The two
+    /// never overlap, and neither holds a class that was read.
     ///
-    /// - Parameter unknown: classes whose own state could not be established
-    ///   this run, today those whose Canvas `/tabs` lookup failed. They are
-    ///   restored unless read, and never dropped, even with no Ed match:
-    ///   "no match" is only evidence of absence when nothing about the class
-    ///   went wrong, and a flaky request on one class (while another class's
-    ///   cached launch URL let the run go on) said nothing about whether it
-    ///   has Ed. Before 2026-10-23 this input did not exist, so such a class
-    ///   fell into `allIDs - matched` like a class Ed had really dropped and
-    ///   its stored posts were deleted for the run. The wrong fix is to treat
-    ///   every unmatched class as unknown, which would keep a class's posts
-    ///   forever after it drops Ed; the rule is that a drop needs a clean
-    ///   run for that class. Defaults to empty so the pure rule can still be
-    ///   asked "what if nothing failed".
+    /// Every id here is a **Canvas course id** (`CourseSummary.courseID`):
+    /// `allIDs` is the whole course list, `matched` the id of the one Canvas
+    /// site each Ed match filed its documents under (`ReadTarget.course`),
+    /// `read` the subset of those that were read, and `unknown` the courses
+    /// whose Canvas `/tabs` request failed this run.
+    ///
+    /// **A failed tab lookup is "unknown", not "no Ed".** Such a course may
+    /// have no Ed match here (the matcher keys on the code, so a mismatch
+    /// between Canvas's and Ed's naming leaves it out), and `allIDs -
+    /// matched` would then drop its stored posts on the strength of one
+    /// flaky request. An unknown that holds stored Ed documents (`storedEd`)
+    /// is restored instead, like a class the read never reached; one with
+    /// none produces nothing, so `restore` keeps meaning "kept documents it
+    /// would otherwise have lost". A course that *is* matched is untouched by
+    /// this: it is read, or restored as unread, whatever its tab check did.
+    /// The wrong fix is treating any note as unknown: a successful lookup
+    /// with no Ed tab and no match is Ed's authoritative "nothing here", and
+    /// keeping its old threads would leave stale answers in ask forever.
     nonisolated static func restoreDropPlan(
         allIDs: Set<String>,
         matched: Set<String>,
         read: Set<String>,
-        unknown: Set<String> = []
+        unknown: Set<String> = [],
+        storedEd: Set<String> = []
     ) -> (drop: Set<String>, restore: Set<String>) {
-        (
-            drop: allIDs.subtracting(matched).subtracting(unknown),
-            restore: matched.union(unknown.intersection(allIDs)).subtracting(read)
+        let unmatchedUnknown = unknown.subtracting(matched)
+        return (
+            drop: allIDs.subtracting(matched).subtracting(unmatchedUnknown),
+            restore: matched.subtracting(read).union(unmatchedUnknown.intersection(storedEd))
         )
     }
 
@@ -514,16 +525,13 @@ final class EdDiscussionCoordinator {
         return edDocuments.filter { previousHashes[$0.id] != $0.contentHash }.count
     }
 
-    /// Puts back `.ed` documents that are absent from `knowledge`.
+    /// Puts back the `.ed` documents a Canvas collector run dropped.
     ///
-    /// `CourseKnowledgeCollector.run` used to merge each re-fetched course
-    /// with itself as the complete set, and it knows nothing of Ed, so every
-    /// course it re-fetched lost its Ed documents; this was the only thing
-    /// that brought them back, and only in memory. The collector now keeps
-    /// them (`preservingKinds: [.ed]`), so this is normally a no-op. It stays
-    /// as the guard for a document that is missing anyway, so that a run in
+    /// `CourseKnowledgeCollector.run` merges each re-fetched course with
+    /// itself as the complete set, and it knows nothing of Ed, so every
+    /// course it re-fetches loses its Ed documents. Without this, a run in
     /// which Ed is unreachable (session expired, throttled launch, Ed down)
-    /// cannot erase Ed material that was fine a minute ago and then tell the
+    /// would erase Ed material that was fine a minute ago, and then tell the
     /// backend those documents are gone (`fullySyncedCourses` lists the
     /// course's current ids). Only documents of `courseIDs` that are absent
     /// from `knowledge` are restored; a fresh Ed merge then replaces them
@@ -600,34 +608,24 @@ final class EdDiscussionCoordinator {
 
     // MARK: - Steps
 
-    /// What step 1 learned: the launch URLs, and which courses it could not
-    /// check at all.
-    private struct TabLookup {
-        var urls: [String: URL]
-        /// Courses whose `/tabs` request failed this run (and whose cached
-        /// answer, if any, was too old to trust). Whether they have Ed is
-        /// unknown, so the restore/drop rule never drops them
-        /// (`restoreDropPlan`).
-        var failedCourseIDs: Set<String>
-    }
-
     /// Step 1. Cached launch URLs for fresh courses; a `/tabs` request for
     /// the rest. A failed request leaves its course unchecked so the next
-    /// run retries, is reported once as a count, not once per course, and is
-    /// returned by id so the run can treat that class as unknown rather than
-    /// as one with no Ed.
+    /// run retries, and is reported once as a count, not once per course;
+    /// the failed courses' ids go to `failedCourseIDs` so the restore/drop
+    /// plan can treat them as unknown rather than as "no Ed".
     private func findLaunchURLs(
         courses: [CourseSummary],
         canvasCookies: [HTTPCookie],
         canvasBase: URL,
         now: Date,
-        notes: inout [String]
-    ) async -> TabLookup {
+        notes: inout [String],
+        failedCourseIDs: inout Set<String>
+    ) async -> [String: URL] {
         var urlStrings = UserDefaults.lhf.dictionary(forKey: Self.launchURLKey) as? [String: String] ?? [:]
         var checkedAt = UserDefaults.lhf.dictionary(forKey: Self.tabCheckedAtKey) as? [String: Date] ?? [:]
         let client = CanvasCourseContentClient(baseURL: canvasBase, cookies: canvasCookies)
 
-        var failedCourseIDs = Set<String>()
+        var failures = 0
         var firstFailure: String?
         for course in courses {
             if let last = checkedAt[course.courseID], now.timeIntervalSince(last) < Self.tabRecheckInterval {
@@ -643,16 +641,17 @@ final class EdDiscussionCoordinator {
                 }
                 checkedAt[course.courseID] = now
             } catch {
+                failures += 1
                 failedCourseIDs.insert(course.courseID)
                 if firstFailure == nil { firstFailure = Self.describe(error) }
             }
         }
         UserDefaults.lhf.set(urlStrings, forKey: Self.launchURLKey)
         UserDefaults.lhf.set(checkedAt, forKey: Self.tabCheckedAtKey)
-        if !failedCourseIDs.isEmpty, let firstFailure {
-            notes.append("couldn't read the tabs of \(failedCourseIDs.count) canvas course(s): \(firstFailure)")
+        if failures > 0, let firstFailure {
+            notes.append("couldn't read the tabs of \(failures) canvas course(s): \(firstFailure)")
         }
-        return TabLookup(urls: urlStrings.compactMapValues { URL(string: $0) }, failedCourseIDs: failedCourseIDs)
+        return urlStrings.compactMapValues { URL(string: $0) }
     }
 
     /// Steps 2 and 3's launch: runs the launcher and saves what it captured

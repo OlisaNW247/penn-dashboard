@@ -201,9 +201,10 @@ holes were found by reading the code, and three behaviours changed.
    classes with no Ed match after a successful `/user`; **restore** =
    matched classes not read this run (a failed read, or never reached);
    **replace** = classes read. A class whose own Canvas `/tabs` lookup
-   failed this run is **unknown**, not unmatched: it is restored and never
-   dropped, because the one request that says whether it has Ed went
-   unanswered (a drop needs a clean run for that class, and a flaky
+   failed this run is **unknown**, not unmatched: it is never dropped, and
+   it is restored when it holds stored Ed posts (`storedEd`; a class with
+   none has nothing to restore and is not counted), because the one
+   request that says whether it has Ed went unanswered (a drop needs a clean run for that class, and a flaky
    request on one class used to erase its posts whenever another class's
    cached launch URL let the run go on). `restoreDropPlan` is that rule as
    a pure function, and `readTargets` the loop, so the tests drive both
@@ -227,6 +228,16 @@ holes were found by reading the code, and three behaviours changed.
    by itself tell whether that class has an Ed tab, was never matched
    (`noMatch`), or was read and failed (`http(code)`, `sessionExpired`); it
    narrows the question to one of those. It is not necessarily a code bug.
+
+## 2026-10-23, evening: a failed tabs lookup is "unknown", not "no Ed"
+
+`findLaunchURLs` now reports the Canvas course ids whose `/tabs` request
+failed, and `restoreDropPlan(allIDs:matched:read:unknown:storedEd:)`
+restores such a class's stored posts instead of dropping them (only when
+it has any; a class the read reached is unaffected). Before, a flaky
+`/tabs` answer for a class whose code matches no Ed course dropped its
+pooled posts on that phone until the next successful lookup. Written
+without a compiler; three tests in `EdRunStopTests`.
 
 ## Privacy rules for this feature
 

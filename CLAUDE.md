@@ -60,8 +60,10 @@ with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
 goes from the laptop's screen to the phone's camera and never to the
 server); the server stores ciphertext it cannot read. Name, reminder
 settings and grades are never in it. The
-PennKey password, if the student saves it, stays in this phone's Keychain
-and only ever goes to Penn's login page. There is no analytics, tracking,
+PennKey password is saved automatically (since 2026-10-23) after a verified
+Penn Canvas sign-in inside the app's own login page, with a one-line
+disclosure above that page; it stays in this phone's Keychain
+(this-device-only, never synced) and only ever goes to Penn's login page. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -154,7 +156,11 @@ It was **archived from `1450fdc` and uploaded at 19:11 on 2026-10-20**
 released source, check out `1450fdc`, not the `v8` tip.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
-to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0
+to the live version is Olisa's call, after the build is downloadable. Marco's
+read of the public iTunes lookup on 2026-10-08
+(`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
+(build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to
+"about 2026-10-01"; the floor then was 1.2.1, as now. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
 2.1(a), see Known gaps). Build 10 was uploaded 2026-09-16 at 9:54 AM,
 from before stay-signed-in existed, and attached to that rejected
@@ -173,9 +179,9 @@ renamed 2.0.0 → 3.0.0, and its What's New and review notes were saved
 (the notes as pasted are at the top of `docs/appstore/REVIEW_NOTES.md`).
 Marco was finishing by hand: remove 3.0.0 from the old rejected
 submission `067299d2…`, swap build 10 for 11, then Add for Review →
-Submit. Whether he submitted is not recorded here. The version is set to
-release automatically once approved; raise the `update-manifest` floor
-only after 3.0.0 is actually downloadable. macOS 1.0 shows "Ready for
+Submit. He did: it was approved and released automatically on 2026-09-28
+(Release state, above). The `update-manifest` floor has not been raised;
+see above for why it should wait. macOS 1.0 shows "Ready for
 Distribution" there (reviewed 2026-08-30), whatever older docs say. On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
@@ -216,11 +222,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
   "sign in to canvas" button under the canvas row for exactly that state
   (connected, no saved login, not preview), because no banner appears
   there and Grade Watcher's reconnect button is gone. At Penn, the PennKey
-  sheet offered after the Canvas login is **"the vault"** since 2026-10-18
-  (`PennKeyCredentialsSheet`): a vault-door emblem that clunks shut once
-  as the sheet opens (drawn already shut under Reduce Motion), the same
-  one line about the Keychain, the two fields. It was a lock icon under
-  "stay signed in to canvas". Only the look changed.
+  sheet is **"the vault"** since 2026-10-18 (`PennKeyCredentialsSheet`): a
+  vault-door emblem that clunks shut once as the sheet opens (drawn
+  already shut under Reduce Motion), the same one line about the
+  Keychain, the two fields. It was a lock icon under "stay signed in to
+  canvas". Only the look changed. **Since 2026-10-23 (never compiled) it is
+  no longer offered after the Canvas login**: the login saves the PennKey
+  itself ("Stay signed in", below), the onboarding step after a connect is
+  a "Canvas connected" page ("Disconnect at any time in Settings") with
+  Continue, and the vault is only the repair tool Profile → accounts
+  opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **megaphone**
@@ -492,7 +503,29 @@ Keep this current. It is the fastest way for a new session to know what exists.
       "today" all day and leaves the dashboard when the day is over (into prev
       only if it was finished), and the open
       card hides the clock time for it. Rows are never deleted when a
-      syllabus stops naming an exam (Known gaps).
+      syllabus stops naming an exam (Known gaps). Since 2026-10-18
+      (`v8-server-exam-dates`) the server's reading comes first:
+      `extract-profile` already stored each class's `examDates`, and
+      `sync`'s manifest now sends them (`CourseProfileWire.examDates` ->
+      `CourseGradingProfile.examDates` in `courseKnowledge.gradingProfiles`).
+      A dated server exam wins over the on-device parse of the same
+      `ExamIdentity`, and an exam only the server named is filed too, both
+      under the same `syllabus-...` id, so a row already on the phone is
+      updated in place and never filed twice. Undated entries are ignored,
+      so are names that are not exactly one exam ("Quiz 3", "Midterms",
+      "Midterm 1 and 2"), and a date more than 150 days past is dropped like
+      the on-device one. The on-device parse is the fallback for a class the
+      server has nothing for and for every exam the server left out. Two
+      refinements (`SyllabusExamRows.reconciled`): on a day both agree on, the
+      phone's time of day is kept, because the server only gives a day; and
+      when they disagree on the day and the phone's syllabus line named a
+      weekday that fits the date it chose (`ExamCandidate.weekdayConfirmed`),
+      the phone's reading stands, because the server is given no current date
+      and so guesses the year of a date written without one. A phone reading
+      with no weekday to back it loses to the server, as does one whose
+      weekday fits no year (a typo).
+      **Nothing arrives until the backend half is deployed**; an older server
+      simply has no `examDates` and the phone reads the text as before.
     - **An announcement.** An announcement task whose title *leads with*
       an exam ("Midterm 1", "Take the final exam"; not "Bring a calculator
       to the exam", `ExamDetection.leadingExamIdentity`) is a found exam
@@ -547,6 +580,23 @@ Keep this current. It is the fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
+  - **Turned in** (how a card knows, read from the code on 2026-10-18).
+    A card is done when the student swiped it; when Canvas's grades fetch
+    reports its assignment submitted (`submittedCanvasAssignmentIDs`,
+    joined on `Assignment.canvasAssignmentID`, which for a calendar row
+    is the URL fragment, section-override rows included); when Gradescope's
+    scrape says so (`gradescopeSubmitted`, which a paired Canvas card
+    takes on); or when Canvas expects nothing online and the due time has
+    passed. Both services' answers are kept in the ledger, so a relaunch
+    shows what was last seen. The Canvas half needs a saved Canvas login,
+    and with none nothing ever flips (Traps, "a card that stays not done").
+    It runs on activation and on the 5-minute loop, at most every 15
+    minutes, and since 2026-10-23 once at a cold launch too (blind; the
+    launch pass under Background). Since
+    2026-10-18 (`fix/submission-status`) a module-listed assignment whose
+    Canvas id differs from a similar-titled calendar row is its own card
+    instead of hiding behind it, and a Gradescope assignment's own name no
+    longer counts as its status.
 - **Grade Watcher** (`GradeWatcherView`). **Removed from the app by the
   owner on 2026-10-18** (`FeatureFlags.gradeWatcher = false`): no grades
   button, so no route to `GradeWatcherView` or `GradeReportView` in a
@@ -793,7 +843,22 @@ Keep this current. It is the fastest way for a new session to know what exists.
   the background (`BackgroundRefresh.swift`), silent Canvas session renewal
   (`CanvasSessionRenewer`, plus the saved PennKey password where
   available) and "turned in" notifications. Grade-change notifications
-  are held back while Grade Watcher is off (2026-10-18).
+  are held back while Grade Watcher is off (2026-10-18). **Since
+  2026-10-23 (`launch-refresh-rework`, blind) a cold launch runs the
+  Canvas chain once** before the loop's first sleep: the feed sync from
+  the root view as before, then `fetchSessionSources` (connected services,
+  Grade Watcher → course intel → course material and Ed) and
+  `settleAfterFetch` (session check, silent-renewal retry, Duo line,
+  reload, badge, reschedule). The two notification drains
+  (`announceGradeChanges`, `announceTurnedIn`) and the laptop sync are
+  **not** in the launch pass: the drains can post, and the root view
+  already ran the laptop pass; a "turned in" raised by the launch fetch
+  therefore waits for the loop's first pass, up to five minutes. Before
+  this, nothing at launch ran the chain and a phone that locked inside
+  the first five minutes synced only on its next return to the
+  foreground (seen 2026-10-23: twenty silent minutes after an install).
+  Marco's `parked/launch-submission-refresh` was the source; merged as
+  written it would have run the drains at launch too.
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -884,7 +949,24 @@ read-only, from the App Group plist:
 xcrun devicectl device copy from --device <CoreDevice id> --domain-type appGroupDataContainer --domain-identifier group.com.lhf.lowhangingfruit --source Library/Preferences/group.com.lhf.lowhangingfruit.plist --destination /tmp/lhf.plist
 ```
 
-Since 2026-10-19 (blind) that plist also holds one-line summaries of the
+That copy only works while the installed app is a developer build. Against
+the App Store copy it fails with `ContainerLookupErrorDomain error 7`,
+and a Release build keeps no renewal log anyway. Installing a DEBUG build
+over the store copy keeps everything (same team, `24A3TDB277`, so the data
+container, App Group and Keychain all carry over) and makes the container
+readable; copy the plist and cookie jar before the first launch to see the
+state the store build left. Going back to the store copy means deleting
+the app, so the phone stays on the debug build until the next App Store
+update installs over it.
+
+`-LHFSessionDiagnostics` (DEBUG only) snapshots what the silent re-login
+has to work with at launch: whether a PennKey password is on file, and
+every saved Canvas cookie's domain, name, expiry and capture time (never a
+value). It prints `LHF-DIAG` lines and keeps them in `UserDefaults.lhf`
+`debugSessionDiagnosticsV1`. Run it before `-LHFAgeCanvasSession`, or
+together with it (the snapshot is taken first).
+
+Since 2026-10-19 (blind) the App Group plist also holds one-line summaries of the
 last announcement sync (`lastAnnouncementSyncSummaryV1`: where it exited,
 Canvas count, eligible, finds, errors, processed, the first error's kind,
 "gave up N"), the last Ed task pass (`lastEdTaskSyncSummaryV1`, 2026-10-20,
@@ -927,7 +1009,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 471 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+counts): 482 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -949,98 +1031,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2606 tests / 237 suites, all green, on `v8` at `ad4f920`
-(2026-10-23, `swift test --no-parallel`, on Olisa's Mac, 8.3 s). Green on
-the first run. It compiled, all at once and for the first time, the
-Chrome extension's Swift half (2026-10-22, `BackendWire`, `Sync/`, the
-pairing and device-sync layer, `FileKindTests`, `DeviceSyncWiringTests`
-and the rest) and the three announcement phases of 2026-10-23
-(`CourseKnowledgeCollectorAnnouncementTests` 6, the Ed reader's 24 in
-`EdClientTests`, `EdIngestionTests` and the `EdRunStopTests` suite).
-Nothing removed. Not yet built to the phone.**
-Before it: 2485 / 227 at `e6aa754`
-(2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
-plus the 21 tests of `VoiceDictationTests` (two suites: the availability
-table and the draft merge; source scans of the two usage strings, the
-on-device flag, the record category, the lifecycle stops and the
-no-auto-send handler), nothing removed. Green on the first run, the
-count exactly as predicted, and the iOS Debug build (the only thing
-that compiles `VoiceDictationController`, whose body is `#if os(iOS)`)
-succeeded on the first try the same morning, was installed on Olisa's
-iPhone, and the mic worked on the first try: "mic is working
-perfectly" (10:39, a dictated question answered).**
-Before it: 2464 / 225 at `1a4ed6e`
-(2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
-the same count, with the sweeper section's copy test pinning two lines
-(the description at 17pt, the nudge in parentheses at 14pt). Green on
-the first run; the phone build of this tree is not yet recorded.
-Before it: 2464 / 225 at `178de76` (2026-10-20 evening, 8.0 s):
-the same count as `38b578a`, with the nine `SweeperOnboardingTests`
-rewritten for the combined reminders page (no sweeper phase, the section
-under the turned-in switch, three dots), nothing added or removed. Green
-on the first run; the iOS Debug build succeeded on the first try, was
-installed on Olisa's iPhone at 18:49 and launched straight into the
-onboarding harness (`-LHFOnboardingHarness -LHFRemindersOnboardingHarness`);
-Olisa saw the combined page and asked for the copy split that became
-`1a4ed6e`.
-Before it: 2464 / 225 at `38b578a`
-(2026-10-20, 7.6 s): 2462
-plus 2 in `SettingsCopyTests` (the Profile diagnostics flag is off, and
-the rows are gated, not deleted), nothing removed. Green on the first
-run; the iOS Debug build succeeded on the first try and was installed on
-Olisa's iPhone at 18:32 the same day (the launch step failed only
-because the phone was locked, twice in a row now: unlock it before the
-last command). Olisa then opened the onboarding harness and saw the
-Sweeper page beside the reminders page, which is what led to `178de76`. Before it:
-2462 / 225 at `8584900`
-(2026-10-20, 9.3 s): 2453
-plus the 9 source-scan tests of `SweeperOnboardingTests` (the Smooth
-Sweeper page and the rename), nothing removed; `usageDescriptionInBothPlaces`
-in `BerserkAlarmTests` pins the new permission text. Green on the first
-run, and the iOS Debug build succeeded on the first try and was installed
-on Olisa's iPhone at 11:49 (the launch command failed only because the
-phone was locked). The page and the new names are not yet seen on the
-phone. Before it: 2453
-/ 224 at `8d00e62`
-(2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.2 s):
-2414 plus 7 in `BerserkAlarmActivityTests` (the Live Activity's plan
-fields, the v2 id namespace, the plist, project and pbxproj entries, the
-widget wiring) and 32 in `BerserkTakeoverTests` (seven suites: which
-signal gets the screen, what a choice does, when it leaves, reading a
-loud buzz, the model, the source wiring), nothing removed; one existing
-test rewritten (`alarmKitIsGuarded` now expects two guarded files).
-Green on the first run. The iOS Debug `xcodebuild` (the widget
-extension's Live Activity and the AlarmKit extension) also succeeded on
-the first try and was installed on Olisa's iPhone at 11:25 the same
-day; Olisa then rang it: the island showed the tomato card and the
-takeover worked. Before it: 2414 / 217 at `edff9ac`
-(2026-10-20 afternoon, 8.4 s):
-2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
-`DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
-`47a946c` failed only the coalescing test, which pumped `RunLoop.main`
-from a main-actor test and so never saw the main-actor reload task;
-`edff9ac` dropped the view model's `receive(on: RunLoop.main)` hop (its
-publishes are main-actor already) and made the test yield instead.
-Before it: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
-(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
-plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
-`RecencyIntent` table and the newest-posts-first excerpt rule), nothing
-removed. Not yet built to the phone.** Before it: 2397 / 214 at `a3ede70`
-(2026-10-20, 7.7 s): the merge
-of Olisa's `v8` (2033/192 at `2b46ce7`, 2026-10-19) and Marco's
-`v8-loud-alert-actions` (2332/209, 2026-10-19), both branching from
-`beed156` (1975/189).** The count is exactly what the merge predicted
-(1975 + 357 + 58, the merge's own −6 +9, the review's +4 and one parent
-suite). The first compile had two failures, both in how the merge was
-resolved rather than in either side's code (the page list judged one
-level too early; a test whose empty course selection was overwritten
-through the shared defaults), fixed in `a3ede70`. The three suites that
-write the shared extraction keys (`EdAnnouncementTaskTests`,
-`EdAnnouncementTaskMergeTests`, `AnnouncementWatcherSyncTests`) are nested
-under one serialized parent, `AnnouncementExtractionSuites`. The iOS
-Debug build of the merged tree (which is what compiles `App/LHFApp.swift`
-and the AlarmKit intents) succeeded on Olisa's Mac the same morning and
-was installed on Olisa's iPhone at 09:08.
+**Current: 2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which
@@ -1082,6 +1073,7 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2736/246 `origin/v8` at `fb3ed94` (Olisa's `v8-merge-marco` fast-forwarded, pushed uncompiled, predicted 2736), compiled and run on Marco's Mac 2026-10-23 ~22:00, `swift test --no-parallel`, 28.1 s: **one failure**, `DeviceSyncWiringTests` "a pass is called from the foreground refresh and the launch task, never from the background wake". The test checks call order by text position inside `ContentView.refresh()`; `launch-refresh-rework` moved the grades fetch and the reload into `fetchSessionSources()` / `settleAfterFetch()`, so the positions reversed while the runtime order (fetch, device-sync pass, reload) is unchanged. Test fixed in PR #13's merge of this tip, not a code regression.
 - 2755/251 `fix/megaphone-every-class`, 2026-10-23 late, `swift test
   --no-parallel` on Marco's Mac, 23.6 s, green: +3 in `NonClassCanvasSiteTests`
   ("TAP 2028" is never a class) and the compact two-row bubbles. iOS build
@@ -1183,6 +1175,35 @@ the count, so a later drop can be traced:
   source scans of `LHFApp.init` and the scheduler's delegate) and new
   request tests in `LoudAlertTests`. Each review fix was reverted in turn
   and its own test was seen failing.
+- (`fix/submission-status`'s own history)
+- 2265/208 `fix/submission-status`, 2026-10-18, `swift test --no-parallel`
+  as the only run on the machine: 2230/206 plus 35 tests, nothing removed.
+  Two new suites (`GradescopeTitleStatusTests`,
+  `SectionOverrideCompletionTests`), six tests in
+  `AssignmentDeduplicatorTests` and the detail-page tests in
+  `GradescopeTests`. The title and id-veto tests were checked by
+  neutering each fix and watching them fail; the table-layout and
+  override pins pass on the old code too, and their comments say so. A
+  third suite, `LaunchRefreshStructureTests`, left with the cold-launch
+  fix for `parked/launch-submission-refresh` (2233/207 there);
+  `parked/gradescope-unverified-submission` is 2240/206. Measured on
+  Marco's Mac in 6.0 s, its base `v8-announcements` re-verified at
+  2230/206 the same day; the iOS Debug compile
+  (`-destination 'generic/platform=iOS'`) ended in BUILD SUCCEEDED.
+- (`v8-server-exam-dates`'s own history)
+- 2270/208 `v8-server-exam-dates`, 2026-10-18, `swift test --no-parallel` on
+  Marco's Mac, 20.8 s, no other test run active when it started
+  (`pgrep -f LowHangingFruitKitPackageTests` was empty): +40 tests and +2
+  suites over the 2230/206 of `v8-announcements` it is built on. The
+  server exam dates: 7 wire and persistence tests in
+  `CourseGradingProfileTests`, the weekday-confirmation tests in
+  `SyllabusExamExtractorTests`, and the two new suites
+  `SyllabusExamServerRowsTests` and `SyllabusExamServerPassTests`. Nothing
+  removed. The same tree compiled for iOS (Debug, generic device and the
+  connected phone; Release `CODE_SIGNING_ALLOWED=NO`). The Deno tests were
+  written there and not run under Deno (no Deno on that Mac; only under
+  Node 24 with a `Deno.test` shim); they first ran under Deno on
+  2026-10-23 on `v8-merge-marco`, see the Deno line below.
 - 2230/206 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as the
   only run on the machine: the next two entries applied together.
   2190/202 plus 17 (the rules) plus 19 (the sheet) plus 4 new in
@@ -1358,6 +1379,13 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
+- Deno, pending: 428 passed, 0 failed on `v8-merge-marco` (2026-10-23, the
+  merge of Marco's `v8-server-exam-dates`: +9 in `db.test.ts` and
+  `profile.test.ts` for `examDates`, the first run of them under real
+  Deno; Deno 2.9.8 `--no-check`, and `deno check --no-lock` of every
+  function's `index.ts` clean under 2.1.4). The merged tree is not
+  compiled in Swift and `sync` is not redeployed (the next deploy would be
+  v13).
 - Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
   posts exempt from the complete-set rule, a 120-day age-out on read,
@@ -1596,19 +1624,50 @@ Canvas signs students out from time to time, and reconnecting means PennKey
 student's PennKey username and password and re-fills Penn's login form
 itself.
 
-- **How it turns on.** There is no toggle (removed 2026-09-24, owner's
-  call: everyone should stay signed in). After every *interactive* Canvas
-  login at Penn, while no password is saved, `OnboardingView.canvasConnected`
-  offers `PennKeyCredentialsSheet`. The sheet is titled "the vault" (a
-  vault-door emblem that shuts once as it opens, since 2026-10-18; it
-  showed a lock icon before), then one line ("encrypted in this phone's
-  keychain. never sent to smooth."), and the two fields. "Not now" is always available; nothing is stored unless the
-  student saves. The offer is gated on `CanvasInstallation.penn`: the sheet
-  asks for a PennKey, and other schools must never see it.
+- **How it turns on (since 2026-10-23; the owner's call, never compiled,
+  never run on a device).** There is no toggle and no second password
+  prompt. At Penn, the visible Canvas login shows a one-line disclosure
+  above Penn's page ("Signing in securely saves your PennKey on this device
+  so Smooth can reconnect. Disconnect at any time in Settings."), and
+  `PennKeyLoginCapture` watches that page for one submission of Penn's
+  own login form: main frame only, `https` on `weblogin.pennkey.upenn.edu`
+  or `idp.pennkey.upenn.edu`, under `/idp/`, with the form's action
+  checked the same way. It observes and never alters the submit or the SAML
+  hop. The submitted pair is held in memory only, in the pane's own
+  capture object, **for at most 10 minutes**, and is dropped on a failed or
+  cancelled navigation, a form error, the pane going away, or the timer.
+  It is saved to the Keychain **only after `connectCanvas` has verified the
+  session** (`enableStayLoggedIn`, which now returns whether the Keychain
+  write succeeded and never switches the feature on when it did not). A
+  login whose submission the page never reported (SSO) simply leaves
+  nothing to save, and the confirmation page says Canvas is connected on
+  the current session and that automatic reconnection needs a PennKey
+  password sign-in. The
+  vault (`PennKeyCredentialsSheet`, titled "the vault" since 2026-10-18)
+  remains, but only as a repair tool behind "update password" after Penn
+  rejects a saved password; it is not an offer after a login any more. Penn
+  only: other schools get no capture, and `OnboardingView` builds the
+  capture only for `CanvasInstallation.penn`. The legacy "offered" flag
+  (`hasOfferedStayLoggedIn`) is no longer written, and
+  `AppState.noteStayLoggedInOffered` has no production caller; the flag is
+  kept because the login-is-missing inference at `init` still reads it.
+  Before 2026-10-23 this was an opt-in sheet, shown after every
+  interactive Penn login while no password was saved, with "not now" always
+  available and nothing stored unless the student typed both fields and
+  tapped save (the 2026-09-24 removal of the toggle, and the vault look of
+  2026-10-18, belong to that design). The owner reversed it to remove the
+  retyping and the consent tap, and the privacy promise that came with
+  them; the trade-off is recorded in `docs/PRIVACY.md` ("Automatic Canvas
+  reconnection"), `docs/appstore/REVIEW_NOTES.md` and the Traps entry about
+  access tokens.
 - **Where it lives.** `PennKeyLoginForm` (Kit, pure) recognizes the
   identity provider's form and knows how to fill it.
   `PennKeyCredentialStore` keeps the credentials in the Keychain,
-  this-device-only, never synced.
+  this-device-only, never synced; its `save` updates the existing item in
+  place and falls back to adding one only when none exists, so a refused
+  write keeps the previous credential instead of deleting it first.
+  `PennKeyLoginCapture` (above) is the only reader of what the student
+  typed, and it never goes beyond memory until a connect is verified.
 - **How it's used.** When the visible reconnect pane or the background
   `CanvasSessionRenewer` hits an expired session, the fill happens through
   one seam. `LoginNavigationObserver` auto-fills and submits the IdP form
@@ -1630,7 +1689,12 @@ itself.
   to the foreground, on a Grade Watcher 401, and, since `v8` (2026-10-09,
   blind), on each foreground refresh while the session is expired and
   `AppState.shouldRetrySilentRenewal` says the cooldown has passed, and on
-  background wakes now that the crash below is fixed. A background
+  background wakes now that the crash below is fixed. **The 24-hour half of
+  that is switched off on any phone whose saved cookie set holds a cookie
+  with a real expiry date** (found on Marco's phone 2026-10-08; still
+  unfixed on `v8` at 2026-10-23, `load` and `isExpired` being unchanged;
+  see the analytics-cookie trap), where only a Grade Watcher 401 or the
+  foreground retry on an expired session starts a renewal. A background
   renewal runs in `RenewalContext.background` with a 20 s budget and can
   only ever *help*: `.renewed` saves cookies, `.passwordRejected` still
   disables auto-login, and every other outcome changes nothing, so a
@@ -1669,7 +1733,9 @@ itself.
   before, every manual reconnect deleted it, which is the most likely
   reason students with a saved password still saw Duo and the banner
   (`docs/SIGNOUT_INVESTIGATION.md`). Disconnecting still purges Duo.
-- **Removal.** Disconnecting Canvas deletes the saved password.
+- **Removal.** Disconnecting Canvas deletes the saved password, and with it
+  any captured pair still in memory (the pane's `onDisappear` finishes the
+  capture).
 - **Verified on a device, 2026-09-27, in the foreground.** On Marco's
   phone, with a real PennKey and Duo, `-LHFAgeCanvasSession` renewed in 8
   seconds, hands-free, and Duo re-issued its trust. Olisa's phone renewed
@@ -1678,6 +1744,23 @@ itself.
   first.
 
 ## Traps that have already bitten
+
+- **Canvas answers 401 for "not allowed", not only for "signed out".**
+  On 2026-10-23 the owner paired the Chrome extension, sync worked both
+  ways, and 40 minutes later the collector had uploaded nothing. Every
+  Canvas fetch in the collector read any 401 as a dead session and threw
+  the whole run away; but a course that hides its Files (common), Modules
+  or Pages answers `401 {"status":"unauthorized", "user not authorized
+  to perform that action"}` to a perfectly live session, so one such
+  course discarded every course's material. The phone's
+  `CanvasCourseContentClient` has the same rule (any 401/403 is
+  `sessionExpired`) and survives only because it never asks for Files.
+  The extension now judges a 401/403 by asking `/api/v1/users/self` once
+  per run: alive means that endpoint is forbidden (that course is not
+  fully synced; files are skipped), dead means out. An HTML page or a
+  redirect off Canvas is still "out" at once. The wrong fix is reading
+  the body's wording, which Canvas has changed before; the session check
+  asks the question that matters.
 
 - **An identity lookup on every call can take every function down.**
   Since 2026-10-22 `requireUser` (`_shared/auth.ts`) looks the caller up
@@ -2022,7 +2105,15 @@ itself.
   state, not a fix owed here; and scraping the password back out of the
   login page's DOM to synthesize a token is the fix that was considered and
   rejected — it defeats the whole point of a scoped, revocable token by
-  handing the app a full credential anyway.
+  handing the app a full credential anyway. (That rejection stands for
+  minting a token. The broader rule it came from, that the app never reads
+  what the student types into Penn's page, was **reversed by the owner on
+  2026-10-23**: no more retyping into a second sheet, and a PennKey is
+  kept only from a sign-in Canvas has just verified, in memory for at most
+  10 minutes first, then the Keychain, this-device-only, nothing leaving
+  the phone. See "Stay signed in" above. Marco wrote the change; it is
+  uncompiled, so read the old wording as history and the new as intent
+  until a phone has signed in with it.)
 - **The 24-hour cookie rule is what keeps a student signed in; removing it
   signed Marco out.** `fac110d` (2026-09-24) dropped
   `SessionCookieStore.load()`'s rule that treats a no-expiry Canvas cookie
@@ -2248,6 +2339,83 @@ itself.
   the megaphone would hide the bug from ask and the upload, which read the
   same file. The tell: an Ed post's `fetchedAt` equal to the latest sync
   for every post at once.
+- **A card that stays "not done" after a real submission is usually a
+  missing session, not a detection bug.** Marco's PHYS 0151 prelab,
+  2026-10-18: handed in, still on the dashboard. Canvas submission state
+  has exactly one source, the cookie-authenticated grades fetch
+  (`AutoSyncCoordinator.refreshCanvasGrades`), and it returns at its
+  first guard (`canUseGradeWatcher`) when no Canvas login is saved, while
+  the cookieless calendar feed keeps the dashboard looking alive. The
+  phone's state fits that: no saved login from 2026-10-10
+  (`edTabCheckedAtByCanvasCourseV1` frozen at 14:23 UTC that day, no
+  `debugRenewalLogV1` entry after 22:48 UTC; read by an earlier session,
+  and the fix for the missing banner is `parked/missing-login-banner`).
+  Whether that was this card's cause is not confirmed: it is not recorded
+  whether Marco signed in again, or whether the prelab went to Canvas or
+  Gradescope. Gradescope has the same shape and a worse ending: an empty
+  Gradescope cookie set (24 hours without a successful sync) flips
+  `isGradescopeConnected` off inside
+  `AutoSyncCoordinator.syncConnectedServices` with no notice, and only the
+  onboarding connect button ever turns it back on, so Gradescope status
+  freezes for good (`needsGradescopeConnection` exists and nothing shows
+  it). Read the session state first (Commands, the device reads;
+  `submissionDiagnosticLines` on a DEBUG build). The wrong fixes:
+  loosening `indicatesSubmitted` (a teacher's zero on a missing item would
+  read as handed in) and shortening throttles (a fetch that never runs is
+  not helped by running it more often).
+- **A keyword scan must not read the item's own name.** Gradescope has no
+  student API, so `GradescopeHTMLParser` decides "submitted" by scanning
+  text for words like "graded", "submitted", "resubmit" and "uploaded",
+  and the title cell was part of that text: "Graded Problem Set 3" whose
+  status said "No Submission" read as handed in, its reminders
+  cancelled. The detail-page check (`isCompletedAssignmentPage`) did the
+  same with the page's heading, so fixing the row alone would have been
+  undone one request later. Since 2026-10-18 both blank the title first
+  (`removingTitle`), except a title that is itself part of a negative
+  phrase ("Not"), where blanking would turn "Not Submitted" into
+  "Submitted". The wrong fix is a longer negative-word list: it fights one
+  title at a time.
+- **Two Canvas assignment ids are two assignments, whatever the titles
+  say.** `collapseCanvasDuplicates`' title/date pass hid module "Lab 3
+  Report" (id 222) behind calendar "Lab 3" (id 111): a 0.667 title match,
+  due hours apart. Assignment 222's own submission then reached no card,
+  and a swipe on it was carried onto "Lab 3". Since 2026-10-18 that pass
+  skips a pair whose ids are both known and differ; a row with no id is
+  still matched by title as before. Ticks carried before the fix stay
+  (Known gaps). The wrong fix is retuning `isLikelyDuplicate`, which moves
+  every other dedup path for a problem that exists only when both ids are
+  known. Gradescope rows carry no Canvas id, so the Canvas↔Gradescope
+  pairing cannot use this veto.
+- **One analytics cookie switches the 24-hour rule off, for good.**
+  `SessionCookieStore.isExpired` is "something is saved, and `load()`
+  returns nothing", and `load()` keeps any cookie whose own `expiresDate`
+  is still ahead, whatever its age. Both harvests save more than the
+  session: `CanvasLoginPane.connect()` keeps every cookie on
+  `canvas.upenn.edu`, and `CanvasSessionRenewer` keeps every cookie whose
+  domain contains "canvas". So Google Analytics' `_ga` (thirteen months)
+  and `sso.canvaslms.com`'s `last_known_canvas_host` (a year) ride along,
+  and from then on the set is never empty: `isExpired` reads false while
+  `canvas_session` itself has been dropped as stale. No banner, no
+  renew-on-open, and `hasCanvasCredentials` still true, so the app sends
+  Canvas a request with analytics cookies and no session. It is the
+  `fac110d` failure through a different door: the renewer only runs after
+  a Grade Watcher 401. Read off Marco's phone on 2026-10-08, on the store
+  build, with `-LHFSessionDiagnostics`: seven saved cookies, three "still
+  fresh" (`_ga`, `_gid`, `last_known_canvas_host`), `isExpired: false`. One
+  `-LHFAgeCanvasSession` launch then ran 55 seconds without any renewal;
+  the next renewed in 9 seconds through the saved password and Duo's
+  trust, started by the 401 and not by the rule. The tells: an aged launch
+  with no `canvasSessionExpired false -> true` line in `debugRenewalLogV1`,
+  and a "still fresh" count above zero when every session cookie is old.
+  Whether a phone is in this state is a race at each harvest (was the
+  analytics script done when the cookies were read), which is why one
+  phone can have it and another not. The wrong fix is filtering the
+  harvests alone: sets already saved on students' phones stay polluted,
+  so the rule has to be decided at read time, by whether a fresh session
+  cookie is left. Two things this ruled out on the same phone, the same
+  day: the saved password was on file and worked, and the Canvas Student
+  app (installed, 8.12.1) did not take the hidden renewer's return hop.
+  Penn's app-association file now claims only `/canvas/login`.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -2297,17 +2465,24 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` v13 deploy before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
 | `v8-loud-alert-actions` | **Pushed to origin 2026-10-19 as one commit `e3f9af8` on `v8-announcements` at `75dc7aa`; no PR, not merged. The AlarmKit alarm (with its custom sound) is a second commit, pushed the same day.** "Berserk mode": "turned in" and "open in canvas" buttons on the loud 10-minute alert, with the notification delegate installed at launch, and on iOS 26 a real AlarmKit alarm in place of the buzzes (What the app does → Profile → reminders). A build from before the review fixes was installed on Marco's iPhone on 2026-10-19 at 15:21. Separate from `fix/submission-status`, which branches from the same commit. Sign-in and sync files are byte-identical to `75dc7aa`. |
+| `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
+| `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
+| `parked/gradescope-unverified-submission` | **Was parked; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
+| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
-| `v8` | **Current line (2026-10-02 onward); Marco's `v8-loud-alert-actions` is merged into it on `v8-merge-loud-alert` (2026-10-20), not yet on `v8` itself.** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
+| `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
+| `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`), the sign-out fix, the Chrome extension's Swift half, the announcements-for-ask work, and, since 2026-10-23 21:23 (`fb3ed94`, Olisa's `v8-merge-marco`, `docs/MERGE_PLAN_MARCO_2026-10-23.md`), seven of Marco's branches (`fix/submission-status`, `fix/canvas-signin-bulletproof`, `v8-launch-prep`, `parked/missing-login-banner`, `parked/gradescope-unverified-submission`, `v8-server-exam-dates`, `codex/automatic-canvas-login` = PR #11) plus three fresh patches (`launch-refresh-rework`, `course-sync-salvage`, `ed-tabs-restore`). Its author did not compile it; compiled on Marco's Mac the same night: 2736/246 with one stale structure test (Test baseline). PR #13 (`fix/megaphone-every-class`) merges this tip and is the next thing to land. |
 | `fix/megaphone-every-class` | **2026-10-23, off `v8` `a480eb1`, local only, for Olisa's review.** The megaphone fixes Marco asked for (every class, finished-twin finds, the keep-check, Ed staff posts by judgment), the `extract-announcement` relevance field and empty-answer fix (not deployed), and `fix/ed-posts-durable` merged in. Write-up: `docs/ED_AND_MEGAPHONE_PLAN.md`. 2719/246 green; not yet run on a phone. Built app kept at `build/megaphone/Smooth.app` in its worktree (`.claude/worktrees/megaphone`). |
 | `fix/ed-posts-durable` | 2026-10-23, off `v8` `a480eb1`, local only (`d4b9a04`), merged into `fix/megaphone-every-class`. Ed posts are no longer deleted by the course-material collector or by a failed `/tabs` lookup. |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-ann-rules` | **Local, 2026-10-18, off `v8-announcements` at the WIP commit `80c21ec`; not merged or pushed.** The announcement-task visibility rules (past tasks leave the dashboard instead of moving to prev, undated tasks age out after 7 days, same-day class reminders are not cards, the Ed pass reads only posts from the last 14 days). Written to be merged into `v8-announcements` as a patch, and applied there on 2026-10-18, so it holds nothing extra. 2207/203 green on its own; compiled for generic iOS (the phone was unreachable), not installed. |
+| `origin/v8` (as of 2026-10-08) | Olisa's Ed Discussion work (four commits, 2026-10-02), on top of `origin/V7`; not merged. It rewrites the staleness line inside `SessionCookieStore.load` and adds a `.ed` service, so a sign-in fix that edits `load` will conflict with it. `origin/V7` is also one commit ahead of the 3.0.0 (11) source (`9769286`, DEBUG owner rows in Settings). Marco's note of 2026-10-08, kept for its dates; since 2026-10-10 `v8` is the line and carries all of it (see its row above). |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
@@ -2352,6 +2527,41 @@ none is a ship line.
   content; fixed in code on `fix/megaphone-every-class` (`36e3aee`),
   **not deployed**.
 
+- **Automatic PennKey capture is uncompiled and has never run on a phone**
+  (2026-10-23, merged on `v8-merge-marco` from `codex/automatic-canvas-login`;
+  Marco's own note says 40 focused tests passed and an iOS Debug build
+  succeeded on his tree at `96dce92`, none of which is `v8`). Unseen: a
+  real PennKey + Duo sign-in through the capture, a password manager's
+  autofill (whether its submit reaches `PennKeyLoginCapture`), the
+  pre-login disclosure line, the "Canvas connected" page, and a later
+  silent renewal with the saved pair (verify with `-LHFAgeCanvasSession`).
+  `docs/appstore/REVIEW_NOTES.md` and `DEMO_VIDEO.md` were rewritten on
+  2026-10-23 to say the app saves the password itself; the App Store
+  privacy label still has to be re-read against that before the next
+  submission, and `docs/PRIVACY.md` (Marco's rewrite) is the student-facing
+  text. `OnboardingView.canvasStep` no longer short-circuits to a
+  "connected" page when Canvas is already connected, so a walk that lands
+  on the Canvas phase again re-mounts the login pane (the back chevron from
+  Gradescope goes to the new connected phase instead). From the read-only
+  review of the merged tree (2026-10-23), accepted and unfixed: (1)
+  `PennKeyCredentialStore.save` now does `SecItemUpdate` with
+  `kSecAttrAccessible` among the update attributes; if the macOS legacy
+  file keychain under `swift test` rejects that, the second save in
+  `StayLoggedInTests` ("re-entering a password clears a prior rejection",
+  the awaiting-Duo tests) returns false, and the fix is to update only
+  `kSecValueData` (iOS is fine either way). (2) The missing-login banner's
+  one-time legacy inference (`AppState.swift`, `resolveCanvasLoginEverCaptured`)
+  can misread an old install: one that took the old vault offer,
+  disconnected on an old build and then pasted a calendar link reads
+  "captured" and gets a reconnect banner it cannot satisfy; fresh installs
+  write the flag explicitly and are fine. (3) `canvasLoginIsMissing` reads
+  the Keychain, which returns nothing before first unlock, so a background
+  wake in that window reads "login missing", attempts a renewal and burns
+  the hour's cooldown; skip the rule when protected data is unavailable.
+  (4) Marco's new copy ("Canvas connected", "Disconnect at any time in
+  Settings", the disclosure line) is capitalised and says "Settings" where
+  the app says Profile; the copy rule is Marco's own, so it is his to
+  settle, not rewritten here.
 - **Whether the extension can download Canvas Files is unknown**
   (2026-10-22). Canvas redirects a file download to a separate signed
   file host (Inst-FS for Instructure-hosted Canvas; Penn's not
@@ -2434,6 +2644,65 @@ none is a ship line.
   it completes nothing; and the alert still fires for work handed in while the app was
   closed, because only a foreground refresh re-plans it (the background
   wake is off limits).
+- **Turned-in state: what the 2026-10-18 review left open** (read from
+  the code on `fix/submission-status`; none of it seen on a phone).
+  Owner answers still unknown: whether Marco signed in to Canvas again
+  after 2026-10-10, where the prelab was handed in, and whether his phone
+  shows "not saving on this phone".
+  - **Cold launch on iOS.** No Canvas or Gradescope status is fetched
+    until the first activation or the first 5-minute tick
+    (`ContentView.refresh`; its own comment says `onChange(of:
+    scenePhase)` skips the initial phase). The ledger seeds what was last
+    seen, so only submissions since the last refresh read late. Fixed
+    blind on 2026-10-23 (`launch-refresh-rework`, in the Marco merge): the
+    launch pass waits for any silent renewal `init` started, then runs the
+    chain once, without the notice drains. Marco's
+    `parked/launch-submission-refresh` was the source and was not merged
+    as written, because on `v8` it would also have run `deviceSyncPass`
+    and the turned-in and grade notices at launch. Not yet on a phone.
+  - **A flaky Gradescope detail page** turns a submitted row back to not
+    done until the next good scrape (`refineCompletionStatus` swallows the
+    error; `StoredAssignment` copies the flag on every reconcile). Fix
+    on `parked/gradescope-unverified-submission`, merged into
+    `v8-merge-marco` on 2026-10-23 (not compiled).
+  - **Gradescope disconnects itself for good** after 24 hours without a
+    successful sync, silently (Traps). In `AutoSyncCoordinator`, not
+    touched.
+  - **Reminders and the loud 10-minute alert fire for work handed in while
+    the app is closed.** Only a foreground `refresh()` or a swipe re-plans
+    them (`NotificationScheduler.reschedule` cancels and re-adds
+    everything); `LHFBackgroundRefresh.run()` posts "turned in" notices but
+    never reschedules, and the silent-renewal refetch
+    (`performSilentCanvasRenewal`) doesn't either. Background code is off
+    limits.
+  - **Canvas partial failure.** When one site of a class fails and another
+    succeeds, the 15-minute throttle arms for both and the failed one keeps
+    its old snapshot (`GradeWatcherStore` `fetchedAny`).
+  - **Conservative misses, left alone:** `excused` is never read; an
+    external-tool assignment graded by passback with no `submitted_at`
+    reads not submitted; a teacher's "missing" outranks a real
+    `submitted_at`.
+  - **A module row matched only by title** is written `canvasSubmitted`
+    but restored as not done at relaunch until the next fetch
+    (`AssignmentStore.submittedCanvasAssignmentIDs` reads only
+    `canvasAssignmentID`).
+  - **Un-ticking does not stick when a hidden twin is ticked**: the twin
+    re-carries onto the card on the next rebuild (`carryCompletion`;
+    `markActive` clears only the card's own id and `linkedID`).
+  - **Submissions don't carry to a displaced twin.** An undated Canvas or
+    Gradescope exam hidden behind a dated syllabus or announcement card
+    loses its submitted state; `carryCompletion` moves swipes only.
+  - **Canvas↔Gradescope fuzzy pairing** can join "Lab 3" with "Lab 3
+    Report" (0.667 within 26 hours), so one side's submission marks the
+    other done. "HW 5 Part A" / "Part B" sit right at 0.6.
+  - **Ticks carried by the old module collapse** before 2026-10-18 stay on
+    the calendar row; the ledger cannot tell a carried tick from a swipe.
+  - **Is the ledger on disk?** A 2026-10-18 `devicectl` listing of the App
+    Group showed no `Assignments.store`, which lives at the container root
+    (`AssignmentStore.makeDefault`). With the plist present and the store
+    absent, the app is on its in-memory fallback and shows "not saving on
+    this phone"; a failed listing (CoreDeviceError 7000) proves neither.
+    Settle it on the phone before trusting any completion fix.
 - **A failed Canvas announcement read is retried on every sync.** Only the
   Ed pass waits (`edTaskRetryInterval`, six hours, per post). A Canvas
   post whose AI-assist call fails is left unread and asked for again on
@@ -2461,6 +2730,13 @@ none is a ship line.
   - Syllabus rows join the work list in the ask context document with the
     source label "announcement" (`assistantSourceLabel`; a disclosure
     boundary, left alone).
+  - Server exam dates have never run against the live `sync`, and the
+    backend half is not deployed. The extraction prompt gives the model no
+    current date or term, so a syllabus line with no year gets the model's
+    guess of the year. The 150-day cut-off drops a past-year guess, and a
+    phone reading backed by a matching weekday beats a wrong guess, but a
+    wrong-year guess on a line with no weekday still beats the phone's
+    reading: nothing in the line says which year is right.
 - **The summary sent with every ask question carries completion state,
   and `docs/PRIVACY.md` says it does not.** Read on 2026-10-10 while
   checking something else; it has been so since `assistant-ui`
@@ -2526,14 +2802,27 @@ none is a ship line.
   files but ask can't find it". Ingesting Files changes what is pooled
   on the server (instructors' files) and `docs/PRIVACY.md`, so it needs
   a decision, not just code.
-- **A half-failed course-material sync erases documents**, for the
-  student and, through the pool, for classmates; and one forbidden
-  course aborts the whole run before anything is saved. Fixes exist on
-  `parked/ask-course-sync-fixes` and are not merged (see Branches).
-  Related and server-side: `selectLiveDocumentsForCourses` is an
-  unpaginated select, so a student past PostgREST's row limit (1000 by
-  default; unverified for this project) gets a silently truncated
-  manifest.
+- **A half-failed course-material sync no longer erases documents, and
+  a 403 is one course's problem** (2026-10-23, `course-sync-salvage`,
+  blind, ported from Marco's `parked/ask-course-sync-fixes` without its
+  page-body work). Any endpoint error, or the shared announcements call
+  failing, puts a course in `Report.partialCourseIDs`: its stored
+  documents the run did not re-fetch are kept and it is not reported
+  fully synced, so neither the phone's merge nor the server's complete-set
+  rule drops them; `usableCourses` (at most one own error) feeds the
+  "couldn't read course materials" notice so one bad endpoint does not
+  read as a dead sync; the summary line gains `partial P`. Only 401 is
+  `sessionExpired` now; a 403 on one course's assignments leaves that
+  course partial and the run continues to `store.save`. Known edge, kept
+  on purpose: a course with one endpoint that always fails (a Pages tab
+  turned off, or a concluded course now answering 403 instead of reading
+  as a sign-out) is partial forever, never stamped fully synced on the
+  server, and re-fetched from Canvas hourly; its stale documents are never
+  pruned. The old `<= 1` tolerance hid that at the price of retiring
+  classmates' documents. Canvas sometimes answers a forbidden course with
+  401, which this does not cover. The server-side half (paginating the live read) was done
+  in `sync` v12 the same day. Six tests, written against a `URLProtocol`
+  stub nobody has run.
 - **The Ed reader fixes of 2026-10-23 compiled green (2606/237) but have not run on a phone** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
   Phase 3, at the owner's direction; the Kit half rode in `9540751`, the
   coordinator in the commit after it). `EdThreadFilter` now drops an
@@ -2552,11 +2841,20 @@ none is a ship line.
   header's date, so no read of that class has completed since
   2026-10-19). Ran on Olisa's iPhone at 18:09 UTC the same day: 36 Ed
   posts re-read for CIS 2400 and CIS 4500, each with the posting-day
-  header. Found in review the same afternoon and fixed that evening on
-  `fix/ed-posts-durable` (not yet on `v8`, not yet run on a phone): a
-  class whose Ed `/tabs` lookup failed was treated as "no Ed match" by
-  `restoreDropPlan` and its stored posts dropped; a failed tab lookup now
-  counts as unknown and restores (`unknown:`). Still true:
+  header. Found in review the same afternoon and fixed blind the same
+  evening (`ed-tabs-restore`): a class whose Ed `/tabs` lookup fails is
+  "unknown", not "no Ed", so `restoreDropPlan(unknown:storedEd:)` restores
+  its stored posts instead of dropping them (three tests in
+  `EdRunStopTests`, and `EdRestoreDropPlanTests`). Narrower than it
+  sounded: matching is by course code, so the only class this protects is
+  one whose code matches no Ed course while its tab request fails; before,
+  that run dropped its posts until the next successful lookup. The same
+  fix was written a second time that evening on `fix/ed-posts-durable`
+  (PR #13), and Olisa's version was kept when the two met (2026-10-23
+  late): the rules agree, and his does not count a class with nothing
+  stored as restored. The bigger cause of vanishing Ed posts, the
+  collector deleting them (the "vanish" trap), is PR #13's and is not in
+  `ed-tabs-restore`. Still true:
   pooled Ed posts are downloaded and dropped again every sync on a phone
   whose class has no Ed match, and staff answers inside student questions
   are never captured (no endpoint).
@@ -2663,6 +2961,40 @@ none is a ship line.
   the background-refresh trap, now historical). The `v8` fix has not been
   exercised on a device: verify with Xcode's Debug → Simulate Background
   Fetch on a DEBUG build and `debugRenewalLogV1`.
+- **Stay signed in is fragile in 3.0.0 (11), the live build** (Marco's
+  phone, 2026-10-08: the refresh banner sometimes clears by itself and
+  sometimes stays). Three causes, the first proven on the device and the
+  other two read from the code, none fixed yet (`ROADMAP.md` → Now):
+  1. The 24-hour trigger is off on a phone with a saved analytics cookie
+     (the trap above).
+  2. Any silent attempt that fails to finish is recorded as "confirmed
+     dead" and raises the banner: a network error (`SettleWaiter`'s
+     `.failed` falls through to `.landedOnLoginPage`), the 30-second cap,
+     or the app being left mid-attempt. The flag is persisted while the
+     1-hour attempt cooldown and the 6-hour password-resubmission cooldown
+     live in memory, so within one process a retry inside six hours of a
+     password submission cannot fill the form again and is bound to fail;
+     a relaunch resets both and retries properly.
+  3. The banner is bound straight to `canvasSessionExpired`
+     (`ContentView`), so when the 24-hour rule does trip it shows for the
+     whole silent attempt; tapping it aborts that attempt and opens the
+     login pane, whose pre-login purge includes `duosecurity` and so
+     deletes Duo's remembered device. Marco also reports typing his
+     password there by hand although one is saved; not yet reproduced.
+
+  Since 2026-10-09 (`v8`, blind, never on a device): causes 2 and 3 are
+  addressed by the sign-out fix above (a failed navigation is `.timedOut`
+  and never a login landing, the attempt cooldowns are persisted and
+  foreground retries replace the one-shot latch, the banner is hidden
+  while a silent renewal is in flight, and the pre-login purge keeps
+  Duo's cookie). Cause 1, the analytics cookie, is not fixed: the
+  trap's own wrong-fix warning still stands and `load` still keeps a
+  cookie by its own expiry (checked 2026-10-23).
+- **Background refresh does nothing: it crashes on every wake** (see the
+  background-refresh trap). Shipped that way in 3.0.0 (11) on purpose,
+  because fixing it alone would switch on untested background re-logins.
+  Fixed blind in `v8` on 2026-10-09 (the entry above and the trap); not
+  yet seen on a device.
 - **Non-Penn schools have only been exercised by tests.** The seven verified
   installations and the custom-address path have never been signed into on a
   device.

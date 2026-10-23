@@ -371,3 +371,111 @@ test("no summary contains a title, id, url or token, success or failure", async 
     })(s);
   }
 });
+
+// ------------------------------------------- 401 for a forbidden resource
+
+const UNAUTHORIZED = JSON.stringify({ status: "unauthorized", errors: [{ message: "user not authorized to perform that action" }] });
+const aliveSelf = (u) => (u.pathname === "/api/v1/users/self" ? reply({ id: 1, name: "S" }) : null);
+const selfCalls = (canvas) => canvas.log.urls.filter((u) => u.endsWith("/api/v1/users/self")).length;
+
+test("forbidden: a hidden Files tab (401 unauthorized) with a live session skips only that course's files", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => {
+      if (/courses\/111\/files$/.test(u.pathname)) return reply(UNAUTHORIZED, { status: 401, raw: true });
+      if (/courses\/222\/files$/.test(u.pathname)) return reply([]);
+      return aliveSelf(u);
+    },
+  });
+  const c = await collect(canvas, { files: { extractText: async () => "" } });
+  assert.equal(c.canvas, "in");
+  assert.ok(c.documents.length > 0);
+  assert.deepEqual(c.failures["111"], []);
+  assert.equal(c.summary.filesForbidden, 1);
+  assert.equal(c.summary.forbidden, 0);
+  assert.equal(selfCalls(canvas), 1);
+  const b = fakeBackend();
+  const { summary } = await syncCourseMaterial({ callFunction: b.callFunction, collected: c, holdings: {} });
+  assert.ok(summary.uploaded > 0);
+  assert.equal(summary.fullySynced, 2);
+});
+
+test("forbidden: a modules endpoint answering 401 on a live session fails that course only, and the run uploads", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => (/courses\/222\/modules/.test(u.pathname) ? reply(UNAUTHORIZED, { status: 401, raw: true }) : aliveSelf(u)),
+  });
+  const c = await collect(canvas);
+  assert.equal(c.canvas, "in");
+  assert.deepEqual(c.failures["222"], ["modules"]);
+  assert.deepEqual(c.failures["111"], []);
+  assert.equal(c.summary.forbidden, 1);
+  assert.equal(c.summary.failedEndpoints, 1);
+  const b = fakeBackend();
+  const { summary } = await syncCourseMaterial({ callFunction: b.callFunction, collected: c, holdings: {} });
+  const upload = b.calls.filter((x) => x.body.action === "upload").at(-1).body;
+  assert.deepEqual(upload.fullySyncedCourses.map((f) => f.courseID), ["111"]);
+  assert.ok(summary.uploaded > 0);
+});
+
+test("forbidden: a 403 that is not a rate limit is treated the same way", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => (/courses\/111\/pages$/.test(u.pathname) ? reply(UNAUTHORIZED, { status: 403, raw: true }) : aliveSelf(u)),
+  });
+  const c = await collect(canvas);
+  assert.equal(c.canvas, "in");
+  assert.deepEqual(c.failures["111"], ["pages"]);
+  assert.equal(c.summary.forbidden, 1);
+});
+
+test("forbidden: the session is checked at most once per run, however many endpoints refuse", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => (/courses\/\d+\/(modules|pages)$/.test(u.pathname) ? reply(UNAUTHORIZED, { status: 401, raw: true }) : aliveSelf(u)),
+  });
+  const c = await collect(canvas);
+  assert.equal(c.summary.forbidden, 4);
+  assert.equal(selfCalls(canvas), 1);
+});
+
+test("forbidden: a dead session (endpoint 401 and /users/self 401) is still canvas out, nothing uploaded", async () => {
+  const dead = JSON.stringify({ status: "unauthenticated", errors: [{ message: "user authorization required" }] });
+  const canvas = fakeCanvas({
+    override: (url, u) => {
+      if (u.pathname === "/api/v1/users/self") return reply(dead, { status: 401, raw: true });
+      return /courses\/111\/modules/.test(u.pathname) ? reply(dead, { status: 401, raw: true }) : null;
+    },
+  });
+  const c = await collect(canvas);
+  assert.equal(c.canvas, "out");
+  assert.deepEqual(c.documents, []);
+  assert.equal(selfCalls(canvas), 1);
+});
+
+test("forbidden: a 401 whose /users/self answer is the login page is canvas out", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => {
+      if (u.pathname === "/api/v1/users/self") return reply("<html>", { url: "https://weblogin.pennkey.upenn.edu/login", raw: true });
+      return /courses\/111\/modules/.test(u.pathname) ? reply(UNAUTHORIZED, { status: 401, raw: true }) : null;
+    },
+  });
+  assert.equal((await collect(canvas)).canvas, "out");
+});
+
+test("forbidden: a 401 with an HTML body is out without asking /users/self", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => (/courses\/111\/modules/.test(u.pathname) ? reply("<html>login</html>", { status: 401, raw: true }) : aliveSelf(u)),
+  });
+  const c = await collect(canvas);
+  assert.equal(c.canvas, "out");
+  assert.equal(selfCalls(canvas), 0);
+});
+
+test("forbidden: a dead session found while listing files is canvas out and discards the run", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => {
+      if (u.pathname === "/api/v1/users/self") return reply("", { status: 401, raw: true });
+      return /courses\/111\/files$/.test(u.pathname) ? reply(UNAUTHORIZED, { status: 401, raw: true }) : null;
+    },
+  });
+  const c = await collect(canvas, { files: { extractText: async () => "" } });
+  assert.equal(c.canvas, "out");
+  assert.deepEqual(c.documents, []);
+});

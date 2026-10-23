@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-22_
+_Last updated: 2026-10-23_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -18,14 +18,11 @@ stored.
 ## What stays on your phone
 
 - **Your Canvas and Gradescope logins.** You sign in through each service's own
-  web page, shown inside the app. The app never sees or stores the password you
-  type into that page. Session cookies and your personal Canvas calendar feed
-  URL (a bearer credential) are kept in the iOS Keychain, encrypted at rest,
-  this-device-only, and never included in unencrypted backups. Separately, if
-  you turn on the optional **"stay signed in"** feature, the app does store a
-  PennKey password — the one you type into the app's own sheet, not Canvas's
-  page — for its own use re-filling Canvas's login form later. See "Stay
-  signed in (optional)" below.
+  web page inside the app. Session cookies and your Canvas calendar feed URL
+  are stored in this device's Keychain. For Penn Canvas, the sign-in screen
+  explains that Smooth also saves the PennKey credentials you submit after a
+  successful connection, to reconnect automatically. Gradescope and other
+  schools' passwords are not captured. See "Automatic Canvas reconnection" below.
 - **Your grades, completions, and submission state.** What you've turned in,
   what you've checked off, any grade the Grade Watcher has observed — all of it
   stays local. None of it is uploaded in readable form; the one exception is
@@ -70,47 +67,28 @@ stored.
   available, the mic is simply not shown rather than sending audio to a
   server.
 
-## Stay signed in (optional)
+## Automatic Canvas reconnection
 
-Canvas signs you out from time to time, and normally reconnecting means going
-through PennKey (and often Duo) again. Since 2026-09-16 the app can do that
-reconnecting for you: after you sign in to Canvas it offers to remember your
-PennKey password (**"stay signed in"**).
+Staying connected is part of signing in to Penn Canvas with Smooth; there is
+no separate "stay signed in" choice or second password entry.
 
-- **Nothing is stored unless you save it.** The offer can be skipped with
-  "not now"; it comes back the next time you sign in to Canvas by hand.
-- **What is stored:** the PennKey username and password you type into the
-  app's own sheet for this purpose — not anything captured from Canvas's or
-  PennKey's own login page.
-- **Where:** the iOS/macOS Keychain, this-device-only, never synced to iCloud
-  or any other device.
-- **What it's used for:** when Canvas's session has expired, the app fills
-  Penn's own login form (`weblogin.pennkey.upenn.edu`) with the stored
-  username and password, inside the same isolated login web view it always
-  uses for sign-in — both when you see the reconnect screen and when the app
-  renews the session silently in the background.
-- **Where it's sent:** nowhere but Penn's own login page, over HTTPS. It is
-  never sent to LHF's server, never logged, and never written to
-  `UserDefaults`.
-- **Duo is never bypassed.** If Duo prompts for a second factor, the app
-  stops and waits for you to complete it yourself, the same as if you'd
-  typed your password by hand. In practice, because Duo can remember a
-  device for 30 days, this makes re-login roughly monthly and otherwise
-  invisible rather than eliminating Duo.
-- **If Penn rejects the stored password once** — a password change is the
-  usual reason — the app disables the feature and shows a banner telling you
-  to update it in Profile. It does not keep retrying, so it can't be the
-  reason a PennKey gets locked.
-- **How to delete it:** disconnect Canvas (Profile → accounts). That removes
-  the stored password from the Keychain immediately.
-
-A caution worth stating plainly: Penn's Acceptable Use Policy asks students
-not to share their PennKey password with anyone. This feature stores that
-password on your own phone, under your own control, to type it into Penn's
-own login page on your behalf — comparable to a password manager's autofill,
-except the app also submits the form for you. If that trade-off doesn't sit
-right with you, leave the feature off; everything else in the app works
-exactly the same either way.
+- **What is captured:** the username and password submitted on the verified
+  PennKey login form. Smooth holds one pair in memory while Canvas verifies
+  the session, for at most ten minutes. It does not record keystrokes or Duo
+  codes. Cancelled, failed, or expired attempts release the temporary pair.
+- **When it is saved:** only after Canvas successfully connects. The login
+  screen explains this before you enter your credentials.
+- **Where:** the iOS/macOS Keychain, encrypted at rest, this-device-only,
+  never synced to iCloud or other devices. Credentials are never logged,
+  written to preferences, or sent to Smooth's servers.
+- **Use:** to fill Penn's own HTTPS login page when Canvas requires a new
+  session. Duo approval may still be required. A rejected stored password
+  stops automatic retries and asks you to reconnect or update the password.
+- **How to remove it:** disconnect Canvas in Settings. This removes the saved
+  credentials and stops automatic reconnection.
+- **SSO and other schools:** if a login succeeds without submitting a PennKey
+  password, Smooth can retain the session but cannot manufacture a saved
+  password. Other institutions continue using their existing session handling.
 
 ## What is sent to our server (and why)
 

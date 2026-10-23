@@ -9,6 +9,14 @@ problem), and it says plainly that the Smooth Sweeper alarm never rings on
 sample data. Preview mode is still the reviewer's only way in. The block that
 follows it (3.0.0) and the long-form background below are history.
 
+**Rewritten 2026-10-23 for the build that carries automatic PennKey saving
+(`v8-merge-marco`, not compiled, never on a phone).** The "Stay signed in"
+paragraph here and in the passages below now says the app saves the PennKey
+itself after a verified sign-in; the 3.1.0 (13) build already uploaded on
+2026-10-20 still has the opt-in sheet this text used to describe, so do not
+paste this block against that build. The App Store privacy label has to be
+re-read against the new behaviour before the next submission.
+
 ```text
 HOW TO REVIEW WITHOUT A SCHOOL LOGIN
 Sign-in uses each university's own Canvas single sign-on (at Penn: PennKey plus Duo). Only the university can issue those accounts, so we can't provide a demo login. You don't need one:
@@ -35,13 +43,13 @@ PRIVACY AND NETWORKING
 - No analytics, tracking, ads or third-party SDKs.
 
 STAY SIGNED IN (PENN ONLY)
-After a student signs in to Canvas at Penn, the app offers to save their PennKey username and password in the device Keychain (this device only, never uploaded), so it can refill Penn's own login page when Canvas signs them out. "Not now" is always available, and nothing is stored unless they save. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off rather than retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
+A one-line notice above Penn's login page says that signing in saves the PennKey on this device. After a verified PennKey sign-in in the app's own login web view, the app saves the PennKey username and password in the device Keychain (this device only, never synced, sent nowhere but Penn's own login page) so it can sign the student back in. Until Canvas confirms the sign-in, the pair is held in memory for at most 10 minutes. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off and asks again in a repair sheet, never retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
 
 THIRD-PARTY SERVICES (5.2.2)
 Smooth is an independent client for services the student already has an account with. It uses their own credentials to show only their own data, and is not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
 ```
 
-_Character count of the block above: 3,807 (limit 4,000), measured on the text between the fences._
+_Character count of the block above: 3,964 (limit 4,000), measured on the text between the fences._
 
 What's New: paste the 3.1.0 text from `LISTING.md`.
 
@@ -76,7 +84,7 @@ PRIVACY AND NETWORKING
 - No analytics, tracking, ads or third-party SDKs.
 
 STAY SIGNED IN (PENN ONLY)
-After a student signs in to Canvas at Penn, the app offers to save their PennKey username and password in the device Keychain (this device only, never uploaded), so it can refill Penn's own login page when Canvas signs them out. "Not now" is always available, and nothing is stored unless they save. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off rather than retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
+A one-line notice above Penn's login page says that signing in saves the PennKey on this device. After a verified PennKey sign-in in the app's own login web view, the app saves the PennKey username and password in the device Keychain (this device only, never synced, sent nowhere but Penn's own login page) so it can sign the student back in. Until Canvas confirms the sign-in, the pair is held in memory for at most 10 minutes. Duo is never bypassed: if Duo needs the student, the app stops and asks them. One rejected password turns the feature off and asks again in a repair sheet, never retrying. Disconnecting Canvas deletes the saved password. Preview mode never uses any of this.
 
 THIRD-PARTY SERVICES (5.2.2)
 Smooth is an independent client for services the student already has an account with. It uses their own credentials to show only their own data, and is not affiliated with Instructure (Canvas), Turnitin (Gradescope) or any university.
@@ -205,11 +213,12 @@ end-to-end.
 1. **Onboarding:** the user enters a first name and taps "Connect Canvas."
 2. **Canvas login:** the school's real Canvas login page loads in a web view. The
    user signs in with their own credentials. The app never sees or stores the
-   password typed into that page. Separately, a user can opt in to "stay
-   signed in" (off by default), which stores a PennKey password — typed into
-   the app's own sheet, not into Canvas's page — in the device Keychain, used
-   only to refill Penn's login form when Canvas signs the user out; see "Stay
-   signed in" under Third-party services below.
+   password typed into other schools' pages or Gradescope's. At Penn, a
+   one-line notice above the login page says that signing in saves the
+   PennKey on this device; after Canvas confirms the sign-in, the app stores
+   that PennKey username and password in the device Keychain, used only to
+   refill Penn's login form when Canvas signs the user out; see "Stay signed
+   in" under Third-party services below.
 3. **Feed capture:** after login the app reads the user's personal Canvas
    *calendar feed* URL (an iCalendar/.ics link Canvas generates per user) and
    fetches their deadlines from it.
@@ -236,8 +245,8 @@ end-to-end.
   self-created tasks, and the student's name live in local storage and are
   never uploaded. Login session cookies are stored in the **iOS Keychain**,
   encrypted at rest and marked this-device-only, and are also never uploaded.
-  If the student opts into "stay signed in" (off by default), the PennKey
-  password they type into the app's own sheet is likewise stored only in the
+  At Penn, the PennKey password the student submits on Penn's login page
+  is, once Canvas has confirmed the sign-in, likewise stored only in the
   device Keychain, this-device-only, never uploaded to our server; it is used
   solely to refill Penn's own login form when Canvas signs the student out,
   and Duo is never bypassed. See "Stay signed in" below.
@@ -255,22 +264,26 @@ Smooth is a client for services the **user already has an account with**, using
 the **user's own credentials**, to display the **user's own data**:
 
 - The user authenticates directly with Canvas and Gradescope through those
-  services' own login pages, rendered in a web view. Smooth never handles or
-  stores the password typed into those pages.
+  services' own login pages, rendered in a web view. Smooth never stores the
+  password typed into Gradescope's page or another school's page.
 
-  **Stay signed in (opt-in, off by default):** a student can choose to have
-  the app store their PennKey username and password — typed into the app's
-  own sheet, separately from Canvas's login page — in the device Keychain,
+  **Stay signed in (Penn only, automatic since 2026-10-23):** a one-line
+  notice above Penn's login page says that signing in saves the PennKey on
+  this device. When the student submits Penn's login form in the app's own
+  login web view (main frame, `weblogin.pennkey.upenn.edu` or
+  `idp.pennkey.upenn.edu` only), the app holds the submitted username and
+  password in memory, for at most 10 minutes, until Canvas confirms the
+  sign-in; only then does it save them in the device Keychain,
   this-device-only, never synced or uploaded, so the app can refill Penn's
-  own login form (`weblogin.pennkey.upenn.edu`) when Canvas's session
-  expires, instead of the student re-entering it by hand every time. It is
-  sent nowhere but that one Penn login page, over HTTPS, inside the same
-  isolated login web view the app already uses for sign-in. Duo is never
-  bypassed — if Duo prompts, the app stops and the student completes it
-  themselves. One rejected password (e.g. after a change) disables the
-  feature and shows a banner asking the student to update it; the app never
-  retries, so it cannot lock a PennKey. The student turns this off, or
-  disconnects Canvas, to delete the stored password immediately.
+  own login form when Canvas's session expires, instead of the student
+  re-entering it by hand every time. A failed or cancelled attempt discards
+  the pair. It is sent nowhere but that one Penn login page, over HTTPS,
+  inside the same isolated login web view the app already uses for sign-in.
+  Duo is never bypassed — if Duo prompts, the app stops and the student
+  completes it themselves. One rejected password (e.g. after a change)
+  disables the feature and shows a banner asking the student to update it in
+  a repair sheet; the app never retries, so it cannot lock a PennKey. The
+  student disconnects Canvas to delete the stored password immediately.
 - The app reads only data belonging to the signed-in student — their own
   deadlines, their own readings, their own submission status, their own
   grades. It cannot access any other user's content.

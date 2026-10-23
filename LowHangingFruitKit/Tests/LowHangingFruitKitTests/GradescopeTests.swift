@@ -126,6 +126,220 @@ struct GradescopeTests {
             }
         }
     }
+    // MARK: - An unreadable detail page is not a "not submitted"
+
+    private static let fallAccount = """
+    <div class="courseList">
+      <div class="courseList--term">Fall 2026</div>
+      <div class="courseList--coursesForTerm">
+        <a class="courseBox" href="/courses/123">CIS 5050</a>
+      </div>
+    </div>
+    """
+
+    /// Two rows the list does not mark submitted, plus one it does.
+    private static let fallCourse = """
+    <table>
+      <tr>
+        <td><a href="/courses/123/assignments/456">Homework 1</a></td>
+        <td>Sep 30, 2026 11:59 PM</td>
+        <td>Not Submitted</td>
+      </tr>
+      <tr>
+        <td><a href="/courses/123/assignments/457">Homework 2</a></td>
+        <td>Oct 7, 2026 11:59 PM</td>
+        <td>Not Submitted</td>
+      </tr>
+      <tr>
+        <td><a href="/courses/123/assignments/458">Homework 3</a></td>
+        <td>Oct 14, 2026 11:59 PM</td>
+        <td>Submitted</td>
+      </tr>
+    </table>
+    """
+
+    private static let hw1ID = "gradescope:course-123-assignment-456"
+    private static let hw2ID = "gradescope:course-123-assignment-457"
+
+    @Test("a detail page that cannot be read leaves the row not-submitted but marks it unverified")
+    func unreadableDetailPageIsReportedUnverified() async throws {
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, Self.fallAccount)
+            case "/courses/123": (200, Self.fallCourse)
+            case "/courses/123/assignments/456": (500, "boom")
+            case "/courses/123/assignments/457": (200, "<main>Homework 2 Not Submitted</main>")
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        let report = try await client.fetchAssignmentsReport()
+
+        // Only the row whose own detail request failed is unverified. Homework
+        // 2's page loaded and showed no completion: an explicit negative.
+        // Homework 3 was read as submitted from the list and never fetched.
+        #expect(report.unverifiedAssignmentIDs == [Self.hw1ID])
+        let byID = Dictionary(uniqueKeysWithValues: report.assignments.map { ($0.id, $0) })
+        #expect(byID[Self.hw1ID]?.submitted == false)
+        #expect(byID[Self.hw2ID]?.submitted == false)
+        #expect(byID["gradescope:course-123-assignment-458"]?.submitted == true)
+        #expect(report.assignments.count == 3)
+    }
+
+    @Test("fetchAssignments still returns the same assignments the report carries")
+    func fetchAssignmentsMatchesReport() async throws {
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, Self.fallAccount)
+            case "/courses/123": (200, Self.fallCourse)
+            case "/courses/123/assignments/456": (500, "boom")
+            case "/courses/123/assignments/457": (200, "<main>Homework 2 Not Submitted</main>")
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        let plain = try await client.fetchAssignments()
+        let report = try await client.fetchAssignmentsReport()
+        #expect(plain == report.assignments)
+    }
+
+    @Test("a detail page that loads and shows completion is submitted and verified; one that loads without it stays verified-not-submitted")
+    func readableDetailPagesAreVerified() async throws {
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, Self.fallAccount)
+            case "/courses/123": (200, Self.fallCourse)
+            case "/courses/123/assignments/456": (200, "<main>Submission History Submitted</main>")
+            case "/courses/123/assignments/457": (200, "<main>Homework 2 No Submission</main>")
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        let report = try await client.fetchAssignmentsReport()
+        #expect(report.unverifiedAssignmentIDs.isEmpty)
+        let byID = Dictionary(uniqueKeysWithValues: report.assignments.map { ($0.id, $0) })
+        #expect(byID[Self.hw1ID]?.submitted == true)
+        #expect(byID[Self.hw2ID]?.submitted == false)
+    }
+
+    @Test("a login page served for a detail request still requires reauthentication")
+    func detailLoginPageStillThrows() async throws {
+        let login = "<html><h1>Log in to Gradescope</h1><label>Password</label><input type='password'></html>"
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, Self.fallAccount)
+            case "/courses/123": (200, Self.fallCourse)
+            case "/courses/123/assignments/456": (200, login)
+            default: (200, "<main>Not Submitted</main>")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        do {
+            _ = try await client.fetchAssignmentsReport()
+            Issue.record("expected the detail-page login redirect to require reauthentication")
+        } catch let error as GradescopeClient.Error {
+            #expect(error.requiresReauthentication)
+        }
+    }
+
+    private static func gradescopeRow(
+        sourceID: String = "course-123-assignment-456",
+        course: String = "CIS 5050",
+        submitted: Bool
+    ) -> Assignment {
+        Assignment(
+            source: .gradescope, sourceID: sourceID, kind: .assignment,
+            course: course, title: "Homework 1", dueAt: nil, url: nil,
+            submitted: submitted
+        )
+    }
+
+    @Test("an unverified row that was submitted before stays submitted")
+    func unverifiedKeepsPreviousSubmitted() {
+        let previous = [Self.gradescopeRow(submitted: true)]
+        let fetched = [Self.gradescopeRow(submitted: false)]
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: fetched, unverifiedIDs: [Self.hw1ID], previous: previous
+        )
+        #expect(result.map(\.submitted) == [true])
+        #expect(result.map(\.id) == [Self.hw1ID])
+    }
+
+    @Test("a verified-not-submitted row goes back to not submitted even if it was submitted before")
+    func verifiedNegativeStillOverrides() {
+        let previous = [Self.gradescopeRow(submitted: true)]
+        let fetched = [Self.gradescopeRow(submitted: false)]
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: fetched, unverifiedIDs: [], previous: previous
+        )
+        #expect(result.map(\.submitted) == [false])
+        // An unverified id for some other row changes nothing for this one.
+        let other = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: fetched, unverifiedIDs: [Self.hw2ID], previous: previous
+        )
+        #expect(other.map(\.submitted) == [false])
+    }
+
+    @Test("an unverified row that was not submitted before stays not submitted")
+    func unverifiedWithoutPreviousSubmissionStaysFalse() {
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: [Self.gradescopeRow(submitted: false)],
+            unverifiedIDs: [Self.hw1ID],
+            previous: [Self.gradescopeRow(submitted: false)]
+        )
+        #expect(result.map(\.submitted) == [false])
+    }
+
+    @Test("a new unverified row with no previous copy is returned unchanged")
+    func unverifiedNewRowUnchanged() {
+        let fetched = [Self.gradescopeRow(submitted: false)]
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: fetched, unverifiedIDs: [Self.hw1ID], previous: []
+        )
+        #expect(result == fetched)
+    }
+
+    @Test("rows match by id across the course-label normalization the app applies")
+    func matchesAcrossCourseRelabel() {
+        // `AppState.normalizingCourse` rewrites `course` ("CIS 5050 Software
+        // Systems" -> "CIS 5050") but never `source` or `sourceID`, which are
+        // all `Assignment.id` is built from.
+        let previous = [Self.gradescopeRow(course: "CIS 5050", submitted: true)]
+        let fetched = [Self.gradescopeRow(course: "CIS 5050 Software Systems", submitted: false)]
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: fetched, unverifiedIDs: [Self.hw1ID], previous: previous
+        )
+        #expect(result.map(\.submitted) == [true])
+        #expect(result.first?.course == "CIS 5050 Software Systems")
+    }
+
+    @Test("only the unverified, previously submitted rows change; the rest of the list is untouched and in order")
+    func onlyMatchingRowsChange() {
+        let a = Self.gradescopeRow(sourceID: "course-123-assignment-1", submitted: false)
+        let b = Self.gradescopeRow(sourceID: "course-123-assignment-2", submitted: false)
+        let c = Self.gradescopeRow(sourceID: "course-123-assignment-3", submitted: true)
+        let previous = [
+            Self.gradescopeRow(sourceID: "course-123-assignment-1", submitted: true),
+            Self.gradescopeRow(sourceID: "course-123-assignment-2", submitted: true),
+            Self.gradescopeRow(sourceID: "course-123-assignment-3", submitted: false),
+        ]
+        let result = GradescopeClient.preservingUnverifiedSubmissions(
+            fetched: [a, b, c],
+            unverifiedIDs: ["gradescope:course-123-assignment-1"],
+            previous: previous
+        )
+        #expect(result.map(\.sourceID) == [a.sourceID, b.sourceID, c.sourceID])
+        #expect(result.map(\.submitted) == [true, false, true])
+    }
+
     @Test("discovers course links from account page")
     func discoversCourses() throws {
         let html = """
@@ -649,6 +863,68 @@ struct GradescopeTests {
         #expect(GradescopeHTMLParser.isCompletedAssignmentPage(submittedHTML))
         #expect(GradescopeHTMLParser.isCompletedAssignmentPage(scoredHTML))
         #expect(!GradescopeHTMLParser.isCompletedAssignmentPage(missingHTML))
+    }
+
+    // MARK: - The detail pass does not let the assignment's own name vote
+
+    /// One course with one assignment whose row says "Open" (no keyword), so
+    /// the row reads not submitted and `refineCompletionStatus` goes to the
+    /// detail page.
+    private func fetchedSubmitted(title: String, detailPage: String) async throws -> Bool {
+        let account = """
+        <div class="courseList">
+          <div class="courseList--term">Fall 2026</div>
+          <div class="courseList--coursesForTerm">
+            <a class="courseBox" href="/courses/123">CIS 5050</a>
+          </div>
+        </div>
+        """
+        let course = """
+        <table><tr>
+          <td><a href="/courses/123/assignments/456">\(title)</a></td>
+          <td>Sep 30, 2026 11:59 PM</td>
+          <td>Open</td>
+        </tr></table>
+        """
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, account)
+            case "/courses/123": (200, course)
+            case "/courses/123/assignments/456": (200, detailPage)
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+        let assignments = try await client.fetchAssignments()
+        return try #require(assignments.first).submitted
+    }
+
+    @Test("a detail page whose only keyword is the assignment's own name does not flip the row to submitted")
+    func detailPassIgnoresTitleKeyword() async throws {
+        let page = """
+        <html><head><title>Graded Problem Set 3</title></head>
+        <body><h1>Graded Problem Set 3</h1></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Graded Problem Set 3", detailPage: page) == false)
+    }
+
+    @Test("a detail page with a real Submitted status still marks the row submitted")
+    func detailPassStillReadsRealStatus() async throws {
+        let page = """
+        <html><head><title>Graded Problem Set 3</title></head>
+        <body><h1>Graded Problem Set 3</h1><p>Status: Submitted</p></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Graded Problem Set 3", detailPage: page) == true)
+    }
+
+    @Test("a negative word in the name does not hide a genuinely submitted detail page")
+    func detailPassNegativeWordTitle() async throws {
+        let page = """
+        <html><head><title>Missing Data Lab | Gradescope</title></head>
+        <body><h1>Missing Data Lab</h1><p>Submitted at Oct 5, 2026 at 11:12 PM</p></body></html>
+        """
+        #expect(try await fetchedSubmitted(title: "Missing Data Lab", detailPage: page) == true)
     }
 
     // MARK: - Score extraction (docs/grades.md §4, CP5)

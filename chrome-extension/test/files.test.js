@@ -194,3 +194,34 @@ test("collector: without `files` nothing changes (no files requests)", async () 
   assert.ok(!urls.some((u) => u.includes("/files")));
   assert.equal(got.summary.files, undefined);
 });
+
+test("with confirmSession, a 401 on the listing of a live session is forbidden: skipped quietly, not out", async () => {
+  const fn = async () => res(JSON.stringify({ status: "unauthorized" }), { status: 401, type: "application/json" });
+  let asked = 0;
+  const out = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText: extract, now: NOW, ...noSleep, confirmSession: async () => { asked += 1; return true; } });
+  assert.equal(out.stopped, null);
+  assert.equal(out.counts.forbidden, 1);
+  assert.equal(out.documents.length, 0);
+  assert.equal(asked, 1);
+});
+
+test("with confirmSession, a 401 on a dead session is out; without it a 401 is out as before", async () => {
+  const fn = async () => res("", { status: 401 });
+  const dead = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText: extract, now: NOW, ...noSleep, confirmSession: async () => false });
+  assert.equal(dead.stopped, "out");
+  const bare = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText: extract, now: NOW, ...noSleep });
+  assert.equal(bare.stopped, "out");
+});
+
+test("with confirmSession, a forbidden download skips that file, is not recorded in seen, and the rest go on", async () => {
+  const { fn } = fake({
+    pages: [[entry(1), entry(2)]],
+    download: (id) => (id === "1" ? res(JSON.stringify({ status: "unauthorized" }), { status: 401, type: "application/json" }) : res("")),
+  });
+  const out = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText: extract, now: NOW, ...noSleep, confirmSession: async () => true });
+  assert.equal(out.stopped, null);
+  assert.equal(out.documents.length, 1);
+  assert.equal(out.seen["1"], undefined);
+  assert.ok(out.seen["2"]);
+  assert.equal(out.counts.failed, 1);
+});

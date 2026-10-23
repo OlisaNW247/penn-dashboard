@@ -22,9 +22,11 @@ shows the real login working end to end.
    *Caption: "Sign in once with your school Canvas."*
 
 2. **Canvas login (real)** · 0:07–0:14
-   The school's Canvas login page loads in the app. Enter credentials and submit.
+   The school's Canvas login page loads in the app (at Penn, with its one-line
+   notice above that signing in saves the PennKey on this device). Enter
+   credentials and submit.
    *(Blur/scrub the password field in post.)*
-   *Caption: "We never see your password."*
+   *Caption: "Your login stays on this phone."*
 
 3. **Dashboard fills in — This Week** · 0:14–0:24
    The list populates, sorted by urgency. Slowly scroll. Point out the colored

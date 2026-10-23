@@ -12,7 +12,24 @@ import Foundation
 /// talks to anything but Canvas. Per-course failures are recorded, not
 /// thrown, so one course with a broken Modules page can't hide the rest. An
 /// expired session is the exception: it is thrown so the caller can stop
-/// hammering Canvas and tell the student to reconnect.
+/// hammering Canvas and tell the student to reconnect. A 403 is not an
+/// expired session (see `CanvasCourseContentClient.Error.sessionExpired`): it
+/// is one course Canvas will not show this account, and that course alone is
+/// recorded as an error while the others carry on.
+///
+/// **A course is only "fully fetched" if nothing about it failed.** The merge
+/// drops a fully fetched course's documents that were not seen this run, and
+/// the upload tells the server the same, for every classmate, so a fetch that
+/// failed and came back empty is indistinguishable from a document the
+/// teacher deleted. Any error while reading a course (one of its endpoints,
+/// or the announcements call, which covers every course at once) makes it
+/// *partial*: its new documents are added and its changed ones updated,
+/// nothing it already holds is dropped, and it is not reported as fully
+/// synced. This was "at most one endpoint failed" until 2026-10-23, which let
+/// a course whose Modules call failed erase every module document it held,
+/// here and, through the pool, for classmates. Marco found it on 2026-10-10
+/// (`10cd49f`, parked); the wrong fix is retrying the failed endpoint inside
+/// the run, which only narrows the window.
 ///
 /// `fetchFully` (see `run`) lets a caller skip the Canvas fetch for courses
 /// the shared backend already has fresh: if a classmate in the same Canvas
@@ -26,15 +43,31 @@ import Foundation
 public struct CourseKnowledgeCollector: Sendable {
     public struct Report: Sendable {
         public let knowledge: CourseKnowledgeBase
+        /// Courses merged as a full resync: the size of `fullyFetchedCourseIDs`.
+        /// A course that came back usable but partial is not counted here
+        /// (see `usableCourses`).
         public let syncedCourses: Int
         public let errors: [String]
-        /// Which courses this run actually re-fetched from Canvas and
-        /// merged as a full resync — i.e. the `fetchFully` set that
-        /// succeeded (or, when `fetchFully` was `nil`, every course whose
-        /// endpoints mostly answered). A caller uploading to the shared
-        /// backend needs exactly this set for `SyncPlanner.uploads(fullyFetched:)`,
-        /// and `syncedCourses` alone (a count) can't reconstruct it.
+        /// Which courses this run re-fetched from Canvas without a single
+        /// error and merged as a full resync (so documents Canvas no longer
+        /// has were dropped). A caller uploading to the shared backend needs
+        /// exactly this set for `SyncPlanner.uploads(fullyFetched:)`, and
+        /// `syncedCourses` alone (a count) can't reconstruct it. A course with
+        /// any error is in `partialCourseIDs` instead.
         public let fullyFetchedCourseIDs: Set<String>
+        /// Courses this run fetched from Canvas where something failed. Their
+        /// documents were merged add-and-update only, and they are
+        /// deliberately absent from `fullyFetchedCourseIDs`. Courses the
+        /// caller told the run to skip (`fetchFully`) are in neither set.
+        public let partialCourseIDs: Set<String>
+        /// How many courses came back usable: at most one of their own
+        /// endpoints failed. This is only a count for the "couldn't read
+        /// course materials" notice; it says nothing about which courses were
+        /// read in full (`fullyFetchedCourseIDs`), and a failed announcements
+        /// call does not lower it, because it is not any one course's
+        /// endpoint. Defaults to `syncedCourses` for callers that build a
+        /// report without it.
+        public let usableCourses: Int
         /// Outbound links gathered from this run's pages, assignments, and
         /// module items — the raw material for the server's course-website
         /// discovery (`backend/PROTOCOL.md`'s `discover-websites`). Not
@@ -43,11 +76,21 @@ public struct CourseKnowledgeCollector: Sendable {
         /// consumed by `SyncPlanner.uploads` and never written to disk.
         public let links: [CourseLink]
 
-        public init(knowledge: CourseKnowledgeBase, syncedCourses: Int, errors: [String], fullyFetchedCourseIDs: Set<String> = [], links: [CourseLink] = []) {
+        public init(
+            knowledge: CourseKnowledgeBase,
+            syncedCourses: Int,
+            errors: [String],
+            fullyFetchedCourseIDs: Set<String> = [],
+            partialCourseIDs: Set<String> = [],
+            usableCourses: Int? = nil,
+            links: [CourseLink] = []
+        ) {
             self.knowledge = knowledge
             self.syncedCourses = syncedCourses
             self.errors = errors
             self.fullyFetchedCourseIDs = fullyFetchedCourseIDs
+            self.partialCourseIDs = partialCourseIDs
+            self.usableCourses = usableCourses ?? syncedCourses
             self.links = links
         }
     }
@@ -119,6 +162,8 @@ public struct CourseKnowledgeCollector: Sendable {
         var documents: [CourseDocument] = []
         var errors: [String] = []
         var synced: Set<String> = []
+        var partial: Set<String> = []
+        var usableCourses = 0
         // Set when the one announcements call fails. See the catch below.
         var announcementsFailed = false
         // Outbound links, gathered only from pages, assignments and module
@@ -183,7 +228,9 @@ public struct CourseKnowledgeCollector: Sendable {
                 links.append(contentsOf: assignments.flatMap { CourseDocumentBuilder.links(from: $0, course: course) })
             } catch CanvasCourseContentClient.Error.sessionExpired {
                 // Stop here: every further request would fail the same way,
-                // and the student needs to reconnect, not wait.
+                // and the student needs to reconnect, not wait. Only a 401 or
+                // a login-page redirect gets here; a 403 is `http(403)` and
+                // lands in the generic catch below as this course's error.
                 throw CanvasCourseContentClient.Error.sessionExpired
             } catch {
                 courseErrors += 1
@@ -222,11 +269,18 @@ public struct CourseKnowledgeCollector: Sendable {
                 errors.append("\(course.code) modules: \(error.localizedDescription)")
             }
 
-            // A course counts as re-synced (so vanished documents are dropped)
-            // only when most of its endpoints answered; otherwise the last
-            // good copy is kept rather than half-erased. Never when the
-            // announcements call failed: see the catch above.
-            if courseErrors <= 1 && !announcementsFailed { synced.insert(course.courseID) }
+            // A course counts as re-synced (so vanished documents are
+            // dropped, here and on the server) only when nothing about it
+            // failed, announcements included (see the catch above). Anything
+            // less is partial: what did arrive is merged in, and what the
+            // course already holds is kept. Usable is the looser, older
+            // question ("did most of it answer?") and feeds only the notice.
+            if courseErrors <= 1 { usableCourses += 1 }
+            if courseErrors == 0 && !announcementsFailed {
+                synced.insert(course.courseID)
+            } else {
+                partial.insert(course.courseID)
+            }
         }
 
         var knowledge = store.load()
@@ -267,6 +321,14 @@ public struct CourseKnowledgeCollector: Sendable {
             if dedupedLinks.count == 400 { break }
         }
 
-        return Report(knowledge: knowledge, syncedCourses: synced.count, errors: errors, fullyFetchedCourseIDs: synced, links: dedupedLinks)
+        return Report(
+            knowledge: knowledge,
+            syncedCourses: synced.count,
+            errors: errors,
+            fullyFetchedCourseIDs: synced,
+            partialCourseIDs: partial,
+            usableCourses: usableCourses,
+            links: dedupedLinks
+        )
     }
 }

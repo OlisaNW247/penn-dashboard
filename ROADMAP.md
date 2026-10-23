@@ -9,7 +9,15 @@ with its date and commit, rather than deleting it.
 
 Last updated 2026-10-22 on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
-with Marco's `v8-loud-alert-actions`; not compiled).
+with Marco's `v8-loud-alert-actions`; not compiled). Marco's
+`fix/submission-status` (last updated 2026-10-18, off `v8-announcements`
+at `75dc7aa`) is merged in on `v8-merge-marco` (2026-10-23); his entries
+below keep their own dates and describe `v8-announcements`' state, not
+today's.
+The rest of Marco's branches the plan of 2026-10-23
+(`docs/MERGE_PLAN_MARCO_2026-10-23.md`) names are merged there too, in the
+same order; none of it is compiled yet, and the launch refresh and the
+course-sync salvage are separate briefs, not merges.
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
 iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
@@ -19,12 +27,19 @@ iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
 in whatever is built from `v8` next. Most of it has not been on a phone:
 the first item under Now is the check that should happen before a build
 from `v8` goes to TestFlight.
+Marco's `fix/canvas-signin-bulletproof` (last updated 2026-10-08, on `V7`,
+when 3.0.0 (build 11) had been live since 2026-09-28 and the next release
+was 3.0.1 with the sign-in fixes at the top of Now) is merged in on
+`v8-merge-marco` (2026-10-23); his Now and Done entries keep their own
+dates.
 
 ---
 
 ## Now: before the next release
 
-These block shipping, or would make shipping risky.
+These block shipping, or would make shipping risky. The launch-prep
+work of 2026-10-09/10 is summarised, with the order to take these in,
+in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
@@ -129,8 +144,40 @@ These block shipping, or would make shipping risky.
   "open in canvas" lands on the assignment (Canvas Student may take the
   link, as it does from the card). Nothing about the alert has been heard
   on a device yet.
-- **Decide the three sync questions** (Marco and Olisa; nothing here is
-  merged, because Marco said not to touch the sync):
+- **Submitted work that still reads "not done"** (Marco's PHYS 0151
+  prelab, 2026-10-18; `CLAUDE.md` → Traps and Known gaps, "Turned-in
+  state"). On the phone, in this order:
+  1. Is there a saved Canvas login (Profile → accounts shows "sign in to
+     canvas" when there is not)? Without one nothing is ever marked
+     turned in. Not yet answered: whether Marco signed in after
+     2026-10-10, and whether the prelab went to Canvas or Gradescope.
+  2. Is Gradescope still connected? It disconnects itself silently.
+  3. Is the ledger on disk ("not saving on this phone"; does a swiped
+     task survive a force-quit)? Not yet answered.
+  4. With a build of `fix/submission-status`: a module-listed assignment
+     beside a similar-titled calendar item shows as two cards when they are
+     two assignments; a Gradescope "Graded …"-titled item with no
+     submission stays on the dashboard.
+- **Decide the submission-status parks** (Marco; Olisa for the sync).
+  Items 1 and 2 were decided and merged on 2026-10-23 (`v8-merge-marco`,
+  blind): 1 as a rework that leaves the notice drains out of the launch
+  pass, 2 as written.
+  1. `parked/launch-submission-refresh`: fetch submission state at a
+     cold launch. Moves the course-knowledge/Ed sync, a full Gradescope
+     scrape and the renewal checks to launch as well.
+  2. `parked/gradescope-unverified-submission`: keep "submitted" when a
+     Gradescope detail page fails to load. Edits one line of
+     `syncGradescope`.
+  3. Still open, no branch: Gradescope's silent, permanent disconnect in
+     `AutoSyncCoordinator.syncConnectedServices`, and re-planning
+     reminders after a background wake (`BackgroundRefresh.run`), so a
+     loud alert doesn't fire for work already handed in.
+- **Decide the three sync questions** (Marco and Olisa). Items 1 and 2
+  were done at the owner's direction on 2026-10-23 (the window fix in
+  `9540751`; the half-failed sync and the 403 as a fresh patch,
+  `course-sync-salvage`, blind), and item 3's pagination went live in
+  `sync` v12; byte batching and the 120-page cap remain open. Marco has
+  not been told that the sync was touched:
   1. Pass `until:` where `CourseKnowledgeCollector` fetches
      announcements. One argument. Without it ask has never had an
      announcement (`CLAUDE.md` → the announcements-window trap).
@@ -171,6 +218,45 @@ These block shipping, or would make shipping risky.
   run with a 20 s budget and can only help, never latch). Xcode's Debug →
   Simulate Background Fetch on a DEBUG build, then read
   `debugRenewalLogV1` and the Profile health line.
+- **Make staying signed in bulletproof (3.0.1).** On 2026-10-08 the live
+  build was still asking Marco to refresh: sometimes the banner cleared by
+  itself, sometimes it stayed. Diagnosed on his phone the same day
+  (`CLAUDE.md` → Known gaps, and the analytics-cookie trap). Three pieces,
+  each verified on a real phone with `-LHFSessionDiagnostics`,
+  `-LHFAgeCanvasSession` and `debugRenewalLogV1` before it counts as done:
+  1. **The 24-hour trigger.** Decide "expired" by whether a fresh Canvas
+     session cookie is left, so a saved analytics cookie cannot switch the
+     rule off. Proven cause; smallest fix.
+  2. **Verdicts and the banner.** A silent attempt that never got an
+     answer (no network, the 30-second cap away from a login wall, the app
+     left mid-attempt) must not be recorded as signed out; it retries on
+     the next open. The banner appears only when a person is needed, and
+     never while an attempt is running. This changes logic that was copied
+     from Olisa's proven build, and bounds how often the saved password
+     may be resubmitted, so the plan needs Marco's sign-off first.
+  3. **The reconnect pane.** Tapping the banner must not delete Duo's
+     remembered device, and the saved password must fill by itself there
+     (Marco reports typing it by hand; not yet reproduced).
+  Status at 2026-10-23: pieces 2 and 3 were done blind in `v8` on
+  2026-10-09 (the sign-out commit and its second round; the Duo-preserving
+  purge is `v8`'s too) and have not run on a device. Piece 1 is not done:
+  `SessionCookieStore.load` and `isExpired` still decide by any cookie's own
+  expiry, so the analytics-cookie trap stands.
+- **Raise the `update-manifest` floor to 3.0.1 once it is downloadable.**
+  3.0.0 is live but the floor is still 1.2.1. Skip 3.0.0 as a floor: it
+  would force everyone onto the build with the sign-in bug.
+- **Fix the background-refresh crash, with a foreground-only re-login.**
+  Every `BGAppRefreshTask` wake has crashed on entry since 2026-08-24
+  (`CLAUDE.md` → the background-refresh trap), so background refresh has
+  never run. Fix the handler's isolation (run the launch handler's work on
+  the main actor, e.g. a `Task { @MainActor in … }` hop, and complete the
+  task on every path), and in the same change let `CanvasSessionRenewer`
+  run only while the app is active, so a background wake that finds a
+  day-old cookie leaves it for the next open. Both halves together keep
+  sign-in exactly as proven while background refresh starts fetching
+  deadlines. Verify with a DEBUG build and `debugRenewalLogV1`, plus Xcode's
+  Debug → Simulate Background Fetch. (Done blind in `v8` on 2026-10-09,
+  the entry just above; this one stays for the plan it records.)
 - **Test with real Canvas and Gradescope data.** Every grade, submission and
   syllabus path has only been proven against fixtures. This is the
   highest-value check outstanding.
@@ -195,6 +281,19 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **Merge Marco's branches into `v8`** (plan written 2026-10-23,
+  `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live
+  branches, three of them needing Olisa's decision (automatic PennKey
+  capture reverses a recorded privacy rule; the launch refresh would post
+  notifications at launch on `v8`; the parked sync fixes conflict with the
+  2026-10-23 announcement window and must be salvaged as fresh patches).
+  Low-risk first: `fix/submission-status`, `fix/canvas-signin-bulletproof`,
+  the launch-prep handoff doc. **Done the same evening on `v8-merge-marco`,
+  blind:** all seven merges (the owner chose automatic PennKey saving as
+  Marco wrote it), plus three fresh patches (the launch pass without the
+  notification drains, the partial-course sync semantics with 403 per
+  course, the Ed tabs restore). Left: Olisa's compile (predicted 2736),
+  the phone, `sync` v13 for the exam dates (needs a go), and telling Marco.
 - **An AI keep-check for the megaphone** (asked for by Marco on
   2026-10-23; **built that evening on `fix/megaphone-every-class`, with
   the phone side compiled and tested and the backend tested but NOT
@@ -240,14 +339,15 @@ These block shipping, or would make shipping risky.
   uploaded 63 of this term's Canvas announcements and 36 Ed posts. Left:
   the tree's answer on a phone (asked for), the `posted_at` migration
   (Phase 2 step 5, needs a go) and Phase 4 (owners' decision). The review
-  finding in the Ed coordinator (a failed `/tabs` lookup dropped a class's
-  Ed posts) and a bigger one (the course-material collector deleted every
-  re-synced class's Ed posts and saved before Ed restored them) are fixed
-  on `fix/ed-posts-durable`, for Olisa's review; see CLAUDE.md → the
-  "vanish" trap. Two shapes left alone: a class whose Canvas has an Ed tab
-  but whose Ed course the matcher refuses is still dropped, and the
-  collector drops `.file` and `.website` documents the same way (the
-  server's downloads re-supply those).
+  finding in the Ed coordinator (a class whose `/tabs` lookup fails had its
+  stored posts dropped) was fixed blind the same evening
+  (`ed-tabs-restore`, in the Marco merge) and compiled in PR #13's merge of
+  that tree. The bigger one (the course-material collector deleted every
+  re-synced class's Ed posts and saved before Ed restored them) is fixed in
+  PR #13 (`fix/ed-posts-durable`); see CLAUDE.md → the "vanish" trap. Two
+  shapes left alone: a class whose Canvas has an Ed tab but whose Ed course
+  the matcher refuses is still dropped, and the collector drops `.file` and
+  `.website` documents the same way (the server's downloads re-supply those).
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the
@@ -265,6 +365,18 @@ These block shipping, or would make shipping risky.
   `docs/PRIVACY.md`'s "audio never leaves the phone" true.
 Roughly in priority order.
 
+- **"Berserk mode" is the loud 10-minute alert.** Marco, 2026-10-19:
+  "basically the 10-minute alert", for the moment right before an
+  assignment goes unsubmitted, when the app "goes berserk and forces you to
+  notice and either fix it or do something about it"; possibly not needed
+  as a separate feature. Nothing separate is built. What the loud alert
+  lacks against that description: the notification has no actions (no
+  category, no notification delegate anywhere in the app), so it can only
+  be noticed, not acted on; and it can fire for work handed in while the
+  app was closed (`CLAUDE.md` → Known gaps, "Turned-in state"). Marco
+  asked for "turned in" and "open in canvas" buttons on 2026-10-19; they
+  are on `v8-loud-alert-actions` (its own worktree off `75dc7aa`,
+  pushed 2026-10-19, not merged, not on a phone).
 - **Silent renewal follow-ups** (from the 2026-10-09 review, none
   blocking): don't count a landing toward the latch when the six-hour
   credential cooldown suppressed the password; have the live `AppState`
@@ -424,6 +536,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-23.** Automatic Penn credential saving after verified Canvas login;
+  no duplicate password prompt or opt-out sheet. Added connection confirmation,
+  pre-login disclosure, origin/lifetime guards, and Keychain error handling.
+  Live PennKey/Duo/autofill validation remains required before release.
+
+
 - **The Chrome extension** (2026-10-22, `3fa853b` through this commit on
   `v8`; owner's scope: a helper for the phone). Pure ES-module ports of
   the phone's parsing (course code, ICS, Gradescope, dedup, document
@@ -537,6 +655,32 @@ Kept so nobody rebuilds them blind.
   Marco's iPhone on 2026-10-19, and it rang (once alarms were allowed
   for Smooth). Then with his own alarm sound, the first 13 seconds of a
   song faded out and 20% quieter: "this is perfect for berserk mode".
+- **2026-10-18 (`fix/submission-status`, off `v8-announcements` at
+  `75dc7aa`, pushed 2026-10-19, not merged): turned-in accuracy.** From the stale PHYS 0151
+  prelab report. Two ways the app could get "turned in" wrong are closed,
+  each with tests:
+  - A `.canvasModules` row and a calendar row with *different* Canvas
+    assignment ids are never collapsed into one card ("Lab 3 Report" no
+    longer hides behind "Lab 3").
+  - A Gradescope assignment's own name no longer counts as its status, on
+    the list row or on the detail page ("Graded Problem Set 3" with no
+    submission stays on the dashboard).
+  - Section-override rows are pinned through `isCompleted` (tests only).
+  - The cold-launch refresh and the flaky-detail-page fix are written and
+    parked (Now). **Not verified on a phone.** Mac tests and an iOS Debug
+    compile only.
+- **2026-10-18 (`v8-server-exam-dates`, off `75dc7aa`, local, not merged):
+  the server's syllabus exam dates reach the app.** `extract-profile` has
+  stored each class's `examDates` since the profile existed, but `sync`
+  sent only the grading weights and components, so the phone read exams out
+  of the syllabus text on its own. `sync`'s manifest now carries them, the
+  app keeps them with the class's profile, and a dated server exam wins over
+  the on-device parse of the same exam under the same `syllabus-...` id (the
+  on-device parse stays as the fallback; `CLAUDE.md` → What the app does,
+  exam cards). **Waiting on a deploy of `sync` that nobody has approved**;
+  until then the app behaves as before. The Deno tests were written, not
+  run (no Deno on this Mac). Edges in `CLAUDE.md` → Known gaps.
+
 - **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
   merged): the stale-card rules.** The owner's phone filled with tasks
   already taken or never needed ("Take quiz covering assignments 1 and 2"
@@ -733,6 +877,11 @@ Kept so nobody rebuilds them blind.
 - **2026-10-02 (`v8`, blind).** Ed Discussion ingestion end to end
   (`docs/ED_DISCUSSION.md`); the `ed` document kind on both sides of the
   wire.
+- **2026-10-08.** Found why the live build keeps asking for a refresh
+  (see Now). DEBUG builds gain `-LHFSessionDiagnostics`, a launch-time
+  readout of the saved password flag and saved Canvas cookies (names and
+  dates only). No behaviour changed.
+- **2026-09-28.** 3.0.0 (11) approved and released on the App Store.
 - **2026-09-27.** Stay signed in works like Olisa's phone again: the
   24-hour cookie rule and Penn's cookie handling restored byte for byte
   from `39b2fff`, so the app re-logs in on open after a day away (PennKey

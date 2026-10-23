@@ -497,3 +497,14 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   "Posted:" line; a post with no message is not a document). Swift
   2606 / 237 green at `ad4f920`; extension 471 and Deno 419 green on the
   merged tree in the container.
+- 2026-10-23: **first real use, on Olisa's laptop and iPhone.** Loaded
+  unpacked in his Penn Chrome profile; the popup listed his real work
+  (test 1); pairing by camera linked the laptop at 19:09:19 UTC and both
+  devices put sealed snapshots within 11 seconds (test 2); a tick crossed
+  in each direction with a 2 to 3 minute delay, the throttles' design
+  (test 3). The collector uploaded nothing: a course hiding its Files tab
+  answers 401 to a live session, and the collector read any 401 as
+  signed out and discarded the run (Traps). Fixed the same evening with a
+  once-per-run `/users/self` check (482 node tests); the collector's
+  hourly throttle (`collectRunAtV1`) has to be cleared once for the fixed
+  build to run before the hour is up.

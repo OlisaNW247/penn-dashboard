@@ -44,7 +44,7 @@ const CANVAS_REPLACED_KINDS = new Set(["assignment", "announcement", "module", "
 class CollectError extends Error {
   constructor(kind) {
     super(kind);
-    this.kind = kind; // out | rateLimited | network | http | decode | truncated | unsafeLink
+    this.kind = kind; // out | forbidden | rateLimited | network | http | decode | truncated | unsafeLink
   }
 }
 
@@ -63,6 +63,13 @@ function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
       first = false;
     },
     requests: 0,
+    sessionCheck: null,
+    // Is the Canvas session alive? One GET of /users/self per run, memoised on
+    // the context (the promise itself, so concurrent callers share it).
+    confirmSession() {
+      if (!this.sessionCheck) this.sessionCheck = checkSession(this);
+      return this.sessionCheck;
+    },
   };
 }
 
@@ -76,9 +83,36 @@ async function safeText(res) {
   try { return await res.text(); } catch { return ""; }
 }
 
-// One Canvas GET. Throws CollectError: "out" for a 401 or a sign-in page (a
-// redirect to another host, or 200 with HTML), "rateLimited", or an endpoint
-// failure kind. Returns { json, link }.
+// Is the Canvas session alive? Canvas answers 401 for a forbidden resource as
+// well as for a dead session: a course that hides its Files, Modules or Pages
+// answers 401 {"status":"unauthorized", "user not authorized to perform that
+// action"} while the session is fine (a dead one answers "unauthenticated", or
+// redirects to the PennKey login, or serves HTML). The wrong fix, and what
+// this code did first (as the phone's CanvasCourseContentClient still does;
+// it gets away with it only because it never asks for Files), is to read every
+// 401 as "signed out": one course with a hidden Files tab then discarded the
+// whole run for every course. So a 401/403 is judged by asking Canvas once who
+// the student is. Only a clean JSON 200 from the Canvas host counts as alive.
+async function checkSession(ctx) {
+  await ctx.pace();
+  ctx.requests += 1;
+  try {
+    const res = await ctx.fetch(`${DEFAULT_BASE_URL}/api/v1/users/self`, { credentials: "include", redirect: "follow", headers: { Accept: "application/json" } });
+    if (typeof res.url === "string" && res.url !== "" && hostOf(res.url) !== CANVAS_HOST) return false;
+    if (res.status !== 200) return false;
+    const text = stripAntiHijackPrefix(await safeText(res));
+    if (looksLikeHTML(text)) return false;
+    return isObject(JSON.parse(text));
+  } catch {
+    return false;
+  }
+}
+
+// One Canvas GET. Throws CollectError: "out" for a sign-in page (a redirect to
+// another host, or HTML) or a 401/403 when the session check says the session
+// is dead, "forbidden" for a 401/403 while the session is alive (that endpoint
+// is closed to this student; nothing else is wrong), "rateLimited", or an
+// endpoint failure kind. Returns { json, link }.
 async function canvasGet(ctx, url) {
   await ctx.pace();
   ctx.requests += 1;
@@ -88,11 +122,14 @@ async function canvasGet(ctx, url) {
   } catch {
     throw new CollectError("network");
   }
-  if (res.status === 401) throw new CollectError("out");
   if (typeof res.url === "string" && res.url !== "" && hostOf(res.url) !== CANVAS_HOST) throw new CollectError("out");
   if (res.status === 429) throw new CollectError("rateLimited");
   const raw = await safeText(res);
   if (res.status === 403 && /rate limit/i.test(raw)) throw new CollectError("rateLimited");
+  if (res.status === 401 || res.status === 403) {
+    if (looksLikeHTML(stripAntiHijackPrefix(raw))) throw new CollectError("out");
+    throw new CollectError((await ctx.confirmSession()) ? "forbidden" : "out");
+  }
   if (!res.ok) throw new CollectError("http");
   const text = stripAntiHijackPrefix(raw);
   if (looksLikeHTML(text)) throw new CollectError("out");
@@ -309,7 +346,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   const ctx = makeContext({ fetch: fetchFn, limits, sleep });
   const empty = (canvas) => ({
     canvas, courses: [], documents: [], links: [], failures: {}, ed: "none", edReadCourseIDs: [], filesSeen: files?.seen ?? {},
-    summary: { canvas, ed: "none", courses: 0, documents: 0, links: 0, failedEndpoints: 0, requests: ctx.requests, rateLimited: false },
+    summary: { canvas, ed: "none", courses: 0, documents: 0, links: 0, failedEndpoints: 0, forbidden: 0, requests: ctx.requests, rateLimited: false },
   });
 
   let list = courses;
@@ -325,6 +362,8 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   let links = [];
   const failures = {};
   let rateLimited = false;
+  let forbidden = 0;
+  let filesForbidden = 0;
   const filesSeen = { ...(files?.seen ?? {}) };
   const fileCounts = { extracted: 0, empty: 0, failed: 0 };
   for (const course of list) {
@@ -342,6 +381,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
         if (!(e instanceof CollectError)) { failed.push(name); continue; }
         if (e.kind === "out") return empty("out"); // sign-in page: nothing is uploaded
         failed.push(name);
+        if (e.kind === "forbidden") forbidden += 1;
         if (e.kind === "rateLimited") { rateLimited = true; break; }
       }
     }
@@ -350,10 +390,13 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
       const got = await collectFiles({
         fetch: fetchFn, courseID: course.courseID, course, extractText: files.extractText,
         seen: filesSeen[course.courseID] ?? {}, now: when, sleep: sleep ?? limits.sleep,
+        confirmSession: () => ctx.confirmSession(),
         limits: { delayMs: limits.delayMs, maxFiles: files.maxFiles },
       });
       ctx.requests += got.counts.requests;
       filesSeen[course.courseID] = got.seen;
+      filesForbidden += got.counts.forbidden ?? 0;
+      if (got.stopped === "out") return empty("out"); // the session check failed: sign-in page, nothing is uploaded
       documents.push(...got.documents);
       for (const k of Object.keys(fileCounts)) fileCounts[k] += got.counts[k];
       if (got.stopped === "rateLimited") rateLimited = true;
@@ -385,10 +428,11 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
       documentsByKind: countBy(documents, "kind"),
       links: links.length,
       failedEndpoints: Object.values(failures).reduce((n, f) => n + f.length, 0),
+      forbidden,
       edMatched: ed.matched,
       requests: ctx.requests,
       rateLimited,
-      ...(files ? { files: fileCounts } : {}),
+      ...(files ? { files: fileCounts, filesForbidden } : {}),
     },
   };
 }

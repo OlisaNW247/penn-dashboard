@@ -374,6 +374,52 @@ struct EdRunStopTests {
         #expect(plan.restore.isEmpty)
     }
 
+    @Test("a class whose tab lookup failed and that no Ed course matched is restored, not dropped: the lookup says nothing about Ed")
+    func failedTabLookupIsRestored() {
+        // Class 3's `/tabs` request failed and the matcher found no Ed
+        // course for it; it holds stored Ed posts. "Unknown", so it keeps them.
+        let plan = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2", "3"], matched: ["1", "2"], read: ["1", "2"],
+            unknown: ["3"], storedEd: ["1", "2", "3"]
+        )
+        #expect(plan.drop.isEmpty)
+        #expect(plan.restore == ["3"])
+    }
+
+    @Test("a class whose tab lookup succeeded and that no Ed course matched is still dropped, even when another class's lookup failed")
+    func successfulLookupWithoutMatchIsDropped() {
+        // Class 3 was checked and has no Ed; class 2's lookup failed. Only
+        // the failure is unknown, so a note anywhere in the run is not
+        // enough to keep a class that Ed authoritatively lacks.
+        let plan = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2", "3"], matched: ["1"], read: ["1"],
+            unknown: ["2"], storedEd: ["1", "2", "3"]
+        )
+        #expect(plan.drop == ["3"])
+        #expect(plan.restore == ["2"])
+    }
+
+    @Test("a failed tab lookup on a class with no stored Ed documents produces nothing, and one on a matched class changes nothing")
+    func failedLookupWithoutStoredDocuments() {
+        // Nothing stored for class 3: neither dropped nor counted as restored.
+        let bare = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "3"], matched: ["1"], read: ["1"],
+            unknown: ["3"], storedEd: ["1"]
+        )
+        #expect(bare.drop.isEmpty)
+        #expect(bare.restore.isEmpty)
+
+        // Class 2 is matched and was read despite its failed lookup (a cached
+        // launch URL, or a sibling site with the tab): it is read, so neither
+        // restored nor dropped.
+        let matchedClass = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2"], matched: ["1", "2"], read: ["1", "2"],
+            unknown: ["2"], storedEd: ["1", "2"]
+        )
+        #expect(matchedClass.drop.isEmpty)
+        #expect(matchedClass.restore.isEmpty)
+    }
+
     // MARK: status line
 
     @Test("the status line leads with the counts and the first failure's kind")
@@ -436,10 +482,19 @@ struct EdRestoreDropPlanTests {
     @Test("a class whose tab check failed and that matched no Ed course is restored, not dropped")
     func tabFailureUnmatchedIsRestored() {
         let plan = EdDiscussionCoordinator.restoreDropPlan(
-            allIDs: Self.all, matched: ["1"], read: ["1"], unknown: ["2"]
+            allIDs: Self.all, matched: ["1"], read: ["1"], unknown: ["2"], storedEd: ["1", "2"]
         )
         #expect(plan.drop == ["3", "4"])
         #expect(plan.restore == ["2"])
+
+        // The same run when class 2 holds no Ed documents: there is nothing to
+        // restore, so it is not counted as restored, and it is still not
+        // dropped, because the failed lookup says nothing about Ed.
+        let bare = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: Self.all, matched: ["1"], read: ["1"], unknown: ["2"], storedEd: ["1"]
+        )
+        #expect(bare.drop == ["3", "4"])
+        #expect(bare.restore.isEmpty)
     }
 
     @Test("a class with no match and a clean run is still dropped: Ed saying it has nothing is authoritative")
@@ -453,8 +508,10 @@ struct EdRestoreDropPlanTests {
 
     @Test("one class being unknown does not protect another class that was cleanly checked")
     func unknownDoesNotProtectOthers() {
+        // Every class holds stored Ed posts, so storage alone does not protect
+        // 2 and 4: only class 3's failed lookup does.
         let plan = EdDiscussionCoordinator.restoreDropPlan(
-            allIDs: Self.all, matched: ["1"], read: ["1"], unknown: ["3"]
+            allIDs: Self.all, matched: ["1"], read: ["1"], unknown: ["3"], storedEd: Self.all
         )
         #expect(plan.drop == ["2", "4"])
         #expect(plan.restore == ["3"])
@@ -481,7 +538,7 @@ struct EdRestoreDropPlanTests {
     @Test("a tab-check failure on a class that was matched and read changes nothing: it was replaced")
     func tabFailureThenReadIsNeither() {
         let plan = EdDiscussionCoordinator.restoreDropPlan(
-            allIDs: Self.all, matched: ["1", "2"], read: ["1", "2"], unknown: ["2"]
+            allIDs: Self.all, matched: ["1", "2"], read: ["1", "2"], unknown: ["2"], storedEd: ["1", "2"]
         )
         #expect(plan.restore.isEmpty)
         #expect(!plan.drop.contains("2"))
@@ -489,32 +546,58 @@ struct EdRestoreDropPlanTests {
 
     @Test("a tab-check failure on a matched class whose read also failed is restored once")
     func tabFailureThenReadFailureIsRestored() {
-        let plan = EdDiscussionCoordinator.restoreDropPlan(
-            allIDs: Self.all, matched: ["1", "2"], read: ["1"], unknown: ["2"]
-        )
-        #expect(plan.restore == ["2"])
-        #expect(plan.drop == ["3", "4"])
+        // Restored because it is matched and unread, whether or not it holds
+        // stored Ed documents; the failed lookup adds nothing to that.
+        for stored: Set<String> in [[], ["1", "2"]] {
+            let plan = EdDiscussionCoordinator.restoreDropPlan(
+                allIDs: Self.all, matched: ["1", "2"], read: ["1"], unknown: ["2"], storedEd: stored
+            )
+            #expect(plan.restore == ["2"])
+            #expect(plan.drop == ["3", "4"])
+        }
     }
 
     @Test("the two sets never overlap and never hold a class that was read, whatever the inputs")
     func setsNeverOverlap() {
         let ids = Array(Self.all)
-        for mask in 0..<(1 << (ids.count * 3)) {
+        // 4 classes x 4 input sets = 65,536 combinations. A failure is
+        // collected as text and asserted once at the end: half a million
+        // individual `#expect` calls would make this the slowest test in the
+        // suite for no extra information.
+        var violations: [String] = []
+        for mask in 0..<(1 << (ids.count * 4)) {
             func pick(_ shift: Int) -> Set<String> {
                 Set(ids.enumerated().filter { (mask >> (shift * ids.count + $0.offset)) & 1 == 1 }.map(\.element))
             }
             let matched = pick(0)
             let read = pick(1).intersection(matched)   // only a matched class can be read
             let unknown = pick(2)
+            let storedEd = pick(3)
             let plan = EdDiscussionCoordinator.restoreDropPlan(
-                allIDs: Self.all, matched: matched, read: read, unknown: unknown
+                allIDs: Self.all, matched: matched, read: read, unknown: unknown, storedEd: storedEd
             )
-            #expect(plan.drop.isDisjoint(with: plan.restore))
-            #expect(plan.drop.isDisjoint(with: read))
-            #expect(plan.restore.isDisjoint(with: read))
-            #expect(plan.drop.isDisjoint(with: unknown))
-            #expect(plan.drop.isDisjoint(with: matched))
+            let allowedToRestore = matched.union(unknown.intersection(storedEd))
+            let checks: [(String, Bool)] = [
+                ("drop overlaps restore", plan.drop.isDisjoint(with: plan.restore)),
+                ("drop holds a read class", plan.drop.isDisjoint(with: read)),
+                ("restore holds a read class", plan.restore.isDisjoint(with: read)),
+                ("drop holds a matched class", plan.drop.isDisjoint(with: matched)),
+                // An unknown class is never dropped: drop ∩ unknown ⊆ matched,
+                // and drop never holds a matched class, so the intersection is empty.
+                ("drop holds an unknown class", plan.drop.intersection(unknown).isEmpty),
+                // Nothing is restored except matched work and unknown classes
+                // that really hold Ed documents.
+                ("restore holds a class outside matched ∪ (unknown ∩ storedEd)",
+                 plan.restore.isSubset(of: allowedToRestore)),
+            ]
+            for (name, held) in checks where !held {
+                violations.append(
+                    "\(name): matched \(matched.sorted()) read \(read.sorted()) unknown \(unknown.sorted()) "
+                        + "storedEd \(storedEd.sorted()) -> drop \(plan.drop.sorted()) restore \(plan.restore.sorted())"
+                )
+            }
         }
+        #expect(violations.isEmpty, "\(violations.count) violations, first: \(violations.first ?? "")")
     }
 
     @Test("applied to a knowledge base: the tab-failed unmatched class keeps its Ed posts, the cleanly unmatched one loses them")
@@ -526,9 +609,14 @@ struct EdRestoreDropPlanTests {
             documents: [Self.edDoc("1", "fresh"), kept, gone],
             lastSyncedAt: Self.now
         )
+        // Class 2 is restorable only because it holds Ed posts, found the way
+        // the coordinator finds them: from the stored documents themselves.
+        let storedEd = Set(knowledge.documents.filter { $0.kind == .ed }.map(\.courseID))
         let plan = EdDiscussionCoordinator.restoreDropPlan(
-            allIDs: ["1", "2", "3"], matched: ["1"], read: ["1"], unknown: ["2"]
+            allIDs: ["1", "2", "3"], matched: ["1"], read: ["1"], unknown: ["2"], storedEd: storedEd
         )
+        #expect(plan.restore == ["2"])
+        #expect(plan.drop == ["3"])
         EdDiscussionCoordinator.droppingEdDocuments(from: &knowledge, courseIDs: plan.drop)
         EdDiscussionCoordinator.restoringEdDocuments([kept, gone], into: &knowledge, courseIDs: plan.restore)
 
