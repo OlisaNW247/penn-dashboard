@@ -207,10 +207,15 @@ These block shipping, or would make shipping risky.
   (2606/237), `sync` v12 live, and the phone's first sync on the build
   uploaded 63 of this term's Canvas announcements and 36 Ed posts. Left:
   the tree's answer on a phone (asked for), the `posted_at` migration
-  (Phase 2 step 5, needs a go), Phase 4 (owners' decision), and one
-  review finding in the Ed coordinator: a class whose `/tabs` lookup fails
-  mid-run has its stored Ed posts dropped instead of restored
-  (`restoreDropPlan`; CLAUDE.md → Known gaps).
+  (Phase 2 step 5, needs a go) and Phase 4 (owners' decision). The review
+  finding in the Ed coordinator (a failed `/tabs` lookup dropped a class's
+  Ed posts) and a bigger one (the course-material collector deleted every
+  re-synced class's Ed posts and saved before Ed restored them) are fixed
+  on `fix/ed-posts-durable`, for Olisa's review; see CLAUDE.md → the
+  "vanish" trap. Two shapes left alone: a class whose Canvas has an Ed tab
+  but whose Ed course the matcher refuses is still dropped, and the
+  collector drops `.file` and `.website` documents the same way (the
+  server's downloads re-supply those).
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the

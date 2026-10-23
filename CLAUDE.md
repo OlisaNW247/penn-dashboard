@@ -2175,6 +2175,24 @@ itself.
   regex compiles per call. The rule: never put a computation that reads
   the ledger or scans all pairs in a SwiftUI `body` or a property `body`
   reads; store it and refresh it where the data changes.
+- **Ed posts that "vanish" were deleted by the course-material sync, not
+  by Ed.** Marco's megaphone showed no Ed posts for days while Olisa said
+  Ed worked, and both were right: on 2026-10-23 Marco's phone read both
+  of his Ed classes at 15:05, yet every one of its 35 Ed posts had been
+  first stored at 15:05 (unchanged posts keep their old `fetchedAt`), so
+  none had survived any earlier run. `CourseKnowledgeCollector` merged
+  each re-synced class as a complete set, which removed its `.ed`
+  documents, and saved the file at once. Ed's pass, which only starts
+  after a hidden launch of up to ~40 s, put them back from
+  `priorEdDocuments`. If the app left the screen in that window, or the Ed
+  run failed, the file kept no Ed posts and the next run had nothing to
+  restore. The fix is `merge(preservingKinds: [.ed])` in the collector: it
+  never produces Ed documents, so it has no say over them. The wrong fixes
+  look reasonable: saving later in the collector still loses everything on
+  a crash between the two saves, and keeping a second copy of Ed posts for
+  the megaphone would hide the bug from ask and the upload, which read the
+  same file. The tell: an Ed post's `fetchedAt` equal to the latest sync
+  for every post at once.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -2450,11 +2468,11 @@ none is a ship line.
   header's date, so no read of that class has completed since
   2026-10-19). Ran on Olisa's iPhone at 18:09 UTC the same day: 36 Ed
   posts re-read for CIS 2400 and CIS 4500, each with the posting-day
-  header. Found in review the same afternoon, not yet fixed: a class
-  whose Ed `/tabs` lookup fails on a flaky request (while another class's
-  cached launch URL lets the run go on) is treated as "no Ed match" by
-  `restoreDropPlan` and its stored posts are dropped for that run; it
-  should be restored like a class the read never reached. Still true:
+  header. Found in review the same afternoon and fixed that evening on
+  `fix/ed-posts-durable` (not yet on `v8`, not yet run on a phone): a
+  class whose Ed `/tabs` lookup failed was treated as "no Ed match" by
+  `restoreDropPlan` and its stored posts dropped; a failed tab lookup now
+  counts as unknown and restores (`unknown:`). Still true:
   pooled Ed posts are downloaded and dropped again every sync on a phone
   whose class has no Ed match, and staff answers inside student questions
   are never captured (no endpoint).

@@ -195,6 +195,87 @@ struct CourseKnowledgeBaseTests {
         #expect(base.lastSyncedAt == t1)
     }
 
+    // MARK: - merge: preserving kinds
+
+    /// Course 1 holds a syllabus, two pages and two Ed posts; course 2 holds
+    /// an Ed post. A re-fetch of course 1 lists only the syllabus and one of
+    /// the pages, the way the Canvas collector's list does (no Ed in it).
+    private func baseWithEd(at t0: Date) -> CourseKnowledgeBase {
+        CourseKnowledgeBase(
+            courses: [CourseSummary(courseID: "1", code: "CIS 1", name: "CIS 1", url: nil)],
+            documents: [
+                doc(kind: .syllabus, id: "s", text: "syllabus", fetchedAt: t0),
+                doc(kind: .page, id: "kept", text: "same", fetchedAt: t0),
+                doc(kind: .page, id: "vanished", text: "deleted from Canvas", fetchedAt: t0),
+                doc(kind: .ed, id: "e1", text: "ed one", fetchedAt: t0),
+                doc(kind: .ed, id: "e2", text: "ed two", fetchedAt: t0),
+                doc("2", kind: .ed, id: "other", text: "other course", fetchedAt: t0),
+            ],
+            lastSyncedAt: t0
+        )
+    }
+
+    @Test("preservingKinds: [.ed] keeps a resynced course's Ed documents and still drops its vanished non-Ed ones")
+    func mergePreservingEdKeepsEdAndDropsVanishedPages() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t1 = Date(timeIntervalSince1970: 2_000)
+        var base = baseWithEd(at: t0)
+        base.merge(
+            courses: [],
+            documents: [
+                doc(kind: .syllabus, id: "s", text: "syllabus", fetchedAt: t1),
+                doc(kind: .page, id: "kept", text: "same", fetchedAt: t1),
+            ],
+            resyncedCourseIDs: ["1"],
+            preservingKinds: [.ed],
+            syncedAt: t1
+        )
+        let byID = Dictionary(uniqueKeysWithValues: base.documents.map { ($0.id, $0) })
+        #expect(Set(byID.keys) == ["syllabus:1:s", "page:1:kept", "ed:1:e1", "ed:1:e2", "ed:2:other"])
+        // Kept as they were: the original document, not a copy stamped now.
+        #expect(byID["ed:1:e1"]?.fetchedAt == t0)
+        #expect(byID["ed:1:e2"]?.text == "ed two")
+        #expect(byID["page:1:kept"]?.fetchedAt == t0)   // unchanged: keeps original fetch time
+        #expect(byID["page:1:vanished"] == nil)          // the rule for every other kind is untouched
+        #expect(base.lastSyncedAt == t1)
+    }
+
+    @Test("with the default preservingKinds (empty) a resynced course loses its Ed documents, exactly as before")
+    func mergeDefaultStillDropsEd() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t1 = Date(timeIntervalSince1970: 2_000)
+        let fresh = [
+            doc(kind: .syllabus, id: "s", text: "syllabus", fetchedAt: t1),
+            doc(kind: .page, id: "kept", text: "same", fetchedAt: t1),
+        ]
+        var implicit = baseWithEd(at: t0)
+        implicit.merge(courses: [], documents: fresh, resyncedCourseIDs: ["1"], syncedAt: t1)
+        var explicit = baseWithEd(at: t0)
+        explicit.merge(courses: [], documents: fresh, resyncedCourseIDs: ["1"], preservingKinds: [], syncedAt: t1)
+
+        #expect(Set(implicit.documents.map(\.id)) == ["syllabus:1:s", "page:1:kept", "ed:2:other"])
+        #expect(implicit == explicit)
+    }
+
+    @Test("a preserved kind is still replaced by id when the new list carries it, and a course that was not resynced is untouched either way")
+    func mergePreservingStillReplacesByID() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t1 = Date(timeIntervalSince1970: 2_000)
+        var base = baseWithEd(at: t0)
+        base.merge(
+            courses: [],
+            documents: [doc(kind: .ed, id: "e1", text: "ed one, edited", fetchedAt: t1)],
+            resyncedCourseIDs: ["1"],
+            preservingKinds: [.ed],
+            syncedAt: t1
+        )
+        let byID = Dictionary(uniqueKeysWithValues: base.documents.map { ($0.id, $0) })
+        #expect(byID["ed:1:e1"]?.text == "ed one, edited")
+        #expect(byID["ed:1:e2"]?.text == "ed two")           // not listed, preserved
+        #expect(byID["ed:2:other"]?.fetchedAt == t0)         // course 2 was never resynced
+        #expect(byID["syllabus:1:s"] == nil)                  // a non-preserved kind not listed is dropped
+    }
+
     // MARK: - catalog
 
     @Test("decoding legacy JSON with no catalog key still loads, with catalog empty")
