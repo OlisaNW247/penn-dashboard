@@ -217,6 +217,16 @@ holes were found by reading the code, and three behaviours changed.
    (`noMatch`), or was read and failed (`http(code)`, `sessionExpired`); it
    narrows the question to one of those. It is not necessarily a code bug.
 
+## 2026-10-23, evening: a failed tabs lookup is "unknown", not "no Ed"
+
+`findLaunchURLs` now reports the Canvas course ids whose `/tabs` request
+failed, and `restoreDropPlan(allIDs:matched:read:unknown:storedEd:)`
+restores such a class's stored posts instead of dropping them (only when
+it has any; a class the read reached is unaffected). Before, a flaky
+`/tabs` answer for a class whose code matches no Ed course dropped its
+pooled posts on that phone until the next successful lookup. Written
+without a compiler; three tests in `EdRunStopTests`.
+
 ## Privacy rules for this feature
 
 Ed content is course material, pooled like syllabi. Student-authored posts

@@ -281,7 +281,12 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   notifications at launch on `v8`; the parked sync fixes conflict with the
   2026-10-23 announcement window and must be salvaged as fresh patches).
   Low-risk first: `fix/submission-status`, `fix/canvas-signin-bulletproof`,
-  the launch-prep handoff doc.
+  the launch-prep handoff doc. **Done the same evening on `v8-merge-marco`,
+  blind:** all seven merges (the owner chose automatic PennKey saving as
+  Marco wrote it), plus three fresh patches (the launch pass without the
+  notification drains, the partial-course sync semantics with 403 per
+  course, the Ed tabs restore). Left: Olisa's compile (predicted 2736),
+  the phone, `sync` v13 for the exam dates (needs a go), and telling Marco.
 
 - **Announcements for ask, from Canvas and Ed** (plan written 2026-10-23,
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`, owner's request). Canvas

@@ -98,7 +98,18 @@ then fast-forward `v8`. The counts above are predictions from `@Test`
 counts; trust the Mac's number. A count below the prediction has lost
 work.
 
-## 4. What this does not cover
+## 4. Status, 2026-10-23 evening
+
+Olisa's decisions: automatic PennKey saving merged as Marco wrote it
+(option a); the launch refresh reworked; the sync fixes salvaged. Steps 1
+to 7 merged on `v8-merge-marco` (Deno 428/0, extension 482/0), then three
+fresh patches merged on top: `launch-refresh-rework` (the launch pass
+without the drains, 4 tests), `course-sync-salvage` (partial courses, 403
+per course, 6 tests), `ed-tabs-restore` (3 tests). Predicted 2736 tests.
+Nothing compiled; one read-only review of the whole merged tree ran
+before the push.
+
+## 5. What this does not cover
 
 - Nothing here has been compiled; the dry merges are textual.
 - Deno tests on `v8-server-exam-dates` have never run under Deno.

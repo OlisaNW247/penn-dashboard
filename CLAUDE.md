@@ -813,7 +813,22 @@ Keep this current. It is the fastest way for a new session to know what exists.
   the background (`BackgroundRefresh.swift`), silent Canvas session renewal
   (`CanvasSessionRenewer`, plus the saved PennKey password where
   available) and "turned in" notifications. Grade-change notifications
-  are held back while Grade Watcher is off (2026-10-18).
+  are held back while Grade Watcher is off (2026-10-18). **Since
+  2026-10-23 (`launch-refresh-rework`, blind) a cold launch runs the
+  Canvas chain once** before the loop's first sleep: the feed sync from
+  the root view as before, then `fetchSessionSources` (connected services,
+  Grade Watcher → course intel → course material and Ed) and
+  `settleAfterFetch` (session check, silent-renewal retry, Duo line,
+  reload, badge, reschedule). The two notification drains
+  (`announceGradeChanges`, `announceTurnedIn`) and the laptop sync are
+  **not** in the launch pass: the drains can post, and the root view
+  already ran the laptop pass; a "turned in" raised by the launch fetch
+  therefore waits for the loop's first pass, up to five minutes. Before
+  this, nothing at launch ran the chain and a phone that locked inside
+  the first five minutes synced only on its next return to the
+  foreground (seen 2026-10-23: twenty silent minutes after an install).
+  Marco's `parked/launch-submission-refresh` was the source; merged as
+  written it would have run the drains at launch too.
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -996,7 +1011,11 @@ and the rest) and the three announcement phases of 2026-10-23
 `EdClientTests`, `EdIngestionTests` and the `EdRunStopTests` suite).
 Nothing removed. Not yet built to the phone.**
 **Pending: the merge of Marco's branches on `v8-merge-marco` (2026-10-23),
-predicted +35 +0 +0 +19 +10 +40 +13 = 2723 tests; not yet compiled.**
+predicted +35 +0 +0 +19 +10 +40 +13 = 2723 tests from the seven merges,
+plus the three fresh patches merged on top (`LaunchRefreshStructureTests`
+4, `CourseKnowledgeCollectorPartialSyncTests` 6, three more in
+`EdRunStopTests`) = **2736 tests in about 246 suites**; nothing compiled.
+A lower count has lost work.**
 Before it: 2485 / 227 at `e6aa754`
 (2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
 plus the 21 tests of `VoiceDictationTests` (two suites: the availability
@@ -2754,14 +2773,24 @@ none is a ship line.
   files but ask can't find it". Ingesting Files changes what is pooled
   on the server (instructors' files) and `docs/PRIVACY.md`, so it needs
   a decision, not just code.
-- **A half-failed course-material sync erases documents**, for the
-  student and, through the pool, for classmates; and one forbidden
-  course aborts the whole run before anything is saved. Fixes exist on
-  `parked/ask-course-sync-fixes` and are not merged (see Branches).
-  Related and server-side: `selectLiveDocumentsForCourses` is an
-  unpaginated select, so a student past PostgREST's row limit (1000 by
-  default; unverified for this project) gets a silently truncated
-  manifest.
+- **A half-failed course-material sync no longer erases documents, and
+  a 403 is one course's problem** (2026-10-23, `course-sync-salvage`,
+  blind, ported from Marco's `parked/ask-course-sync-fixes` without its
+  page-body work). Any endpoint error, or the shared announcements call
+  failing, puts a course in `Report.partialCourseIDs`: its stored
+  documents the run did not re-fetch are kept and it is not reported
+  fully synced, so neither the phone's merge nor the server's complete-set
+  rule drops them; `usableCourses` (at most one own error) feeds the
+  "couldn't read course materials" notice so one bad endpoint does not
+  read as a dead sync; the summary line gains `partial P`. Only 401 is
+  `sessionExpired` now; a 403 on one course's assignments leaves that
+  course partial and the run continues to `store.save`. Known edge, kept
+  on purpose: a course with one endpoint that always fails (a Pages tab
+  turned off) is partial forever and its stale documents are never
+  pruned. Canvas sometimes answers a forbidden course with 401, which this
+  does not cover. The server-side half (paginating the live read) was done
+  in `sync` v12 the same day. Six tests, written against a `URLProtocol`
+  stub nobody has run.
 - **The Ed reader fixes of 2026-10-23 compiled green (2606/237) but have not run on a phone** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
   Phase 3, at the owner's direction; the Kit half rode in `9540751`, the
   coordinator in the commit after it). `EdThreadFilter` now drops an
@@ -2780,11 +2809,14 @@ none is a ship line.
   header's date, so no read of that class has completed since
   2026-10-19). Ran on Olisa's iPhone at 18:09 UTC the same day: 36 Ed
   posts re-read for CIS 2400 and CIS 4500, each with the posting-day
-  header. Found in review the same afternoon, not yet fixed: a class
-  whose Ed `/tabs` lookup fails on a flaky request (while another class's
-  cached launch URL lets the run go on) is treated as "no Ed match" by
-  `restoreDropPlan` and its stored posts are dropped for that run; it
-  should be restored like a class the read never reached. Still true:
+  header. Found in review the same afternoon and fixed blind the same
+  evening (`ed-tabs-restore`): a class whose Ed `/tabs` lookup fails is
+  "unknown", not "no Ed", so `restoreDropPlan(unknown:storedEd:)` restores
+  its stored posts instead of dropping them (three tests in
+  `EdRunStopTests`). Narrower than it sounded: matching is by course code,
+  so the only class this protects is one whose code matches no Ed course
+  while its tab request fails; before, that run dropped its posts until
+  the next successful lookup. Still true:
   pooled Ed posts are downloaded and dropped again every sync on a phone
   whose class has no Ed match, and staff answers inside student questions
   are never captured (no endpoint).
