@@ -483,6 +483,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-10-23.** Automatic Penn credential saving after verified Canvas login;
+  no duplicate password prompt or opt-out sheet. Added connection confirmation,
+  pre-login disclosure, origin/lifetime guards, and Keychain error handling.
+  Live PennKey/Duo/autofill validation remains required before release.
+
+
 - **The Chrome extension** (2026-10-22, `3fa853b` through this commit on
   `v8`; owner's scope: a helper for the phone). Pure ES-module ports of
   the phone's parsing (course code, ICS, Gradescope, dedup, document
