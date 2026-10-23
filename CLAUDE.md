@@ -150,7 +150,11 @@ it was attached to a 3.1.0 version and submitted for review is Olisa's
 step in App Store Connect and is not recorded here yet.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
-to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0
+to the live version is Olisa's call, after the build is downloadable. Marco's
+read of the public iTunes lookup on 2026-10-08
+(`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
+(build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to
+"about 2026-10-01"; the floor then was 1.2.1, as now. Builds 7–9 of 3.0.0
 were uploaded from `v5` and none was released (build 8 was rejected under
 2.1(a), see Known gaps). Build 10 was uploaded 2026-09-16 at 9:54 AM,
 from before stay-signed-in existed, and attached to that rejected
@@ -169,9 +173,9 @@ renamed 2.0.0 → 3.0.0, and its What's New and review notes were saved
 (the notes as pasted are at the top of `docs/appstore/REVIEW_NOTES.md`).
 Marco was finishing by hand: remove 3.0.0 from the old rejected
 submission `067299d2…`, swap build 10 for 11, then Add for Review →
-Submit. Whether he submitted is not recorded here. The version is set to
-release automatically once approved; raise the `update-manifest` floor
-only after 3.0.0 is actually downloadable. macOS 1.0 shows "Ready for
+Submit. He did: it was approved and released automatically on 2026-09-28
+(Release state, above). The `update-manifest` floor has not been raised;
+see above for why it should wait. macOS 1.0 shows "Ready for
 Distribution" there (reviewed 2026-08-30), whatever older docs say. On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
@@ -871,7 +875,24 @@ read-only, from the App Group plist:
 xcrun devicectl device copy from --device <CoreDevice id> --domain-type appGroupDataContainer --domain-identifier group.com.lhf.lowhangingfruit --source Library/Preferences/group.com.lhf.lowhangingfruit.plist --destination /tmp/lhf.plist
 ```
 
-Since 2026-10-19 (blind) that plist also holds one-line summaries of the
+That copy only works while the installed app is a developer build. Against
+the App Store copy it fails with `ContainerLookupErrorDomain error 7`,
+and a Release build keeps no renewal log anyway. Installing a DEBUG build
+over the store copy keeps everything (same team, `24A3TDB277`, so the data
+container, App Group and Keychain all carry over) and makes the container
+readable; copy the plist and cookie jar before the first launch to see the
+state the store build left. Going back to the store copy means deleting
+the app, so the phone stays on the debug build until the next App Store
+update installs over it.
+
+`-LHFSessionDiagnostics` (DEBUG only) snapshots what the silent re-login
+has to work with at launch: whether a PennKey password is on file, and
+every saved Canvas cookie's domain, name, expiry and capture time (never a
+value). It prints `LHF-DIAG` lines and keeps them in `UserDefaults.lhf`
+`debugSessionDiagnosticsV1`. Run it before `-LHFAgeCanvasSession`, or
+together with it (the snapshot is taken first).
+
+Since 2026-10-19 (blind) the App Group plist also holds one-line summaries of the
 last announcement sync (`lastAnnouncementSyncSummaryV1`: where it exited,
 Canvas count, eligible, finds, errors, processed, the first error's kind,
 "gave up N"), the last Ed task pass (`lastEdTaskSyncSummaryV1`, 2026-10-20,
@@ -1608,7 +1629,12 @@ itself.
   to the foreground, on a Grade Watcher 401, and, since `v8` (2026-10-09,
   blind), on each foreground refresh while the session is expired and
   `AppState.shouldRetrySilentRenewal` says the cooldown has passed, and on
-  background wakes now that the crash below is fixed. A background
+  background wakes now that the crash below is fixed. **The 24-hour half of
+  that is switched off on any phone whose saved cookie set holds a cookie
+  with a real expiry date** (found on Marco's phone 2026-10-08; still
+  unfixed on `v8` at 2026-10-23, `load` and `isExpired` being unchanged;
+  see the analytics-cookie trap), where only a Grade Watcher 401 or the
+  foreground retry on an expired session starts a renewal. A background
   renewal runs in `RenewalContext.background` with a 20 s budget and can
   only ever *help*: `.renewed` saves cookies, `.passwordRejected` still
   disables auto-login, and every other outcome changes nothing, so a
@@ -2272,6 +2298,36 @@ itself.
   every other dedup path for a problem that exists only when both ids are
   known. Gradescope rows carry no Canvas id, so the Canvas↔Gradescope
   pairing cannot use this veto.
+- **One analytics cookie switches the 24-hour rule off, for good.**
+  `SessionCookieStore.isExpired` is "something is saved, and `load()`
+  returns nothing", and `load()` keeps any cookie whose own `expiresDate`
+  is still ahead, whatever its age. Both harvests save more than the
+  session: `CanvasLoginPane.connect()` keeps every cookie on
+  `canvas.upenn.edu`, and `CanvasSessionRenewer` keeps every cookie whose
+  domain contains "canvas". So Google Analytics' `_ga` (thirteen months)
+  and `sso.canvaslms.com`'s `last_known_canvas_host` (a year) ride along,
+  and from then on the set is never empty: `isExpired` reads false while
+  `canvas_session` itself has been dropped as stale. No banner, no
+  renew-on-open, and `hasCanvasCredentials` still true, so the app sends
+  Canvas a request with analytics cookies and no session. It is the
+  `fac110d` failure through a different door: the renewer only runs after
+  a Grade Watcher 401. Read off Marco's phone on 2026-10-08, on the store
+  build, with `-LHFSessionDiagnostics`: seven saved cookies, three "still
+  fresh" (`_ga`, `_gid`, `last_known_canvas_host`), `isExpired: false`. One
+  `-LHFAgeCanvasSession` launch then ran 55 seconds without any renewal;
+  the next renewed in 9 seconds through the saved password and Duo's
+  trust, started by the 401 and not by the rule. The tells: an aged launch
+  with no `canvasSessionExpired false -> true` line in `debugRenewalLogV1`,
+  and a "still fresh" count above zero when every session cookie is old.
+  Whether a phone is in this state is a race at each harvest (was the
+  analytics script done when the cookies were read), which is why one
+  phone can have it and another not. The wrong fix is filtering the
+  harvests alone: sets already saved on students' phones stay polluted,
+  so the rule has to be decided at read time, by whether a fresh session
+  cookie is left. Two things this ruled out on the same phone, the same
+  day: the saved password was on file and worked, and the Canvas Student
+  app (installed, 8.12.1) did not take the hidden renewer's return hop.
+  Penn's app-association file now claims only `/canvas/login`.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -2333,6 +2389,7 @@ it holds work that exists nowhere else.
 | `v8` | **Current line (2026-10-02 onward); Marco's `v8-loud-alert-actions` is merged into it on `v8-merge-loud-alert` (2026-10-20), not yet on `v8` itself.** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-ann-rules` | **Local, 2026-10-18, off `v8-announcements` at the WIP commit `80c21ec`; not merged or pushed.** The announcement-task visibility rules (past tasks leave the dashboard instead of moving to prev, undated tasks age out after 7 days, same-day class reminders are not cards, the Ed pass reads only posts from the last 14 days). Written to be merged into `v8-announcements` as a patch, and applied there on 2026-10-18, so it holds nothing extra. 2207/203 green on its own; compiled for generic iOS (the phone was unreachable), not installed. |
+| `origin/v8` (as of 2026-10-08) | Olisa's Ed Discussion work (four commits, 2026-10-02), on top of `origin/V7`; not merged. It rewrites the staleness line inside `SessionCookieStore.load` and adds a `.ed` service, so a sign-in fix that edits `load` will conflict with it. `origin/V7` is also one commit ahead of the 3.0.0 (11) source (`9769286`, DEBUG owner rows in Settings). Marco's note of 2026-10-08, kept for its dates; since 2026-10-10 `v8` is the line and carries all of it (see its row above). |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
@@ -2714,6 +2771,40 @@ none is a ship line.
   the background-refresh trap, now historical). The `v8` fix has not been
   exercised on a device: verify with Xcode's Debug → Simulate Background
   Fetch on a DEBUG build and `debugRenewalLogV1`.
+- **Stay signed in is fragile in 3.0.0 (11), the live build** (Marco's
+  phone, 2026-10-08: the refresh banner sometimes clears by itself and
+  sometimes stays). Three causes, the first proven on the device and the
+  other two read from the code, none fixed yet (`ROADMAP.md` → Now):
+  1. The 24-hour trigger is off on a phone with a saved analytics cookie
+     (the trap above).
+  2. Any silent attempt that fails to finish is recorded as "confirmed
+     dead" and raises the banner: a network error (`SettleWaiter`'s
+     `.failed` falls through to `.landedOnLoginPage`), the 30-second cap,
+     or the app being left mid-attempt. The flag is persisted while the
+     1-hour attempt cooldown and the 6-hour password-resubmission cooldown
+     live in memory, so within one process a retry inside six hours of a
+     password submission cannot fill the form again and is bound to fail;
+     a relaunch resets both and retries properly.
+  3. The banner is bound straight to `canvasSessionExpired`
+     (`ContentView`), so when the 24-hour rule does trip it shows for the
+     whole silent attempt; tapping it aborts that attempt and opens the
+     login pane, whose pre-login purge includes `duosecurity` and so
+     deletes Duo's remembered device. Marco also reports typing his
+     password there by hand although one is saved; not yet reproduced.
+
+  Since 2026-10-09 (`v8`, blind, never on a device): causes 2 and 3 are
+  addressed by the sign-out fix above (a failed navigation is `.timedOut`
+  and never a login landing, the attempt cooldowns are persisted and
+  foreground retries replace the one-shot latch, the banner is hidden
+  while a silent renewal is in flight, and the pre-login purge keeps
+  Duo's cookie). Cause 1, the analytics cookie, is not fixed: the
+  trap's own wrong-fix warning still stands and `load` still keeps a
+  cookie by its own expiry (checked 2026-10-23).
+- **Background refresh does nothing: it crashes on every wake** (see the
+  background-refresh trap). Shipped that way in 3.0.0 (11) on purpose,
+  because fixing it alone would switch on untested background re-logins.
+  Fixed blind in `v8` on 2026-10-09 (the entry above and the trap); not
+  yet seen on a device.
 - **Non-Penn schools have only been exercised by tests.** The seven verified
   installations and the custom-address path have never been signed into on a
   device.

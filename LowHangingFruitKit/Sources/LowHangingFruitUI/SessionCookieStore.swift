@@ -216,6 +216,22 @@ enum SessionCookieStore {
         }
         write(dicts, service: .canvas)
     }
+
+    /// `-LHFSessionDiagnostics` seam (`DebugSessionDiagnostics`): one line per
+    /// persisted cookie for `service`, giving its domain, name, expiry and
+    /// capture time, and never its value. It exists because the 24h rule in
+    /// `load(service:)` only trips when EVERY persisted cookie is stale, and
+    /// a cookie carrying a real, far-future `expiresDate` is never stale, so
+    /// the only way to tell why a phone's renew-on-open trigger did or didn't
+    /// fire is to see what the set actually holds. A name is cut at its first
+    /// `|` for the same reason `AppState.duoCookieDisplayName` cuts Duo's:
+    /// what follows can be a per-device identifier.
+    static func debugEntrySummaries(service: Service) -> [String] {
+        loadDicts(service: service).map { entry in
+            let name = (entry["name"] ?? "?").split(separator: "|").first.map(String.init) ?? "?"
+            return "\(entry["domain"] ?? "?") | \(name) | expires \(entry["expiresDate"] ?? "none") | captured \(entry["capturedAt"] ?? "none")"
+        }
+    }
     #endif
 
     // MARK: - Keychain

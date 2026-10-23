@@ -1207,6 +1207,9 @@ final class AppState: ObservableObject {
         #endif
 
         #if DEBUG
+        // `-LHFSessionDiagnostics`: snapshot the saved session BEFORE the
+        // aging below or the expiry check after it can change what it shows.
+        DebugSessionDiagnostics.recordIfRequested()
         // `-LHFAgeCanvasSession`: rewrites every persisted Canvas cookie's
         // `capturedAt` to 25 hours ago before the check below ever runs, so a
         // debug launch can exercise the real 24h renewal trigger
