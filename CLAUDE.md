@@ -272,7 +272,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
        when a find came from it; the whole row opens the original. Empty
        says "no announcements". A find whose real Canvas/Gradescope twin
        is finished leaves the found list too
-       (`announcementFindsWithFinishedTwin`).
+       (`announcementFindsWithFinishedTwin`). Since 2026-10-23 two rows of
+       class **bubbles** sit at the top, wrapped so every class shows ("all", preset on every open,
+       then one per class; tap a class to switch to it, tap more to add
+       them, tap a selected one to drop it). With classes selected the
+       two lists become **one compiled list**, newest first, each find
+       directly above the post it came from
+       (`announcementSheetCompiled`, `announcementSheetTap`). Judgments
+       for posts read before the server gave them are **backfilled**,
+       relevance only, sharing the 6-a-day budget, and only once this
+       install has seen the server return one (`serverJudgesRelevanceV1`,
+       `AppState+RelevanceBackfill.swift`).
 
     The dismiss button says "back to assignments". What each list holds
     is decided in `AppState+AnnouncementSheet.swift`
@@ -1070,6 +1080,12 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2752/250 `fix/megaphone-every-class`, 2026-10-23 evening, `swift test
+  --no-parallel` on Marco's Mac, 23.4 s, green, after the class bubbles
+  (`AnnouncementSheetBubblesTests`, +20) and `fix/relevance-backfill`
+  merged in (`RelevanceBackfillTests`, +13); the two-row bubble layout
+  came after it (layout only; the 55 sheet tests re-ran green and the iOS
+  build succeeds).
 - 2719/246 `fix/megaphone-every-class` (not yet on `v8`), 2026-10-23,
   `swift test --no-parallel` on Marco's Mac, 21.3 s, green, with
   `fix/ed-posts-durable` merged in; the iOS build of the same tree

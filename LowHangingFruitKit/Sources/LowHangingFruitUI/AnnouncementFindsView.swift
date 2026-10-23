@@ -187,31 +187,31 @@ struct AnnouncementFindsView: View {
         )
     }
 
-    /// "all" and then one bubble per class, in one scrolling row: the same
-    /// capsules the add sheet's class picker draws (`CoursePicker`), so a class
-    /// is the same colour here as there. A selected class is filled in its own
-    /// colour; "all" is the sheet's teal. Which bubbles are lit and what a tap
-    /// does is `AppState.announcementSheetTap`.
+    /// "all" and then one bubble per class, wrapped onto as many rows as the
+    /// width needs (two, for a usual term): the same capsules and the same
+    /// flow layout the add sheet's class picker uses (`CoursePicker`), so a
+    /// class is the same colour here as there. A selected class is filled in
+    /// its own colour; "all" is the sheet's teal. Which bubbles are lit and
+    /// what a tap does is `AppState.announcementSheetTap`.
+    ///
+    /// Wrapped, not one scrolling row: the owner's call on first sight
+    /// (2026-10-23). A row that scrolls hides the classes past the screen's
+    /// edge, so a class you cannot see is a class you cannot pick.
     private var classBubbles: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        CoursePickerFlowLayout(spacing: 8) {
+            bubble(
+                AnnouncementSheetCopy.allBubble, isSelected: selection.isEmpty,
+                accent: .smoothAnnouncementAccent, ink: .smoothAnnouncementAccent, onFill: .smoothPaper
+            ) { tap(nil) }
+            ForEach(courses, id: \.key) { course in
                 bubble(
-                    AnnouncementSheetCopy.allBubble, isSelected: selection.isEmpty,
-                    accent: .smoothAnnouncementAccent, ink: .smoothAnnouncementAccent, onFill: .smoothPaper
-                ) { tap(nil) }
-                ForEach(courses, id: \.key) { course in
-                    bubble(
-                        course.name, isSelected: selection.contains(course.key),
-                        accent: courseAccent(for: course.key), ink: courseAccentInk(for: course.key),
-                        onFill: Color(hex: 0x1B1714)
-                    ) { tap(course.key) }
-                }
+                    course.name, isSelected: selection.contains(course.key),
+                    accent: courseAccent(for: course.key), ink: courseAccentInk(for: course.key),
+                    onFill: Color(hex: 0x1B1714)
+                ) { tap(course.key) }
             }
-            .padding(.vertical, 2)
         }
-        // Lets the capsules scroll out under the page margin instead of being
-        // cut off at it.
-        .scrollClipDisabled()
+        .padding(.vertical, 2)
         .sensoryFeedback(.selection, trigger: selection)
     }
 

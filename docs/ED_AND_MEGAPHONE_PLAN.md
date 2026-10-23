@@ -88,6 +88,16 @@ to learn the token's real lifetime on a phone, then decide.
     task the class was given. About one backend call per staff post, ever.
   - A judgment's `until` may be a date alone ("2026-10-26"); the phone
     reads it as the end of that day in its own time zone.
+  - **Backfill.** Posts read before the server gave judgments (on Olisa's
+    phone, two staff posts an older build had already processed; on every
+    phone, whatever is read before the deploy) get one relevance-only
+    call later, tasks discarded, sharing the 6-a-day budget. Nothing is
+    sent for this, and no staff post is read, until the install has seen
+    the server return a judgment once, so installing before the deploy
+    costs nothing.
+- **Class bubbles** at the top of the sheet ("all" by default, any class
+  or subset); with classes selected, found tasks and posts are one list,
+  each task directly above the post it came from.
 - Backend (`extract-announcement`): the `relevance` field, and the fix for
   the 502 seen on Marco's phone (a thinking model that spent its whole token
   cap reasoning returned no content and the function failed; now the

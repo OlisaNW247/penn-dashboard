@@ -174,8 +174,11 @@ on-device alone:
   still matters; no task is ever made from such a post. The answer to every
   one of these requests also says what kind of post it is and until when it
   matters; the phone keeps that short note (and the tasks, as above), and
-  the server keeps nothing. With the switch off, Canvas and Ed posts are
-  read on the phone and nothing is sent.
+  the server keeps nothing. A post read before the server could give that
+  note is sent once more, only for the note, a few a day at most and only
+  while it is under two weeks old; the second answer's tasks are thrown
+  away. With the switch off, Canvas and Ed posts are read on the phone and
+  nothing is sent.
 
   Grade Watcher can also ask the server how a class's Canvas assignment
   groups line up with its syllabus categories. That request carries the
