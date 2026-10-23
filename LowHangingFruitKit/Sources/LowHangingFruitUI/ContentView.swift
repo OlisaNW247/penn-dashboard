@@ -260,10 +260,49 @@ struct ContentView: View {
             // `onChange(of: scenePhase)` does not fire for the phase the view
             // starts in, so without this a trusted student would see Profile's
             // Duo line empty (or "not trusted yet") for the first five
-            // minutes of every launch. Only the cheap cookie-jar read: the
-            // launch sync already runs from `RootView`, and a full
-            // `refresh()` here would repeat it.
+            // minutes of every launch. Only the cheap cookie-jar read, kept
+            // ahead of the launch pass below (which reads it again once its
+            // network work is done) so Profile's line fills at once.
             await state.refreshDuoRememberSummary()
+            // Run the session-sourced half of the refresh once, now, instead
+            // of waiting out the loop's first sleep. Until this line existed
+            // nothing ran the Canvas chain at a cold launch:
+            // `onChange(of: scenePhase)` does not fire for the phase the view
+            // starts in, the loop below sleeps five minutes before its first
+            // pass, and `RootView`'s launch task fetches only the cookieless
+            // calendar feed (plus the laptop sync). So a phone that locked
+            // inside the first five minutes never ran Grade Watcher's
+            // submission fetch, course intel, the course-material / Ed sync
+            // or the session check until it next came to the foreground; on
+            // 2026-10-23 a device went twenty minutes after launch with none
+            // of them having run. Marco's parked `launch-submission-refresh`
+            // (`56d27b9`) found the gap and split `refresh()` for it; this is
+            // that split, narrowed.
+            //
+            // What it deliberately leaves out, on top of the feed fetch
+            // (`RootView` has just started it, and `sync()` has no
+            // reentrancy guard, so a second one is a double fetch):
+            // `announceGradeChanges()` and `announceTurnedIn()`, which post
+            // local notifications, and `deviceSyncPass()`, which `RootView`
+            // ran seconds ago. A notice raised by this pass is not lost: it
+            // waits in `pendingTurnedInNotices` / `pendingGradeChanges` and
+            // the first pass of the loop (or the next activation) posts it,
+            // so the cost is up to five minutes' delay on a "turned in"
+            // confirmation, never a notification fired from a launch path
+            // that has not been run on a device. The wrong fix is calling
+            // `refresh()` here, or dropping the loop's first sleep, which
+            // runs all of that.
+            //
+            // Beside the loud-alert inbox: the inbox hands out nothing until
+            // `.onAppear` above has bound the view model and set
+            // `isDashboardBound` (`takeLoudAlertActions`), whichever of
+            // `.onAppear` and this task SwiftUI starts first, so a "turned
+            // in" that cold-launched the app is never applied to an empty
+            // list. This pass only reloads and replans; it completes nothing
+            // itself. If it replans before that drain, the drain's own
+            // replan (`needsReplan`) follows and takes the finished item's
+            // buzzes back out.
+            await refreshSessionSourcesAtLaunch()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.autoRefreshInterval)
@@ -615,18 +654,49 @@ struct ContentView: View {
     /// from its persisted session, then reload the dashboard. Runs on
     /// activation (`onChange(of: scenePhase)`, which does not fire for the
     /// initial phase) and on the 5-minute loop, whose first pass comes after
-    /// the sleep, so it does NOT run at launch: the launch sync is
-    /// `RootView`'s `syncIfConfigured()`, and the `.task` above does the one
-    /// cheap launch-time read of its own. There's no manual sync button.
+    /// the sleep. At a cold launch the feed half is `RootView`'s
+    /// `syncIfConfigured()` and the `.task` above runs the session-sourced
+    /// half once by itself (`refreshSessionSourcesAtLaunch()`); this function
+    /// is not called then, because it also posts notifications and runs the
+    /// laptop sync. There's no manual sync button. `LHFScenes.swift`'s
+    /// menu-bar copy mirrors the call order here.
+    ///
+    /// The order is the one this function always had; it is only cut into
+    /// `fetchSessionSources()` and `settleAfterFetch()` so the launch pass can
+    /// reuse the two halves without the calls that belong to this one.
     private func refresh() async {
         await state.syncIfConfigured()
-        await AutoSyncCoordinator.syncConnectedServices(state: state)
-        await AutoSyncCoordinator.refreshCanvasGrades(state: state)
+        await fetchSessionSources()
         // Encrypted sync with the paired laptop. Before the reload and the
         // reschedule below, so what a remote device ticked or moved reaches
         // the lists and the reminders in this same pass. A no-op without a
         // key, throttled to once per two minutes, never a banner.
         await state.deviceSyncPass()
+        await settleAfterFetch()
+        await announceGradeChanges()
+        await announceTurnedIn()
+    }
+
+    /// The cold-launch pass: the cookie-authenticated fetches and the
+    /// session check, then reload and replan. No feed sync, no laptop sync and
+    /// no notification drains; see the comment at the call in `.task`.
+    private func refreshSessionSourcesAtLaunch() async {
+        await fetchSessionSources()
+        await settleAfterFetch()
+    }
+
+    /// Gradescope's scrape, then the Canvas fetch that is the only source of
+    /// Canvas submission state and carries course intel and the
+    /// course-knowledge / Ed sync with it.
+    private func fetchSessionSources() async {
+        await AutoSyncCoordinator.syncConnectedServices(state: state)
+        await AutoSyncCoordinator.refreshCanvasGrades(state: state)
+    }
+
+    /// Everything after the fetches that needs no network of its own: the
+    /// session-expiry check and silent renewal, the Duo read, the reload, the
+    /// badge and the reminder replan.
+    private func settleAfterFetch() async {
         state.refreshCanvasSessionExpiredState()
         // Retry a silent Canvas renewal if the policy says one is due (it
         // does nothing while awaiting Duo, after a rejected password, or
@@ -647,8 +717,6 @@ struct ContentView: View {
         // it too.
         state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
-        await announceGradeChanges()
-        await announceTurnedIn()
     }
 
     /// Drains "Turned in ✓" confirmations the same way grade changes drain —
