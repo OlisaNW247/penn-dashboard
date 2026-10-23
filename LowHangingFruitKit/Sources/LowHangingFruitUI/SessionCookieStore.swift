@@ -147,8 +147,31 @@ enum SessionCookieStore {
     /// from "you never logged in via this path" (e.g. a feed-only/paste-link
     /// Canvas user, who never captured a cookie session and shouldn't be
     /// nagged to reconnect one). See `AppState.canvasSessionExpired`.
+    ///
+    /// **Left alone on purpose when the "login is gone" fix was written
+    /// (`AppState.canvasLoginIsMissing`).** This answers "there WAS a session
+    /// and it aged out", and it can only answer that while something is still
+    /// saved: a deleted item reads `false` here, exactly as a calendar-link
+    /// install that never had a session does, because the store keeps no
+    /// record that a login ever happened. The wrong fix is making this return
+    /// `true` for "nothing saved": it would raise the "needs a refresh" banner
+    /// on every pasted-link install (and every install before its first
+    /// login), none of which has anything to refresh. The missing fact, "this
+    /// install did log in once", lives in `AppState` (`canvasLoginEverCaptured`),
+    /// which is where the other half of the decision is, and it asks the store
+    /// only `hasSavedCookies(service:)` below.
     static func isExpired(service: Service) -> Bool {
         !loadDicts(service: service).isEmpty && load(service: service).isEmpty
+    }
+
+    /// True when `service` has ANY persisted cookie entry, live or stale.
+    /// Deliberately not `!load(service:).isEmpty`: `load` drops the stale
+    /// ones, and the caller (`AppState.canvasLoginIsMissing`) needs to tell
+    /// "saved but aged out", which `isExpired` already reports, from "nothing
+    /// saved at all", which is the state a rejected Grade Watcher fetch leaves
+    /// behind (`GradeWatcherView.performRefresh` removes the item).
+    static func hasSavedCookies(service: Service) -> Bool {
+        !loadDicts(service: service).isEmpty
     }
 
     /// How long a true session cookie (no server-supplied expiry) is trusted

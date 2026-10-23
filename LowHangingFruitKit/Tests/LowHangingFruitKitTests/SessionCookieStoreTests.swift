@@ -171,6 +171,41 @@ struct SessionCookieStoreTests {
         }
     }
 
+    // The store-level half of the "Canvas login is gone" rule
+    // (`CanvasLoginMissingTests`). `isExpired` stays exactly as it was: it is
+    // false for a deleted item, indistinguishable from a never-connected
+    // pasted-link install, and that is why the missing-login rule needs the
+    // separate `hasSavedCookies` read plus a "logged in before" flag.
+
+    @Test("hasSavedCookies is false when nothing was ever persisted for that service")
+    func hasSavedCookiesFalseWhenEmpty() {
+        withCleanStore {
+            #expect(!SessionCookieStore.hasSavedCookies(service: .canvas))
+        }
+    }
+
+    @Test("hasSavedCookies is true for a stale-only set, where load() is empty and isExpired is true")
+    func hasSavedCookiesTrueForStaleOnlySet() {
+        withCleanStore {
+            let past = Date().addingTimeInterval(-3600)
+            SessionCookieStore.save([cookie(name: "sid", domain: "canvas.upenn.edu", expiresDate: past)], service: .canvas)
+            #expect(SessionCookieStore.hasSavedCookies(service: .canvas))
+            #expect(SessionCookieStore.load(service: .canvas).isEmpty)
+            #expect(SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("after remove(service:) hasSavedCookies is false and isExpired is still false, which is why the rule needs the flag")
+    func removedItemIsNotReportedExpired() {
+        withCleanStore {
+            let past = Date().addingTimeInterval(-3600)
+            SessionCookieStore.save([cookie(name: "sid", domain: "canvas.upenn.edu", expiresDate: past)], service: .canvas)
+            SessionCookieStore.remove(service: .canvas)
+            #expect(!SessionCookieStore.hasSavedCookies(service: .canvas))
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
     // MARK: - Full-fidelity round-trip (secure, httpOnly, sameSite, expiry)
 
     @Test("A realistic Canvas-like cookie (secure, httpOnly, future expiry) round-trips every attribute, not just name/value")
