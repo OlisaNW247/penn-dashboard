@@ -5,6 +5,16 @@ users. `create-feedback-form.gs` beside this file builds the form in your
 Google Drive in one run (see the steps at the end). Keep the register:
 lowercase, short, the least text that works._
 
+## Live form
+
+Created in Olisa's Google account on 2026-10-22 with the script beside
+this file. Public link, the one to hand to students:
+https://docs.google.com/forms/d/e/1FAIpQLScZJ4BBXicAOFYSbCkHGcM5kWcDD8OXSSWtkK64kSSUO4WcJQ/viewform
+The edit link and the responses sheet are in Olisa's Drive and are not
+recorded here. Changing a question means editing it in Google Forms (the
+live form) and here (the record); re-running the script makes a second
+form, not an update.
+
 ## Title
 
 **smooth feedback**
