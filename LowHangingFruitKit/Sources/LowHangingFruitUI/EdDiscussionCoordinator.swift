@@ -111,6 +111,12 @@ final class EdDiscussionCoordinator {
     ///   run had not reached yet), and every course when the run never got
     ///   as far as a match. An unknown is not an absence: a bad network day
     ///   must never erase material that was fine yesterday.
+    /// - **Tab check failed, so restored:** a Canvas course whose `/tabs`
+    ///   request failed this run and that no Ed course matched. Whether it has
+    ///   an Ed tool is unknown, the same as for a class the read never
+    ///   reached (2026-10-23; before, only a run in which *every* tab check
+    ///   failed was treated so, and a single flaky request dropped the
+    ///   class's stored posts while the rest of the run went on).
     func sync(
         courses: [CourseSummary],
         canvasCookies: [HTTPCookie],
@@ -124,6 +130,7 @@ final class EdDiscussionCoordinator {
             canvasCookies: canvasCookies,
             canvasBase: canvasBase,
             knowledge: &knowledge,
+            priorEdDocuments: priorEdDocuments,
             now: now
         )
         Self.droppingEdDocuments(from: &knowledge, courseIDs: result.drop)
@@ -150,6 +157,7 @@ final class EdDiscussionCoordinator {
         canvasCookies: [HTTPCookie],
         canvasBase: URL,
         knowledge: inout CourseKnowledgeBase,
+        priorEdDocuments: [CourseDocument],
         now: Date
     ) async -> SyncResult {
         var report = Report(statusLine: "")
@@ -160,13 +168,16 @@ final class EdDiscussionCoordinator {
             Self.finished(report, drop: [], restore: allIDs, matched: 0, read: 0, failure: failure)
         }
 
-        // 1. Find Ed tabs.
+        // 1. Find Ed tabs. `tabCheckFailed` holds the Canvas courses whose
+        // `/tabs` request failed this run: for them "has Ed" is unknown.
+        var tabCheckFailed = Set<String>()
         let launchURLs = await findLaunchURLs(
             courses: courses,
             canvasCookies: canvasCookies,
             canvasBase: canvasBase,
             now: now,
-            notes: &report.notes
+            notes: &report.notes,
+            failedCourseIDs: &tabCheckFailed
         )
         guard let firstLaunchURL = courses.compactMap({ launchURLs[$0.courseID] }).first else {
             if report.notes.isEmpty {
@@ -318,7 +329,18 @@ final class EdDiscussionCoordinator {
         } else {
             report.statusLine = "connected: " + report.matched.map { $0.code }.sorted().joined(separator: ", ")
         }
-        let plan = Self.restoreDropPlan(allIDs: allIDs, matched: matchedTargetIDs, read: tally.readIDs)
+        // Courses that hold Ed documents now or held them before this
+        // Canvas sync dropped them: only those have anything to restore.
+        let storedEdIDs = Set(
+            (priorEdDocuments + knowledge.documents).filter { $0.kind == .ed }.map(\.courseID)
+        )
+        let plan = Self.restoreDropPlan(
+            allIDs: allIDs,
+            matched: matchedTargetIDs,
+            read: tally.readIDs,
+            unknown: tabCheckFailed,
+            storedEd: storedEdIDs
+        )
         return Self.finished(
             report,
             drop: plan.drop,
@@ -372,12 +394,37 @@ final class EdDiscussionCoordinator {
     /// read: a failed read, and every class a mid-run 401 stopped before);
     /// a class with no Ed match is authoritatively gone (`drop`). The two
     /// never overlap, and neither holds a class that was read.
+    ///
+    /// Every id here is a **Canvas course id** (`CourseSummary.courseID`):
+    /// `allIDs` is the whole course list, `matched` the id of the one Canvas
+    /// site each Ed match filed its documents under (`ReadTarget.course`),
+    /// `read` the subset of those that were read, and `unknown` the courses
+    /// whose Canvas `/tabs` request failed this run.
+    ///
+    /// **A failed tab lookup is "unknown", not "no Ed".** Such a course may
+    /// have no Ed match here (the matcher keys on the code, so a mismatch
+    /// between Canvas's and Ed's naming leaves it out), and `allIDs -
+    /// matched` would then drop its stored posts on the strength of one
+    /// flaky request. An unknown that holds stored Ed documents (`storedEd`)
+    /// is restored instead, like a class the read never reached; one with
+    /// none produces nothing, so `restore` keeps meaning "kept documents it
+    /// would otherwise have lost". A course that *is* matched is untouched by
+    /// this: it is read, or restored as unread, whatever its tab check did.
+    /// The wrong fix is treating any note as unknown: a successful lookup
+    /// with no Ed tab and no match is Ed's authoritative "nothing here", and
+    /// keeping its old threads would leave stale answers in ask forever.
     nonisolated static func restoreDropPlan(
         allIDs: Set<String>,
         matched: Set<String>,
-        read: Set<String>
+        read: Set<String>,
+        unknown: Set<String> = [],
+        storedEd: Set<String> = []
     ) -> (drop: Set<String>, restore: Set<String>) {
-        (drop: allIDs.subtracting(matched), restore: matched.subtracting(read))
+        let unmatchedUnknown = unknown.subtracting(matched)
+        return (
+            drop: allIDs.subtracting(matched).subtracting(unmatchedUnknown),
+            restore: matched.subtracting(read).union(unmatchedUnknown.intersection(storedEd))
+        )
     }
 
     /// Stamps the counts onto the report's status line and packages the
@@ -563,13 +610,16 @@ final class EdDiscussionCoordinator {
 
     /// Step 1. Cached launch URLs for fresh courses; a `/tabs` request for
     /// the rest. A failed request leaves its course unchecked so the next
-    /// run retries, and is reported once as a count, not once per course.
+    /// run retries, and is reported once as a count, not once per course;
+    /// the failed courses' ids go to `failedCourseIDs` so the restore/drop
+    /// plan can treat them as unknown rather than as "no Ed".
     private func findLaunchURLs(
         courses: [CourseSummary],
         canvasCookies: [HTTPCookie],
         canvasBase: URL,
         now: Date,
-        notes: inout [String]
+        notes: inout [String],
+        failedCourseIDs: inout Set<String>
     ) async -> [String: URL] {
         var urlStrings = UserDefaults.lhf.dictionary(forKey: Self.launchURLKey) as? [String: String] ?? [:]
         var checkedAt = UserDefaults.lhf.dictionary(forKey: Self.tabCheckedAtKey) as? [String: Date] ?? [:]
@@ -592,6 +642,7 @@ final class EdDiscussionCoordinator {
                 checkedAt[course.courseID] = now
             } catch {
                 failures += 1
+                failedCourseIDs.insert(course.courseID)
                 if firstFailure == nil { firstFailure = Self.describe(error) }
             }
         }
