@@ -163,12 +163,20 @@ final class AppState: ObservableObject {
     /// here because an extension cannot add stored properties.
     var edTaskPassTask: Task<Void, Never>?
     var edTaskPassNeedsRerun = false
-    /// How many staff posts the Ed pass may still send to an extractor today
-    /// (`EdStaffReadBudget`: a UTC-day cap, because the quota is shared with
+    /// How many calls made only for a relevance judgment (an Ed staff post, a
+    /// judgment backfill) this install may still send to an extractor today
+    /// (`RelevanceReadBudget`: a UTC-day cap, because the quota is shared with
     /// ask). Persisted in `UserDefaults.lhf` in the app, memory-only under the
     /// test runner; a test that wants to see the stored form assigns a budget
     /// over a scratch suite.
-    var edStaffReadBudget = EdStaffReadBudget(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
+    var relevanceReadBudget = RelevanceReadBudget(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
+    /// Whether this install has ever seen the server return a relevance
+    /// judgment, and the backfill's memory of posts it has asked about
+    /// (`AppState+RelevanceBackfill.swift`). Same shape as the budget: the
+    /// preferences tier in the app, memory-only under the test runner, a
+    /// scratch suite for a test that wants the stored form.
+    var serverJudgesRelevance = ServerJudgesRelevance(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
+    var relevanceBackfillLedger = RelevanceBackfillLedger(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
     /// Watches `courseKnowledge` for new Ed posts to read tasks from. Separate
     /// from `announcementKnowledgeSubscription`, which only refreshes the
     /// megaphone's list.
@@ -5294,7 +5302,18 @@ final class AppState: ObservableObject {
             .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else {
             if presenceChanged { applyAnnouncementLedgerChange() }
-            return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count)", at: now)
+            // Nothing to read for tasks, but posts read before the server
+            // judged can still be waiting for a judgment (see
+            // `AppState+RelevanceBackfill.swift`), from this same fetch.
+            let backfill = await backfillRelevance(
+                canvasRelevanceBackfillCandidates(
+                    fetched: fetched, courseCodesByID: courseCodesByID, readThisRun: [], now: now
+                ),
+                now: now
+            )
+            return noteAnnouncementSync(
+                "nothing new \u{00B7} canvas \(fetched.count)" + backfill.summary, at: now
+            )
         }
 
         // THE QUOTA IS SHARED WITH ASK, so a persistent extractor failure must
@@ -5397,6 +5416,9 @@ final class AppState: ObservableObject {
                 extracted = extraction.assignments
                 if let relevance = extraction.relevance {
                     relevanceByKey[AnnouncementReadState.recordKey(announcement.id)] = relevance
+                    // The first judgment ever seen turns on the Ed staff-post
+                    // reads and the backfill (`ServerJudgesRelevance`).
+                    serverJudgesRelevance.markSeen()
                 }
             } catch {
                 // A transient extraction failure (network blip on the AI
@@ -5473,13 +5495,27 @@ final class AppState: ObservableObject {
         if !collected.isEmpty || !newlyProcessedIDs.isEmpty || presenceChanged {
             applyAnnouncementLedgerChange()
         }
+        // The judgment backfill, from this run's fetch: posts read before the
+        // server judged. After the reads (they go first), skipping this run's
+        // own, and not while the server is refusing or failing.
+        let serverUsable = !quotaRefused && !(attemptedExtractions > 0 && failedExtractions == attemptedExtractions)
+        let backfill = serverUsable
+            ? await backfillRelevance(
+                canvasRelevanceBackfillCandidates(
+                    fetched: fetched, courseCodesByID: courseCodesByID,
+                    readThisRun: Set(newlyProcessedIDs), now: now
+                ),
+                now: now
+            )
+            : RelevanceBackfillOutcome()
         let used = extractorsUsed.isEmpty ? "none" : extractorsUsed.sorted().joined(separator: "+")
         noteAnnouncementSync(
             "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count)"
                 + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
                 + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)"
                 + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? "")
-                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : ""),
+                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : "")
+                + backfill.summary,
             at: now
         )
     }

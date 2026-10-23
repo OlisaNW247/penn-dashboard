@@ -766,7 +766,7 @@ struct AnnouncementKeepCheckRuleTests {
 // MARK: - The staff-post budget and the reading order
 
 @Suite("Ed staff-post budget: a daily cap on reads")
-struct EdStaffReadBudgetTests {
+struct RelevanceReadBudgetTests {
     private func withScratch(_ body: (UserDefaults) throws -> Void) rethrows {
         let name = "ed-staff-budget-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
@@ -780,12 +780,12 @@ struct EdStaffReadBudgetTests {
     @Test("the day is the UTC day: the last second of one day and the first of the next are different days")
     func utcDay() {
         let before = Self.midnight.addingTimeInterval(-1)
-        #expect(EdStaffReadBudget.utcDay(of: Self.midnight) == EdStaffReadBudget.utcDay(of: before) + 1)
-        #expect(EdStaffReadBudget.utcDay(of: Self.midnight.addingTimeInterval(86_399)) == EdStaffReadBudget.utcDay(of: Self.midnight))
-        #expect(EdStaffReadBudget.utcDay(of: Date(timeIntervalSince1970: 0)) == 0)
+        #expect(RelevanceReadBudget.utcDay(of: Self.midnight) == RelevanceReadBudget.utcDay(of: before) + 1)
+        #expect(RelevanceReadBudget.utcDay(of: Self.midnight.addingTimeInterval(86_399)) == RelevanceReadBudget.utcDay(of: Self.midnight))
+        #expect(RelevanceReadBudget.utcDay(of: Date(timeIntervalSince1970: 0)) == 0)
     }
 
-    private func exerciseTheLimit(_ budget: EdStaffReadBudget) {
+    private func exerciseTheLimit(_ budget: RelevanceReadBudget) {
         #expect(budget.remaining(on: Self.midnight) == 6)
         for call in 1...6 {
             #expect(budget.remaining(on: Self.midnight) > 0)
@@ -802,15 +802,15 @@ struct EdStaffReadBudgetTests {
 
     @Test("the limit is six a day, and the count runs out exactly there, in memory and in defaults")
     func limit() {
-        #expect(EdStaffReadBudget.dailyLimit == 6)
-        exerciseTheLimit(EdStaffReadBudget(defaults: nil))
-        withScratch { exerciseTheLimit(EdStaffReadBudget(defaults: $0)) }
+        #expect(RelevanceReadBudget.dailyLimit == 6)
+        exerciseTheLimit(RelevanceReadBudget(defaults: nil))
+        withScratch { exerciseTheLimit(RelevanceReadBudget(defaults: $0)) }
     }
 
     @Test("a budget with no defaults keeps its count in itself only, and two budgets do not share it")
     func memoryOnly() {
-        let one = EdStaffReadBudget(defaults: nil)
-        let two = EdStaffReadBudget(defaults: nil)
+        let one = RelevanceReadBudget(defaults: nil)
+        let two = RelevanceReadBudget(defaults: nil)
         one.recordCall(on: Self.midnight)
         #expect(one.used(on: Self.midnight) == 1)
         #expect(two.used(on: Self.midnight) == 0)
@@ -819,12 +819,12 @@ struct EdStaffReadBudgetTests {
     @Test("an unreadable stored value counts as nothing used")
     func unreadableStoredValue() {
         withScratch { defaults in
-            let budget = EdStaffReadBudget(defaults: defaults)
-            for junk: Any in ["text", 7, ["day": "x"], ["count": 3], ["day": EdStaffReadBudget.utcDay(of: Self.midnight)]] {
-                defaults.set(junk, forKey: EdStaffReadBudget.key)
+            let budget = RelevanceReadBudget(defaults: defaults)
+            for junk: Any in ["text", 7, ["day": "x"], ["count": 3], ["day": RelevanceReadBudget.utcDay(of: Self.midnight)]] {
+                defaults.set(junk, forKey: RelevanceReadBudget.key)
                 #expect(budget.used(on: Self.midnight) == 0, "\(junk)")
             }
-            defaults.set(["day": EdStaffReadBudget.utcDay(of: Self.midnight), "count": -4], forKey: EdStaffReadBudget.key)
+            defaults.set(["day": RelevanceReadBudget.utcDay(of: Self.midnight), "count": -4], forKey: RelevanceReadBudget.key)
             #expect(budget.used(on: Self.midnight) == 0)
             #expect(budget.remaining(on: Self.midnight) == 6)
         }
