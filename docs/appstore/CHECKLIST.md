@@ -1,5 +1,82 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
+## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
+
+State when written: PR #13 (`fix/megaphone-every-class`, `21b63e6`) holds
+Olisa's `v8` `fb3ed94` plus the megaphone, Ed and keep-check work; 2885
+tests / 260 suites green, iOS build succeeds, Deno 468. **Nothing in that
+tree has run on a phone yet** (both phones were unplugged), and
+`project.yml` still stamps the live 3.1.0 (13).
+
+### A. Prove it on phones (the gate; sign-in broke the last two releases)
+1. Plug Marco's phone in; install `build/megaphone/Smooth.app` from the
+   `megaphone` worktree (a watcher installs on connect while it runs).
+2. **Automatic PennKey saving, never run on a phone:** Profile → disconnect
+   Canvas → reconnect with PennKey + Duo → "Canvas connected" with no vault
+   sheet. Then `-LHFSessionDiagnostics` (password on file: yes), then
+   `-LHFAgeCanvasSession` → renewal in seconds, no Duo. Then disconnect →
+   `-LHFSessionDiagnostics` shows no password. Any failure blocks the release.
+3. Megaphone: bubbles in one or two rows, every class listed, no "TAP
+   2028", the worksheet 6-7 post gone once its assignment is done, Ed staff
+   posts absent until the backend deploys (expected).
+4. Ed posts survive: after a day of syncs the `.ed` documents' `fetchedAt`
+   values are NOT all equal to the last sync (the "vanish" trap's tell).
+5. Cold launch pulls Canvas within about a minute, with no burst of
+   turned-in or grade notifications at launch (launch-refresh rework).
+6. The Sweeper still rings at 10 minutes (regression check only).
+7. Olisa's phone: the same, since his Ed classes differ.
+
+### B. Branches
+8. Olisa reviews PR #13 (his Ed and announcement code is in it); merge to `v8`.
+9. Decide PR #12 (Codex: Sweeper timing, audio, class settings): in this
+   release → merge after #13, resolve the CLAUDE.md/ROADMAP.md overlap, full
+   `swift test --no-parallel` + iOS build again; out → next release.
+10. Anything A finds: fix on the branch, re-run the suite and the iOS build.
+
+### C. Backend (needs a person's go and the Supabase management token; the
+dev Mac has none, Olisa's environment injects it)
+11. `node backend/scripts/deploy-function.mjs sync` → v13 (server exam
+    dates). Old server is safe: the app falls back to on-device parsing.
+12. `node backend/scripts/deploy-function.mjs extract-announcement`
+    (relevance field + the empty-answer 502 fix). Old server is safe: the
+    phone stores nothing and reads no staff posts until it sees a judgment.
+    After: on a phone, `announcementRelevanceV1` fills and
+    `serverJudgesRelevanceV1` turns true; the backfill stays under 6 calls a
+    day. Can follow the release, but before is better.
+
+### D. Release paperwork
+13. Stamp **3.2.0 (14)** (3.1.1 is fine too; the build number must beat 13)
+    in `project.yml` AND `project.pbxproj` by hand. No `xcodegen generate`.
+14. Mirror `docs/PRIVACY.md` into `docs/site/privacy.html`: the page has
+    the automatic sign-in text but NOT the 2026-10-23 AI-assist changes
+    (instructor/TA Ed posts sent once for a judgment, the per-post "until
+    when" note kept on the phone). The privacy-policy URL points there.
+15. Re-read the App Store privacy label against automatic password saving
+    (the password never leaves the phone; the label must still match what
+    is sent: pooled course material, anonymous account, ask questions).
+16. What's New for 3.2.0: every class in the megaphone, class bubbles,
+    finished posts leave, Ed posts that stay, automatic sign-in; update
+    `REVIEW_NOTES.md` (already says the app saves the password) and keep
+    the preview-mode paragraph (App Review's only way in).
+17. App Store Connect: no pending Developer Program License Agreement
+    (the Account Holder is Olisa's Apple ID); TestFlight → Builds shows
+    the highest build number is 13.
+
+### E. Archive, upload, submit
+18. `otool -L` check that the widget links AlarmKit weakly (3.1.0 step).
+19. The two `xcodebuild` lines in CLAUDE.md → Commands (archive, then
+    `-exportArchive` with `docs/appstore/ExportOptions.plist`, which uploads).
+20. App Store Connect: new version 3.2.0, attach build 14, paste What's New
+    and review notes, Add for Review → Submit (manual; auto-release on
+    approval is set).
+
+### F. After it is downloadable
+21. Raise the `update-manifest` floor (orphan branch, GitHub web UI) to the
+    new version, `minimumVersion` = `latestVersion`, only once the store
+    serves it; Olisa's call.
+22. Delete merged branches: `parked/*`, `fix/ed-posts-durable`,
+    `v8-merge-marco`, `fix/relevance-backfill`, `codex/automatic-canvas-login`.
+
 _Last updated: 2026-10-20 — **3.1.0 (build 13)** from `v8`, straight to App
 Review._
 
