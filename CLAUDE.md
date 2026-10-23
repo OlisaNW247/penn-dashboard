@@ -117,7 +117,9 @@ macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
 `extract-profile`, `map-categories`, `pair`, `sync`. `pair` and
 `device-sync` (the Chrome extension's pairing and encrypted sync) and the
 `20261022090000_chrome_extension.sql` migration went live on 2026-10-22
-with Olisa's go (`sync` v11, `delete-account` v6). `sync` v12 (the
+with Olisa's go (`sync` v11, `delete-account` v6); `extract-profile` v8
+and `discover-websites` v4 followed on 2026-10-23, also at his go, so
+every function that resolves a caller now knows a paired laptop. `sync` v12 (the
 window-kind rules of `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2) went
 live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
 40 live announcement documents, every one from spring 2026, and 97 Ed.
@@ -896,7 +898,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 467 tests, all green, on `v8` (2026-10-22, `cd chrome-extension
+counts): 471 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared

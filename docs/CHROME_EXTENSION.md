@@ -481,3 +481,19 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   and `discover-websites` still run the old `requireUser`, so the
   extension's post-upload calls are treated as an unlinked user's until
   those two are next deployed; the phone's own calls are unaffected.
+- 2026-10-23, with Olisa's go: **`extract-profile` v8 and
+  `discover-websites` v4 deployed**, so the extension's post-upload
+  calls now act for the paired student. Neither function's own code had
+  changed since its September deploy; the bundle carries the shared
+  modules already live in `sync` v12 and `ask` v11, and
+  `chatCompletionJSON` is byte-identical, so `extract-profile` keeps its
+  model (`LHF_MODEL`). Smoke-tested with a throwaway user (an empty list
+  answers 200; a course the caller is not enrolled in answers 200 with
+  nothing updated, or 403 `not_enrolled` from discovery), then deleted.
+  The other session's work of the same day landed beside this:
+  announcements and Ed are window kinds the complete-set rule never
+  retires, aged out on read at 120 days, and the extension's
+  announcement documents now match the phone's byte for byte (no
+  "Posted:" line; a post with no message is not a document). Swift
+  2606 / 237 green at `ad4f920`; extension 471 and Deno 419 green on the
+  merged tree in the container.

@@ -29,29 +29,29 @@ These block shipping, or would make shipping risky.
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
   Collector, encrypted phone sync with QR pairing, Canvas Files, Penn
-  only, unpacked. The extension's 467 node tests and the backend's 406
-  Deno tests ran in the container; **none of the Swift has compiled**
-  (an independent read found one failing test, fixed, and nothing that
-  should not compile). In this order:
-  1. On the Mac: `cd LowHangingFruitKit && swift test --no-parallel`.
-     Expect about 2575 tests (CLAUDE.md → Known gaps). A red
-     `SyncSnapshotTests` vector test means the phone and the extension
-     disagree on the encrypted format; stop there.
-  2. Build to the phone (Commands). Nothing changes on screen until a
-     laptop is paired.
-  3. Load the extension unpacked (`chrome-extension/README.md`), signed
-     in to Canvas and Gradescope: the popup should list real work. This
-     needs no backend change.
-  4. ~~Apply the migration and deploy `sync`, `pair`, `device-sync`,
-     `delete-account`.~~ **Done 2026-10-22 ~16:05 UTC with Olisa's go**
-     (`sync` v11, `pair` v1, `device-sync` v1, `delete-account` v6),
-     smoke-tested live (`docs/CHROME_EXTENSION.md` → Status). Next deploys
-     of `extract-profile` and `discover-websites` pick up the linked-device
-     lookup; until then the extension's follow-up calls to them do
-     nothing.
+  only, unpacked. As of 2026-10-23 the backend half is all live and the
+  phone half is compiled and on Olisa's iPhone; what is left needs his
+  laptop. Done:
+  1. ~~`swift test --no-parallel`~~ **2606 / 237 green on the first run
+     at `ad4f920`** (2026-10-23, Olisa's Mac), the extension's Swift and
+     the announcement phases compiled together for the first time.
+  2. ~~Build to the phone~~ **The `ad4f920` build is on Olisa's iPhone**
+     (2026-10-23, 18:09 UTC sync recorded); the pairing sheet is in it,
+     unseen until a laptop shows a code.
+  3. ~~Migration and deploys~~ **All live**: `sync` (v12 since the
+     announcement work), `pair` v1, `device-sync` v1, `delete-account`
+     v6 (2026-10-22), and `extract-profile` v8 and `discover-websites`
+     v4 (2026-10-23, with Olisa's go, so the extension's post-upload
+     calls act for the paired student). Each smoke-tested live with
+     throwaway users, who were deleted.
+
+  Still to do, in order (2026-10-23: no link, blob, pairing,
+  extension-collected or `file` row exists yet):
+  4. Load the extension unpacked (`chrome-extension/README.md`), signed
+     in to Canvas and Gradescope: the popup should list real work.
   5. Pair: "pair with phone" in the popup, point the iPhone camera at
-     it, "pair". Tick something on the laptop; it should be ticked on the
-     phone within a refresh, and the other way round.
+     it, "pair". Tick something on the laptop; it should be ticked on
+     the phone within a refresh, and the other way round.
   6. Within the hour the collector runs: check `course_documents` for
      `collector = 'extension'` rows and kind `file` through the
      Management API (read-only). If no `file` rows ever appear, the
