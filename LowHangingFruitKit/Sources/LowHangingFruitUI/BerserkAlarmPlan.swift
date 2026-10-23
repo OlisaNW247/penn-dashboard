@@ -69,7 +69,7 @@ struct PlannedAlarm: Equatable, Sendable {
     let id: UUID
     /// `Assignment.id` of the item.
     let assignmentID: String
-    /// Due minus ten minutes.
+    /// Due minus the selected Sweeper lead time.
     let fireDate: Date
     /// The assignment's name, trimmed the way a reminder's body trims it.
     let title: String
@@ -77,8 +77,8 @@ struct PlannedAlarm: Equatable, Sendable {
     /// student's renames applied). Drawn by the alarm's Live Activity, which
     /// has no other way to learn it.
     let course: String
-    /// The due moment, fire date plus `NotificationScheduler.loudAlertLead`.
-    /// The Live Activity counts down to this, not to the alarm.
+    var sound: SweeperSound = .smooth
+    /// The Live Activity counts down to the assignment deadline.
     let dueAt: Date
     /// Nil for manual work and Ed finds, which have no page of their own.
     let link: Link?
@@ -174,11 +174,13 @@ enum BerserkAlarmPlan {
     nonisolated static func alarms(
         for selection: [DashItem],
         now: Date,
-        nameOverrides: [String: String]
+        nameOverrides: [String: String],
+        lead: TimeInterval = NotificationScheduler.loudAlertLead,
+        sound: SweeperSound = .smooth
     ) -> [PlannedAlarm] {
         selection.compactMap { item in
             guard let due = item.due else { return nil }
-            let fire = due.addingTimeInterval(-NotificationScheduler.loudAlertLead)
+            let fire = due.addingTimeInterval(-lead)
             guard fire > now else { return nil }
 
             let assignment = item.assignment
@@ -191,11 +193,12 @@ enum BerserkAlarmPlan {
             default: link = nil
             }
             return PlannedAlarm(
-                id: alarmID(assignmentID: assignment.id, fireDate: fire),
+                id: alarmID(assignmentID: assignment.id, fireDate: fire, sound: sound),
                 assignmentID: assignment.id,
                 fireDate: fire,
                 title: name.isEmpty ? assignment.displayCourse(overrides: nameOverrides) : name,
                 course: assignment.displayCourse(overrides: nameOverrides),
+                sound: sound,
                 dueAt: due,
                 link: link)
         }
@@ -235,9 +238,9 @@ enum BerserkAlarmPlan {
     /// one that matters: it is the one the student relies on, and it would be
     /// the plain Apple alert. Bump the number again whenever the metadata's
     /// shape changes.
-    nonisolated static func alarmID(assignmentID: String, fireDate: Date) -> UUID {
+    nonisolated static func alarmID(assignmentID: String, fireDate: Date, sound: SweeperSound = .smooth) -> UUID {
         let millis = Int64((fireDate.timeIntervalSince1970 * 1000).rounded())
-        let name = "lhf.berserk-alarm.v2|\(assignmentID.utf8.count)|\(assignmentID)|\(millis)"
+        let name = "lhf.berserk-alarm.v2|\(assignmentID.utf8.count)|\(assignmentID)|\(millis)" + (sound == .smooth ? "" : "|\(sound.rawValue)")
         var bytes = Array(SHA256.hash(data: Data(name.utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x80
         bytes[8] = (bytes[8] & 0x3F) | 0x80
@@ -417,11 +420,11 @@ enum BerserkAlarmPlan {
     /// item with a due time, the id its alarm has (or had) under this plan,
     /// derived exactly as `alarms(for:now:nameOverrides:)` derives it from
     /// (assignment id, effective due date minus the lead).
-    nonisolated static func finishedAlarmIDs(from items: [DashItem]) -> Set<UUID> {
+    nonisolated static func finishedAlarmIDs(from items: [DashItem], lead: TimeInterval = NotificationScheduler.loudAlertLead, sound: SweeperSound = .smooth) -> Set<UUID> {
         Set(items.compactMap { item in
             guard item.isCompleted, let due = item.due else { return nil }
             return alarmID(assignmentID: item.assignment.id,
-                           fireDate: due.addingTimeInterval(-NotificationScheduler.loudAlertLead))
+                           fireDate: due.addingTimeInterval(-lead), sound: sound)
         })
     }
 

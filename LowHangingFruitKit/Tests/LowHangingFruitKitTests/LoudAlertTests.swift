@@ -26,6 +26,71 @@ struct LoudAlertTests {
     private static let lead = NotificationScheduler.loudAlertLead
     private static let spacing = NotificationScheduler.loudAlertSpacing
 
+    @Test("Sweeper defaults and choices survive relaunch")
+    func sweeperPersistence() {
+        withScratchDefaults { defaults in
+            let scheduler = NotificationScheduler(defaults: defaults)
+            #expect(scheduler.sweeperMinutes == 10)
+            #expect(scheduler.sweeperSound == .smooth)
+            #expect(scheduler.sweeperExcludedCourses.isEmpty)
+            scheduler.setSweeperMinutes(20)
+            scheduler.setSweeperSound(.chime)
+            scheduler.setSweeperCourse("CIS 1200", enabled: false)
+            let restored = NotificationScheduler(defaults: defaults)
+            #expect(restored.sweeperMinutes == 20)
+            #expect(restored.sweeperSound == .chime)
+            #expect(restored.sweeperExcludedCourses == ["CIS 1200"])
+            restored.setSweeperMinutes(-1)
+            #expect(restored.sweeperMinutes == 20)
+        }
+    }
+
+    @Test("Sweeper timing moves alarms and fallback notifications together", arguments: [5, 10, 15, 20, 30, 60])
+    func sweeperTiming(minutes: Int) throws {
+        try withScheduler { scheduler, prefs, now in
+            scheduler.setSweeperMinutes(minutes)
+            let due = now + 7200
+            let item = assignment("CIS 1200", "timed", due: due)
+            let alarm = try #require(scheduler.plannedAlarms(from: [item], now: now, preferences: prefs).first)
+            #expect(alarm.fireDate == due - Double(minutes * 60))
+            let requests = loudRequests(scheduler.plannedRequests(from: [item], now: now, preferences: prefs))
+            let first = try #require(requests.first)
+            let trigger = try #require(first.trigger as? UNTimeIntervalNotificationTrigger)
+            #expect(trigger.timeInterval == 7200 - Double(minutes * 60))
+            #expect(first.content.body.contains("Due in \(minutes) minutes"))
+        }
+    }
+
+    @Test("Class opt-out leaves ordinary reminders and other classes intact")
+    func sweeperClasses() {
+        withScheduler { scheduler, prefs, now in
+            let items = [assignment("CIS 1200", "excluded", due: now + 7200),
+                         assignment("MATH 1400", "included", due: now + 7200)]
+            scheduler.setSweeperCourse("CIS 1200", enabled: false)
+            #expect(scheduler.plannedAlarms(from: items, now: now, preferences: prefs).map(\.assignmentID) == ["canvas:included"])
+            let requests = scheduler.plannedRequests(from: items, now: now, preferences: prefs)
+            #expect(loudItemIDs(requests) == ["canvas:included"])
+            #expect(requests.contains { $0.identifier.hasPrefix("due:canvas:excluded:") })
+            scheduler.resetSweeperCourses()
+            #expect(scheduler.plannedAlarms(from: items, now: now, preferences: prefs).count == 2)
+        }
+    }
+
+    @Test("Changing sound replaces an idle alarm instead of retaining its old audio")
+    func sweeperSoundIdentity() throws {
+        try withScheduler { scheduler, prefs, now in
+            let item = assignment("CIS 1200", "sound", due: now + 7200)
+            let original = try #require(scheduler.plannedAlarms(from: [item], now: now, preferences: prefs).first)
+            scheduler.setSweeperSound(.pulse)
+            let updated = try #require(scheduler.plannedAlarms(from: [item], now: now, preferences: prefs).first)
+            #expect(original.id != updated.id)
+            #expect(updated.sound == .pulse)
+            let diff = BerserkAlarmPlan.reconcile(desired: [updated], existingIDs: [original.id])
+            #expect(diff.toCancel == [original.id])
+            #expect(diff.toSchedule == [updated])
+        }
+    }
+
     // MARK: Which items qualify
 
     @Test("Only unsubmitted, submittable, dated, upcoming work in a class with reminders on qualifies")
@@ -153,9 +218,10 @@ struct LoudAlertTests {
         }
     }
 
-    @Test("Time Sensitive, default sound, one thread per item, in the reminders' own wording")
-    func contentAndThreading() {
+    @Test("Time Sensitive, selected sound, one thread per item, in the reminders' own wording", arguments: SweeperSound.allCases)
+    func contentAndThreading(sound: SweeperSound) {
         withScheduler { scheduler, prefs, now in
+            scheduler.setSweeperSound(sound)
             prefs.setDisplayName("CIS 1200", to: "Programming")
             let items = [
                 assignment("CIS 1200", "a", due: now + 2 * 3600),
@@ -166,7 +232,7 @@ struct LoudAlertTests {
 
             for request in loud {
                 #expect(request.content.interruptionLevel == .timeSensitive)
-                #expect(request.content.sound == .default)
+                #expect(request.content.sound == (sound.filename.map { UNNotificationSound(named: UNNotificationSoundName(rawValue: $0)) } ?? .default))
                 // The class as the student sees it on the card (their rename),
                 // then the assignment's name and the 10-minute phrase.
                 #expect(request.content.title == "Programming")

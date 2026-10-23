@@ -29,7 +29,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.education</string>
 	<key>NSAlarmKitUsageDescription</key>
-	<string>The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in.</string>
+	<string>The Smooth Sweeper rings an alarm before work you haven't turned in, at the time you choose.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

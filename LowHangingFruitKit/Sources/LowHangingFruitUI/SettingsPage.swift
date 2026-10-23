@@ -186,6 +186,7 @@ struct SettingsPage: View {
             .smoothSectionBackground(.smoothCobalt)
 
             remindersSection
+            SweeperSettingsSection()
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
@@ -304,22 +305,6 @@ struct SettingsPage: View {
                             .foregroundStyle(Color.v2SpineAmber)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    // "Smooth Sweeper" is the owner's name for the loud
-                    // 10-minute alert (2026-10-20); "Berserk" stays in code and
-                    // docs. Not a lead time: it is its own switch because it is
-                    // a different kind of reminder (three Time Sensitive
-                    // notifications seconds apart for work not yet handed in)
-                    // and a student who wants no 10-minute reminder at all
-                    // still has to be able to find it. Changing it re-plans,
-                    // like the lead times above.
-                    Toggle("Smooth Sweeper", isOn: Binding(
-                        get: { scheduler.loudAlertEnabled },
-                        set: {
-                            scheduler.setLoudAlertEnabled($0)
-                            scheduler.rescheduleAfterPreferenceChange()
-                        }
-                    ))
 
                     Toggle("\u{201C}turned in\u{201D} confirmations", isOn: Binding(
                         get: { scheduler.turnedInEnabled },
