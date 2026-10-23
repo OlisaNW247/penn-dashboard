@@ -374,6 +374,52 @@ struct EdRunStopTests {
         #expect(plan.restore.isEmpty)
     }
 
+    @Test("a class whose tab lookup failed and that no Ed course matched is restored, not dropped: the lookup says nothing about Ed")
+    func failedTabLookupIsRestored() {
+        // Class 3's `/tabs` request failed and the matcher found no Ed
+        // course for it; it holds stored Ed posts. "Unknown", so it keeps them.
+        let plan = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2", "3"], matched: ["1", "2"], read: ["1", "2"],
+            unknown: ["3"], storedEd: ["1", "2", "3"]
+        )
+        #expect(plan.drop.isEmpty)
+        #expect(plan.restore == ["3"])
+    }
+
+    @Test("a class whose tab lookup succeeded and that no Ed course matched is still dropped, even when another class's lookup failed")
+    func successfulLookupWithoutMatchIsDropped() {
+        // Class 3 was checked and has no Ed; class 2's lookup failed. Only
+        // the failure is unknown, so a note anywhere in the run is not
+        // enough to keep a class that Ed authoritatively lacks.
+        let plan = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2", "3"], matched: ["1"], read: ["1"],
+            unknown: ["2"], storedEd: ["1", "2", "3"]
+        )
+        #expect(plan.drop == ["3"])
+        #expect(plan.restore == ["2"])
+    }
+
+    @Test("a failed tab lookup on a class with no stored Ed documents produces nothing, and one on a matched class changes nothing")
+    func failedLookupWithoutStoredDocuments() {
+        // Nothing stored for class 3: neither dropped nor counted as restored.
+        let bare = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "3"], matched: ["1"], read: ["1"],
+            unknown: ["3"], storedEd: ["1"]
+        )
+        #expect(bare.drop.isEmpty)
+        #expect(bare.restore.isEmpty)
+
+        // Class 2 is matched and was read despite its failed lookup (a cached
+        // launch URL, or a sibling site with the tab): it is read, so neither
+        // restored nor dropped.
+        let matchedClass = EdDiscussionCoordinator.restoreDropPlan(
+            allIDs: ["1", "2"], matched: ["1", "2"], read: ["1", "2"],
+            unknown: ["2"], storedEd: ["1", "2"]
+        )
+        #expect(matchedClass.drop.isEmpty)
+        #expect(matchedClass.restore.isEmpty)
+    }
+
     // MARK: status line
 
     @Test("the status line leads with the counts and the first failure's kind")
