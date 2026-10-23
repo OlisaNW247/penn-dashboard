@@ -90,6 +90,9 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// `startURL` below.
     weak var webView: WKWebView?
 
+    /// Enabled only for the visible Penn Canvas login, never Gradescope or renewal.
+    var credentialCapture: PennKeyLoginCapture?
+
     /// Plain-language message for a failed load (offline, DNS, timeout, …).
     /// `nil` once a subsequent navigation attempt starts.
     @Published private(set) var loadError: String?
@@ -698,6 +701,9 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     /// keep `loadError` nil (they were never a user-visible failure).
     private func recordNavigationFailure(_ webView: WKWebView, error: Error, phase: String) {
         let nsError = error as NSError
+        if nsError.code != NSURLErrorCancelled {
+            credentialCapture?.clear()
+        }
         appendLogEntry(
             host: webView.url?.host ?? "(no url)",
             path: "\(webView.url?.path ?? "") [\(phase) code=\(nsError.code)]",
@@ -772,6 +778,13 @@ extension LoginNavigationObserver: WKNavigationDelegate {
                 // surface in the copyable diagnostics report via the same
                 // path as the host/path/status entries below.
                 self.appendLogEntry(host: "(page title)", path: " \(title)", status: nil)
+            }
+        }
+        if credentialCapture != nil, PennKeyLoginCapture.accepts(webView.url, isMainFrame: true) {
+            webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { [weak self] result, _ in
+                if PennKeyLoginForm.presence(from: result) == .formError {
+                    self?.credentialCapture?.clear()
+                }
             }
         }
         attemptAutoLoginIfNeeded(webView)

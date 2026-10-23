@@ -42,11 +42,7 @@ struct OnboardingView: View {
     /// lifetime (see `RootView.swift`), not a locally-owned `@StateObject`.
     @EnvironmentObject var scheduler: NotificationScheduler
     @State private var phase: Phase = .schoolSelection
-    /// Presents `PennKeyCredentialsSheet` once, right after a successful
-    /// interactive Canvas login — see `canvasConnected()`'s doc comment for
-    /// the "why here" and `AppState.hasOfferedStayLoggedIn` for why this
-    /// never fires a second time.
-    @State private var showStayLoggedInOffer = false
+    @State private var canvasConnectionNotice: String?
     @State private var schoolSearch = ""
     @State private var customCanvasAddress = ""
     @State private var customAddressError: String?
@@ -66,6 +62,7 @@ struct OnboardingView: View {
     enum Phase: Hashable {
         case schoolSelection
         case canvasLogin
+        case canvasConnected
         case gradescopeLogin
         case reminders
     }
@@ -163,32 +160,6 @@ struct OnboardingView: View {
             // the missing height; the height was never missing, the step just
             // never claimed it.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Attached here, at the OUTER body level, rather than inside
-            // `canvasStep`'s `CanvasLoginPane` branch: the instant
-            // `state.isCanvasConnected` flips true (which happens inside
-            // `CanvasLoginPane.connect()` BEFORE it calls `onConnected()` —
-            // i.e. before `canvasConnected()` even runs), `canvasStep`'s own
-            // `@ViewBuilder` switches from the `CanvasLoginPane` branch to
-            // the `connectedStep(...)` branch, which would tear down any
-            // `.sheet` modifier attached to the pane branch specifically
-            // before `showStayLoggedInOffer` even had a chance to present
-            // it. This level of the view tree survives that branch swap (and
-            // the `phase` change `advancePastCanvasStep` makes once the
-            // sheet closes) untouched, so the presentation is reliable
-            // regardless of which branch is on screen when it's triggered.
-            .sheet(isPresented: $showStayLoggedInOffer, onDismiss: advancePastCanvasStep) {
-                // `onDismiss` (not `onCancel`) is what actually advances the
-                // walk — it fires whether the student saved or tapped "not
-                // now", so both answers land on the same next step. The
-                // sheet's own "not now" button just closes it; there is
-                // nothing else for it to do here.
-                PennKeyCredentialsSheet(cancelLabel: "not now")
-                    .environmentObject(state)
-            }
-            // At the outer level for the same reason as the sheet above: the
-            // dialog must survive `stepContent` swapping branches. The
-            // message names the school being left, read when the dialog is
-            // built, which is before `selectCanvasInstallation` changes it.
             .confirmationDialog("switch school?",
                                 isPresented: $showSwitchSchoolConfirmation,
                                 titleVisibility: .visible) {
@@ -210,6 +181,11 @@ struct OnboardingView: View {
             schoolSelectionStep
         case .canvasLogin:
             canvasStep
+        case .canvasConnected:
+            connectedStep(step: 1, message: "Canvas connected",
+                          detail: "Disconnect at any time in Settings",
+                          notice: canvasConnectionNotice, onBack: nil,
+                          onContinue: advancePastCanvasStep)
         case .gradescopeLogin:
             gradescopeStep
         case .reminders:
@@ -363,25 +339,10 @@ struct OnboardingView: View {
         phase = .canvasLogin
     }
 
-    /// Canvas is the only required step. If it's already connected — the
-    /// student stepped forward once and then used the back chevron on a
-    /// later step to glance backward — this shows a plain confirmation
-    /// instead of re-mounting `CanvasLoginPane`. Without that check, going
-    /// back "just to look" would re-run the pane's own pre-login cookie
-    /// purge and load a fresh WebView for a login that already succeeded:
-    /// harmless, but a needless network round trip and a confusing
-    /// "log in again?" prompt for a login that isn't being redone.
-    @ViewBuilder
+    /// The login pane stays mounted until verified connection and credential saving
+    /// finish. Confirmation is a separate phase, not a reaction to partial state.
     private var canvasStep: some View {
-        if state.isCanvasConnected && state.onboardingDestination != .canvas {
-            connectedStep(
-                step: 1,
-                message: "canvas is connected.",
-                onBack: nil,
-                onContinue: { phase = .gradescopeLogin }
-            )
-        } else {
-            CanvasLoginPane(installation: state.canvasInstallation, onConnected: canvasConnected)
+        CanvasLoginPane(installation: state.canvasInstallation, onConnected: canvasConnected)
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
                 loginHeader(
@@ -403,7 +364,6 @@ struct OnboardingView: View {
                 previewFooter
             }
             .background(Color.v2Bg.ignoresSafeArea())
-        }
     }
 
     /// Same door as `IntroView.previewLink`, on the screen a reviewer
@@ -431,38 +391,12 @@ struct OnboardingView: View {
         .accessibilityHint("explore a demo dashboard without logging in")
     }
 
-    /// Called once Canvas is actually connected (cookies captured, the pane's
-    /// `onChange` fired `connect()` successfully). Before moving on, this is
-    /// the one-time hook for offering "stay signed in"
-    /// (`PennKeyCredentialsSheet`) — right after a real interactive login is
-    /// the one moment the student has just proven they know their PennKey
-    /// password and are already thinking about Canvas access, which makes it
-    /// the least intrusive place to ask, once, whether Smooth should
-    /// remember it. Offered after EVERY interactive login until a password
-    /// is saved, not once ever: Settings no longer has a "stay signed in"
-    /// toggle (2026-09-24), so a one-time offer would leave a student who
-    /// tapped "not now" with no way back. An interactive login only happens
-    /// when the session died with nothing stored, which is exactly when the
-    /// offer is worth repeating.
-    ///
-    /// Penn only. The sheet asks for a PennKey and `PennKeyLoginForm` only
-    /// knows Penn's identity provider; since other schools can sign in
-    /// (`CanvasInstallation.verifiedSchools`, 2026-09-23) a Yale student was
-    /// being asked for a PennKey after every Canvas login.
-    private func canvasConnected() {
-        if !state.stayLoggedInEnabled,
-           state.canvasInstallation.id == CanvasInstallation.penn.id {
-            state.noteStayLoggedInOffered()
-            showStayLoggedInOffer = true
-            return
-        }
-        advancePastCanvasStep()
+    /// Keep the confirmation visible until Continue, including Settings reconnects.
+    private func canvasConnected(_ notice: String?) {
+        canvasConnectionNotice = notice
+        phase = .canvasConnected
     }
 
-    /// The actual "Canvas step is done" transition — pulled out of
-    /// `canvasConnected()` so both the ordinary path (offer already shown,
-    /// or feature already on) and the offer sheet's `onDismiss` (however the
-    /// student answered: saved, or "not now") land on the same next step.
     private func advancePastCanvasStep() {
         if state.onboardingDestination == .canvas {
             state.completeOnboarding()
@@ -479,7 +413,7 @@ struct OnboardingView: View {
             connectedStep(
                 step: 2,
                 message: "gradescope is connected.",
-                onBack: { phase = .canvasLogin },
+                onBack: { phase = .canvasConnected },
                 onContinue: gradescopeConnected
             )
         } else {
@@ -842,6 +776,8 @@ struct OnboardingView: View {
     private func connectedStep(
         step: Int,
         message: String,
+        detail: String? = nil,
+        notice: String? = nil,
         onBack: (() -> Void)?,
         onContinue: @escaping () -> Void
     ) -> some View {
@@ -857,7 +793,20 @@ struct OnboardingView: View {
                 Text(message)
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.v2Ink)
+                if let detail {
+                    Text(detail)
+                        .font(.lhfSans(14))
+                        .foregroundStyle(Color.v2DateText)
+                }
+                if let notice {
+                    Text(notice)
+                        .font(.lhfSans(13))
+                        .foregroundStyle(Color.smoothTomatoInk)
+                }
             }
+
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
 
             Spacer()
 
@@ -889,17 +838,19 @@ struct OnboardingView: View {
 private struct CanvasLoginPane: View {
     @EnvironmentObject private var state: AppState
     let installation: CanvasInstallation
-    let onConnected: () -> Void
+    let onConnected: (String?) -> Void
 
+    @State private var paneActive = false
     @State private var isReadingCookies = false
     @State private var isPurging = true
     @State private var message: String?
     @StateObject private var navObserver: LoginNavigationObserver
 
-    init(installation: CanvasInstallation, onConnected: @escaping () -> Void) {
+    init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void) {
         self.installation = installation
         self.onConnected = onConnected
         let observer = LoginNavigationObserver()
+        observer.credentialCapture = installation.id == CanvasInstallation.penn.id ? PennKeyLoginCapture() : nil
         observer.signedInHostMarker = installation.host
         // Canvas Student can claim universal links for the Canvas host, which
         // hijacks the SAML return hop away from this WebView on a device
@@ -950,6 +901,13 @@ private struct CanvasLoginPane: View {
                             .padding(.vertical, 10)
                             .background(Color.smoothTomato.opacity(0.13))
                     }
+                    if installation.id == CanvasInstallation.penn.id {
+                        Text("Signing in securely saves your PennKey on this device so Smooth can reconnect. Disconnect at any time in Settings.")
+                            .font(.lhfSans(12))
+                            .foregroundStyle(Color.v2DateText)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
                     LoginWebView(
                         url: startURL,
                         store: LoginDataStores.canvas,
@@ -997,6 +955,7 @@ private struct CanvasLoginPane: View {
         // path for this pane beyond SwiftUI removing it from the tree
         // (`OnboardingView`'s `phase` switch), which `onDisappear` covers.
         .onAppear {
+            paneActive = true
             state.isCanvasLoginPaneActive = true
             // Belt-and-suspenders (2026-09-21 review): `navObserver` is a
             // fresh `LoginNavigationObserver()` every time this pane gets a
@@ -1034,7 +993,12 @@ private struct CanvasLoginPane: View {
                 }
             }
         }
-        .onDisappear { state.isCanvasLoginPaneActive = false }
+        .onDisappear {
+            paneActive = false
+            state.isCanvasLoginPaneActive = false
+            navObserver.credentialCapture?.finish()
+            navObserver.autoLoginCredentials = nil
+        }
 #if os(macOS)
         .frame(minWidth: 860, minHeight: 620)
 #endif
@@ -1069,9 +1033,22 @@ private struct CanvasLoginPane: View {
                 }
             SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
-                isReadingCookies = false
+                guard paneActive else { return }
                 let connected = await state.connectCanvas(cookies: canvasCookies)
+                guard paneActive else { return }
+                isReadingCookies = false
                 if connected {
+                    var persistenceNotice: String?
+                    if let capture = navObserver.credentialCapture {
+                        if let credentials = capture.take() {
+                            if !state.enableStayLoggedIn(username: credentials.username, password: credentials.password) {
+                                persistenceNotice = "Canvas is connected, but secure credential storage failed. Reconnect in Settings to try again."
+                            }
+                        } else if !state.canAutoLogin {
+                            persistenceNotice = "Canvas is connected using your current session. Automatic reconnection needs a PennKey password sign-in."
+                        }
+                        capture.finish()
+                    }
                     // A connect that actually succeeded is proof the session
                     // is alive — clear any earlier "confirmed dead" sticky
                     // record (AppState.canvasSessionConfirmedDead) so it
@@ -1085,54 +1062,8 @@ private struct CanvasLoginPane: View {
                     // flag exists to close.
                     state.noteCanvasLoginSessionCaptured()
 
-                    // Silently mint a Canvas personal access token from
-                    // inside this still-live, already-authenticated login
-                    // WebView, so the student doesn't have to do this again
-                    // for the token's lifetime (`CanvasAccessTokenPolicy
-                    // .lifetime`, Canvas's own ~120-day ceiling for a
-                    // student account — see `CanvasAccessToken.swift`'s doc
-                    // comment in the Kit). Three alternatives were
-                    // considered and rejected:
-                    //   - Storing the PennKey password: Penn's own policy
-                    //     plus Duo's second factor make a stored password
-                    //     useless for silent reauthentication — there is no
-                    //     way to drive a fresh login without a human tapping
-                    //     through Duo, so nothing would actually get
-                    //     automated by holding onto it.
-                    //   - Minting from inside `CanvasSessionRenewer`:
-                    //     deferred. That class's rule 1 is GET-only — no
-                    //     JavaScript that submits a form, no re-POST, ever —
-                    //     because a double-POSTed SAML form is the exact
-                    //     historical bug it exists to never repeat, and a
-                    //     token mint is a POST. Running the mint here
-                    //     instead, in the visible pane, is safe against that
-                    //     same rule for a different reason: this `fetch` is
-                    //     issued by the PAGE itself (see
-                    //     `CanvasAccessTokenMint.script`), not a
-                    //     `WKWebView.load`/form-submit navigation, so it
-                    //     cannot re-POST the SAML login form no matter when
-                    //     it runs — and it only ever runs once, right after
-                    //     a login the user just performed themselves, never
-                    //     unattended.
-                    //   - A process-wide "current Canvas credential"
-                    //     provider inside the Kit, so every client could
-                    //     reach for the token itself instead of taking it as
-                    //     a parameter: rejected by `CanvasAuth.apply`'s own
-                    //     doc comment in the Kit — hidden shared state read
-                    //     from more than one place at once is the exact
-                    //     shape of this repo's two pre-existing test flakes
-                    //     (CLAUDE.md, "Two known flakes"). `accessToken` is
-                    //     threaded explicitly from here down instead, the
-                    //     same way `cookies` already is.
-                    //
-                    // Gated on `needsMint` (not "mint every login"): a token
-                    // already minted this semester and nowhere near its
-                    // renewal window needs nothing from this login beyond
-                    // the cookies it already captured above. `navObserver
-                    // .webView` can be nil in principle (deallocated between
-                    // the login completing and this line running) — in that
-                    // case there is simply nothing to mint from and cookie
-                    // mode continues exactly as it does today.
+                    // Token support remains optional per institution. Credential saving
+                    // above is independent of whether the school permits token minting.
                     if installation.id == CanvasInstallation.penn.id,
                        FeatureFlags.canvasAccessTokens,
                        let webView = navObserver.webView,
@@ -1168,7 +1099,8 @@ private struct CanvasLoginPane: View {
                         }
                     }
 
-                    onConnected()
+                    guard paneActive else { return }
+                    onConnected(persistenceNotice)
                 } else if installation.id != CanvasInstallation.penn.id {
                     // A custom host can commit its landing page before a
                     // session exists. Return to the WebView instead of
@@ -1314,6 +1246,7 @@ private struct LoginWebView: UIViewRepresentable {
 private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver: LoginNavigationObserver) -> WKWebView {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = store
+    navigationObserver.credentialCapture?.install(in: configuration.userContentController)
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.allowsBackForwardNavigationGestures = false
     // UA experiment concluded 2026-08-22: spoof off changed nothing (0/3,

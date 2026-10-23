@@ -1980,20 +1980,16 @@ final class AppState: ObservableObject {
         return "on"
     }
 
-    /// Settings → "stay signed in", turned on. Called only after the student
-    /// has typed both fields into `PennKeyCredentialsSheet` and tapped save
-    /// — never with an empty username or password (the sheet's own "save"
-    /// button stays disabled until both are non-empty, so this is a second,
-    /// belt-and-suspenders guard rather than the only one). Clears any prior
-    /// rejection: entering a (presumably corrected) password is the
-    /// student's own signal that the old failure no longer applies, and is
-    /// also how "update password" after a rejection re-arms the feature.
-    /// Also clears `autoLoginAwaitingDuo`: a fresh save is the student
-    /// actively re-engaging with this feature, so any stale "silent path is
-    /// standing down" latch from before should not survive it.
-    func enableStayLoggedIn(username: String, password: String) {
-        guard !username.isEmpty, !password.isEmpty else { return }
-        PennKeyCredentialStore.save(username: username, password: password)
+    /// Save the credential from a verified Canvas login (or explicit password repair).
+    /// Never enable automatic login unless Keychain confirms the write succeeded.
+    @discardableResult
+    func enableStayLoggedIn(username: String, password: String) -> Bool {
+        guard !username.isEmpty, !password.isEmpty else { return false }
+        guard PennKeyCredentialStore.save(username: username, password: password) else {
+            // Do not reuse an older account/password if replacing it failed.
+            setAutoLoginDisabledReason("Couldn't save your login securely. Reconnect Canvas in Settings to try again.")
+            return false
+        }
         stayLoggedInEnabled = true
         UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
         setAutoLoginDisabledReason(nil)
@@ -2007,6 +2003,7 @@ final class AppState: ObservableObject {
         // stay blocked in the background until a manual login.
         clearBackgroundDuoStandDown()
         canvasSessionRenewer = nil
+        return true
     }
 
     /// Settings → "stay signed in", turned off — and the one path

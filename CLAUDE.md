@@ -1,5 +1,22 @@
 # LHF (Low Hanging Fruit), shipped as **Smooth**
 
+## 2026-10-23 — automatic Canvas sign-in (release-source worktree)
+
+Based on 96dce92 / App Store 3.1.0 (13). Penn's visible login discloses
+credential saving, captures a submitted pair in memory (exact HTTPS hosts,
+main frame, ten-minute limit), and saves only after Canvas verifies the session.
+The extra password/opt-in sheet is removed from onboarding. The next screen
+says “Canvas connected” / “Disconnect at any time in Settings”; Continue moves
+on. Disconnect still clears credentials. Other schools retain session behavior;
+SSO without a password cannot populate the vault. Keychain failures are surfaced.
+This supersedes the earlier decision against submission capture and descriptions
+of an optional stay-signed-in offer below. Historical release notes remain historical.
+Validation: 40 focused tests passed (including real WebKit synthetic submission,
+origin/lifetime rejection, Keychain error outcomes, and reconnect routing);
+iOS Debug build succeeded. Live PennKey/Duo and password-manager autofill
+still require device validation.
+
+
 ## Start here: every session reads this file, and updates it before it ends
 
 This file and `ROADMAP.md` are the project's memory. Sessions don't remember
@@ -54,7 +71,7 @@ material by numeric Canvas course id, and two schools' ids would collide.
 on-device; course material is pooled server-side; ask has an on-device
 fallback." Grades, completions, submission state, the work list, the
 student's name, and Canvas/Gradescope cookies never leave the phone. The
-PennKey password, if the student saves it, stays in this phone's Keychain
+PennKey password, saved automatically after a verified Penn Canvas login, stays in this phone's Keychain
 and only ever goes to Penn's login page. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`

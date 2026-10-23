@@ -1,49 +1,10 @@
 import Foundation
 import Security
 
-/// Persists a student's PennKey username and password for the "stay signed
-/// in" auto-login feature — the owner's decision, made after being told the
-/// risks (CLAUDE.md's "stay signed in" entry): since Penn blocks Canvas
-/// access tokens for students, the app optionally stores the student's own
-/// PennKey credentials and uses them to sign back into Canvas automatically
-/// when the session dies.
-///
-/// **Tier 3 (Keychain), `ThisDeviceOnly`, own service string — never Tier 2
-/// (`UserDefaults.lhf`), never iCloud, never the shared App Group.** A
-/// PennKey password is the student's master credential for essentially
-/// everything at Penn (email, registration, financial aid, Canvas,
-/// Gradescope-via-PennKey) — an order of magnitude more sensitive than any
-/// other secret this app persists, including the Canvas session cookies and
-/// access token next to this file. It is stored here ONLY because the
-/// student typed it into Smooth's own credentials sheet
-/// (`PennKeyCredentialsSheet`) and explicitly turned the "stay signed in"
-/// toggle on; it is off by default, and nothing in the app ever scrapes it
-/// out of the login page the student would otherwise type it into by hand
-/// (see `PennKeyLoginForm`'s doc comment for why that alternative was
-/// rejected outright).
-///
-/// It is sent to exactly one place: Penn's own login form
-/// (`weblogin.pennkey.upenn.edu` / `idp.pennkey.upenn.edu`), over HTTPS,
-/// inside the app's own isolated `WKWebView` (`LoginNavigationObserver`'s
-/// visible-pane auto-fill, `CanvasSessionRenewer`'s silent renewal) — never
-/// to Smooth's own backend, never anywhere else. It is never logged (not by
-/// `Logger`, not by `print`, not by `LoginDiagnosticsLog`, not by
-/// `DiagnosticsReport` — those surfaces report only whether the feature is
-/// on/off and, when disabled, the reason, never the credential itself), and
-/// it is deleted from the Keychain the moment the toggle goes off
-/// (`AppState.disableStayLoggedIn()`) or the student disconnects Canvas
-/// entirely (`AppState.disconnectCanvas()` calls that same method — see its
-/// own doc comment for why disconnecting has to take the password with it).
-///
-/// Stored as one JSON blob (`{"username":..., "password":...}`) under a
-/// single Keychain item, the same "one item per credential" isolation
-/// `CanvasAccessTokenStore`'s doc comment argues for — a rotate/clear here
-/// can never touch the Canvas session cookies or access token, and vice
-/// versa. Two separate Keychain items (one per field) were considered and
-/// rejected: the two values are only ever read or written together (there is
-/// no operation that wants the username without the password or vice versa),
-/// so a single atomic write is simpler and removes any window where one half
-/// could be updated without the other.
+/// Device-only storage for automatic Penn Canvas reconnection. The visible login
+/// explains this before entry. A submitted pair is saved only after Canvas confirms
+/// the connection; credentials never go to Smooth, logs, defaults, or iCloud.
+/// Disconnecting Canvas removes the item. Duo remains interactive when required.
 enum PennKeyCredentialStore {
     private static let service = "com.lhf.lowhangingfruit.pennkeyCredentials"
     private static let account = "pennkeyCredentialsV1"
@@ -61,21 +22,25 @@ enum PennKeyCredentialStore {
         ]
     }
 
-    /// Persists `username`/`password`, replacing whatever was stored before
-    /// — Keychain has no upsert, so this is delete-then-add like every other
-    /// store in this codebase (`SessionCookieStore.write`,
-    /// `ICSFeedURLStore.save`, `CanvasAccessTokenStore.save`).
-    static func save(username: String, password: String) {
-        guard let data = try? JSONEncoder().encode(Payload(username: username, password: password)) else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
+    /// Update atomically, retaining the previous item if Keychain refuses the write.
+    @discardableResult
+    static func save(
+        username: String,
+        password: String,
+        update: (CFDictionary, CFDictionary) -> OSStatus = { SecItemUpdate($0, $1) },
+        add: (CFDictionary) -> OSStatus = { SecItemAdd($0, nil) }
+    ) -> Bool {
+        guard let data = try? JSONEncoder().encode(Payload(username: username, password: password)) else { return false }
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let status = update(baseQuery() as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
         var query = baseQuery()
-        query[kSecValueData as String] = data
-        // Readable after first unlock only, this-device-only — never
-        // migrated to a new device via an encrypted backup restore, same
-        // accessibility class every other credential in this file's
-        // neighborhood uses.
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+        attributes.forEach { query[$0.key] = $0.value }
+        return add(query as CFDictionary) == errSecSuccess
     }
 
     /// The persisted PennKey username/password, if any.

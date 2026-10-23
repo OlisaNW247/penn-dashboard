@@ -1,23 +1,8 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// Collects the student's own PennKey username and password for the optional
-/// "stay signed in" auto-login feature (CLAUDE.md's "stay signed in" entry;
-/// `PennKeyCredentialStore`'s doc comment has the full data-handling
-/// argument). This sheet is the ONLY place in the app a PennKey password is
-/// ever typed for this feature — auto-login never scrapes it out of Penn's
-/// own login page, which the student would otherwise type it into by hand
-/// (`PennKeyLoginForm`'s doc comment records that rejected alternative and
-/// why).
-///
-/// Presented from three places, all sharing this one sheet:
-/// - Settings' "stay signed in" toggle, turned on.
-/// - Settings' "update password" button, shown once a stored password has
-///   been rejected (`AppState.autoLoginDisabledReason`).
-/// - Once, automatically, right after a successful interactive Canvas login
-///   (`OnboardingView`'s one-time offer) — that caller passes `onCancel` so
-///   its own onward flow (to the next onboarding step) isn't blocked on a
-///   save that may never happen.
+/// Manual repair for a previously rejected password. Normal onboarding saves the
+/// credential submitted to Penn automatically and never presents this sheet.
 struct PennKeyCredentialsSheet: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -37,6 +22,7 @@ struct PennKeyCredentialsSheet: View {
 
     @State private var username: String
     @State private var password: String = ""
+    @State private var saveError: String?
 
     init(cancelLabel: String = "cancel", onCancel: (() -> Void)? = nil) {
         self.cancelLabel = cancelLabel
@@ -60,6 +46,10 @@ struct PennKeyCredentialsSheet: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
 
+                if let saveError {
+                    Text(saveError)
+                        .foregroundStyle(Color.smoothTomatoInk)
+                }
                 Section {
                     // Empty title + `.labelsHidden()`, not a literal title
                     // string: on macOS a `TextField`'s title renders as a
@@ -142,7 +132,11 @@ struct PennKeyCredentialsSheet: View {
     private func save() {
         let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedUsername.isEmpty, !password.isEmpty else { return }
-        state.enableStayLoggedIn(username: trimmedUsername, password: password)
+        guard state.enableStayLoggedIn(username: trimmedUsername, password: password) else {
+            saveError = "Couldn't save securely on this device. Please try again."
+            return
+        }
+        password = ""
         dismiss()
     }
 }
