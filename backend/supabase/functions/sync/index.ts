@@ -23,6 +23,7 @@ import {
   selectCourseWebsites,
   selectEnrolledCourseIDs,
   selectLiveDocumentIDsForCourse,
+  selectLiveDocumentSnapshots,
   selectLiveDocumentsForCourses,
   selectProfileWiresForCourses,
   setCourseCatalogCode,
@@ -41,12 +42,13 @@ import {
   freshCourses,
   goneIDs,
   ManifestValidationError,
+  MAX_WINDOW_DOWNLOAD_PER_COURSE,
   parseAcceptsKinds,
   parseSyncClient,
   profileStaleCourses,
   retirableCollector,
   validateCourse,
-  validateDocument,
+  validateDocuments,
   validateDocumentStub,
   validateFullySyncedCourse,
   validateLink,
@@ -55,6 +57,7 @@ import {
   type DocumentKind,
   type DocumentStub,
   type LinkWire,
+  type RejectedDocument,
   type SyncClient,
 } from "../_shared/manifest.ts";
 
@@ -92,6 +95,7 @@ interface ManifestResult {
 
 interface UploadResult {
   accepted: number;
+  rejected: RejectedDocument[];
   profileStale: string[];
   websitesPending: string[];
 }
@@ -210,18 +214,23 @@ async function handleManifest(
   await refreshCatalog(serviceClient, courses);
 
   const courseIDs = courses.map((course) => course.courseID);
-  const liveRows = await selectLiveDocumentsForCourses(serviceClient, courseIDs);
+  const now = new Date();
+  const liveRows = await selectLiveDocumentsForCourses(serviceClient, courseIDs, now);
   // Capability-gated kinds (`file`) are withheld from both `download` and
   // `serverManifest` unless the client listed them in `acceptsKinds`; see
   // `filterByAcceptedKinds`. Absent `acceptsKinds` is every shipped phone.
   const liveWireDocs = filterByAcceptedKinds(liveRows.map(documentRowToWire), acceptsKinds);
 
-  const { download, serverManifest } = diffManifest(stubs, liveWireDocs);
+  // Window kinds are capped in `download` only; `serverManifest` lists them
+  // all (see `diffManifest`).
+  const { download, serverManifest } = diffManifest(stubs, liveWireDocs, {
+    maxWindowPerCourse: MAX_WINDOW_DOWNLOAD_PER_COURSE,
+  });
 
   const courseFreshnessRows = await selectCoursesByIDs(serviceClient, courseIDs);
   const coursesFresh = freshCourses(
     courseFreshnessRows.map((row) => ({ courseID: row.course_id, lastFullSyncAt: row.last_full_sync_at })),
-    new Date(),
+    now,
   );
 
   // Read after `refreshCatalog` above so a `catalog_code` link (or a fresh
@@ -291,7 +300,13 @@ async function handleUpload(
     throw new HttpError(400, "bad_request", `at most ${MAX_UPLOAD_LINKS} links per upload call`);
   }
 
-  const documents = rawDocuments.map(validateDocument);
+  // One bad document (an announcement with an empty title or an image-only
+  // body) is reported in `rejected` and the rest of the batch goes through;
+  // see `validateDocuments`. A rejected document touches nothing below: its
+  // course is not "affected" by it, it is not upserted, and the ids the
+  // client lists in `fullySyncedCourses` are the client's, unchanged, so a
+  // rejected id is neither added to nor removed from the gone computation.
+  const { documents, rejected } = validateDocuments(rawDocuments);
   const fullySyncedCourses = rawFullySynced.map(validateFullySyncedCourse);
   const links: LinkWire[] = Array.isArray(rawLinks) ? rawLinks.map(validateLink) : [];
 
@@ -320,7 +335,8 @@ async function handleUpload(
   // before `upsertDocuments`/gone-marking on purpose -- diffing against a
   // state already mutated by this same request would compare a value
   // against itself for every document this call touches.
-  const beforeRows = await selectLiveDocumentsForCourses(serviceClient, [...affectedCourseIDs]);
+  const now = new Date();
+  const beforeRows = await selectLiveDocumentSnapshots(serviceClient, [...affectedCourseIDs], now);
   const beforeHashByID = new Map<string, string>();
   const kindByID = new Map<string, DocumentKind>();
   for (const row of beforeRows) {
@@ -348,7 +364,7 @@ async function handleUpload(
   }
   await setLastFullSyncNow(serviceClient, nowFullySyncedCourseIDs);
 
-  const afterRows = await selectLiveDocumentsForCourses(serviceClient, [...affectedCourseIDs]);
+  const afterRows = await selectLiveDocumentSnapshots(serviceClient, [...affectedCourseIDs], now);
   const afterHashByID = new Map<string, string>();
   for (const row of afterRows) {
     afterHashByID.set(row.id, row.content_hash);
@@ -396,7 +412,7 @@ async function handleUpload(
 
   const websitesPending = await computeWebsitesPending(serviceClient, [...affectedCourseIDs], courseInfoByID);
 
-  return { accepted: documents.length, profileStale: [...staleCourseIDs], websitesPending };
+  return { accepted: documents.length, rejected, profileStale: [...staleCourseIDs], websitesPending };
 }
 
 /**

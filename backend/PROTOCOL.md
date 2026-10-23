@@ -108,12 +108,27 @@ uploaded; a student's post never becomes a document. `ed` is content like
 `announcement`: it is never profile or syllabus input, and it does not make a
 course's profile stale. One more exception: the upload step's complete-set
 rule (Step 2 below, "sets `gone_at` on live docs of a fully-synced course
-whose id is absent from `documentIDs`") skips `ed` documents. A fully
-fetched Canvas course is the same for every enrolled student, but its Ed
-board is not: a student not yet on Ed, or without the Ed tab, legitimately
-reports a fully-synced course with no `ed` ids, and that must not erase
-classmates' pooled threads. So `ed` rows are only ever upserted; a thread
-deleted on Ed stays pooled until an Ed-specific sync signal exists.
+whose id is absent from `documentIDs`") skips every **window kind**,
+`announcement` and `ed`. The kinds split in two. A *census* kind (home,
+syllabus, assignment, module, page, website, file) is the same for every
+enrolled student, so one student's complete fetch is the truth. A *window*
+kind is a stream and each client fetched only a window of it: a student not
+yet on Ed, or without the Ed tab, a client whose announcements request
+failed, or one whose window is narrower, legitimately reports a
+fully-synced course with fewer (or no) such ids, and that must not erase
+classmates' pooled posts. So window-kind rows are only ever upserted by an
+upload, never retired by one, whichever client reports and whoever
+collected them. In their place the server ages them out on read: a
+window-kind row whose `coalesce(updated_at, fetched_at)` is more than 120
+days old is never served (not in `download`, `serverManifest`, or the
+upload's profile-staleness snapshots) and may be deleted by a later
+cleanup; nothing deletes it today. (For `ed`, `updated_at` is the thread's
+last activity; for an announcement it is the post time.) A manifest also
+sends at most the newest 150 window-kind rows per course in `download`;
+`serverManifest` still lists all of them, so a client does not re-upload
+the rest. Live-document reads are paginated (500 rows a page, ordered by
+`id`) because the project's PostgREST `max_rows` is 1000 and a larger
+single select is silently truncated.
 
 `CourseSummaryWire.section` is the Canvas SIS section number for *this
 Canvas course site* (e.g. `"401"`), at most 8 characters matching
@@ -207,14 +222,24 @@ Server: upserts docs by id (clearing `gone_at`), sets `gone_at = now()` on
 live docs of a fully-synced course whose id is absent from `documentIDs`
 (when the reporting `client` is the phone, only docs with
 `collector = 'phone'`; when it is the extension, docs of any collector;
-`ed` is exempt as before), sets `courses.last_full_sync_at = now()` for those courses, sets
+window kinds, `announcement` and `ed`, are exempt for both), sets `courses.last_full_sync_at = now()` for those courses, sets
 `courses.profile_stale = true` for any course whose set of
 `(id, contentHash)` for kinds `syllabus|home|page|website` changed, and
 scores `links` into `course_websites` candidate rows. Answers
 
 ```
-{ "accepted": n, "profileStale": [courseID], "websitesPending": [courseID] }
+{ "accepted": n,
+  "rejected": [ { "id": string, "reason": string } ],
+  "profileStale": [courseID], "websitesPending": [courseID] }
 ```
+
+A document that fails validation (an empty title or text, an id that does
+not match its own kind/courseID/sourceID, an unknown kind) is reported in
+`rejected` (`id` is "" when the entry had none) and does not fail the
+batch: the rest are upserted and counted in `accepted`. `rejected` is `[]`
+when there are none. A rejected document is never upserted and never
+changes what the complete-set rule retires. Resending it unchanged will be
+rejected again, so a client should log it and move on.
 
 Client then POSTs `extract-profile` for `profileStale` without awaiting,
 and fires `discover-websites` (at most 3 course ids per call; batch a

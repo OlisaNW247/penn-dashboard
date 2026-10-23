@@ -1289,7 +1289,15 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
-- Deno: 406 passed, 0 failed (2026-10-22, `v8`, the Chrome extension's
+- Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
+  posts exempt from the complete-set rule, a 120-day age-out on read,
+  the live read paginated in pages of 500 against the project's
+  PostgREST `max_rows` of 1000, per-document rejection on upload, a
+  150-per-class cap on window-kind downloads; 13 new tests, 4 edited
+  because they pinned the extension retiring announcements; Deno 2.9.8
+  `--no-check`, and the 2.1.4 type check clean; not deployed).
+- Deno before it: 406 passed, 0 failed (2026-10-22, `v8`, the Chrome extension's
   backend: pairing, linked devices, encrypted sync blobs, the `collector`
   rule and the `file` kind; in the cloud container with Deno 2.9.8 and
   `--no-check`, because `deno task test`'s type-check fails under 2.9.8 on
@@ -2361,12 +2369,26 @@ none is a ship line.
   edits, deleting your own tasks, the widget, the "not saving" banner,
   the under-an-hour "8m" form. The sign-up rule can only be seen on a
   fresh install.
-- **ask has never seen an announcement.** `CourseKnowledgeCollector` asks
-  Canvas for announcements from 200 days back without an `until`, and
-  Canvas ends the window 28 days after it starts (the announcements-
-  window trap). Marco's phone, 2026-10-10: 106 course documents, none of
-  kind `announcement`. The fix is passing `until:` in that one call. It
-  is in the course-material sync, so it waits for Marco and Olisa.
+- **ask's Canvas announcements are blind** (2026-10-23, `9540751`,
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 1): until then the
+  collector asked Canvas for announcements from 200 days back without an
+  `until`, and Canvas ends the window 28 days after it starts (the
+  announcements-window trap), so no term's announcement ever reached ask
+  (the pool held nine spring posts from one class on 2026-10-23). Now
+  120 days back through tomorrow, the document text is the message alone
+  (no device-zone `Posted:` line, so every phone and the extension hash
+  a post the same), an untitled or empty post never reaches the server,
+  a failed announcements request no longer lets a course count as fully
+  synced, and `courseKnowledgeSyncVersion` is 5. Written without a
+  compiler; the new `CourseKnowledgeCollectorAnnouncementTests` drive
+  the collector through a `URLProtocol` stub whose other routes answer
+  `[]`, which no one has seen every sub-client accept. The backend half
+  (Phase 2, Deno 419/0) is on `v8` and not deployed; until `sync` is
+  redeployed, a phone whose announcements fetch fails still cannot
+  retire classmates' announcements (the collector no longer reports the
+  course fully synced), but the 1000-row manifest cap and the batch-wide
+  rejection remain live. This touched the course-material sync at the
+  owner's direct request; Marco has not been told yet.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently
   updated pages get their bodies; module items contribute titles only.

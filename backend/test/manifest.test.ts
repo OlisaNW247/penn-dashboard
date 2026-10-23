@@ -4,11 +4,14 @@
 // network, no database -- everything this file imports is pure.
 import {
   CAPABILITY_GATED_KINDS,
+  capWindowDocuments,
   diffManifest,
   filterByAcceptedKinds,
   freshCourses,
   goneIDs,
+  isWindowKind,
   MAX_LINK_HREF_LENGTH,
+  MAX_WINDOW_DOWNLOAD_PER_COURSE,
   liveIDsRetirableBy,
   MAX_TEXT_LENGTH,
   ManifestValidationError,
@@ -19,6 +22,10 @@ import {
   retirableCollector,
   validateCourse,
   validateDocument,
+  validateDocuments,
+  WINDOW_KIND_MAX_AGE_DAYS,
+  WINDOW_KINDS,
+  windowAgeOutFilter,
   validateDocumentStub,
   validateFullySyncedCourse,
   validateLink,
@@ -364,7 +371,7 @@ Deno.test("parseSyncClient: absent means phone, only two values are valid", () =
   assertThrows(() => parseSyncClient(1), ManifestValidationError);
 });
 
-Deno.test("complete-set: a phone retires only phone-collected rows, never ed", () => {
+Deno.test("complete-set: a phone retires only phone-collected rows, never a window kind", () => {
   const live = [
     { id: "page:1:1", kind: "page", collector: "phone" },
     { id: "announcement:1:2", kind: "announcement", collector: "extension" },
@@ -376,25 +383,29 @@ Deno.test("complete-set: a phone retires only phone-collected rows, never ed", (
   assertEquals(liveIDsRetirableBy(live, "phone"), ["page:1:1", "page:1:5"]);
 });
 
-Deno.test("complete-set: the extension's report applies to every collector, still not ed", () => {
+Deno.test("complete-set: the extension's report applies to every collector, still not a window kind", () => {
   const live = [
     { id: "page:1:1", kind: "page", collector: "phone" },
     { id: "announcement:1:2", kind: "announcement", collector: "extension" },
     { id: "ed:1:4", kind: "ed", collector: "extension" },
   ];
   assertEquals(retirableCollector("extension"), undefined);
-  assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1", "announcement:1:2"]);
+  assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1"]);
 });
 
-Deno.test("complete-set composed with goneIDs: a phone sync leaves an extension announcement alive", () => {
+Deno.test("complete-set composed with goneIDs: nobody's list retires an announcement", () => {
   const live = [
     { id: "page:1:1", kind: "page", collector: "phone" },
     { id: "announcement:1:2", kind: "announcement", collector: "extension" },
   ];
   // The phone lists only the page it knows about.
   assertEquals(goneIDs(liveIDsRetirableBy(live, "phone"), ["page:1:1"]), []);
-  // The extension, listing only the announcement, retires the stale page.
+  // The extension, listing only the announcement, retires the stale page,
+  // and the announcement is not in its retirable set to begin with.
   assertEquals(goneIDs(liveIDsRetirableBy(live, "extension"), ["announcement:1:2"]), ["page:1:1"]);
+  // A client whose announcements request failed lists none; the pooled
+  // announcement survives either way.
+  assertEquals(goneIDs(liveIDsRetirableBy(live, "extension"), []), ["page:1:1"]);
 });
 
 Deno.test("file is a valid uploaded kind, and is not profile input", () => {
@@ -436,4 +447,98 @@ Deno.test("a withheld file is in neither download nor serverManifest", () => {
   const { download, serverManifest } = diffManifest([], docs);
   assertEquals(download.map((d) => d.id), ["page:1:1"]);
   assertEquals(serverManifest.map((d) => d.id), ["page:1:1"]);
+});
+
+// ---- Window kinds: exemption, age-out, per-course cap, per-document rejection
+
+Deno.test("WINDOW_KINDS is announcement and ed, and nothing else is a window kind", () => {
+  assertEquals([...WINDOW_KINDS], ["announcement", "ed"]);
+  for (const kind of ["home", "syllabus", "assignment", "module", "page", "website", "file"]) {
+    assertFalse(isWindowKind(kind), kind);
+  }
+  assert(isWindowKind("announcement") && isWindowKind("ed"));
+});
+
+Deno.test("complete-set: an announcement is never retirable, whoever reports and whoever collected it", () => {
+  const live = [
+    { id: "announcement:1:1", kind: "announcement", collector: "phone" },
+    { id: "announcement:1:2", kind: "announcement", collector: "extension" },
+    { id: "ed:1:3", kind: "ed", collector: "extension" },
+    { id: "syllabus:1:4", kind: "syllabus", collector: "phone" },
+  ];
+  assertEquals(liveIDsRetirableBy(live, "phone"), ["syllabus:1:4"]);
+  assertEquals(liveIDsRetirableBy(live, "extension"), ["syllabus:1:4"]);
+});
+
+Deno.test("windowAgeOutFilter: the exact PostgREST or-expression, 120 days back from the caller's now", () => {
+  assertEquals(WINDOW_KIND_MAX_AGE_DAYS, 120);
+  // 2026-10-23 minus 120 days is 2026-06-25.
+  const filter = windowAgeOutFilter(new Date("2026-10-23T12:00:00.000Z"));
+  assertEquals(
+    filter,
+    "kind.not.in.(announcement,ed),updated_at.gte.2026-06-25T12:00:00.000Z," +
+      "and(updated_at.is.null,fetched_at.gte.2026-06-25T12:00:00.000Z)",
+  );
+});
+
+function windowDoc(n: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `announcement:c1:${n}`,
+    contentHash: `h${n}`,
+    kind: "announcement" as const,
+    courseID: "c1",
+    // n = 1 is the oldest, a day apart.
+    updatedAt: new Date(Date.UTC(2026, 0, 1) + n * 86_400_000).toISOString(),
+    fetchedAt: "2026-10-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+Deno.test("diffManifest: 160 announcements in one course send the newest 150 and list all 160", () => {
+  assertEquals(MAX_WINDOW_DOWNLOAD_PER_COURSE, 150);
+  const docs = Array.from({ length: 160 }, (_, i) => windowDoc(i + 1));
+  const { download, serverManifest } = diffManifest([], docs, {
+    maxWindowPerCourse: MAX_WINDOW_DOWNLOAD_PER_COURSE,
+  });
+  assertEquals(download.length, 150);
+  assertEquals(serverManifest.length, 160);
+  // The ten oldest (1..10) are the ones left out.
+  const sent = new Set(download.map((d) => d.id));
+  for (let n = 1; n <= 10; n++) assertFalse(sent.has(`announcement:c1:${n}`), `n=${n}`);
+  assert(sent.has("announcement:c1:11") && sent.has("announcement:c1:160"));
+});
+
+Deno.test("diffManifest cap: per course, census kinds untouched, fetchedAt stands in for a missing updatedAt", () => {
+  const docs = [
+    windowDoc(1, { courseID: "c1" }),
+    windowDoc(2, { courseID: "c1" }),
+    windowDoc(3, { courseID: "c1", updatedAt: undefined, fetchedAt: "2030-01-01T00:00:00.000Z" }),
+    windowDoc(4, { id: "announcement:c2:4", courseID: "c2" }),
+    { id: "page:c1:1", contentHash: "p", kind: "page", courseID: "c1", fetchedAt: "2026-01-01T00:00:00.000Z" },
+  ];
+  const { download, serverManifest } = diffManifest([], docs, { maxWindowPerCourse: 1 });
+  // c1 keeps only #3 (fetchedAt 2030 is newest); c2's single row stays; the page stays.
+  assertEquals(download.map((d) => d.id), ["announcement:c1:3", "announcement:c2:4", "page:c1:1"]);
+  assertEquals(serverManifest.length, 5);
+});
+
+Deno.test("diffManifest without options sends everything, as before", () => {
+  const docs = Array.from({ length: 160 }, (_, i) => windowDoc(i + 1));
+  assertEquals(diffManifest([], docs).download.length, 160);
+  assertEquals(capWindowDocuments(docs, 160).length, 160);
+});
+
+Deno.test("validateDocuments: one empty-text document is rejected alone and the other is kept", () => {
+  const good = {
+    id: "announcement:1:10", courseID: "1", course: "CIS 1200", kind: "announcement", sourceID: "10",
+    title: "Hello", text: "body", fetchedAt: "2026-10-23T00:00:00Z", contentHash: "a",
+  };
+  const bad = { ...good, id: "announcement:1:11", sourceID: "11", text: "" };
+  const { documents, rejected } = validateDocuments([good, bad, "not an object"]);
+  assertEquals(documents.map((d) => d.id), ["announcement:1:10"]);
+  assertEquals(rejected.length, 2);
+  assertEquals(rejected[0], { id: "announcement:1:11", reason: 'expected non-empty string field "text"' });
+  assertEquals(rejected[1].id, "");
+  // validateDocument itself still throws, which is what the loop catches.
+  assertThrows(() => validateDocument(bad), ManifestValidationError);
 });

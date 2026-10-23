@@ -13,6 +13,7 @@ import type {
   DocumentStub,
   SyncClient,
 } from "./manifest.ts";
+import { WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
 import {
   catalogEntryWire,
   academicSemester,
@@ -191,24 +192,79 @@ export async function upsertEnrollments(
   if (error) throw error;
 }
 
+const LIVE_DOCUMENT_FULL_COLUMNS =
+  "id, course_id, course_code, kind, source_id, title, url, text, content_hash, updated_at, fetched_at, due_at, points_possible, first_seen_at, gone_at";
+
+/** What the upload's before/after snapshots read: enough to diff content
+ * hashes and resolve an id to its kind, with no `text` along for the ride. */
+const LIVE_DOCUMENT_SNAPSHOT_COLUMNS = "id, kind, content_hash, collector";
+
+/** Rows per PostgREST request. The live project's `max_rows` is 1000
+ * (read through the Management API on 2026-10-23); a request for more is
+ * silently cut to 1000 with a 200, not refused. 500 stays well under it and
+ * keeps the full-text pages (up to 200,000 characters a row) a sane size. */
+export const LIVE_DOCUMENT_PAGE_SIZE = 500;
+
+/** The pager shared by the two live reads below. Pages are ordered by `id`
+ * so `range` windows are stable while rows are written between requests (an
+ * unordered paginated read can repeat or skip rows), and it stops at the
+ * first short page. The wrong fix is a bigger single select: the cap is the
+ * server's, and exceeding it truncates without an error, which is exactly
+ * how a manifest used to lose the tail of a big student's pool. The window
+ * kinds' age-out (`windowAgeOutFilter`) is applied in SQL here, so the
+ * manifest, its `serverManifest` and the upload snapshots all agree on what
+ * is live. */
+async function pagedLiveRows<T>(
+  client: SupabaseClient,
+  courseIDs: string[],
+  now: Date,
+  columns: string,
+): Promise<T[]> {
+  if (courseIDs.length === 0) return [];
+  const orFilter = windowAgeOutFilter(now);
+  const rows: T[] = [];
+  for (let from = 0;; from += LIVE_DOCUMENT_PAGE_SIZE) {
+    const { data, error } = await client
+      .from("course_documents")
+      .select(columns)
+      .in("course_id", courseIDs)
+      .is("gone_at", null)
+      .or(orFilter)
+      .order("id", { ascending: true })
+      .range(from, from + LIVE_DOCUMENT_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < LIVE_DOCUMENT_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 /** Full live-document rows for a set of course ids -- used to build the
- * manifest's `download` list (needs complete `CourseDocumentWire` bodies)
- * and, filtered by the caller to profile-relevant kinds, the "before"
- * state for `profileStaleCourses`. */
+ * manifest's `download` list (needs complete `CourseDocumentWire` bodies).
+ * Window-kind rows older than `WINDOW_KIND_MAX_AGE_DAYS` are not returned,
+ * and the read is paginated; see `pagedLiveRows`. `now` is the caller's, so
+ * a request reads the clock once. */
 export async function selectLiveDocumentsForCourses(
   client: SupabaseClient,
   courseIDs: string[],
+  now: Date,
 ): Promise<CourseDocumentRow[]> {
-  if (courseIDs.length === 0) return [];
-  const { data, error } = await client
-    .from("course_documents")
-    .select(
-      "id, course_id, course_code, kind, source_id, title, url, text, content_hash, updated_at, fetched_at, due_at, points_possible, first_seen_at, gone_at",
-    )
-    .in("course_id", courseIDs)
-    .is("gone_at", null);
-  if (error) throw error;
-  return (data ?? []) as CourseDocumentRow[];
+  return await pagedLiveRows<CourseDocumentRow>(client, courseIDs, now, LIVE_DOCUMENT_FULL_COLUMNS);
+}
+
+export type LiveDocumentSnapshotRow = Pick<CourseDocumentRow, "id" | "kind" | "content_hash" | "collector">;
+
+/** The same live set as `selectLiveDocumentsForCourses` (same age-out, same
+ * paging) with only the columns the upload's before/after diff reads. A
+ * separate function rather than a `columns` argument so the return type
+ * cannot claim a `text` it did not select. */
+export async function selectLiveDocumentSnapshots(
+  client: SupabaseClient,
+  courseIDs: string[],
+  now: Date,
+): Promise<LiveDocumentSnapshotRow[]> {
+  return await pagedLiveRows<LiveDocumentSnapshotRow>(client, courseIDs, now, LIVE_DOCUMENT_SNAPSHOT_COLUMNS);
 }
 
 /** Just the live ids for one course -- all `goneIDs` needs, and cheap
@@ -219,26 +275,27 @@ export async function selectLiveDocumentIDsForCourse(
   courseID: string,
   onlyCollector?: "phone" | "extension",
 ): Promise<string[]> {
-  // `ed` documents are excluded on purpose, so the complete-set rule in
-  // the upload step can never mark them gone. A course's Canvas material
-  // is the same for every enrolled student, so one student's full fetch
-  // is authoritative for the whole pool; its Ed board is not: a student
-  // who has not joined Ed yet, or whose Canvas site lacks the Ed tab,
-  // legitimately uploads a fully-synced course with zero `ed` ids, and
-  // treating that as "every Ed thread was deleted" would erase what their
-  // classmates pooled. The cost is that an Ed thread deleted on Ed stays
-  // pooled until a dedicated Ed sync signal exists (PROTOCOL.md, "Ed
-  // Discussion documents"). Clients still drop them locally.
+  // Window kinds (`announcement`, `ed`; see `WINDOW_KINDS` in manifest.ts)
+  // are excluded on purpose, so the complete-set rule in the upload step can
+  // never mark them gone. A course's Canvas material is the same for every
+  // enrolled student, so one student's full fetch is authoritative for the
+  // whole pool; its announcements and Ed board are not: a student who has
+  // not joined Ed yet, whose Canvas site lacks the Ed tab, or whose
+  // announcements request failed legitimately uploads a fully-synced course
+  // with zero such ids, and treating that as "every post was deleted" would
+  // erase what their classmates pooled. The cost is that a post deleted at
+  // the source stays pooled until it ages out (`WINDOW_KIND_MAX_AGE_DAYS`).
+  // Clients still drop them locally.
   //
   // `onlyCollector` is the second exemption (see `retirableCollector` in
   // manifest.ts): a phone reporting a complete set may only retire rows the
-  // phone collected, since it never sees the extension's announcements,
-  // late pages or files.
+  // phone collected, since it never sees the extension's late pages or
+  // files.
   let query = client
     .from("course_documents")
     .select("id")
     .eq("course_id", courseID)
-    .neq("kind", "ed")
+    .not("kind", "in", `(${WINDOW_KINDS.join(",")})`)
     .is("gone_at", null);
   if (onlyCollector) query = query.eq("collector", onlyCollector);
   const { data, error } = await query;

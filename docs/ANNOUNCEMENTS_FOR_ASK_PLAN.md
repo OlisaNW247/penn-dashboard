@@ -231,7 +231,14 @@ and on window (60 vs 120 days), and neither matters to ask.
   the id scheme all assume one table; the census/window split is a
   policy, not a schema.
 
-## 6. Sequence and gates
+## 6. Status
+
+- 2026-10-23: Phase 1 written (`9540751`, blind, with the extension's
+  builder matched in the same commit); Phase 2 written and tested here
+  (Deno 419/0, not deployed); Phase 3 in progress. `posted_at` (Phase 2
+  step 5) deferred: everything runs on `updated_at` for now.
+
+## 7. Sequence and gates
 
 1. Phase 1 on `v8`, compiled and on the phone, then the DB count check.
 2. Phase 2 steps 1 to 4 deployed as `sync` v11 (go needed), then step 5's
