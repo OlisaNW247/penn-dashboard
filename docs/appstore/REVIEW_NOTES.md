@@ -1,8 +1,10 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-## To paste for 3.1.0 (13), 2026-10-20
+## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
-This is the block to paste for 3.1.0. App Store Connect caps Notes at 4,000
+This is the block to paste for 3.2.0; nothing a reviewer meets changed
+since 3.1.0 except the megaphone's class bubbles and every class listed,
+which preview mode shows with sample data. It is the block pasted for 3.1.0. App Store Connect caps Notes at 4,000
 characters. Grade Watcher is hidden in this build, so the walkthrough has no
 Grades item (a claim about an unexposed feature is a Guideline 2.3.1
 problem), and it says plainly that the Smooth Sweeper alarm never rings on
@@ -51,7 +53,7 @@ Smooth is an independent client for services the student already has an account 
 
 _Character count of the block above: 3,964 (limit 4,000), measured on the text between the fences._
 
-What's New: paste the 3.1.0 text from `LISTING.md`.
+What's New: paste the 3.2.0 text from `LISTING.md`.
 
 ## As pasted for 3.0.0 (11), 2026-09-27
 

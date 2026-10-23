@@ -154,6 +154,11 @@ Ed posts, the ask work and the sign-out fix, with Grade Watcher removed.
 It was **archived from `1450fdc` and uploaded at 19:11 on 2026-10-20**
 (`docs/appstore/CHECKLIST.md` → "3.1.0 submission"). To read the
 released source, check out `1450fdc`, not the `v8` tip.
+**Next: 3.2.0 (build 14)**, stamped 2026-10-23 late on
+`fix/megaphone-every-class` (PR #13: all of `v8` `fb3ed94` plus the
+megaphone, Ed and keep-check work), at Marco's say to submit; the
+archive commit and upload time go here once done
+(`docs/appstore/CHECKLIST.md` → "3.2.0 (14) submission").
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Marco's
@@ -2527,10 +2532,12 @@ none is a ship line.
   content; fixed in code on `fix/megaphone-every-class` (`36e3aee`),
   **not deployed**.
 
-- **Automatic PennKey capture is uncompiled and has never run on a phone**
-  (2026-10-23, merged on `v8-merge-marco` from `codex/automatic-canvas-login`;
-  Marco's own note says 40 focused tests passed and an iOS Debug build
-  succeeded on his tree at `96dce92`, none of which is `v8`). Unseen: a
+- **Automatic PennKey capture: compiled (2885/260 green in PR #13), and
+  Marco reports a working PennKey + Duo login through it on his phone
+  (2026-10-23, on his own tree, build not recorded); the merged tree,
+  where it meets the launch-refresh rework, has not been watched on a
+  device.** (Merged on `v8-merge-marco` from `codex/automatic-canvas-login`.)
+  Unseen on the merged tree: a
   real PennKey + Duo sign-in through the capture, a password manager's
   autofill (whether its submit reaches `PennKeyLoginCapture`), the
   pre-login disclosure line, the "Canvas connected" page, and a later
