@@ -154,11 +154,17 @@ Ed posts, the ask work and the sign-out fix, with Grade Watcher removed.
 It was **archived from `1450fdc` and uploaded at 19:11 on 2026-10-20**
 (`docs/appstore/CHECKLIST.md` → "3.1.0 submission"). To read the
 released source, check out `1450fdc`, not the `v8` tip.
-**Next: 3.2.0 (build 14)**, stamped 2026-10-23 late on
-`fix/megaphone-every-class` (PR #13: all of `v8` `fb3ed94` plus the
-megaphone, Ed and keep-check work), at Marco's say to submit; the
-archive commit and upload time go here once done
-(`docs/appstore/CHECKLIST.md` → "3.2.0 (14) submission").
+**3.2.0 (build 14): archived from `a9af3ad` on `fix/megaphone-every-class`
+(PR #13: all of `v8` `fb3ed94` plus the megaphone, Ed and keep-check
+work) and uploaded to App Store Connect at 18:18 EDT (22:18 UTC) on
+2026-10-23** ("Upload succeeded"; the Release widget's AlarmKit link
+checked weak first), at Marco's say. Attaching it to a 3.2.0 version and
+submitting for review is Marco's step in App Store Connect; whether he did
+is not recorded here yet. The What's New in `LISTING.md` leaves out the AI
+judgments and the server exam dates until `extract-announcement` and
+`sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
+submission"). PR #13 was not yet merged into `v8` at upload time; the
+archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Marco's

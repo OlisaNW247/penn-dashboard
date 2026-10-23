@@ -2,6 +2,13 @@
 
 ## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
 
+**Status 2026-10-23 18:18 EDT: steps 13, 14, 16, 18, 19 done; build 14
+archived from `a9af3ad` and uploaded ("Upload succeeded"), widget AlarmKit
+link weak. Left: 20 (Marco, in App Store Connect), 15 (privacy label), 17
+(agreement check), A (phones; the 3.2.0 Debug build is at
+`build/phone-320/Smooth.app`), B (PR #13 merge, PR #12 decision), C
+(deploys), F.**
+
 State when written: PR #13 (`fix/megaphone-every-class`, `21b63e6`) holds
 Olisa's `v8` `fb3ed94` plus the megaphone, Ed and keep-check work; 2885
 tests / 260 suites green, iOS build succeeds, Deno 468. **Nothing in that
