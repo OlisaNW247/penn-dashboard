@@ -230,7 +230,25 @@ public struct CourseKnowledgeCollector: Sendable {
         }
 
         var knowledge = store.load()
-        knowledge.merge(courses: courses, documents: documents, resyncedCourseIDs: synced, syncedAt: now)
+        // `.ed` is kept for every course this run re-fetched. The collector
+        // never produces Ed posts (`EdDiscussionCoordinator` does, in a
+        // separate pass the caller runs afterwards), so its `documents` list
+        // is the complete set of everything *but* Ed, and treating it as the
+        // complete set of everything dropped each course's stored Ed posts
+        // and wrote that to disk. Ed's pass could restore them only from
+        // memory, and only if it ran to the end: a suspended or killed app,
+        // or an Ed step that never started, left a store with no Ed posts and
+        // nothing to restore from on the next run (owner's phone, 2026-10-23:
+        // all 35 posts re-read the same afternoon, none surviving from
+        // before). The Ed coordinator's own merge and authoritative drop stay
+        // the only things that remove an Ed post.
+        knowledge.merge(
+            courses: courses,
+            documents: documents,
+            resyncedCourseIDs: synced,
+            preservingKinds: [.ed],
+            syncedAt: now
+        )
         try store.save(knowledge)
 
         // De-duplicated by (courseID, href) — the same link commonly

@@ -263,11 +263,13 @@ extension AppState {
             noteCourseKnowledgeRun(trace, failure: failure)
         }
 
-        // The collector merges each course it re-fetches with itself as the
-        // complete set, so it drops that course's `.ed` documents (it has no
-        // idea Ed exists). Taken here, in both paths below, so
-        // `mergeEdDiscussion` can put back what an unreachable Ed would
-        // otherwise have cost the student.
+        // The collector keeps every course's `.ed` documents when it merges
+        // (`preservingKinds: [.ed]`, 2026-10-23; before that it dropped them,
+        // knowing nothing of Ed, and saved the result before Ed's pass could
+        // put them back). Taken here, in both paths below, anyway, so
+        // `mergeEdDiscussion` can restore any that are missing from the
+        // collected knowledge (a store an older build wrote) instead of
+        // leaving an unreachable Ed to cost the student them.
         var priorEdDocuments = courseKnowledge.documents.filter { $0.kind == .ed }
 
         let store = CourseKnowledgeStore.default()
