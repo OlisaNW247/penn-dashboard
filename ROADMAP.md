@@ -195,6 +195,14 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **Announcements for ask, from Canvas and Ed** (plan written 2026-10-23,
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`, owner's request). Canvas
+  announcements have never reached ask (the collector's dead window); Ed
+  reaches it with holes. Four phases: fix the collector's window and
+  header; split the backend's gone rule into census and window kinds,
+  paginate the manifest read (PostgREST `max_rows` is 1000, confirmed),
+  reject a bad document alone, add `posted_at`; page the Ed read and
+  keep the anonymous promise; later, one Canvas path on the phone.
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the
