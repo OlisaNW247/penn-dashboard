@@ -203,6 +203,14 @@ These block shipping, or would make shipping risky.
   paginate the manifest read (PostgREST `max_rows` is 1000, confirmed),
   reject a bad document alone, add `posted_at`; page the Ed read and
   keep the anonymous promise; later, one Canvas path on the phone.
+  **Status 2026-10-23 evening:** Phases 1 to 3 are done, compiled
+  (2606/237), `sync` v12 live, and the phone's first sync on the build
+  uploaded 63 of this term's Canvas announcements and 36 Ed posts. Left:
+  the tree's answer on a phone (asked for), the `posted_at` migration
+  (Phase 2 step 5, needs a go), Phase 4 (owners' decision), and one
+  review finding in the Ed coordinator: a class whose `/tabs` lookup fails
+  mid-run has its stored Ed posts dropped instead of restored
+  (`restoreDropPlan`; CLAUDE.md → Known gaps).
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the

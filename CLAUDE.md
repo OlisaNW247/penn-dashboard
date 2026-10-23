@@ -2042,13 +2042,12 @@ itself.
   `processedAnnouncementIDsV1` held newer ids. Fixed by passing `until:`
   (tomorrow) from `syncAnnouncements`; the regression test's stub now
   honours the window the way Canvas does. The wrong fix is shortening the
-  look-back to 28 days. **Still broken, on purpose:**
-  `CourseKnowledgeCollector` asks for 200 days back with no `until`, so
-  its window ended about 172 days ago and it has never collected an
-  announcement (Marco's phone, same day: 106 course documents, none of
-  kind `announcement`). That is a one-argument fix in the course-material
-  sync, left for Marco and Olisa because Marco said not to touch the sync
-  (see Known gaps).
+  look-back to 28 days. The same bug sat in `CourseKnowledgeCollector`
+  (200 days back, no `until`, so its window ended about 172 days ago and
+  it never collected an announcement; Marco's phone, same day: 106 course
+  documents, none of kind `announcement`) until 2026-10-23, when the owner
+  had the sync touched (`9540751`, 120 days through tomorrow); the first
+  phone sync on that build uploaded 63 of this term's posts at 18:09 UTC.
 - **Every worktree's test run shares one defaults domain.** On 2026-10-10
   four agents ran `swift test` in four git worktrees at once and
   unrelated suites failed at random: `CourseContentDashboardTests` saw
@@ -2401,9 +2400,21 @@ none is a ship line.
   retire classmates' announcements (the collector no longer reports the
   course fully synced), but the 1000-row manifest cap and the batch-wide
   rejection remain live. `sync` v12 went live at about 16:00 UTC the same
-  day, so all of that is now server-side fact; what is still unseen is a
-  phone collecting this term's posts. This touched the course-material sync at the
-  owner's direct request; Marco has not been told yet.
+  day. **Seen working on Olisa's iPhone at 18:09 UTC the same day**: the
+  build's first course-material sync uploaded 63 announcements from this
+  term (LGST 1010 27, PHYS 0151 20 across its two sites, ACCT 1010 16;
+  the CIS classes post on Ed, not Canvas) with no `Posted:` line, no
+  empty or untitled document and 63 distinct hashes, and 36 Ed posts with
+  the posting-day header. The full-sync stamps did not move, correctly:
+  the manifest called every course fresh from the 17:29 run, so only the
+  announcements and Ed ran. Note the launch gap: nothing at launch runs
+  the Canvas chain; the dashboard's loop sleeps 5 minutes before its
+  first refresh and the root view's launch sync is the feed only, so a
+  phone that locks inside those 5 minutes syncs only on its next return
+  to the foreground (pre-existing, every build). Whether the tree
+  answers from the new posts is the next check. This touched the
+  course-material sync at the owner's direct request; Marco has not been
+  told yet.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently
   updated pages get their bodies; module items contribute titles only.
@@ -2435,9 +2446,16 @@ none is a ship line.
   dropped · first failure`), which is how to find out why CIS 3990's
   posts carry no posting day (ten of its rows on the server predate the
   header's date, so no read of that class has completed since
-  2026-10-19). Still true: pooled Ed posts are downloaded and dropped
-  again every sync on a phone whose class has no Ed match, and staff
-  answers inside student questions are never captured (no endpoint).
+  2026-10-19). Ran on Olisa's iPhone at 18:09 UTC the same day: 36 Ed
+  posts re-read for CIS 2400 and CIS 4500, each with the posting-day
+  header. Found in review the same afternoon, not yet fixed: a class
+  whose Ed `/tabs` lookup fails on a flaky request (while another class's
+  cached launch URL lets the run go on) is treated as "no Ed match" by
+  `restoreDropPlan` and its stored posts are dropped for that run; it
+  should be restored like a class the read never reached. Still true:
+  pooled Ed posts are downloaded and dropped again every sync on a phone
+  whose class has no Ed match, and staff answers inside student questions
+  are never captured (no endpoint).
 - **A deleted announcement stays in the megaphone until it ages out**
   (since 2026-10-18 its task cards are hidden, for Canvas posts only; the
   list row is not). An Ed post that is deleted is not noticed at all: an

@@ -240,8 +240,11 @@ and on window (60 vs 120 days), and neither matters to ask.
   16:00 UTC with Olisa's go**; the pool then held 40 live announcement
   documents (all spring 2026, now outside the 120-day read window) and 97
   Ed. `posted_at` (Phase 2 step 5) deferred: everything runs on
-  `updated_at` for now. Next gate: a phone on the new build syncing, then
-  the DB count and the CIS 2400 question.
+  `updated_at` for now. **18:09 UTC: the phone's first sync on the new
+  build uploaded 63 Canvas announcements from this term (the pool's first
+  ever) and 36 Ed posts with the posting-day header; shape checks clean.**
+  Next gate: the tree answering from them (LGST 1010 for Canvas, CIS 2400
+  for Ed).
 
 ## 7. Sequence and gates
 
