@@ -195,6 +195,15 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **Merge Marco's branches into `v8`** (plan written 2026-10-23,
+  `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live
+  branches, three of them needing Olisa's decision (automatic PennKey
+  capture reverses a recorded privacy rule; the launch refresh would post
+  notifications at launch on `v8`; the parked sync fixes conflict with the
+  2026-10-23 announcement window and must be salvaged as fresh patches).
+  Low-risk first: `fix/submission-status`, `fix/canvas-signin-bulletproof`,
+  the launch-prep handoff doc.
+
 - **Announcements for ask, from Canvas and Ed** (plan written 2026-10-23,
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`, owner's request). Canvas
   announcements have never reached ask (the collector's dead window); Ed
