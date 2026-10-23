@@ -562,7 +562,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     shows what was last seen. The Canvas half needs a saved Canvas login,
     and with none nothing ever flips (Traps, "a card that stays not done").
     It runs on activation and on the 5-minute loop, at most every 15
-    minutes, and on iOS not at a cold launch (fix parked, Branches). Since
+    minutes, and since 2026-10-23 once at a cold launch too (blind; the
+    launch pass under Background). Since
     2026-10-18 (`fix/submission-status`) a module-listed assignment whose
     Canvas id differs from a similar-titled calendar row is its own card
     instead of hiding behind it, and a Gradescope assignment's own name no
@@ -2535,7 +2536,26 @@ none is a ship line.
   text. `OnboardingView.canvasStep` no longer short-circuits to a
   "connected" page when Canvas is already connected, so a walk that lands
   on the Canvas phase again re-mounts the login pane (the back chevron from
-  Gradescope goes to the new connected phase instead).
+  Gradescope goes to the new connected phase instead). From the read-only
+  review of the merged tree (2026-10-23), accepted and unfixed: (1)
+  `PennKeyCredentialStore.save` now does `SecItemUpdate` with
+  `kSecAttrAccessible` among the update attributes; if the macOS legacy
+  file keychain under `swift test` rejects that, the second save in
+  `StayLoggedInTests` ("re-entering a password clears a prior rejection",
+  the awaiting-Duo tests) returns false, and the fix is to update only
+  `kSecValueData` (iOS is fine either way). (2) The missing-login banner's
+  one-time legacy inference (`AppState.swift`, `resolveCanvasLoginEverCaptured`)
+  can misread an old install: one that took the old vault offer,
+  disconnected on an old build and then pasted a calendar link reads
+  "captured" and gets a reconnect banner it cannot satisfy; fresh installs
+  write the flag explicitly and are fine. (3) `canvasLoginIsMissing` reads
+  the Keychain, which returns nothing before first unlock, so a background
+  wake in that window reads "login missing", attempts a renewal and burns
+  the hour's cooldown; skip the rule when protected data is unavailable.
+  (4) Marco's new copy ("Canvas connected", "Disconnect at any time in
+  Settings", the disclosure line) is capitalised and says "Settings" where
+  the app says Profile; the copy rule is Marco's own, so it is his to
+  settle, not rewritten here.
 - **Whether the extension can download Canvas Files is unknown**
   (2026-10-22). Canvas redirects a file download to a separate signed
   file host (Inst-FS for Instructure-hosted Canvas; Penn's not
@@ -2627,10 +2647,13 @@ none is a ship line.
     until the first activation or the first 5-minute tick
     (`ContentView.refresh`; its own comment says `onChange(of:
     scenePhase)` skips the initial phase). The ledger seeds what was last
-    seen, so only submissions since the last refresh read late. Fix parked
-    on `parked/launch-submission-refresh` (Branches); still parked on
-    2026-10-23, because on `v8` it would also run `deviceSyncPass` and the
-    turned-in and grade notices at launch.
+    seen, so only submissions since the last refresh read late. Fixed
+    blind on 2026-10-23 (`launch-refresh-rework`, in the Marco merge): the
+    launch pass waits for any silent renewal `init` started, then runs the
+    chain once, without the notice drains. Marco's
+    `parked/launch-submission-refresh` was the source and was not merged
+    as written, because on `v8` it would also have run `deviceSyncPass`
+    and the turned-in and grade notices at launch. Not yet on a phone.
   - **A flaky Gradescope detail page** turns a submitted row back to not
     done until the next good scrape (`refineCompletionStatus` swallows the
     error; `StoredAssignment` copies the flag on every reconcile). Fix
@@ -2786,9 +2809,12 @@ none is a ship line.
   `sessionExpired` now; a 403 on one course's assignments leaves that
   course partial and the run continues to `store.save`. Known edge, kept
   on purpose: a course with one endpoint that always fails (a Pages tab
-  turned off) is partial forever and its stale documents are never
-  pruned. Canvas sometimes answers a forbidden course with 401, which this
-  does not cover. The server-side half (paginating the live read) was done
+  turned off, or a concluded course now answering 403 instead of reading
+  as a sign-out) is partial forever, never stamped fully synced on the
+  server, and re-fetched from Canvas hourly; its stale documents are never
+  pruned. The old `<= 1` tolerance hid that at the price of retiring
+  classmates' documents. Canvas sometimes answers a forbidden course with
+  401, which this does not cover. The server-side half (paginating the live read) was done
   in `sync` v12 the same day. Six tests, written against a `URLProtocol`
   stub nobody has run.
 - **The Ed reader fixes of 2026-10-23 compiled green (2606/237) but have not run on a phone** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`

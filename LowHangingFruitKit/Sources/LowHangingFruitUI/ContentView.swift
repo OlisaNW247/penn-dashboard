@@ -681,6 +681,16 @@ struct ContentView: View {
     /// session check, then reload and replan. No feed sync, no laptop sync and
     /// no notification drains; see the comment at the call in `.task`.
     private func refreshSessionSourcesAtLaunch() async {
+        // `AppState.init` has already judged the saved Canvas session, and when
+        // it found the cookies aged or missing it started a silent renewal.
+        // That renewal is the whole reason this pass exists on a phone that
+        // was locked for a day: run the Canvas chain before it finishes and
+        // `refreshCanvasGrades` meets an empty cookie jar, returns at its
+        // guard, and nothing runs until the loop's first five-minute tick,
+        // which is the gap this pass was written to close. So wait for it.
+        // On a healthy session nothing is pending and this returns at once;
+        // the background wake does the same before telling iOS it is done.
+        await state.awaitPendingSilentRenewal()
         await fetchSessionSources()
         await settleAfterFetch()
     }

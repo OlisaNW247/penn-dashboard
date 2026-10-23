@@ -1035,7 +1035,17 @@ private struct CanvasLoginPane: View {
             Task { @MainActor in
                 guard paneActive else { return }
                 let connected = await state.connectCanvas(cookies: canvasCookies)
-                guard paneActive else { return }
+                // No `paneActive` guard here, on purpose (review of
+                // 2026-10-23). A student who taps back while the connect is
+                // in flight has still connected Canvas: the cookies are saved
+                // and `connectCanvas` succeeded. Returning early at this point
+                // left that install connected with no "login captured" note
+                // and, since the automatic save, no PennKey saved either, so
+                // the banner rule and the silent renewer both had nothing to
+                // work with until the next interactive login. The state
+                // bookkeeping below belongs to the connection, not to the
+                // pane; only the UI hand-off (`onConnected`) still checks the
+                // pane is on screen.
                 isReadingCookies = false
                 if connected {
                     var persistenceNotice: String?

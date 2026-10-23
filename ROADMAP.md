@@ -158,19 +158,26 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      beside a similar-titled calendar item shows as two cards when they are
      two assignments; a Gradescope "Graded …"-titled item with no
      submission stays on the dashboard.
-- **Decide the submission-status parks** (Marco; Olisa for the sync):
+- **Decide the submission-status parks** (Marco; Olisa for the sync).
+  Items 1 and 2 were decided and merged on 2026-10-23 (`v8-merge-marco`,
+  blind): 1 as a rework that leaves the notice drains out of the launch
+  pass, 2 as written.
   1. `parked/launch-submission-refresh`: fetch submission state at a
      cold launch. Moves the course-knowledge/Ed sync, a full Gradescope
      scrape and the renewal checks to launch as well.
   2. `parked/gradescope-unverified-submission`: keep "submitted" when a
      Gradescope detail page fails to load. Edits one line of
      `syncGradescope`.
-  3. No branch: Gradescope's silent, permanent disconnect in
+  3. Still open, no branch: Gradescope's silent, permanent disconnect in
      `AutoSyncCoordinator.syncConnectedServices`, and re-planning
      reminders after a background wake (`BackgroundRefresh.run`), so a
      loud alert doesn't fire for work already handed in.
-- **Decide the three sync questions** (Marco and Olisa; nothing here is
-  merged, because Marco said not to touch the sync):
+- **Decide the three sync questions** (Marco and Olisa). Items 1 and 2
+  were done at the owner's direction on 2026-10-23 (the window fix in
+  `9540751`; the half-failed sync and the 403 as a fresh patch,
+  `course-sync-salvage`, blind), and item 3's pagination went live in
+  `sync` v12; byte batching and the 120-page cap remain open. Marco has
+  not been told that the sync was touched:
   1. Pass `until:` where `CourseKnowledgeCollector` fetches
      announcements. One argument. Without it ask has never had an
      announcement (`CLAUDE.md` → the announcements-window trap).
@@ -300,10 +307,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   (2606/237), `sync` v12 live, and the phone's first sync on the build
   uploaded 63 of this term's Canvas announcements and 36 Ed posts. Left:
   the tree's answer on a phone (asked for), the `posted_at` migration
-  (Phase 2 step 5, needs a go), Phase 4 (owners' decision), and one
-  review finding in the Ed coordinator: a class whose `/tabs` lookup fails
-  mid-run has its stored Ed posts dropped instead of restored
-  (`restoreDropPlan`; CLAUDE.md → Known gaps).
+  (Phase 2 step 5, needs a go) and Phase 4 (owners' decision). The review
+  finding in the Ed coordinator (a class whose `/tabs` lookup fails had its
+  stored posts dropped) was fixed blind the same evening
+  (`ed-tabs-restore`, in the Marco merge).
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the
