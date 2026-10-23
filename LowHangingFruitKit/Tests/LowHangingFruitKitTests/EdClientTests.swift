@@ -165,6 +165,162 @@ struct EdClientTests {
         #expect(try queryValue("limit") == "1")
     }
 
+    // MARK: windowed read
+
+    /// Records the queries the stub saw, from the URLProtocol's thread.
+    private final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var offsetsStore: [Int] = []
+        private var limitsStore: [String] = []
+        private var sortsStore: [String] = []
+        func note(_ request: URLRequest) {
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String { items.first { $0.name == name }?.value ?? "" }
+            lock.lock(); defer { lock.unlock() }
+            offsetsStore.append(Int(value("offset")) ?? -1)
+            limitsStore.append(value("limit"))
+            sortsStore.append(value("sort"))
+        }
+        var offsets: [Int] { lock.lock(); defer { lock.unlock() }; return offsetsStore }
+        var limits: [String] { lock.lock(); defer { lock.unlock() }; return limitsStore }
+        var sorts: [String] { lock.lock(); defer { lock.unlock() }; return sortsStore }
+    }
+
+    private static let windowNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    /// A threads body for ids `ids`; `daysAgo` gives each thread's creation
+    /// age and `updatedDaysAgo` its optional last-activity age.
+    private static func pageBody(
+        ids: ClosedRange<Int>,
+        daysAgo: (Int) -> Double,
+        updatedDaysAgo: (Int) -> Double? = { _ in nil }
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        func stamp(_ days: Double) -> String {
+            formatter.string(from: windowNow.addingTimeInterval(-days * 86_400))
+        }
+        let threads = ids.map { id -> String in
+            var json = #"{"id":\#(id),"user_id":7,"course_id":101,"type":"post","title":"T\#(id)","is_private":false,"created_at":"\#(stamp(daysAgo(id)))""#
+            if let updated = updatedDaysAgo(id) { json += #","updated_at":"\#(stamp(updated))""# }
+            return json + "}"
+        }
+        return #"{"threads":["# + threads.joined(separator: ",") + #"],"users":[{"id":7,"course_role":"admin"}]}"#
+    }
+
+    /// A client whose stub serves `pages[offset / 100]` (an empty page past
+    /// the end) and records every request.
+    private func pagedClient(_ pages: [String], seen: Seen, failAtOffset: Int? = nil) -> EdClient {
+        client { request in
+            seen.note(request)
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let offset = Int(items.first { $0.name == "offset" }?.value ?? "") ?? 0
+            if offset == failAtOffset { return Reply(status: 500, body: "{}") }
+            let index = offset / 100
+            return Reply(status: 200, body: index < pages.count ? pages[index] : #"{"threads":[],"users":[]}"#)
+        }
+    }
+
+    @Test("the windowed read stops on a short page, and the union keeps Ed's order across pages")
+    func windowStopsOnShortPage() async throws {
+        let seen = Seen()
+        let c = pagedClient([
+            Self.pageBody(ids: 1...100, daysAgo: { Double($0) * 0.1 }),
+            Self.pageBody(ids: 101...140, daysAgo: { Double($0) * 0.1 }),
+            Self.pageBody(ids: 141...240, daysAgo: { Double($0) * 0.1 }),   // must never be asked for
+        ], seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        let response = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        #expect(seen.offsets == [0, 100])
+        #expect(response.threads.map(\.id) == Array(1...140))
+        #expect(response.users.map(\.id) == [7])
+        #expect(seen.limits == ["100", "100"])
+        #expect(seen.sorts == ["new", "new"])
+    }
+
+    @Test("the windowed read stops when a page's oldest thread is outside the window")
+    func windowStopsOnOldThread() async throws {
+        let seen = Seen()
+        // 95 recent threads, then 5 from 200 days ago: the page is full, but
+        // its oldest thread is past the 120-day window, so page two is moot.
+        let c = pagedClient([
+            Self.pageBody(ids: 1...100, daysAgo: { $0 <= 95 ? Double($0) : 200 }),
+            Self.pageBody(ids: 101...200, daysAgo: { _ in 300 }),
+        ], seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        let response = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        #expect(seen.offsets == [0])
+        #expect(response.threads.count == 100)
+    }
+
+    @Test("last activity, not creation, decides whether the window has closed")
+    func windowUsesLastActivity() async throws {
+        let seen = Seen()
+        // Every thread was created 300 days ago but was active within the
+        // last 10 days, so the window is open on every page.
+        let c = pagedClient([
+            Self.pageBody(ids: 1...100, daysAgo: { _ in 300 }, updatedDaysAgo: { Double($0) * 0.1 }),
+            Self.pageBody(ids: 101...140, daysAgo: { _ in 300 }, updatedDaysAgo: { Double($0) * 0.1 }),
+        ], seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        let response = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        #expect(seen.offsets == [0, 100])
+        #expect(response.threads.count == 140)
+    }
+
+    @Test("the windowed read never goes past three pages, offsets 0, 100, 200")
+    func windowStopsAtThreePages() async throws {
+        let seen = Seen()
+        let pages = (0..<5).map { page in
+            Self.pageBody(ids: (page * 100 + 1)...(page * 100 + 100), daysAgo: { Double($0) * 0.01 })
+        }
+        let c = pagedClient(pages, seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        let response = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        #expect(EdClient.maxWindowPages == 3)
+        #expect(seen.offsets == [0, 100, 200])
+        #expect(response.threads.map(\.id) == Array(1...300))
+    }
+
+    @Test("pageLimit lowers the cap, and a limit below one still reads one page")
+    func windowPageLimit() async throws {
+        let seen = Seen()
+        let pages = (0..<3).map { page in
+            Self.pageBody(ids: (page * 100 + 1)...(page * 100 + 100), daysAgo: { Double($0) * 0.01 })
+        }
+        let c = pagedClient(pages, seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        _ = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow, pageLimit: 2)
+        #expect(seen.offsets == [0, 100])
+        _ = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow, pageLimit: 0)
+        #expect(seen.offsets == [0, 100, 0])
+    }
+
+    @Test("a thread that shifted between pages is kept once")
+    func windowDeduplicates() async throws {
+        let seen = Seen()
+        let c = pagedClient([
+            Self.pageBody(ids: 1...100, daysAgo: { Double($0) * 0.1 }),
+            Self.pageBody(ids: 100...139, daysAgo: { Double($0) * 0.1 }),
+        ], seen: seen)
+        defer { StubURLProtocol.handler = nil }
+        let response = try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        #expect(response.threads.map(\.id) == Array(1...139))
+    }
+
+    @Test("an error on a later page throws, so the caller keeps the stored set instead of a partial one")
+    func windowErrorThrows() async {
+        let seen = Seen()
+        let c = pagedClient([
+            Self.pageBody(ids: 1...100, daysAgo: { Double($0) * 0.1 }),
+            Self.pageBody(ids: 101...140, daysAgo: { Double($0) * 0.1 }),
+        ], seen: seen, failAtOffset: 100)
+        defer { StubURLProtocol.handler = nil }
+        await #expect(throws: EdClient.Error.http(500)) {
+            try await c.threadsWithinWindow(courseID: 101, now: Self.windowNow)
+        }
+        #expect(seen.offsets == [0, 100])
+    }
+
     private func queryValue(_ name: String) throws -> String? {
         let url = try #require(StubURLProtocol.lastRequest?.url)
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -232,6 +388,16 @@ struct EdIngestionDocumentTests {
         let posted = try #require(header.postedAt)
         #expect(EdDocumentHeader.postedDayString(posted) == EdDocumentHeader.postedDayString(created))
         #expect(header.body == "Hello class")
+    }
+
+    @Test("an anonymous announcement yields no document")
+    func anonymousAnnouncementYieldsNothing() {
+        let anonymous = EdThread(
+            id: 6, userID: 7, courseID: 101, type: "announcement", title: "Secret", content: "<p>x</p>",
+            isPrivate: false, isAnonymous: true, createdAt: now.addingTimeInterval(-86_400)
+        )
+        let docs = EdIngestion.documents(course: course, edCourseID: 101, response: staffResponse([anonymous]), now: now)
+        #expect(docs.isEmpty)
     }
 
     @Test("a student post yields no document")

@@ -2404,16 +2404,25 @@ none is a ship line.
   unpaginated select, so a student past PostgREST's row limit (1000 by
   default; unverified for this project) gets a silently truncated
   manifest.
-- **`docs/PRIVACY.md` says anonymous Ed posts never leave the phone, and
-  nothing enforces it.** `EdThreadFilter` never reads `isAnonymous`, so
-  an anonymous post that staff pinned would be kept and pooled. Either
-  the keep-rule or the sentence has to change; the keep-rule is scraping
-  logic, which is Olisa's. Also from the 2026-10-10 Ed review, all in
-  the coordinator and left alone: a 401 partway through a run drops the
-  Ed documents of the classes not yet read; each read replaces a class's
-  whole Ed set with the newest 100 threads, so older pinned posts vanish
-  and pooled ones are downloaded and dropped again every sync; staff
-  answers inside student questions are never captured.
+- **The Ed reader fixes of 2026-10-23 are blind** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
+  Phase 3, at the owner's direction; the Kit half rode in `9540751`, the
+  coordinator in the commit after it). `EdThreadFilter` now drops an
+  anonymous thread before the announcement and pinned rules, which makes
+  `docs/PRIVACY.md`'s promise true (a missing `is_anonymous` still
+  decodes as false, so the promise rests on Ed sending the field, which
+  it does today; flipping that default is the owner's call). The read
+  pages up to three pages of 100 until the window closes
+  (`EdClient.threadsWithinWindow`), so a pinned post beyond the 100th
+  newest thread no longer vanishes. A sign-out partway through a run
+  restores the unread classes' documents instead of dropping them (every
+  match is resolved before any read, so `drop` is only "no Ed match").
+  The Ed status line now leads with counts (`matched · read · restored ·
+  dropped · first failure`), which is how to find out why CIS 3990's
+  posts carry no posting day (ten of its rows on the server predate the
+  header's date, so no read of that class has completed since
+  2026-10-19). Still true: pooled Ed posts are downloaded and dropped
+  again every sync on a phone whose class has no Ed match, and staff
+  answers inside student questions are never captured (no endpoint).
 - **A deleted announcement stays in the megaphone until it ages out**
   (since 2026-10-18 its task cards are hidden, for Canvas posts only; the
   list row is not). An Ed post that is deleted is not noticed at all: an

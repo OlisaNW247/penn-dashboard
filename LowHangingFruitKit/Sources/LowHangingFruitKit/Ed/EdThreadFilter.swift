@@ -55,12 +55,14 @@ public enum EdThreadFilter {
     /// 6. everything else: dropped ("student or question").
     ///
     /// `EdThread.isAnonymous` decodes a missing `is_anonymous` as `false`
-    /// (`EdWire.swift`), unlike `isPrivate`, which defaults to `true`. That
-    /// is deliberate and not a hole to close here: Ed sends the field on
-    /// every real thread, so "missing" only happens in a hand-built fixture.
-    /// The cost of reading an absent flag as anonymous would be dropping
-    /// every announcement the day Ed renamed the field, which fails loud
-    /// (no Ed documents at all) where the other default would fail quiet.
+    /// (`EdWire.swift`), unlike `isPrivate`, which defaults to `true`. So an
+    /// unknown stays kept here, on the strength of Ed sending the field on
+    /// every thread it returns today. That is an assumption, not a proof,
+    /// and the sibling flag is defaulted the other way: if Ed ever omits
+    /// `is_anonymous`, an anonymous announcement would be kept again.
+    /// Flipping the default to `true` would fail safe at the price of
+    /// dropping every announcement the day the field disappears; it is
+    /// left for the owner to decide, since it changes `EdThread`'s decode.
     public static func decide(_ thread: EdThread, authorRole: String?) -> EdThreadDecision {
         // Private beats everything, announcements included: a private
         // thread is addressed to one person, whatever its type field says.
