@@ -1070,6 +1070,22 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2719/246 `fix/megaphone-every-class` (not yet on `v8`), 2026-10-23,
+  `swift test --no-parallel` on Marco's Mac, 21.3 s, green, with
+  `fix/ed-posts-durable` merged in; the iOS build of the same tree
+  succeeds. +113 tests and +9 suites over `v8`'s 2606/237: the every-class
+  list and the finished-twin rule (`AnnouncementFindTwinTests` and new
+  `AnnouncementSheetTests` cases), the camelCase/"worksheets" matcher
+  cases, the keep-check (`AnnouncementRelevanceTests`,
+  `AnnouncementRelevanceSyncTests`), staff posts and their daily cap
+  (`EdStaffReadBudgetTests` and pass tests), and the Ed fix's 13
+  (`CourseKnowledgeCollectorEdTests`, `EdRestoreDropPlanTests`, three
+  `CourseKnowledgeBaseTests`). Changed on purpose: two
+  `AnnouncementEdRowsTests` cases now expect a staff post as a marked
+  candidate row the sheet does not list, and the relevance wire test reads
+  a date-only `until` as the end of that day. Deno: 459 with `--no-check`
+  (see the backend commit `36e3aee` for why `deno task test` stops at
+  type-checking on Deno 2.9.8).
 - 2397/214 `v8`, 2026-10-20, verified on Olisa's Mac (2393/213
   at the merge commit, then +4 tests and the parent suite
   `AnnouncementExtractionSuites` from the review: `movedExamIsNotTheSyllabusTwin`
@@ -2266,6 +2282,8 @@ it holds work that exists nowhere else.
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `v8` | **Current line (2026-10-02 onward); Marco's `v8-loud-alert-actions` is merged into it on `v8-merge-loud-alert` (2026-10-20), not yet on `v8` itself.** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
+| `fix/megaphone-every-class` | **2026-10-23, off `v8` `a480eb1`, local only, for Olisa's review.** The megaphone fixes Marco asked for (every class, finished-twin finds, the keep-check, Ed staff posts by judgment), the `extract-announcement` relevance field and empty-answer fix (not deployed), and `fix/ed-posts-durable` merged in. Write-up: `docs/ED_AND_MEGAPHONE_PLAN.md`. 2719/246 green; not yet run on a phone. Built app kept at `build/megaphone/Smooth.app` in its worktree (`.claude/worktrees/megaphone`). |
+| `fix/ed-posts-durable` | 2026-10-23, off `v8` `a480eb1`, local only (`d4b9a04`), merged into `fix/megaphone-every-class`. Ed posts are no longer deleted by the course-material collector or by a failed `/tabs` lookup. |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-ann-rules` | **Local, 2026-10-18, off `v8-announcements` at the WIP commit `80c21ec`; not merged or pushed.** The announcement-task visibility rules (past tasks leave the dashboard instead of moving to prev, undated tasks age out after 7 days, same-day class reminders are not cards, the Ed pass reads only posts from the last 14 days). Written to be merged into `v8-announcements` as a patch, and applied there on 2026-10-18, so it holds nothing extra. 2207/203 green on its own; compiled for generic iOS (the phone was unreachable), not installed. |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
@@ -2294,18 +2312,23 @@ none is a ship line.
   (`seenAnnouncementIDsV1`) held only those three Ed keys, none of the
   older Ed rows the first Ed seeding marked. `markAllSeen` keeps an old
   key only while its row is still known, so at some earlier open of the
-  sheet the phone held no Ed posts at all. That is the restore/drop rule
-  in `EdDiscussionCoordinator` (Olisa's sync, left alone on Marco's
-  standing rule) failing to restore for some run. The exact run is not
-  known, because only the last sync summary is kept. The `restoreDropPlan`
-  finding under ROADMAP → Next ("Announcements for ask") is one candidate.
+  sheet the phone held no Ed posts at all, and every one of the 35 had
+  been first stored at 15:05. Cause found the same evening: the
+  course-material collector deleted Ed posts and saved before Ed put them
+  back (see the trap "Ed posts that 'vanish'"), plus a failed `/tabs`
+  lookup counting as "no Ed". Both fixed on `fix/ed-posts-durable`, merged
+  into `fix/megaphone-every-class`; **still a gap until it runs on a
+  phone**, and in 3.1.0 (13) itself until the next release.
 - **`extract-announcement` returned HTTP 502** on Marco's phone at 15:04
   on 2026-10-23, for PHYS 0151's "Midterm 2 information with formula
   sheet added" (posted 10-16). That was its second failure
   (`announcementExtractionAttemptsV1`); a third makes the app give up on
   the post for good, so no task is ever found in it. The run's back-off
-  also skipped the Ed task pass for the hour. The function's log for that
-  minute has not been read.
+  also skipped the Ed task pass for the hour. The function's log was not
+  read (no Supabase token on the dev Mac). Probable cause: a thinking
+  model spending its whole token cap on reasoning and answering with no
+  content; fixed in code on `fix/megaphone-every-class` (`36e3aee`),
+  **not deployed**.
 
 - **Whether the extension can download Canvas Files is unknown**
   (2026-10-22). Canvas redirects a file download to a separate signed
