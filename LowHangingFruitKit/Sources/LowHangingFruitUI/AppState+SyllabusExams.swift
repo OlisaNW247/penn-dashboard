@@ -23,6 +23,20 @@ import LowHangingFruitKit
 //    the same rows (not duplicates), a moved date updates the row it moves
 //    (the completion, a due-date edit and the ledger row all stay with the
 //    exam), and an older build that reads the store sees an announcement task.
+//  - **The server's reading wins; the phone's is the fallback.** The backend
+//    has already read the class's syllabus once for everyone in it and sends
+//    the exams it found with the profile (`courseKnowledge.gradingProfiles`,
+//    `CourseGradingProfile.examDates`). A dated one replaces the phone's
+//    reading of the same exam and an exam only the server named is filed too,
+//    all under the same stable ids, so an exam already filed from the phone's
+//    own reading is updated in place; see `SyllabusExamRows` for the rules. A
+//    class the server has nothing for (not extracted yet, an older server,
+//    offline) is read on the phone exactly as before. Two refinements, both
+//    in `SyllabusExamRows.reconciled`: on a day both agree on, the phone's time
+//    of day is kept (the server only gives a day), and a phone reading whose
+//    syllabus line named a weekday that fits its date stands against a server
+//    date on another day (the server is given no current date, so it guesses
+//    the year of a date written without one).
 //  - **Nothing is read twice, and nothing is rewritten for nothing.** The pass
 //    has no ratchet of "documents already read", unlike the announcement
 //    passes: those protect an extractor that costs money, and this one is a
@@ -63,12 +77,14 @@ extension AppState {
         guard !isUsingFixtureData, let store = assignmentStore else { return }
 
         let documents = courseKnowledge.documents
+        let profiles = courseKnowledge.gradingProfiles
         let codesByID = canvasCourseIDs()
-        guard !documents.isEmpty, !codesByID.isEmpty else { return }
+        guard !documents.isEmpty || !profiles.isEmpty, !codesByID.isEmpty else { return }
 
         let computed = await Task.detached(priority: .utility) {
             SyllabusExamRows.assignments(
-                from: documents, courseCodesByID: codesByID, referenceDate: now, calendar: calendar
+                from: documents, profiles: profiles, courseCodesByID: codesByID,
+                referenceDate: now, calendar: calendar
             )
         }.value
         syllabusExamComputedHookForTesting?()

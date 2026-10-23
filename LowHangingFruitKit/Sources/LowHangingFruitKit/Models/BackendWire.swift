@@ -339,17 +339,29 @@ public struct CourseProfileWire: Decodable, Sendable, Equatable {
     public let courseID: String
     public let gradingWeights: [CourseGradingProfile.Weight]
     public let components: [CourseGradingProfile.Component]
+    /// The exams the server read out of the syllabus (`examDates` in
+    /// PROTOCOL.md). Absent from a server that predates the field, which
+    /// reads as empty, so a build with this decodes either server and the
+    /// phone keeps reading exams from the syllabus text itself.
+    public let examDates: [CourseGradingProfile.ExamDate]
     public let extractedAt: String
 
-    public init(courseID: String, gradingWeights: [CourseGradingProfile.Weight], components: [CourseGradingProfile.Component], extractedAt: String) {
+    public init(
+        courseID: String,
+        gradingWeights: [CourseGradingProfile.Weight],
+        components: [CourseGradingProfile.Component],
+        extractedAt: String,
+        examDates: [CourseGradingProfile.ExamDate] = []
+    ) {
         self.courseID = courseID
         self.gradingWeights = gradingWeights
         self.components = components
+        self.examDates = examDates
         self.extractedAt = extractedAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case courseID, gradingWeights, components, extractedAt
+        case courseID, gradingWeights, components, examDates, extractedAt
     }
 
     /// Hand-written so a profile row missing either array — a legacy
@@ -365,6 +377,10 @@ public struct CourseProfileWire: Decodable, Sendable, Equatable {
         courseID = try container.decode(String.self, forKey: .courseID)
         gradingWeights = try container.decodeIfPresent([CourseGradingProfile.Weight].self, forKey: .gradingWeights) ?? []
         components = try container.decodeIfPresent([CourseGradingProfile.Component].self, forKey: .components) ?? []
+        // Element by element, unlike the two arrays above: one exam written
+        // oddly costs that exam, not this course's weights and not the
+        // manifest (`SyncManifestResponse` decodes every profile in one go).
+        examDates = container.decodeLossyArray(CourseGradingProfile.ExamDate.self, forKey: .examDates)
         extractedAt = try container.decodeIfPresent(String.self, forKey: .extractedAt) ?? ""
     }
 
@@ -374,7 +390,10 @@ public struct CourseProfileWire: Decodable, Sendable, Equatable {
     /// this wire, via the same underlying `BackendJSON.parseDate`.
     public func profile() -> CourseGradingProfile? {
         guard let extractedAt = BackendJSON.parseDate(extractedAt) else { return nil }
-        return CourseGradingProfile(courseID: courseID, weights: gradingWeights, components: components, extractedAt: extractedAt)
+        return CourseGradingProfile(
+            courseID: courseID, weights: gradingWeights, components: components,
+            extractedAt: extractedAt, examDates: examDates
+        )
     }
 }
 

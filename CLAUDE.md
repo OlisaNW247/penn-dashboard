@@ -467,7 +467,29 @@ Keep this current. It is the fastest way for a new session to know what exists.
       "today" all day and leaves the dashboard when the day is over (into prev
       only if it was finished), and the open
       card hides the clock time for it. Rows are never deleted when a
-      syllabus stops naming an exam (Known gaps).
+      syllabus stops naming an exam (Known gaps). Since 2026-10-18
+      (`v8-server-exam-dates`) the server's reading comes first:
+      `extract-profile` already stored each class's `examDates`, and
+      `sync`'s manifest now sends them (`CourseProfileWire.examDates` ->
+      `CourseGradingProfile.examDates` in `courseKnowledge.gradingProfiles`).
+      A dated server exam wins over the on-device parse of the same
+      `ExamIdentity`, and an exam only the server named is filed too, both
+      under the same `syllabus-...` id, so a row already on the phone is
+      updated in place and never filed twice. Undated entries are ignored,
+      so are names that are not exactly one exam ("Quiz 3", "Midterms",
+      "Midterm 1 and 2"), and a date more than 150 days past is dropped like
+      the on-device one. The on-device parse is the fallback for a class the
+      server has nothing for and for every exam the server left out. Two
+      refinements (`SyllabusExamRows.reconciled`): on a day both agree on, the
+      phone's time of day is kept, because the server only gives a day; and
+      when they disagree on the day and the phone's syllabus line named a
+      weekday that fits the date it chose (`ExamCandidate.weekdayConfirmed`),
+      the phone's reading stands, because the server is given no current date
+      and so guesses the year of a date written without one. A phone reading
+      with no weekday to back it loses to the server, as does one whose
+      weekday fits no year (a typo).
+      **Nothing arrives until the backend half is deployed**; an older server
+      simply has no `examDates` and the phone reads the text as before.
     - **An announcement.** An announcement task whose title *leads with*
       an exam ("Midterm 1", "Take the final exam"; not "Bring a calculator
       to the exam", `ExamDetection.leadingExamIdentity`) is a found exam
@@ -1182,6 +1204,20 @@ the count, so a later drop can be traced:
   Marco's Mac in 6.0 s, its base `v8-announcements` re-verified at
   2230/206 the same day; the iOS Debug compile
   (`-destination 'generic/platform=iOS'`) ended in BUILD SUCCEEDED.
+- (`v8-server-exam-dates`'s own history)
+- 2270/208 `v8-server-exam-dates`, 2026-10-18, `swift test --no-parallel` on
+  Marco's Mac, 20.8 s, no other test run active when it started
+  (`pgrep -f LowHangingFruitKitPackageTests` was empty): +40 tests and +2
+  suites over the 2230/206 of `v8-announcements` it is built on. The
+  server exam dates: 7 wire and persistence tests in
+  `CourseGradingProfileTests`, the weekday-confirmation tests in
+  `SyllabusExamExtractorTests`, and the two new suites
+  `SyllabusExamServerRowsTests` and `SyllabusExamServerPassTests`. Nothing
+  removed. The same tree compiled for iOS (Debug, generic device and the
+  connected phone; Release `CODE_SIGNING_ALLOWED=NO`). The Deno tests were
+  written there and not run under Deno (no Deno on that Mac; only under
+  Node 24 with a `Deno.test` shim); they first ran under Deno on
+  2026-10-23 on `v8-merge-marco`, see the Deno line below.
 - 2230/206 `v8-announcements`, 2026-10-18, `swift test --no-parallel` as the
   only run on the machine: the next two entries applied together.
   2190/202 plus 17 (the rules) plus 19 (the sheet) plus 4 new in
@@ -1357,6 +1393,13 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
+- Deno, pending: 428 passed, 0 failed on `v8-merge-marco` (2026-10-23, the
+  merge of Marco's `v8-server-exam-dates`: +9 in `db.test.ts` and
+  `profile.test.ts` for `examDates`, the first run of them under real
+  Deno; Deno 2.9.8 `--no-check`, and `deno check --no-lock` of every
+  function's `index.ts` clean under 2.1.4). The merged tree is not
+  compiled in Swift and `sync` is not redeployed (the next deploy would be
+  v13).
 - Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
   posts exempt from the complete-set rule, a 120-day age-out on read,
@@ -2384,6 +2427,7 @@ it holds work that exists nowhere else.
 | `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR, not merged.** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
 | `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
 | `parked/gradescope-unverified-submission` | **Parked, do not merge without Marco's say.** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
+| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed, not merged.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
@@ -2570,6 +2614,13 @@ none is a ship line.
   - Syllabus rows join the work list in the ask context document with the
     source label "announcement" (`assistantSourceLabel`; a disclosure
     boundary, left alone).
+  - Server exam dates have never run against the live `sync`, and the
+    backend half is not deployed. The extraction prompt gives the model no
+    current date or term, so a syllabus line with no year gets the model's
+    guess of the year. The 150-day cut-off drops a past-year guess, and a
+    phone reading backed by a matching weekday beats a wrong guess, but a
+    wrong-year guess on a line with no weekday still beats the phone's
+    reading: nothing in the line says which year is right.
 - **The summary sent with every ask question carries completion state,
   and `docs/PRIVACY.md` says it does not.** Read on 2026-10-10 while
   checking something else; it has been so since `assistant-ui`

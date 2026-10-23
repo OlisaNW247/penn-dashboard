@@ -610,6 +610,18 @@ Kept so nobody rebuilds them blind.
   - The cold-launch refresh and the flaky-detail-page fix are written and
     parked (Now). **Not verified on a phone.** Mac tests and an iOS Debug
     compile only.
+- **2026-10-18 (`v8-server-exam-dates`, off `75dc7aa`, local, not merged):
+  the server's syllabus exam dates reach the app.** `extract-profile` has
+  stored each class's `examDates` since the profile existed, but `sync`
+  sent only the grading weights and components, so the phone read exams out
+  of the syllabus text on its own. `sync`'s manifest now carries them, the
+  app keeps them with the class's profile, and a dated server exam wins over
+  the on-device parse of the same exam under the same `syllabus-...` id (the
+  on-device parse stays as the fallback; `CLAUDE.md` → What the app does,
+  exam cards). **Waiting on a deploy of `sync` that nobody has approved**;
+  until then the app behaves as before. The Deno tests were written, not
+  run (no Deno on this Mac). Edges in `CLAUDE.md` → Known gaps.
+
 - **2026-10-18 (`v8-ann-rules`, off `v8-announcements` at `80c21ec`, not
   merged): the stale-card rules.** The owner's phone filled with tasks
   already taken or never needed ("Take quiz covering assignments 1 and 2"
