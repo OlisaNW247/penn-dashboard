@@ -189,4 +189,26 @@ public struct ExtractedAssignment: Sendable, Equatable {
 /// reused from whatever actor drives the announcement sync.
 public protocol AnnouncementAssignmentExtractor: Sendable {
     func extract(from announcement: AnnouncementSourceText, now: Date) async throws -> [ExtractedAssignment]
+
+    /// `extract`, plus the extractor's judgment of how long the post as a whole
+    /// stays worth listing (`AnnouncementRelevance`). Declared as a requirement
+    /// and not only in the extension below: a call through
+    /// `any AnnouncementAssignmentExtractor` (which is how the sync holds
+    /// every extractor) dispatches statically for an extension-only method, so
+    /// `BackendAnnouncementExtractor`'s override would never run and every
+    /// post would come back with no relevance, silently, with every test of
+    /// the concrete type still green.
+    func extractWithRelevance(from announcement: AnnouncementSourceText, now: Date) async throws -> AnnouncementExtraction
+}
+
+extension AnnouncementAssignmentExtractor {
+    /// The default: whatever `extract` finds, and no relevance. The on-device
+    /// heuristic cannot judge a post's lifetime and keeps this, as does every
+    /// extractor written before the judgment existed.
+    public func extractWithRelevance(
+        from announcement: AnnouncementSourceText,
+        now: Date
+    ) async throws -> AnnouncementExtraction {
+        AnnouncementExtraction(assignments: try await extract(from: announcement, now: now), relevance: nil)
+    }
 }

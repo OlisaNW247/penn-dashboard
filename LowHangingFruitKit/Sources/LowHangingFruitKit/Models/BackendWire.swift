@@ -585,9 +585,53 @@ public struct ExtractedAssignmentWire: Codable, Sendable, Equatable {
 
 public struct ExtractAnnouncementResponse: Decodable, Sendable, Equatable {
     public let assignments: [ExtractedAssignmentWire]
+    /// The server's judgment of how long the post as a whole stays worth
+    /// listing (`backend/PROTOCOL.md`, "`extract-announcement`"). Nil when the
+    /// key is absent (an older server, or a model that gave none), when it is
+    /// not an object, or when its `kind` is not one of the four known values.
+    /// Never the reason a response fails to decode: see `init(from:)`.
+    public let relevance: AnnouncementRelevance?
 
-    public init(assignments: [ExtractedAssignmentWire]) {
+    public init(assignments: [ExtractedAssignmentWire], relevance: AnnouncementRelevance? = nil) {
         self.assignments = assignments
+        self.relevance = relevance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case assignments, relevance
+    }
+
+    /// `relevance` is decoded on its own, with `try?`, and from strings.
+    /// The tasks are what the student asked for and `relevance` is a bonus
+    /// riding in the same body, so a malformed bonus must cost the bonus and
+    /// nothing else: not the `assignments` beside it, and not the response.
+    /// The wrong version is a plain `decodeIfPresent(AnnouncementRelevance.self)`
+    /// (or an `until: Date` field): the shared decoder (`BackendJSON.decoder()`)
+    /// throws for the whole decode on one unparseable date, so a model that
+    /// wrote "next Friday" would have turned a good extraction into an error,
+    /// retried three times and given up on, losing the post's tasks.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        assignments = try container.decode([ExtractedAssignmentWire].self, forKey: .assignments)
+        relevance = (try? container.decode(LenientRelevance.self, forKey: .relevance))?.relevance
+    }
+
+    /// The `relevance` object read field by field: each of `kind` and `until`
+    /// is taken only if it is a string, so a number or an array in either
+    /// place leaves that field empty instead of throwing.
+    private struct LenientRelevance: Decodable {
+        let relevance: AnnouncementRelevance?
+
+        private enum CodingKeys: String, CodingKey {
+            case kind, until
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let kind = try? container.decodeIfPresent(String.self, forKey: .kind)
+            let until = try? container.decodeIfPresent(String.self, forKey: .until)
+            relevance = AnnouncementRelevance(wireKind: kind, wireUntil: until)
+        }
     }
 }
 

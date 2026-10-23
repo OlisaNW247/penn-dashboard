@@ -4,9 +4,10 @@ import Testing
 @testable import LowHangingFruitUI
 
 /// The megaphone sheet as the owner asked for it on 2026-10-18: the posts of
-/// the past 7 days, the tasks and exams found in them that are still ahead
-/// (the syllabus's included), one class filter over both, and a badge that
-/// counts only what the sheet can show.
+/// the past 7 days (and, since 2026-10-23, each class's newest post however
+/// old, so a quiet class does not vanish), the tasks and exams found in them
+/// that are still ahead (the syllabus's included), one class filter over both,
+/// and a badge that counts only what the sheet can show.
 ///
 /// The pure rules first (window, found list, filter), then the same rules
 /// through an `AppState` (the badge and what opening the sheet marks seen),
@@ -55,6 +56,11 @@ struct AnnouncementSheetRulesTests {
 
     // MARK: The 7-day window
 
+    // The three window tests below are unchanged by the "each class's newest
+    // post" rule on purpose: every older post in them has a newer post of its
+    // own class inside the window, so it is still out. The cases where the
+    // newest post is itself older than the window are the tests after them.
+
     @Test("a post from exactly 7 days ago is in, one second older is out, and nothing newer is dropped")
     func windowBoundary() {
         let now = Self.now
@@ -95,6 +101,96 @@ struct AnnouncementSheetRulesTests {
         ))
         #expect(fresh.isEd && stale.isEd)
         #expect(AppState.announcementRecordsInSheetWindow([stale, fresh], now: now).map(\.id) == [fresh.id])
+    }
+
+    // MARK: Each class's newest post, however old
+
+    @Test("a class with posts 2 and 10 days old lists only the 2-day one")
+    func newestInsideWindowAddsNothing() {
+        let now = Self.now
+        let recent = record("21", posted: now - 2 * Self.day)
+        let older = record("20", posted: now - 10 * Self.day)
+
+        #expect(AppState.announcementRecordsInSheetWindow([older, recent], now: now).map(\.id) == ["21"])
+    }
+
+    @Test("a class whose only post is 20 days old lists it")
+    func onlyPostOutsideWindowIsListed() {
+        let now = Self.now
+        let lone = record("30", posted: now - 20 * Self.day)
+
+        #expect(AppState.announcementRecordsInSheetWindow([lone], now: now).map(\.id) == ["30"])
+    }
+
+    @Test("a class with posts 10 and 20 days old lists only the 10-day one")
+    func newestOutsideWindowIsTheOnlyOne() {
+        let now = Self.now
+        let tenDays = record("41", posted: now - 10 * Self.day)
+        let twentyDays = record("40", posted: now - 20 * Self.day)
+
+        #expect(AppState.announcementRecordsInSheetWindow([twentyDays, tenDays], now: now).map(\.id) == ["41"])
+    }
+
+    @Test("two spellings of one class are one class: PHYS 0151 and PHYS 151 earn a single newest post between them")
+    func spellingsOfOneClassGroupTogether() {
+        let now = Self.now
+        // The newest is under the descriptor's spelling, the older under the
+        // cleaned code. Grouped by raw string, the 10-day post would be the
+        // newest of "PHYS 151" and be listed beside the 2-day one.
+        let newerLeadingZero = record("51", course: "PHYS 0151", posted: now - 2 * Self.day)
+        let olderPlain = record("50", course: "PHYS 151", posted: now - 10 * Self.day)
+        #expect(AppState.announcementRecordsInSheetWindow([olderPlain, newerLeadingZero], now: now).map(\.id) == ["51"])
+
+        // And when both are outside the window, one of them is still just one.
+        let tenDays = record("53", course: "PHYS 151", posted: now - 10 * Self.day)
+        let twentyDays = record("52", course: "PHYS 0151", posted: now - 20 * Self.day)
+        #expect(AppState.announcementRecordsInSheetWindow([twentyDays, tenDays], now: now).map(\.id) == ["53"])
+    }
+
+    @Test("every class gets its newest post, mixed with the week's posts newest first, and no post is listed twice")
+    func everyClassIsRepresented() {
+        let now = Self.now
+        // The owner's phone on 2026-10-23: a busy class, a class that posted
+        // once in September, and a class that has not posted for weeks.
+        let busyToday = record("60", course: "PHYS 0151", posted: now - 1 * Self.day)
+        let busyMid = record("61", course: "PHYS 0151", posted: now - 4 * Self.day)
+        let busyOld = record("62", course: "PHYS 0151", posted: now - 9 * Self.day)
+        let quiet = record("63", course: "FNAR 0010", posted: now - 31 * Self.day)
+        let quieterNewest = record("64", course: "CIS 2620", posted: now - 40 * Self.day)
+        let quieterOlder = record("65", course: "CIS 2620", posted: now - 50 * Self.day)
+
+        let shown = AppState.announcementRecordsInSheetWindow(
+            [quieterOlder, busyOld, quiet, busyMid, quieterNewest, busyToday], now: now
+        )
+        #expect(shown.map(\.id) == ["60", "61", "63", "64"])
+        #expect(Set(shown.map(\.id)).count == shown.count)
+    }
+
+    @Test("a class's newest post is chosen in the sheet's own order, so a same-second tie goes to the higher id, and an undated post counts from when it was first seen")
+    func newestFollowsTheSheetsOrder() {
+        let now = Self.now
+        let moment = now - 12 * Self.day
+        let tieLow = record("9", posted: moment)
+        let tieHigh = record("10", posted: moment)
+        #expect(AppState.announcementRecordsInSheetWindow([tieLow, tieHigh], now: now).map(\.id) == ["10"])
+
+        // Undated and first seen 15 days ago is newer than one posted 20 days ago.
+        let undated = record("71", course: "PHYS 0151", posted: nil, recorded: now - 15 * Self.day)
+        let dated = record("70", course: "PHYS 0151", posted: now - 20 * Self.day)
+        #expect(AppState.announcementRecordsInSheetWindow([dated, undated], now: now).map(\.id) == ["71"])
+    }
+
+    @Test("a Canvas post and an Ed post of one class compete as one class")
+    func canvasAndEdShareAClass() throws {
+        let now = Self.now
+        let ed = try #require(AnnouncementRecord.edRecord(
+            from: AnnouncementEdRowsTests.edDocument(
+                thread: "803", course: "ANSHEET 7000", daysAgo: 12, now: now
+            ), now: now
+        ))
+        let canvas = record("80", course: "ANSHEET 7000", posted: now - 20 * Self.day)
+        #expect(ed.isEd)
+        #expect(AppState.announcementRecordsInSheetWindow([canvas, ed], now: now).map(\.id) == [ed.id])
     }
 
     // MARK: The found list
@@ -397,6 +493,27 @@ struct AnnouncementSheetBadgeTests {
         }
     }
 
+    @Test("a class's newest post is listed and counted even when it is older than 7 days; the post before it is not")
+    func newestPostOutsideTheWindowIsListedAndCounted() async throws {
+        try await withHarness { h, now in
+            // The first Ed row an install sees counts as seen; the newer one
+            // arrives later and is unread.
+            let seeded = ed("9721", daysAgo: 25, now: now)
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [seeded])
+            #expect(h.state.announcementBadgeCount(now: now) == 3, "only the three upcoming finds are unread")
+
+            let newest = ed("9722", daysAgo: 20, now: now)
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [seeded, newest])
+
+            // Neither is within 7 days. The class's newest is listed (and
+            // unread, so counted); the 25-day-old one before it is not.
+            #expect(h.state.announcementRecordsOnPage.count == 2)
+            #expect(h.state.announcementSheetRecords(now: now).map(\.id) == [newest.id])
+            #expect(h.state.announcementBadgeCount(now: now) == 4)
+            #expect(h.state.unreadAnnouncementCount == 4)
+        }
+    }
+
     @Test("opening the sheet marks only what it shows as seen, and reports those as new")
     func openingMarksOnlyShownRows() async throws {
         try await withHarness { h, now in
@@ -459,6 +576,43 @@ struct AnnouncementSheetBadgeTests {
             #expect(h.state.announcementPageItems.contains { $0.id == reminder.id })
             #expect(!h.state.announcementFoundItems(now: now).contains { $0.id == reminder.id })
             #expect(h.state.announcementBadgeCount(now: now) == 3, "the three upcoming rows, not the reminder")
+        }
+    }
+
+    @Test("a find whose real Canvas twin is finished leaves the page, the found list and the badge, with nothing written onto the find; un-finishing the twin brings it back")
+    func finishedRealTwinTakesTheFindOffTheSheet() async throws {
+        try await withHarness(extra: { now in [
+            "worksheet": task("announcement-71010005-0", title: "Worksheet 6-7", due: now + 2 * Self.day),
+        ] }) { h, now in
+            let find = h.rows["worksheet"]!
+            let real = Assignment(
+                source: .canvas, sourceID: "\(Self.courseID)-ws67", kind: .assignment, course: Self.course,
+                title: "Worksheet 6-7", dueAt: now + 2 * Self.day,
+                url: URL(string: "https://canvas.upenn.edu/courses/\(Self.courseID)/assignments/67")
+            )
+            h.state.canvasItems.append(real)
+            h.state.rebuildDashboardItemsForTesting(now: now)
+
+            // Unfinished: the find is on the page and in the found list.
+            #expect(h.state.announcementPageItems.contains { $0.id == find.id })
+            #expect(h.state.announcementFoundItems(now: now).contains { $0.id == find.id })
+            #expect(h.state.announcementBadgeCount(now: now) == 4)
+
+            // The student turns in the real assignment.
+            h.state.markCompleted(real)
+            #expect(h.state.isCompleted(real))
+            #expect(!h.state.announcementPageItems.contains { $0.id == find.id })
+            #expect(!h.state.announcementFoundItems(now: now).contains { $0.id == find.id })
+            #expect(h.state.announcementBadgeCount(now: now) == 3)
+            // Display only: the find itself was never marked done.
+            #expect(!h.state.completedAssignmentIDs.contains(find.id))
+            #expect(!h.state.isCompleted(find))
+
+            // Un-finish the twin and the find is back, so nothing was lost.
+            h.state.markActive(real)
+            #expect(h.state.announcementPageItems.contains { $0.id == find.id })
+            #expect(h.state.announcementFoundItems(now: now).contains { $0.id == find.id })
+            #expect(h.state.announcementBadgeCount(now: now) == 4)
         }
     }
 

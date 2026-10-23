@@ -21,6 +21,12 @@ struct BackendAnnouncementExtractor: AnnouncementAssignmentExtractor {
     let client: BackendClient
 
     func extract(from announcement: AnnouncementSourceText, now: Date) async throws -> [ExtractedAssignment] {
+        try await extractWithRelevance(from: announcement, now: now).assignments
+    }
+
+    /// The one network call. `extract` above is this with the relevance
+    /// dropped, so the two cannot disagree about the tasks.
+    func extractWithRelevance(from announcement: AnnouncementSourceText, now: Date) async throws -> AnnouncementExtraction {
         let request = ExtractAnnouncementRequest(
             announcementID: announcement.announcementID,
             courseCode: announcement.courseCode,
@@ -29,15 +35,6 @@ struct BackendAnnouncementExtractor: AnnouncementAssignmentExtractor {
             postedAt: announcement.postedAt,
             now: now
         )
-        let response = try await client.extractAnnouncement(request)
-        // `taskKind` is `ExtractedAssignmentWire`'s resolved `ExtractedTaskKind`
-        // (`.kind` is the raw string the server actually sent, kept on the
-        // wire type for whatever fallback decoding it does with an
-        // unrecognized value — see that property's own doc comment) — reading
-        // through `taskKind` here keeps this extractor agnostic to how that
-        // resolution happens.
-        return response.assignments.map {
-            ExtractedAssignment(title: $0.title, dueAt: $0.dueAt, kind: $0.taskKind)
-        }
+        return AnnouncementExtraction(response: try await client.extractAnnouncement(request))
     }
 }

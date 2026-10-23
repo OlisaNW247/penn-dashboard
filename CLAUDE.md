@@ -93,7 +93,11 @@ password, no name. Two things go through it:
   context document and matched excerpts, and are answered by a model via
   OpenRouter under LHF's own key (see the ask section below). The
   Announcement Watcher's AI assist is routed the same way, only for
-  announcements that an on-device gate judges could carry a task. Since
+  announcements that an on-device gate judges could carry a task, and
+  (since 2026-10-23, on `fix/megaphone-every-class`) for at most six
+  instructor/TA Ed posts a day, judged only for whether they still matter.
+  Each answer also carries a short "until when this matters" note, which
+  the phone keeps and the server does not. Since
   2026-10-18 that covers Ed announcements and pinned posts too (title and
   body, no author, once each, never for a hidden class), under the same
   switch and the same gate; the text is what the pool already holds. (For
@@ -136,18 +140,18 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.0.0 (build 11)** (App Store
-id `6783911002`, released about 2026-10-01; confirmed on the store page by
-Olisa 2026-10-09, with 1.2.1 live before it from 2026-09-04). This line has
-been stale before, so re-check it rather than trust it. `project.yml`
-stamps **3.1.0 (build 13)** on `v8` (2026-10-20, the release the owner
-asked to send straight to App Review that evening: the Smooth Sweeper,
-the exam cards, the megaphone redesign, Ed posts, the ask work and the
-sign-out fix, with Grade Watcher removed). **Archived from `1450fdc` and
-uploaded to App Store Connect at 19:11 on 2026-10-20** ("Upload
-succeeded", `docs/appstore/CHECKLIST.md` → "3.1.0 submission"); whether
-it was attached to a 3.1.0 version and submitted for review is Olisa's
-step in App Store Connect and is not recorded here yet.
+**Release state.** Live on the App Store: **3.1.0 (build 13)** (App Store
+id `6783911002`), released 2026-10-21 at 19:07 UTC per the public iTunes
+lookup, read 2026-10-23
+(`curl -s "https://itunes.apple.com/lookup?id=6783911002"`); before it,
+3.0.0 (11) from about 2026-10-01 and 1.2.1 from 2026-09-04. This line has
+been stale before, so re-check it rather than trust it. 3.1.0 (13) is the
+release the owner asked to send straight to App Review on the evening of
+2026-10-20: the Smooth Sweeper, the exam cards, the megaphone redesign,
+Ed posts, the ask work and the sign-out fix, with Grade Watcher removed.
+It was **archived from `1450fdc` and uploaded at 19:11 on 2026-10-20**
+(`docs/appstore/CHECKLIST.md` → "3.1.0 submission"). To read the
+released source, check out `1450fdc`, not the `v8` tip.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0
@@ -251,17 +255,30 @@ Keep this current. It is the fastest way for a new session to know what exists.
        announcement both name it. A "NEW" tag sits beside the class.
        Hidden when empty.
     2. **announcements**: the Canvas announcements and the Ed
-       announcements and pinned posts from the **past 7 days**, newest
-       first, across classes; a row is class, date ("ed" beside it for an
-       Ed post), title, a one-line preview, an arrow and a "task found"
-       tag when a find came from it; the whole row opens the original.
-       Empty says "no announcements".
+       announcements and pinned posts from the **past 7 days, plus each
+       class's newest post** however old (since 2026-10-23, so a class
+       that posts rarely, or only on Ed, never vanishes), newest first,
+       across classes. On top of that standing set sits the **keep-check**
+       (`announcementRecordsForSheet`): a post is taken off once it is
+       over (its judged event has passed, or every task found in it is
+       finished or past, which needs no AI), and an older post comes back
+       while it still matters (judged `standing`, an `event` ahead, a
+       `task` still open). An Ed staff post lists only while judged to
+       matter (an event or due date ahead). The judgments come from
+       `extract-announcement`'s `relevance` field, once per post, stored
+       on the phone (`AnnouncementRelevanceStore`); completion state never
+       leaves the phone. A row is class, date ("ed" beside it for an Ed
+       post), title, a one-line preview, an arrow and a "task found" tag
+       when a find came from it; the whole row opens the original. Empty
+       says "no announcements". A find whose real Canvas/Gradescope twin
+       is finished leaves the found list too
+       (`announcementFindsWithFinishedTwin`).
 
     The dismiss button says "back to assignments". What each list holds
     is decided in `AppState+AnnouncementSheet.swift`
     (`announcementFoundItems(now:)`, `announcementSheetRecords(now:)`),
-    read-only over the same rows as before; the 7 days are display only,
-    the log still keeps 60. Before 2026-10-10 the sheet listed only
+    read-only over the same rows as before; the window and the
+    keep-check are display only, the log still keeps 60. Before 2026-10-10 the sheet listed only
     extracted tasks and hid itself when there were none, which read as
     "announcements are missing".
     The Canvas rows are an on-device cache (`AnnouncementLogStore`,
@@ -279,8 +296,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     compiler), and the thread's last activity only for a document synced
     before that. The badge counts
     exactly what the sheet can show: unread found items plus unread
-    posts from the past 7 days, so it never counts a passed task or an
-    older post. Rows unread when opened are tagged NEW
+    listed posts, so it never counts a passed task or a post the sheet
+    does not list. Rows unread when opened are tagged NEW
     (`AnnouncementReadState`, which marks only the shown rows seen), and
     the first fill of each kind on an install counts as already seen. The
     badge caps at "99+" (VoiceOver still gets the true count). Since
@@ -2249,6 +2266,28 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **A class's Ed posts can vanish from the phone and come back**
+  (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
+  over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620
+  and CIS 3990 post only on Ed. At 15:05 that day the phone held 35 Ed
+  posts for them, and a replay of the saved data through the 3.1.0 rules
+  listed three of them. But the seen set
+  (`seenAnnouncementIDsV1`) held only those three Ed keys, none of the
+  older Ed rows the first Ed seeding marked. `markAllSeen` keeps an old
+  key only while its row is still known, so at some earlier open of the
+  sheet the phone held no Ed posts at all. That is the restore/drop rule
+  in `EdDiscussionCoordinator` (Olisa's sync, left alone on Marco's
+  standing rule) failing to restore for some run. The exact run is not
+  known, because only the last sync summary is kept. The `restoreDropPlan`
+  finding under ROADMAP → Next ("Announcements for ask") is one candidate.
+- **`extract-announcement` returned HTTP 502** on Marco's phone at 15:04
+  on 2026-10-23, for PHYS 0151's "Midterm 2 information with formula
+  sheet added" (posted 10-16). That was its second failure
+  (`announcementExtractionAttemptsV1`); a third makes the app give up on
+  the post for good, so no task is ever found in it. The run's back-off
+  also skipped the Ed task pass for the hour. The function's log for that
+  minute has not been read.
 
 - **Whether the extension can download Canvas Files is unknown**
   (2026-10-22). Canvas redirects a file download to a separate signed

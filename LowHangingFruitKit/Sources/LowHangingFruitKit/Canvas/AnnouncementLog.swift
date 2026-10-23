@@ -38,6 +38,21 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
     /// When this device first logged the record. Only ever the age basis for
     /// an undated announcement (`sortDate`).
     public let recordedAt: Date
+    /// True for an Ed "staff post": a staff-authored non-question that the Ed
+    /// filter keeps as course material (`EdDocumentHeader.isStaffPost`), as
+    /// opposed to an announcement or a pinned thread. Such a row is a
+    /// *candidate* for the megaphone sheet and no more: it is listed only when
+    /// the post's relevance judgment says it still matters (`AppState
+    /// .announcementRecordsForSheet`), never by the 7-day window and never as
+    /// its class's latest post, because most staff posts are answers and
+    /// course notes and a sheet that listed them all would be the Ed board.
+    /// Always false for a Canvas announcement and for an announcement or
+    /// pinned Ed row.
+    ///
+    /// Defaulted, and absent from the stored form when false, so a log written
+    /// before this field existed decodes unchanged (as `false`) and a Canvas
+    /// record encodes byte for byte as it always did.
+    public let isStaffPost: Bool
 
     public init(
         id: String,
@@ -47,7 +62,8 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
         postedAt: Date?,
         url: URL?,
         snippet: String,
-        recordedAt: Date
+        recordedAt: Date,
+        isStaffPost: Bool = false
     ) {
         self.id = id
         self.courseID = courseID
@@ -57,6 +73,37 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
         self.url = url
         self.snippet = snippet
         self.recordedAt = recordedAt
+        self.isStaffPost = isStaffPost
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, courseID, courseCode, title, postedAt, url, snippet, recordedAt, isStaffPost
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        courseID = try container.decode(String.self, forKey: .courseID)
+        courseCode = try container.decode(String.self, forKey: .courseCode)
+        title = try container.decode(String.self, forKey: .title)
+        postedAt = try container.decodeIfPresent(Date.self, forKey: .postedAt)
+        url = try container.decodeIfPresent(URL.self, forKey: .url)
+        snippet = try container.decode(String.self, forKey: .snippet)
+        recordedAt = try container.decode(Date.self, forKey: .recordedAt)
+        isStaffPost = try container.decodeIfPresent(Bool.self, forKey: .isStaffPost) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(courseID, forKey: .courseID)
+        try container.encode(courseCode, forKey: .courseCode)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(postedAt, forKey: .postedAt)
+        try container.encodeIfPresent(url, forKey: .url)
+        try container.encode(snippet, forKey: .snippet)
+        try container.encode(recordedAt, forKey: .recordedAt)
+        if isStaffPost { try container.encode(true, forKey: .isStaffPost) }
     }
 
     /// Builds the record for a fetched announcement. `message` on a
@@ -152,9 +199,12 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
     /// The "all announcements" row for an Ed document, or nil when the
     /// document is not one a student should see listed:
     ///
-    /// - it must be an Ed document whose header reason is an announcement or
-    ///   a pinned post. A plain "staff post" is course material the filter
-    ///   keeps, not news (`EdDocumentHeader.isAnnouncementOrPinned`);
+    /// - it must be an Ed document whose header reason is an announcement, a
+    ///   pinned post, or a "staff post". A staff post is course material the
+    ///   filter keeps, not news, so its row is marked (`isStaffPost`) and is
+    ///   only ever listed when its relevance judgment says it still matters
+    ///   (a TA's "No recitation today + HW 5" is such a post, and never
+    ///   reached the sheet while only announcements and pins were rows);
     /// - it must carry text, not only `[image]` placeholders
     ///   (`EdDocumentHeader.carriesNoText`);
     /// - it must be dated, and within the log's 60 days. The date is the day
@@ -177,7 +227,7 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
         guard let posted = header.postedAt ?? document.updatedAt,
               posted >= now.addingTimeInterval(-AnnouncementLogStore.retention)
         else { return nil }
-        guard header.isAnnouncementOrPinned,
+        guard header.isAnnouncementOrPinned || header.isStaffPost,
               !EdDocumentHeader.carriesNoText(document.text)
         else { return nil }
         return AnnouncementRecord(
@@ -188,13 +238,21 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
             postedAt: posted,
             url: document.url,
             snippet: snippet(fromPlainText: header.body),
-            recordedAt: document.fetchedAt
+            recordedAt: document.fetchedAt,
+            isStaffPost: header.isStaffPost
         )
     }
 
-    /// Every listable Ed row among `documents`, newest first, inside the
-    /// same 60-day, 300-row bounds as the log (`AnnouncementLogStore.pruned`).
-    /// A document id seen twice yields one row.
+    /// Every candidate Ed row among `documents`, newest first. A document id
+    /// seen twice yields one row.
+    ///
+    /// The announcement and pinned rows keep the same 60-day, 300-row bounds
+    /// as the log (`AnnouncementLogStore.pruned`), and the staff-post rows are
+    /// bounded the same way **on their own**. Pruned together, a board with
+    /// hundreds of staff posts would push the 300-row cut past the older
+    /// announcements, and the sheet would lose a class's latest announcement
+    /// to the very posts it lists only when they matter. The wrong version is
+    /// one `pruned` call over both.
     public static func edRecords(from documents: [CourseDocument], now: Date) -> [AnnouncementRecord] {
         var seen = Set<String>()
         let rows = documents.compactMap { document -> AnnouncementRecord? in
@@ -203,7 +261,9 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
             }
             return row
         }
-        return AnnouncementLogStore.pruned(rows, now: now)
+        let news = AnnouncementLogStore.pruned(rows.filter { !$0.isStaffPost }, now: now)
+        let staff = AnnouncementLogStore.pruned(rows.filter(\.isStaffPost), now: now)
+        return (news + staff).sorted(by: AnnouncementRecord.isNewer(_:than:))
     }
 
     // MARK: Ordering and age
