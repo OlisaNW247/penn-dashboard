@@ -1,0 +1,6 @@
+{"user":{"id":1,"name":"Sam"},
+ "courses":[
+   {"course":{"id":101,"code":"CIS 2400","name":"Machine Organization","year":"2026","session":"Fall","status":"active","created_at":"2026-03-05T14:21:55.123456+10:00"},
+    "role":{"role":"student"}},
+   {"course":{"id":102,"code":"MATH 1400","name":"Calculus"}}
+ ]}

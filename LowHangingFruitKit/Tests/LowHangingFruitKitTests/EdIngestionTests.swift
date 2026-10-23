@@ -20,6 +20,7 @@ private func thread(
     type: String = "post",
     pinned: Bool = false,
     isPrivate: Bool = false,
+    anonymous: Bool = false,
     document: String? = nil,
     content: String? = nil,
     category: String? = nil,
@@ -29,7 +30,7 @@ private func thread(
     EdThread(
         id: id, userID: user, courseID: 101, type: type, title: title, document: document,
         content: content, category: category, subcategory: subcategory,
-        isPinned: pinned, isPrivate: isPrivate
+        isPinned: pinned, isPrivate: isPrivate, isAnonymous: anonymous
     )
 }
 
@@ -252,6 +253,59 @@ struct EdThreadFilterTests {
         #expect(EdThreadFilter.decide(thread(1), authorRole: "student") == drop)
         #expect(EdThreadFilter.decide(thread(1), authorRole: nil) == drop)
         #expect(EdThreadFilter.decide(thread(1), authorRole: "something-new") == drop)
+    }
+
+    @Test("an anonymous announcement is dropped, with the reason \"anonymous\"")
+    func anonymousAnnouncementDropped() {
+        let d = EdThreadFilter.decide(thread(1, type: "announcement", anonymous: true), authorRole: "admin")
+        #expect(d == EdThreadDecision(keep: false, reason: "anonymous"))
+    }
+
+    @Test("an anonymous pinned thread is dropped, however it was pinned")
+    func anonymousPinnedDropped() {
+        let d = EdThreadFilter.decide(thread(1, pinned: true, anonymous: true), authorRole: "student")
+        #expect(d == EdThreadDecision(keep: false, reason: "anonymous"))
+    }
+
+    @Test("an anonymous staff-role post is dropped too")
+    func anonymousStaffPostDropped() {
+        let d = EdThreadFilter.decide(thread(1, anonymous: true), authorRole: "ta")
+        #expect(d == EdThreadDecision(keep: false, reason: "anonymous"))
+    }
+
+    @Test("private still wins the reason when a thread is both private and anonymous")
+    func privateBeatsAnonymous() {
+        let d = EdThreadFilter.decide(thread(1, type: "announcement", isPrivate: true, anonymous: true), authorRole: "admin")
+        #expect(d == EdThreadDecision(keep: false, reason: "private"))
+    }
+
+    @Test("a non-anonymous announcement, pinned thread and staff post are kept as before")
+    func nonAnonymousUnchanged() {
+        #expect(EdThreadFilter.decide(thread(1, type: "announcement", anonymous: false), authorRole: nil).reason == "announcement")
+        #expect(EdThreadFilter.decide(thread(2, pinned: true, anonymous: false), authorRole: "student").reason == "pinned")
+        #expect(EdThreadFilter.decide(thread(3, anonymous: false), authorRole: "admin").reason == "staff post")
+    }
+
+    @Test("is_anonymous decodes as false when missing and true when sent")
+    func anonymousDecoding() throws {
+        let base = #"{"id":1,"course_id":101,"type":"post","title":"T","is_private":false,"created_at":"2026-03-05T14:21:55Z""#
+        let missing = try EdJSON.decoder().decode(EdThread.self, from: Data((base + "}").utf8))
+        let sent = try EdJSON.decoder().decode(EdThread.self, from: Data((base + #","is_anonymous":true}"#).utf8))
+        #expect(missing.isAnonymous == false)
+        #expect(sent.isAnonymous == true)
+    }
+
+    @Test("keptThreads leaves an anonymous announcement out of the response's kept set")
+    func keptThreadsDropsAnonymous() {
+        let response = EdThreadsResponse(
+            threads: [
+                thread(1, user: 10, type: "announcement"),
+                thread(2, user: 10, type: "announcement", anonymous: true),
+                thread(3, user: 11, pinned: true, anonymous: true),
+            ],
+            users: [EdThreadUser(id: 10, courseRole: "admin"), EdThreadUser(id: 11, courseRole: "student")]
+        )
+        #expect(EdThreadFilter.keptThreads(response).map { $0.thread.id } == [1])
     }
 
     @Test("keptThreads reads author roles from the response's users array")

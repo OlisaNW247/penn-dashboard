@@ -23,6 +23,10 @@ struct RootCore: View {
 
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The `smooth://pair` link the phone was opened with, while the sheet that
+    /// asks "pair this laptop?" is up (`AppState+DeviceSync.swift`).
+    @State private var pendingPairing: PendingPairing?
+
     var body: some View {
         ZStack {
             mainContent
@@ -80,6 +84,17 @@ struct RootCore: View {
         // context that doesn't inherit this automatically — see
         // `SheetTheme.swift`, which re-applies it there.
         .preferredColorScheme(state.appearanceMode.colorScheme)
+        // The Chrome extension's pairing QR opens `smooth://pair?c=...#k=...`.
+        // Anything that is not a well-formed link, and any install that cannot
+        // pair (not Penn, no backend, preview, mid-onboarding), is ignored
+        // silently: the scheme is a custom one, so any app or web page can
+        // hand this one a URL.
+        .onOpenURL { url in
+            if let pending = state.pendingPairing(from: url) { pendingPairing = pending }
+        }
+        .sheet(item: $pendingPairing) { pending in
+            PairLaptopSheet(link: pending.link).environmentObject(state)
+        }
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
 #endif
@@ -126,6 +141,9 @@ struct RootCore: View {
                     // Canvas-only: refresh from the cookieless calendar feed.
                     // Fires once at the onboarding -> app handoff.
                     await state.syncIfConfigured()
+                    // Foreground only (this view never exists in a background
+                    // wake), throttled and silent; see `deviceSyncPass`.
+                    await state.deviceSyncPass()
                 }
         }
     }

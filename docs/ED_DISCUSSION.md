@@ -99,14 +99,24 @@ no main-frame script can see Ed at all.
   in Ed's XML, timestamps, `user_id`; `users[]` with `course_role`).
 - **Filter** — keep a thread when `type == announcement`, or `is_pinned`,
   or its author's `course_role` is `admin`/`staff` and it is not a
-  `question`; drop `is_private` and everything student-authored. Authors
-  are recorded as "staff", never by name. Newest 100 per course, last 120
-  days, incremental by `updated_at`.
+  `question`; drop `is_private`, `is_anonymous` (since 2026-10-23) and
+  everything student-authored. Authors are recorded as "staff", never by
+  name. Threads whose last activity is within 120 days, read up to 300
+  deep (see "2026-10-23" below). **Not incremental:** an earlier version of
+  this line said "incremental by `updated_at`". Nothing is fetched by
+  `updated_at` and nothing is diffed on the wire; every read takes the whole
+  window and replaces the class's Ed set, and only the document hash
+  decides what counts as changed.
 - **Ed XML → text** — `<document>`, `<heading>`, `<paragraph>`, `<list>`,
   `<link>`, `<callout>`, `<pre>`; a pure Kit converter with fixtures.
 - **Matching Ed course ↔ Canvas course** by code + term from `/api/user`,
   with an `edstem.org/us/courses/<id>` link found in the Canvas site as the
   tie-breaker (`course_websites.ed_course_id` already exists for this).
+  **Not wired (stated 2026-10-23):** `EdCourseMatcher` implements the link
+  tier, but the coordinator passes `edLinks: [:]`, so no link is ever read
+  and code plus term is the only matching in use. A class whose code or
+  term does not agree between Canvas and Ed is not matched (status failure
+  kind `noMatch`).
 - **Sync** — a new `course_documents` kind `ed` (migration widening the
   kind check; `PROTOCOL.md` gains `ed` with `sourceID` = Ed thread id),
   uploaded through the existing manifest/dedupe path from
@@ -137,6 +147,75 @@ rule.
 
 A TA's "HW3 due Friday moved to Monday", if it is an announcement or pinned,
 becomes a dashboard item through the same gates as a Canvas announcement.
+
+## 2026-10-23: paging, anonymous posts, sign-outs, and the status line
+
+Written blind: nothing here was compiled or run when it was written. Four
+holes were found by reading the code, and three behaviours changed.
+
+1. **The read pages until the window closes.**
+   `EdClient.threadsWithinWindow` reads `/threads` 100 at a time, `sort=new`,
+   offsets 0, 100, 200, and stops at the first of: a short page (fewer than
+   100, an empty one included); a page whose oldest thread, by last activity
+   (`updated_at`, else `created_at`), is older than 120 days; the third page.
+   The cap of 3 (300 threads) is there because a board with more than 300
+   threads in 120 days is a question board, where announcements and pins are
+   a small fraction and paging further downloads student threads to throw
+   them away; it also bounds a run to three requests per class. Before this
+   the sync read the newest 100 only, so a pinned or announcement post older
+   than the 100th newest thread was never read, and because each successful
+   read replaces the class's whole Ed set, one that had been read earlier
+   vanished from the phone on the next run. A failure on any page throws and
+   discards the pages already read: handing back a partial set would erase
+   the posts on the pages not reached. A thread repeated across pages (a
+   reply moved it between two requests) is kept once. One thing is assumed and
+   not verified against a live board: that `sort=new` runs in the same
+   order as last activity (if it runs by creation, a long-dead thread
+   revived by a reply can sit on a page the stop rule never reaches, which
+   is the same miss the one-page read always had). The `users` side-loads of
+   every page are merged by user id before the filter sees them.
+2. **Anonymous posts are dropped.** `docs/PRIVACY.md` has promised that
+   anonymous Ed posts never leave the phone; `EdThreadFilter` never read
+   `isAnonymous`, so an anonymous announcement, or an anonymous thread staff
+   pinned, was kept and pooled. It is now dropped with the reason
+   "anonymous", after the private check and before the announcement check.
+   A missing `is_anonymous` decodes as `false` (`EdWire.swift`), unlike
+   `is_private`, which defaults to `true`; so a thread that arrives without
+   the flag is judged on its other fields. Ed sends the flag today. If it
+   ever stops, anonymous posts would be kept again; defaulting it to `true`
+   would fail safe at the price of dropping every announcement, and is the
+   owner's call.
+3. **A sign-out mid-run restores, never drops.** On a 401 from `/threads`
+   the run stops (a retry would only repeat the 401). Before today only the
+   classes the loop had reached were in the matched set, so every class
+   after the break fell into the drop set and had its stored Ed documents
+   deleted: a sign-out on the second of six classes erased the other four
+   classes' posts. Every match is now resolved to its Canvas site before any
+   read, so `matched` is the whole list, and the rule reads: **drop** =
+   classes with no Ed match after a successful `/user`; **restore** =
+   matched classes not read this run (a failed read, or never reached);
+   **replace** = classes read. `restoreDropPlan` is that rule as a pure
+   function, and `readTargets` the loop, so the tests drive both with a fake
+   reader.
+4. **The status line says why a class was not read.** The Ed status line
+   (Profile → accounts in a DEBUG build, and the `ed:` tail of
+   `lastCourseKnowledgeSyncSummaryV1` on the phone's App Group plist) now
+   leads with counts: `matched 3 · read 1 · restored 2 · dropped 0 · first
+   failure sessionExpired · <detail>`. Classes are Canvas courses: `matched`
+   found an Ed course, `read` were read, `restored` kept their stored
+   documents, `dropped` had them removed. The first failure is one fixed
+   word: `noTab` (no class has an Ed tab), `tabCheck` (a Canvas tab request
+   failed, so nobody knows), `launch` (no Ed session came out of the
+   launch), `noMatch` (Ed's courses matched none of the Canvas classes),
+   `sessionExpired`, `http(code)`, `notHTTP`, `invalidJSON`, or `other`.
+   Counts come first because the summary line is capped at 120 characters
+   and the cap cuts the tail. Never a title, id or body. This exists
+   because ten CIS 3990 documents on the server had no `· posted` day,
+   meaning that class had not completed a read since the header gained the
+   date (2026-10-19), and nothing on the phone said why. The line cannot
+   by itself tell whether that class has an Ed tab, was never matched
+   (`noMatch`), or was read and failed (`http(code)`, `sessionExpired`); it
+   narrows the question to one of those. It is not necessarily a code bug.
 
 ## Privacy rules for this feature
 

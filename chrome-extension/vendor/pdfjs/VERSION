@@ -1,0 +1,16 @@
+pdfjs-dist 4.10.38 (npm, published 2025-01-01), Apache-2.0 (see LICENSE)
+Source: `npm pack pdfjs-dist@4.10.38`; files copied unmodified from legacy/build/.
+Nothing else from the package is vendored (no cmaps, standard_fonts, wasm, maps).
+
+SHA-256
+44ec6f011027ee77791386b66c14876a5fc29e20bf0433c07c6726fff7212b72  pdf.min.mjs
+bd88805178a26c729db8c0107a5b630cb900ec070f4d8c7529a3e45530afd41d  pdf.worker.min.mjs
+0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594  LICENSE
+
+Use: src/adapters/pdfText.js. Runs in-thread (no Worker): the worker module is
+imported statically and registered as globalThis.pdfjsWorker. Opened with
+isEvalSupported:false, disableFontFace:true, useWorkerFetch:false, no cMapUrl,
+no standardFontDataUrl, so it makes no network request. Cost: text in fonts that
+need an external CMap (some CJK / non-embedded legacy encodings) can come out
+empty or garbled, and non-embedded standard fonts get no metrics (text is still
+extracted; only rendering would suffer, which we never do).

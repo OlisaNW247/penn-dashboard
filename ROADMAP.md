@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
+Last updated 2026-10-22 on `v8` (the Chrome extension). Before that,
+2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
 with Marco's `v8-loud-alert-actions`; not compiled).
 
 Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
@@ -25,6 +26,36 @@ from `v8` goes to TestFlight.
 
 These block shipping, or would make shipping risky.
 
+- **The Chrome extension: built 2026-10-22, now the owner's to try**
+  (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
+  Collector, encrypted phone sync with QR pairing, Canvas Files, Penn
+  only, unpacked. As of 2026-10-23 the backend half is all live and the
+  phone half is compiled and on Olisa's iPhone; what is left needs his
+  laptop. Done:
+  1. ~~`swift test --no-parallel`~~ **2606 / 237 green on the first run
+     at `ad4f920`** (2026-10-23, Olisa's Mac), the extension's Swift and
+     the announcement phases compiled together for the first time.
+  2. ~~Build to the phone~~ **The `ad4f920` build is on Olisa's iPhone**
+     (2026-10-23, 18:09 UTC sync recorded); the pairing sheet is in it,
+     unseen until a laptop shows a code.
+  3. ~~Migration and deploys~~ **All live**: `sync` (v12 since the
+     announcement work), `pair` v1, `device-sync` v1, `delete-account`
+     v6 (2026-10-22), and `extract-profile` v8 and `discover-websites`
+     v4 (2026-10-23, with Olisa's go, so the extension's post-upload
+     calls act for the paired student). Each smoke-tested live with
+     throwaway users, who were deleted.
+
+  Still to do, in order (2026-10-23: no link, blob, pairing,
+  extension-collected or `file` row exists yet):
+  4. Load the extension unpacked (`chrome-extension/README.md`), signed
+     in to Canvas and Gradescope: the popup should list real work.
+  5. Pair: "pair with phone" in the popup, point the iPhone camera at
+     it, "pair". Tick something on the laptop; it should be ticked on
+     the phone within a refresh, and the other way round.
+  6. Within the hour the collector runs: check `course_documents` for
+     `collector = 'extension'` rows and kind `file` through the
+     Management API (read-only). If no `file` rows ever appear, the
+     download redirect needs a host permission (Known gaps).
 - **Check the merge of 2026-10-20 on the phone** (it compiled green,
   2397 / 214, and was installed on Olisa's iPhone that morning; nothing in
   it has been watched running yet). The DEBUG rows under Profile →
@@ -32,7 +63,14 @@ These block shipping, or would make shipping risky.
   stopped; the Berserk alarm, the exam cards and the megaphone sheet are
   the things to look at. Where the two sides' tests could disagree:
   `AnnouncementFindExpiryTests` against `AnnouncementTaskRulesTests`.
-- **Try the section details on a phone** (deployed 2026-10-20): ask
+- **Watch the catalog rows flip to `2026C`** after the semester fix was
+  finally deployed (2026-10-22, `sync` v10 and `ask` v11, Olisa's go;
+  `396e464` had sat undeployed since 2026-10-20 and the tree was giving
+  Spring 2027 section times). `select semester, count(*) from
+  catalog_courses group by semester` through the Management API; then
+  ask "when and where is my CIS 2400 lecture" on the phone and expect
+  Tue/Thu 1:45 to 3:14 in AGH 106B.
+- **Try the section details on a phone** (deployed 2026-10-20 without the semester fix above): ask
   "where is my CIS 2400 lecture" once the catalog rows have refetched
   (`select count(*) filter (where components::text like '%"room"%') from
   catalog_courses` through the Management API says how many have). Note
@@ -60,10 +98,11 @@ These block shipping, or would make shipping risky.
      older hidden · show" at the foot of prev.
 - **Ship 3.1.0 (13)** (stamped 2026-10-20; the owner's call that evening:
   straight to App Review, no TestFlight round, the song kept under a
-  licence he says he holds). The steps are `docs/appstore/CHECKLIST.md`
-  → "3.1.0 submission": confirm no build 13 in App Store Connect,
-  archive, check the widget links AlarmKit weakly (`otool -L`), export
-  (uploads), then in App Store Connect paste the 3.1.0 What's New and
+  licence he says he holds). **Build 13 was archived from `1450fdc` and
+  uploaded at 19:11 that evening** (tests green, the widget's AlarmKit
+  link confirmed weak). Left to do, in App Store Connect by hand
+  (`docs/appstore/CHECKLIST.md` → "3.1.0 submission", step 5): create
+  version 3.1.0, attach build 13, paste the 3.1.0 What's New and
   the rewritten Description from `LISTING.md`, the 3.1.0 review notes,
   drop any grades screenshot, submit. Raise the `update-manifest` floor
   only once it is downloadable, with Olisa's word. Two decisions the
@@ -80,11 +119,9 @@ These block shipping, or would make shipping risky.
   any dismissal"); one ring with the app force-quit first; and, once the
   2026-10-20 build is on the phone, the new Live Activity (the Dynamic
   Island card, seen; the lock-screen card, not yet) and the in-app
-  takeover screen (seen once; try the three roads in). Before any TestFlight
-  build from this tree: `otool -L` on the Release archive's
-  `LHFWidgetExtension.appex` must show AlarmKit as `weak` (the widget
-  now imports it; the app's own link was weak in Debug and unchecked in
-  Release).
+  takeover screen (seen once; try the three roads in). The `otool -L`
+  check on the widget's AlarmKit link passed on the 3.1.0 Release archive
+  (2026-10-20: `weak`).
 - **Hear the loud alert's buttons on a phone** (`v8-loud-alert-actions`).
   With an item due in about 11 minutes: the three buzzes arrive Time
   Sensitive; "turned in" from the lock screen stops the next buzz and
@@ -158,6 +195,37 @@ These block shipping, or would make shipping risky.
 
 ## Next: features
 
+- **Announcements for ask, from Canvas and Ed** (plan written 2026-10-23,
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`, owner's request). Canvas
+  announcements have never reached ask (the collector's dead window); Ed
+  reaches it with holes. Four phases: fix the collector's window and
+  header; split the backend's gone rule into census and window kinds,
+  paginate the manifest read (PostgREST `max_rows` is 1000, confirmed),
+  reject a bad document alone, add `posted_at`; page the Ed read and
+  keep the anonymous promise; later, one Canvas path on the phone.
+  **Status 2026-10-23 evening:** Phases 1 to 3 are done, compiled
+  (2606/237), `sync` v12 live, and the phone's first sync on the build
+  uploaded 63 of this term's Canvas announcements and 36 Ed posts. Left:
+  the tree's answer on a phone (asked for), the `posted_at` migration
+  (Phase 2 step 5, needs a go), Phase 4 (owners' decision), and one
+  review finding in the Ed coordinator: a class whose `/tabs` lookup fails
+  mid-run has its stored Ed posts dropped instead of restored
+  (`restoreDropPlan`; CLAUDE.md → Known gaps).
+- **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
+  nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
+  the brief for the session that starts it: the standing rules, what the
+  browser has that the phone does not (the student's live Canvas,
+  Gradescope and Ed sessions), the privacy line a laptop copy of the work
+  list would cross, and the five scope questions to put to the owner
+  before the first brief.
+- **Hands-free voice mode for ask.** Today's mic (2026-10-22) dictates
+  into the composer and the student taps send. The owner's full ask was a
+  "voice mode": a spoken answer (`AVSpeechSynthesizer`, reading the
+  streamed text as it lands), and perhaps listen → send on silence → speak
+  → listen again on its own screen. Decided against auto-send in the first
+  version so a misheard word never sends a question. Build it on
+  `VoiceDictationController`; keep on-device recognition only, and keep
+  `docs/PRIVACY.md`'s "audio never leaves the phone" true.
 Roughly in priority order.
 
 - **Silent renewal follow-ups** (from the 2026-10-09 review, none
@@ -255,6 +323,21 @@ Roughly in priority order.
 
 Kept so nobody rebuilds them blind.
 
+- **"Connect your own Claude / ChatGPT account" to ask** (researched
+  2026-10-21, nothing built; `docs/AI_ACCOUNT_LINKING.md` is the report).
+  Olisa asked for a smoother path than pasting an API key. Findings: a
+  Claude account link cannot be built at all (Anthropic's legal page bans
+  third-party Claude.ai login, routing through Pro/Max credentials, and
+  even holding a session token; enforced through 2026); OpenAI's "Sign in
+  with ChatGPT" plan usage exists (2026-09-29) but admits only open-source
+  or local apps self-serve, Plus/Pro users, and a loopback redirect with no
+  iOS path. Ranked: keep developer-pays and move `ask` to a cheaper cached
+  model; add iOS 27 Private Cloud Compute (32K context, free under 2M
+  downloads in the Small Business Program) as the on-device responder's
+  upgrade; file OpenAI's interest form; OpenRouter PKCE sign-in and
+  paste-a-key only as opt-in power-user doors, key kept on the phone.
+  Re-check the OpenAI and OpenRouter wording live: those pages were read
+  through mirrors and search snippets from the container.
 - **Course-material sync fixes for ask** (2026-10-09). Written, tested
   (1636/160 on that branch), reviewed, and parked on
   **`parked/ask-course-sync-fixes`** the next day when Marco said not to
@@ -314,6 +397,20 @@ are replaced. Ordinary reminders keep their own class settings. Chime and
 pulse are original synthesized WAV assets. Validation: iOS Debug build succeeded; 109 targeted tests across five suites passed. Installed over Smooth 3.1.0 (13) and launched on Marco’s iPhone 17 Pro on 2026-10-23. Visual review in the simulator was skipped at the owner’s request; real alarm playback remains for phone testing.
 
 
+- **The Chrome extension** (2026-10-22, `3fa853b` through this commit on
+  `v8`; owner's scope: a helper for the phone). Pure ES-module ports of
+  the phone's parsing (course code, ICS, Gradescope, dedup, document
+  builders, Ed) with 467 node tests; a popup in the Smooth design reading
+  Canvas and Gradescope through the browser's own sessions; a collector
+  for every announcement, page and course PDF plus Ed staff posts; QR
+  pairing and end-to-end encrypted sync of completions, due edits and the
+  student's own tasks; the backend's `collector` rule, `file` kind,
+  `pair` and `device-sync` (406 Deno tests); the phone's half, never
+  compiled. Nothing deployed, nothing loaded in a real Chrome yet.
+- **2026-10-22: voice dictation in ask** (`v8`, 2485/227 green, built and working on Olisa's iPhone the same morning):
+  a mic in the composer, on-device recognition only, tap to listen and
+  tap send to send. The owner's "voice mode" request; the hands-free
+  version is under Next.
 - **2026-10-20: the debug diagnostics are off the Profile page** (`v8`,
   blind): the sign-in health lines, the ed status row, the three sync
   summaries and the "testing" section are behind

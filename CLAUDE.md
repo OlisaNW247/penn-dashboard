@@ -54,6 +54,12 @@ material by numeric Canvas course id, and two schools' ids would collide.
 on-device; course material is pooled server-side; ask has an on-device
 fallback." Grades, completions, submission state, the work list, the
 student's name, and Canvas/Gradescope cookies never leave the phone. The
+one exception, since 2026-10-22: a student who pairs the Chrome extension
+shares completions, due-date edits, their own tasks and the work list
+with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
+goes from the laptop's screen to the phone's camera and never to the
+server); the server stores ciphertext it cannot read. Name, reminder
+settings and grades are never in it. The
 PennKey password, if the student saves it, stays in this phone's Keychain
 and only ever goes to Penn's login page. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
@@ -105,10 +111,18 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Eight Edge Functions live in
+(`OnDeviceLanguageModel`). Ten Edge Functions live in
 `backend/supabase/functions/`: `ask`, `ask-canary`, `delete-account`,
-`discover-websites`, `extract-announcement`, `extract-profile`,
-`map-categories`, `sync`.
+`device-sync`, `discover-websites`, `extract-announcement`,
+`extract-profile`, `map-categories`, `pair`, `sync`. `pair` and
+`device-sync` (the Chrome extension's pairing and encrypted sync) and the
+`20261022090000_chrome_extension.sql` migration went live on 2026-10-22
+with Olisa's go (`sync` v11, `delete-account` v6); `extract-profile` v8
+and `discover-websites` v4 followed on 2026-10-23, also at his go, so
+every function that resolves a caller now knows a paired laptop. `sync` v12 (the
+window-kind rules of `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2) went
+live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
+40 live announcement documents, every one from spring 2026, and 97 Ed.
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
@@ -129,8 +143,11 @@ been stale before, so re-check it rather than trust it. `project.yml`
 stamps **3.1.0 (build 13)** on `v8` (2026-10-20, the release the owner
 asked to send straight to App Review that evening: the Smooth Sweeper,
 the exam cards, the megaphone redesign, Ed posts, the ask work and the
-sign-out fix, with Grade Watcher removed; the archive and upload run on
-Olisa's Mac, see `docs/appstore/CHECKLIST.md` → "3.1.0 submission").
+sign-out fix, with Grade Watcher removed). **Archived from `1450fdc` and
+uploaded to App Store Connect at 19:11 on 2026-10-20** ("Upload
+succeeded", `docs/appstore/CHECKLIST.md` → "3.1.0 submission"); whether
+it was attached to a 3.1.0 version and submitted for review is Olisa's
+step in App Store Connect and is not recorded here yet.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Builds 7–9 of 3.0.0
@@ -539,6 +556,26 @@ Keep this current. It is the fastest way for a new session to know what exists.
   answer are links when they can be tied to exactly one document
   (`CitationLinks`, 2026-10-10). Its own canned lines are a few words
   ("Couldn't find that.", "answering from your phone.").
+  Since 2026-10-22 (blind) the composer has a **mic** at its trailing
+  edge on iOS: tap to listen, the words stream into the field
+  (`VoiceDictationRules.merged`: the draft as it was, a space, the
+  transcript), tap again or tap send to stop; nothing is ever sent by the
+  mic itself, because a misheard word must not send a question the
+  student never asked. Recognition is Apple's `Speech` framework with
+  `requiresOnDeviceRecognition = true`, and the mic is hidden outright on
+  a device or language that cannot transcribe locally
+  (`VoiceDictationRules.availability` → `.hidden`), which is what lets
+  `docs/PRIVACY.md` say audio never leaves the phone. The audio session is
+  set to `.record` only while listening and restored afterwards (the
+  `AVAudioSession` trap). A 60-second cap stops a pocket tap. The two
+  usage strings (`NSMicrophoneUsageDescription`,
+  `NSSpeechRecognitionUsageDescription`) live in both `project.yml` and
+  `App/Info.plist`, pinned by `VoiceDictationTests`. Not on the Mac (its
+  sandbox would need the audio-input entitlement, and nothing there is
+  verified). Seen working on Olisa's iPhone the same morning ("mic is
+  working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
+  dictate-then-send was the agreed first version, hands-free with spoken
+  answers set aside (`ROADMAP.md` → Next).
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -748,6 +785,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
+- **Pair a laptop** (2026-10-22, never compiled). Scanning the Chrome
+  extension's QR code with the iPhone camera opens Smooth
+  (`smooth://pair?c=…#k=…`, `.onOpenURL` in `RootCore`) on "pair this
+  laptop?" (`PairLaptopSheet`), Penn installs past onboarding only. On
+  "pair" the phone claims the code under its own token and keeps the key
+  in the Keychain (`SyncKeyStore`). From then on `ContentView.refresh()`
+  runs `deviceSyncPass()` (foreground only, at most every 2 minutes):
+  fetch the laptop's sealed snapshot, merge, apply what the laptop changed
+  through the same paths a swipe, an edited date and the add sheet use
+  (inside `RemoteApplyGate`, so the tap hooks do not re-date them), then
+  seal and put the phone's own. Profile → accounts shows a "laptop" row
+  with "unpair" when paired. Pairing a second laptop unlinks the first.
+  Unpairing keeps the change log; disconnecting Canvas clears it and the
+  key.
+- **Chrome extension** (`chrome-extension/`, started 2026-10-22; nothing
+  loaded in a real Chrome yet). A helper for the phone, Penn only, loaded
+  unpacked: it collects course material the phone cannot reach with the
+  browser's own sessions, and syncs the student's completions, edits and
+  manual tasks with the phone, end-to-end encrypted after a QR pairing.
+  What is built and what is only designed: `docs/CHROME_EXTENSION.md` →
+  Status.
 
 ## Commands
 
@@ -849,11 +907,54 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current: 2464 tests / 225 suites, all green, on `v8` at `1a4ed6e`
+**Chrome extension (a separate suite; never add it to the Swift or Deno
+counts): 482 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+&& npm test`, node 22 in the cloud container).** The pure core: term,
+course code, assignment ids, content hash, ICS (74), dedup (64),
+Gradescope parsing (51), the sync snapshot (18, pinned to the shared
+AES-GCM vector the Swift suite also pins), and the course-material
+builders (141: HTML text, Canvas URLs, Canvas documents, Ed, sync plan).
+Plus 23 for the work list (the phone's todo · all · prev rules and due
+phrases) and the Canvas and Gradescope readers against a fake fetch.
+Plus 32 for the backend client, the pairing state machine and the QR
+encoder (whose pinned matrices were decoded back to their exact input by
+OpenCV in a scratch venv; that check is not part of `npm test`).
+Plus 28 for the collector and the Ed course matcher, against a fake fetch
+and a fake backend.
+Plus 14 for the encrypted device sync (a two-device round trip through a
+fake backend) and the popup's merge of the phone's work list.
+Plus 13 for Canvas Files (listing, skips, caps, non-fatal failures) with
+an injected extractor; pdf.js itself is checked only by hand in headless
+Chromium, not by `npm test`.
+Plus 9 for the worker's collection run (throttle, back-offs, persistence
+on a stop, follow-up calls). `node --test` takes
+a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
+
+**Current: 2606 tests / 237 suites, all green, on `v8` at `ad4f920`
+(2026-10-23, `swift test --no-parallel`, on Olisa's Mac, 8.3 s). Green on
+the first run. It compiled, all at once and for the first time, the
+Chrome extension's Swift half (2026-10-22, `BackendWire`, `Sync/`, the
+pairing and device-sync layer, `FileKindTests`, `DeviceSyncWiringTests`
+and the rest) and the three announcement phases of 2026-10-23
+(`CourseKnowledgeCollectorAnnouncementTests` 6, the Ed reader's 24 in
+`EdClientTests`, `EdIngestionTests` and the `EdRunStopTests` suite).
+Nothing removed. Not yet built to the phone.**
+Before it: 2485 / 227 at `e6aa754`
+(2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
+plus the 21 tests of `VoiceDictationTests` (two suites: the availability
+table and the draft merge; source scans of the two usage strings, the
+on-device flag, the record category, the lifecycle stops and the
+no-auto-send handler), nothing removed. Green on the first run, the
+count exactly as predicted, and the iOS Debug build (the only thing
+that compiles `VoiceDictationController`, whose body is `#if os(iOS)`)
+succeeded on the first try the same morning, was installed on Olisa's
+iPhone, and the mic worked on the first try: "mic is working
+perfectly" (10:39, a dictated question answered).**
+Before it: 2464 / 225 at `1a4ed6e`
 (2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
 the same count, with the sweeper section's copy test pinning two lines
 (the description at 17pt, the nudge in parentheses at 14pt). Green on
-the first run; the phone build of this tree is not yet recorded.**
+the first run; the phone build of this tree is not yet recorded.
 Before it: 2464 / 225 at `178de76` (2026-10-20 evening, 8.0 s):
 the same count as `38b578a`, with the nine `SweeperOnboardingTests`
 rewritten for the combined reminders page (no sweeper phase, the section
@@ -1212,7 +1313,24 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
-- Deno: 370 passed, 0 failed (2026-10-20, the semester fix; 366 after the
+- Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
+  posts exempt from the complete-set rule, a 120-day age-out on read,
+  the live read paginated in pages of 500 against the project's
+  PostgREST `max_rows` of 1000, per-document rejection on upload, a
+  150-per-class cap on window-kind downloads; 13 new tests, 4 edited
+  because they pinned the extension retiring announcements; Deno 2.9.8
+  `--no-check`, and the 2.1.4 type check clean; deployed as `sync` v12
+  the same day).
+- Deno before it: 406 passed, 0 failed (2026-10-22, `v8`, the Chrome extension's
+  backend: pairing, linked devices, encrypted sync blobs, the `collector`
+  rule and the `file` kind; in the cloud container with Deno 2.9.8 and
+  `--no-check`, because `deno task test`'s type-check fails under 2.9.8 on
+  three pre-existing `setTimeout` `Timeout`-vs-`number` errors in
+  `quota.ts` and `ask/index.ts`, identical before the change. The four
+  touched functions pass `deno check --no-lock`. The migration and
+  `rls.test.sql` have not run: no Postgres in the container.)
+- Deno before it: 370 passed, 0 failed (2026-10-20, the semester fix; 366 after the
   section-details change the same day, 350 before it; in the cloud
   container with Deno 2.9.7 and `--no-check`).
   `deno check` is clean under Deno 2.1.4 (`--no-lock`, the edge runtime's
@@ -1239,6 +1357,7 @@ path has only ever been exercised by hand on a device.
 | `docs/` | Design docs and plain-language explainers |
 | `ROADMAP.md` | The plan: release blockers, next features, parked experiments. Read with this file at the start of every session. |
 | `smooth-prototype/` | Marco's dependency-free HTML/CSS/JS tester for the Smooth redesign. Isolated from the app; `python3 -m http.server 4173 --directory smooth-prototype`. |
+| `chrome-extension/` | The Smooth Chrome extension (MV3, plain ES modules, no build step): a collector and encrypted sync helper for the phone. `docs/CHROME_EXTENSION.md` is its design record; `node --test chrome-extension/test` is its gate. |
 | `project.yml` | xcodegen source of truth for the Xcode project |
 
 ## Architecture
@@ -1409,10 +1528,18 @@ client problem. The pieces, all exercised by tests:
   its meetings, which `dbRowToCatalogRow` detects by key presence (a
   present `room: null` is a real online section) and `catalogNeedsFetch`
   refetches on the next manifest, so every enrolled course re-reads
-  within about an hour of the deploy. Since the same afternoon the fetch
-  names the semester (`academicSemester`, Traps: Penn Labs' `current`
-  had rolled to Spring 2027) and a row from another semester is
-  refetched and never served. The system instructions say the
+  within about an hour of the deploy. The same afternoon the fetch was
+  changed to name the semester (`academicSemester`, `396e464`, 14:29 UTC;
+  Traps: Penn Labs' `current` had rolled to Spring 2027) so a row from
+  another semester is refetched and never served. That commit was not
+  deployed until 2026-10-22 (`sync` v9 and `ask` v10 were from 13:35
+  UTC on the 20th, an hour before it, and every row refetched at 14:21
+  UTC that day was `2027A`), which is why on the morning of 2026-10-22
+  the tree gave CIS 2400's lecture as 12:00 to 1:29 in NBS AUD, Spring
+  2027's slot, when the fall section meets 1:45 to 3:14 in AGH 106B
+  (Penn Labs' `2026C` entry, read from Olisa's Mac). **Deployed with
+  Olisa's go at about 14:55 UTC on 2026-10-22 as `sync` v10 and `ask`
+  v11**; the rows flip to `2026C` on each install's next manifest call. The system instructions say the
   block never holds an exam room: those come from announcements and Ed
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
@@ -1507,6 +1634,43 @@ itself.
 
 ## Traps that have already bitten
 
+- **Canvas answers 401 for "not allowed", not only for "signed out".**
+  On 2026-10-23 the owner paired the Chrome extension, sync worked both
+  ways, and 40 minutes later the collector had uploaded nothing. Every
+  Canvas fetch in the collector read any 401 as a dead session and threw
+  the whole run away; but a course that hides its Files (common), Modules
+  or Pages answers `401 {"status":"unauthorized", "user not authorized
+  to perform that action"}` to a perfectly live session, so one such
+  course discarded every course's material. The phone's
+  `CanvasCourseContentClient` has the same rule (any 401/403 is
+  `sessionExpired`) and survives only because it never asks for Files.
+  The extension now judges a 401/403 by asking `/api/v1/users/self` once
+  per run: alive means that endpoint is forbidden (that course is not
+  fully synced; files are skipped), dead means out. An HTML page or a
+  redirect off Canvas is still "out" at once. The wrong fix is reading
+  the body's wording, which Canvas has changed before; the session check
+  asks the question that matters.
+
+- **An identity lookup on every call can take every function down.**
+  Since 2026-10-22 `requireUser` (`_shared/auth.ts`) looks the caller up
+  in `device_links` to resolve a paired Chrome extension to its phone. Its
+  first version failed every request on any lookup error, which is right
+  for a real error, but `ask` is redeployed from `v8` often, and one
+  deploy before `20261022090000_chrome_extension.sql` was applied would
+  have answered 502 to every phone. A missing table (`42P01`/`PGRST205`)
+  now means "not linked", which is exactly true; every other error still
+  fails closed. The wrong fix would have been falling back to the token's
+  own id on any error, which silently makes a linked device a stranger.
+- **The complete-set rule belongs to whoever collected the document.**
+  The `sync` upload retires every live document of a fully-synced course
+  the client did not list. The phone never holds announcements, pages
+  past 40 or files, so once the extension uploaded them the phone's next
+  hourly sync would have retired them all. `course_documents.collector`
+  (2026-10-22) limits a phone's report to `collector = 'phone'` rows; the
+  extension's report retires any collector, so it must list every
+  document it holds after applying `download`, as the phone does, or it
+  would retire the server's own `website` crawls.
+
 - **A "flagged, never deleted" doc comment was a delete.** Announcement
   rows hidden because their post vanished get `isGoneFromFeed`
   (`markGoneFromFeed`), copying the flag a vanished feed item gets, and
@@ -1566,9 +1730,15 @@ itself.
   dashboard now shows "not saving on this phone" (`StorageHealth`). See
   Known gaps.
 - **`AVAudioSession` is never configured by default**, and `AVPlayer` then
-  activates it as `.soloAmbient`, which stops the user's music. `SplashView` sets
-  `.ambient` + `.mixWithOthers`. The splash clips have **no audio track** — if
-  this resurfaces, muting is not the fix.
+  activates it as `.soloAmbient`, which stops the user's music. `SplashView`
+  used to set `.ambient` + `.mixWithOthers` for its clips (which had **no
+  audio track**; muting was never the fix). The splash and that line are
+  gone from the tree (checked 2026-10-22: no `AVAudioSession` use remained),
+  so the dictation controller (`VoiceDictationController`), the one thing
+  that now touches the session, remembers whatever category it finds, sets
+  `.record` only while listening, and puts the old one back with
+  `.notifyOthersOnDeactivation` on every stop path. Anything that plays
+  audio in future has to live with that or coordinate with it.
 - **Regex patterns needing real Unicode characters must not be raw strings.**
   `#"...\u{2013}..."#` passes the escape through literally, the pattern fails to
   compile, and `try?` turns that into a silent wrong answer.
@@ -1901,13 +2071,12 @@ itself.
   `processedAnnouncementIDsV1` held newer ids. Fixed by passing `until:`
   (tomorrow) from `syncAnnouncements`; the regression test's stub now
   honours the window the way Canvas does. The wrong fix is shortening the
-  look-back to 28 days. **Still broken, on purpose:**
-  `CourseKnowledgeCollector` asks for 200 days back with no `until`, so
-  its window ended about 172 days ago and it has never collected an
-  announcement (Marco's phone, same day: 106 course documents, none of
-  kind `announcement`). That is a one-argument fix in the course-material
-  sync, left for Marco and Olisa because Marco said not to touch the sync
-  (see Known gaps).
+  look-back to 28 days. The same bug sat in `CourseKnowledgeCollector`
+  (200 days back, no `until`, so its window ended about 172 days ago and
+  it never collected an announcement; Marco's phone, same day: 106 course
+  documents, none of kind `announcement`) until 2026-10-23, when the owner
+  had the sync touched (`9540751`, 120 days through tomorrow); the first
+  phone sync on that build uploaded 63 of this term's posts at 18:09 UTC.
 - **Every worktree's test run shares one defaults domain.** On 2026-10-10
   four agents ran `swift test` in four git worktrees at once and
   unrelated suites failed at random: `CourseContentDashboardTests` saw
@@ -2108,6 +2277,40 @@ none is a ship line.
 
 ## Known gaps
 
+- **Whether the extension can download Canvas Files is unknown**
+  (2026-10-22). Canvas redirects a file download to a separate signed
+  file host (Inst-FS for Instructure-hosted Canvas; Penn's not
+  confirmed), and a service-worker fetch with credentials can only read
+  it if that host's CORS allows it or the extension holds a host
+  permission for it. None was added: the host is unknown and a wildcard
+  would be a broad grant shown at install. A failed download is skipped
+  and retried next run, never fatal. The owner's first run says which:
+  if files never appear, read the redirect host off one download in
+  Chrome's network panel and add exactly that host.
+- **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
+  written in the cloud container with no toolchain): the `file` document
+  kind, `client` and `acceptsKinds` on the sync requests and the lossy
+  `download` decode (`BackendWire.swift`, 11 tests), and the sync snapshot
+  codec and merge (`Sync/`, 16 tests, among them the shared AES-GCM
+  vector), and the pairing and sync layer (`Sync/PairingLink`,
+  `SyncChangeLog`, `SyncSnapshotBuilder`, `SyncApplyPlan`,
+  `LowHangingFruitUI/DeviceSyncClient`, `SyncKeyStore`; 50 test
+  functions, 69 cases with the parameterized one expanded), and the app
+  wiring (`AppState+DeviceSync.swift`, `PairLaptopSheet.swift`, the
+  `smooth` URL scheme in `project.yml` and `App/Info.plist`, tap hooks in
+  `AppState`, the pass in `ContentView.refresh()` and at launch, the
+  laptop row in Profile; 13 tests in `DeviceSyncWiringTests`). Predicted:
+  **2512 + 63 test functions**; trust the Mac's count, not this one.
+  An independent read of all of it (2026-10-22) found nothing that should
+  fail to compile and one test that would fail (`profileRow`'s order
+  check: a section's header closure follows its rows in the source),
+  fixed; `canonicalJSON()` was split into typed lets so the type-checker
+  is not handed one literal with three closures.
+  `swift test --no-parallel` on the Mac is the first gate; a different
+  count or a red vector test means the phone and the extension disagree.
+  `SyncSnapshot` uses a hand-written JSON serializer and UTC date
+  formatter on purpose (key order and `Sendable`), so read a failure there
+  as a real disagreement, not flakiness.
 - **The Berserk alarm has rung once, on Marco's iPhone (iOS 26.6,
   2026-10-19, a build from before the review fixes).** The first try did
   not ring because alarms were not allowed for Smooth; after he allowed
@@ -2130,19 +2333,20 @@ none is a ship line.
   known from the review, both accepted: a sheet the dashboard has open (add, edit date,
   the megaphone) draws above the takeover, which is an `.overlay` on the
   root and not a presentation, so a signal that lands with a sheet up is
-  only seen once the sheet closes, and the extension's `import AlarmKit`
-  has not been checked to be weak-linked, so a Release archive's
-  `LHFWidgetExtension.appex` should be read with `otool -L` before any
-  TestFlight build, or the home-screen widget could fail to load on iOS
-  17–25);
+  only seen once the sheet closes; the extension's `import AlarmKit` IS
+  weak-linked: `otool -L` on the 3.1.0 (13) Release archive's
+  `LHFWidgetExtension.appex` printed `AlarmKit.framework ... weak` on
+  2026-10-20, so the Home Screen widget loads on iOS 17–25);
   the system "Stop" button (it opens the assignment in Canvas; Olisa has
   not reported trying it); what `schedule(id:)` does with an id that already exists
   and whether `cancel(id:)` throws for one that is gone; that both
   buttons work from the lock screen with `.foreground(.immediate)`;
   whether stop runs on swipe or the side button; whether the lock screen
   shows the due time next to the bare assignment name; and a launch on
-  iOS 17–25 (AlarmKit is weak-linked in the Debug build; a Release archive
-  has not been checked). Disconnecting Canvas does not cancel alarms until
+  iOS 17–25 (AlarmKit is weak-linked in the Debug build and, checked with
+  `otool -L` on 2026-10-20, in the 3.1.0 Release archive of both the app's
+  widget extension and, by the same linker setting, the app; a launch on
+  such a device is still untried). Disconnecting Canvas does not cancel alarms until
   the next reschedule, so leaving the app straight from Settings can let
   one ring for purged work (the buzzes have the same gap).
 - **The loud alert's buttons are proven on the Mac only** (2026-10-19,
@@ -2206,12 +2410,40 @@ none is a ship line.
   edits, deleting your own tasks, the widget, the "not saving" banner,
   the under-an-hour "8m" form. The sign-up rule can only be seen on a
   fresh install.
-- **ask has never seen an announcement.** `CourseKnowledgeCollector` asks
-  Canvas for announcements from 200 days back without an `until`, and
-  Canvas ends the window 28 days after it starts (the announcements-
-  window trap). Marco's phone, 2026-10-10: 106 course documents, none of
-  kind `announcement`. The fix is passing `until:` in that one call. It
-  is in the course-material sync, so it waits for Marco and Olisa.
+- **ask's Canvas announcements are blind** (2026-10-23, `9540751`,
+  `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 1): until then the
+  collector asked Canvas for announcements from 200 days back without an
+  `until`, and Canvas ends the window 28 days after it starts (the
+  announcements-window trap), so no term's announcement ever reached ask
+  (the pool held nine spring posts from one class on 2026-10-23). Now
+  120 days back through tomorrow, the document text is the message alone
+  (no device-zone `Posted:` line, so every phone and the extension hash
+  a post the same), an untitled or empty post never reaches the server,
+  a failed announcements request no longer lets a course count as fully
+  synced, and `courseKnowledgeSyncVersion` is 5. Compiled green on
+  2026-10-23 (2606/237), not yet on a phone; the new `CourseKnowledgeCollectorAnnouncementTests` drive
+  the collector through a `URLProtocol` stub whose other routes answer
+  `[]`, which no one has seen every sub-client accept. The backend half
+  (Phase 2, Deno 419/0) is on `v8` and not deployed; until `sync` is
+  redeployed, a phone whose announcements fetch fails still cannot
+  retire classmates' announcements (the collector no longer reports the
+  course fully synced), but the 1000-row manifest cap and the batch-wide
+  rejection remain live. `sync` v12 went live at about 16:00 UTC the same
+  day. **Seen working on Olisa's iPhone at 18:09 UTC the same day**: the
+  build's first course-material sync uploaded 63 announcements from this
+  term (LGST 1010 27, PHYS 0151 20 across its two sites, ACCT 1010 16;
+  the CIS classes post on Ed, not Canvas) with no `Posted:` line, no
+  empty or untitled document and 63 distinct hashes, and 36 Ed posts with
+  the posting-day header. The full-sync stamps did not move, correctly:
+  the manifest called every course fresh from the 17:29 run, so only the
+  announcements and Ed ran. Note the launch gap: nothing at launch runs
+  the Canvas chain; the dashboard's loop sleeps 5 minutes before its
+  first refresh and the root view's launch sync is the feed only, so a
+  phone that locks inside those 5 minutes syncs only on its next return
+  to the foreground (pre-existing, every build). Whether the tree
+  answers from the new posts is the next check. This touched the
+  course-material sync at the owner's direct request; Marco has not been
+  told yet.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently
   updated pages get their bodies; module items contribute titles only.
@@ -2227,16 +2459,32 @@ none is a ship line.
   unpaginated select, so a student past PostgREST's row limit (1000 by
   default; unverified for this project) gets a silently truncated
   manifest.
-- **`docs/PRIVACY.md` says anonymous Ed posts never leave the phone, and
-  nothing enforces it.** `EdThreadFilter` never reads `isAnonymous`, so
-  an anonymous post that staff pinned would be kept and pooled. Either
-  the keep-rule or the sentence has to change; the keep-rule is scraping
-  logic, which is Olisa's. Also from the 2026-10-10 Ed review, all in
-  the coordinator and left alone: a 401 partway through a run drops the
-  Ed documents of the classes not yet read; each read replaces a class's
-  whole Ed set with the newest 100 threads, so older pinned posts vanish
-  and pooled ones are downloaded and dropped again every sync; staff
-  answers inside student questions are never captured.
+- **The Ed reader fixes of 2026-10-23 compiled green (2606/237) but have not run on a phone** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
+  Phase 3, at the owner's direction; the Kit half rode in `9540751`, the
+  coordinator in the commit after it). `EdThreadFilter` now drops an
+  anonymous thread before the announcement and pinned rules, which makes
+  `docs/PRIVACY.md`'s promise true (a missing `is_anonymous` still
+  decodes as false, so the promise rests on Ed sending the field, which
+  it does today; flipping that default is the owner's call). The read
+  pages up to three pages of 100 until the window closes
+  (`EdClient.threadsWithinWindow`), so a pinned post beyond the 100th
+  newest thread no longer vanishes. A sign-out partway through a run
+  restores the unread classes' documents instead of dropping them (every
+  match is resolved before any read, so `drop` is only "no Ed match").
+  The Ed status line now leads with counts (`matched · read · restored ·
+  dropped · first failure`), which is how to find out why CIS 3990's
+  posts carry no posting day (ten of its rows on the server predate the
+  header's date, so no read of that class has completed since
+  2026-10-19). Ran on Olisa's iPhone at 18:09 UTC the same day: 36 Ed
+  posts re-read for CIS 2400 and CIS 4500, each with the posting-day
+  header. Found in review the same afternoon, not yet fixed: a class
+  whose Ed `/tabs` lookup fails on a flaky request (while another class's
+  cached launch URL lets the run go on) is treated as "no Ed match" by
+  `restoreDropPlan` and its stored posts are dropped for that run; it
+  should be restored like a class the read never reached. Still true:
+  pooled Ed posts are downloaded and dropped again every sync on a phone
+  whose class has no Ed match, and staff answers inside student questions
+  are never captured (no endpoint).
 - **A deleted announcement stays in the megaphone until it ages out**
   (since 2026-10-18 its task cards are hidden, for Canvas posts only; the
   list row is not). An Ed post that is deleted is not noticed at all: an

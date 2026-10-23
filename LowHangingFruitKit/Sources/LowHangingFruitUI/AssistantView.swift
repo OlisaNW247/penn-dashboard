@@ -92,6 +92,15 @@ struct AssistantView: View {
     /// this the same way the send button's does.
     @State private var pickedShapeProgress: Double = 0
     @FocusState private var composerFocused: Bool
+    #if os(iOS)
+    /// Dictation is iOS-only (on-device recognition, see `VoiceDictationRules`).
+    @StateObject private var dictation = VoiceDictationController()
+    /// The field's text at the moment listening began. The transcript is the
+    /// recogniser's whole result so far, so each update is merged onto this
+    /// and not onto the field's current text, which would repeat the words.
+    @State private var draftBeforeListening = ""
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     private let tree = TreeGeometry()
 
@@ -519,23 +528,44 @@ struct AssistantView: View {
 
     private var composer: some View {
         HStack(spacing: 11) {
-            TextField("ask about your classes…", text: $draft, axis: .vertical)
-                .font(.lhfSerif(16))
-                .foregroundStyle(Color.v2Ink)
-                .lineLimit(1...4)
-                .focused($composerFocused)
-                .submitLabel(.send)
-                .onSubmit { ask(draft) }
-                .padding(.horizontal, 17)
-                .padding(.vertical, 12)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.v2Card)
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(Color.v2Divider, lineWidth: 1)
-                        )
-                )
+            HStack(spacing: 8) {
+                TextField("ask about your classes…", text: $draft, axis: .vertical)
+                    .font(.lhfSerif(16))
+                    .foregroundStyle(Color.v2Ink)
+                    .lineLimit(1...4)
+                    .focused($composerFocused)
+                    .submitLabel(.send)
+                    .onSubmit { ask(draft) }
+                    .padding(.vertical, 12)
+                #if os(iOS)
+                micButton
+                #endif
+            }
+            // The vertical padding sits on the field, not the row, so the
+            // 44pt mic does not make the capsule taller than it was; the
+            // trailing inset shrinks when the mic is there so its hit area
+            // does not widen the capsule's right edge.
+            .padding(.leading, 17)
+            .padding(.trailing, composerTrailingInset)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.v2Card)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color.v2Divider, lineWidth: 1)
+                    )
+            )
+            #if os(iOS)
+            // Words only ever land in the field; nothing here sends them.
+            .onChange(of: dictation.transcript) { _, t in draft = VoiceDictationRules.merged(draft: draftBeforeListening, transcript: t) }
+            // Taken when listening actually begins, not at the tap: the first
+            // tap may go through a permission prompt and the draft can change.
+            .onChange(of: dictation.isListening) { _, on in if on { draftBeforeListening = draft } }
+            // Typing while listening would be overwritten by the next partial.
+            .onChange(of: composerFocused) { _, focused in if focused && dictation.isListening { dictation.stop() } }
+            .onChange(of: scenePhase) { _, phase in if phase != .active { dictation.stop() } }
+            .onDisappear { dictation.stop() }
+            #endif
 
             sendButton
         }
@@ -553,6 +583,39 @@ struct AssistantView: View {
             .ignoresSafeArea()
         )
     }
+
+    private var composerTrailingInset: CGFloat {
+        #if os(iOS)
+        return dictation.availability == .hidden ? 17 : 6
+        #else
+        return 17
+        #endif
+    }
+
+    #if os(iOS)
+    /// Absent entirely when the phone cannot recognise speech on-device.
+    /// Tapping starts listening and tapping again stops; the dictated words
+    /// stream into the field and the student sends them as usual.
+    @ViewBuilder
+    private var micButton: some View {
+        if dictation.availability != .hidden {
+            Button {
+                if !dictation.isListening { composerFocused = false }
+                dictation.toggle()
+            } label: {
+                Image(systemName: dictation.isListening ? "waveform" : "mic")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(dictation.isListening ? Color.smoothTomato : Color.v2DateText)
+                    .symbolEffect(.variableColor.iterative, isActive: dictation.isListening)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(conversation.isResponding)
+            .accessibilityLabel(dictation.isListening ? "stop listening" : "dictate")
+        }
+    }
+    #endif
 
     /// The send control is the fruit, and pressing it picks it: the persimmon
     /// detaches, tips, and falls out of the button while a fresh one fades in
@@ -612,6 +675,9 @@ struct AssistantView: View {
             sendPulse = 0
         }
 
+        #if os(iOS)
+        if dictation.isListening { dictation.stop() }
+        #endif
         draft = ""
         composerFocused = false
         withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {

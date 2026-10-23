@@ -622,6 +622,11 @@ struct ContentView: View {
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
+        // Encrypted sync with the paired laptop. Before the reload and the
+        // reschedule below, so what a remote device ticked or moved reaches
+        // the lists and the reminders in this same pass. A no-op without a
+        // key, throttled to once per two minutes, never a banner.
+        await state.deviceSyncPass()
         state.refreshCanvasSessionExpiredState()
         // Retry a silent Canvas renewal if the policy says one is due (it
         // does nothing while awaiting Duo, after a rejected password, or

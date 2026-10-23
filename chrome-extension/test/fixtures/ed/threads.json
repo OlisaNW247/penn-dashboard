@@ -1,0 +1,32 @@
+{"threads": [
+  {"id": 900, "user_id": 7, "course_id": 101, "type": "announcement", "title": "Midterm room",
+   "document": "<document version=\"2.0\"><paragraph>The midterm is in <bold>Towne 100</bold> &amp; starts at 10.</paragraph></document>",
+   "content": "<p>old rendering</p>", "category": "Exams", "subcategory": "Midterm",
+   "is_pinned": false, "is_private": false, "is_anonymous": false,
+   "created_at": "2026-10-12T11:30:00.123456-04:00", "updated_at": "2026-10-13T09:00:00.5-04:00", "number": 31, "reply_count": 2, "vote_count": 9},
+  {"id": 901, "user_id": 8, "course_id": 101, "type": "post", "title": "FAQ: late days",
+   "document": "<document version=\"2.0\"><paragraph>You have three late days.</paragraph></document>",
+   "category": "Policies", "subcategory": "",
+   "is_pinned": true, "is_private": false,
+   "created_at": "2026-10-01T14:00:00Z", "number": 4},
+  {"id": 902, "user_id": 8, "course_id": 101, "type": "post", "title": "STUDENT-ONLY-TITLE",
+   "document": "<document version=\"2.0\"><paragraph>STUDENT-ONLY-BODY</paragraph></document>",
+   "is_pinned": false, "is_private": false, "created_at": "2026-10-10T14:00:00Z", "number": 20},
+  {"id": 903, "user_id": 9, "course_id": 101, "type": "question", "title": "STAFF-QUESTION-TITLE",
+   "document": "<document version=\"2.0\"><paragraph>STAFF-QUESTION-BODY</paragraph></document>",
+   "is_pinned": false, "is_private": false, "created_at": "2026-10-10T15:00:00Z", "number": 21},
+  {"id": 904, "user_id": 9, "course_id": 101, "type": "post", "title": "Recitation moved",
+   "document": null, "content": "<p>Recitation moves to Thursday.</p>", "category": "Logistics",
+   "is_private": false, "created_at": "2026-10-11 09:15:00+00:00", "number": 22},
+  {"id": 905, "user_id": 7, "course_id": 101, "type": "announcement", "title": "PRIVATE-TITLE",
+   "document": "<document version=\"2.0\"><paragraph>PRIVATE-BODY</paragraph></document>",
+   "is_private": true, "created_at": "2026-10-11T10:00:00Z", "number": 23},
+  {"id": 906, "course_id": 101, "type": "post", "title": "NO-PRIVATE-FLAG-TITLE", "is_pinned": true,
+   "document": "<document version=\"2.0\"><paragraph>NO-PRIVATE-FLAG-BODY</paragraph></document>",
+   "created_at": "2026-10-11T10:00:00Z", "number": 24}
+ ],
+ "users": [
+  {"id": 7, "name": "Fixture Instructorname", "course_role": "admin", "email": "fixture.instructor@example.invalid"},
+  {"id": 8, "name": "Fixture Studentname", "course_role": "student"},
+  {"id": 9, "name": "Fixture Taname", "course_role": "ta"}
+ ]}

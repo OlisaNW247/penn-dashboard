@@ -1,0 +1,18 @@
+[
+  {
+    "id": 5001,
+    "context_code": "course_12345",
+    "title": "Midterm info",
+    "message": "<p>The midterm is on <strong>Friday</strong>.</p><p>Bring a calculator &amp; two pencils.</p>",
+    "posted_at": "2026-02-01T12:30:00.123Z",
+    "html_url": "https://canvas.upenn.edu/courses/12345/discussion_topics/5001"
+  },
+  {
+    "id": 5002,
+    "context_code": "course_67890",
+    "title": "Office hours moved",
+    "message": "Office hours moved to<br>Thursday 3-5pm.",
+    "posted_at": "2026-02-02T09:00:00Z",
+    "html_url": "https://canvas.upenn.edu/courses/67890/discussion_topics/5002"
+  }
+]

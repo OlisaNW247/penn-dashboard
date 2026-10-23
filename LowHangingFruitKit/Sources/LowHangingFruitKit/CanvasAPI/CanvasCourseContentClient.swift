@@ -333,22 +333,45 @@ public enum CourseDocumentBuilder {
     }
 
     /// An announcement from `CanvasAnnouncementsClient`, whose `message` is
-    /// already plain text.
-    public static func announcement(from announcement: CanvasAnnouncement, course: CourseSummary, now: Date = Date()) -> CourseDocument {
-        var lines: [String] = []
-        if let posted = announcement.postedAt {
-            lines.append("Posted: \(DateText.long(posted))")
-        }
+    /// already plain text. `nil` for a post with no message.
+    ///
+    /// `text` is the trimmed message and nothing else. It used to open with
+    /// `Posted: <DateText.long(posted)>`, rendered in the device's time zone
+    /// and locale, and the content hash that decides whether a document is
+    /// re-uploaded is FNV-1a of `title + "\u{1F}" + text`. Two classmates in
+    /// different zones (or one who travels) hashed the same post differently,
+    /// so each re-uploaded it over the other's copy forever. The posting time
+    /// is not lost: it already travels in `updatedAt`, which is what
+    /// `CourseDocument.shownPostedAt`, the excerpt's "posted Oct 18" tag, the
+    /// recency picks and the on-device "latest announcements" answer all read.
+    ///
+    /// The alternative, a fixed-zone header like Ed's `· posted yyyy-MM-dd`,
+    /// was not chosen. Ed needs its header because its `updatedAt` is the
+    /// thread's last activity, so the posting day has nowhere else to live. An
+    /// announcement's `updatedAt` IS the post time, and a header would be a
+    /// second copy of a date that readers would then have to parse back out
+    /// of the body. Documents synced before this change still carry a
+    /// `Posted:` line until they are re-synced, which is why
+    /// `ClassQuestionAnswerer.bodyText` still strips one.
+    ///
+    /// Two guards keep the builder from producing a document the server
+    /// rejects (its validator fails the whole 200-document batch on an empty
+    /// `title` or `text`). A post with a blank title is called "Announcement".
+    /// A post with a blank message is skipped: an empty document is
+    /// retrievable by nothing, so uploading it would cost a batch for no
+    /// answer.
+    public static func announcement(from announcement: CanvasAnnouncement, course: CourseSummary, now: Date = Date()) -> CourseDocument? {
         let message = announcement.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !message.isEmpty { lines.append(message) }
+        guard !message.isEmpty else { return nil }
+        let title = announcement.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return CourseDocument(
             courseID: course.courseID,
             course: course.code,
             kind: .announcement,
             sourceID: announcement.id,
-            title: announcement.title,
+            title: title.isEmpty ? "Announcement" : title,
             url: announcement.url,
-            text: lines.joined(separator: "\n"),
+            text: message,
             updatedAt: announcement.postedAt,
             fetchedAt: now
         )

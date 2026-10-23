@@ -97,6 +97,45 @@ struct BackendWireTests {
         #expect(!json.contains("submitted"))
     }
 
+    @Test("SyncManifestRequest encodes client phone and acceptsKinds covering every kind including file")
+    func encodesManifestClientAndAcceptsKinds() throws {
+        let request = SyncManifestRequest(courses: [], documents: [])
+        let data = try BackendJSON.encoder().encode(request)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["client"] as? String == "phone")
+        let accepted = try #require(object["acceptsKinds"] as? [String])
+        #expect(Set(accepted) == Set(CourseDocument.Kind.allCases.map(\.rawValue)))
+        #expect(accepted.contains("file"))
+    }
+
+    @Test("SyncUploadRequest encodes client phone")
+    func encodesUploadClient() throws {
+        let data = try BackendJSON.encoder().encode(SyncUploadRequest(documents: [], fullySyncedCourses: []))
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["client"] as? String == "phone")
+    }
+
+    @Test("a download entry with an unknown kind is skipped, its neighbours kept")
+    func lossyDownloadSkipsUnknownKind() throws {
+        func entry(_ kind: String, _ id: String) -> String {
+            #"{"id":"\#(kind):1234:\#(id)","courseID":"1234","course":"CIS 2400","kind":"\#(kind)","sourceID":"\#(id)","title":"T","text":"body","fetchedAt":"2026-09-07T14:03:00Z","contentHash":"h"}"#
+        }
+        let json = #"{"download":[\#(entry("page", "1")),\#(entry("hologram", "2")),\#(entry("file", "3"))]}"#
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.download.map(\.id) == ["page:1234:1", "file:1234:3"])
+        #expect(response.download.compactMap { $0.document() }.count == 2)
+    }
+
+    @Test("a structurally broken download entry is skipped without failing the manifest")
+    func lossyDownloadSkipsBrokenEntry() throws {
+        let good = #"{"id":"page:1234:1","courseID":"1234","course":"CIS 2400","kind":"page","sourceID":"1","title":"T","text":"b","fetchedAt":"2026-09-07T14:03:00Z","contentHash":"h"}"#
+        let broken = #"{"id":"page:1234:2","kind":"page"}"#
+        let json = #"{"coursesFresh":["1234"],"download":[\#(broken),\#(good)]}"#
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.download.map(\.id) == ["page:1234:1"])
+        #expect(response.coursesFresh == ["1234"])
+    }
+
     @Test("CourseSummaryWire encodes a summary's section, and decodes an absent one to nil")
     func courseSummaryWireSection() throws {
         let sectioned = CourseSummary(courseID: "1234", code: "PHYS 0151", name: "PHYS 0151-401 Lab", url: nil, section: "401")

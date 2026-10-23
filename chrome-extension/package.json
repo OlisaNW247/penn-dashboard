@@ -1,0 +1,1 @@
+{"name":"smooth-chrome-extension","private":true,"type":"module","scripts":{"test":"TZ=America/New_York node --test \"test/*.test.js\""}}

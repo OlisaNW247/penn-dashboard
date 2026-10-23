@@ -372,6 +372,32 @@ final class AppState: ObservableObject {
     var dueDateEditStore: DueDateEditStore? =
         SharedDefaults.isTestRunner ? nil : DueDateEditStore(defaults: .lhf)
 
+    // Device sync (`AppState+DeviceSync.swift`). An extension cannot hold
+    // stored properties, so the state it needs lives here.
+
+    /// When the student last changed each synced thing, and this install's id
+    /// in the sync. Nil under the test runner unless a test injects one, for
+    /// the reason `dueDateEditStore` gives: a test's tap must not write into
+    /// the defaults every other suite reads.
+    var syncChangeLog: SyncChangeLog? =
+        SharedDefaults.isTestRunner ? nil : SyncChangeLog(defaults: .lhf)
+
+    /// While a remote plan is being applied, the tap hooks (`markCompleted`,
+    /// `setDueDateEdit`, the manual and recurring add/remove) must not stamp
+    /// "now" on what another device decided, or phone and laptop would take
+    /// turns winning. See `RemoteApplyGate`.
+    let remoteApplyGate = RemoteApplyGate()
+
+    /// True when the Keychain holds the pairing key. Published so Profile's
+    /// "laptop" row appears and disappears with it; refreshed by
+    /// `refreshPairedLaptop()`, not read per frame (a Keychain query).
+    @Published var hasPairedLaptop = false
+
+    /// A sync pass is in flight / the last one's start. Neither is published:
+    /// nothing on screen shows them.
+    var isDeviceSyncRunning = false
+    var lastDeviceSyncAt: Date?
+
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
     /// store stays free of notification plumbing.
@@ -6361,6 +6387,7 @@ final class AppState: ObservableObject {
     }
 
     func addRecurringTask(_ task: RecurringTask) {
+        recordSyncChange(.manual, ids: [task.id.uuidString])
         recurringTasks.append(task)
         persistRecurringTasks()
         rebuildDashboardItems()
@@ -6391,6 +6418,9 @@ final class AppState: ObservableObject {
     /// is in memory, rebuilt by a scan), so there is no list for it to return to;
     /// a later scan offers it again exactly as it offered an accepted one before.
     func removeRecurringTask(id: UUID) {
+        if recurringTasks.contains(where: { $0.id == id }) {
+            recordSyncChange(.manual, ids: [id.uuidString])
+        }
         recurringTasks.removeAll { $0.id == id }
         persistRecurringTasks()
         clearDueDateEdits(forRecurringTask: id)
@@ -6403,6 +6433,7 @@ final class AppState: ObservableObject {
     private var manualWorkIsLedgerBacked: Bool { assignmentStore?.isPersistent == true }
 
     func addManualAssignment(_ assignment: ManualAssignment) {
+        recordSyncChange(.manual, ids: [assignment.id.uuidString])
         manualAssignments.append(assignment)
         if let store = assignmentStore, manualWorkIsLedgerBacked {
             store.upsert([assignment.asAssignment()])
@@ -6412,8 +6443,33 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Replaces a manual task's content in place, keeping its id and so its
+    /// completion and its edited due date. Only device sync calls this (a task
+    /// edited on another device); a remove-then-add would clear the due edit
+    /// (`removeManualAssignment`) and tombstone the id. Records no sync change
+    /// itself: the caller is applying a remote plan.
+    func replaceManualAssignment(_ assignment: ManualAssignment) {
+        guard let index = manualAssignments.firstIndex(where: { $0.id == assignment.id }) else { return }
+        manualAssignments[index] = assignment
+        if let store = assignmentStore, manualWorkIsLedgerBacked {
+            store.upsert([assignment.asAssignment()])
+        } else {
+            persistManualAssignments()
+        }
+        rebuildDashboardItems()
+    }
+
+    /// The recurring-task counterpart of `replaceManualAssignment`.
+    func replaceRecurringTask(_ task: RecurringTask) {
+        guard let index = recurringTasks.firstIndex(where: { $0.id == task.id }) else { return }
+        recurringTasks[index] = task
+        persistRecurringTasks()
+        rebuildDashboardItems()
+    }
+
     func removeManualAssignment(id: UUID) {
         let removed = manualAssignments.filter { $0.id == id }
+        if !removed.isEmpty { recordSyncChange(.manual, ids: [id.uuidString]) }
         manualAssignments.removeAll { $0.id == id }
         if let store = assignmentStore, manualWorkIsLedgerBacked {
             // The user deleting their own item is the one case where removing a
@@ -6717,7 +6773,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func rebuildDashboardItems(now: Date = Date()) {
+    func rebuildDashboardItems(now: Date = Date()) {
         updateCanvasCourseIDCache()
         refreshArchiveState(now: now)
         let recurringAssignments = effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
@@ -7284,6 +7340,7 @@ final class AppState: ObservableObject {
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        recordSyncChange(.completion, ids: Array(touched))
 
         guard let store = assignmentStore else {
             applyCompletionInMemory(touched, at: date)
@@ -7306,6 +7363,7 @@ final class AppState: ObservableObject {
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        recordSyncChange(.completion, ids: Array(touched))
 
         guard assignmentStore != nil else {
             // Same session-only degradation as `applyCompletionInMemory`: with
@@ -7353,7 +7411,7 @@ final class AppState: ObservableObject {
     /// so the two can never drift; without one (store creation failed — see
     /// `assignmentStore`), the optimistic values stand and completion is
     /// session-only, which is the same degradation the rest of the ledger has.
-    private func reloadCompletionFromLedger() {
+    func reloadCompletionFromLedger() {
         guard let record = assignmentStore?.completionRecord() else { return }
         completedAssignmentIDs = record.ids
         completionDates = record.dates

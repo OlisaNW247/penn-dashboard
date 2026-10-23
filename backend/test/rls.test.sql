@@ -8,6 +8,8 @@
 --   psql ... -f supabase/migrations/20260907000000_init.sql
 --   psql ... -f supabase/migrations/20260907120000_catalog.sql
 --   psql ... -f supabase/migrations/20260907180000_websites.sql
+--   psql ... -f supabase/migrations/20261002090000_ed_kind.sql
+--   psql ... -f supabase/migrations/20261022090000_chrome_extension.sql
 --   psql ... -v ON_ERROR_STOP=1 -f test/rls.test.sql
 --
 -- Every check is a `DO $$ ... RAISE EXCEPTION ... $$` block so a failure
@@ -435,6 +437,98 @@ begin
   end;
 end $$;
 
+rollback;
+
+-- Chrome extension tables (20261022090000_chrome_extension.sql): service
+-- role only. Neither anon nor authenticated may read or write pairings,
+-- device_links or device_sync_blobs, whoever they are; and the widened
+-- kind / new collector checks behave.
+set role service_role;
+insert into auth.users (id) values
+  ('33333333-3333-3333-3333-333333333333'); -- student A's laptop (device user)
+insert into public.device_links (device_user_id, owner_user_id) values
+  ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111');
+insert into public.device_sync_blobs (owner_user_id, device_id, ciphertext) values
+  ('11111111-1111-1111-1111-111111111111', 'laptop-device-1', 'AAAA');
+insert into public.pairings (code, device_user_id, expires_at) values
+  ('code-for-test', '22222222-2222-2222-2222-222222222222', now() + interval '10 minutes');
+insert into public.course_documents
+  (id, course_id, course_code, kind, source_id, title, text, content_hash, fetched_at, collector)
+values
+  ('file:100:9', '100', 'PHYS 151', 'file', '9', 'Slides', 'extracted text', 'h9', now(), 'extension');
+reset role;
+
+do $$
+begin
+  begin
+    set local role service_role;
+    insert into public.device_sync_blobs (owner_user_id, device_id, ciphertext)
+      values ('11111111-1111-1111-1111-111111111111', 'bad id!', 'AAAA');
+    raise exception 'device_id check accepted a malformed id';
+  exception when check_violation then null;
+  end;
+  reset role;
+  begin
+    set local role service_role;
+    update public.course_documents set collector = 'robot' where id = 'file:100:9';
+    raise exception 'collector check accepted an unknown collector';
+  exception when check_violation then null;
+  end;
+  reset role;
+end $$;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+
+do $$
+declare
+  n int;
+begin
+  begin
+    select count(*) into n from public.device_sync_blobs;
+    if n <> 0 then
+      raise exception 'authenticated owner saw % blob rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select count(*) into n from public.device_links;
+    if n <> 0 then
+      raise exception 'authenticated owner saw % link rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select count(*) into n from public.pairings;
+    if n <> 0 then
+      raise exception 'authenticated saw % pairing rows directly', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.device_links (device_user_id, owner_user_id)
+      values ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111');
+    raise exception 'authenticated was able to insert a device link';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+declare
+  n int;
+begin
+  begin
+    select count(*) into n from public.pairings;
+    if n <> 0 then
+      raise exception 'anon saw % pairing rows', n;
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+end $$;
 rollback;
 
 \echo 'rls.test.sql: all checks passed'

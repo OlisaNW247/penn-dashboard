@@ -218,3 +218,200 @@ struct EdWiringTests {
         #expect(knowledge == snapshot)
     }
 }
+
+/// What the Ed run does to a class's stored Ed documents when the run stops
+/// early (2026-10-23). Until then a sign-out partway through the classes
+/// left every class after it out of the matched set, so the drop rule
+/// deleted their stored Ed documents. Pure: the network is a fake reader and
+/// no store, Keychain or defaults is touched.
+@Suite("Ed run: stopped early restores, never drops")
+struct EdRunStopTests {
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private static let a = CourseSummary(courseID: "1", code: "CIS 1000", name: "A", url: nil)
+    private static let b = CourseSummary(courseID: "2", code: "CIS 2000", name: "B", url: nil)
+    private static let c = CourseSummary(courseID: "3", code: "CIS 3000", name: "C", url: nil)
+
+    private static let targets = [
+        EdDiscussionCoordinator.ReadTarget(edCourseID: 11, code: "CIS 1000", course: a),
+        EdDiscussionCoordinator.ReadTarget(edCourseID: 12, code: "CIS 2000", course: b),
+        EdDiscussionCoordinator.ReadTarget(edCourseID: 13, code: "CIS 3000", course: c),
+    ]
+
+    private static func doc(_ course: CourseSummary, kind: CourseDocument.Kind, id: String) -> CourseDocument {
+        CourseDocument(
+            courseID: course.courseID, course: course.code, kind: kind, sourceID: id,
+            title: "Doc \(id)", url: nil, text: "text \(id)", fetchedAt: now
+        )
+    }
+
+    /// The Ed documents the knowledge base held before the Canvas sync.
+    private static let prior = [
+        doc(a, kind: .ed, id: "oldA"),
+        doc(b, kind: .ed, id: "oldB"),
+        doc(c, kind: .ed, id: "oldC"),
+    ]
+
+    /// What the Canvas collector leaves behind: it re-fetched every course
+    /// and, knowing nothing of Ed, dropped all their Ed documents.
+    private static func collected() -> CourseKnowledgeBase {
+        CourseKnowledgeBase(
+            courses: [a, b, c],
+            documents: [doc(a, kind: .syllabus, id: "s"), doc(b, kind: .syllabus, id: "s"), doc(c, kind: .syllabus, id: "s")],
+            lastSyncedAt: now
+        )
+    }
+
+    private static func freshResponse(edCourseID: Int) -> EdThreadsResponse {
+        EdThreadsResponse(
+            threads: [EdThread(
+                id: 900, userID: 7, courseID: edCourseID, type: "announcement", title: "New",
+                content: "<p>fresh</p>", isPrivate: false, createdAt: now.addingTimeInterval(-86_400)
+            )],
+            users: []
+        )
+    }
+
+    /// A fake network: a result per Ed course id, and a record of who was asked.
+    private final class Reader: @unchecked Sendable {
+        private let lock = NSLock()
+        private let results: [Int: Result<EdThreadsResponse, EdClient.Error>]
+        private var askedStore: [Int] = []
+        init(_ results: [Int: Result<EdThreadsResponse, EdClient.Error>]) { self.results = results }
+        var asked: [Int] { lock.lock(); defer { lock.unlock() }; return askedStore }
+        func read(_ id: Int) throws -> EdThreadsResponse {
+            lock.lock(); askedStore.append(id); lock.unlock()
+            return try (results[id] ?? .failure(.http(404))).get()
+        }
+    }
+
+    /// The whole rule, as `perform` applies it after the reads.
+    private static func run(_ reader: Reader) async -> (
+        knowledge: CourseKnowledgeBase,
+        tally: EdDiscussionCoordinator.ReadTally,
+        plan: (drop: Set<String>, restore: Set<String>)
+    ) {
+        var knowledge = collected()
+        let tally = await EdDiscussionCoordinator.readTargets(targets, knowledge: &knowledge, now: now) { id in
+            try reader.read(id)
+        }
+        let matched = Set(targets.map { $0.course.courseID })
+        let plan = EdDiscussionCoordinator.restoreDropPlan(allIDs: ["1", "2", "3"], matched: matched, read: tally.readIDs)
+        EdDiscussionCoordinator.droppingEdDocuments(from: &knowledge, courseIDs: plan.drop)
+        EdDiscussionCoordinator.restoringEdDocuments(prior, into: &knowledge, courseIDs: plan.restore)
+        return (knowledge, tally, plan)
+    }
+
+    private func edIDs(_ knowledge: CourseKnowledgeBase) -> Set<String> {
+        Set(knowledge.documents.filter { $0.kind == .ed }.map(\.id))
+    }
+
+    @Test("a sign-out on the second of three classes: the first is replaced, the second and third are restored, nothing is dropped")
+    func signOutOnTheSecondClass() async {
+        let reader = Reader([
+            11: .success(Self.freshResponse(edCourseID: 11)),
+            12: .failure(.sessionExpired),
+            13: .success(Self.freshResponse(edCourseID: 13)),
+        ])
+        let result = await Self.run(reader)
+
+        // The run stopped at the 401: the third class was never asked.
+        #expect(reader.asked == [11, 12])
+        #expect(result.tally.signedOutCode == "CIS 2000")
+        #expect(result.tally.firstFailure == "sessionExpired")
+        #expect(result.tally.readIDs == ["1"])
+
+        #expect(result.plan.drop.isEmpty)
+        #expect(result.plan.restore == ["2", "3"])
+
+        // Class 1 holds the fresh thread and not its old one; classes 2 and
+        // 3 hold exactly what they held before the run.
+        #expect(edIDs(result.knowledge) == ["ed:1:900", "ed:2:oldB", "ed:3:oldC"])
+        // The syllabi are untouched either way.
+        #expect(result.knowledge.documents.filter { $0.kind == .syllabus }.count == 3)
+    }
+
+    @Test("the old rule would have dropped the unreached class: a plan built from the classes the loop reached deletes it")
+    func theOldShapeDropped() {
+        // Documents what the bug was, against the pure rule: when the matched
+        // set holds only the classes reached before the break, class 3 lands
+        // in `drop`.
+        let reachedOnly: Set<String> = ["1", "2"]
+        let plan = EdDiscussionCoordinator.restoreDropPlan(allIDs: ["1", "2", "3"], matched: reachedOnly, read: ["1"])
+        #expect(plan.drop == ["3"])
+    }
+
+    @Test("a sign-out on the first class restores all three")
+    func signOutOnTheFirstClass() async {
+        let reader = Reader([11: .failure(.sessionExpired)])
+        let result = await Self.run(reader)
+        #expect(reader.asked == [11])
+        #expect(result.plan.drop.isEmpty)
+        #expect(result.plan.restore == ["1", "2", "3"])
+        #expect(edIDs(result.knowledge) == ["ed:1:oldA", "ed:2:oldB", "ed:3:oldC"])
+    }
+
+    @Test("an ordinary failure on one class restores that class and the run goes on to the next")
+    func ordinaryFailureContinues() async {
+        let reader = Reader([
+            11: .success(Self.freshResponse(edCourseID: 11)),
+            12: .failure(.http(500)),
+            13: .success(Self.freshResponse(edCourseID: 13)),
+        ])
+        let result = await Self.run(reader)
+        #expect(reader.asked == [11, 12, 13])
+        #expect(result.tally.signedOutCode == nil)
+        #expect(result.tally.firstFailure == "http(500)")
+        #expect(result.plan.restore == ["2"])
+        #expect(result.plan.drop.isEmpty)
+        #expect(edIDs(result.knowledge) == ["ed:1:900", "ed:2:oldB", "ed:3:900"])
+    }
+
+    @Test("a class with no Ed match is still dropped: that is Ed saying it has nothing")
+    func unmatchedClassIsDropped() {
+        let plan = EdDiscussionCoordinator.restoreDropPlan(allIDs: ["1", "2", "3"], matched: ["1", "2"], read: ["1", "2"])
+        #expect(plan.drop == ["3"])
+        #expect(plan.restore.isEmpty)
+    }
+
+    // MARK: status line
+
+    @Test("the status line leads with the counts and the first failure's kind")
+    func statusLineCounts() {
+        let line = EdDiscussionCoordinator.statusLine(
+            matched: 3, read: 1, restored: 2, dropped: 0,
+            firstFailure: "sessionExpired", detail: "signed out; reconnecting next sync"
+        )
+        #expect(line == "matched 3 \u{00B7} read 1 \u{00B7} restored 2 \u{00B7} dropped 0 \u{00B7} first failure sessionExpired \u{00B7} signed out; reconnecting next sync")
+    }
+
+    @Test("with no failure the line has no failure part, and the counts survive the summary's length cap")
+    func statusLineNoFailureAndCap() {
+        let line = EdDiscussionCoordinator.statusLine(
+            matched: 12, read: 12, restored: 12, dropped: 12, firstFailure: nil,
+            detail: "connected: " + (0..<20).map { "CIS \(1000 + $0)" }.joined(separator: ", ")
+        )
+        #expect(line.hasPrefix("matched 12 \u{00B7} read 12 \u{00B7} restored 12 \u{00B7} dropped 12 \u{00B7} connected: "))
+        #expect(!line.contains("first failure"))
+        // Counts lead, so the cap cuts the class list and never the numbers.
+        let scrubbed = AppState.scrubbedForSummary(line)
+        #expect(scrubbed.hasPrefix("matched 12 \u{00B7} read 12 \u{00B7} restored 12 \u{00B7} dropped 12"))
+    }
+
+    @Test("failure kinds are fixed words and never a message")
+    func failureKinds() {
+        #expect(EdDiscussionCoordinator.failureKind(EdClient.Error.sessionExpired) == "sessionExpired")
+        #expect(EdDiscussionCoordinator.failureKind(EdClient.Error.http(503)) == "http(503)")
+        #expect(EdDiscussionCoordinator.failureKind(EdClient.Error.notHTTP) == "notHTTP")
+        #expect(EdDiscussionCoordinator.failureKind(EdClient.Error.invalidJSON("a thread body")) == "invalidJSON")
+        #expect(EdDiscussionCoordinator.failureKind(URLError(.notConnectedToInternet)) == "other")
+    }
+
+    @Test("a report's counts start at zero with no failure")
+    func reportDefaults() {
+        let report = EdDiscussionCoordinator.Report(statusLine: "")
+        #expect(report.matchedClasses == 0 && report.readClasses == 0)
+        #expect(report.restoredClasses == 0 && report.droppedClasses == 0)
+        #expect(report.firstFailure == nil)
+    }
+}

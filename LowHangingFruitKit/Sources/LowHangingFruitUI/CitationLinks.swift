@@ -108,7 +108,7 @@ enum CitationLinks {
         let w = fold(word)
         guard !w.isEmpty else { return false }
         if fold(kind.label) == w || kind.rawValue == w { return true }
-        return w == "canvas" && [.home, .assignment, .module, .page].contains(kind)
+        return w == "canvas" && [.home, .assignment, .module, .page, .file].contains(kind)
     }
 
     /// Normalised equality, or `detail` containing the whole `title` as

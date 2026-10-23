@@ -223,6 +223,18 @@ public struct FullySyncedCourse: Codable, Sendable, Equatable {
 /// upload requests apart.
 public struct SyncManifestRequest: Encodable, Sendable, Equatable {
     public let action: String = "manifest"
+    /// Which client is asking. The server's `download` list is filtered by
+    /// what the asker can use: `phone` never gets document kinds only the
+    /// extension produces unless it lists them in `acceptsKinds`.
+    public let client: String = "phone"
+    /// Every `CourseDocument.Kind` this build can decode, derived from
+    /// `allCases` so a new case is advertised the moment it exists in the
+    /// enum and not before. Relying on the server's gate alone would be the
+    /// wrong fix: it knows kinds by name, not by what an installed build
+    /// decodes, so only the client can say what it accepts. The lossy
+    /// `download` decode below is the second line for a kind this list
+    /// could not anticipate.
+    public let acceptsKinds: [String] = CourseDocument.Kind.allCases.map(\.rawValue)
     public let courses: [CourseSummaryWire]
     public let documents: [DocumentStub]
 
@@ -284,10 +296,32 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         coursesFresh = try container.decodeIfPresent([String].self, forKey: .coursesFresh) ?? []
         serverManifest = try container.decodeIfPresent([DocumentStub].self, forKey: .serverManifest) ?? []
-        download = try container.decodeIfPresent([CourseDocumentWire].self, forKey: .download) ?? []
+        // Decoded entry by entry so one document this build cannot use
+        // (a kind a newer server or the extension invented, or a row with a
+        // field the wire type requires missing) costs that document and not
+        // the catalog, profiles and every other download in the response.
+        // An unknown kind is dropped here, not left for
+        // `applyDownloads`'s `compactMap`, so `download` only ever holds
+        // kinds this build can name. The `id` consistency check stays in
+        // `document()`. Nothing about the dropped entry is logged: its title
+        // and text are course material.
+        let lossyDownloads = try container.decodeIfPresent([LossyDocumentWire].self, forKey: .download) ?? []
+        download = lossyDownloads.compactMap(\.wire).filter { CourseDocument.Kind(rawValue: $0.kind) != nil }
         catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
         let wireProfiles = try container.decodeIfPresent([CourseProfileWire].self, forKey: .profiles) ?? []
         profiles = wireProfiles.compactMap { $0.profile() }
+    }
+}
+
+/// One element of the manifest's `download` array, decoded without letting a
+/// failure escape. The wrapper's own `init(from:)` never throws, which is what
+/// lets the surrounding unkeyed container advance past a bad element; throwing
+/// out of the element decode directly would fail the whole array.
+private struct LossyDocumentWire: Decodable {
+    let wire: CourseDocumentWire?
+
+    init(from decoder: Decoder) {
+        wire = try? CourseDocumentWire(from: decoder)
     }
 }
 
@@ -348,6 +382,9 @@ public struct CourseProfileWire: Decodable, Sendable, Equatable {
 /// now vouch for completely.
 public struct SyncUploadRequest: Encodable, Sendable, Equatable {
     public let action: String = "upload"
+    /// Same identification as on `SyncManifestRequest`: the server stores
+    /// whichever client uploaded a row last, so it has to be told.
+    public let client: String = "phone"
     public let documents: [CourseDocumentWire]
     public let fullySyncedCourses: [FullySyncedCourse]
     /// Outbound links this run found in Canvas content, so the server has

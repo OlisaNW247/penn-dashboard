@@ -53,8 +53,29 @@ public struct CourseKnowledgeCollector: Sendable {
     }
 
     /// How far back announcements are pulled on a sync. A semester is about
-    /// 115 days; 200 covers a course that started early or ran late.
-    public static let announcementLookbackDays = 200
+    /// 115 days; 120 covers it and matches the Ed window
+    /// (`EdIngestion.defaultMaxAge`), so the two kinds of post the assistant
+    /// reads age out together. It was 200 until 2026-10-23, and that number
+    /// was never the problem: the request carried no end (see `announcementUntil`),
+    /// so the collector never received a post from the current term.
+    public static let announcementLookbackDays = 120
+
+    /// The end of the announcements window: one day after `now`. The end is
+    /// not optional. Canvas's announcements API defaults `end_date` to 28 days
+    /// after `start_date`, so a request that sends only `start_date` 200 days
+    /// back asks for "200 to 172 days ago" and returns nothing from this term,
+    /// with a normal-looking 200 and no error. That is what this collector
+    /// did from `assistant-ui` until 2026-10-23: everything downstream of an
+    /// `.announcement` document (upload, search boost, recency picks,
+    /// citations) was built and fed nothing. The extra day covers clock skew
+    /// between the phone and Canvas, the reasoning of
+    /// `AppState.announcementFetchWindow`. The wrong fix is shortening the
+    /// look-back to 28 days, which would also work and throw away most of a
+    /// term; the other wrong fix is changing `CanvasAnnouncementsClient`'s
+    /// default, whose no-`until` URL its own tests pin on purpose.
+    public static func announcementUntil(now: Date) -> Date {
+        now.addingTimeInterval(86_400)
+    }
 
     private let baseURL: URL
     private let cookies: [HTTPCookie]
@@ -98,6 +119,8 @@ public struct CourseKnowledgeCollector: Sendable {
         var documents: [CourseDocument] = []
         var errors: [String] = []
         var synced: Set<String> = []
+        // Set when the one announcements call fails. See the catch below.
+        var announcementsFailed = false
         // Outbound links, gathered only from pages, assignments and module
         // items — never announcements, which are noisy (a link to a due
         // Gradescope assignment, a Zoom room, a form) compared to the
@@ -110,13 +133,32 @@ public struct CourseKnowledgeCollector: Sendable {
         do {
             let client = CanvasAnnouncementsClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
             let since = now.addingTimeInterval(-Double(Self.announcementLookbackDays) * 86_400)
-            let announcements = try await client.fetchAnnouncements(courseIDs: courses.map(\.courseID), since: since)
+            let announcements = try await client.fetchAnnouncements(
+                courseIDs: courses.map(\.courseID),
+                since: since,
+                until: Self.announcementUntil(now: now)
+            )
             for announcement in announcements {
                 guard let course = byCourse[announcement.courseID] else { continue }
-                documents.append(CourseDocumentBuilder.announcement(from: announcement, course: course, now: now))
+                // `nil` is a post with no message: see the builder for why
+                // it is left out rather than uploaded empty.
+                if let document = CourseDocumentBuilder.announcement(from: announcement, course: course, now: now) {
+                    documents.append(document)
+                }
             }
         } catch {
             errors.append("announcements: \(error.localizedDescription)")
+            // The one call covers every course. A course whose own endpoints
+            // all answered would otherwise be counted as fully re-synced with
+            // no announcements in the run, and `merge` would drop the ones the
+            // phone already holds while the upload's complete-set rule told
+            // classmates they are gone. A failed call therefore keeps every
+            // course out of `synced` below: nothing is dropped locally or
+            // reported gone, and what did arrive still merges in. The wrong
+            // fix is carrying the stored announcements into `documents` by
+            // hand, which would refresh their `fetchedAt` as if Canvas had
+            // just confirmed them.
+            announcementsFailed = true
         }
 
         let content = CanvasCourseContentClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
@@ -182,8 +224,9 @@ public struct CourseKnowledgeCollector: Sendable {
 
             // A course counts as re-synced (so vanished documents are dropped)
             // only when most of its endpoints answered; otherwise the last
-            // good copy is kept rather than half-erased.
-            if courseErrors <= 1 { synced.insert(course.courseID) }
+            // good copy is kept rather than half-erased. Never when the
+            // announcements call failed: see the catch above.
+            if courseErrors <= 1 && !announcementsFailed { synced.insert(course.courseID) }
         }
 
         var knowledge = store.load()
