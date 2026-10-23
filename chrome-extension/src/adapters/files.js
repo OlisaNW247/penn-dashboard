@@ -33,7 +33,7 @@ export function cleanFileText(raw) {
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class Stop extends Error {
-  constructor(kind) { super(kind); this.kind = kind; } // rateLimited | out | http | network | decode | unsafe
+  constructor(kind) { super(kind); this.kind = kind; } // rateLimited | out | forbidden | http | network | decode | unsafe
 }
 
 function isObject(v) { return typeof v === "object" && v !== null && !Array.isArray(v); }
@@ -68,18 +68,24 @@ export function decodeFileEntry(raw) {
 //   seen         { [fileID]: updated_at } from the last run; unchanged files are skipped
 //   now          fetchedAt
 //   sleep        for tests
+//   confirmSession  optional async () => boolean, "is the Canvas session alive?" (the
+//                collector's memoised /users/self check). Canvas answers 401 for a
+//                forbidden resource too (a course that hides its Files tab), so with
+//                it a 401/403 on a live session is "forbidden": the listing is skipped
+//                quietly (counts.forbidden) or one download is skipped. Without it a
+//                401 is "out", as before.
 //   limits       { maxFiles = 60, delayMs = 250, maxBytes = 25 MB, sleep }
 // Returns { documents, seen, stopped, counts }. `seen` is the new map (old
 // entries for files still listed, plus every file handled this run, including
 // scans that had no text; failed downloads are not recorded so they retry).
 // `stopped` is null, "rateLimited" or "out" (the caller stops its Canvas run
 // on rateLimited). Never throws.
-export async function collectFiles({ fetch: fetchFn, courseID, course, extractText, seen = {}, now, sleep, limits = {} } = {}) {
+export async function collectFiles({ fetch: fetchFn, courseID, course, extractText, seen = {}, now, sleep, confirmSession, limits = {} } = {}) {
   const delayMs = limits.delayMs ?? FILES_DEFAULT_DELAY_MS;
   const maxFiles = limits.maxFiles ?? FILES_DEFAULT_MAX;
   const maxBytes = limits.maxBytes ?? FILE_MAX_BYTES;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
-  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, requests: 0 };
+  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0 };
   const result = { documents: [], seen: { ...seen }, stopped: null, counts };
   const fetchedAt = now === undefined ? new Date() : new Date(now);
 
@@ -92,11 +98,13 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     } catch {
       throw new Stop("network");
     }
-    if (res.status === 401) throw new Stop("out");
     if (res.status === 429) throw new Stop("rateLimited");
-    if (res.status === 403) {
+    if (res.status === 401 || res.status === 403) {
       const t = await res.text().catch(() => "");
-      throw new Stop(/rate limit/i.test(t) ? "rateLimited" : "http");
+      if (res.status === 403 && /rate limit/i.test(t)) throw new Stop("rateLimited");
+      if (typeof confirmSession !== "function") throw new Stop(res.status === 401 ? "out" : "http");
+      if (looksLikeHTML(stripAntiHijackPrefix(t))) throw new Stop("out");
+      throw new Stop((await confirmSession()) ? "forbidden" : "out");
     }
     if (!res.ok) throw new Stop("http");
     return res;
@@ -125,6 +133,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     }
   } catch (e) {
     if (e instanceof Stop && (e.kind === "rateLimited" || e.kind === "out")) { result.stopped = e.kind; return result; }
+    if (e instanceof Stop && e.kind === "forbidden") { counts.forbidden += 1; return result; } // Files tab hidden: skip quietly
     if (entries.length === 0) return result;
   }
 
@@ -170,7 +179,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       counts.extracted += 1;
     } catch (err) {
       if (err instanceof Stop && (err.kind === "rateLimited" || err.kind === "out")) { result.stopped = err.kind; break; }
-      counts.failed += 1; // network / http: not recorded in `seen`, so it is tried again next run
+      counts.failed += 1; // network / http / forbidden: not recorded in `seen`, so it is tried again next run
     }
   }
   return result;

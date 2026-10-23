@@ -898,7 +898,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 471 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+counts): 482 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -1623,6 +1623,23 @@ itself.
   first.
 
 ## Traps that have already bitten
+
+- **Canvas answers 401 for "not allowed", not only for "signed out".**
+  On 2026-10-23 the owner paired the Chrome extension, sync worked both
+  ways, and 40 minutes later the collector had uploaded nothing. Every
+  Canvas fetch in the collector read any 401 as a dead session and threw
+  the whole run away; but a course that hides its Files (common), Modules
+  or Pages answers `401 {"status":"unauthorized", "user not authorized
+  to perform that action"}` to a perfectly live session, so one such
+  course discarded every course's material. The phone's
+  `CanvasCourseContentClient` has the same rule (any 401/403 is
+  `sessionExpired`) and survives only because it never asks for Files.
+  The extension now judges a 401/403 by asking `/api/v1/users/self` once
+  per run: alive means that endpoint is forbidden (that course is not
+  fully synced; files are skipped), dead means out. An HTML page or a
+  redirect off Canvas is still "out" at once. The wrong fix is reading
+  the body's wording, which Canvas has changed before; the session check
+  asks the question that matters.
 
 - **An identity lookup on every call can take every function down.**
   Since 2026-10-22 `requireUser` (`_shared/auth.ts`) looks the caller up
