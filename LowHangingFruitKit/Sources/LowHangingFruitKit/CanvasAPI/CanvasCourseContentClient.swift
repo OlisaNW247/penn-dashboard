@@ -19,7 +19,16 @@ import Foundation
 /// `CanvasGradesClient` — the same stance that file documents.
 public struct CanvasCourseContentClient: Sendable {
     public enum Error: Swift.Error, Sendable, LocalizedError, Equatable {
-        /// 401/403, or Canvas silently redirected to its HTML login page.
+        /// 401, or Canvas silently redirected to its HTML login page. A 403 is
+        /// deliberately NOT this: Canvas answers 403 for "this account may not
+        /// see this course's content" (an unpublished course, an instructor
+        /// who closed assignments), which is one course's problem. Treating it
+        /// as a dead session aborted the whole materials sync before it saved
+        /// anything. It surfaces as `http(403)`, a per-course error that makes
+        /// that course partial. Caveat recorded by the author of the idea
+        /// (Marco, `10cd49f`): Canvas also answers a forbidden course with a
+        /// 401 `{"status":"unauthorized"}` body, which no client here reads,
+        /// so that case still looks like a sign-out and still aborts the run.
         case sessionExpired
         case http(Int)
         case notHTTP
@@ -133,7 +142,8 @@ public struct CanvasCourseContentClient: Sendable {
         CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
-        if http.statusCode == 401 || http.statusCode == 403 { throw Error.sessionExpired }
+        // Only 401 means the session is dead; 403 falls through to `http(403)`.
+        if http.statusCode == 401 { throw Error.sessionExpired }
         guard (200..<300).contains(http.statusCode) else { throw Error.http(http.statusCode) }
         if let type = http.value(forHTTPHeaderField: "Content-Type"), type.localizedCaseInsensitiveContains("text/html") {
             throw Error.sessionExpired
