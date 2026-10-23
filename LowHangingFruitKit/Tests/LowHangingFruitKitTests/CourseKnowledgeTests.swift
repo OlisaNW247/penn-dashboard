@@ -71,14 +71,21 @@ struct CourseContentAPITests {
         #expect(syllabus.url?.path == "/courses/1234/assignments/syllabus")
         #expect(CourseDocumentBuilder.syllabus(from: SyllabusCandidate(id: "x", source: .pasted, name: "", text: "  "), course: Self.course) == nil)
 
-        let announcement = CourseDocumentBuilder.announcement(
-            from: CanvasAnnouncement(id: "9", courseID: "1234", title: "Exam moved", message: "The midterm is now Oct 21.", postedAt: Date(timeIntervalSince1970: 1_800_000_000), url: URL(string: "https://canvas.upenn.edu/courses/1234/discussion_topics/9")),
+        let posted = Date(timeIntervalSince1970: 1_800_000_000)
+        let announcement = try #require(CourseDocumentBuilder.announcement(
+            from: CanvasAnnouncement(id: "9", courseID: "1234", title: "Exam moved", message: "The midterm is now Oct 21.", postedAt: posted, url: URL(string: "https://canvas.upenn.edu/courses/1234/discussion_topics/9")),
             course: Self.course
-        )
+        ))
         #expect(announcement.kind == .announcement)
         #expect(announcement.id == "announcement:1234:9")
-        #expect(announcement.text.hasPrefix("Posted: "))
-        #expect(announcement.text.contains("The midterm is now Oct 21."))
+        // This used to pin a "Posted: <date>" first line. That line was
+        // rendered in the device's zone and locale and is part of the content
+        // hash, so two classmates hashed one post differently and re-uploaded
+        // it over each other forever. The text is the message alone now, and
+        // the posting time travels in `updatedAt`.
+        #expect(announcement.text == "The midterm is now Oct 21.")
+        #expect(!announcement.text.contains("Posted:"))
+        #expect(announcement.updatedAt == posted)
 
         let items = [
             CanvasModulesClient.ModuleItem(id: "1", title: "Lecture 3 slides", dueAt: nil, typeRaw: "File", moduleName: "Week 2"),

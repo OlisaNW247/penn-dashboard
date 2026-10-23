@@ -62,14 +62,14 @@ public struct EdClient: Sendable {
     /// GET /courses/<id>/threads: one page of a course's threads, newest
     /// first by default.
     ///
-    /// Phase 1 reads exactly one page of `sort=new` and never paginates. What
-    /// it wants is staff posts, announcements and pinned threads
-    /// (`EdThreadFilter`), and the newest 100 threads of a course cover a
-    /// semester of those for any realistic course: staff post far less than
-    /// students do, and a pinned thread is by definition recent enough to
-    /// have been kept on top. Paging deeper would mostly download student
-    /// threads only to throw them away. `limit` is clamped to Ed's own cap of
-    /// 100, since asking for more is a 400 and a lost sync.
+    /// This is one page and nothing more; the sync reads through
+    /// `threadsWithinWindow`, which pages. (Until 2026-10-23 the sync read
+    /// only this one page, on the theory that the newest 100 threads cover a
+    /// semester of staff posts. They do not on a busy board: a pinned
+    /// announcement older than the 100th newest thread was never read, and
+    /// because each read replaces a class's whole Ed set, it then vanished
+    /// from the phone.) `limit` is clamped to Ed's own cap of 100, since
+    /// asking for more is a 400 and a lost sync.
     public func threads(courseID: Int, limit: Int = 100, offset: Int = 0, sort: String = "new") async throws -> EdThreadsResponse {
         let clamped = min(max(limit, 1), Self.maxLimit)
         let url = url(path: "courses/\(courseID)/threads", query: [
@@ -79,6 +79,76 @@ public struct EdClient: Sendable {
         ])
         let data = try await fetch(url)
         return try decode(EdThreadsResponse.self, from: data)
+    }
+
+    /// How many pages of `maxLimit` threads `threadsWithinWindow` reads at
+    /// most: 300 threads, three requests per class per run.
+    ///
+    /// Why 3. What the sync wants is announcements, pinned threads and staff
+    /// posts, and on a board with more than 300 threads in 120 days (a
+    /// question board, where students post all day) those are a small
+    /// fraction of what is there, so paging further would download hundreds
+    /// of student threads only to throw them away, for a handful of extra
+    /// kept posts. The cap also bounds a run: a student with six Ed classes
+    /// costs at most 18 thread requests, and it is the same number whether
+    /// the board is busy or the window never closes (a clock far in the
+    /// past, a board of old threads that Ed keeps sorting first).
+    public static let maxWindowPages = 3
+
+    /// GET /courses/<id>/threads, paged newest first until the ingestion
+    /// window closes: the union of the pages read, in the order Ed returned
+    /// them.
+    ///
+    /// **Stops, checked after each page, in this order:**
+    /// 1. the page is short (fewer than `maxLimit` threads, an empty page
+    ///    included): the board has no more;
+    /// 2. the page's oldest thread, by last activity (`updatedAt`, else
+    ///    `createdAt`, the same value `EdIngestion.documents` ages by), is
+    ///    older than `now - maxAge`: everything on later pages is older
+    ///    still, so none of it can become a document;
+    /// 3. `pageLimit` pages have been read (default `maxWindowPages`).
+    ///
+    /// Offsets go 0, 100, 200. That `sort=new` runs in the same order as
+    /// last activity is assumed, not verified: if Ed sorts by creation, a
+    /// long-ago thread revived by a reply could sit on a page this rule
+    /// stops before. That costs the same missed post the one-page read
+    /// always had, no more.
+    ///
+    /// **An error on any page throws, and the pages already read are
+    /// discarded.** The caller replaces a class's whole Ed set with what
+    /// this returns, so handing back a partial union would erase the posts
+    /// on the pages not reached; a throw makes the coordinator keep the
+    /// stored set instead. A thread that moves between pages while paging
+    /// (a reply bumps it up the list between two requests) can come back
+    /// twice, so a repeated thread id keeps its first copy; the side-loaded
+    /// `users` are merged the same way, by user id.
+    public func threadsWithinWindow(
+        courseID: Int,
+        maxAge: TimeInterval = EdIngestion.defaultMaxAge,
+        now: Date = Date(),
+        pageLimit: Int = EdClient.maxWindowPages
+    ) async throws -> EdThreadsResponse {
+        let cutoff = now.addingTimeInterval(-maxAge)
+        let pages = max(pageLimit, 1)
+        var collected: [EdThread] = []
+        var users: [EdThreadUser] = []
+        var seenThreads = Set<Int>()
+        var seenUsers = Set<Int>()
+        for page in 0..<pages {
+            let response = try await self.threads(
+                courseID: courseID, limit: Self.maxLimit, offset: page * Self.maxLimit, sort: "new"
+            )
+            for thread in response.threads where seenThreads.insert(thread.id).inserted {
+                collected.append(thread)
+            }
+            for user in response.users where seenUsers.insert(user.id).inserted {
+                users.append(user)
+            }
+            if response.threads.count < Self.maxLimit { break }
+            let oldest = response.threads.map { $0.updatedAt ?? $0.createdAt }.min()
+            if let oldest, oldest < cutoff { break }
+        }
+        return EdThreadsResponse(threads: collected, users: users)
     }
 
     /// Adds the headers that carry the student's identity. Pure and

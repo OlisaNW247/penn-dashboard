@@ -239,6 +239,12 @@ and on window (60 vs 120 days), and neither matters to ask.
 3. Phase 3, compiled, on the phone, with the CIS 3990 check.
 4. Phase 4 when the owners decide.
 
-Pending from before and unrelated to this plan: the semester fix on
-`v8` (`396e464`) is still not deployed; 11 catalog rows still hold
-Spring 2027 sections.
+Since this was written: the semester fix went live on 2026-10-22 (`sync`
+v10, `ask` v11) and the Chrome extension work of the same day added a
+`collector` column (a phone's complete-set report now retires only rows
+the phone collected) and its own announcement collector, which already
+sends Canvas an end date. Phase 1 therefore also keeps the extension's
+builder byte-identical to the phone's: both now drop the device-zone
+`Posted:` line rather than adopting a new header, because the post time
+already travels in `updatedAt` and every reader derives the date from
+that.

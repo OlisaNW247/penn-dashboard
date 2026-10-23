@@ -210,7 +210,7 @@ const READERS = {
     const pages = await canvasPaged(ctx, announcementsRequestURL([course.courseID], now));
     const announcements = decoding(() => pages.flatMap((p) => decodeAnnouncements(p)));
     return {
-      documents: announcements.filter((a) => a.courseID === course.courseID).map((a) => announcementDocument(a, course, { now })),
+      documents: announcements.filter((a) => a.courseID === course.courseID).map((a) => announcementDocument(a, course, { now })).filter((d) => d !== null),
       links: [], // announcements are deliberately not scanned for links
     };
   },

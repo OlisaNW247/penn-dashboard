@@ -446,22 +446,30 @@ export function decodeAnnouncements(json) {
   return out;
 }
 
-// CourseDocumentBuilder.announcement
-export function announcementDocument(announcement, course, { now = new Date(), timeZone } = {}) {
-  const lines = [];
-  if (announcement.postedAt) {
-    lines.push(`Posted: ${dateTextLong(announcement.postedAt, { timeZone })}`);
-  }
+// CourseDocumentBuilder.announcement (2026-10-23 form). The text is the
+// trimmed message alone: no "Posted:" line. That line was a device-zone,
+// locale-rendered string, so it fed the content hash something the two
+// clients could render differently, and the post time already travels in
+// `updatedAt`, which is where every reader takes the date from. Hash parity
+// with the phone is the whole point, so do not put a date back in the text.
+// Two server-rejection guards, mirrored from the phone so both clients
+// produce the same documents: an empty title becomes "Announcement", and a
+// post with no message produces no document (null; callers skip it).
+export function announcementDocument(announcement, course, { now = new Date() } = {}) {
   const message = trimWhitespaceAndNewlines(announcement.message);
-  if (message !== "") lines.push(message);
+  if (message === "") return null;
+  // Trimmed, as the phone trims it, so the two hashes agree on a title that
+  // Canvas padded with whitespace.
+  const trimmedTitle = trimWhitespaceAndNewlines(announcement.title);
+  const title = trimmedTitle === "" ? "Announcement" : trimmedTitle;
   return courseDocumentWire({
     courseID: course.courseID,
     course: course.code,
     kind: "announcement",
     sourceID: announcement.id,
-    title: announcement.title,
+    title,
     url: announcement.url,
-    text: lines.join("\n"),
+    text: message,
     updatedAt: announcement.postedAt,
     fetchedAt: now,
   });

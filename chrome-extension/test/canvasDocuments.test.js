@@ -294,17 +294,43 @@ test("announcement plainText of an empty string is an empty string", () => {
   assert.equal(announcementPlainText(""), "");
 });
 
-// CourseKnowledgeTests.swift buildsOtherDocuments (announcement part). The
-// Swift test pins only the "Posted: " prefix and the message.
+// CourseKnowledgeTests.swift buildsOtherDocuments (announcement part). Since
+// 2026-10-23 the text is the message alone (no "Posted:" line) and the date
+// lives in updatedAt, matching the phone's builder byte for byte.
 test("builds an announcement document", () => {
   const a = decodeAnnouncements(json("announcements.json")).find((x) => x.id === "5001");
-  const doc = announcementDocument(a, { courseID: "12345", code: "CIS 2400" }, { now, ...NY });
+  const doc = announcementDocument(a, { courseID: "12345", code: "CIS 2400" }, { now });
   assert.equal(doc.kind, "announcement");
   assert.equal(doc.id, "announcement:12345:5001");
-  assert.ok(doc.text.startsWith("Posted: "));
-  assert.equal(doc.text, "Posted: Sun, Feb 1 at 7:30 AM\nThe midterm is on Friday.\nBring a calculator & two pencils.");
+  assert.ok(!doc.text.includes("Posted:"));
+  assert.equal(doc.text, "The midterm is on Friday.\nBring a calculator & two pencils.");
   assert.equal(doc.updatedAt, "2026-02-01T12:30:00.123Z");
   assert.equal(doc.url, "https://canvas.upenn.edu/courses/12345/discussion_topics/5001");
+});
+
+// CourseDocumentBuilder.announcement: a dated post's updatedAt is its postedAt
+// and the zone no longer matters to the text.
+test("announcement updatedAt equals postedAt and the text is the same in any zone", () => {
+  const [a] = decodeAnnouncements([{ id: 5003, context_code: "course_12345", title: "Dated", message: "Body", posted_at: "2026-02-01T12:30:00.123Z" }]);
+  const doc = announcementDocument(a, { courseID: "12345", code: "CIS 2400" }, { now, timeZone: "Asia/Tokyo" });
+  assert.equal(doc.text, "Body");
+  assert.equal(doc.updatedAt, "2026-02-01T12:30:00.123Z");
+});
+
+// CourseDocumentBuilder.announcement empty-title guard (server rejects "").
+test("announcement with an empty or blank title is titled Announcement", () => {
+  for (const title of ["", "  \n "]) {
+    const [a] = decodeAnnouncements([{ id: 5004, context_code: "course_12345", title, message: "Body" }]);
+    const doc = announcementDocument(a, { courseID: "12345", code: "CIS 2400" }, { now });
+    assert.equal(doc.title, "Announcement");
+    assert.equal(doc.contentHash, fnv1a("Announcement\u001FBody"));
+  }
+});
+
+// CourseDocumentBuilder.announcement empty-message guard (server rejects "").
+test("announcement with an empty message produces no document", () => {
+  const [a] = decodeAnnouncements([{ id: 5005, context_code: "course_12345", title: "Image only", message: "<p>  </p>", posted_at: "2026-02-01T12:30:00Z" }]);
+  assert.equal(announcementDocument(a, { courseID: "12345", code: "CIS 2400" }, { now }), null);
 });
 
 // A posted_at-less announcement's text is exactly the message, so the Swift

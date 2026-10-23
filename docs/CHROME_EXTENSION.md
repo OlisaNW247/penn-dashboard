@@ -86,6 +86,12 @@ that disagrees with Swift is a bug in the port.
   `title + "\u{1F}" + text` (`ContentHash.fnv1a`). A hash that differs from
   the phone's for the same document makes the two clients re-upload each
   other's copy forever.
+- **Announcement documents** (`CourseDocumentBuilder.announcement`):
+  since 2026-10-23 the text is the trimmed message alone, with no
+  `Posted:` line, because that line was device-zone and locale rendered
+  (a hash the two clients could disagree on) and the post time already
+  travels in `updatedAt`. An empty title becomes "Announcement" and an
+  empty message produces no document, the two server-rejection guards.
 - **Ed filter** (`EdThreadFilter`): announcements, pinned, staff only.
 
 ## Collecting course material

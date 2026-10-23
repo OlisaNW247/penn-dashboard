@@ -106,6 +106,22 @@ test("collect: announcements ask for a window with both ends, ending tomorrow", 
   assert.match(url, /end_date=2026-10-23T15:00:00Z/);
 });
 
+test("collect: an announcement with no message is skipped, one with no title is titled Announcement", async () => {
+  const canvas = fakeCanvas({
+    override: (url, u) => u.pathname === "/api/v1/announcements"
+      ? reply([
+        { id: 1, context_code: u.searchParams.get("context_codes[]"), title: "Image only", message: "", posted_at: "2026-10-01T12:00:00Z" },
+        { id: 2, context_code: u.searchParams.get("context_codes[]"), title: "", message: "<p>hello</p>", posted_at: "2026-10-01T12:00:00Z" },
+      ])
+      : null,
+  });
+  const c = await collect(canvas);
+  const docs = c.documents.filter((d) => d.kind === "announcement" && d.courseID === "111");
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].title, "Announcement");
+  assert.equal(docs[0].text, "hello");
+});
+
 test("collect: one request in flight, 250 ms between requests, none before the first", async () => {
   const canvas = fakeCanvas();
   const sleeps = [];
