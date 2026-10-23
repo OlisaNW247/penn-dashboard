@@ -915,7 +915,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2485 tests / 227 suites, all green, on `v8` at `e6aa754`
+**Current: 2606 tests / 237 suites, all green, on `v8` at `ad4f920`
+(2026-10-23, `swift test --no-parallel`, on Olisa's Mac, 8.3 s). Green on
+the first run. It compiled, all at once and for the first time, the
+Chrome extension's Swift half (2026-10-22, `BackendWire`, `Sync/`, the
+pairing and device-sync layer, `FileKindTests`, `DeviceSyncWiringTests`
+and the rest) and the three announcement phases of 2026-10-23
+(`CourseKnowledgeCollectorAnnouncementTests` 6, the Ed reader's 24 in
+`EdClientTests`, `EdIngestionTests` and the `EdRunStopTests` suite).
+Nothing removed. Not yet built to the phone.**
+Before it: 2485 / 227 at `e6aa754`
 (2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
 plus the 21 tests of `VoiceDictationTests` (two suites: the availability
 table and the draft merge; source scans of the two usage strings, the
@@ -2246,7 +2255,7 @@ none is a ship line.
   and retried next run, never fatal. The owner's first run says which:
   if files never appear, read the redirect host off one download in
   Chrome's network panel and add exactly that host.
-- **The Chrome extension's Swift half has never compiled** (2026-10-22,
+- **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy
   `download` decode (`BackendWire.swift`, 11 tests), and the sync snapshot
@@ -2379,8 +2388,8 @@ none is a ship line.
   (no device-zone `Posted:` line, so every phone and the extension hash
   a post the same), an untitled or empty post never reaches the server,
   a failed announcements request no longer lets a course count as fully
-  synced, and `courseKnowledgeSyncVersion` is 5. Written without a
-  compiler; the new `CourseKnowledgeCollectorAnnouncementTests` drive
+  synced, and `courseKnowledgeSyncVersion` is 5. Compiled green on
+  2026-10-23 (2606/237), not yet on a phone; the new `CourseKnowledgeCollectorAnnouncementTests` drive
   the collector through a `URLProtocol` stub whose other routes answer
   `[]`, which no one has seen every sub-client accept. The backend half
   (Phase 2, Deno 419/0) is on `v8` and not deployed; until `sync` is
@@ -2404,7 +2413,7 @@ none is a ship line.
   unpaginated select, so a student past PostgREST's row limit (1000 by
   default; unverified for this project) gets a silently truncated
   manifest.
-- **The Ed reader fixes of 2026-10-23 are blind** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
+- **The Ed reader fixes of 2026-10-23 compiled green (2606/237) but have not run on a phone** (`docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`
   Phase 3, at the owner's direction; the Kit half rode in `9540751`, the
   coordinator in the commit after it). `EdThreadFilter` now drops an
   anonymous thread before the announcement and pinned rules, which makes
