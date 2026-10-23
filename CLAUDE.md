@@ -2525,8 +2525,12 @@ none is a ship line.
   course-material collector deleted Ed posts and saved before Ed put them
   back (see the trap "Ed posts that 'vanish'"), plus a failed `/tabs`
   lookup counting as "no Ed". Both fixed on `fix/ed-posts-durable`, merged
-  into `fix/megaphone-every-class`; **still a gap until it runs on a
-  phone**, and in 3.1.0 (13) itself until the next release.
+  into `fix/megaphone-every-class`. **First evidence on a phone, 2026-10-23
+  18:22:** the previous build's 17:57 run on Marco's phone failed its
+  manifest and its whole Ed read (first failure `other · couldn't read ed account: cancelled`), and the
+  status line read `restored 6 · dropped 0`; all 35 Ed posts were still on
+  disk afterwards, where the old code would have deleted them. Still in
+  3.1.0 (13) itself until 3.2.0 ships.
 - **`extract-announcement` returned HTTP 502** on Marco's phone at 15:04
   on 2026-10-23, for PHYS 0151's "Midterm 2 information with formula
   sheet added" (posted 10-16). That was its second failure
@@ -2542,8 +2546,11 @@ none is a ship line.
   Marco reports a working PennKey + Duo login through it on his phone
   (2026-10-23, on his own tree, build not recorded); the merged tree,
   where it meets the launch-refresh rework, has not been watched on a
-  device.** (Merged on `v8-merge-marco` from `codex/automatic-canvas-login`.)
-  Unseen on the merged tree: a
+  device until 18:22 that evening, when the 3.2.0 (14) Debug build of the
+  merged tree ran on Marco's phone: no crash, Canvas sync alive (20
+  announcements), Ed task pass and course-material sync ran.** (Merged on
+  `v8-merge-marco` from `codex/automatic-canvas-login`.) Still unseen on
+  the merged tree: a
   real PennKey + Duo sign-in through the capture, a password manager's
   autofill (whether its submit reaches `PennKeyLoginCapture`), the
   pre-login disclosure line, the "Canvas connected" page, and a later
