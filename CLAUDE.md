@@ -117,7 +117,10 @@ macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
 `extract-profile`, `map-categories`, `pair`, `sync`. `pair` and
 `device-sync` (the Chrome extension's pairing and encrypted sync) and the
 `20261022090000_chrome_extension.sql` migration went live on 2026-10-22
-with Olisa's go (`sync` v11, `delete-account` v6).
+with Olisa's go (`sync` v11, `delete-account` v6). `sync` v12 (the
+window-kind rules of `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2) went
+live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
+40 live announcement documents, every one from spring 2026, and 97 Ed.
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
@@ -1305,7 +1308,8 @@ the count, so a later drop can be traced:
   PostgREST `max_rows` of 1000, per-document rejection on upload, a
   150-per-class cap on window-kind downloads; 13 new tests, 4 edited
   because they pinned the extension retiring announcements; Deno 2.9.8
-  `--no-check`, and the 2.1.4 type check clean; not deployed).
+  `--no-check`, and the 2.1.4 type check clean; deployed as `sync` v12
+  the same day).
 - Deno before it: 406 passed, 0 failed (2026-10-22, `v8`, the Chrome extension's
   backend: pairing, linked devices, encrypted sync blobs, the `collector`
   rule and the `file` kind; in the cloud container with Deno 2.9.8 and
@@ -2396,7 +2400,9 @@ none is a ship line.
   redeployed, a phone whose announcements fetch fails still cannot
   retire classmates' announcements (the collector no longer reports the
   course fully synced), but the 1000-row manifest cap and the batch-wide
-  rejection remain live. This touched the course-material sync at the
+  rejection remain live. `sync` v12 went live at about 16:00 UTC the same
+  day, so all of that is now server-side fact; what is still unseen is a
+  phone collecting this term's posts. This touched the course-material sync at the
   owner's direct request; Marco has not been told yet.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently

@@ -233,10 +233,15 @@ and on window (60 vs 120 days), and neither matters to ask.
 
 ## 6. Status
 
-- 2026-10-23: Phase 1 written (`9540751`, blind, with the extension's
-  builder matched in the same commit); Phase 2 written and tested here
-  (Deno 419/0, not deployed); Phase 3 in progress. `posted_at` (Phase 2
-  step 5) deferred: everything runs on `updated_at` for now.
+- 2026-10-23: Phase 1 written (`9540751`, with the extension's builder
+  matched in the same commit) and Phase 3 (`ad4f920`) compiled green on
+  Olisa's Mac at 2606/237 the same afternoon, not yet built to a phone.
+  Phase 2 tested here (Deno 419/0) and **deployed as `sync` v12 at about
+  16:00 UTC with Olisa's go**; the pool then held 40 live announcement
+  documents (all spring 2026, now outside the 120-day read window) and 97
+  Ed. `posted_at` (Phase 2 step 5) deferred: everything runs on
+  `updated_at` for now. Next gate: a phone on the new build syncing, then
+  the DB count and the CIS 2400 question.
 
 ## 7. Sequence and gates
 
