@@ -76,6 +76,21 @@ enum AnnouncementFindState: Sendable, Equatable {
     case allDone
 }
 
+/// One row of the sheet's combined list (`AppState.announcementSheetCompiled`):
+/// a found card or a post.
+enum AnnouncementSheetEntry: Equatable, Identifiable {
+    case found(DashItem)
+    case post(AnnouncementRecord)
+
+    /// Distinct across the two kinds, so a find and a post can share a list.
+    var id: String {
+        switch self {
+        case .found(let item): return "found:" + item.id
+        case .post(let record): return "post:" + AnnouncementReadState.key(for: record)
+        }
+    }
+}
+
 extension AppState {
     /// How far back the sheet lists announcements.
     nonisolated static let announcementSheetWindowDays = 7
@@ -380,32 +395,172 @@ extension AppState {
 
     // MARK: Class filter
 
-    /// Whether a row of class `course` survives the sheet's class filter
-    /// (`filter`, a class key as the dashboard's class menu hands it out, or
-    /// nil for all classes). Compared by course identity and not byte for byte:
-    /// an announcement row can carry the raw Canvas descriptor where the menu
-    /// holds the cleaned code, and `PHYS 0151` is `PHYS 151`
+    /// What a tap on a class bubble does to the set of selected classes
+    /// (`selection`, class keys as the dashboard's class menu hands them out;
+    /// empty means every class). `course` is the tapped bubble's key, or nil
+    /// for the "all" bubble.
+    ///
+    /// - "all" clears the set, whatever it held.
+    /// - A class while the sheet shows all of them selects **just that class**:
+    ///   from "all", a tap means "show me this one", not "add one to nothing".
+    /// - An unselected class while some are selected is **added**, so any
+    ///   subset can be built.
+    /// - A selected class is **removed**, and removing the last one goes back
+    ///   to all (an empty set already means all; the alternative is a sheet
+    ///   that shows nothing and a row with no bubble lit).
+    ///
+    /// Pure and `nonisolated`, so a test pins every transition.
+    nonisolated static func announcementSheetTap(_ course: String?, selection: Set<String>) -> Set<String> {
+        guard let course else { return [] }
+        if selection.isEmpty { return [course] }
+        var next = selection
+        if next.contains(course) {
+            next.remove(course)
+        } else {
+            next.insert(course)
+        }
+        return next
+    }
+
+    /// A predicate for "does a row of this class survive the selection", with
+    /// the selected classes turned into course identities once and each row's
+    /// course string parsed once: a log of 60 days holds hundreds of rows for a
+    /// handful of classes, and this runs on every redraw.
+    ///
+    /// Compared by course identity (`announcementCourseIdentity`) and not byte
+    /// for byte: an announcement row can carry the raw Canvas descriptor where
+    /// the bubble holds the cleaned code, and `PHYS 0151` is `PHYS 151`
     /// (`announcementCoursesMatch`, which the duplicate checks use for the same
     /// reason). The dashboard's own filter compares `course` exactly because
-    /// its rows all come through one cleaned pool; this list does not.
-    static func announcementSheetCourseMatches(_ course: String, filter: String?) -> Bool {
-        guard let filter else { return true }
-        return announcementCoursesMatch(course, filter)
+    /// its rows all come through one cleaned pool; this list does not. An empty
+    /// selection keeps everything.
+    nonisolated private static func announcementSheetCourseFilter(
+        _ selection: Set<String>
+    ) -> (String) -> Bool {
+        guard !selection.isEmpty else { return { _ in true } }
+        let wanted = Set(selection.map(announcementCourseIdentity))
+        var identities: [String: String] = [:]
+        return { course in
+            if let known = identities[course] { return wanted.contains(known) }
+            let identity = announcementCourseIdentity(course)
+            identities[course] = identity
+            return wanted.contains(identity)
+        }
     }
 
-    /// The found cards of class `course` (all of them for nil). The sheet's
-    /// class filter narrows both lists through these two functions, so a test
-    /// of them is a test of what the sheet draws.
-    static func announcementSheetNarrowed(_ cards: [DashItem], toCourse course: String?) -> [DashItem] {
-        cards.filter { announcementSheetCourseMatches($0.assignment.course, filter: course) }
+    /// Whether a row of class `course` survives the sheet's class selection
+    /// (empty: all of them).
+    nonisolated static func announcementSheetCourseMatches(_ course: String, selection: Set<String>) -> Bool {
+        announcementSheetCourseFilter(selection)(course)
     }
 
-    /// The posts of class `course` (all of them for nil), order kept.
-    static func announcementSheetNarrowed(
+    /// The same for one class or none (`filter`, nil for all classes). Kept for
+    /// callers that think in one class; it is the selection of one.
+    nonisolated static func announcementSheetCourseMatches(_ course: String, filter: String?) -> Bool {
+        announcementSheetCourseMatches(course, selection: filter.map { [$0] } ?? [])
+    }
+
+    /// The found cards of the selected classes (all of them for an empty
+    /// selection), order kept. The sheet's class filter narrows both lists
+    /// through these functions, so a test of them is a test of what the sheet
+    /// draws.
+    nonisolated static func announcementSheetNarrowed(_ cards: [DashItem], toCourses selection: Set<String>) -> [DashItem] {
+        let keeps = announcementSheetCourseFilter(selection)
+        return cards.filter { keeps($0.assignment.course) }
+    }
+
+    /// The posts of the selected classes (all of them for an empty selection),
+    /// order kept.
+    nonisolated static func announcementSheetNarrowed(
+        _ records: [AnnouncementRecord],
+        toCourses selection: Set<String>
+    ) -> [AnnouncementRecord] {
+        let keeps = announcementSheetCourseFilter(selection)
+        return records.filter { keeps($0.courseCode) }
+    }
+
+    nonisolated static func announcementSheetNarrowed(_ cards: [DashItem], toCourse course: String?) -> [DashItem] {
+        announcementSheetNarrowed(cards, toCourses: course.map { [$0] } ?? [])
+    }
+
+    nonisolated static func announcementSheetNarrowed(
         _ records: [AnnouncementRecord],
         toCourse course: String?
     ) -> [AnnouncementRecord] {
-        records.filter { announcementSheetCourseMatches($0.courseCode, filter: course) }
+        announcementSheetNarrowed(records, toCourses: course.map { [$0] } ?? [])
+    }
+
+    // MARK: One list for the selected classes
+
+    /// The found cards and the posts of the selected classes as one list,
+    /// newest first (`AnnouncementSheetEntry`). Drawn instead of the "found"
+    /// and "announcements" sections while any class is selected; with all
+    /// classes the two sections are drawn as they always were.
+    ///
+    /// **A post's date** is its `sortDate`. **A find's date is the date of the
+    /// post it came from** (`AnnouncementRecord.recordID(fromFindSourceID:)`,
+    /// matched against `records`, the posts the sheet is listing), so a task
+    /// found in Monday's post sits with Monday's post and not at its due date;
+    /// the card still shows its due date. A find with no listed post (a
+    /// syllabus exam, which no post carries, or a find whose post the sheet is
+    /// not listing) has no post to be dated by and uses its card's date,
+    /// `dueOverride ?? assignment.dueAt`. An entry with no date at all goes
+    /// last.
+    ///
+    /// **A find sits directly above its post**, however many other entries
+    /// share their date: the list is built from units (a post with its finds,
+    /// or a lone find), and the units are ordered, so nothing can wedge itself
+    /// between a find and its post. Within a unit the finds keep the order
+    /// `found` gave them. Equal dates keep the order the inputs came in (posts
+    /// as `records` has them, then lone finds as `found` has them), by an
+    /// explicit index and not by trusting the sort to be stable.
+    ///
+    /// The wrong version sorts finds and posts together by their own dates: a
+    /// task due Friday found in Monday's post would land among Friday's posts,
+    /// away from the post that said it, and the combined list would read as
+    /// two lists shuffled.
+    nonisolated static func announcementSheetCompiled(
+        found: [DashItem],
+        records: [AnnouncementRecord]
+    ) -> [AnnouncementSheetEntry] {
+        var postIndexByID: [String: Int] = [:]
+        for (index, record) in records.enumerated() where postIndexByID[record.id] == nil {
+            postIndexByID[record.id] = index
+        }
+        var findsByPost: [Int: [DashItem]] = [:]
+        var loneFinds: [DashItem] = []
+        for item in found {
+            if let recordID = AnnouncementRecord.recordID(fromFindSourceID: item.assignment.sourceID),
+               let index = postIndexByID[recordID] {
+                findsByPost[index, default: []].append(item)
+            } else {
+                loneFinds.append(item)
+            }
+        }
+
+        struct Unit {
+            let date: Date?
+            let order: Int
+            let entries: [AnnouncementSheetEntry]
+        }
+        var units: [Unit] = []
+        for (index, record) in records.enumerated() {
+            let finds = (findsByPost[index] ?? []).map(AnnouncementSheetEntry.found)
+            units.append(Unit(date: record.sortDate, order: units.count, entries: finds + [.post(record)]))
+        }
+        for item in loneFinds {
+            units.append(Unit(date: item.due, order: units.count, entries: [.found(item)]))
+        }
+        return units
+            .sorted { lhs, rhs in
+                switch (lhs.date, rhs.date) {
+                case let (l?, r?) where l != r: return l > r
+                case (nil, .some): return false
+                case (.some, nil): return true
+                default: return lhs.order < rhs.order
+                }
+            }
+            .flatMap(\.entries)
     }
 
     // MARK: What the sheet and the badge read

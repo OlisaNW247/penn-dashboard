@@ -719,7 +719,7 @@ struct AnnouncementSheetStructureTests {
         }
     }
 
-    @Test("found comes before announcements, as dashboard cards, hidden when empty, under the dashboard's own class filter")
+    @Test("found comes before announcements, as dashboard cards, hidden when empty, under the sheet's own class bubbles")
     func viewStructure() throws {
         let source = try GradeWatcherRemovalTests.uiSource("AnnouncementFindsView.swift")
         guard !source.isEmpty else { return }
@@ -730,8 +730,13 @@ struct AnnouncementSheetStructureTests {
         #expect(source.contains("AssignmentCardView("))
         #expect(source.contains("isExamOverride: item.examStyleOverride"))
         #expect(source.contains("if !foundNow.isEmpty"))
-        #expect(source.contains("ClassFilterMenu("))
-        #expect(source.contains("ClassFilterChip("))
+        // The sheet's class filter is a row of bubbles, not the dashboard's
+        // menu and chip, which are the dashboard's own.
+        #expect(source.contains("AppState.announcementSheetTap("))
+        #expect(source.contains("AppState.announcementSheetCompiled("))
+        #expect(source.contains(".sensoryFeedback(.selection, trigger: selection)"))
+        #expect(!source.contains("ClassFilterMenu("))
+        #expect(!source.contains("ClassFilterChip("))
         // The old plain rows and headers are gone.
         #expect(!source.contains("SmoothSectionHeader(\"tasks found\""))
         #expect(!source.contains("SmoothSectionHeader(\"all announcements\""))
