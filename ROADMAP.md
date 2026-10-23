@@ -33,7 +33,9 @@ dates.
 
 ## Now: before the next release
 
-These block shipping, or would make shipping risky.
+These block shipping, or would make shipping risky. The launch-prep
+work of 2026-10-09/10 is summarised, with the order to take these in,
+in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
