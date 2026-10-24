@@ -946,12 +946,14 @@ and an inconsistent resolution is refused rather than guessed at.
 
 ## Model
 
-`LHF_MODEL` env, default `z-ai/glm-5.3-flash`, called through OpenRouter's
+`LHF_MODEL` env, default `openai/gpt-4.1-mini` since 2026-09-22 (this
+section said `z-ai/glm-5.3-flash` until 2026-10-24; the primary-and-hedge
+paragraph above was already right), called through OpenRouter's
 chat-completions endpoint (`https://openrouter.ai/api/v1/chat/completions`)
 with `provider: { "data_collection": "deny", "allow_fallbacks": true }` and,
 when `LHF_PROVIDER_ORDER` is set, `provider.order` from that comma list.
-Fallback model on upstream failure: `LHF_ASK_FALLBACK_MODEL`, default
-`openai/gpt-5.6-luna`. `OPENROUTER_API_KEY` is a function secret, never in
+Hedge and fallback model: `LHF_ASK_FALLBACK_MODEL`, default
+`z-ai/glm-5.3-flash` at `reasoning.effort: low`. `OPENROUTER_API_KEY` is a function secret, never in
 the repo, never in the app.
 
 The two JSON-mode functions (`extract-announcement`, `extract-profile`) read

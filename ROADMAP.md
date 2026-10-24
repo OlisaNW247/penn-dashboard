@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-22 on `v8` (the Chrome extension). Before that,
+Last updated 2026-10-24 on `v8` (the tree research plan). Before that,
+2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
 with Marco's `v8-loud-alert-actions`; not compiled). Marco's
 `fix/submission-status` (last updated 2026-10-18, off `v8-announcements`
@@ -60,8 +61,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      calls act for the paired student). Each smoke-tested live with
      throwaway users, who were deleted.
 
-  Still to do, in order (2026-10-23: no link, blob, pairing,
-  extension-collected or `file` row exists yet):
+  Steps 4 to 6 happened on 2026-10-23/24 (read from the live table on
+  2026-10-24: one device link, 692 extension-collected documents across
+  10 courses, 53 of them `file` rows from one course; the 401 trap in
+  CLAUDE.md is what the first run hit). Kept for the record:
   4. Load the extension unpacked (`chrome-extension/README.md`), signed
      in to Canvas and Gradescope: the popup should list real work.
   5. Pair: "pair with phone" in the popup, point the iPhone camera at
@@ -281,10 +284,20 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
-- **Deep research on the tree (ask)** (owner's request, 2026-10-24).
-  `docs/TREE_RESEARCH_SESSION_PROMPT.md` is the brief for the session that
-  does it; the deliverable is `docs/TREE_IMPROVEMENT_PLAN.md`. Nothing
-  decided yet.
+- **Improve the tree (ask)** (owner's request, 2026-10-24; the research
+  is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
+  30-question set with verdicts (19 answerable today, 6 not in the pool,
+  4 missed by retrieval, 1 answered badly), the live numbers (44 real
+  questions ever, first word 2.4 s median, the hedge never fired) and a
+  ranked list. Its three first steps, all phone-side: render dates in the
+  student's zone (every "due tomorrow" after 8 pm Eastern is wrong today),
+  chunk the `discover-websites` call by three (a student in four CIS
+  classes never gets a website crawl; two of Olisa's classes have nothing
+  in the pool but Ed), and keep table line breaks in excerpts plus a
+  citation contract that names the title. Waiting on Olisa: a
+  `course-knowledge.json` read off his phone for the retrieval bench, a
+  canary go, and two decisions (concept questions; the completion-state
+  sentence). `docs/TREE_RESEARCH_SESSION_PROMPT.md` was the brief.
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live

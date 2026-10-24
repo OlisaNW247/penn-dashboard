@@ -926,8 +926,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   with "unpair" when paired. Pairing a second laptop unlinks the first.
   Unpairing keeps the change log; disconnecting Canvas clears it and the
   key.
-- **Chrome extension** (`chrome-extension/`, started 2026-10-22; nothing
-  loaded in a real Chrome yet). A helper for the phone, Penn only, loaded
+- **Chrome extension** (`chrome-extension/`, started 2026-10-22; running
+  in Olisa's Chrome since 2026-10-23, and by 2026-10-24 20:00 UTC it had
+  uploaded 692 documents across 10 courses, 53 of them PDF `file`
+  documents from one course, read from the live table). A helper for the
+  phone, Penn only, loaded
   unpacked: it collects course material the phone cannot reach with the
   browser's own sessions, and syncs the student's completions, edits and
   manual tasks with the phone, end-to-end encrypted after a QR pairing.
@@ -1625,10 +1628,15 @@ client problem. The pieces, all exercised by tests:
   `question` is exactly what was typed. Sending earlier turns is a
   privacy-policy change nobody has approved.
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
-  any PDF not named "syllabus") are not ingested at all, only the 40
-  newest pages get their bodies, and no announcement has ever been
-  collected (Known gaps). Those are in the course-material sync, which
-  Marco has said not to touch (`parked/ask-course-sync-fixes`).
+  any PDF not named "syllabus") are not ingested by the phone, only the 40
+  newest pages get their bodies, and announcements reach the pool only
+  since 2026-10-23 (Known gaps). The extension fills some of that in
+  (`file` documents, every page) for a student who pairs a laptop. On
+  2026-10-24 the pool held a real syllabus for 28 of 63 courses, a stub
+  for 18 and none for 17: half the classes have no policy text to
+  retrieve, which `docs/TREE_IMPROVEMENT_PLAN.md` ranks as the
+  first-order problem. The collection code is the course-material sync,
+  which Marco has said not to touch (`parked/ask-course-sync-fixes`).
 - **Where and when each section meets** is the one thing the server adds
   on its own (2026-10-20; deployed the same day at Olisa's word, `sync`
   version 9 and `ask` version 10, about 13:40 UTC; the catalog rows
@@ -2614,8 +2622,12 @@ none is a ship line.
   Settings", the disclosure line) is capitalised and says "Settings" where
   the app says Profile; the copy rule is Marco's own, so it is his to
   settle, not rewritten here.
-- **Whether the extension can download Canvas Files is unknown**
-  (2026-10-22). Canvas redirects a file download to a separate signed
+- **The extension downloads Canvas Files for at least one course**
+  (2026-10-24: 53 PDF `file` documents in the pool, all from one course
+  whose Files tab is visible; whether a course with a hidden Files tab,
+  which answers 401, ever yields any is still unknown, and so is the
+  redirect host question below for other courses). Written 2026-10-22,
+  when it was unknown: Canvas redirects a file download to a separate signed
   file host (Inst-FS for Instructure-hosted Canvas; Penn's not
   confirmed), and a service-worker fetch with credentials can only read
   it if that host's CORS allows it or the extension holds a host
@@ -2847,6 +2859,24 @@ none is a ship line.
   answers from the new posts is the next check. This touched the
   course-material sync at the owner's direct request; Marco has not been
   told yet.
+- **ask tells the model every date in UTC and never says so** (read
+  2026-10-24, `docs/TREE_IMPROVEMENT_PLAN.md` item 1). The context
+  document renders due times as `…T03:59:00Z` and the user message's
+  `Current date:` is a UTC instant, so an 11:59 pm Eastern deadline is the
+  next calendar day to the model and from 8 pm Eastern "today" is already
+  tomorrow. UTC was chosen for the byte-stable prefix, which a fixed
+  per-student zone keeps just as well. Not yet seen wrong on a phone: ask
+  "what's due tomorrow" after 8 pm to see it. The on-device answerer uses
+  the device calendar and is right.
+- **The phone's `discover-websites` call fails whenever more than three
+  courses are pending** (read 2026-10-24, plan item 2).
+  `AppState+CourseKnowledge.swift` sends the whole `websitesPending` list
+  in one call, the server refuses more than three ids with a 400, and the
+  `try?` swallows it, so a student in four CIS classes never triggers a
+  crawl. On 2026-10-24 `course_websites` held 213 candidates, 3 verified
+  and no row ever crawled; CIS 2400 and CIS 2620 have nothing in the pool
+  but Ed posts because their syllabi live on external sites. The extension
+  chunks by three and is the only caller that ever has.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently
   updated pages get their bodies; module items contribute titles only.
