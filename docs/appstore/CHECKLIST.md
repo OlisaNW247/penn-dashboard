@@ -2,6 +2,24 @@
 
 ## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
 
+**2026-10-24: submit build 15, not 14.** At Olisa's word the Smooth Sweeper
+settings (PR #12, `codex/sweeper-settings`) are in this release: step B9 is
+decided "in". Build 14 (archived from `a9af3ad`) does not contain them and
+cannot be changed, so `release-3.2.0-sweeper` is `fix/megaphone-every-class`
+plus the settings, stamped **3.2.0 (15)** in `project.yml` and
+`project.pbxproj`. Before archiving: `swift test --no-parallel` (the full
+suite has never run on the sweeper code; Marco ran 109 targeted tests), the
+iOS Debug build to a phone, and on the phone: Profile shows the Sweeper
+section under reminders; at 10 minutes and the Smooth sound it rings as
+before (A6); a 5-minute choice and the chime both ring; a class switched off
+does not ring; the takeover still appears when an alarm rings with a
+non-default sound. Then steps 18 and 19 again for build 15 (archive from the
+new head, check the widget's AlarmKit link is weak, upload), and in step 20
+attach build **15** to the 3.2.0 version (if build 14 was already attached or
+submitted, remove it from the submission first; App Store Connect keeps both
+builds and lets you choose). The App Store review notes and What's New
+should mention the new Sweeper choices (timing, sound, classes).
+
 **Status 2026-10-23 18:18 EDT: steps 13, 14, 16, 18, 19 done; build 14
 archived from `a9af3ad` and uploaded ("Upload succeeded"), widget AlarmKit
 link weak. Left: 20 (Marco, in App Store Connect), 15 (privacy label), 17
