@@ -833,6 +833,23 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `8d00e62`, 11:25): it rang, the Dynamic Island showed the tomato
      card, and the takeover worked. Which road in he used, and the
      lock-screen card, are not recorded.
+     **Smooth Sweeper settings** (2026-10-23, Marco, `codex/sweeper-settings`;
+     in the 3.2.0 release from build 15, 2026-10-24): the Sweeper has its own
+     section immediately below reminders (`SweeperSettingsSection`), with
+     5/10/15/20/30/60-minute timing (`notif.sweeperMinutes`), four sounds
+     (`SweeperSound`: Smooth's clip, `App/sweeper-chime.wav`,
+     `App/sweeper-pulse.wav`, both original synthesized audio, and the
+     system alarm) with previews of the bundled ones, and an expandable
+     per-class selection (`notif.sweeperExcludedCourses`, separate from the
+     ordinary reminders' class settings). Defaults are unchanged: 10
+     minutes, Smooth, every class. A change re-plans alarms and the
+     fallback buzzes; the sound is part of the alarm's identity, so
+     changing it replaces idle alarms, and work finished under an earlier
+     timing or sound is still recognised. Marco's validation: an iOS Debug
+     build, 109 targeted tests in five suites, installed on his iPhone 17
+     Pro on 2026-10-23; the full suite and real alarm playback with the new
+     sounds are not yet seen. The permission text now reads "rings an alarm
+     before work you haven't turned in, at the time you choose".
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"

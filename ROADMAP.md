@@ -540,6 +540,12 @@ Kept so nobody rebuilds them blind.
   no duplicate password prompt or opt-out sheet. Added connection confirmation,
   pre-login disclosure, origin/lifetime guards, and Keychain error handling.
   Live PennKey/Duo/autofill validation remains required before release.
+- **2026-10-23.** Smooth Sweeper settings (Marco, `codex/sweeper-settings`,
+  PR 12): its own Profile section under Reminders with 5/10/15/20/30/60-minute
+  timing, four sounds (Smooth's clip, a chime, a pulse, the system alarm) with
+  previews, and a per-class selection; defaults unchanged (10 minutes, Smooth,
+  every class). Merged into the 3.2.0 release on 2026-10-24 at Olisa's word,
+  as build 15 (`release-3.2.0-sweeper`); build 14 was uploaded without it.
 
 
 - **The Chrome extension** (2026-10-22, `3fa853b` through this commit on

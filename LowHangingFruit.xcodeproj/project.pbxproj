@@ -12,6 +12,8 @@
 		384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */; };
 		4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */; };
+		856044C84708E114495A0F16 /* sweeper-chime.wav in Resources */ = {isa = PBXBuildFile; fileRef = F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */; };
+		7CB79FA3D5ABA53CE431DE49 /* sweeper-pulse.wav in Resources */ = {isa = PBXBuildFile; fileRef = 9248689226C5D3652707465A /* sweeper-pulse.wav */; };
 		42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */; };
 		5E9A2C4B8D1F36070A8B3C5D /* BerserkAlarmActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */; };
 		7EBFF15B18E4FD732FFE5CD6 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */; };
@@ -60,6 +62,8 @@
 		B2FB5A48F750018E0BC603A6 /* Smooth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smooth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5231672329B97276105F09B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */ = {isa = PBXFileReference; path = berserk-alarm.caf; sourceTree = "<group>"; };
+		F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "sweeper-chime.wav"; sourceTree = "<group>"; };
+		9248689226C5D3652707465A /* sweeper-pulse.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "sweeper-pulse.wav"; sourceTree = "<group>"; };
 		FDF6FFE94ABFA7265FCF40BD /* LowHangingFruitKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LowHangingFruitKit; path = LowHangingFruitKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -96,6 +100,8 @@
 			children = (
 				81469103D4BF3FC55D12744D /* Assets.xcassets */,
 				E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */,
+				F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */,
+				9248689226C5D3652707465A /* sweeper-pulse.wav */,
 				C5231672329B97276105F09B /* Info.plist */,
 				AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */,
 				3DC183EBB281825AF54C0509 /* LHFApp.swift */,
@@ -238,6 +244,8 @@
 			files = (
 				32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */,
 				41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */,
+				856044C84708E114495A0F16 /* sweeper-chime.wav in Resources */,
+				7CB79FA3D5ABA53CE431DE49 /* sweeper-pulse.wav in Resources */,
 				CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -284,7 +292,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -374,7 +382,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;
@@ -403,7 +411,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -486,7 +494,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;

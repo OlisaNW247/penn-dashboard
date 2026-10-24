@@ -153,17 +153,16 @@ final class BerserkAlarmScheduler: BerserkAlarmBackend, BerserkAlarmStore {
             attributes: attributes,
             stopIntent: stopIntent,
             secondaryIntent: secondaryIntent,
-            sound: Self.sound())
+            sound: Self.sound(planned.sound))
     }
 
     /// The owner's custom sound when its file is in the main bundle, the
     /// system alarm sound otherwise (`BerserkAlarmPlan.alarmSoundName` has the
     /// reasoning, including why this is the main bundle and why the file must
     /// not ship without a licence).
-    private static func sound() -> AlertConfiguration.AlertSound {
-        let file = Bundle.main.url(forResource: BerserkAlarmPlan.alarmSoundResource,
-                                   withExtension: BerserkAlarmPlan.alarmSoundExtension)
-        if let name = BerserkAlarmPlan.alarmSoundName(fileExists: file != nil) {
+    private static func sound(_ choice: SweeperSound) -> AlertConfiguration.AlertSound {
+        if let name = choice.filename,
+           Bundle.main.url(forResource: name, withExtension: nil) != nil {
             return .named(name)
         }
         return .default
