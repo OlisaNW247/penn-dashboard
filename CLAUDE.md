@@ -849,7 +849,22 @@ Keep this current. It is the fastest way for a new session to know what exists.
      build, 109 targeted tests in five suites, installed on his iPhone 17
      Pro on 2026-10-23; the full suite and real alarm playback with the new
      sounds are not yet seen. The permission text now reads "rings an alarm
-     before work you haven't turned in, at the time you choose".
+     before work you haven't turned in, at the time you choose". A review of
+     the merge (2026-10-24) found the takeover screen could not find a
+     ringing alarm under any non-default timing or sound, because
+     `BerserkTakeoverRules.alarmIndex` still rebuilt the id with the fixed
+     ten minutes and no sound; it now enumerates every option, as the
+     stop-on-finish path does (blind, with a test). Left as Marco wrote
+     them, for the owners: the fallback buzzes now play the chosen sound,
+     so with the default each of the three buzzes starts the 13-second song
+     three seconds apart (build 14 used the system tone; Marco's test pins
+     the new behaviour); the previews play through `AVAudioPlayer` without
+     touching the audio session, so the silent switch mutes them and they
+     stop other audio (the `AVAudioSession` trap); a 60-minute lead
+     suppresses the plain 1-hour reminder for loud items, as 10 minutes did
+     for the 10-minute one; and two capitalised explanatory lines remain in
+     the section. The garbled footer ("A list minute alarm right before your
+     miss an assignment.") was corrected.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"

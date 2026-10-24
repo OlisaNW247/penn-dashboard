@@ -80,7 +80,7 @@ struct SweeperSettingsSection: View {
         } header: {
             SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
         } footer: {
-            Text("A list minute alarm right before your miss an assignment.")
+            Text("an alarm right before you'd miss an assignment.")
         }
         .smoothSectionBackground(.smoothTomato)
         .onChange(of: scheduler.sweeperSound) { preview?.stop() }
