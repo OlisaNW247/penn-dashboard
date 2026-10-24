@@ -281,6 +281,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Deep research on the tree (ask)** (owner's request, 2026-10-24).
+  `docs/TREE_RESEARCH_SESSION_PROMPT.md` is the brief for the session that
+  does it; the deliverable is `docs/TREE_IMPROVEMENT_PLAN.md`. Nothing
+  decided yet.
+
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live
   branches, three of them needing Olisa's decision (automatic PennKey
