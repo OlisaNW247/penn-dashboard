@@ -195,7 +195,27 @@ Deno.test("chatCompletionStream omits reasoning entirely when not configured", a
   assert.equal(Object.prototype.hasOwnProperty.call(body, "reasoning"), false);
 });
 
-Deno.test("chatCompletionJSON's request body has no reasoning field (JSON-mode extract functions never set it)", async () => {
+// This test used to pin `z-ai/glm-5.3-flash` to *no* reasoning field ("the
+// JSON-mode extract functions never set it"). That was the 2026-10-23 bug:
+// the thinking model spent `max_tokens` on hidden reasoning and answered with
+// null content, which reached a phone as a 502. It now pins the half of the
+// rule that still holds -- a model with no business receiving `reasoning`
+// does not get one -- and the `z-ai/` half is asserted just below.
+Deno.test("chatCompletionJSON's request body has no reasoning field for a model that is not z-ai", async () => {
+  const payload = { choices: [{ message: { content: "{}" } }] };
+  const { fetchImpl, calls } = scriptedFetch([new Response(JSON.stringify(payload), { status: 200 })]);
+  await chatCompletionJSON({
+    apiKey: "k",
+    model: "openai/gpt-4.1-mini",
+    messages: [{ role: "user", content: "extract" }],
+    maxTokens: 500,
+    fetchImpl,
+  });
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.equal(Object.prototype.hasOwnProperty.call(body, "reasoning"), false);
+});
+
+Deno.test("chatCompletionJSON sends reasoning effort low for a z-ai model", async () => {
   const payload = { choices: [{ message: { content: "{}" } }] };
   const { fetchImpl, calls } = scriptedFetch([new Response(JSON.stringify(payload), { status: 200 })]);
   await chatCompletionJSON({
@@ -206,7 +226,171 @@ Deno.test("chatCompletionJSON's request body has no reasoning field (JSON-mode e
     fetchImpl,
   });
   const body = JSON.parse(await calls[0].clone().text());
-  assert.equal(Object.prototype.hasOwnProperty.call(body, "reasoning"), false);
+  assert.deepEqual(body.reasoning, { effort: "low" });
+  // The rest of the JSON-mode body is untouched.
+  assert.equal(body.stream, false);
+  assert.deepEqual(body.response_format, { type: "json_object" });
+  assert.equal(body.max_tokens, 500);
+});
+
+// ---------------------------------------------------------------------
+// chatCompletionJSON: a 200 with no usable content falls back, once
+// ---------------------------------------------------------------------
+
+const JSON_BASE = {
+  apiKey: "k",
+  model: "z-ai/glm-5.3-flash",
+  fallbackModel: "openai/gpt-5.6-luna",
+  messages: [{ role: "user", content: "extract" }],
+  maxTokens: 500,
+};
+
+function completion(content: unknown): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+}
+
+Deno.test("chatCompletionJSON tries the fallback when the primary answers 200 with an empty string", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(""), completion('{"ok":true}')]);
+  const text = await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  assert.equal(text, '{"ok":true}');
+  assert.equal(calls.length, 2);
+  assert.equal(JSON.parse(await calls[0].clone().text()).model, "z-ai/glm-5.3-flash");
+  assert.equal(JSON.parse(await calls[1].clone().text()).model, "openai/gpt-5.6-luna");
+});
+
+Deno.test("chatCompletionJSON tries the fallback when the primary's content is null (reasoning ate max_tokens)", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(null), completion('{"ok":true}')]);
+  const text = await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  assert.equal(text, '{"ok":true}');
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON tries the fallback when the primary's content is whitespace only", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(" \n\t "), completion('{"ok":true}')]);
+  const text = await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  assert.equal(text, '{"ok":true}');
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON tries the fallback when the primary has no choices at all", async () => {
+  const { fetchImpl, calls } = scriptedFetch([
+    new Response(JSON.stringify({ choices: [] }), { status: 200 }),
+    completion('{"ok":true}'),
+  ]);
+  const text = await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  assert.equal(text, '{"ok":true}');
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON's empty-200 fallback body is built for the fallback model (no reasoning for a non-z-ai fallback)", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(null), completion('{"ok":true}')]);
+  await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  const primaryBody = JSON.parse(await calls[0].clone().text());
+  const fallbackBody = JSON.parse(await calls[1].clone().text());
+  assert.deepEqual(primaryBody.reasoning, { effort: "low" });
+  // The primary's reasoning must not ride along to a model that never
+  // measured it -- the default pairing is exactly z-ai then non-z-ai.
+  assert.equal(Object.prototype.hasOwnProperty.call(fallbackBody, "reasoning"), false);
+  // Everything else about the request is the same one, re-aimed.
+  assert.deepEqual(fallbackBody.messages, primaryBody.messages);
+  assert.equal(fallbackBody.max_tokens, primaryBody.max_tokens);
+  assert.deepEqual(fallbackBody.response_format, { type: "json_object" });
+  assert.equal(fallbackBody.stream, false);
+});
+
+Deno.test("chatCompletionJSON gives a z-ai fallback its own reasoning effort when the primary is not z-ai", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(""), completion('{"ok":true}')]);
+  await chatCompletionJSON({
+    ...JSON_BASE,
+    model: "openai/gpt-4.1-mini",
+    fallbackModel: "z-ai/glm-5.3-flash",
+    fetchImpl,
+  });
+  const primaryBody = JSON.parse(await calls[0].clone().text());
+  const fallbackBody = JSON.parse(await calls[1].clone().text());
+  assert.equal(Object.prototype.hasOwnProperty.call(primaryBody, "reasoning"), false);
+  assert.deepEqual(fallbackBody.reasoning, { effort: "low" });
+});
+
+Deno.test("chatCompletionJSON's 5xx fallback body is also built for the fallback model", async () => {
+  const { fetchImpl, calls } = scriptedFetch([new Response("bad gateway", { status: 502 }), completion('{"ok":true}')]);
+  await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  const primaryBody = JSON.parse(await calls[0].clone().text());
+  const fallbackBody = JSON.parse(await calls[1].clone().text());
+  assert.deepEqual(primaryBody.reasoning, { effort: "low" });
+  assert.equal(fallbackBody.model, "openai/gpt-5.6-luna");
+  assert.equal(Object.prototype.hasOwnProperty.call(fallbackBody, "reasoning"), false);
+});
+
+Deno.test("chatCompletionJSON throws UpstreamError when the fallback is empty too, after exactly two calls", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(""), completion(null)]);
+  await assert.rejects(() => chatCompletionJSON({ ...JSON_BASE, fetchImpl }), UpstreamError);
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON does not ask the fallback twice when it already answered an empty 200 after a 5xx", async () => {
+  const { fetchImpl, calls } = scriptedFetch([new Response("bad gateway", { status: 502 }), completion("")]);
+  await assert.rejects(() => chatCompletionJSON({ ...JSON_BASE, fetchImpl }), UpstreamError);
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON throws on an empty 200 when no fallback model is configured", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion("")]);
+  await assert.rejects(
+    () => chatCompletionJSON({ ...JSON_BASE, fallbackModel: undefined, fetchImpl }),
+    UpstreamError,
+  );
+  assert.equal(calls.length, 1);
+});
+
+Deno.test("chatCompletionJSON surfaces the fallback's HTTP status when the empty-200 retry itself fails", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion(null), new Response("overloaded", { status: 503 })]);
+  await assert.rejects(
+    () => chatCompletionJSON({ ...JSON_BASE, fetchImpl }),
+    (err: unknown) => {
+      assert.ok(err instanceof UpstreamError);
+      assert.equal((err as UpstreamError).status, 503);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 2);
+});
+
+Deno.test("chatCompletionJSON makes a single call and returns the primary's content when it is usable", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion('{"ok":true}')]);
+  const text = await chatCompletionJSON({ ...JSON_BASE, fetchImpl });
+  assert.equal(text, '{"ok":true}');
+  assert.equal(calls.length, 1);
+});
+
+Deno.test("chatCompletionJSON still throws, without trying the fallback, when a 200 body is not JSON", async () => {
+  const { fetchImpl, calls } = scriptedFetch([new Response("<html>gateway page</html>", { status: 200 })]);
+  await assert.rejects(() => chatCompletionJSON({ ...JSON_BASE, fetchImpl }), UpstreamError);
+  assert.equal(calls.length, 1);
+});
+
+Deno.test("chatCompletionJSON does not retry a 4xx with a fallback configured", async () => {
+  const { fetchImpl, calls } = scriptedFetch([new Response("unauthorized", { status: 401 })]);
+  await assert.rejects(() => chatCompletionJSON({ ...JSON_BASE, fetchImpl }), UpstreamError);
+  assert.equal(calls.length, 1);
+});
+
+// Pins that the JSON path's per-model bodies did not leak into the streaming
+// path `ask` uses: its fallback body is still the primary's with only `model`
+// swapped, `reasoning` included.
+Deno.test("chatCompletionStream's fallback body is still the primary body with only the model swapped", async () => {
+  const goodSSE = [`data: ${JSON.stringify({ choices: [{ delta: { content: "x" } }] })}`, "data: [DONE]", ""].join("\n\n");
+  const { fetchImpl, calls } = scriptedFetch([new Response("server error", { status: 503 }), sseResponse(goodSSE)]);
+  await collect(chatCompletionStream({
+    ...BASE_STREAM_OPTIONS,
+    fallbackModel: "openai/gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    fetchImpl,
+  }));
+  const primaryBody = JSON.parse(await calls[0].clone().text());
+  const fallbackBody = JSON.parse(await calls[1].clone().text());
+  assert.deepEqual(fallbackBody, { ...primaryBody, model: "openai/gpt-5.6-luna" });
+  assert.deepEqual(fallbackBody.reasoning, { effort: "low" });
 });
 
 Deno.test("chatCompletionStream sets Authorization, HTTP-Referer and X-Title headers", async () => {

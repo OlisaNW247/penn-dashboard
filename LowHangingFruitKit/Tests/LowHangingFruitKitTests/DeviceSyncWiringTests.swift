@@ -160,12 +160,28 @@ struct DeviceSyncWiringTests {
     func passCallSites() throws {
         let content = try uiSource("ContentView.swift")
         guard !content.isEmpty else { return }
-        let refresh = try #require(content.range(of: "private func refresh() async {"))
-        let refreshBody = String(content[refresh.lowerBound...].prefix(2_500))
+        // The order the pass needs: the Canvas fetch (grades, so a fresh
+        // submission state is on the ledger) before it, the reload after it.
+        // Since the launch-refresh rework of 2026-10-23 those two steps live
+        // in helpers (`fetchSessionSources`, `settleAfterFetch`), so the order
+        // is read off `refresh()`'s own body by the helper calls, and each
+        // helper is then checked for the step it owns. Reading the three
+        // strings' positions in one 2,500-character window, as before, broke
+        // the day the helpers were extracted: it compared a call in `refresh()`
+        // with a line inside a helper declared further down.
+        func body(of function: String) throws -> String {
+            let start = try #require(content.range(of: "private func \(function)() async {"))
+            let rest = content[start.upperBound...]
+            let end = try #require(rest.range(of: "\n    }\n"))
+            return String(rest[..<end.lowerBound])
+        }
+        let refreshBody = try body(of: "refresh")
+        let fetch = try #require(refreshBody.range(of: "await fetchSessionSources()"))
         let pass = try #require(refreshBody.range(of: "await state.deviceSyncPass()"))
-        let reload = try #require(refreshBody.range(of: "vm.reload(preservingEdits: true)"))
-        let grades = try #require(refreshBody.range(of: "refreshCanvasGrades(state: state)"))
-        #expect(grades.lowerBound < pass.lowerBound && pass.lowerBound < reload.lowerBound)
+        let settle = try #require(refreshBody.range(of: "await settleAfterFetch()"))
+        #expect(fetch.lowerBound < pass.lowerBound && pass.lowerBound < settle.lowerBound)
+        #expect(try body(of: "fetchSessionSources").contains("refreshCanvasGrades(state: state)"))
+        #expect(try body(of: "settleAfterFetch").contains("vm.reload(preservingEdits: true)"))
 
         let root = try uiSource("RootView.swift")
         let background = try uiSource("BackgroundRefresh.swift")

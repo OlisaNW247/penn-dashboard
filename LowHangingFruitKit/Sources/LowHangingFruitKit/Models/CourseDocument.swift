@@ -257,10 +257,28 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
     /// Merges freshly fetched documents in. Unchanged documents keep their
     /// original `fetchedAt` so "last changed" stays meaningful; documents that
     /// disappeared from Canvas for a re-synced course are dropped.
+    ///
+    /// - Parameter preservingKinds: kinds a resynced course keeps even though
+    ///   `newDocuments` does not list them. The default, empty, is the rule
+    ///   above, unchanged. It exists for a caller that re-enumerates only
+    ///   *some* of the kinds a course can hold: the Canvas collector never
+    ///   produces `.ed` documents (Ed's pass does, separately), so treating
+    ///   its list as that course's complete set made every collector run
+    ///   delete the course's stored Ed posts, and the caller then saved the
+    ///   result to disk before Ed's pass could put them back. An app
+    ///   suspended or killed in that gap, or an Ed pass that never ran,
+    ///   left a store with no Ed posts, and the next run had nothing to
+    ///   restore from. A preserved kind is still replaced by id when
+    ///   `newDocuments` carries it, and is still removed by the one caller
+    ///   with authority over it (`EdDiscussionCoordinator`'s merge and
+    ///   authoritative drop, which keep the default). The wrong fix is for the
+    ///   caller to copy the kinds into `newDocuments` by hand, which would
+    ///   look like a fresh fetch and could not be told apart from one.
     public mutating func merge(
         courses newCourses: [CourseSummary],
         documents newDocuments: [CourseDocument],
         resyncedCourseIDs: Set<String>,
+        preservingKinds: Set<CourseDocument.Kind> = [],
         syncedAt: Date
     ) {
         var byCourse = Dictionary(self.courses.map { ($0.courseID, $0) }, uniquingKeysWith: { _, last in last })
@@ -268,7 +286,9 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
         courses = byCourse.values.sorted { $0.code.localizedCaseInsensitiveCompare($1.code) == .orderedAscending }
 
         let existing = Dictionary(documents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        var merged: [String: CourseDocument] = existing.filter { !resyncedCourseIDs.contains($0.value.courseID) }
+        var merged: [String: CourseDocument] = existing.filter {
+            !resyncedCourseIDs.contains($0.value.courseID) || preservingKinds.contains($0.value.kind)
+        }
         for doc in newDocuments {
             if let old = existing[doc.id], old.contentHash == doc.contentHash {
                 merged[doc.id] = old

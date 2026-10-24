@@ -5,6 +5,7 @@
 // hand in a fake and this file never needs a live OpenRouter key, or the
 // network, to be exercised at all. `ask/index.ts` and the extract functions
 // are what pass the real global `fetch` in at the edges.
+import { reasoningFor } from "./fallback.ts";
 
 export interface ChatMessage {
   role: string;
@@ -124,7 +125,7 @@ export async function* chatCompletionStream(
     providerOverride: options.providerOverride,
   });
 
-  const response = await requestWithFallback(
+  const { response } = await requestWithFallback(
     options.fetchImpl,
     options.apiKey,
     body,
@@ -139,41 +140,102 @@ export async function* chatCompletionStream(
   yield* parseSSEStream(response.body);
 }
 
-/** Non-streaming variant used by the two extract functions, which want one
- *  complete JSON object back, not a stream of text fragments. */
+/**
+ * Non-streaming variant used by the two extract functions, which want one
+ * complete JSON object back, not a stream of text fragments.
+ *
+ * Two things here exist because of a real failure (2026-10-23, a phone, one
+ * 255-word Canvas announcement that failed twice with a 502 while a 53-word
+ * one succeeded). `extract-announcement`'s default model is `z-ai/glm-5.3-
+ * flash`, a thinking model, and with `reasoning` unset it can spend the whole
+ * `maxTokens` cap on hidden reasoning and come back HTTP 200 with
+ * `choices[0].message.content` null or empty. That is not a failure
+ * `requestWithFallback` can see -- it only tries `fallbackModel` when the
+ * HTTP request itself fails -- so the call fell through to "missing content",
+ * the handler turned it into a 502, and because the model's behaviour on a
+ * given prompt is deterministic at temperature 0, retrying the same request
+ * failed the same way. So:
+ *
+ * 1. Every body carries `reasoning: reasoningFor(<the model that body
+ *    targets>)`: `{ effort: "low" }` for a `z-ai/` model, which cuts its
+ *    reasoning to a handful of tokens, and no field at all for anything else
+ *    (a non-thinking model may reject one). The fallback body is built for
+ *    the *fallback* model, not copied from the primary's with the model id
+ *    swapped, because the two may differ -- the default pairing is exactly a
+ *    `z-ai/` primary and a non-`z-ai` fallback.
+ * 2. A 200 with no usable content (null, missing, or empty/whitespace) gets
+ *    one attempt against `fallbackModel` before this throws. If the fallback
+ *    already ran because the primary 5xx'd, it is not asked a second time.
+ *
+ * The wrong fixes: raising `maxTokens` alone (it makes the failure rarer and
+ * dearer, and a long enough post still exhausts it); and treating an empty
+ * 200 as success, which this function used to for an empty *string* and which
+ * `parseAssignments` then turned into "this announcement has no tasks" -- a
+ * confident wrong answer where a retry or an honest error was owed.
+ */
 export async function chatCompletionJSON(
   options: ChatCompletionJSONOptions,
 ): Promise<string> {
-  const body = buildRequestBody({
-    model: options.model,
-    messages: options.messages,
-    maxTokens: options.maxTokens,
-    temperature: options.temperature,
-    provider: options.provider,
-    stream: false,
-    responseFormat: { type: "json_object" },
-  });
+  const bodyFor = (model: string) =>
+    buildRequestBody({
+      model,
+      messages: options.messages,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      provider: options.provider,
+      stream: false,
+      responseFormat: { type: "json_object" },
+      reasoning: reasoningFor(model),
+    });
 
-  const response = await requestWithFallback(
+  const { response, usedFallback } = await requestWithFallback(
     options.fetchImpl,
     options.apiKey,
-    body,
+    bodyFor(options.model),
     options.fallbackModel,
     options.signal,
+    bodyFor,
   );
 
+  const content = await readUsableContent(response);
+  if (content !== undefined) return content;
+
+  if (options.fallbackModel === undefined || usedFallback) {
+    throw new UpstreamError("OpenRouter response was missing choices[0].message.content");
+  }
+
+  // Model ids only -- never the prompt or the post -- so this is safe to log,
+  // and it is the one place anyone learns that the primary is coming back
+  // empty instead of the fallback quietly absorbing it on every request.
+  console.warn(
+    `chatCompletionJSON: ${options.model} returned no usable content, trying ${options.fallbackModel}`,
+  );
+  const fallbackResponse = await requestFallback(
+    options.fetchImpl,
+    options.apiKey,
+    bodyFor(options.fallbackModel),
+    options.signal,
+  );
+  const fallbackContent = await readUsableContent(fallbackResponse);
+  if (fallbackContent === undefined) {
+    throw new UpstreamError("OpenRouter fallback response was missing choices[0].message.content");
+  }
+  return fallbackContent;
+}
+
+/** `choices[0].message.content` when it is a string with something in it;
+ *  `undefined` for null, missing, or empty/whitespace. A body that is not
+ *  JSON at all still throws -- that is a broken response, not an empty
+ *  answer, and no model swap is promised for it. */
+async function readUsableContent(response: Response): Promise<string | undefined> {
   let payload: unknown;
   try {
     payload = await response.json();
   } catch (err) {
     throw new UpstreamError(`OpenRouter response was not JSON: ${describeError(err)}`);
   }
-
   const content = extractMessageContent(payload);
-  if (typeof content !== "string") {
-    throw new UpstreamError("OpenRouter response was missing choices[0].message.content");
-  }
-  return content;
+  return typeof content === "string" && content.trim().length > 0 ? content : undefined;
 }
 
 // ---------------------------------------------------------------------
@@ -213,8 +275,10 @@ interface BuildRequestBodyOptions {
  * no longer waits this model out alone: `openai/gpt-4.1-mini`, which sends
  * no `reasoning` field here at all, is the primary now, and this model is
  * raced in only once the primary has gone quiet for `HEDGE_AFTER_MS`. The
- * JSON-mode extract functions never set `reasoning`, so their request body
- * is unaffected by any of this. The wrong fix, still, is raising
+ * JSON-mode extract functions now send `reasoningFor(model)` too (see
+ * `chatCompletionJSON`: their default model is this same thinking model, and
+ * the same empty-answer failure reached a phone as a 502 on 2026-10-23). The
+ * wrong fix, still, is raising
  * `MAX_TOKENS` alone: it only makes the empty-answer failure rarer and the
  * bill bigger, and a long enough prompt still exhausts it.
  */
@@ -317,7 +381,13 @@ async function requestWithFallback(
   primaryBody: Record<string, unknown>,
   fallbackModel: string | undefined,
   signal?: AbortSignal,
-): Promise<Response> {
+  /** How to build the fallback request body for `fallbackModel`. The default
+   *  copies the primary body with only `model` swapped, which is what the
+   *  streaming path has always done and keeps it byte-for-byte unchanged;
+   *  `chatCompletionJSON` passes its own so each model gets the `reasoning`
+   *  field that suits it rather than inheriting the primary's. */
+  fallbackBodyFor: (model: string) => Record<string, unknown> = (model) => ({ ...primaryBody, model }),
+): Promise<{ response: Response; usedFallback: boolean }> {
   let primaryResponse: Response | undefined;
   let primaryError: unknown;
 
@@ -328,7 +398,7 @@ async function requestWithFallback(
   }
 
   if (primaryResponse?.ok) {
-    return primaryResponse;
+    return { response: primaryResponse, usedFallback: false };
   }
 
   const retryable = primaryError !== undefined ||
@@ -345,7 +415,25 @@ async function requestWithFallback(
     throw new UpstreamError(`OpenRouter request failed: ${describeError(primaryError)}`);
   }
 
-  const fallbackBody = { ...primaryBody, model: fallbackModel };
+  const fallbackResponse = await requestFallback(
+    fetchImpl,
+    apiKey,
+    fallbackBodyFor(fallbackModel),
+    signal,
+  );
+  return { response: fallbackResponse, usedFallback: true };
+}
+
+/** The one fallback request, shared by `requestWithFallback` (after an HTTP
+ *  or transport failure) and `chatCompletionJSON` (after a 200 with no
+ *  usable content), so both surface a failure as the same `UpstreamError`
+ *  shapes. */
+async function requestFallback(
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  fallbackBody: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
   let fallbackResponse: Response;
   try {
     fallbackResponse = await postChatCompletions(fetchImpl, apiKey, fallbackBody, signal);

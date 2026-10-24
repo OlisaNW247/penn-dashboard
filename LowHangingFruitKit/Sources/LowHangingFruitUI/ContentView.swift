@@ -339,7 +339,9 @@ struct ContentView: View {
                 found: state.announcementFoundCards(),
                 records: state.announcementSheetRecords(),
                 newIDs: announcementNewIDs,
-                courses: filterableCourses,
+                // Classes the student has on only: the sheet never lists a
+                // hidden class's posts, so its bubble would always be empty.
+                courses: filterableCourses.filter { state.isCourseSelected($0.key) },
                 onComplete: { state.markCompleted($0.assignment) },
                 onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) }
             )

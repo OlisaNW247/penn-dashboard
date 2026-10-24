@@ -299,6 +299,37 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   notification drains, the partial-course sync semantics with 403 per
   course, the Ed tabs restore). Left: Olisa's compile (predicted 2736),
   the phone, `sync` v13 for the exam dates (needs a go), and telling Marco.
+- **An AI keep-check for the megaphone** (asked for by Marco on
+  2026-10-23; **built that evening on `fix/megaphone-every-class`, with
+  the phone side compiled and tested and the backend tested but NOT
+  deployed**; Olisa, who took over announcements and Ed on 2026-10-18,
+  has not reviewed it). `docs/ED_AND_MEGAPHONE_PLAN.md` is the full write-up
+  and the ship order. The standing list rule is "the past 7 days plus
+  each class's latest post".
+  Marco: which posts matter "will kinda vary", so on top of that rule an
+  AI should judge which announcements to keep. The proposed shape, built
+  so it costs no extra model calls and sends nothing new off the phone:
+  - `extract-announcement` already reads every post that might carry a
+    task, once. Its response gains one optional field per post,
+    `relevance: { kind, until? }`: `event` (an exam, a session, a room
+    change; matters until `until`), `task` (matters while its found tasks
+    are open), `standing` (a policy, a formula sheet, an OH schedule;
+    matters all term), `news` (grades are out, slides posted; a few days).
+    `backend/PROTOCOL.md` changes with it, and deploying needs a person's go.
+  - The phone stores it on the post's log record (one judgment per post,
+    never re-asked) and decides on the device. The list shows the
+    standing set, plus older posts whose relevance is still live, minus
+    posts whose relevance has run out or whose found tasks are all
+    finished. Completion and turned-in state never leave the phone
+    (`docs/PRIVACY.md`), which is why that last part cannot be the
+    server's call.
+  - Posts the on-device informational gate never sends get `news`
+    locally. Non-Penn installs, or when over quota or offline, use the
+    standing rule alone. The Ed task pass uses the same extractor, so Ed
+    posts get the same field.
+  - Open: whether a `standing` post older than the class's latest still
+    shows (proposed: yes, below the dated ones), and whether the student
+    can hide a post by hand.
 
 - **Announcements for ask, from Canvas and Ed** (plan written 2026-10-23,
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md`, owner's request). Canvas
@@ -315,7 +346,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   (Phase 2 step 5, needs a go) and Phase 4 (owners' decision). The review
   finding in the Ed coordinator (a class whose `/tabs` lookup fails had its
   stored posts dropped) was fixed blind the same evening
-  (`ed-tabs-restore`, in the Marco merge).
+  (`ed-tabs-restore`, in the Marco merge) and compiled in PR #13's merge of
+  that tree. The bigger one (the course-material collector deleted every
+  re-synced class's Ed posts and saved before Ed restored them) is fixed in
+  PR #13 (`fix/ed-posts-durable`); see CLAUDE.md → the "vanish" trap. Two
+  shapes left alone: a class whose Canvas has an Ed tab but whose Ed course
+  the matcher refuses is still dropped, and the collector drops `.file` and
+  `.website` documents the same way (the server's downloads re-supply those).
 - **A Smooth Chrome extension.** The owner named it on 2026-10-22 and
   nothing is designed yet. `docs/CHROME_EXTENSION_SESSION_PROMPT.md` is
   the brief for the session that starts it: the standing rules, what the

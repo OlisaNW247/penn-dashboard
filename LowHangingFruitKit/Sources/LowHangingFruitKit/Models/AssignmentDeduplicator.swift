@@ -773,6 +773,11 @@ public enum AssignmentDeduplicator {
     // call, four times a title. Literals known to be valid, so `try!` can only
     // trap on a typo the first test run catches. The replacements contain no
     // `$` or `\`, so template and literal replacement are the same thing.
+    /// A zero-width boundary between a lowercase letter and an uppercase one
+    /// ("dW" in "CombinedWorksheets"). Applied to the title as it was typed,
+    /// before `lowercased()` throws the capitals away. A run of capitals has
+    /// no such boundary, so "CIS", "PSET" and the "HW" in "HWs" are left whole.
+    private static let camelBoundaryRegex = try! NSRegularExpression(pattern: #"(?<=\p{Ll})(?=\p{Lu})"#)
     private static let nonWordRegex = try! NSRegularExpression(pattern: #"[^a-z0-9\s]"#)
     private static let problemSetRegex = try! NSRegularExpression(pattern: #"\bproblem\s+sets?\b"#)
     private static let midTermRegex = try! NSRegularExpression(pattern: #"\bmid\s+terms?\b"#)
@@ -796,8 +801,19 @@ public enum AssignmentDeduplicator {
     /// self-contained function here since the two call sites canonicalize
     /// slightly different prefix sets and have different false-positive
     /// tolerances — see the type doc comment).
+    ///
+    /// camelCase words are split before lowercasing: Canvas assignment names
+    /// are sometimes typed with no spaces ("CombinedWorksheets6-7", the owner's
+    /// real one, 2026-10-23), and `lowercased()` first would make that the one
+    /// token "combinedworksheets" that no announcement's wording can equal.
+    /// Only a lowercase-to-uppercase step splits, so "HW3", "PSET 2", "CIS 1210"
+    /// and "HWs" tokenize exactly as before. The split is symmetric (both
+    /// titles of a pair go through it), so two spellings of one title still
+    /// agree; the cost is a title like "iClicker" or "PhD" now reads as
+    /// [i, clicker] / [ph, d], which only matters against a spelling of the
+    /// same title typed in a different case.
     static func normalize(_ raw: String) -> [String] {
-        var s = raw.lowercased()
+        var s = replacing(camelBoundaryRegex, in: raw, with: " ").lowercased()
         s = replacing(nonWordRegex, in: s, with: " ")
         // Phrase-level collapses before word-splitting, so multi-word phrases
         // line up with their single-word abbreviations.
@@ -825,7 +841,7 @@ public enum AssignmentDeduplicator {
         if tokens.starts(with: ["turn", "in"]) || tokens.starts(with: ["hand", "in"]) {
             tokens.removeFirst(2)
         } else if let first = tokens.first,
-                  ["take", "complete", "submit", "upload", "do"].contains(first) {
+                  ["take", "complete", "submit", "upload", "do", "try", "attempt"].contains(first) {
             tokens.removeFirst()
         }
 
@@ -865,6 +881,11 @@ public enum AssignmentDeduplicator {
         case "midterm", "midterms": return "midterm"
         case "lab", "labs": return "lab"
         case "project", "projects", "proj": return "project"
+        // "Combined Worksheets 6-7" (a Canvas title) and "combined worksheet
+        // 6-7" (the announcement) are one name. Only the plural is folded:
+        // "ws" is also a course/section abbreviation, and nothing here can
+        // tell "WS 3" the worksheet from "WS 3" the workshop.
+        case "worksheets": return "worksheet"
         default: return token
         }
     }

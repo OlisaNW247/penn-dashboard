@@ -1,20 +1,33 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The megaphone sheet. Two lists, top to bottom, both narrowed by one class
-/// filter:
+/// The megaphone sheet. A row of class bubbles at the top ("all" first, then
+/// one per class), and under it either two lists or one:
 ///
-/// - **found**: tasks the Announcement Watcher found in Canvas announcements
-///   and Ed posts, and the exams the class has found (the syllabus's too),
-///   that are still ahead of the student. Drawn as the dashboard's own
-///   `AssignmentCardView`, so an exam keeps its black-on-white (or inverted)
-///   exam card and a card can be swiped done or have its date edited right
-///   here. Hidden altogether when there are none.
-/// - **announcements**: the Canvas announcements and the Ed announcements and
-///   pinned posts from the last 7 days, newest first, whether or not the
-///   extractor found anything in them. What decides each list's rows is
-///   `AppState+AnnouncementSheet.swift`; this view only draws what it is
-///   given, plus the class filter.
+/// - **All classes** (the preset, and every time the sheet opens): two
+///   sections, top to bottom.
+///   - **found**: tasks the Announcement Watcher found in Canvas
+///     announcements and Ed posts, and the exams the class has found (the
+///     syllabus's too), that are still ahead of the student. Drawn as the
+///     dashboard's own `AssignmentCardView`, so an exam keeps its
+///     black-on-white (or inverted) exam card and a card can be swiped done or
+///     have its date edited right here. Hidden altogether when there are none.
+///   - **announcements**: the Canvas announcements and the Ed posts the sheet
+///     lists, newest first, whether or not the extractor found anything in
+///     them. Which posts those are (the standing set and the keep-check) is
+///     decided in `AppState+AnnouncementSheet.swift`, not here.
+/// - **One or more classes selected**: no sections. The found cards and the
+///   posts of those classes are compiled into one list, newest first, each
+///   find directly above the post it came from
+///   (`AppState.announcementSheetCompiled`). The rows are the same rows.
+///
+/// The bubbles: tapping a class from "all" switches to just that class,
+/// tapping another adds it, tapping a selected one removes it, and removing
+/// the last goes back to all (`AppState.announcementSheetTap`). The selection
+/// is the sheet's own, not the dashboard's class filter, which a student may
+/// have set for a different reason, and it starts at all each time the sheet
+/// opens. What decides each list's rows is `AppState+AnnouncementSheet.swift`;
+/// this view only draws what it is given, plus the selection.
 ///
 /// An announcement row is deliberately plain: class, date, a "NEW" mark, the
 /// title, and one line of preview. The arrow alone says a row opens elsewhere;
@@ -26,15 +39,15 @@ import LowHangingFruitKit
 struct AnnouncementFindsView: View {
     /// The found list as dashboard cards (`AppState.announcementFoundCards`).
     let found: [DashItem]
-    /// The announcements within the 7-day window, already limited to classes
-    /// the student still has and sorted newest first
-    /// (`AppState.announcementSheetRecords`).
+    /// The posts the sheet lists, already limited to classes the student still
+    /// has and sorted newest first (`AppState.announcementSheetRecords`: the
+    /// standing set and the keep-check).
     var records: [AnnouncementRecord] = []
     /// Ids that were unread when the sheet opened, so their rows can say
     /// "new" even though opening the sheet has just marked them seen. A
     /// find's `Assignment.id`, or a row's `AnnouncementReadState.key(for:)`.
     var newIDs: Set<String> = []
-    /// (class key, display name) for the filter, as the dashboard's own class
+    /// (class key, display name) for the bubbles, as the dashboard's own class
     /// menu is given them.
     var courses: [(key: String, name: String)] = []
     /// A found card was swiped done.
@@ -42,21 +55,21 @@ struct AnnouncementFindsView: View {
     /// The student saved (or reset, with nil) an edited date on a found card.
     var onSetDue: (Assignment, Date?) -> Void = { _, _ in }
 
-    /// The class the sheet is narrowed to, or nil for all of them. Starts at
-    /// all classes every time the sheet opens, and is the sheet's own: it is
-    /// not the dashboard's filter, which a student may have set for a
+    /// The classes the sheet is narrowed to (class keys), empty for all of
+    /// them. Starts empty every time the sheet opens, and is the sheet's own:
+    /// it is not the dashboard's filter, which a student may have set for a
     /// different reason.
-    @State private var classFilter: String?
+    @State private var selection: Set<String> = []
     @State private var editing: Assignment?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
     private var visibleFound: [DashItem] {
-        AppState.announcementSheetNarrowed(found, toCourse: classFilter)
+        AppState.announcementSheetNarrowed(found, toCourses: selection)
     }
 
     private var visibleRecords: [AnnouncementRecord] {
-        AppState.announcementSheetNarrowed(records, toCourse: classFilter)
+        AppState.announcementSheetNarrowed(records, toCourses: selection)
     }
 
     var body: some View {
@@ -75,47 +88,54 @@ struct AnnouncementFindsView: View {
                     )
                     .padding(.bottom, 4)
 
-                    classFilterRow
-
-                    let foundNow = visibleFound
-                    if !foundNow.isEmpty {
-                        SmoothSectionHeader(AnnouncementSheetCopy.foundHeader, accent: .smoothAnnouncementAccent)
-                            .padding(.top, 4)
-                        ForEach(foundNow) { item in
-                            AssignmentCardView(
-                                item: item,
-                                onComplete: {
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                                        onComplete(item)
-                                    }
-                                },
-                                onEdit: { editing = item.assignment },
-                                isExamOverride: item.examStyleOverride,
-                                isNew: newIDs.contains(item.id)
-                            )
-                        }
+                    if !courses.isEmpty {
+                        classBubbles
                     }
 
-                    SmoothSectionHeader(AnnouncementSheetCopy.announcementsHeader, accent: .smoothAnnouncementAccent)
-                        .padding(.top, foundNow.isEmpty ? 4 : 12)
+                    let foundNow = visibleFound
                     let shown = visibleRecords
-                    if shown.isEmpty {
-                        Text(AnnouncementSheetCopy.emptyState)
-                            .font(.lhfSecondary(14))
-                            .foregroundStyle(Color.smoothMuted)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 24)
+                    // Which of these posts a find came from, for the small
+                    // "task found" tag. Joined on the id inside the find's
+                    // ledger `sourceID`: a Canvas announcement id, or an Ed
+                    // document id.
+                    let withFinds = Set(found.compactMap {
+                        AnnouncementRecord.recordID(fromFindSourceID: $0.assignment.sourceID)
+                    })
+                    let now = Date()
+
+                    if selection.isEmpty {
+                        if !foundNow.isEmpty {
+                            SmoothSectionHeader(AnnouncementSheetCopy.foundHeader, accent: .smoothAnnouncementAccent)
+                                .padding(.top, 4)
+                            ForEach(foundNow) { item in
+                                foundCard(item)
+                            }
+                        }
+
+                        SmoothSectionHeader(AnnouncementSheetCopy.announcementsHeader, accent: .smoothAnnouncementAccent)
+                            .padding(.top, foundNow.isEmpty ? 4 : 12)
+                        if shown.isEmpty {
+                            emptyLine
+                        } else {
+                            ForEach(shown) { record in
+                                recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
+                            }
+                        }
                     } else {
-                        let now = Date()
-                        // Which of these posts a find came from, for the
-                        // small "task found" tag. Joined on the id
-                        // inside the find's ledger `sourceID`: a Canvas
-                        // announcement id, or an Ed document id.
-                        let withFinds = Set(found.compactMap {
-                            AnnouncementRecord.recordID(fromFindSourceID: $0.assignment.sourceID)
-                        })
-                        ForEach(shown) { record in
-                            recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
+                        // One list for the selected classes: the finds and the
+                        // posts together, newest first, each find above its post.
+                        let compiled = AppState.announcementSheetCompiled(found: foundNow, records: shown)
+                        if compiled.isEmpty {
+                            emptyLine
+                        } else {
+                            ForEach(compiled) { entry in
+                                switch entry {
+                                case .found(let item):
+                                    foundCard(item)
+                                case .post(let record):
+                                    recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
+                                }
+                            }
                         }
                     }
                 }
@@ -144,27 +164,93 @@ struct AnnouncementFindsView: View {
         }
     }
 
-    /// The dashboard's class filter, as it is there: the cobalt menu button,
-    /// and once a class is picked a chip naming it (in that class's own colour,
-    /// as in the add sheet's class picker) that clears it. The same
-    /// `ClassFilterMenu`, so the two cannot drift apart.
-    private var classFilterRow: some View {
-        HStack(spacing: 8) {
-            ClassFilterMenu(courses: courses, selection: $classFilter)
-            if let key = classFilter {
-                ClassFilterChip(
-                    name: courses.first { $0.key == key }?.name ?? key,
-                    accent: courseAccent(for: key),
-                    ink: courseAccentInk(for: key)
-                ) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                        classFilter = nil
-                    }
+    private var emptyLine: some View {
+        Text(AnnouncementSheetCopy.emptyState)
+            .font(.lhfSecondary(14))
+            .foregroundStyle(Color.smoothMuted)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 24)
+    }
+
+    /// A found task or exam as the dashboard's own card.
+    private func foundCard(_ item: DashItem) -> some View {
+        AssignmentCardView(
+            item: item,
+            onComplete: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                    onComplete(item)
                 }
-                .transition(.opacity)
+            },
+            onEdit: { editing = item.assignment },
+            isExamOverride: item.examStyleOverride,
+            isNew: newIDs.contains(item.id)
+        )
+    }
+
+    /// "all" and then one bubble per class, wrapped onto as many rows as the
+    /// width needs (two, for a usual term): the same capsules and the same
+    /// flow layout the add sheet's class picker uses (`CoursePicker`), so a
+    /// class is the same colour here as there. A selected class is filled in
+    /// its own colour; "all" is the sheet's teal. Which bubbles are lit and
+    /// what a tap does is `AppState.announcementSheetTap`.
+    ///
+    /// Wrapped, not one scrolling row: the owner's call on first sight
+    /// (2026-10-23). A row that scrolls hides the classes past the screen's
+    /// edge, so a class you cannot see is a class you cannot pick.
+    private var classBubbles: some View {
+        CoursePickerFlowLayout(spacing: 6) {
+            bubble(
+                AnnouncementSheetCopy.allBubble, isSelected: selection.isEmpty,
+                accent: .smoothAnnouncementAccent, ink: .smoothAnnouncementAccent, onFill: .smoothPaper
+            ) { tap(nil) }
+            ForEach(courses, id: \.key) { course in
+                bubble(
+                    course.name, isSelected: selection.contains(course.key),
+                    accent: courseAccent(for: course.key), ink: courseAccentInk(for: course.key),
+                    onFill: Color(hex: 0x1B1714)
+                ) { tap(course.key) }
             }
-            Spacer(minLength: 0)
         }
+        .padding(.vertical, 2)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func tap(_ course: String?) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            selection = AppState.announcementSheetTap(course, selection: selection)
+        }
+    }
+
+    /// One capsule, drawn as `CoursePicker`'s chips are: uppercased mono label,
+    /// a solid pastel when selected and a quiet tint with a hairline when not.
+    /// A selected capsule's label is `onFill` and an unselected one's is `ink`:
+    /// the pastels are fills, and type on them takes a fixed colour in both
+    /// modes (the pastels do not change after sunset) where type on the page
+    /// takes the accent's ink.
+    private func bubble(
+        _ label: String,
+        isSelected: Bool,
+        accent: Color,
+        ink: Color,
+        onFill: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            // A size down from `CoursePicker`'s chips so a usual term's
+            // classes and "all" fit in one or two rows (the owner's ask).
+            Text(label.uppercased())
+                .font(.lhfMono(11, weight: .semibold))
+                .tracking(0.3)
+                .lineLimit(1)
+                .foregroundStyle(isSelected ? onFill : ink)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(isSelected ? accent : accent.opacity(0.14)))
+                .overlay(Capsule().stroke(accent.opacity(isSelected ? 0 : 0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -281,6 +367,8 @@ enum AnnouncementSheetCopy {
     /// The sheet's dismiss button. The owner's wording: it names where the
     /// student lands, which "done" did not.
     static let dismiss = "back to assignments"
+    /// The first bubble, before the classes. Drawn uppercased like the others.
+    static let allBubble = "all"
     static let foundHeader = "found"
     static let announcementsHeader = "announcements"
     /// A row whose post came without a title.

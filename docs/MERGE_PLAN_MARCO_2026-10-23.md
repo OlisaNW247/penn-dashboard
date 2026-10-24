@@ -116,3 +116,11 @@ before the push.
 - Marco has not been told that the course-material sync was touched on
   2026-10-23 at Olisa's direction, and this plan salvages his parked sync
   fixes onto that; he should hear both at once.
+
+## 6. Compiled, 2026-10-23 late (Marco's session, PR #13)
+
+`origin/v8` at `fb3ed94` builds. `swift test --no-parallel`: 2736 tests / 246 suites, the predicted count, one failure:
+`DeviceSyncWiringTests.passCallSites`, a text-position check of `ContentView.refresh()` that the launch-refresh
+rework's helper extraction inverted (runtime order unchanged; fixed in PR #13). PR #13 merges this tip; the one code
+clash was `ed-tabs-restore` against Marco's `fix/ed-posts-durable` (the same fix twice), resolved by keeping Olisa's.
+Marco was told, in the same session, that the course-material sync was changed at Olisa's direction.

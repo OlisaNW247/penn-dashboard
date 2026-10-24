@@ -95,7 +95,11 @@ password, no name. Two things go through it:
   context document and matched excerpts, and are answered by a model via
   OpenRouter under LHF's own key (see the ask section below). The
   Announcement Watcher's AI assist is routed the same way, only for
-  announcements that an on-device gate judges could carry a task. Since
+  announcements that an on-device gate judges could carry a task, and
+  (since 2026-10-23, on `fix/megaphone-every-class`) for at most six
+  instructor/TA Ed posts a day, judged only for whether they still matter.
+  Each answer also carries a short "until when this matters" note, which
+  the phone keeps and the server does not. Since
   2026-10-18 that covers Ed announcements and pinned posts too (title and
   body, no author, once each, never for a hidden class), under the same
   switch and the same gate; the text is what the pool already holds. (For
@@ -138,18 +142,29 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.0.0 (build 11)** (App Store
-id `6783911002`, released about 2026-10-01; confirmed on the store page by
-Olisa 2026-10-09, with 1.2.1 live before it from 2026-09-04). This line has
-been stale before, so re-check it rather than trust it. `project.yml`
-stamps **3.1.0 (build 13)** on `v8` (2026-10-20, the release the owner
-asked to send straight to App Review that evening: the Smooth Sweeper,
-the exam cards, the megaphone redesign, Ed posts, the ask work and the
-sign-out fix, with Grade Watcher removed). **Archived from `1450fdc` and
-uploaded to App Store Connect at 19:11 on 2026-10-20** ("Upload
-succeeded", `docs/appstore/CHECKLIST.md` → "3.1.0 submission"); whether
-it was attached to a 3.1.0 version and submitted for review is Olisa's
-step in App Store Connect and is not recorded here yet.
+**Release state.** Live on the App Store: **3.1.0 (build 13)** (App Store
+id `6783911002`), released 2026-10-21 at 19:07 UTC per the public iTunes
+lookup, read 2026-10-23
+(`curl -s "https://itunes.apple.com/lookup?id=6783911002"`); before it,
+3.0.0 (11) from about 2026-10-01 and 1.2.1 from 2026-09-04. This line has
+been stale before, so re-check it rather than trust it. 3.1.0 (13) is the
+release the owner asked to send straight to App Review on the evening of
+2026-10-20: the Smooth Sweeper, the exam cards, the megaphone redesign,
+Ed posts, the ask work and the sign-out fix, with Grade Watcher removed.
+It was **archived from `1450fdc` and uploaded at 19:11 on 2026-10-20**
+(`docs/appstore/CHECKLIST.md` → "3.1.0 submission"). To read the
+released source, check out `1450fdc`, not the `v8` tip.
+**3.2.0 (build 14): archived from `a9af3ad` on `fix/megaphone-every-class`
+(PR #13: all of `v8` `fb3ed94` plus the megaphone, Ed and keep-check
+work) and uploaded to App Store Connect at 18:18 EDT (22:18 UTC) on
+2026-10-23** ("Upload succeeded"; the Release widget's AlarmKit link
+checked weak first), at Marco's say. Attaching it to a 3.2.0 version and
+submitting for review is Marco's step in App Store Connect; whether he did
+is not recorded here yet. The What's New in `LISTING.md` leaves out the AI
+judgments and the server exam dates until `extract-announcement` and
+`sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
+submission"). PR #13 was not yet merged into `v8` at upload time; the
+archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is still 1.2.1; raising it
 to the live version is Olisa's call, after the build is downloadable. Marco's
@@ -262,17 +277,42 @@ Keep this current. It is the fastest way for a new session to know what exists.
        announcement both name it. A "NEW" tag sits beside the class.
        Hidden when empty.
     2. **announcements**: the Canvas announcements and the Ed
-       announcements and pinned posts from the **past 7 days**, newest
-       first, across classes; a row is class, date ("ed" beside it for an
-       Ed post), title, a one-line preview, an arrow and a "task found"
-       tag when a find came from it; the whole row opens the original.
-       Empty says "no announcements".
+       announcements and pinned posts from the **past 7 days, plus each
+       class's newest post** however old (since 2026-10-23, so a class
+       that posts rarely, or only on Ed, never vanishes), newest first,
+       across classes. On top of that standing set sits the **keep-check**
+       (`announcementRecordsForSheet`): a post is taken off once it is
+       over (its judged event has passed, or every task found in it is
+       finished or past, which needs no AI), and an older post comes back
+       while it still matters (judged `standing`, an `event` ahead, a
+       `task` still open). An Ed staff post lists only while judged to
+       matter (an event or due date ahead). The judgments come from
+       `extract-announcement`'s `relevance` field, once per post, stored
+       on the phone (`AnnouncementRelevanceStore`); completion state never
+       leaves the phone. A row is class, date ("ed" beside it for an Ed
+       post), title, a one-line preview, an arrow and a "task found" tag
+       when a find came from it; the whole row opens the original. Empty
+       says "no announcements". A find whose real Canvas/Gradescope twin
+       is finished leaves the found list too
+       (`announcementFindsWithFinishedTwin`). Since 2026-10-23 two rows of
+       class **bubbles** sit at the top, wrapped so every class shows
+       (only classes switched on; a program site such as "TAP 2028" is
+       never a class anywhere in the app, `NonClassCanvasSite`) ("all", preset on every open,
+       then one per class; tap a class to switch to it, tap more to add
+       them, tap a selected one to drop it). With classes selected the
+       two lists become **one compiled list**, newest first, each find
+       directly above the post it came from
+       (`announcementSheetCompiled`, `announcementSheetTap`). Judgments
+       for posts read before the server gave them are **backfilled**,
+       relevance only, sharing the 6-a-day budget, and only once this
+       install has seen the server return one (`serverJudgesRelevanceV1`,
+       `AppState+RelevanceBackfill.swift`).
 
     The dismiss button says "back to assignments". What each list holds
     is decided in `AppState+AnnouncementSheet.swift`
     (`announcementFoundItems(now:)`, `announcementSheetRecords(now:)`),
-    read-only over the same rows as before; the 7 days are display only,
-    the log still keeps 60. Before 2026-10-10 the sheet listed only
+    read-only over the same rows as before; the window and the
+    keep-check are display only, the log still keeps 60. Before 2026-10-10 the sheet listed only
     extracted tasks and hid itself when there were none, which read as
     "announcements are missing".
     The Canvas rows are an on-device cache (`AnnouncementLogStore`,
@@ -290,8 +330,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     compiler), and the thread's last activity only for a document synced
     before that. The badge counts
     exactly what the sheet can show: unread found items plus unread
-    posts from the past 7 days, so it never counts a passed task or an
-    older post. Rows unread when opened are tagged NEW
+    listed posts, so it never counts a passed task or a post the sheet
+    does not list. Rows unread when opened are tagged NEW
     (`AnnouncementReadState`, which marks only the shown rows seen), and
     the first fill of each kind on an install counts as already seen. The
     badge caps at "99+" (VoiceOver still gets the true count). Since
@@ -1002,104 +1042,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2606 tests / 237 suites, all green, on `v8` at `ad4f920`
-(2026-10-23, `swift test --no-parallel`, on Olisa's Mac, 8.3 s). Green on
-the first run. It compiled, all at once and for the first time, the
-Chrome extension's Swift half (2026-10-22, `BackendWire`, `Sync/`, the
-pairing and device-sync layer, `FileKindTests`, `DeviceSyncWiringTests`
-and the rest) and the three announcement phases of 2026-10-23
-(`CourseKnowledgeCollectorAnnouncementTests` 6, the Ed reader's 24 in
-`EdClientTests`, `EdIngestionTests` and the `EdRunStopTests` suite).
-Nothing removed. Not yet built to the phone.**
-**Pending: the merge of Marco's branches on `v8-merge-marco` (2026-10-23),
-predicted +35 +0 +0 +19 +10 +40 +13 = 2723 tests from the seven merges,
-plus the three fresh patches merged on top (`LaunchRefreshStructureTests`
-4, `CourseKnowledgeCollectorPartialSyncTests` 6, three more in
-`EdRunStopTests`) = **2736 tests in about 246 suites**; nothing compiled.
-A lower count has lost work.**
-Before it: 2485 / 227 at `e6aa754`
-(2026-10-22, `swift test --no-parallel`, on Olisa's Mac, 8.2 s): 2464
-plus the 21 tests of `VoiceDictationTests` (two suites: the availability
-table and the draft merge; source scans of the two usage strings, the
-on-device flag, the record category, the lifecycle stops and the
-no-auto-send handler), nothing removed. Green on the first run, the
-count exactly as predicted, and the iOS Debug build (the only thing
-that compiles `VoiceDictationController`, whose body is `#if os(iOS)`)
-succeeded on the first try the same morning, was installed on Olisa's
-iPhone, and the mic worked on the first try: "mic is working
-perfectly" (10:39, a dictated question answered).**
-Before it: 2464 / 225 at `1a4ed6e`
-(2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.0 s):
-the same count, with the sweeper section's copy test pinning two lines
-(the description at 17pt, the nudge in parentheses at 14pt). Green on
-the first run; the phone build of this tree is not yet recorded.
-Before it: 2464 / 225 at `178de76` (2026-10-20 evening, 8.0 s):
-the same count as `38b578a`, with the nine `SweeperOnboardingTests`
-rewritten for the combined reminders page (no sweeper phase, the section
-under the turned-in switch, three dots), nothing added or removed. Green
-on the first run; the iOS Debug build succeeded on the first try, was
-installed on Olisa's iPhone at 18:49 and launched straight into the
-onboarding harness (`-LHFOnboardingHarness -LHFRemindersOnboardingHarness`);
-Olisa saw the combined page and asked for the copy split that became
-`1a4ed6e`.
-Before it: 2464 / 225 at `38b578a`
-(2026-10-20, 7.6 s): 2462
-plus 2 in `SettingsCopyTests` (the Profile diagnostics flag is off, and
-the rows are gated, not deleted), nothing removed. Green on the first
-run; the iOS Debug build succeeded on the first try and was installed on
-Olisa's iPhone at 18:32 the same day (the launch step failed only
-because the phone was locked, twice in a row now: unlock it before the
-last command). Olisa then opened the onboarding harness and saw the
-Sweeper page beside the reminders page, which is what led to `178de76`. Before it:
-2462 / 225 at `8584900`
-(2026-10-20, 9.3 s): 2453
-plus the 9 source-scan tests of `SweeperOnboardingTests` (the Smooth
-Sweeper page and the rename), nothing removed; `usageDescriptionInBothPlaces`
-in `BerserkAlarmTests` pins the new permission text. Green on the first
-run, and the iOS Debug build succeeded on the first try and was installed
-on Olisa's iPhone at 11:49 (the launch command failed only because the
-phone was locked). The page and the new names are not yet seen on the
-phone. Before it: 2453
-/ 224 at `8d00e62`
-(2026-10-20 evening, `swift test --no-parallel`, on Olisa's Mac, 8.2 s):
-2414 plus 7 in `BerserkAlarmActivityTests` (the Live Activity's plan
-fields, the v2 id namespace, the plist, project and pbxproj entries, the
-widget wiring) and 32 in `BerserkTakeoverTests` (seven suites: which
-signal gets the screen, what a choice does, when it leaves, reading a
-loud buzz, the model, the source wiring), nothing removed; one existing
-test rewritten (`alarmKitIsGuarded` now expects two guarded files).
-Green on the first run. The iOS Debug `xcodebuild` (the widget
-extension's Live Activity and the AlarmKit extension) also succeeded on
-the first try and was installed on Olisa's iPhone at 11:25 the same
-day; Olisa then rang it: the island showed the tomato card and the
-takeover worked. Before it: 2414 / 217 at `edff9ac`
-(2026-10-20 afternoon, 8.4 s):
-2409 plus 4 in `AnnouncementSheetBadgeTests` and the new
-`DashboardReloadCoalescingTests` (1), the freeze fix. The first run at
-`47a946c` failed only the coalescing test, which pumped `RunLoop.main`
-from a main-actor test and so never saw the main-actor reload task;
-`edff9ac` dropped the view model's `receive(on: RunLoop.main)` hop (its
-publishes are main-actor already) and made the test yield instead.
-Before it: 2409 tests / 216 suites, all green, on `v8` at `99e3f57`
-(2026-10-20, `swift test --no-parallel`, on Olisa's Mac, 8.0 s): 2397
-plus the 12 tests of `AskRecencyExcerptTests` (two suites: the
-`RecencyIntent` table and the newest-posts-first excerpt rule), nothing
-removed. Not yet built to the phone.** Before it: 2397 / 214 at `a3ede70`
-(2026-10-20, 7.7 s): the merge
-of Olisa's `v8` (2033/192 at `2b46ce7`, 2026-10-19) and Marco's
-`v8-loud-alert-actions` (2332/209, 2026-10-19), both branching from
-`beed156` (1975/189).** The count is exactly what the merge predicted
-(1975 + 357 + 58, the merge's own −6 +9, the review's +4 and one parent
-suite). The first compile had two failures, both in how the merge was
-resolved rather than in either side's code (the page list judged one
-level too early; a test whose empty course selection was overwritten
-through the shared defaults), fixed in `a3ede70`. The three suites that
-write the shared extraction keys (`EdAnnouncementTaskTests`,
-`EdAnnouncementTaskMergeTests`, `AnnouncementWatcherSyncTests`) are nested
-under one serialized parent, `AnnouncementExtractionSuites`. The iOS
-Debug build of the merged tree (which is what compiles `App/LHFApp.swift`
-and the AlarmKit intents) succeeded on Olisa's Mac the same morning and
-was installed on Olisa's iPhone at 09:08.
+**Current: 2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which
@@ -1141,6 +1084,33 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 2736/246 `origin/v8` at `fb3ed94` (Olisa's `v8-merge-marco` fast-forwarded, pushed uncompiled, predicted 2736), compiled and run on Marco's Mac 2026-10-23 ~22:00, `swift test --no-parallel`, 28.1 s: **one failure**, `DeviceSyncWiringTests` "a pass is called from the foreground refresh and the launch task, never from the background wake". The test checks call order by text position inside `ContentView.refresh()`; `launch-refresh-rework` moved the grades fetch and the reload into `fetchSessionSources()` / `settleAfterFetch()`, so the positions reversed while the runtime order (fetch, device-sync pass, reload) is unchanged. Test fixed in PR #13's merge of this tip, not a code regression.
+- 2755/251 `fix/megaphone-every-class`, 2026-10-23 late, `swift test
+  --no-parallel` on Marco's Mac, 23.6 s, green: +3 in `NonClassCanvasSiteTests`
+  ("TAP 2028" is never a class) and the compact two-row bubbles. iOS build
+  succeeds.
+- 2752/250 `fix/megaphone-every-class`, 2026-10-23 evening, `swift test
+  --no-parallel` on Marco's Mac, 23.4 s, green, after the class bubbles
+  (`AnnouncementSheetBubblesTests`, +20) and `fix/relevance-backfill`
+  merged in (`RelevanceBackfillTests`, +13); the two-row bubble layout
+  came after it (layout only; the 55 sheet tests re-ran green and the iOS
+  build succeeds).
+- 2719/246 `fix/megaphone-every-class` (not yet on `v8`), 2026-10-23,
+  `swift test --no-parallel` on Marco's Mac, 21.3 s, green, with
+  `fix/ed-posts-durable` merged in; the iOS build of the same tree
+  succeeds. +113 tests and +9 suites over `v8`'s 2606/237: the every-class
+  list and the finished-twin rule (`AnnouncementFindTwinTests` and new
+  `AnnouncementSheetTests` cases), the camelCase/"worksheets" matcher
+  cases, the keep-check (`AnnouncementRelevanceTests`,
+  `AnnouncementRelevanceSyncTests`), staff posts and their daily cap
+  (`EdStaffReadBudgetTests` and pass tests), and the Ed fix's 13
+  (`CourseKnowledgeCollectorEdTests`, `EdRestoreDropPlanTests`, three
+  `CourseKnowledgeBaseTests`). Changed on purpose: two
+  `AnnouncementEdRowsTests` cases now expect a staff post as a marked
+  candidate row the sheet does not list, and the relevance wire test reads
+  a date-only `until` as the end of that day. Deno: 459 with `--no-check`
+  (see the backend commit `36e3aee` for why `deno task test` stops at
+  type-checking on Deno 2.9.8).
 - 2397/214 `v8`, 2026-10-20, verified on Olisa's Mac (2393/213
   at the merge commit, then +4 tests and the parent suite
   `AnnouncementExtractionSuites` from the review: `movedExamIsNotTheSyllabusTwin`
@@ -2362,6 +2332,24 @@ itself.
   regex compiles per call. The rule: never put a computation that reads
   the ledger or scans all pairs in a SwiftUI `body` or a property `body`
   reads; store it and refresh it where the data changes.
+- **Ed posts that "vanish" were deleted by the course-material sync, not
+  by Ed.** Marco's megaphone showed no Ed posts for days while Olisa said
+  Ed worked, and both were right: on 2026-10-23 Marco's phone read both
+  of his Ed classes at 15:05, yet every one of its 35 Ed posts had been
+  first stored at 15:05 (unchanged posts keep their old `fetchedAt`), so
+  none had survived any earlier run. `CourseKnowledgeCollector` merged
+  each re-synced class as a complete set, which removed its `.ed`
+  documents, and saved the file at once. Ed's pass, which only starts
+  after a hidden launch of up to ~40 s, put them back from
+  `priorEdDocuments`. If the app left the screen in that window, or the Ed
+  run failed, the file kept no Ed posts and the next run had nothing to
+  restore. The fix is `merge(preservingKinds: [.ed])` in the collector: it
+  never produces Ed documents, so it has no say over them. The wrong fixes
+  look reasonable: saving later in the collector still loses everything on
+  a crash between the two saves, and keeping a second copy of Ed posts for
+  the megaphone would hide the bug from ask and the upload, which read the
+  same file. The tell: an Ed post's `fetchedAt` equal to the latest sync
+  for every post at once.
 - **A card that stays "not done" after a real submission is usually a
   missing session, not a detection bug.** Marco's PHYS 0151 prelab,
   2026-10-18: handed in, still on the dashboard. Canvas submission state
@@ -2500,7 +2488,9 @@ it holds work that exists nowhere else.
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
-| `v8` | **Current line (2026-10-02 onward); Marco's `v8-loud-alert-actions` is merged into it on `v8-merge-loud-alert` (2026-10-20), not yet on `v8` itself.** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`): the `ed` document kind on both sides of the wire, the pure Kit `Ed/` layer, `EdClient`/`EdIngestion`, and the app wiring (`EdSessionLauncher`, `EdDiscussionCoordinator`, the Settings status row). Compiled green 2026-10-09 (1499/152); nothing run on a device yet. Also carries the sign-out fix, stamped 3.0.1 (12). |
+| `v8` | **Current line (2026-10-02 onward).** `V7` plus Ed Discussion ingestion (`docs/ED_DISCUSSION.md`), the sign-out fix, the Chrome extension's Swift half, the announcements-for-ask work, and, since 2026-10-23 21:23 (`fb3ed94`, Olisa's `v8-merge-marco`, `docs/MERGE_PLAN_MARCO_2026-10-23.md`), seven of Marco's branches (`fix/submission-status`, `fix/canvas-signin-bulletproof`, `v8-launch-prep`, `parked/missing-login-banner`, `parked/gradescope-unverified-submission`, `v8-server-exam-dates`, `codex/automatic-canvas-login` = PR #11) plus three fresh patches (`launch-refresh-rework`, `course-sync-salvage`, `ed-tabs-restore`). Its author did not compile it; compiled on Marco's Mac the same night: 2736/246 with one stale structure test (Test baseline). PR #13 (`fix/megaphone-every-class`) merges this tip and is the next thing to land. |
+| `fix/megaphone-every-class` | **2026-10-23, off `v8` `a480eb1`, local only, for Olisa's review.** The megaphone fixes Marco asked for (every class, finished-twin finds, the keep-check, Ed staff posts by judgment), the `extract-announcement` relevance field and empty-answer fix (not deployed), and `fix/ed-posts-durable` merged in. Write-up: `docs/ED_AND_MEGAPHONE_PLAN.md`. 2719/246 green; not yet run on a phone. Built app kept at `build/megaphone/Smooth.app` in its worktree (`.claude/worktrees/megaphone`). |
+| `fix/ed-posts-durable` | 2026-10-23, off `v8` `a480eb1`, local only (`d4b9a04`), merged into `fix/megaphone-every-class`. Ed posts are no longer deleted by the course-material collector or by a failed `/tabs` lookup. |
 | `V7` | The line from 2026-09-23 to 2026-10-02. Contains all of `v6`, `v5`, `V7-polish` and `v8-features`: the session-persistence work, the Settings trim, the todo · all · prev switch and class filter, multi-school sign-in, and (2026-09-27, `df759f8`/`a16ea07`, from the since-deleted `v7-olisa-session`) Olisa's `39b2fff` session logic restored for Penn. 3.0.0 (11) was archived from `ddef468`. New work branches from here, and lands back here. |
 | `v8-ann-rules` | **Local, 2026-10-18, off `v8-announcements` at the WIP commit `80c21ec`; not merged or pushed.** The announcement-task visibility rules (past tasks leave the dashboard instead of moving to prev, undated tasks age out after 7 days, same-day class reminders are not cards, the Ed pass reads only posts from the last 14 days). Written to be merged into `v8-announcements` as a patch, and applied there on 2026-10-18, so it holds nothing extra. 2207/203 green on its own; compiled for generic iOS (the phone was unreachable), not installed. |
 | `origin/v8` (as of 2026-10-08) | Olisa's Ed Discussion work (four commits, 2026-10-02), on top of `origin/V7`; not merged. It rewrites the staleness line inside `SessionCookieStore.load` and adds a `.ed` service, so a sign-in fix that edits `load` will conflict with it. `origin/V7` is also one commit ahead of the 3.0.0 (11) source (`9769286`, DEBUG owner rows in Settings). Marco's note of 2026-10-08, kept for its dates; since 2026-10-10 `v8` is the line and carries all of it (see its row above). |
@@ -2521,10 +2511,46 @@ none is a ship line.
 
 ## Known gaps
 
-- **Automatic PennKey capture is uncompiled and has never run on a phone**
-  (2026-10-23, merged on `v8-merge-marco` from `codex/automatic-canvas-login`;
-  Marco's own note says 40 focused tests passed and an iOS Debug build
-  succeeded on his tree at `96dce92`, none of which is `v8`). Unseen: a
+- **A class's Ed posts can vanish from the phone and come back**
+  (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
+  over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620
+  and CIS 3990 post only on Ed. At 15:05 that day the phone held 35 Ed
+  posts for them, and a replay of the saved data through the 3.1.0 rules
+  listed three of them. But the seen set
+  (`seenAnnouncementIDsV1`) held only those three Ed keys, none of the
+  older Ed rows the first Ed seeding marked. `markAllSeen` keeps an old
+  key only while its row is still known, so at some earlier open of the
+  sheet the phone held no Ed posts at all, and every one of the 35 had
+  been first stored at 15:05. Cause found the same evening: the
+  course-material collector deleted Ed posts and saved before Ed put them
+  back (see the trap "Ed posts that 'vanish'"), plus a failed `/tabs`
+  lookup counting as "no Ed". Both fixed on `fix/ed-posts-durable`, merged
+  into `fix/megaphone-every-class`. **First evidence on a phone, 2026-10-23
+  18:22:** the previous build's 17:57 run on Marco's phone failed its
+  manifest and its whole Ed read (first failure `other · couldn't read ed account: cancelled`), and the
+  status line read `restored 6 · dropped 0`; all 35 Ed posts were still on
+  disk afterwards, where the old code would have deleted them. Still in
+  3.1.0 (13) itself until 3.2.0 ships.
+- **`extract-announcement` returned HTTP 502** on Marco's phone at 15:04
+  on 2026-10-23, for PHYS 0151's "Midterm 2 information with formula
+  sheet added" (posted 10-16). That was its second failure
+  (`announcementExtractionAttemptsV1`); a third makes the app give up on
+  the post for good, so no task is ever found in it. The run's back-off
+  also skipped the Ed task pass for the hour. The function's log was not
+  read (no Supabase token on the dev Mac). Probable cause: a thinking
+  model spending its whole token cap on reasoning and answering with no
+  content; fixed in code on `fix/megaphone-every-class` (`36e3aee`),
+  **not deployed**.
+
+- **Automatic PennKey capture: compiled (2885/260 green in PR #13), and
+  Marco reports a working PennKey + Duo login through it on his phone
+  (2026-10-23, on his own tree, build not recorded); the merged tree,
+  where it meets the launch-refresh rework, has not been watched on a
+  device until 18:22 that evening, when the 3.2.0 (14) Debug build of the
+  merged tree ran on Marco's phone: no crash, Canvas sync alive (20
+  announcements), Ed task pass and course-material sync ran.** (Merged on
+  `v8-merge-marco` from `codex/automatic-canvas-login`.) Still unseen on
+  the merged tree: a
   real PennKey + Duo sign-in through the capture, a password manager's
   autofill (whether its submit reaches `PennKeyLoginCapture`), the
   pre-login disclosure line, the "Canvas connected" page, and a later
@@ -2839,10 +2865,16 @@ none is a ship line.
   evening (`ed-tabs-restore`): a class whose Ed `/tabs` lookup fails is
   "unknown", not "no Ed", so `restoreDropPlan(unknown:storedEd:)` restores
   its stored posts instead of dropping them (three tests in
-  `EdRunStopTests`). Narrower than it sounded: matching is by course code,
-  so the only class this protects is one whose code matches no Ed course
-  while its tab request fails; before, that run dropped its posts until
-  the next successful lookup. Still true:
+  `EdRunStopTests`, and `EdRestoreDropPlanTests`). Narrower than it
+  sounded: matching is by course code, so the only class this protects is
+  one whose code matches no Ed course while its tab request fails; before,
+  that run dropped its posts until the next successful lookup. The same
+  fix was written a second time that evening on `fix/ed-posts-durable`
+  (PR #13), and Olisa's version was kept when the two met (2026-10-23
+  late): the rules agree, and his does not count a class with nothing
+  stored as restored. The bigger cause of vanishing Ed posts, the
+  collector deleting them (the "vanish" trap), is PR #13's and is not in
+  `ed-tabs-restore`. Still true:
   pooled Ed posts are downloaded and dropped again every sync on a phone
   whose class has no Ed match, and staff answers inside student questions
   are never captured (no endpoint).
