@@ -21,24 +21,33 @@ import LowHangingFruitKit
 // sync, and this file only reads that (`AnnouncementRecord.edRecords`), merging
 // the rows at display time and never into the log file.
 //
+// Each post also carries, when the server gave one, a judgment of how long it
+// stays worth listing (`AnnouncementRelevance`, stored per post in
+// `AnnouncementRelevanceStore`, written by the two extraction passes). The
+// sheet's rule reads it (`AppState+AnnouncementSheet.swift`); nothing else does.
+//
 // Nothing here talks to a server. The log is read from and written to one
 // file on the phone, it is cleared when Canvas is disconnected, and nothing
 // reads it to build a request (`AnnouncementLogSyncTests` pins that the
 // extraction path sees exactly the announcements it saw before the log
 // existed).
 
-/// The on-disk log and the read state that goes with it. One optional value
-/// rather than two so "the feature is off" is a single check: nil under the
-/// test runner, where an `AppState` must not touch the real Application
-/// Support directory or the shared defaults domain.
+/// The on-disk log, the read state that goes with it, and the per-post
+/// relevance judgments kept beside the read state. One optional value rather
+/// than several so "the feature is off" is a single check: nil under the test
+/// runner, where an `AppState` must not touch the real Application Support
+/// directory or the shared defaults domain.
 struct AnnouncementLogContext {
     var store: AnnouncementLogStore
     var readState: AnnouncementReadState
+    var relevance: AnnouncementRelevanceStore
 
     /// The shipping wiring: the real file beside the course-knowledge cache,
-    /// and `UserDefaults.lhf` for the seen ids.
+    /// and `UserDefaults.lhf` for the seen ids and the relevance judgments.
     static func live() -> AnnouncementLogContext {
-        AnnouncementLogContext(store: .default(), readState: AnnouncementReadState())
+        AnnouncementLogContext(
+            store: .default(), readState: AnnouncementReadState(), relevance: AnnouncementRelevanceStore()
+        )
     }
 }
 
@@ -158,7 +167,8 @@ extension AppState {
         )
         announcementLog = AnnouncementLogContext(
             store: AnnouncementLogStore(directory: directory),
-            readState: AnnouncementReadState(defaults: defaults)
+            readState: AnnouncementReadState(defaults: defaults),
+            relevance: AnnouncementRelevanceStore(defaults: defaults)
         )
         loadAnnouncementLog()
     }
@@ -172,12 +182,15 @@ extension AppState {
             announcementLogRecords = []
             edAnnouncementRecords = []
             announcementSeenIDs = []
+            announcementRelevance = [:]
             refreshAnnouncementRecordsOnPage()
             refreshAnnouncementBadge()
             return
         }
         announcementLogRecords = log.store.load(now: now)
         announcementSeenIDs = log.readState.seenIDs
+        // Before the Ed refresh below, which prunes this to the rows that exist.
+        announcementRelevance = log.relevance.all
         observeKnowledgeForAnnouncements()
         refreshEdAnnouncementRecords(from: courseKnowledge, now: now)
         // The seen ids were just replaced from disk, which no list change implies.
@@ -220,6 +233,7 @@ extension AppState {
             ? []
             : AnnouncementRecord.edRecords(from: knowledge.documents, now: now)
         if next != edAnnouncementRecords { edAnnouncementRecords = next }
+        pruneAnnouncementRelevance()
         seedEdAnnouncementsIfNeeded()
         refreshAnnouncementRecordsOnPage()
         // Unconditional, and after the seeding above: the seed writes the seen
@@ -230,21 +244,30 @@ extension AppState {
 
     /// The first time Ed rows exist on this install, they count as already
     /// seen, so the badge does not jump to the whole backlog the day they
-    /// first appear. Tracked by its own flag (`edSeeded`), not by the Canvas
-    /// log's first fill: an install that filled its Canvas log long ago must
-    /// still get this once. Set only when there is something to mark, so a
+    /// first appear. Staff-post rows (`isStaffPost`) are left out of this, both
+    /// as rows to mark and as a reason to seed: a staff row is listed only when
+    /// its judgment says it matters, which can only happen after it is read, so
+    /// marking it seen here would file the very post that matters (a TA's
+    /// "Midterm" from yesterday) under "already looked at" and it would never
+    /// badge or say NEW. A student who has only staff posts on Ed is seeded on
+    /// the day their first announcement or pinned post appears, not before.
+    ///
+    /// Tracked by its own flag (`edSeeded`), not by the Canvas log's first
+    /// fill: an install that filled its Canvas log long ago must still get this
+    /// once. Set only when there is something to mark, so a
     /// class whose Ed posts arrive in a later sync is seeded then and not at
     /// launch with nothing to see. Later Ed rows are unread.
     private func seedEdAnnouncementsIfNeeded() {
         guard let log = announcementLog,
               !isUsingFixtureData,
-              !edAnnouncementRecords.isEmpty,
               !log.readState.edSeeded
         else { return }
+        let listable = edAnnouncementRecords.filter { !$0.isStaffPost }
+        guard !listable.isEmpty else { return }
         // A plain union, not `markSeen(_:keepingOnly:)`: this can run at
         // launch, before the first rebuild has loaded the finds, and pruning
         // to "what is on the page" then would forget finds already seen.
-        log.readState.markSeen(Set(edAnnouncementRecords.map(AnnouncementReadState.key(for:))))
+        log.readState.markSeen(Set(listable.map(AnnouncementReadState.key(for:))))
         log.readState.markEdSeeded()
         announcementSeenIDs = log.readState.seenIDs
         refreshAnnouncementBadge()
@@ -339,8 +362,47 @@ extension AppState {
         }
         announcementSeenIDs = log.readState.seenIDs
         announcementLogRecords = kept
+        pruneAnnouncementRelevance()
         refreshAnnouncementRecordsOnPage()
         refreshAnnouncementBadge(now: now)
+    }
+
+    // MARK: Relevance
+
+    /// Stores the relevance judgments a pass just read, keyed by the read-state
+    /// key of the post (`AnnouncementReadState.recordKey` / `.edKey`), and
+    /// brings the badge up to date, since the sheet's list (which the badge
+    /// counts) follows them. A judgment replaces an earlier one for the same
+    /// post, which only happens when a post is read again after the processed
+    /// ids were cleared; a post whose pass gave none keeps what it had.
+    ///
+    /// Not pruned here, on purpose. A judgment is written once per post and the
+    /// post is never asked about again, so dropping one because the row it
+    /// describes is not yet in the list (the Ed list is rebuilt from the
+    /// course material on its own subscription) would lose it for good, where
+    /// keeping it until the next refresh costs a few bytes: that refresh
+    /// (`pruneAnnouncementRelevance`) keeps it once the row exists and drops
+    /// it only if the row never does.
+    ///
+    /// Without the log (the test runner by default) nothing is stored.
+    func recordAnnouncementRelevance(_ judgments: [String: AnnouncementRelevance]) {
+        guard let log = announcementLog, !judgments.isEmpty else { return }
+        announcementRelevance = log.relevance.merge(judgments)
+        refreshAnnouncementBadge()
+    }
+
+    /// Drops the judgments of rows that can no longer be listed, so the stored
+    /// set is bounded the way the seen set is: by `knownAnnouncementKeys`, every
+    /// stored Canvas record (hidden classes included) and every Ed row. Run
+    /// whenever either list is refreshed. It never grows the set and writes
+    /// nothing when nothing is dropped.
+    private func pruneAnnouncementRelevance() {
+        guard let log = announcementLog, !announcementRelevance.isEmpty else { return }
+        let known = knownAnnouncementKeys(canvas: announcementLogRecords)
+        let kept = announcementRelevance.filter { known.contains($0.key) }
+        guard kept.count != announcementRelevance.count else { return }
+        announcementRelevance = kept
+        log.relevance.replace(with: kept)
     }
 
     // MARK: Megaphone
@@ -386,7 +448,9 @@ extension AppState {
     var showsAnnouncementsButton: Bool {
         AnnouncementReadState.megaphoneVisible(
             finds: announcementPageItems,
-            records: announcementRecordsOnPage
+            // A staff post is listed only when its judgment says so, so on its
+            // own it is nothing to open.
+            records: announcementRecordsOnPage.filter { !$0.isStaffPost }
         )
     }
 
@@ -438,6 +502,11 @@ extension AppState {
     func clearAnnouncementLog() {
         announcementLog?.store.clear()
         announcementLog?.readState.forgetRecords()
+        // The judgments describe the posts just forgotten, Ed's included: the
+        // processed ids go with a disconnect, so those posts are read, and
+        // judged, again.
+        announcementLog?.relevance.clear()
+        announcementRelevance = [:]
         announcementLogRecords = []
         announcementSeenIDs = announcementSeenIDs.filter {
             !AnnouncementReadState.isRecordKey($0) && !AnnouncementReadState.isEdKey($0)

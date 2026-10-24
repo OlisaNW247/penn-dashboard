@@ -141,9 +141,13 @@ public struct EdDocumentHeader: Sendable, Equatable {
 
     /// A staff-authored non-question post, which `EdThreadFilter` files under
     /// the reason "staff post" (not "staff": that is only the word the text
-    /// uses where provenance matters). Not listed as news, but it is the
-    /// third kind the Announcement Watcher reads, because a TA's "HW3 moved
-    /// to Monday" is exactly such a post.
+    /// uses where provenance matters). Not listed as news: the megaphone sheet
+    /// lists its row only while the post's relevance judgment says it still
+    /// matters (`AnnouncementRecord.isStaffPost`). The Announcement Watcher's
+    /// Ed pass (`syncEdAnnouncementTasks`) reads it, but for that judgment
+    /// alone and never for tasks, because a staff post is usually an answer
+    /// and "you can submit by Friday" in a reply is not a task the class was
+    /// given.
     public var isStaffPost: Bool { reason == "staff post" }
 
     public static func parse(_ text: String) -> EdDocumentHeader {

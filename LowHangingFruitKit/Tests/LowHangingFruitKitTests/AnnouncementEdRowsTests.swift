@@ -49,7 +49,7 @@ struct AnnouncementEdRowsTests {
 
     // MARK: Which Ed documents become rows
 
-    @Test("an Ed announcement and a pinned post are listed; a plain staff post, an image-only post, a headerless one and a Canvas announcement are not")
+    @Test("an Ed announcement and a pinned post are rows, and a staff post is a marked candidate row; an image-only post, a headerless one and a Canvas announcement are not")
     func onlyAnnouncementsAndPinnedAppear() {
         let announcement = Self.edDocument(thread: "1", reason: "announcement")
         let pinned = Self.edDocument(thread: "2", reason: "pinned")
@@ -70,8 +70,13 @@ struct AnnouncementEdRowsTests {
             from: [announcement, pinned, staffPost, imageOnly, noBody, headerless, canvasAnnouncement],
             now: Self.now
         )
-        #expect(Set(rows.map(\.id)) == [announcement.id, pinned.id])
-        #expect(AnnouncementRecord.edRecord(from: staffPost, now: Self.now) == nil)
+        // The staff post is a candidate, marked as one; the sheet lists it
+        // only when its judgment says it matters (`AnnouncementKeepCheckRuleTests`).
+        #expect(Set(rows.map(\.id)) == [announcement.id, pinned.id, staffPost.id])
+        #expect(rows.first { $0.id == staffPost.id }?.isStaffPost == true)
+        #expect(rows.filter { $0.id != staffPost.id }.allSatisfy { !$0.isStaffPost })
+        #expect(AnnouncementRecord.edRecord(from: announcement, now: Self.now)?.isStaffPost == false)
+        #expect(AnnouncementRecord.edRecord(from: pinned, now: Self.now)?.isStaffPost == false)
         #expect(AnnouncementRecord.edRecord(from: imageOnly, now: Self.now) == nil)
     }
 
@@ -496,11 +501,14 @@ struct AnnouncementEdSyncTests {
             #expect(h.state.announcementRecordsOnPage.first?.isEd == true)
             #expect(h.state.showsAnnouncementsButton)
 
-            // A second Ed post and a plain staff post: only the first lands.
+            // A second Ed post and a plain staff post. The staff post is on the
+            // page as a candidate, but with no judgment the sheet does not list it.
             let second = ed("9200002", daysAgo: 0.5)
             let staff = ed("9200003", reason: "staff post")
             h.state.courseKnowledge = knowledge([first, second, staff])
-            #expect(h.state.announcementRecordsOnPage.map(\.id) == [second.id, first.id])
+            #expect(Set(h.state.announcementRecordsOnPage.map(\.id)) == [second.id, first.id, staff.id])
+            #expect(h.state.announcementRecordsOnPage.first { $0.id == staff.id }?.isStaffPost == true)
+            #expect(h.state.announcementSheetRecords().map(\.id) == [second.id, first.id])
 
             h.state.courseKnowledge = .empty
             #expect(h.state.announcementRecordsOnPage.isEmpty)

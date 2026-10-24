@@ -2,10 +2,12 @@ import { strict as assert } from "node:assert";
 import {
   ANNOUNCEMENT_INSTRUCTIONS,
   buildAnnouncementUserContent,
+  buildExtractionResult,
   classMeetingsBlock,
   courseCodesMatch,
   courseProfileBlock,
   parseAssignments,
+  parseRelevance,
 } from "../supabase/functions/_shared/announcement.ts";
 import type { CatalogCourseRow } from "../supabase/functions/_shared/catalog.ts";
 
@@ -390,4 +392,184 @@ Deno.test("ANNOUNCEMENT_INSTRUCTIONS demands JSON-only output and states the kin
   assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes("assignments"));
   assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes("submission"));
   assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes("preparation"));
+});
+
+Deno.test("ANNOUNCEMENT_INSTRUCTIONS asks for relevance with all four kinds and the until rule", () => {
+  assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes('"relevance"'));
+  for (const kind of ["event", "task", "standing", "news"]) {
+    assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes(`"${kind}"`), `missing relevance kind ${kind}`);
+  }
+  assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes('"until"'));
+  // An informational post is where relevance matters most; the prompt must
+  // not let a model skip it just because "assignments" is empty.
+  assert.ok(ANNOUNCEMENT_INSTRUCTIONS.includes("even when \"assignments\" is empty"));
+});
+
+// ---------------------------------------------------------------------
+// parseRelevance
+// ---------------------------------------------------------------------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+function iso(offsetMs: number): string {
+  return new Date(NOW.getTime() + offsetMs).toISOString();
+}
+
+Deno.test("parseRelevance reads an event with its until", () => {
+  const until = "2026-09-10T19:30:00-04:00";
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "event", until } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "event", until });
+});
+
+Deno.test("parseRelevance reads a task with its latest due date", () => {
+  const until = "2026-09-20T23:59:00-04:00";
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "task", until } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "task", until });
+});
+
+Deno.test("parseRelevance reads a standing post with no until", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "standing" } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "standing" });
+});
+
+Deno.test("parseRelevance reads a news post with no until", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "news" } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "news" });
+});
+
+Deno.test("parseRelevance strips a fenced ```json block", () => {
+  const text = "```json\n" + JSON.stringify({ assignments: [], relevance: { kind: "news" } }) + "\n```";
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "news" });
+});
+
+Deno.test("parseRelevance is undefined when relevance is absent", () => {
+  assert.equal(parseRelevance('{"assignments":[]}', NOW), undefined);
+  assert.equal(parseRelevance('{"assignments":[{"title":"HW 1","kind":"submission"}]}', NOW), undefined);
+});
+
+Deno.test("parseRelevance is undefined for a kind that is not one of the four", () => {
+  for (const kind of ["other", "Event", "NEWS", "", "tasks", 3, null, ["news"], { a: 1 }]) {
+    const text = JSON.stringify({ assignments: [], relevance: { kind } });
+    assert.equal(parseRelevance(text, NOW), undefined, `kind ${JSON.stringify(kind)} should be rejected`);
+  }
+});
+
+Deno.test("parseRelevance is undefined when kind is missing, even with a valid until", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { until: iso(DAY_MS) } });
+  assert.equal(parseRelevance(text, NOW), undefined);
+});
+
+Deno.test("parseRelevance is undefined when relevance is not an object", () => {
+  for (const relevance of ["news", 7, true, null, ["news"], []]) {
+    const text = JSON.stringify({ assignments: [], relevance });
+    assert.equal(parseRelevance(text, NOW), undefined, `relevance ${JSON.stringify(relevance)} should be rejected`);
+  }
+});
+
+Deno.test("parseRelevance is undefined for malformed or non-object JSON, and never throws", () => {
+  for (const text of ["", "not json", "{", '{"relevance":', "null", "42", '"news"', "[]", '[{"relevance":{"kind":"news"}}]']) {
+    assert.equal(parseRelevance(text, NOW), undefined, `text ${JSON.stringify(text)} should be rejected`);
+  }
+});
+
+Deno.test("parseRelevance drops an until more than 200 days out but keeps the kind", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "event", until: iso(200 * DAY_MS + 1) } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "event" });
+});
+
+Deno.test("parseRelevance drops an until more than a day in the past but keeps the kind", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "task", until: iso(-DAY_MS - 1) } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "task" });
+});
+
+Deno.test("parseRelevance keeps an until exactly at both edges of [now - 1 day, now + 200 days]", () => {
+  const early = iso(-DAY_MS);
+  const late = iso(200 * DAY_MS);
+  assert.deepEqual(
+    parseRelevance(JSON.stringify({ relevance: { kind: "event", until: early } }), NOW),
+    { kind: "event", until: early },
+  );
+  assert.deepEqual(
+    parseRelevance(JSON.stringify({ relevance: { kind: "task", until: late } }), NOW),
+    { kind: "task", until: late },
+  );
+});
+
+Deno.test("parseRelevance drops an unparseable or non-string until but keeps the kind", () => {
+  for (const until of ["next Thursday-ish", "", "2026-13-45T99:00:00Z", null, 1789000000000, true, ["2026-09-10"], {}]) {
+    const text = JSON.stringify({ assignments: [], relevance: { kind: "event", until } });
+    assert.deepEqual(parseRelevance(text, NOW), { kind: "event" }, `until ${JSON.stringify(until)} should be dropped`);
+  }
+});
+
+Deno.test("parseRelevance returns until exactly as the model wrote it", () => {
+  const until = "2026-09-10T19:30:00-04:00";
+  const result = parseRelevance(JSON.stringify({ relevance: { kind: "event", until } }), NOW);
+  assert.equal(result?.until, until);
+});
+
+Deno.test("parseRelevance ignores extra keys on the relevance object", () => {
+  const text = JSON.stringify({ relevance: { kind: "news", until: null, confidence: 0.9, note: "x" } });
+  assert.deepEqual(parseRelevance(text, NOW), { kind: "news" });
+});
+
+// ---------------------------------------------------------------------
+// buildExtractionResult -- the whole extract-announcement success body
+// ---------------------------------------------------------------------
+
+Deno.test("buildExtractionResult returns relevance beside assignments when the model gave one", () => {
+  const text = JSON.stringify({
+    assignments: [{ title: "Submit Homework 3", dueAt: "2026-09-12T23:59:00-04:00", kind: "submission" }],
+    relevance: { kind: "task", until: "2026-09-12T23:59:00-04:00" },
+  });
+  assert.deepEqual(buildExtractionResult(text, NOW), {
+    assignments: [{ title: "Submit Homework 3", dueAt: "2026-09-12T23:59:00-04:00", kind: "submission" }],
+    relevance: { kind: "task", until: "2026-09-12T23:59:00-04:00" },
+  });
+});
+
+Deno.test("buildExtractionResult carries relevance for an informational post with no assignments", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "news" } });
+  assert.deepEqual(buildExtractionResult(text, NOW), { assignments: [], relevance: { kind: "news" } });
+});
+
+Deno.test("buildExtractionResult omits the relevance key entirely when absent, so an old response shape is byte-identical", () => {
+  const text = JSON.stringify({ assignments: [{ title: "Read chapter 4", kind: "preparation" }] });
+  const result = buildExtractionResult(text, NOW);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, "relevance"), false);
+  assert.equal(JSON.stringify(result), JSON.stringify({ assignments: [{ title: "Read chapter 4", kind: "preparation" }] }));
+});
+
+Deno.test("buildExtractionResult omits relevance when its kind is invalid", () => {
+  const text = JSON.stringify({ assignments: [], relevance: { kind: "urgent" } });
+  const result = buildExtractionResult(text, NOW);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, "relevance"), false);
+  assert.deepEqual(result, { assignments: [] });
+});
+
+Deno.test("buildExtractionResult: a bad relevance never changes what parseAssignments returns", () => {
+  const assignments = [
+    { title: "Submit Homework 3", dueAt: "2026-09-12T23:59:00-04:00", kind: "submission" },
+    { title: "Read chapter 4", kind: "preparation" },
+  ];
+  const expected = parseAssignments(JSON.stringify({ assignments }), NOW);
+  for (const relevance of [null, "news", 12, [], { kind: "bogus" }, { kind: "event", until: "garbage" }, { kind: 5 }]) {
+    const text = JSON.stringify({ assignments, relevance });
+    assert.deepEqual(buildExtractionResult(text, NOW).assignments, expected);
+    assert.deepEqual(parseAssignments(text, NOW), expected);
+  }
+});
+
+Deno.test("buildExtractionResult returns an empty assignments list and no relevance for unparseable text", () => {
+  assert.deepEqual(buildExtractionResult("this is not json", NOW), { assignments: [] });
+});
+
+Deno.test("buildExtractionResult serializes to the documented wire shape", () => {
+  const text = JSON.stringify({
+    assignments: [{ title: "Bring a calculator", kind: "preparation" }],
+    relevance: { kind: "event", until: "2026-09-10T19:30:00-04:00" },
+  });
+  assert.equal(
+    JSON.stringify(buildExtractionResult(text, NOW)),
+    '{"assignments":[{"title":"Bring a calculator","kind":"preparation"}],"relevance":{"kind":"event","until":"2026-09-10T19:30:00-04:00"}}',
+  );
 });

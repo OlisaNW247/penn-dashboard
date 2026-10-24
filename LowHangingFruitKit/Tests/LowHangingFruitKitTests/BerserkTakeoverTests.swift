@@ -92,7 +92,24 @@ struct BerserkTakeoverResolveTests {
         let planned = BerserkAlarmPlan.alarms(for: items, now: now, nameOverrides: [:])
         let index = BerserkTakeoverRules.alarmIndex(items: items)
         #expect(planned.count == 3)
-        #expect(Set(index.keys) == Set(planned.map(\.id)))
+        // A superset since the Sweeper settings: the index holds every timing
+        // and sound an alarm could have been scheduled with (2026-10-24).
+        #expect(Set(planned.map(\.id)).isSubset(of: Set(index.keys)))
+        for alarm in planned {
+            #expect(index[alarm.id]?.assignment.id == alarm.assignmentID)
+        }
+    }
+
+    @Test("A Sweeper alarm with a non-default timing and sound still resolves to its item",
+          arguments: [(20, SweeperSound.chime), (5, .pulse), (60, .system), (30, .smooth)])
+    func nonDefaultSweeperAlarmsResolve(minutes: Int, sound: SweeperSound) {
+        let now = F.base
+        let items = [F.item("a", due: now + 3 * 3600), F.item("b", due: now + 4 * 3600)]
+        let planned = BerserkAlarmPlan.alarms(
+            for: items, now: now, nameOverrides: [:],
+            lead: TimeInterval(minutes * 60), sound: sound)
+        #expect(planned.count == 2)
+        let index = BerserkTakeoverRules.alarmIndex(items: items)
         for alarm in planned {
             #expect(index[alarm.id]?.assignment.id == alarm.assignmentID)
         }

@@ -126,7 +126,12 @@ extension NotificationScheduler {
 
         // Ticking an item off while its alarm rings is the one thing besides
         // the student's own stop that silences a ringing alarm.
-        activeAlarmBackend()?.stopRinging(among: BerserkAlarmPlan.finishedAlarmIDs(from: items))
+        let finished = Set(Self.sweeperMinuteOptions.flatMap { minutes in
+            SweeperSound.allCases.flatMap { sound in
+                BerserkAlarmPlan.finishedAlarmIDs(from: items, lead: TimeInterval(minutes * 60), sound: sound)
+            }
+        })
+        activeAlarmBackend()?.stopRinging(among: finished)
 
         sink.prepare()
         let firstPassAsAlarms = decision.delivery == .alarms

@@ -203,6 +203,106 @@ struct AssignmentDeduplicatorTests {
         ))
     }
 
+    // MARK: - camelCase titles, worksheets, and "try" (2026-10-23)
+
+    // The owner's real Canvas assignment is titled exactly
+    // "CombinedWorksheets6-7" (no spaces), due 2026-10-20T03:59:59Z, and the
+    // post that announced it says "For combined worksheet 6-7, please try by
+    // your own before the Monday lecture".
+
+    private static let combinedDue = Date(timeIntervalSince1970: 1_792_468_799) // 2026-10-20T03:59:59Z
+
+    @Test("a camelCase title with no spaces tokenizes like the same words typed with spaces, including the plural worksheet")
+    func camelCaseTitleSplitsIntoWords() {
+        let expected = ["combined", "worksheet", "6", "7"]
+        #expect(AssignmentDeduplicator.normalize("CombinedWorksheets6-7") == expected)
+        #expect(AssignmentDeduplicator.normalize("Combined worksheet 6-7") == expected)
+        #expect(AssignmentDeduplicator.normalize("Combined Worksheets 6-7") == expected)
+        #expect(AssignmentDeduplicator.normalize("combinedWorksheets6-7") == expected)
+    }
+
+    @Test("the owner's real pair: an undated announcement find is the dated Canvas assignment CombinedWorksheets6-7")
+    func combinedWorksheetFindMatchesTheCanvasTitle() {
+        for announced in [
+            "Combined worksheet 6-7",
+            "Combined worksheets 6-7",
+            "Try combined worksheet 6-7",
+            "Please try combined worksheet 6-7",
+            "Attempt the combined worksheet 6-7",
+        ] {
+            #expect(Self.announcementTwin(
+                announced, "CombinedWorksheets6-7", announcementDue: nil, existingDue: Self.combinedDue
+            ), "\(announced) vs CombinedWorksheets6-7")
+        }
+        // Undated on both sides is the same task too.
+        #expect(Self.announcementTwin(
+            "Combined worksheet 6-7", "CombinedWorksheets6-7", announcementDue: nil, existingDue: nil
+        ))
+    }
+
+    @Test("a different worksheet is not the combined one: undated, Worksheet 6, 7, 6-7 and the other combined pairs stay apart; dated, the ones the fuzzy tier already refused stay apart")
+    func otherWorksheetsAreNotTheCombinedOne() {
+        // Undated: only token equality can match, and none of these is equal.
+        for announced in ["Worksheet 6", "Worksheet 7", "Worksheet 6-7", "Combined worksheet 6", "Combined worksheet 8-9"] {
+            #expect(!Self.announcementTwin(
+                announced, "CombinedWorksheets6-7", announcementDue: nil, existingDue: Self.combinedDue
+            ), "undated \(announced)")
+        }
+        // Dated on the same day, the pre-existing similar-title tier decides
+        // (Jaccard >= 0.6 over the token sets). "Worksheet 6" and "Worksheet 7"
+        // share 2 of 4 tokens and "Combined worksheet 8-9" 2 of 6, so they stay
+        // apart. ("Worksheet 6-7" and "Combined worksheet 6" share 3 of 4 and
+        // merge there, as they did before the camelCase split; this change
+        // gives that tier nothing new except the tokens themselves.)
+        for announced in ["Worksheet 6", "Worksheet 7", "Combined worksheet 8-9"] {
+            #expect(!Self.announcementTwin(
+                announced, "CombinedWorksheets6-7",
+                announcementDue: Self.combinedDue, existingDue: Self.combinedDue
+            ), "dated \(announced)")
+        }
+    }
+
+    @Test("a camelCase split never touches a run of capitals or a letter-digit title: HW3, PSET 2, CIS 1210 and HWs tokenize as before")
+    func camelCaseSplitLeavesCapitalRunsAlone() {
+        #expect(AssignmentDeduplicator.normalize("HW3") == ["hw", "3"])
+        #expect(AssignmentDeduplicator.normalize("PSET 2") == ["hw", "2"])
+        #expect(AssignmentDeduplicator.normalize("CIS 1210") == ["cis", "1210"])
+        #expect(AssignmentDeduplicator.normalize("HWs") == ["hws"])
+        #expect(AssignmentDeduplicator.normalize("HW3Solutions") == ["hw", "3", "solutions"])
+        #expect(AssignmentDeduplicator.normalize("CIS1210 HW2") == ["cis", "1210", "hw", "2"])
+        for title in ["HW3", "PSET 2", "CIS 1210", "HWs", "Quiz 2", "MIDTERM 1"] {
+            #expect(AssignmentDeduplicator.normalize(title) == AssignmentDeduplicator.normalize(title.lowercased()), "\(title)")
+        }
+        // And a lead-in written in camelCase pairs with a spaced one.
+        #expect(Self.announcementTwin("HomeworkTwo", "Homework Two", announcementDue: nil, existingDue: nil))
+    }
+
+    @Test("\"try\" and \"attempt\" are stripped as leading verbs, but only that one word: prose that is not a title still matches nothing")
+    func tryIsAnOrdinaryLeadingVerb() {
+        #expect(Self.announcementTwin("Try Quiz 2", "Quiz 2"))
+        #expect(Self.announcementTwin("Attempt Quiz 2", "Quiz 2"))
+        #expect(Self.announcementTwin("Try HW 2", "Homework 2"))
+        // A different number or a different item is still a different thing.
+        #expect(!Self.announcementTwin("Try Quiz 3", "Quiz 2"))
+        #expect(!Self.announcementTwin("Try office hours", "Worksheet 6-7"))
+        #expect(!Self.announcementTwin("Try the practice exam", "Exam"))
+        // "try to ..." keeps its "to": only the first word goes, so a sentence
+        // cannot shrink into an assignment's title.
+        #expect(!Self.announcementTwin("Try to attend office hours", "Office hours"))
+        #expect(!Self.announcementTwin("Try again", "Again 2"))
+    }
+
+    @Test("\"worksheets\" folds into \"worksheet\"; \"ws\" does not, because WS is also a course or section abbreviation")
+    func worksheetPluralFoldsButWsDoesNot() {
+        #expect(AssignmentDeduplicator.normalize("Worksheets 3") == AssignmentDeduplicator.normalize("Worksheet 3"))
+        #expect(Self.announcementTwin("Worksheets 3", "Worksheet 3"))
+        #expect(AssignmentDeduplicator.normalize("WS 3") == ["ws", "3"])
+        #expect(!Self.announcementTwin("WS 3", "Worksheet 3"))
+        // The ordinal tier is untouched: "worksheet" is not a work noun, so
+        // 6 and 6-7 are told apart by plain token equality.
+        #expect(!Self.announcementTwin("Worksheet 6", "Worksheet 6-7"))
+    }
+
     // MARK: - isLikelyAnnouncementDuplicate: work identity
 
     private static func announcementTwin(

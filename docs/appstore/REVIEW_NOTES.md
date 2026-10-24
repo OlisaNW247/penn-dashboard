@@ -1,8 +1,10 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-## To paste for 3.1.0 (13), 2026-10-20
+## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
-This is the block to paste for 3.1.0. App Store Connect caps Notes at 4,000
+This is the block to paste for 3.2.0; nothing a reviewer meets changed
+since 3.1.0 except the megaphone's class bubbles and every class listed,
+which preview mode shows with sample data. It is the block pasted for 3.1.0. App Store Connect caps Notes at 4,000
 characters. Grade Watcher is hidden in this build, so the walkthrough has no
 Grades item (a claim about an unexposed feature is a Guideline 2.3.1
 problem), and it says plainly that the Smooth Sweeper alarm never rings on
@@ -25,7 +27,7 @@ On the first screen, tap "just exploring? preview with sample data". The same li
 
 Everything is reachable from the demo:
 1. Dashboard: the todo / all / prev switch. Swipe a card right to complete it; tap it for details. The class filter and + (add a task) sit above the list.
-2. Megaphone: the button in the header. Announcements from the past 7 days and the tasks found in them.
+2. Megaphone: the button in the header. Your classes' announcements (bubbles at the top pick classes) and the tasks found in them.
 3. Ask: the "ask about your classes" button. Plain-English questions about your classes; in the demo it answers on the device from sample course material.
 4. Profile: the person button in the header. Name, accounts, appearance, reminders, classes, notifications, sync.
 5. Widget: "Next Due" on the Home or Lock Screen.
@@ -49,9 +51,9 @@ THIRD-PARTY SERVICES (5.2.2)
 Smooth is an independent client for services the student already has an account with. It uses their own credentials to show only their own data, and is not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
 ```
 
-_Character count of the block above: 3,964 (limit 4,000), measured on the text between the fences._
+_Character count of the block above: 3992 (limit 4,000), measured on the text between the fences._
 
-What's New: paste the 3.1.0 text from `LISTING.md`.
+What's New: paste the 3.2.0 text from `LISTING.md`.
 
 ## As pasted for 3.0.0 (11), 2026-09-27
 

@@ -84,11 +84,25 @@ final class AppState: ObservableObject {
     /// is hidden by the dashboard's rule (`isHiddenAnnouncementTask`) and
     /// collapses second copies.
     @Published private(set) var announcementPageItems: [Assignment] = []
+    /// The ids of the finds in `announcementItems` whose real Canvas twin is
+    /// finished (`announcementFindsWithFinishedTwin`), as of the last rebuild.
+    /// The page leaves these finds out, and the sheet's announcements list
+    /// reads the set to tell a post whose every find is done from one with
+    /// work still open (`announcementFindStates`) without matching titles a
+    /// second time. Not `@Published`: it changes only inside a rebuild, which
+    /// also reassigns `announcementPageItems`.
+    var announcementFindsWithFinishedTwinIDs: Set<String> = []
+    /// The relevance judgment of each post that has one, keyed by
+    /// `AnnouncementReadState.key(for:)` (`AppState+AnnouncementLog.swift`
+    /// writes it; the sheet's list reads it). A mirror of
+    /// `AnnouncementRelevanceStore`, so a read does not decode JSON.
+    @Published var announcementRelevance: [String: AnnouncementRelevance] = [:]
     /// The announcement log as stored: every Canvas announcement logged in
     /// the last 60 days (plus the Ed rows) for a class that is still
     /// selected, newest first. Plain announcements, not extracted tasks; the
-    /// finds above are the tasks. The megaphone sheet lists only the past 7
-    /// days of it (`announcementSheetRecords(now:)`). Backed by `AnnouncementLogStore` and
+    /// finds above are the tasks. The megaphone sheet lists a subset of it
+    /// (`announcementSheetRecords(now:)`: the past 7 days and each class's
+    /// newest post, less what the keep-check says is over). Backed by `AnnouncementLogStore` and
     /// maintained by `AppState+AnnouncementLog.swift`, whose methods write
     /// these, so (like `courseKnowledge`) they are internal rather than
     /// `private(set)`: `private` is file-scoped.
@@ -149,6 +163,20 @@ final class AppState: ObservableObject {
     /// here because an extension cannot add stored properties.
     var edTaskPassTask: Task<Void, Never>?
     var edTaskPassNeedsRerun = false
+    /// How many calls made only for a relevance judgment (an Ed staff post, a
+    /// judgment backfill) this install may still send to an extractor today
+    /// (`RelevanceReadBudget`: a UTC-day cap, because the quota is shared with
+    /// ask). Persisted in `UserDefaults.lhf` in the app, memory-only under the
+    /// test runner; a test that wants to see the stored form assigns a budget
+    /// over a scratch suite.
+    var relevanceReadBudget = RelevanceReadBudget(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
+    /// Whether this install has ever seen the server return a relevance
+    /// judgment, and the backfill's memory of posts it has asked about
+    /// (`AppState+RelevanceBackfill.swift`). Same shape as the budget: the
+    /// preferences tier in the app, memory-only under the test runner, a
+    /// scratch suite for a test that wants the stored form.
+    var serverJudgesRelevance = ServerJudgesRelevance(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
+    var relevanceBackfillLedger = RelevanceBackfillLedger(defaults: SharedDefaults.isTestRunner ? nil : .lhf)
     /// Watches `courseKnowledge` for new Ed posts to read tasks from. Separate
     /// from `announcementKnowledgeSubscription`, which only refreshes the
     /// megaphone's list.
@@ -5051,6 +5079,89 @@ final class AppState: ObservableObject {
         return abs(lhs.timeIntervalSince(rhs)) <= AssignmentDeduplicator.similarTitleDueDateTolerance
     }
 
+    /// Each find (a row out of `announcementItems`) paired with the real item
+    /// that is the same task, for the finds that have one. This is the match
+    /// `rebuildDashboardItems` has always used to carry a tick from a find onto
+    /// its real twin, lifted out so the megaphone's found list can ask the very
+    /// same question (`announcementFindsWithFinishedTwin`): two copies of the
+    /// rule would drift, and the sheet would call something a twin that the
+    /// dashboard does not, or the other way round.
+    ///
+    /// A twin is the first item of the find's own class (compared by course
+    /// identity, `announcementCourseIdentity`, in the order `realItems` came)
+    /// that `AssignmentDeduplicator.isLikelyAnnouncementDuplicate` accepts,
+    /// and only if that item's date is compatible with the find's
+    /// (`announcementDatesCompatible`). The date test is applied to the first
+    /// title match and not folded into the search: asking "first item that
+    /// matches by title *and* date" would let a find skip past its true twin
+    /// to a later, same-titled item in another week and hand the tick to the
+    /// wrong one. Pairs come out in `finds` order.
+    ///
+    /// Real items are bucketed by course identity once, each distinct course
+    /// string parsed once, so a find scans its own class and not all of them.
+    nonisolated static func announcementRealTwins(
+        of finds: [Assignment],
+        among realItems: [Assignment]
+    ) -> [(find: Assignment, real: Assignment)] {
+        var identities: [String: String] = [:]
+        func identity(of raw: String) -> String {
+            if let known = identities[raw] { return known }
+            let made = announcementCourseIdentity(raw)
+            identities[raw] = made
+            return made
+        }
+        var realByIdentity: [String: [Assignment]] = [:]
+        for item in realItems {
+            realByIdentity[identity(of: item.course), default: []].append(item)
+        }
+        var twins: [(find: Assignment, real: Assignment)] = []
+        for find in finds {
+            let sameClass = realByIdentity[identity(of: find.course)] ?? []
+            if let real = sameClass.first(where: { other in
+                AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
+                    announcementTitle: find.title,
+                    announcementDue: find.dueAt,
+                    existingTitle: other.title,
+                    existingDue: other.dueAt
+                )
+            }), announcementDatesCompatible(find.dueAt, real.dueAt) {
+                twins.append((find, real))
+            }
+        }
+        return twins
+    }
+
+    /// The ids of the finds whose real twin (`announcementRealTwins`) is
+    /// finished by `isFinished`, which the app passes as `isCompleted(_:)`:
+    /// done, turned in or submitted, resolved against Grade Watcher, or filed
+    /// as nothing to submit. The megaphone leaves these out of its found list.
+    ///
+    /// The student turned in "Worksheet 6-7" on Canvas; the announcement that
+    /// said "combined worksheet 6-7 is due Friday" is the same piece of work,
+    /// and listing it as found would keep a finished task in front of them.
+    /// Completion already flows from a find onto its real twin (the tick the
+    /// student gives the find is carried forward), but never back, which is
+    /// why the real assignment's submission never reached the find.
+    ///
+    /// This is display only. Nothing is written onto the find or the ledger,
+    /// so if the twin is later un-finished or leaves the feed, the find comes
+    /// back on the next rebuild. The wrong fix is to copy the twin's
+    /// completion onto the find (`carryCompletion` the other way): a
+    /// completion is the one fact in the ledger that cannot be re-derived, and
+    /// writing it on the strength of a title heuristic could mark work done
+    /// that the student never did.
+    nonisolated static func announcementFindsWithFinishedTwin(
+        _ finds: [Assignment],
+        among realItems: [Assignment],
+        isFinished: (Assignment) -> Bool
+    ) -> Set<String> {
+        Set(
+            announcementRealTwins(of: finds, among: realItems)
+                .filter { isFinished($0.real) }
+                .map { $0.find.id }
+        )
+    }
+
     /// Whether a tick on `hidden` may follow onto `survivor`: only when the two
     /// are the same task on the same day (`announcementDatesCompatible`). Two
     /// rows can be one card without being one piece of work: a rescheduled
@@ -5141,7 +5252,13 @@ final class AppState: ObservableObject {
     /// same catalog number with or without leading zeroes (`PHYS 0151` vs
     /// `PHYS 151`). Department stays in the key, so different subjects never
     /// collide merely because their numbers match.
-    static func announcementCourseIdentity(_ raw: String) -> String {
+    ///
+    /// `nonisolated` because it is a pure string rule that the sheet's window
+    /// (`announcementRecordsInSheetWindow`) and the twin matcher
+    /// (`announcementRealTwins`) call from their own `nonisolated` helpers,
+    /// which tests call directly; `AppState` is `@MainActor`, and Swift 6
+    /// enforces that at run time (see CLAUDE.md, the `decidedText` trap).
+    nonisolated static func announcementCourseIdentity(_ raw: String) -> String {
         let parsed = CourseCode.parse(raw).code
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .uppercased()
@@ -5393,7 +5510,18 @@ final class AppState: ObservableObject {
             .filter { !processedAnnouncementIDs.contains($0.id) }
         guard !unprocessed.isEmpty else {
             if presenceChanged { applyAnnouncementLedgerChange() }
-            return noteAnnouncementSync("nothing new \u{00B7} canvas \(fetched.count)", at: now)
+            // Nothing to read for tasks, but posts read before the server
+            // judged can still be waiting for a judgment (see
+            // `AppState+RelevanceBackfill.swift`), from this same fetch.
+            let backfill = await backfillRelevance(
+                canvasRelevanceBackfillCandidates(
+                    fetched: fetched, courseCodesByID: courseCodesByID, readThisRun: [], now: now
+                ),
+                now: now
+            )
+            return noteAnnouncementSync(
+                "nothing new \u{00B7} canvas \(fetched.count)" + backfill.summary, at: now
+            )
         }
 
         // THE QUOTA IS SHARED WITH ASK, so a persistent extractor failure must
@@ -5424,6 +5552,9 @@ final class AppState: ObservableObject {
 
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
+        // Each post's relevance judgment, by read-state key, for the megaphone
+        // sheet (`recordAnnouncementRelevance`).
+        var relevanceByKey: [String: AnnouncementRelevance] = [:]
         var gaveUpCount = 0
         // Backend-or-injected extractions started and failed (not quota);
         // the heuristic cannot throw and is not counted. All-failed is what
@@ -5464,6 +5595,9 @@ final class AppState: ObservableObject {
                 title: announcement.title, body: announcement.message
             ) {
                 newlyProcessedIDs.append(announcement.id)
+                // A post that only reports something done is news by
+                // construction, with no server call to say so.
+                relevanceByKey[AnnouncementReadState.recordKey(announcement.id)] = AnnouncementRelevance(kind: .news)
                 continue
             }
 
@@ -5486,7 +5620,14 @@ final class AppState: ObservableObject {
             let countsTowardBackoff = !(extractor is HeuristicAnnouncementExtractor)
             if countsTowardBackoff { attemptedExtractions += 1 }
             do {
-                extracted = try await extractor.extract(from: sourceText, now: now)
+                let extraction = try await extractor.extractWithRelevance(from: sourceText, now: now)
+                extracted = extraction.assignments
+                if let relevance = extraction.relevance {
+                    relevanceByKey[AnnouncementReadState.recordKey(announcement.id)] = relevance
+                    // The first judgment ever seen turns on the Ed staff-post
+                    // reads and the backfill (`ServerJudgesRelevance`).
+                    serverJudgesRelevance.markSeen()
+                }
             } catch {
                 // A transient extraction failure (network blip on the AI
                 // path, a rate limit) must not permanently eat this
@@ -5542,6 +5683,9 @@ final class AppState: ObservableObject {
             store.upsert(collected)
         }
         recordProcessedAnnouncementIDs(newlyProcessedIDs)
+        // Before the rebuild below, which ends in the badge: the sheet's list
+        // reads these.
+        recordAnnouncementRelevance(relevanceByKey)
         // A processed id (found, found nothing, informational, or given up
         // on) has no use for a counter.
         for id in newlyProcessedIDs { attempts.removeValue(forKey: id) }
@@ -5559,13 +5703,27 @@ final class AppState: ObservableObject {
         if !collected.isEmpty || !newlyProcessedIDs.isEmpty || presenceChanged {
             applyAnnouncementLedgerChange()
         }
+        // The judgment backfill, from this run's fetch: posts read before the
+        // server judged. After the reads (they go first), skipping this run's
+        // own, and not while the server is refusing or failing.
+        let serverUsable = !quotaRefused && !(attemptedExtractions > 0 && failedExtractions == attemptedExtractions)
+        let backfill = serverUsable
+            ? await backfillRelevance(
+                canvasRelevanceBackfillCandidates(
+                    fetched: fetched, courseCodesByID: courseCodesByID,
+                    readThisRun: Set(newlyProcessedIDs), now: now
+                ),
+                now: now
+            )
+            : RelevanceBackfillOutcome()
         let used = extractorsUsed.isEmpty ? "none" : extractorsUsed.sorted().joined(separator: "+")
         noteAnnouncementSync(
             "extractor \(used) \u{00B7} ok \u{00B7} canvas \(fetched.count)"
                 + " \u{00B7} eligible \(unprocessed.count) \u{00B7} finds \(collected.count)"
                 + " \u{00B7} errors \(extractorErrors) \u{00B7} processed \(newlyProcessedIDs.count)"
                 + (firstExtractorError.map { " \u{00B7} first error: \($0)" } ?? "")
-                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : ""),
+                + (gaveUpCount > 0 ? " \u{00B7} gave up \(gaveUpCount)" : "")
+                + backfill.summary,
             at: now
         )
     }
@@ -6244,6 +6402,9 @@ final class AppState: ObservableObject {
             .union(coursePreferences.manuallyAddedCourseKeys)
             .union(enrolledKeys)
             .subtracting([Self.unknownCourse])
+            // Never listed, not even toggled off in Settings: a program site
+            // is not a class the student could want back (`NonClassCanvasSite`).
+            .filter { !NonClassCanvasSite.matches($0) }
         return codes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
@@ -6309,7 +6470,10 @@ final class AppState: ObservableObject {
     /// False if the course is hidden OR deleted — both keep it out of the
     /// dashboard, notifications, and Grade Watcher (see `selectedCanvasCourseIDs`).
     func isCourseSelected(_ course: String) -> Bool {
-        coursePreferences.isSelected(course)
+        // A program site (`NonClassCanvasSite`, "TAP 2028") is never a class,
+        // whatever its stored switch says, so nothing of it reaches the
+        // dashboard, a reminder or the megaphone.
+        coursePreferences.isSelected(course) && !NonClassCanvasSite.matches(course)
     }
 
     /// Toggle a course on/off. Off = hidden from the dashboard and notifications.
@@ -7088,27 +7252,13 @@ final class AppState: ObservableObject {
         // one due the 6th" is not "I did the one due the 20th"
         // (`completionFollows`).
         //
-        // The real items are bucketed by course identity once, each course
-        // string parsed once, so an announcement scans its own class's items
-        // (in their old order, so `first` is the same item) and not all of
-        // them with a course parse per pair.
-        var courseIdentities = AnnouncementCourseIdentities()
-        var realByIdentity: [String: [Assignment]] = [:]
-        for item in realItems {
-            realByIdentity[courseIdentities.identity(of: item.course), default: []].append(item)
-        }
-        for announcementItem in announcementItems {
-            let sameClass = realByIdentity[courseIdentities.identity(of: announcementItem.course)] ?? []
-            if let survivor = sameClass.first(where: { other in
-                AssignmentDeduplicator.isLikelyAnnouncementDuplicate(
-                    announcementTitle: announcementItem.title,
-                    announcementDue: announcementItem.dueAt,
-                    existingTitle: other.title,
-                    existingDue: other.dueAt
-                )
-            }), Self.announcementDatesCompatible(announcementItem.dueAt, survivor.dueAt) {
-                carryCompletion(from: announcementItem.id, to: survivor.id)
-            }
+        // Which real item is a find's twin is `announcementRealTwins`, which
+        // buckets the real items by course identity once so an announcement
+        // scans its own class's items and not all of them. The megaphone's
+        // found list asks the same function whether a twin is finished, so
+        // the sheet and this loop cannot disagree about what a twin is.
+        for twin in Self.announcementRealTwins(of: announcementItems, among: realItems) {
+            carryCompletion(from: twin.find.id, to: twin.real.id)
         }
         // Canvas and Ed announcements share this pool (`announcementItems`),
         // so the same task announced in both places, or announced in one and
@@ -7237,8 +7387,17 @@ final class AppState: ObservableObject {
         // as an unread find, but the owner wants every exam the class has
         // found in one place, rendered as the exam card it is on the
         // dashboard (whose "from syllabus" line says where it came from).
+        //
+        // A find whose real twin is already finished is left out
+        // (`announcementFindsWithFinishedTwin`), decided here and not earlier
+        // because the carries above may have just finished a twin. Display
+        // only: the find's own ledger row and completion are untouched.
+        let findsWithFinishedTwin = Self.announcementFindsWithFinishedTwin(
+            announcementItems, among: realItems, isFinished: { self.isCompleted($0) }
+        )
+        announcementFindsWithFinishedTwinIDs = findsWithFinishedTwin
         announcementPageItems = announcementItems
-            .filter(isVisibleAnnouncement)
+            .filter { !findsWithFinishedTwin.contains($0.id) && isVisibleAnnouncement($0) }
             .sorted(by: Self.byDueDate)
         announcementFinds = secondaryAnnouncementItems
             .filter(isVisibleAnnouncement)

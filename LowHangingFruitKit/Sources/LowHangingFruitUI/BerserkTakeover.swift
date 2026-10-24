@@ -97,21 +97,36 @@ enum BerserkTakeoverRules {
     ///
     /// **Why this exists.** AlarmKit's `Alarm` carries no metadata the app can
     /// read back from a ringing alarm, but the alarm's id is deliberately a
-    /// hash of (assignment id, ring time) (`BerserkAlarmPlan.alarmID`), so the
-    /// id can be recomputed for each item and matched. The ring time is due
-    /// minus `loudAlertLead`, exactly what `BerserkAlarmPlan.alarms` uses, and
-    /// the due time is `DashItem.due` (the student's edited date, if any), so
-    /// a moved item resolves by its new alarm and the old alarm, which the
-    /// next reschedule cancels, resolves to nothing. The wrong fix is a second
-    /// copy of the id arithmetic: this calls the one function.
+    /// hash of (assignment id, ring time, sound) (`BerserkAlarmPlan.alarmID`),
+    /// so the id can be recomputed for each item and matched. The due time is
+    /// `DashItem.due` (the student's edited date, if any), so a moved item
+    /// resolves by its new alarm and the old alarm, which the next reschedule
+    /// cancels, resolves to nothing.
+    ///
+    /// **Every Sweeper timing and sound, not the current one** (2026-10-24).
+    /// Since the Sweeper settings (Marco, `91470ac`) the ring time is due minus
+    /// the student's chosen lead and a non-default sound is part of the id.
+    /// This index first used the fixed ten minutes and no sound, so with any
+    /// other choice the alarm rang and the takeover never found its item. It
+    /// enumerates every option, as `BerserkAlarmDelivery`'s stop-on-finish
+    /// path already does, rather than asking the scheduler for the current
+    /// choice: an alarm scheduled before the student changed the setting can
+    /// still be the one ringing, and the next reschedule is what retires it.
+    /// The ids cannot collide across options (they hash different strings), so
+    /// a few extra keys cost a few hashes per item and nothing else. The wrong
+    /// fix is a second copy of the id arithmetic: this calls the one function.
     nonisolated static func alarmIndex(items: [DashItem]) -> [UUID: DashItem] {
         var index: [UUID: DashItem] = [:]
         for item in items {
             guard let due = item.due else { continue }
-            let id = BerserkAlarmPlan.alarmID(
-                assignmentID: item.assignment.id,
-                fireDate: due.addingTimeInterval(-NotificationScheduler.loudAlertLead))
-            if index[id] == nil { index[id] = item }
+            for minutes in NotificationScheduler.sweeperMinuteOptions {
+                let fireDate = due.addingTimeInterval(-TimeInterval(minutes * 60))
+                for sound in SweeperSound.allCases {
+                    let id = BerserkAlarmPlan.alarmID(
+                        assignmentID: item.assignment.id, fireDate: fireDate, sound: sound)
+                    if index[id] == nil { index[id] = item }
+                }
+            }
         }
         return index
     }

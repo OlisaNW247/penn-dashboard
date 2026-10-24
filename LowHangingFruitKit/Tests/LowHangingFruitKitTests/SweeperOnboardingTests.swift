@@ -16,7 +16,7 @@ import Testing
 struct SweeperOnboardingTests {
 
     private static let usage =
-        "The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in."
+        "The Smooth Sweeper rings an alarm before work you haven't turned in, at the time you choose."
 
     private func packageRoot() -> URL {
         URL(fileURLWithPath: #filePath)     // .../Tests/LowHangingFruitKitTests/<this>
@@ -125,7 +125,7 @@ struct SweeperOnboardingTests {
 
     @Test("Settings names the switch Smooth Sweeper, not the loud 10-minute alert")
     func settingsToggle() throws {
-        let settings = try ui("SettingsPage.swift")
+        let settings = try ui("SweeperSettingsSection.swift")
         #expect(settings.contains("Toggle(\"Smooth Sweeper\""))
         #expect(!settings.contains("Toggle(\"loud 10-minute alert\""))
     }

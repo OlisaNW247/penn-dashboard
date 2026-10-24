@@ -134,7 +134,7 @@ struct EdAnnouncementTaskTests {
 
     // MARK: Which posts are read
 
-    @Test("announcements and pinned threads with text and recent activity are read; nothing else is")
+    @Test("announcements, pinned threads and staff posts with text and recent activity are read; nothing else is")
     func eligibility() {
         let now = Self.now
         let announcement = document("9500001", reason: "announcement")
@@ -156,7 +156,34 @@ struct EdAnnouncementTaskTests {
             [announcement, pinned, staffPost, imageOnly, stale, undated, headerless, canvasKind, announcement],
             now: now
         )
-        #expect(eligible.map(\.id) == [announcement.id, pinned.id])
+        // A staff post is read too, for its relevance judgment only (the pass
+        // drops its tasks: `AnnouncementRelevanceSyncTests`).
+        #expect(eligible.map(\.id) == [announcement.id, pinned.id, staffPost.id])
+    }
+
+    @Test("a staff post is read under the same rules as the others: text, the 14-day window, a date, and its retry clock; a question is not read")
+    func staffPostEligibility() {
+        let now = Self.now
+        let staff = document("9500051", reason: "staff post")
+        let noText = document("9500052", reason: "staff post", body: "- [image]\n> [image]")
+        let stale = document("9500053", reason: "staff post", daysAgo: 20)
+        let undated = document("9500054", reason: "staff post", daysAgo: nil)
+        let question = document("9500055", reason: "question")
+        let edge = document("9500056", reason: "staff post", daysAgo: AppState.announcementExtractionWindow / Self.day)
+
+        let all = [staff, noText, stale, undated, question, edge, staff]
+        #expect(AppState.edDocumentsEligibleForTasks(all, now: now).map(\.id) == [staff.id, edge.id])
+
+        // Waiting out a failed read, like any other post.
+        #expect(AppState.edDocumentsEligibleForTasks(
+            [staff], now: now, retryAfter: [staff.id: now.addingTimeInterval(3600)]
+        ).isEmpty)
+        #expect(AppState.edDocumentsEligibleForTasks(
+            [staff], now: now, retryAfter: [staff.id: now.addingTimeInterval(-1)]
+        ).map(\.id) == [staff.id])
+
+        #expect(AppState.isReadablePost(EdDocumentHeader.parse(staff.text)))
+        #expect(!AppState.isReadablePost(EdDocumentHeader.parse(question.text)))
     }
 
     // MARK: The 14-day window

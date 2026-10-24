@@ -137,8 +137,8 @@ struct ClassFilterMenu: View {
 struct ClassFilterChip: View {
     let name: String
     /// The chip's tint and the colour of its type. Cobalt, as on the
-    /// dashboard, unless the caller has a class to show in its own colour
-    /// (the megaphone sheet passes `courseAccent(for:)` and its ink partner).
+    /// dashboard, unless the caller has a class to show in its own colour (the
+    /// megaphone sheet did, until it drew class bubbles instead).
     var accent: Color = .smoothCobalt
     var ink: Color = .smoothCobalt
     let onClear: () -> Void

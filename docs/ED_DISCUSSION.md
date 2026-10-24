@@ -27,12 +27,18 @@ where Ed's session is a token in `localStorage` (`authToken`,
 `authToken:us`), not a cookie (`document.cookie` empty, a cookie-only
 `GET /api/user` is 401), so `EdClient` uses `EdAuth.token`.
 
-Two things learned building it. `CourseKnowledgeBase.merge` and the Canvas
-collector both treat a course's documents as a complete set, so an Ed
-merge must pass the course's existing non-Ed documents alongside the new
-ones, and prior `ed` documents must be restored after every collector
-run or an unreachable Ed would erase them (and report them gone to the
-server). And `CourseSummary` carries no term, so the matcher's term comes
+Two things learned building it. `CourseKnowledgeBase.merge` treats a
+course's documents as a complete set, so an Ed merge must pass the
+course's existing non-Ed documents alongside the new ones. The Canvas
+collector used to do the same with its own list, which has no Ed posts in
+it, so every collector run deleted the re-fetched courses' stored Ed
+posts and saved that to disk before Ed's pass could restore them from
+memory; an app suspended in the gap, or an Ed step that never ran, left
+a store with none (owner's phone, 2026-10-23: no Ed post older than that
+afternoon's read). The collector now merges with `preservingKinds: [.ed]`,
+so only Ed's own merge and its authoritative drop ever remove an Ed
+post, and `restoringEdDocuments` is a guard for a store an older build
+wrote. And `CourseSummary` carries no term, so the matcher's term comes
 from `CourseCode.parse(name).term`, falling back to code-only.
 
 ## What Olisa asked for
@@ -194,9 +200,15 @@ holes were found by reading the code, and three behaviours changed.
    read, so `matched` is the whole list, and the rule reads: **drop** =
    classes with no Ed match after a successful `/user`; **restore** =
    matched classes not read this run (a failed read, or never reached);
-   **replace** = classes read. `restoreDropPlan` is that rule as a pure
-   function, and `readTargets` the loop, so the tests drive both with a fake
-   reader.
+   **replace** = classes read. A class whose own Canvas `/tabs` lookup
+   failed this run is **unknown**, not unmatched: it is never dropped, and
+   it is restored when it holds stored Ed posts (`storedEd`; a class with
+   none has nothing to restore and is not counted), because the one
+   request that says whether it has Ed went unanswered (a drop needs a clean run for that class, and a flaky
+   request on one class used to erase its posts whenever another class's
+   cached launch URL let the run go on). `restoreDropPlan` is that rule as
+   a pure function, and `readTargets` the loop, so the tests drive both
+   with a fake reader.
 4. **The status line says why a class was not read.** The Ed status line
    (Profile → accounts in a DEBUG build, and the `ed:` tail of
    `lastCourseKnowledgeSyncSummaryV1` on the phone's App Group plist) now

@@ -73,7 +73,7 @@ targets:
         # in App/Info.plist for the same reason as CFBundleName above:
         # `xcodegen generate` rewrites the .plist from this list. Not on the
         # widget target, which schedules nothing.
-        NSAlarmKitUsageDescription: "The Smooth Sweeper rings an alarm 10 minutes before work you haven't turned in."
+        NSAlarmKitUsageDescription: "The Smooth Sweeper rings an alarm before work you haven't turned in, at the time you choose."
         # Berserk mode's alarm shows a Live Activity (the Dynamic Island and the
         # lock screen card, drawn by the widget extension). Without this key
         # iOS shows no Live Activity for the alarm at all, and says nothing.
@@ -146,8 +146,8 @@ targets:
         # will get a stale tile when the update replaces LowHangingFruit.app
         # with Smooth.app, and has to re-pin it.
         PRODUCT_NAME: Smooth
-        MARKETING_VERSION: "3.1.0"
-        CURRENT_PROJECT_VERSION: "13"
+        MARKETING_VERSION: "3.2.0"
+        CURRENT_PROJECT_VERSION: "15"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
@@ -202,8 +202,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
-        MARKETING_VERSION: "3.1.0"
-        CURRENT_PROJECT_VERSION: "13"
+        MARKETING_VERSION: "3.2.0"
+        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO

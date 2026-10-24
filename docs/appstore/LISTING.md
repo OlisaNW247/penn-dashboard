@@ -116,6 +116,25 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
 
+## What's New in 3.2.0 (release notes, ≤4000)
+
+Every class in the megaphone, Ed posts that stay put, and a Canvas sign-in
+that takes care of itself.
+
+• The megaphone shows every class: the past week plus each class's latest
+  post, so a class that posts rarely never disappears
+• Class bubbles at the top: tap one class, or a few, to see just their
+  announcements and tasks together in one list
+• A task found in an announcement leaves once you've turned the real
+  assignment in, and a post leaves once what it was about is over
+• Ed Discussion (Penn): a class's posts no longer vanish when a sync is
+  interrupted
+• Canvas sign-in: sign in once and Smooth keeps your Penn login on this
+  phone and reconnects by itself; disconnect any time in Profile
+• Smooth refreshes Canvas the moment it opens, not minutes later
+• "Turned in" is read more carefully, for Gradescope and for assignments
+  that share a name
+
 ## What's New in 3.1.0 (release notes, ≤4000)
 
 Meet the Smooth Sweeper, and a lot of smaller things that make the list

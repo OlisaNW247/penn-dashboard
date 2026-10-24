@@ -39,9 +39,15 @@ stored.
   each one's title, class, date, link and a short preview in a file on this
   phone. That file is never uploaded, and disconnecting Canvas deletes it.
   For a class that uses Ed Discussion, the list also shows that class's Ed
-  announcements and pinned posts, taken from the course material already on
-  your phone (described below); showing them makes no new request and sends
-  nothing.
+  announcements and pinned posts, and an instructor's or TA's post while it
+  still matters, taken from the course material already on your phone
+  (described below); showing them makes no new request and sends nothing.
+  Which posts stay listed is decided on this phone: a post leaves once what
+  it was about is over, or once every task found in it is done. For that the
+  app keeps, per post, a short note of what kind of post it is and until when
+  it matters (see "AI assist" below). The note stays on this phone, is never
+  uploaded, and disconnecting Canvas deletes it. Whether you finished a task
+  is never sent anywhere to make this decision.
 - **Tasks found in announcements.** When an announcement says to do
   something by a date (and, for a class that uses Ed Discussion, when an Ed
   announcement or pinned post does), the app turns it into a card on your
@@ -130,7 +136,8 @@ on-device alone:
   The Announcement Watcher's "AI assist" toggle is on by default (you can turn
   it off in Settings). With it on, extracting a task and due date from an
   announcement's text works the same way — the announcement
-  text goes to the same server and model, and the result isn't stored either.
+  text goes to the same server and model, and the server doesn't store the
+  result either.
   Each of these requests carries the post's title and body, the post's id (a
   Canvas announcement's id, or the Ed thread's), the class code and the post's
   date, and nothing else about you.
@@ -140,8 +147,16 @@ on-device alone:
   and model, with the class code, the post's id and the date, once, only when
   an on-device check says the text could contain a task, and only for a class
   you have not hidden. It is text the app already pools per class (see
-  above), and the result isn't stored either. With the switch off, Canvas and
-  Ed posts are read on the phone and nothing is sent.
+  above). Since 2026-10-23 an instructor's or TA's ordinary Ed post is sent
+  the same way, once, a few a day at most, so the model can say whether it
+  still matters; no task is ever made from such a post. The answer to every
+  one of these requests also says what kind of post it is and until when it
+  matters; the phone keeps that short note (and the tasks, as above), and
+  the server keeps nothing. A post read before the server could give that
+  note is sent once more, only for the note, a few a day at most and only
+  while it is under two weeks old; the second answer's tasks are thrown
+  away. With the switch off, Canvas and Ed posts are read on the phone and
+  nothing is sent.
 
   Grade Watcher can also ask the server how a class's Canvas assignment
   groups line up with its syllabus categories. That request carries the

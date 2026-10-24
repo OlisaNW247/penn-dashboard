@@ -39,14 +39,34 @@ export const ANNOUNCEMENT_INSTRUCTIONS: string = [
   `Respond with a single JSON object and nothing else -- no prose, no `
   + `markdown fence -- of exactly this shape:\n`
   + `{ "assignments": [ { "title": string, "dueAt": string | null, `
-  + `"kind": "submission" | "preparation" } ] }`,
+  + `"kind": "submission" | "preparation" } ], `
+  + `"relevance": { "kind": "event" | "task" | "standing" | "news", `
+  + `"until"?: string } }`,
 
   `"title" is a short imperative task title, at most 80 characters. `
   + `"kind" is "submission" for anything handed in or completed on a `
   + `platform -- homework, a quiz, a survey, an upload -- and `
   + `"preparation" for a task with nothing to hand in -- read, watch, `
-  + `review, bring, prepare. If there are no extractable tasks, respond `
-  + `with { "assignments": [] }.`,
+  + `review, bring, prepare. If there are no extractable tasks, "assignments" `
+  + `is an empty list.`,
+
+  `"relevance" says how long the post as a whole stays worth a student's `
+  + `attention, whether or not it yields any task. Always include it, even `
+  + `when "assignments" is empty -- a purely informational post is exactly `
+  + `where it matters. Its "kind" is one of: `
+  + `"event" when the post is about a dated happening -- an exam, a review `
+  + `session, office hours, a room or time change -- and "until" is when that `
+  + `happening is over; `
+  + `"task" when the post is mainly about work to do, and "until" is the `
+  + `latest due date it names, if any; `
+  + `"standing" for a resource or policy that stays useful for the rest of `
+  + `the term -- a formula sheet, an office-hours schedule, a solutions `
+  + `directory, a grading policy -- with no "until"; `
+  + `"news" for an FYI that stops mattering within days -- grades released, `
+  + `slides posted, a reminder about something already acted on -- with no `
+  + `"until". "until" follows the same rule as "dueAt": an ISO 8601 datetime `
+  + `with a timezone, never a guess at a date or time the post doesn't `
+  + `state or clearly imply. Leave "until" out rather than guessing one.`,
 
   `"dueAt" is an ISO 8601 datetime with a timezone -- never guess a date `
   + `or time the announcement doesn't state or clearly imply. When the `
@@ -314,6 +334,112 @@ function sanitizeDueDate(raw: string, now: Date): string | undefined {
 function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   return (fenced ? fenced[1] : text).trim();
+}
+
+export type RelevanceKind = "event" | "task" | "standing" | "news";
+
+/** The model's judgment of how long the post as a whole stays worth listing,
+ *  independent of whether it yielded any task. `until` is only ever present
+ *  for `event` (when the happening is over) and `task` (the latest due date
+ *  named); `parseRelevance` does not enforce that pairing -- see its doc
+ *  comment on why. */
+export interface ExtractedRelevance {
+  kind: RelevanceKind;
+  until?: string;
+}
+
+/** What `extract-announcement` returns: `relevance` is optional and additive,
+ *  so a shipped app that predates it ignores the key (Swift `Decodable`
+ *  drops unknown keys). It is omitted entirely, never `null`, when
+ *  `parseRelevance` found nothing usable. */
+export interface AnnouncementExtraction {
+  assignments: ExtractedAssignment[];
+  relevance?: ExtractedRelevance;
+}
+
+const RELEVANCE_KINDS: ReadonlySet<string> = new Set(["event", "task", "standing", "news"]);
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+/** An `until` already more than a day gone cannot keep a post listed, and
+ *  one more than 200 days out is past the end of any term -- so either is a
+ *  hallucinated year or an echoed placeholder, the same failure
+ *  `MAX_DUE_DATE_SKEW_MS` guards `dueAt` against, with a window that is
+ *  deliberately asymmetric because "how long should this stay listed" has no
+ *  use for a date in the past. A day of slack, not zero, because the model
+ *  is handed `now` as a date-time and may legitimately answer "until
+ *  tonight" with a time a few hours before the request. */
+const RELEVANCE_UNTIL_PAST_MS = 1 * MS_PER_DAY;
+const RELEVANCE_UNTIL_FUTURE_MS = 200 * MS_PER_DAY;
+
+/**
+ * Parses the optional `"relevance": { "kind", "until"? }` object out of the
+ * model's response. Returns `undefined` when it is absent, when the text
+ * does not parse, when `relevance` is not an object, or when `kind` is not
+ * exactly one of the four known values -- a `kind` this function cannot
+ * place is no judgment at all, and the phone treats "no relevance" as "decide
+ * the old way", which is safer than guessing which of the four a typo meant.
+ *
+ * `until` is kept only when it is a string that parses as a date inside
+ * `[now - 1 day, now + 200 days]`; otherwise just `until` is dropped and the
+ * `kind` survives, the same posture `parseAssignments` takes toward a bad
+ * `dueAt` (the string is returned as the model wrote it, not re-serialised,
+ * so it reaches the phone through the same decode path `dueAt` already does).
+ * `until` is not required to be absent for `standing` and `news`, and not
+ * required to be present for `event`: the prompt asks for those pairings,
+ * but a model that adds a date to a `standing` post has still told the phone
+ * something true about when it stops mattering, and throwing that away to
+ * enforce a prompt convention would only lose information.
+ *
+ * Total on purpose: nothing here throws, and it reads `text` independently
+ * of `parseAssignments`, so a malformed or hostile `relevance` can neither
+ * fail the request nor change what `parseAssignments` returns. The wrong
+ * shape of this function would parse once and share the result with
+ * `parseAssignments`, which is exactly how one bad key would take both down.
+ */
+export function parseRelevance(text: string, now: Date): ExtractedRelevance | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(extractJSON(text));
+  } catch {
+    return undefined;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+
+  const relevance = (raw as Record<string, unknown>).relevance;
+  if (typeof relevance !== "object" || relevance === null || Array.isArray(relevance)) return undefined;
+
+  const kind = (relevance as Record<string, unknown>).kind;
+  if (typeof kind !== "string" || !RELEVANCE_KINDS.has(kind)) return undefined;
+
+  const rawUntil = (relevance as Record<string, unknown>).until;
+  const until = typeof rawUntil === "string" ? sanitizeRelevanceUntil(rawUntil, now) : undefined;
+
+  return until !== undefined
+    ? { kind: kind as RelevanceKind, until }
+    : { kind: kind as RelevanceKind };
+}
+
+function sanitizeRelevanceUntil(raw: string, now: Date): string | undefined {
+  const parsed = new Date(raw).getTime();
+  if (Number.isNaN(parsed)) return undefined;
+  const offset = parsed - now.getTime();
+  if (offset < -RELEVANCE_UNTIL_PAST_MS || offset > RELEVANCE_UNTIL_FUTURE_MS) return undefined;
+  return raw;
+}
+
+/**
+ * The whole `extract-announcement` success body: `assignments` always,
+ * `relevance` only when `parseRelevance` found one. Lives here, not inline in
+ * `extract-announcement/index.ts`, because that file is a bare `Deno.serve`
+ * this directory's tests cannot import -- and "does the response carry
+ * `relevance` when the model gave one and omit the key entirely when it
+ * didn't" is exactly the contract an old client and a new one both depend
+ * on. The two parsers run independently (see `parseRelevance`).
+ */
+export function buildExtractionResult(text: string, now: Date): AnnouncementExtraction {
+  const assignments = parseAssignments(text, now);
+  const relevance = parseRelevance(text, now);
+  return relevance !== undefined ? { assignments, relevance } : { assignments };
 }
 
 /**
