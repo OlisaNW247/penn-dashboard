@@ -142,9 +142,11 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.1.0 (build 13)** (App Store
-id `6783911002`), released 2026-10-21 at 19:07 UTC per the public iTunes
-lookup, read 2026-10-23
+**Release state.** Live on the App Store: **3.2.0 (build 14)** (App Store
+id `6783911002`), per Olisa on 2026-10-25; **3.2.1 (build 15)** was
+submitted for review by Olisa on 2026-10-25. Before them, **3.1.0 (build
+13)**, released 2026-10-21 at 19:07 UTC per the public iTunes lookup, read
+2026-10-23
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`); before it,
 3.0.0 (11) from about 2026-10-01 and 1.2.1 from 2026-09-04. This line has
 been stale before, so re-check it rather than trust it. 3.1.0 (13) is the
@@ -176,8 +178,11 @@ judgments and the server exam dates until `extract-announcement` and
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
-archived. The `update-manifest` floor is still 1.2.1; raising it
-to the live version is Olisa's call, after the build is downloadable. Marco's
+archived. The `update-manifest` floor is **3.2.0** since
+2026-10-25 (`feec931`, at Olisa's word, once 3.2.0 was live; it had been
+1.2.1 since 2026-09-09), so every gated build below 3.2.0 shows the update
+wall. Raise it to 3.2.1 only once 3.2.1 is downloadable, and only at
+Olisa's word. Marco's
 read of the public iTunes lookup on 2026-10-08
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
 (build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to
@@ -201,8 +206,8 @@ renamed 2.0.0 → 3.0.0, and its What's New and review notes were saved
 Marco was finishing by hand: remove 3.0.0 from the old rejected
 submission `067299d2…`, swap build 10 for 11, then Add for Review →
 Submit. He did: it was approved and released automatically on 2026-09-28
-(Release state, above). The `update-manifest` floor has not been raised;
-see above for why it should wait. macOS 1.0 shows "Ready for
+(Release state, above). The `update-manifest` floor stayed at 1.2.1 until
+2026-10-25 (see above). macOS 1.0 shows "Ready for
 Distribution" there (reviewed 2026-08-30), whatever older docs say. On launch the app fetches a public update-policy file that can
 require an update (`Update/`, below).
 
