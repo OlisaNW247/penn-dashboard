@@ -153,6 +153,18 @@ struct HTMLTextTests {
         #expect(text == "Policies\nLate work & extensions: see below.\n• Item one\n• Item 'two'")
     }
 
+    @Test("a table keeps one line per row and delimits its cells, with no delimiter at the start of a line")
+    func tableCellsAreDelimited() {
+        let html = "<table><tr><th>Item</th><th>Weight</th><th>Drops</th></tr>"
+            + "<tr><td>Homework</td><td>20%</td><td>lowest</td></tr></table>"
+        #expect(HTMLText.plainText(from: html) == "Item | Weight | Drops\nHomework | 20% | lowest")
+    }
+
+    @Test("a pipe an instructor typed at the start of a line is kept, and a table cell's is not added")
+    func typedPipeIsKept() {
+        #expect(HTMLText.plainText(from: "<p>| kept</p><table><tr><td>A</td><td>B</td></tr></table>") == "| kept\nA | B")
+    }
+
     @Test("decodes numeric entities")
     func numericEntities() {
         #expect(HTMLText.decodeEntities("&#8217;s &#x2014; ok") == "’s — ok")

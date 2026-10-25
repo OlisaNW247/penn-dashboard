@@ -455,7 +455,24 @@ extension AppState {
                         // student looking at the app right after it — can
                         // use a discovered site until a later sync downloads
                         // whatever the crawl produced anyway.
-                        Task { try? await client.discoverWebsites(courseIDs: websitesPending) }
+                        //
+                        // One call per group of at most three distinct ids
+                        // (`WebsiteDiscoveryBatches`), because the server
+                        // answers 400 to a longer list and refuses all of it.
+                        // Sent whole, as it was until 2026-10-25, a student
+                        // with four pending courses never triggered a crawl
+                        // and the `try?` hid why. Sequential, so a long crawl
+                        // is not run three-wide against one function, and
+                        // each call has its own `try?` so one refusal does
+                        // not stop the groups behind it. Not counted in the
+                        // sync trace: the calls outlive the sync, and the
+                        // diagnostics line is pinned by tests.
+                        let discoveryGroups = WebsiteDiscoveryBatches.chunks(of: websitesPending)
+                        Task {
+                            for group in discoveryGroups {
+                                try? await client.discoverWebsites(courseIDs: group)
+                            }
+                        }
                     }
                 } catch {
                     courseKnowledgeNotice = "synced from canvas; couldn't share updates with lhf's server."

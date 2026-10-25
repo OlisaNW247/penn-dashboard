@@ -129,6 +129,104 @@ struct AskExcerptChannelTests {
         #expect(BackendAssistantResponder.cutAtWordBoundary(url, limit: 30) == String(url.prefix(30)))
     }
 
+    // MARK: - The student's local date and time, first in every block
+
+    private static let newYork = TimeZone(identifier: "America/New_York")!
+
+    /// 2026-10-24 01:15:22 UTC: 9:15 pm on Friday the 23rd in New York (EDT).
+    private static let lateFriday = ISO8601DateFormatter().date(from: "2026-10-24T01:15:22Z")!
+
+    private static let fridayLine = "The student's local date and time: Friday, October 23, 2026, 9:15 PM (America/New_York, UTC-04:00). Due times in the work list carry this offset; \"today\" and \"tomorrow\" mean the student's calendar day."
+
+    private static func zonedContext(_ documents: [CourseDocument], zone: TimeZone = Self.newYork, askedAt: Date = Self.lateFriday) -> AssistantContext {
+        AssistantContext(
+            courseCodes: ["CIS 2400"],
+            contextDocument: "the exact document text",
+            askedAt: askedAt,
+            timeZone: zone,
+            knowledge: CourseKnowledgeBase(courses: [course], documents: documents)
+        )
+    }
+
+    @Test("the local date line for 01:15:22 UTC in New York reads Friday, October 23, 2026, 9:15 PM and UTC-04:00")
+    func localDateLineInNewYork() {
+        let line = BackendAssistantResponder.localDateLine(askedAt: Self.lateFriday, timeZone: Self.newYork)
+        #expect(line == Self.fridayLine)
+        #expect(line.contains("Friday, October 23, 2026, 9:15 PM"))
+        #expect(line.contains("UTC-04:00"))
+    }
+
+    @Test("the local date line writes a half-hour offset and a zone east of Greenwich")
+    func localDateLineInKolkata() {
+        let kolkata = TimeZone(identifier: "Asia/Kolkata")!
+        let line = BackendAssistantResponder.localDateLine(askedAt: Self.lateFriday, timeZone: kolkata)
+        #expect(line.hasPrefix("The student's local date and time: Saturday, October 24, 2026, 6:45 AM (Asia/Kolkata, UTC+05:30)."))
+    }
+
+    @Test("a question with no hits yields a block that is exactly the local date line")
+    func noHitsIsJustTheLocalDateLine() {
+        let documents = [Self.page("tariff schedule", id: "a")]
+        let block = BackendAssistantResponder.excerptBlock(question: "xylophone", context: Self.zonedContext(documents))
+        #expect(block.text == Self.fridayLine)
+        #expect(block.sources.isEmpty)
+        // And so does a student with nothing synced at all.
+        let empty = BackendAssistantResponder.excerptBlock(question: "tariff", context: Self.zonedContext([]))
+        #expect(empty.text == Self.fridayLine)
+        #expect(empty.sources.isEmpty)
+        let request = BackendAssistantResponder.makeRequest(question: "tariff", context: Self.zonedContext([]))
+        #expect(request.excerpts == Self.fridayLine)
+    }
+
+    @Test("with hits, the local date line comes first and the header follows it")
+    func localDateLineLeadsTheExcerpts() {
+        let documents = [Self.page("tariff schedule", id: "a")]
+        let block = BackendAssistantResponder.excerptBlock(question: "tariff", context: Self.zonedContext(documents))
+        let all = block.text.components(separatedBy: "\n")
+        #expect(all[0] == Self.fridayLine)
+        #expect(all[1] == "RETRIEVED EXCERPTS (from the student's synced course materials):")
+        #expect(all[2].hasPrefix("[1] "))
+        #expect(Self.lines(block.text).count == 1)
+    }
+
+    @Test("the same question, time and zone give byte-identical blocks")
+    func blockIsByteStable() {
+        let documents = [Self.page("tariff schedule", id: "a")]
+        let first = BackendAssistantResponder.excerptBlock(question: "tariff", context: Self.zonedContext(documents))
+        let second = BackendAssistantResponder.excerptBlock(question: "tariff", context: Self.zonedContext(documents))
+        #expect(Array(first.text.utf8) == Array(second.text.utf8))
+    }
+
+    // MARK: - Line structure survives into the excerpt
+
+    @Test("a two-paragraph passage keeps its newline and indents the continuation line")
+    func newlineKeptAndContinuationIndented() throws {
+        let document = Self.page("tariff first line\nsecond line of the passage", id: "two")
+        let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "tariff", context: Self.context([document]))
+        let all = excerpts.components(separatedBy: "\n")
+        let start = try #require(all.firstIndex { $0.hasPrefix("[1] ") })
+        #expect(all[start].hasSuffix(": tariff first line"))
+        #expect(all[start + 1] == "  second line of the passage")
+        #expect(all.count == start + 2)
+        // Only the numbered line starts at the left edge.
+        #expect(Self.lines(excerpts).count == 1)
+    }
+
+    @Test("structuredExcerptBody indents continuation lines, collapses newline runs and leaves blank lines bare")
+    func structuredBodyRules() {
+        #expect(BackendAssistantResponder.structuredExcerptBody("one") == "one")
+        #expect(BackendAssistantResponder.structuredExcerptBody("one\ntwo\nthree") == "one\n  two\n  three")
+        #expect(BackendAssistantResponder.structuredExcerptBody("one\n\n\n\n\ntwo") == "one\n\n  two")
+        #expect(BackendAssistantResponder.structuredExcerptBody("one\n\ntwo") == "one\n\n  two")
+    }
+
+    @Test("a cut inside a continuation line still ends on a whole word")
+    func cutInsideAContinuationLine() {
+        let body = BackendAssistantResponder.structuredExcerptBody("alpha bravo\ncharlie delta echo")
+        // "alpha bravo\n  charlie delta echo": 25 characters ends inside "delta".
+        let cut = BackendAssistantResponder.cutAtWordBoundary(body, limit: 25)
+        #expect(cut == "alpha bravo\n  charlie")
+    }
+
     // MARK: - Remembering the previous question changes nothing on the wire
 
     @Test("with a previous question, the question is still the typed text and history is still empty")

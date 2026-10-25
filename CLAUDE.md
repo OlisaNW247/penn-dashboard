@@ -1616,7 +1616,19 @@ client problem. The pieces, all exercised by tests:
   eight passages of 1,500 characters, three per document, cut at a word
   boundary; Ed posts and announcements carry "posted Oct 3"; image-only
   Ed posts are skipped. It was four passages cut at 700 until
-  2026-10-10, which dropped the tail of nearly every passage.
+  2026-10-10, which dropped the tail of nearly every passage. Since
+  2026-10-25 (blind, `docs/TREE_IMPROVEMENT_PLAN.md` items 1 and 3) the
+  block always opens with one line giving the student's local date, time
+  and zone ("The student's local date and time: Friday, October 23, 2026,
+  9:15 PM (America/New_York, UTC-04:00). …"), built from `askedAt` and
+  never the clock, so it is never empty any more; a passage keeps its line
+  breaks (continuation lines indented two spaces) instead of being
+  flattened to one line; and `HTMLText` separates table cells with " | ",
+  so a grading table reaches the model as a table. In the same change
+  the context document renders due times in the student's zone
+  (`2026-09-04T23:59:00-04:00`, `AssistantContextDocument.build(…,
+  timeZone:)`, `AssistantContext.timeZone`, `.current` at the UI layer
+  only), which `docs/PRIVACY.md` now discloses.
 - **"What's new" questions** (`RecencyIntent`, 2026-10-20, compiled green, not yet on a phone). BM25
   has no idea what "recent" means: asked "what have been the recent staff
   posts on Ed for my cis 2620 class", the phone sent the posts whose text
@@ -2115,6 +2127,18 @@ itself.
   models were wrong) with `glm-5.3-flash` at low effort as a five-second
   hedge. The client's `BackendAssistantResponder` still hands an empty
   `done` to the on-device answerer as the last resort.
+- **"Byte-stable" never meant "UTC".** The ask context document rendered
+  every due time in UTC and the user message carried `Current date:` as a
+  UTC instant, both chosen so the prompt-cache prefix never varied. The
+  cache only needs the same bytes for the same student, and a student's
+  zone is as fixed as their work list; UTC bought nothing and cost the
+  model the calendar day: an 11:59 pm Eastern deadline read as the next
+  day and from 8 pm Eastern "today" was already tomorrow (read 2026-10-24,
+  fixed blind 2026-10-25). The tell was that no probe ever asked an
+  evening question: `ask-probe.mjs` sent `new Date()` from a UTC shell.
+  The wrong fix is a zone line inside the cached document; the student's
+  local date and time go in the excerpts block, after the breakpoint,
+  where a change costs nothing.
 - **A 504 from `/rest/v1` can be the API gateway, not Postgres.** The
   2026-09-13 20:47 "database stall" was `sb_gateway_version: 2` timing out
   after ~5 s (`origin_time: 5126`, 29-byte body
@@ -2122,8 +2146,10 @@ itself.
   idle, no restart, no errors, and the RPC's max ever 23 ms. Before
   blaming the database, pull `edge_logs` for the request id and read
   `origin_time`, then `pg_stat_statements` for the query; the management
-  API's `logs.all` returns nothing for windows wider than a few minutes,
-  so query narrow windows. Also from that day, a misdiagnosis worth
+  API's logs endpoint returns nothing for windows wider than a few
+  minutes, so query narrow windows (since 2026-10-25 the path is
+  `/v1/projects/<ref>/analytics/endpoints/logs`; `logs.all` answers "has
+  been removed"). Also from that day, a misdiagnosis worth
   keeping: every ask logged "record_ask_usage exceeded 4000ms deadline"
   while the row still landed, and this file blamed the write running
   after `yield done`. Measured on 2026-09-22, the write lands in 125-440
@@ -2879,9 +2905,12 @@ none is a ship line.
   `Current date:` is a UTC instant, so an 11:59 pm Eastern deadline is the
   next calendar day to the model and from 8 pm Eastern "today" is already
   tomorrow. UTC was chosen for the byte-stable prefix, which a fixed
-  per-student zone keeps just as well. Not yet seen wrong on a phone: ask
-  "what's due tomorrow" after 8 pm to see it. The on-device answerer uses
-  the device calendar and is right.
+  per-student zone keeps just as well. **Fixed blind on 2026-10-25**
+  (zone-aware due times in the document, the local-date line at the top
+  of the excerpts block; 13 tests predicted, none compiled): the Mac
+  compile and an evening "what's due tomorrow" on the phone are the
+  checks. Before the fix the on-device answerer, which uses the device
+  calendar, was the only path that got the day right.
 - **The phone's `discover-websites` call fails whenever more than three
   courses are pending** (read 2026-10-24, plan item 2).
   `AppState+CourseKnowledge.swift` sends the whole `websitesPending` list
@@ -2890,7 +2919,13 @@ none is a ship line.
   crawl. On 2026-10-24 `course_websites` held 213 candidates, 3 verified
   and no row ever crawled; CIS 2400 and CIS 2620 have nothing in the pool
   but Ed posts because their syllabi live on external sites. The extension
-  chunks by three and is the only caller that ever has.
+  chunks by three and is the only caller that ever has. **Fixed blind on
+  2026-10-25** (`WebsiteDiscoveryBatches`, one call per three distinct
+  ids, 3 tests): after the build is on a phone and one sync has run,
+  `course_websites` should show `verified` rows and a `last_crawled_at`
+  for the CIS courses; if candidates stay candidates, the next suspects
+  are the verification rule (code and term in the first 3,000 characters)
+  and the convention guesser (no `github.io`), plan item 2's server half.
 - **ask cannot read Canvas Files.** Slides, readings and any PDF not
   named like a syllabus are never ingested; only the 40 most recently
   updated pages get their bodies; module items contribute titles only.

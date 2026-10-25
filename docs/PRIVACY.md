@@ -128,10 +128,11 @@ on-device alone:
 
 - **Questions you ask "the tree."** When you ask a question, the app sends the
   question, an on-device summary of your dashboard (built without your name,
-  grades, or completion state), and the most relevant excerpts of the pooled
-  course material to our server, which forwards them to an AI model to
-  generate an answer streamed back to you. Neither the question nor the answer
-  is stored anywhere — see "What we keep and for how long" below.
+  grades, or completion state), the most relevant excerpts of the pooled
+  course material, and your phone's time zone (so that due times and
+  "tomorrow" read correctly) to our server, which forwards them to an AI
+  model to generate an answer streamed back to you. Neither the question nor
+  the answer is stored anywhere — see "What we keep and for how long" below.
 
   The Announcement Watcher's "AI assist" toggle is on by default (you can turn
   it off in Settings). With it on, extracting a task and due date from an

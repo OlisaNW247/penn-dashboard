@@ -63,7 +63,10 @@ struct AskKnowledgeWiringTests {
     func backendNoExcerpts() {
         let context = AssistantContext(courseCodes: ["PHYS 0151"], contextDocument: "doc", askedAt: AssistantFixture.now)
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "attendance policy", context: context)
-        #expect(excerpts.isEmpty)
+        // "Empty" of excerpts: the block is now only the student's local date
+        // and time (2026-10-25), in the default UTC of a context built without a zone.
+        #expect(excerpts == BackendAssistantResponder.localDateLine(askedAt: context.askedAt, timeZone: context.timeZone))
+        #expect(!excerpts.contains("RETRIEVED EXCERPTS"))
     }
 
     @Test("question and excerpts travel as separate request fields; the server joins them")

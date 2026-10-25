@@ -10,7 +10,16 @@
 //
 // Usage:
 //   node backend/scripts/ask-probe.mjs --slug ask-canary --runs 5 --set exam \
-//     [--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--tag mytag]
+//     [--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--tag mytag] \
+//     [--temperature N] [--asked-at <ISO>]
+//
+// The `citations` set (2026-10-25) measures the citation contract in
+// `_shared/prompt.ts`: it sends excerpts in the exact line format the phone
+// sends (`BackendAssistantResponder.retrievedExcerpts`), prints every answer
+// in full with its parsed `<sources>` line, and ends with counts of how many
+// answers carried a block, how many `detail`s held a known title verbatim
+// (the phone links a chip only then), how many used kind `ed`, and how many
+// "where is the midterm" answers named the newer post's room.
 //
 // Exit code is 1 if any run came back empty (a `done` with zero deltas) or
 // errored, so this can gate a loop; 0 if every run produced an answer.
@@ -26,8 +35,9 @@ const PUBLISHABLE_KEY =
 function usageAndExit(message) {
   if (message) console.error(message);
   console.error(
-    "Usage: node backend/scripts/ask-probe.mjs --slug <slug> --runs <n> --set <exam|policy|short|mixed> " +
-      "[--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--probe '<json>'] [--tag mytag]",
+    "Usage: node backend/scripts/ask-probe.mjs --slug <slug> --runs <n> --set <exam|policy|short|mixed|citations> " +
+      "[--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--probe '<json>'] [--tag mytag] " +
+      "[--temperature N] [--asked-at <ISO>]",
   );
   process.exit(1);
 }
@@ -68,14 +78,26 @@ function parseArgs(argv) {
       case "--tag":
         opts.tag = next();
         break;
+      case "--temperature":
+        opts.temperature = Number.parseFloat(next());
+        break;
+      case "--asked-at":
+        opts.askedAt = next();
+        break;
       default:
         usageAndExit(`unknown flag: ${arg}`);
     }
   }
   if (!opts.slug) usageAndExit("--slug is required");
   if (!Number.isInteger(opts.runs) || opts.runs < 1) usageAndExit("--runs must be a positive integer");
-  if (!["exam", "policy", "short", "mixed"].includes(opts.set)) {
-    usageAndExit(`--set must be one of exam, policy, short, mixed (got "${opts.set}")`);
+  if (!["exam", "policy", "short", "mixed", "citations"].includes(opts.set)) {
+    usageAndExit(`--set must be one of exam, policy, short, mixed, citations (got "${opts.set}")`);
+  }
+  if (opts.temperature !== undefined && !Number.isFinite(opts.temperature)) {
+    usageAndExit("--temperature must be a number");
+  }
+  if (opts.askedAt !== undefined && Number.isNaN(Date.parse(opts.askedAt))) {
+    usageAndExit("--asked-at must be an ISO 8601 timestamp");
   }
   return opts;
 }
@@ -219,11 +241,62 @@ function buildExcerpts() {
   return text.slice(0, 2000);
 }
 
+// The `citations` set's excerpts, in the phone's exact line format
+// (`BackendAssistantResponder.retrievedExcerpts`, read 2026-10-25):
+//   [n] COURSE · kind label · posted Mon D · "Title": body
+// under the header line, then the Ed note (`edExcerptNote`, copied word for
+// word) because an Ed post is among the hits. The two Ed posts disagree on
+// the midterm room on purpose, so the newest-post rule in the system prompt
+// is exercised: the right answer to "where is the midterm" is Meyerson B1,
+// and says the newer post changed it.
+const CITATION_TITLES = ["Course Syllabus", "Midterm 1 logistics", "Midterm room change", "Welcome to CIS 2400"];
+
+function buildCitationExcerpts() {
+  const syllabusBody =
+    "Late work loses 10% per day up to three days; after that it is not accepted. " +
+    "Each student has two grace days for the semester, usable on problem sets only and " +
+    "never on exams or the final project. Requests for an extension must reach the " +
+    "instructors before the deadline, with documentation from the dean's office for " +
+    "medical or family emergencies. Regrade requests are open for one week after grades " +
+    "are released on Gradescope, and the whole assignment is regraded, so a score can go " +
+    "down as well as up. Office hours are Tuesday and Thursday 3 to 5 pm in Levine 512.";
+  const lines = [
+    `[1] CIS 2400 · syllabus · "Course Syllabus": ${syllabusBody}`,
+    '[2] CIS 2400 · ed discussion · posted Oct 3 · "Midterm 1 logistics": ' +
+      "The midterm is on Wednesday, October 15 in Towne 100, 7:00 to 8:30 pm. Bring your " +
+      "PennCard and a pencil; one double-sided handwritten cheat sheet is allowed and no " +
+      "calculators. Seating is assigned by the last digit of your Penn ID and the seating " +
+      "chart will be posted the night before. Conflict exams must be requested by Friday.",
+    '[3] CIS 2400 · ed discussion · posted Oct 12 · "Midterm room change": ' +
+      "The midterm has moved to Meyerson B1; same date and time (Wednesday, October 15, " +
+      "7:00 to 8:30 pm). Towne 100 is being used for another exam that evening. Seating " +
+      "is still assigned by the last digit of your Penn ID. Everything else in the " +
+      "logistics post stands, including the cheat sheet rule.",
+    '[4] CIS 2400 · announcement · posted Sep 2 · "Welcome to CIS 2400": ' +
+      "Welcome to the course! Lectures meet Monday and Wednesday, recitations start next " +
+      "week, and the first problem set goes out on Friday. Please join the class Ed board " +
+      "and check Canvas for announcements. We are looking forward to a great semester " +
+      "together and are happy to answer questions in office hours.",
+  ];
+  const edNote =
+    'Excerpts labelled "ed discussion" are posts by course staff on the class\'s Ed board, and carry the date they were posted.';
+  return [
+    "RETRIEVED EXCERPTS (from the student's synced course materials):",
+    edNote,
+    ...lines,
+  ].join("\n");
+}
+
 const PROMPT_SETS = {
   exam: ["when's my next exam?"],
   policy: ["what's the late policy in cis 2400?"],
   short: ["what's due tomorrow?"],
   mixed: ["when's my next exam?", "what's the late policy in cis 2400?", "what's due tomorrow?"],
+  citations: [
+    "what's the late policy in cis 2400?",
+    "where is the cis 2400 midterm?",
+    "what did staff post recently in cis 2400?",
+  ],
 };
 
 function questionForRun(set, runIndex) {
@@ -231,15 +304,15 @@ function questionForRun(set, runIndex) {
   return pool[runIndex % pool.length];
 }
 
-function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, probeExtra }) {
+function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, probeExtra, temperature, askedAt }) {
   let contextDocument = buildContextDocument(55000);
   if (Number.isInteger(trim)) contextDocument = contextDocument.slice(0, trim);
 
   const body = {
     question: questionForRun(set, runIndex),
     contextDocument,
-    excerpts: buildExcerpts(),
-    askedAt: new Date().toISOString(),
+    excerpts: set === "citations" ? buildCitationExcerpts() : buildExcerpts(),
+    askedAt: askedAt ?? new Date().toISOString(),
     courseIDs: ["1000001", "1000002", "1000003"],
     history: [],
   };
@@ -248,6 +321,7 @@ function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, pr
   if (model !== undefined) probe.model = model;
   if (maxTokens !== undefined) probe.maxTokens = maxTokens;
   if (reasoning !== undefined) probe.reasoning = reasoning;
+  if (temperature !== undefined) probe.temperature = temperature;
   if (probeExtra !== undefined) Object.assign(probe, probeExtra);
   if (Object.keys(probe).length > 0) body.probe = probe;
 
@@ -264,6 +338,7 @@ async function runOnce({ slug, session, tag, requestBody }) {
   let deltaCount = 0;
   let contentChars = 0;
   let answerPrefix = "";
+  let fullText = "";
   let doneUsage;
   let errorEvent;
   let httpStatus;
@@ -289,6 +364,7 @@ async function runOnce({ slug, session, tag, requestBody }) {
       deltaCount: 0,
       contentChars: 0,
       answerPrefix: "",
+      fullText: "",
       doneUsage: undefined,
       errorEvent: { code: "http", message: text.slice(0, 500) },
     };
@@ -323,6 +399,7 @@ async function runOnce({ slug, session, tag, requestBody }) {
         deltaCount += 1;
         contentChars += event.text?.length ?? 0;
         if (answerPrefix.length < 120) answerPrefix += event.text ?? "";
+        fullText += event.text ?? "";
       } else if (event.type === "done") {
         doneUsage = event.usage;
       } else if (event.type === "error") {
@@ -338,9 +415,31 @@ async function runOnce({ slug, session, tag, requestBody }) {
     deltaCount,
     contentChars,
     answerPrefix: answerPrefix.slice(0, 120),
+    fullText,
     doneUsage,
     errorEvent,
   };
+}
+
+// Pulls the trailing `<sources>COURSE|kind|detail; …</sources>` block out of
+// an answer the way the phone's splitter reads it: returns the raw inner
+// text and the parsed entries, or null when there is no block.
+function parseSources(text) {
+  const match = /<sources>([\s\S]*?)<\/sources>/.exec(text ?? "");
+  if (!match) return null;
+  const entries = match[1]
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const [course = "", kind = "", ...rest] = part.split("|");
+      return { course: course.trim(), kind: kind.trim().toLowerCase(), detail: rest.join("|").trim() };
+    });
+  return { raw: match[1].trim(), entries };
+}
+
+function answerBody(text) {
+  return (text ?? "").replace(/<sources>[\s\S]*?<\/sources>/, "").trim();
 }
 
 function percentile(sorted, p) {
@@ -363,6 +462,8 @@ async function main() {
       maxTokens: opts.maxTokens,
       probeExtra: opts.probeExtra,
       reasoning: opts.reasoning,
+      temperature: opts.temperature,
+      askedAt: opts.askedAt,
     });
 
     let result;
@@ -382,10 +483,12 @@ async function main() {
         deltaCount: 0,
         contentChars: 0,
         answerPrefix: "",
+        fullText: "",
         doneUsage: undefined,
         errorEvent: { code: "network", message: err instanceof Error ? err.message : String(err) },
       };
     }
+    result.runIndex = i;
     results.push(result);
 
     const status = result.errorEvent
@@ -398,8 +501,16 @@ async function main() {
         `firstDeltaMs=${result.firstDeltaMs?.toFixed(0) ?? "-"}  totalMs=${result.totalMs?.toFixed(0) ?? "-"}  ` +
         `deltas=${result.deltaCount}  chars=${result.contentChars}  ` +
         `usage=${JSON.stringify(result.doneUsage ?? null)}  ${status}` +
-        (result.answerPrefix ? `\n    answer: ${JSON.stringify(result.answerPrefix)}` : ""),
+        (opts.set !== "citations" && result.answerPrefix
+          ? `\n    answer: ${JSON.stringify(result.answerPrefix)}`
+          : ""),
     );
+    if (opts.set === "citations") {
+      const sources = parseSources(result.fullText);
+      console.log(`    question: ${questionForRun(opts.set, i)}`);
+      console.log(`    answer (full):\n${answerBody(result.fullText).replace(/^/gm, "      ")}`);
+      console.log(`    sources: ${sources ? sources.raw : "(none)"}`);
+    }
   }
 
   const answered = results.filter((r) => !r.errorEvent && r.deltaCount > 0).length;
@@ -419,6 +530,32 @@ async function main() {
       `p50=${percentile(latencies, 50)?.toFixed(0) ?? "-"}ms p95=${percentile(latencies, 95)?.toFixed(0) ?? "-"}ms  ` +
       `meanCompletionTokens=${meanCompletion?.toFixed(0) ?? "-"}`,
   );
+
+  if (opts.set === "citations") {
+    const ok = results.filter((r) => !r.errorEvent && r.deltaCount > 0);
+    const parsed = ok.map((r) => ({ r, sources: parseSources(r.fullText) }));
+    const withBlock = parsed.filter((p) => p.sources);
+    const withTitle = withBlock.filter((p) =>
+      // Case-folded, as the phone's `CitationLinks.title(_:matches:)` folds
+      // before it looks for the title as whole words (2026-10-25: the first
+      // baseline run wrote "Oct 12 midterm room change", which links on the
+      // phone and a case-sensitive count missed).
+      p.sources.entries.some((e) => CITATION_TITLES.some((title) => e.detail.toLowerCase().includes(title.toLowerCase()))),
+    );
+    const withEd = withBlock.filter((p) => p.sources.entries.some((e) => e.kind === "ed"));
+    // "where is the midterm" is the second question of the cycle.
+    const midterm = ok.filter((r) => r.runIndex % PROMPT_SETS.citations.length === 1);
+    const meyerson = midterm.filter((r) => /meyerson/i.test(answerBody(r.fullText)));
+    const towne = midterm.filter((r) => /towne/i.test(answerBody(r.fullText)));
+    console.log("--- citations");
+    console.log(`answers with a <sources> block: ${withBlock.length}/${ok.length}`);
+    console.log(`blocks whose detail held a known title verbatim: ${withTitle.length}/${withBlock.length}`);
+    console.log(`blocks using kind ed: ${withEd.length}/${withBlock.length}`);
+    console.log(
+      `midterm answers naming Meyerson (the newer post): ${meyerson.length}/${midterm.length}  ` +
+        `(also mentioning Towne: ${towne.length})`,
+    );
+  }
 
   process.exit(empty > 0 || errored > 0 ? 1 : 0);
 }

@@ -165,7 +165,13 @@ Deno.test("buildMessages keeps at least the most recent turn even if it alone ex
 
 Deno.test("SYSTEM_INSTRUCTIONS keeps the exact <sources> trailer contract the app parses", () => {
   assert.ok(SYSTEM_INSTRUCTIONS.includes("<sources>COURSE|kind|detail; COURSE|kind|detail</sources>"));
-  assert.ok(SYSTEM_INSTRUCTIONS.includes("syllabus, canvas, website, or announcement"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("syllabus, canvas, website, announcement, or ed"));
+  // 2026-10-25: detail is the quoted title, so the phone can link the chip.
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("copied exactly as it appears between the quotes in the excerpt line"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("<sources>CIS 2400|ed|Midterm room change</sources>"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("never emit an empty or invented one"));
+  // The newest-post rule sits in the excerpts paragraph.
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("prefer the one posted most recently and say that the newer post changed it"));
 });
 
 Deno.test("SYSTEM_INSTRUCTIONS explains the [website] excerpt label", () => {

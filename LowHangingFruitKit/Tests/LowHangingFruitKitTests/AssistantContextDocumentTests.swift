@@ -18,6 +18,14 @@ struct AssistantContextDocumentTests {
 
     // MARK: - Fixtures
 
+    /// The zone most tests render in. UTC, so the long-standing `...Z` pins
+    /// below keep meaning what they meant before `build` took a zone.
+    private static let utc = TimeZone(secondsFromGMT: 0)!
+
+    /// The student's zone in the zone-specific tests, fixed by name and never
+    /// `.current`, so the suite gives the same bytes on every machine.
+    private static let eastern = TimeZone(identifier: "America/New_York")!
+
     /// Builds a `Date` from explicit UTC components, independent of
     /// whatever timezone the test runner's host happens to be in. Using
     /// `Date()` or a local-timezone `Calendar` here would make the fixtures
@@ -134,8 +142,8 @@ struct AssistantContextDocumentTests {
     @Test("Building twice from identical inputs returns byte-identical strings")
     func byteStability() {
         let (courses, work, announcements) = Self.sampleFacts()
-        let first = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements)
-        let second = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements)
+        let first = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.utc)
+        let second = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.utc)
         #expect(first == second)
     }
 
@@ -144,11 +152,12 @@ struct AssistantContextDocumentTests {
     @Test("Reversing the input arrays produces an identical document")
     func orderIndependenceReversed() {
         let (courses, work, announcements) = Self.sampleFacts()
-        let baseline = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements)
+        let baseline = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.utc)
         let reversed = AssistantContextDocument.build(
             courses: courses.reversed(),
             work: work.reversed(),
-            announcements: announcements.reversed()
+            announcements: announcements.reversed(),
+            timeZone: Self.utc
         )
         #expect(baseline == reversed)
     }
@@ -156,11 +165,12 @@ struct AssistantContextDocumentTests {
     @Test("Randomly shuffling the input arrays produces an identical document")
     func orderIndependenceShuffled() {
         let (courses, work, announcements) = Self.sampleFacts()
-        let baseline = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements)
+        let baseline = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.utc)
         let shuffled = AssistantContextDocument.build(
             courses: courses.shuffled(),
             work: work.shuffled(),
-            announcements: announcements.shuffled()
+            announcements: announcements.shuffled(),
+            timeZone: Self.utc
         )
         #expect(baseline == shuffled)
     }
@@ -178,7 +188,7 @@ struct AssistantContextDocumentTests {
             course: "CIS 1210", title: "Reading response",
             due: nil, isCompleted: false, nothingToSubmit: false, source: "reading"
         )
-        let doc = AssistantContextDocument.build(courses: [], work: [undated, dated], announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: [undated, dated], announcements: [], timeZone: Self.utc)
         let workLines = Self.section("# WORK", in: doc)
 
         #expect(workLines.count == 2)
@@ -198,7 +208,7 @@ struct AssistantContextDocumentTests {
                 postedAt: Self.utcDate(year: 2026, month: 8, day: 26)
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements)
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements, timeZone: Self.utc)
 
         #expect(!doc.contains(longBody))
         #expect(doc.contains("…[truncated]"))
@@ -215,7 +225,7 @@ struct AssistantContextDocumentTests {
                 postedAt: Self.utcDate(year: 2026, month: 8, day: 26)
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements)
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements, timeZone: Self.utc)
 
         #expect(doc.contains(shortBody))
         #expect(!doc.contains("…[truncated]"))
@@ -225,7 +235,7 @@ struct AssistantContextDocumentTests {
 
     @Test("All three sections are omitted when there are no facts of any kind")
     func allSectionsOmittedWhenEmpty() {
-        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: [], timeZone: Self.utc)
         #expect(!doc.contains("# CLASSES"))
         #expect(!doc.contains("# WORK"))
         #expect(!doc.contains("# ANNOUNCEMENTS"))
@@ -241,7 +251,7 @@ struct AssistantContextDocumentTests {
                 isCompleted: false, nothingToSubmit: false, source: "manual"
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [], timeZone: Self.utc)
         #expect(doc.contains("# WORK"))
         #expect(!doc.contains("# CLASSES"))
         #expect(!doc.contains("# ANNOUNCEMENTS"))
@@ -251,7 +261,7 @@ struct AssistantContextDocumentTests {
 
     @Test("The header states that syllabus prose is not included")
     func headerStatesSyllabusProseLimitation() {
-        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: [], timeZone: Self.utc)
         #expect(doc.contains("Does NOT contain syllabus prose"))
         #expect(doc.contains("attendance"))
         #expect(doc.contains("office hours"))
@@ -259,7 +269,7 @@ struct AssistantContextDocumentTests {
 
     // MARK: - UTC / locale independence
 
-    @Test("Dates render as UTC ISO-8601, not in the device's timezone")
+    @Test("Dates render as UTC ISO-8601 when the zone given is UTC, not in the device's timezone")
     func datesRenderInUTC() {
         // 23:59 UTC is deliberately late in the day: a formatter that leaked
         // the device's timezone would roll this onto the 3rd or the 5th
@@ -273,9 +283,50 @@ struct AssistantContextDocumentTests {
             ),
         ]
 
-        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [], timeZone: Self.utc)
 
         #expect(doc.contains("due 2026-09-04T23:59:00Z"))
+    }
+
+    @Test("A 23:59 Eastern deadline renders with the student's own offset, on the student's own day")
+    func dueTimeCarriesStudentOffset() {
+        // 03:59 UTC on the 5th is 23:59 on the 4th in New York (EDT, -04:00).
+        // In UTC the deadline would read as the 5th, the next day to the model.
+        let due = Self.utcDate(year: 2026, month: 9, day: 5, hour: 3, minute: 59)
+        let work = [
+            AssistantContextDocument.WorkFacts(
+                course: "PHYS 0151", title: "Problem set 3", due: due,
+                isCompleted: false, nothingToSubmit: false, source: "canvas"
+            ),
+        ]
+        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [], timeZone: Self.eastern)
+        #expect(doc.contains("PHYS 0151 | Problem set 3 | due 2026-09-04T23:59:00-04:00 | outstanding | canvas"))
+        #expect(!doc.contains("2026-09-05T03:59:00Z"))
+    }
+
+    @Test("The same inputs in the same zone render byte-identical documents; a winter date carries the winter offset")
+    func zoneAwareRenderIsByteStable() {
+        let (courses, work, announcements) = Self.sampleFacts()
+        let first = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.eastern)
+        let second = AssistantContextDocument.build(courses: courses, work: work, announcements: announcements, timeZone: Self.eastern)
+        #expect(Array(first.utf8) == Array(second.utf8))
+
+        // Each line carries the offset of its own date, so the clock at
+        // render time and daylight-saving changes cannot rewrite a line.
+        let winter = [
+            AssistantContextDocument.WorkFacts(
+                course: "PHYS 0151", title: "Final", due: Self.utcDate(year: 2026, month: 12, day: 16, hour: 4, minute: 59),
+                isCompleted: false, nothingToSubmit: false, source: "canvas"
+            ),
+        ]
+        let doc = AssistantContextDocument.build(courses: [], work: winter, announcements: [], timeZone: Self.eastern)
+        #expect(doc.contains("due 2026-12-15T23:59:00-05:00"))
+    }
+
+    @Test("The header tells the model that due times carry the student's own offset")
+    func headerNamesTheStudentOffset() {
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: [], timeZone: Self.eastern)
+        #expect(doc.contains("Due times carry the student's own UTC offset (an Eastern deadline of\n11:59 pm in September reads 23:59:00-04:00), so the calendar day written\nin each line is the student's own calendar day, not UTC's."))
     }
 
     @Test("Announcement dates render as plain UTC yyyy-MM-dd regardless of locale")
@@ -287,7 +338,7 @@ struct AssistantContextDocumentTests {
                 postedAt: Self.utcDate(year: 2026, month: 8, day: 26, hour: 23, minute: 30)
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements)
+        let doc = AssistantContextDocument.build(courses: [], work: [], announcements: announcements, timeZone: Self.utc)
         #expect(doc.contains("(2026-08-26)"))
     }
 
@@ -304,7 +355,7 @@ struct AssistantContextDocumentTests {
                 AssistantContextDocument.GradeCategoryFacts(name: "Labs", weightPercent: nil, dropsLowest: false),
             ]
         )
-        let doc = AssistantContextDocument.build(courses: [course], work: [], announcements: [])
+        let doc = AssistantContextDocument.build(courses: [course], work: [], announcements: [], timeZone: Self.utc)
 
         #expect(doc.contains("## PHYS 0151 (shown as: Physics I)"))
         // Alphabetically sorted regardless of input order: Final, Labs, Problem sets.
@@ -315,7 +366,7 @@ struct AssistantContextDocumentTests {
     @Test("A course with no extracted grade categories says so explicitly")
     func courseWithNoGradeCategoriesIsExplicit() {
         let course = AssistantContextDocument.CourseFacts(code: "PSYC 1010", displayName: nil, gradeCategories: [])
-        let doc = AssistantContextDocument.build(courses: [course], work: [], announcements: [])
+        let doc = AssistantContextDocument.build(courses: [course], work: [], announcements: [], timeZone: Self.utc)
         #expect(doc.contains("## PSYC 1010"))
         #expect(doc.contains("grading: not extracted from a syllabus"))
     }
@@ -330,7 +381,7 @@ struct AssistantContextDocumentTests {
                 isCompleted: false, nothingToSubmit: true, source: "canvas"
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [], timeZone: Self.utc)
         #expect(doc.contains("(no course) | Guest lecture | no due date | nothing to submit | canvas"))
     }
 
@@ -347,7 +398,7 @@ struct AssistantContextDocumentTests {
                 isCompleted: false, nothingToSubmit: false, source: "canvas"
             ),
         ]
-        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [])
+        let doc = AssistantContextDocument.build(courses: [], work: work, announcements: [], timeZone: Self.utc)
         #expect(doc.contains("Lab 2 | no due date | done | canvas"))
         #expect(doc.contains("Lab 3 | due 2026-09-20T00:00:00Z | outstanding | canvas"))
     }

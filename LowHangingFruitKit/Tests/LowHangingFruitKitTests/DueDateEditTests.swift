@@ -236,7 +236,9 @@ struct DueDateEditTests {
         // timestamp, on the item's line) and the edited date appears nowhere in
         // it. The on-device pool above and this document can therefore disagree
         // about a date the student moved; that is the price of the promise.
-        let document = h.state.assistantContextDocument()
+        // UTC, to match `isoTimestamp` above; the default is the machine's zone
+        // (the student's, in production), which would move the rendered offset.
+        let document = h.state.assistantContextDocument(timeZone: TimeZone(secondsFromGMT: 0)!)
         let line = try #require(
             document
                 .split(separator: "\n")

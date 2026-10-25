@@ -587,3 +587,45 @@ What I need from Olisa, in order:
   tree may answer concept questions from general knowledge when no excerpt
   covers them (section 7, last paragraph), and the completion-state
   sentence already in ROADMAP → Now.
+
+**Running the bench** (2026-10-25). `RetrievalBenchTests` loads a
+`course-knowledge.json` and prints, for each of the 30 questions, the course
+the matcher chose, whether the recency rule fired and the exact excerpt lines
+`ask` would send (it calls the phone's own `excerptBlock`). The file is in the
+app's private container, not the App Group: `CourseKnowledgeStore` keeps it
+under Application Support, beside `announcement-log.json`
+(`CourseKnowledgeStore.swift:17-23`). Copying it works only from a developer
+build installed over the store copy (Commands in CLAUDE.md). `~/lhf-bench/` is
+outside the repo and must stay there: the file holds the student's course text
+and is never committed. With the variable unset the test does nothing. Optional
+`LHF_BENCH_QUESTIONS` (one question per line, `>` marks a follow-up) and
+`LHF_BENCH_ASKED_AT` (ISO 8601) change the questions and the pinned "now".
+
+```bash
+mkdir -p ~/lhf-bench
+xcrun devicectl device copy from --device <CoreDevice id> --domain-type appDataContainer --domain-identifier com.lhf.lowhangingfruit --source "Library/Application Support/LowHangingFruit/course-knowledge.json" --destination ~/lhf-bench/course-knowledge.json
+cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json swift test --no-parallel --filter RetrievalBenchTests
+```
+
+## 11. Status
+
+- **2026-10-25.** Olisa: "put your plan into action". Written blind in
+  the cloud container, nothing compiled: items 1, 2 (phone half), 3 and 4
+  (server half), the `RetrievalBenchTests` bench of section 10, and the
+  `citations` probe set with `--asked-at` and `--temperature`. Predicted
+  `swift test` delta: +17 tests (13 for dates and excerpts, 3 for the
+  chunking, 1 for the bench), +2 suites, nothing removed; the Mac's count
+  wins. Deno 468/0 before and after the prompt change. The `ask-canary`
+  deploy was refused by the session's permission classifier as a
+  production deploy, so the new prompt is not live anywhere; the command
+  is `node backend/scripts/deploy-function.mjs ask-canary --also ask`
+  from a shell with the Management API token. A 6-run baseline of the
+  `citations` set against the canary's old prompt (tag `cite-base`): 6/6
+  answered, first word median 2.5 s, 13.2k of 14.6k prompt tokens cached
+  from the second run on, 2/2 midterm answers named the newer post's room
+  without the new sentence, 3/6 `<sources>` details carried a known title
+  verbatim (case-sensitive count; the phone folds case, so the real
+  linkable share is higher), and the model wrote `ed discussion` as its
+  kind word, which the phone already accepts. So item 4's effect is
+  smaller than section 3 feared; the deploy still earns its place by
+  making the title the rule rather than the habit.

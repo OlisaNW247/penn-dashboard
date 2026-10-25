@@ -6,7 +6,10 @@ import Foundation
 /// passage chunker relies on.
 public enum HTMLText {
     public static func plainText(from html: String) -> String {
-        var s = html
+        // A private-use scalar stands in for "a table cell starts here" until
+        // the tags are gone (`cellMark`). Nothing a Canvas page writes uses
+        // it, but one that did would be read as a cell, so it is dropped.
+        var s = html.replacingOccurrences(of: cellMark, with: "")
 
         // `[\s\S]*?`, not `.*?`: ICU's `.` stops at a line break, so a
         // `<style>` or `<script>` block (or a comment) that spans lines
@@ -21,12 +24,31 @@ public enum HTMLText {
         s = replace(in: s, pattern: #"<br\s*/?>"#, with: "\n")
         s = replace(in: s, pattern: #"</(p|div|li|h[1-6]|tr|blockquote|section|article|header|footer|table|ul|ol|pre)\s*>"#, with: "\n")
         s = replace(in: s, pattern: #"<(li)\b[^>]*>"#, with: "\n• ")
-        s = replace(in: s, pattern: #"<(td|th)\b[^>]*>"#, with: " ")
+        // A table cell opener is marked rather than turned into " | " at
+        // once, because the first cell of a row must not start its line with
+        // a delimiter, and "first in its line" is only knowable once the
+        // block boundaries above are newlines and the other tags are gone.
+        // Written 2026-10-25: before it the cells were joined by a single
+        // space, so a grading table reached the chunker, and from there ask,
+        // as "Homework 20% Midterm 25% Final 30%", with nothing to say where
+        // one cell ended. The wrong fix is a bare " | " in this substitution:
+        // every row would open with a stray "| ", and a literal "| " that an
+        // instructor typed at the start of a line would be indistinguishable
+        // from it.
+        s = replace(in: s, pattern: #"<(td|th)\b[^>]*>"#, with: cellMark)
 
         // Everything else: drop the tag.
         s = replace(in: s, pattern: #"<[^>]+>"#, with: " ")
 
         s = decodeEntities(s)
+
+        // The mark that opens a line is dropped, every other one becomes the
+        // delimiter. A normal string literal, not a raw one: the pattern
+        // holds real U+E000 and U+00A0 characters (see CLAUDE.md's regex
+        // trap). The BM25 tokenizer splits on non-alphanumerics, so " | "
+        // adds and changes no search token: only what the model reads moves.
+        s = replace(in: s, pattern: "(^|\n)[ \t\r\u{00A0}]*\(cellMark)", with: "$1")
+        s = s.replacingOccurrences(of: cellMark, with: " | ")
 
         // Collapse runs of spaces/tabs, then one line per block (the chunker
         // treats every line as a paragraph, so blank lines add nothing).
@@ -35,6 +57,10 @@ public enum HTMLText {
         s = replace(in: s, pattern: #"\n{2,}"#, with: "\n")
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Stands in for a table cell's opening tag between the tag pass and the
+    /// whitespace pass of `plainText(from:)`. U+E000 is a private-use scalar.
+    private static let cellMark = "\u{E000}"
 
     /// Decodes the named entities Canvas actually emits plus numeric forms.
     public static func decodeEntities(_ text: String) -> String {

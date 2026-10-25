@@ -94,20 +94,36 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `An excerpt labelled [website] comes from the course's own external `
   + `website (its syllabus, schedule or policy pages, not Canvas) — treat `
   + `it as every bit as authoritative as the syllabus itself, not as a `
-  + `secondary or unofficial source.`,
+  + `secondary or unofficial source. When two excerpts disagree, such as a `
+  + `syllabus and a later post or two posts about the same thing, prefer the `
+  + `one posted most recently and say that the newer post changed it; a `
+  + `staff post can supersede the syllabus.`,
 
+  // The citation contract, rewritten 2026-10-25. The phone turns a source
+  // chip into a link only when `detail` contains the cited document's title
+  // as whole words and the kind word names the document's kind
+  // (`CitationLinks.swift`), so `detail` is the title copied from the
+  // excerpt line and `ed` is a legal kind. The old wording asked for "a few
+  // words locating the fact", which a prompt-following answer obeyed and
+  // therefore never linked. The system prompt is a constant: this changes
+  // the cached prefix once per deploy, which is fine.
   `If your answer relies on specific facts from the document, end it with `
   + `a line of its own — nothing else on that line, nothing after it — in `
   + `exactly this form:\n`
   + `<sources>COURSE|kind|detail; COURSE|kind|detail</sources>\n`
   + `COURSE is the course code as it appears in the document, such as `
   + `"PHYS 0151". kind is one short lowercase word: syllabus, canvas, `
-  + `website, or announcement — use "website" for a fact drawn from the `
-  + `course's own external website rather than Canvas. detail is a few `
-  + `words locating the fact, such as "§4 `
-  + `attendance, p.2". Separate multiple sources with "; ". If nothing in `
-  + `your answer traces back to a specific cited fact, omit the <sources> `
-  + `block entirely — never emit an empty or invented one.`,
+  + `website, announcement, or ed — use "website" for a fact drawn from the `
+  + `course's own external website rather than Canvas, and "ed" for an `
+  + `excerpt labelled "ed discussion". detail is the title of the excerpt or `
+  + `document the fact came from, copied exactly as it appears between the `
+  + `quotes in the excerpt line, such as "Course Syllabus"; only when no `
+  + `excerpt applies, use a few words locating the fact in the document, `
+  + `such as "§4 attendance, p.2". An example for an Ed post: `
+  + `<sources>CIS 2400|ed|Midterm room change</sources>. Separate multiple `
+  + `sources with "; ". If nothing in your answer traces back to a specific `
+  + `cited fact, omit the <sources> block entirely — never emit an empty or `
+  + `invented one.`,
 ].join("\n\n");
 
 export type ChatRole = "system" | "user" | "assistant";

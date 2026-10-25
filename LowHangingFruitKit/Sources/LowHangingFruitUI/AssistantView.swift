@@ -686,6 +686,7 @@ struct AssistantView: View {
                 context: AssistantContext(
                     courseCodes: courseCodes,
                     contextDocument: contextDocument,
+                    timeZone: .current,
                     knowledge: knowledge,
                     work: work,
                     userName: userName

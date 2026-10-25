@@ -298,6 +298,20 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   `course-knowledge.json` read off his phone for the retrieval bench, a
   canary go, and two decisions (concept questions; the completion-state
   sentence). `docs/TREE_RESEARCH_SESSION_PROMPT.md` was the brief.
+  **Status 2026-10-25 (owner's go, "put your plan into action"):** items
+  1 to 4 are written and not compiled: the zone-aware context document
+  and the local-date line, the discovery call chunked by three, newlines
+  and table cells kept in excerpts, the citation contract (title in
+  `detail`, `ed` kind, newest-post rule) in `prompt.ts` with Deno
+  468/0, a `citations` probe set in the phone's real excerpt format, and
+  a `RetrievalBenchTests` that prints the exact excerpt block for the 30
+  questions from a `course-knowledge.json` read off a phone. Predicted
+  Swift delta +17 tests, +2 suites. The `ask-canary` deploy was refused
+  by the session's permission classifier, so the new prompt is not on the
+  canary yet; a 6-run baseline against the old prompt showed the model
+  already preferring the newer post (2/2) and writing a linkable title in
+  about half the `<sources>` details. Next: Olisa's compile, the canary
+  deploy at his hand, then the three probe commands in the plan.
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live

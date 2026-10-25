@@ -103,7 +103,10 @@ enum CitationLinks {
     }
 
     /// Whether the model's kind word names this document kind. The prompt
-    /// tells the model to write one of syllabus, canvas, website, announcement.
+    /// tells the model to write one of syllabus, canvas, website,
+    /// announcement or (since 2026-10-25) ed; `ed` matches through the kind's
+    /// raw value, and the "ed discussion" label through `label`, so an Ed
+    /// citation written either way links.
     static func kind(_ word: String, names kind: CourseDocument.Kind) -> Bool {
         let w = fold(word)
         guard !w.isEmpty else { return false }

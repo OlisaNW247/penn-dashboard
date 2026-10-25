@@ -169,13 +169,16 @@ struct AskEdExcerptTests {
         ]
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents))
         let all = excerpts.components(separatedBy: "\n")
-        #expect(all[0] == "RETRIEVED EXCERPTS (from the student's synced course materials):")
-        #expect(all[1] == BackendAssistantResponder.edExcerptNote)
-        #expect(all[1] == "Excerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted.")
+        // The student's local date and time is the block's first line since
+        // 2026-10-25; the header and the note follow it.
+        #expect(all[0].hasPrefix("The student's local date and time: "))
+        #expect(all[1] == "RETRIEVED EXCERPTS (from the student's synced course materials):")
+        #expect(all[2] == BackendAssistantResponder.edExcerptNote)
+        #expect(all[2] == "Excerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted.")
         #expect(excerpts.components(separatedBy: BackendAssistantResponder.edExcerptNote).count == 2)
         // The numbered lines are still just the excerpts.
         #expect(Self.lines(excerpts).count == 2)
-        #expect(all[2].hasPrefix("[1] "))
+        #expect(all[3].hasPrefix("[1] "))
     }
 
     @Test("the note is absent when no Ed post is among the excerpts")
@@ -187,7 +190,7 @@ struct AskEdExcerptTests {
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents))
         #expect(!excerpts.contains(BackendAssistantResponder.edExcerptNote))
         #expect(!excerpts.contains("Ed board"))
-        #expect(excerpts.components(separatedBy: "\n")[1].hasPrefix("[1] "))
+        #expect(excerpts.components(separatedBy: "\n")[2].hasPrefix("[1] "))
     }
 
     // MARK: - The request around the excerpts
@@ -257,7 +260,7 @@ struct AskEdExcerptTests {
         #expect(excerpts.contains("the review is Sunday"))
         let edLines = Self.lines(excerpts).filter { $0.contains("ed discussion") }
         #expect(edLines.count == 1)
-        #expect(excerpts.components(separatedBy: "\n")[1] == BackendAssistantResponder.edExcerptNote)
+        #expect(excerpts.components(separatedBy: "\n")[2] == BackendAssistantResponder.edExcerptNote)
     }
 
     @Test("when every match is an image-only Ed post there are no excerpts at all")
@@ -267,7 +270,11 @@ struct AskEdExcerptTests {
             Self.imageOnlyEd(911, title: "zeppelin quiz", posted: Self.eastern(2026, 10, 4)),
         ]
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents))
-        #expect(excerpts.isEmpty)
+        // No excerpts, so the block is only its first line, the student's
+        // local date and time (it used to be the empty string).
+        #expect(excerpts.hasPrefix("The student's local date and time: "))
+        #expect(!excerpts.contains("\n"))
+        #expect(!excerpts.contains("RETRIEVED EXCERPTS"))
     }
 
     @Test("a question with no image-only match returns exactly what it always did")

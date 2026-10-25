@@ -40,10 +40,30 @@ import Foundation
 ///   order (a fetch returning items in a new sequence, a `Set` walked in a
 ///   different hash order, a shuffled fixture in a test) still produce
 ///   identical bytes — nothing here trusts incoming order;
-/// - renders every date through a formatter pinned to UTC and
-///   `Locale(identifier: "en_US_POSIX")`, so the device's ambient timezone
-///   and region — which differ per student and can change on the very same
-///   device between two calls — can never leak a byte into the output.
+/// - renders every date through a formatter pinned to `Locale(identifier:
+///   "en_US_POSIX")` and to a time zone that is an explicit argument of
+///   `build(...)`, never the device's ambient one, so the region settings
+///   — which differ per student and can change on the very same device
+///   between two calls — can never leak a byte into the output.
+///
+/// ## Why the zone is the student's and not UTC (2026-10-25)
+///
+/// Until 2026-10-25 every due time was rendered in UTC, which is stable but
+/// wrong for the reader: an 11:59 pm Eastern deadline came out as
+/// `2026-09-05T03:59:00Z`, the next calendar day, and the model, which has
+/// no zone to correct it with, answered "what's due tomorrow" a day off for
+/// the last four hours of every Eastern evening. The stability that UTC
+/// bought is not unique to UTC: a *fixed per-student zone* gives the same
+/// bytes for the same student for as long as they stay in it, and each item
+/// carries its own offset (`-04:00` in September, `-05:00` in December), so
+/// a daylight-saving change rewrites no line. A student who flies to another
+/// zone re-bills the prefix once, on the first question there; that is the
+/// price of being right about their day. The wrong fix is to leave the lines
+/// in UTC and add a "the student is in New York" sentence: the model would
+/// then do offset arithmetic on every line, and does it unreliably. The
+/// zone is a parameter and not `TimeZone.current` so that this type stays
+/// pure; the one place that reads the device's zone is `AppState
+/// .assistantContextDocument()`.
 public enum AssistantContextDocument {
 
     // MARK: - Input facts
@@ -173,10 +193,15 @@ public enum AssistantContextDocument {
 
     /// Renders the full context document from on-device facts.
     ///
+    /// `timeZone` is the student's own zone, used only for the due times of
+    /// work items (see the type comment). It is required, with no default,
+    /// so a caller that forgets it fails to compile instead of silently
+    /// sending UTC again.
     public static func build(
         courses: [CourseFacts],
         work: [WorkFacts],
-        announcements: [AnnouncementFacts]
+        announcements: [AnnouncementFacts],
+        timeZone: TimeZone
     ) -> String {
         var lines = header
 
@@ -194,7 +219,7 @@ public enum AssistantContextDocument {
             lines.append("")
             lines.append("# WORK")
             for item in sortedWork {
-                lines.append(render(item))
+                lines.append(render(item, timeZone: timeZone))
             }
         }
 
@@ -232,6 +257,10 @@ public enum AssistantContextDocument {
             "extracted from a syllabus, work items with due dates and completion",
             "status, and recent course announcements (bodies truncated at",
             "\(announcementBodyLimit) characters).",
+            "",
+            "Due times carry the student's own UTC offset (an Eastern deadline of",
+            "11:59 pm in September reads 23:59:00-04:00), so the calendar day written",
+            "in each line is the student's own calendar day, not UTC's.",
             "",
             "Does NOT contain syllabus prose: attendance policy, late-work policy,",
             "office hours, or any text beyond the grading weights listed under",
@@ -280,9 +309,9 @@ public enum AssistantContextDocument {
         return lines
     }
 
-    private static func render(_ item: WorkFacts) -> String {
+    private static func render(_ item: WorkFacts, timeZone: TimeZone) -> String {
         let courseLabel = item.course.isEmpty ? "(no course)" : item.course
-        let dueLabel = item.due.map { "due \(isoTimestamp($0))" } ?? "no due date"
+        let dueLabel = item.due.map { "due \(isoTimestamp($0, in: timeZone))" } ?? "no due date"
         let statusLabel: String
         if item.isCompleted {
             statusLabel = "done"
@@ -363,17 +392,21 @@ public enum AssistantContextDocument {
 
     // MARK: - Deterministic formatting
 
-    /// Full timestamp, always UTC, always this exact shape:
-    /// "2026-09-04T23:59:00Z". Built fresh on every call rather than cached
+    /// Full timestamp in the zone it is given, always this exact shape:
+    /// "2026-09-04T23:59:00-04:00" for 11:59 pm Eastern daylight time, and
+    /// "2026-09-04T23:59:00Z" when the zone is UTC (Foundation writes `Z`
+    /// for a zero offset). Built fresh on every call rather than cached
     /// as a `static let` because `ISO8601DateFormatter` is a mutable
     /// Foundation class that isn't documented `Sendable` — the same reason
     /// `CanvasAnnouncementsClient.parseDate` and
     /// `CanvasGradesClient.parseDate` build theirs locally rather than
-    /// reusing a shared instance.
-    private static func isoTimestamp(_ date: Date) -> String {
+    /// reusing a shared instance. The offset is that of the item's own
+    /// date, not of the moment of rendering, which is what keeps a
+    /// daylight-saving change from rewriting any line.
+    private static func isoTimestamp(_ date: Date, in timeZone: TimeZone) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.timeZone = timeZone
         return formatter.string(from: date)
     }
 
@@ -381,7 +414,7 @@ public enum AssistantContextDocument {
     /// noise (the announcement section header). `DateFormatter`, not
     /// `ISO8601DateFormatter`, because the latter has no date-only output
     /// mode; pinned to `Locale(identifier: "en_US_POSIX")` and UTC for the
-    /// same reason as `isoTimestamp(_:)` — an unpinned `DateFormatter`
+    /// same reason as `isoTimestamp(_:in:)` — an unpinned `DateFormatter`
     /// reads the device's ambient locale and timezone, and `en_US_POSIX` is
     /// Apple's own documented escape hatch for "the same digits everywhere,
     /// regardless of the user's region settings."

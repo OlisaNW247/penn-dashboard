@@ -84,6 +84,18 @@ struct AssistantContext: Sendable {
     /// is the obvious-looking move that silently zeroes the cache hit rate.)
     var askedAt: Date = Date()
 
+    /// The student's time zone (2026-10-25), read once at the UI layer
+    /// (`AssistantView` passes `.current`) and never inside the Kit. The
+    /// responder turns it and `askedAt` into the "local date and time" line
+    /// that opens the excerpts, and the context document was rendered in the
+    /// same zone, so a due time and "tomorrow" mean the same day to the model.
+    /// Defaulted to UTC rather than the device's zone so a context built
+    /// without one (a test, a preview) renders the same text on every
+    /// machine; the one production site sets it explicitly. Like `askedAt`
+    /// it is NOT part of `contextDocument`'s bytes: it reaches the model after
+    /// the cache breakpoint.
+    var timeZone: TimeZone = .gmt
+
     /// The course materials synced on-device (syllabus prose, announcement
     /// bodies, assignment descriptions, modules, pages). Both backends read
     /// it: `OnDeviceAssistantResponder` answers from it directly, and

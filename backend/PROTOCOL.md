@@ -298,7 +298,13 @@ data: {"type":"error","code":"quota_exceeded"|"upstream"|"bad_request","message"
 
 The model is instructed to end with the same `<sources>COURSE|kind|detail;…</sources>`
 line the app already parses (`SourcesBlockSplitter`); the server passes
-model text through untouched. Errors before streaming starts are plain
+model text through untouched. Since 2026-10-25 `kind` is one of `syllabus`,
+`canvas`, `website`, `announcement` or `ed` (an excerpt labelled "ed
+discussion"), and `detail` is the title of the excerpt or document the fact
+came from, copied exactly as it appears between the quotes in the excerpt
+line (only when no excerpt applies, a few words locating the fact), because
+the phone links a source chip only when `detail` contains the cited
+document's title as whole words. Errors before streaming starts are plain
 JSON with an HTTP status: 401 unauthorized, 429
 `{ "error": "quota_exceeded", "resetAt": ISO8601 }`, 502 upstream.
 

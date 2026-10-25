@@ -176,11 +176,14 @@ struct AskRecencyExcerptTests {
         #expect(lines[6].contains("\"Solutions schedule\""))
         #expect(block.text.contains(BackendAssistantResponder.recencyExcerptNote))
         #expect(block.text.components(separatedBy: BackendAssistantResponder.recencyExcerptNote).count == 2)
-        // The note sits in the header, under the Ed note, before the first excerpt.
+        // The note sits in the header, under the Ed note, before the first
+        // excerpt; the student's local date and time is the line above the header.
         let all = block.text.components(separatedBy: "\n")
-        #expect(all[1] == BackendAssistantResponder.edExcerptNote)
-        #expect(all[2] == BackendAssistantResponder.recencyExcerptNote)
-        #expect(all[3].hasPrefix("[1] "))
+        #expect(all[0].hasPrefix("The student's local date and time: "))
+        #expect(all[1] == "RETRIEVED EXCERPTS (from the student's synced course materials):")
+        #expect(all[2] == BackendAssistantResponder.edExcerptNote)
+        #expect(all[3] == BackendAssistantResponder.recencyExcerptNote)
+        #expect(all[4].hasPrefix("[1] "))
         // Sources follow the numbered lines.
         #expect(block.sources.map(\.title) == [
             "Project partners", "Thanksgiving schedule", "Midterm review session", "Homework 1 clarification",

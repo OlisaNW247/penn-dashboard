@@ -54,14 +54,25 @@ import LowHangingFruitKit
 // it sorts everything and never reads a clock. This function's part of the
 // bargain is not to introduce per-call variation of its own, which is why
 // `isCompleted` is the only piece of derived state consulted and why nothing
-// here formats a date. The current date reaches the model through the user
-// turn instead (`BackendAssistantResponder.makeRequest`).
+// here formats a date: the one input that varies by student rather than by
+// moment is the time zone (below), and it is handed to `build` as a value.
+// The current date reaches the model through the user turn instead
+// (`BackendAssistantResponder.makeRequest`).
 
 extension AppState {
     /// Renders this student's classes and work as the document the assistant
     /// reasons over. Returns `""` when there is nothing worth sending, which
     /// the responder treats as "no context" rather than as an empty document.
-    func assistantContextDocument() -> String {
+    ///
+    /// `timeZone` is the student's zone (2026-10-25), the one place the
+    /// device's zone is read for the document: due times are written in it,
+    /// so an 11:59 pm deadline is that evening to the model and not the next
+    /// UTC day. `.current`, not `.autoupdatingCurrent`: the document is a
+    /// prompt-cache prefix, and a snapshot taken once per render cannot
+    /// change halfway through it. `AssistantView` reads `.current` the same
+    /// way when it builds each question's `AssistantContext`, so the
+    /// document and the "local date and time" line of the excerpts agree.
+    func assistantContextDocument(timeZone: TimeZone = .current) -> String {
         let codes = allCourseCodes()
         guard !codes.isEmpty else { return "" }
 
@@ -129,7 +140,8 @@ extension AppState {
         return AssistantContextDocument.build(
             courses: courses,
             work: work,
-            announcements: []
+            announcements: [],
+            timeZone: timeZone
         )
     }
 

@@ -346,9 +346,10 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     }
 
     /// The passages of the student's synced course materials that best match
-    /// the question, rendered as a block for the `excerpts` field. Empty
-    /// when nothing has been synced or nothing matches — the server's
-    /// system prompt is told that policy text is then simply absent.
+    /// the question, rendered as a block for the `excerpts` field. When
+    /// nothing has been synced or nothing matches, the block is only its first
+    /// line, the student's local date and time (`localDateLine`), and the
+    /// server's system prompt is told that policy text is then simply absent.
     ///
     /// Retrieval happens on-device rather than sending every synced document
     /// to the server on purpose: putting every syllabus in `contextDocument`
@@ -377,7 +378,15 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     }
 
     static func excerptBlock(question: String, context: AssistantContext) -> ExcerptBlock {
-        guard !context.knowledge.isEmpty else { return ExcerptBlock(text: "", sources: []) }
+        // Always first, whether or not anything was retrieved: this block is
+        // the only phone-controlled text that lands in the server's user
+        // message after the cached prefix (`Current date: <askedAt in UTC>`,
+        // then this, then the question), so it is where the model learns the
+        // student's own day. An empty block used to be the empty string, which
+        // the server treats as "no excerpts" and leaves out; it is now this
+        // one line, so a question with no hits still gets its date right.
+        let localLine = localDateLine(askedAt: context.askedAt, timeZone: context.timeZone)
+        guard !context.knowledge.isEmpty else { return ExcerptBlock(text: localLine, sources: []) }
         let courses = context.knowledge.courses
         let followUp = FollowUpRetrieval.resolve(
             question: question,
@@ -435,7 +444,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
                 hits = picks + Array(fill)
             }
         }
-        guard !hits.isEmpty else { return ExcerptBlock(text: "", sources: []) }
+        guard !hits.isEmpty else { return ExcerptBlock(text: localLine, sources: []) }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
         // so the model can tell the two apart — see
@@ -447,8 +456,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             splitByCourse[hit.document.course] = DocumentComponent.courseIsSplit(code: hit.document.course, in: context.knowledge)
         }
         let lines = hits.enumerated().map { index, hit -> String in
-            let flattened = hit.passage.text.replacingOccurrences(of: "\n", with: " ")
-            let body = cutAtWordBoundary(flattened, limit: excerptCharacterLimit)
+            let body = cutAtWordBoundary(structuredExcerptBody(hit.passage.text), limit: excerptCharacterLimit)
             let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
             let postedTag = postedLabel(for: hit.document, askedAt: context.askedAt).map { "posted \($0) · " } ?? ""
@@ -458,9 +466,69 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
         if recencyFired { header.append(recencyExcerptNote) }
         return ExcerptBlock(
-            text: (header + lines).joined(separator: "\n"),
+            text: ([localLine] + header + lines).joined(separator: "\n"),
             sources: hits.map { ExcerptSource(document: $0.document) }
         )
+    }
+
+    /// A passage's text with its line structure kept, for the excerpt line it
+    /// rides in. Until 2026-10-25 every newline became a space, which turned a
+    /// grading table ("Homework | 20%" over three rows) and a list of dates
+    /// into one run of words, and the model could not tell where a row ended
+    /// ("Homework 20% Midterm 25% Final 30%"). Now a newline stays, and every
+    /// continuation line is indented two spaces: the numbered lines start with
+    /// `[`, and the indent is what keeps `[2] ...` the only thing that can
+    /// begin a line at the left edge, so the boundaries between excerpts stay
+    /// as plain as before (the tests, and anything else reading the block, find
+    /// the excerpts by that prefix). Runs of three or more newlines collapse
+    /// to two first, and a blank line is not indented, so a passage full of
+    /// spacing cannot balloon or leave lines of nothing but spaces. The wrong
+    /// fix is a bare `"\n"` to `"\n  "`: it would indent the blank lines too.
+    ///
+    /// `cutAtWordBoundary` runs on the result, and treats a newline as the
+    /// whitespace it is, so a cut inside a line still ends on a whole word
+    /// and a cut right after a line break drops the break.
+    static func structuredExcerptBody(_ text: String) -> String {
+        var collapsed = text
+        while collapsed.contains("\n\n\n") {
+            collapsed = collapsed.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        let lines = collapsed.components(separatedBy: "\n")
+        return lines.enumerated().map { index, line in
+            index == 0 || line.isEmpty ? line : "  " + line
+        }.joined(separator: "\n")
+    }
+
+    /// The first line of every excerpts block: the student's local date and
+    /// time, built from `askedAt` (never the clock) and the student's zone,
+    /// for example `The student's local date and time: Friday, October 23,
+    /// 2026, 9:15 PM (America/New_York, UTC-04:00). Due times in the work list
+    /// carry this offset; "today" and "tomorrow" mean the student's calendar
+    /// day.` Added 2026-10-25 with the zone-aware context document: the
+    /// document's due times now carry the student's UTC offset, and this is the
+    /// line that says what "now" is in the same zone. It rides here and not in
+    /// the cached document because it changes with every question; the
+    /// excerpts sit after the cache breakpoint, so it costs the prefix nothing.
+    ///
+    /// `en_US_POSIX` with an explicit pattern, not a localized style: on
+    /// iOS 17 and later the `.short` time style in `en_US` writes a narrow
+    /// no-break space before "PM", which a pattern in `en_US_POSIX` does not.
+    /// The offset is that of `askedAt` itself, so it is right across a
+    /// daylight-saving change, and a zone with a half-hour offset reads
+    /// `UTC+05:30`.
+    static func localDateLine(askedAt: Date, timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "EEEE, MMMM d, yyyy, h:mm a"
+        let seconds = timeZone.secondsFromGMT(for: askedAt)
+        let magnitude = abs(seconds)
+        func twoDigits(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
+        let hours = twoDigits(magnitude / 3600)
+        let minutes = twoDigits((magnitude % 3600) / 60)
+        let offset = "UTC\(seconds < 0 ? "-" : "+")\(hours):\(minutes)"
+        return "The student's local date and time: \(formatter.string(from: askedAt)) (\(timeZone.identifier), \(offset)). Due times in the work list carry this offset; \"today\" and \"tomorrow\" mean the student's calendar day."
     }
 
     /// The one line that follows the `RETRIEVED EXCERPTS` header, only when an

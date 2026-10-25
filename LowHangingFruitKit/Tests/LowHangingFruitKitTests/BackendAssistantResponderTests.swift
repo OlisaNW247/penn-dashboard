@@ -237,7 +237,10 @@ struct BackendAssistantResponderTests {
                 question: "what's my attendance policy?",
                 context: context
             )
-            #expect(request.excerpts.isEmpty)
+            // No knowledge means no excerpts, but not an empty field: it carries
+            // the student's local date and time (2026-10-25), here in UTC.
+            #expect(request.excerpts == BackendAssistantResponder.localDateLine(askedAt: context.askedAt, timeZone: .gmt))
+            #expect(!request.excerpts.contains("RETRIEVED EXCERPTS"))
         }
 
         @Test("history is always empty")
