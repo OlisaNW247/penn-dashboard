@@ -864,8 +864,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
      stop other audio (the `AVAudioSession` trap); a 60-minute lead
      suppresses the plain 1-hour reminder for loud items, as 10 minutes did
      for the 10-minute one; and two capitalised explanatory lines remain in
-     the section. The garbled footer ("A list minute alarm right before your
-     miss an assignment.") was corrected.
+     the section. The section's footer (Marco's "A list minute alarm right
+     before your miss an assignment.", corrected on 2026-10-24) was removed
+     the same evening at Olisa's word, seeing it on his phone ("Remove the
+     text under smooth sweeper"); the section ends at the classes row.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
