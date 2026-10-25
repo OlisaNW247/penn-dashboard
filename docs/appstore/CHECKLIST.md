@@ -7,9 +7,9 @@ settings (PR #12, `codex/sweeper-settings`) are in this release: step B9 is
 decided "in". Build 14 (archived from `a9af3ad`) does not contain them and
 cannot be changed, so `release-3.2.0-sweeper` is `fix/megaphone-every-class`
 plus the settings, stamped **3.2.0 (15)** in `project.yml` and
-`project.pbxproj`. Before archiving: `swift test --no-parallel` (the full
-suite has never run on the sweeper code; Marco ran 109 targeted tests), the
-iOS Debug build to a phone, and on the phone: Profile shows the Sweeper
+`project.pbxproj`. The full suite ran green on it on Olisa's Mac on
+2026-10-24 (2890/260 at `04350cf`, the first full run of the sweeper code).
+Before archiving: the iOS Debug build to a phone, and on the phone: Profile shows the Sweeper
 section under reminders; at 10 minutes and the Smooth sound it rings as
 before (A6); a 5-minute choice and the chime both ring; a class switched off
 does not ring; the takeover still appears when an alarm rings with a

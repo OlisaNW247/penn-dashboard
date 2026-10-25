@@ -854,7 +854,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      ringing alarm under any non-default timing or sound, because
      `BerserkTakeoverRules.alarmIndex` still rebuilt the id with the fixed
      ten minutes and no sound; it now enumerates every option, as the
-     stop-on-finish path does (blind, with a test). Left as Marco wrote
+     stop-on-finish path does (compiled green in the 2890/260 run of
+     2026-10-24, with a test; not yet seen on a phone). Left as Marco wrote
      them, for the owners: the fallback buzzes now play the chosen sound,
      so with the default each of the three buzzes starts the 13-second song
      three seconds apart (build 14 used the system tone; Marco's test pins
@@ -1077,7 +1078,8 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
+**Current: 2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). Not yet built to a phone.
+Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
 -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`), which
