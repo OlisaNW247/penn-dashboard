@@ -116,6 +116,15 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
 
+## What's New in 3.2.1 (release notes, ≤4000)
+
+The Smooth Sweeper, your way.
+
+• Pick when the Sweeper rings: 5, 10, 15, 20, 30 or 60 minutes before
+  anything you haven't turned in
+• Pick its sound, and hear it first
+• Choose which classes it rings for
+
 ## What's New in 3.2.0 (release notes, ≤4000)
 
 Every class in the megaphone, Ed posts that stay put, and a Canvas sign-in

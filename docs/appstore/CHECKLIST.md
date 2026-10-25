@@ -2,6 +2,18 @@
 
 ## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
 
+**2026-10-24 20:52 EDT: build 15 ships as 3.2.1, not 3.2.0.** The first
+export of 3.2.0 (15) was refused by App Store Connect: "The train version
+'3.2.0' is closed for new build submissions" and "must contain a higher
+version than that of the previously approved version [3.2.0]". So 3.2.0
+(build 14, no Sweeper settings) has already passed review; a version that is
+approved takes no more builds. The same tree is now stamped **3.2.1 (15)**
+(`MARKETING_VERSION` in `project.yml` and `project.pbxproj`; nothing in the
+code reads it). Archive and upload again, then in App Store Connect create
+a **new iOS version 3.2.1**, attach build 15, paste "What's New in 3.2.1"
+from `LISTING.md`, and submit. Whether 3.2.0 is already released or waiting
+on a manual release is not recorded; check App Store Connect.
+
 **2026-10-24: submit build 15, not 14.** At Olisa's word the Smooth Sweeper
 settings (PR #12, `codex/sweeper-settings`) are in this release: step B9 is
 decided "in". Build 14 (archived from `a9af3ad`) does not contain them and

@@ -146,7 +146,7 @@ targets:
         # will get a stale tile when the update replaces LowHangingFruit.app
         # with Smooth.app, and has to re-pin it.
         PRODUCT_NAME: Smooth
-        MARKETING_VERSION: "3.2.0"
+        MARKETING_VERSION: "3.2.1"
         CURRENT_PROJECT_VERSION: "15"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
@@ -202,7 +202,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
-        MARKETING_VERSION: "3.2.0"
+        MARKETING_VERSION: "3.2.1"
         CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"

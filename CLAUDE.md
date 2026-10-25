@@ -159,8 +159,14 @@ released source, check out `1450fdc`, not the `v8` tip.
 work) and uploaded to App Store Connect at 18:18 EDT (22:18 UTC) on
 2026-10-23** ("Upload succeeded"; the Release widget's AlarmKit link
 checked weak first), at Marco's say. Attaching it to a 3.2.0 version and
-submitting for review is Marco's step in App Store Connect; whether he did
-is not recorded here yet. The What's New in `LISTING.md` leaves out the AI
+submitting for review is Marco's step in App Store Connect. He did: on
+2026-10-24 App Store Connect called 3.2.0 "previously approved" and its
+train closed. Whether it is released yet is not recorded (the iTunes lookup
+is unreachable from the cloud container). **3.2.1 (build 15)** is the same
+release line plus the Smooth Sweeper settings and the takeover fix, stamped
+3.2.0 (15) first; its export was refused at 20:52 EDT on 2026-10-24 because
+the 3.2.0 train is closed, so it was restamped 3.2.1 (15) the same evening,
+not yet archived again (`docs/appstore/CHECKLIST.md`, top). The What's New in `LISTING.md` leaves out the AI
 judgments and the server exam dates until `extract-announcement` and
 `sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
@@ -834,7 +840,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
      card, and the takeover worked. Which road in he used, and the
      lock-screen card, are not recorded.
      **Smooth Sweeper settings** (2026-10-23, Marco, `codex/sweeper-settings`;
-     in the 3.2.0 release from build 15, 2026-10-24): the Sweeper has its own
+     in 3.2.1 (15), 2026-10-24; build 15 was first stamped 3.2.0): the Sweeper has its own
      section immediately below reminders (`SweeperSettingsSection`), with
      5/10/15/20/30/60-minute timing (`notif.sweeperMinutes`), four sounds
      (`SweeperSound`: Smooth's clip, `App/sweeper-chime.wav`,
