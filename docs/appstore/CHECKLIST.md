@@ -13,6 +13,12 @@ code reads it). Archive and upload again, then in App Store Connect create
 a **new iOS version 3.2.1**, attach build 15, paste "What's New in 3.2.1"
 from `LISTING.md`, and submit. Whether 3.2.0 is already released or waiting
 on a manual release is not recorded; check App Store Connect.
+**Done 2026-10-24 20:57 EDT:** archived from `4fe7a4f` (3.2.1, build 15,
+read back from the archive's Info.plist), the widget extension's AlarmKit
+link printed `weak`, and the export ended "Upload succeeded". Left: the
+3.2.1 version record, attach 15, What's New, submit; and before submitting,
+the phone checks above (a 5-minute chime alarm with the takeover, a class
+switched off, the defaults ringing).
 
 **2026-10-24: submit build 15, not 14.** At Olisa's word the Smooth Sweeper
 settings (PR #12, `codex/sweeper-settings`) are in this release: step B9 is

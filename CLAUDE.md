@@ -165,8 +165,12 @@ train closed. Whether it is released yet is not recorded (the iTunes lookup
 is unreachable from the cloud container). **3.2.1 (build 15)** is the same
 release line plus the Smooth Sweeper settings and the takeover fix, stamped
 3.2.0 (15) first; its export was refused at 20:52 EDT on 2026-10-24 because
-the 3.2.0 train is closed, so it was restamped 3.2.1 (15) the same evening,
-not yet archived again (`docs/appstore/CHECKLIST.md`, top). The What's New in `LISTING.md` leaves out the AI
+the 3.2.0 train is closed, so it was restamped 3.2.1 (15) the same evening
+(`4fe7a4f`), **archived from `4fe7a4f` and uploaded at 20:57 EDT
+(00:57 UTC 2026-10-25)** ("Upload succeeded"; the widget's AlarmKit link
+weak). Creating the 3.2.1 version record, attaching build 15 and
+submitting are Olisa's steps in App Store Connect; whether done is not
+recorded here yet (`docs/appstore/CHECKLIST.md`, top). The What's New in `LISTING.md` leaves out the AI
 judgments and the server exam dates until `extract-announcement` and
 `sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
