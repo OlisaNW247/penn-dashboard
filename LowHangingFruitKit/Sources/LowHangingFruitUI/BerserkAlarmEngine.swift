@@ -82,7 +82,7 @@ enum BerserkAlarmEngine {
     }
 
     /// Cancels every alarm, ringing or not. Only for the student's own "off":
-    /// the loud-alert switch, reminders or notifications off, preview mode,
+    /// the loud-alert switch, reminders off, preview mode,
     /// and alarm permission revoked.
     static func cancelAll(in store: any BerserkAlarmStore) {
         guard let alarms = try? store.storedAlarms() else { return }

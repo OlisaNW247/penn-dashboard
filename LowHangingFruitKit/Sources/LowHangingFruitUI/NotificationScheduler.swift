@@ -374,11 +374,19 @@ final class NotificationScheduler: ObservableObject {
         let sink: any PendingNotificationSink = notificationSinkOverride ?? self
         guard isEnabled else { sink.removeAllPending(); cancelAlarms(); return }
         await refreshAuthStatus()
-        // Reminders that cannot be delivered are not reminders the student
-        // asked to hear from: with notifications refused there is no loud
-        // alert to replace, so an alarm left over from an earlier state goes.
-        guard authStatus == .authorized || authStatus == .provisional else { cancelAlarms(); return }
-        await applyReminders(from: items, now: now, sink: sink, mayPrompt: mayPrompt)
+        // The notification permission gates the notifications, and nothing
+        // else. This used to `cancelAlarms()` and return when it was refused,
+        // on the reasoning that undeliverable reminders are not reminders the
+        // student asked for. But the AlarmKit alarm is a different permission
+        // with a different question, and declining notifications is the
+        // commonest answer at onboarding: a student who refused them and
+        // allowed alarms had the alarm switched off at every pass, with
+        // nothing to show for it (hardening plan C2, NOT-02). The pass now
+        // goes on without the notification half (`applyReminders`), and an
+        // alarm is taken back only for the reasons that are about alarms.
+        let notificationsAllowed = authStatus == .authorized || authStatus == .provisional
+        await applyReminders(from: items, now: now, sink: sink, mayPrompt: mayPrompt,
+                             notificationsAllowed: notificationsAllowed)
     }
 
     /// Re-plans from `lastScheduledItems` after the student changed a per-course

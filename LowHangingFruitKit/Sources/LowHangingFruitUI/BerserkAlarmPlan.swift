@@ -367,7 +367,7 @@ enum BerserkAlarmPlan {
         /// an AlarmKit error and for "alarms are not usable right now".
         case idleOnly
         /// Every alarm, ringing or not. Only for the student's own "off":
-        /// the loud-alert switch, reminders or notifications off, preview mode,
+        /// the loud-alert switch, reminders off, preview mode,
         /// and alarm permission revoked.
         case everything
     }

@@ -365,21 +365,109 @@ struct BerserkAlarmDeliveryTests {
         }
     }
 
-    @Test("Reminders off, or notifications refused, take back every alarm, ringing or not")
+    @Test("Reminders off take back every alarm, ringing or not")
     func remindersOffTakesEverything() async {
-        for (remindersOn, status) in [(false, UNAuthorizationStatus.authorized), (true, .denied)] {
-            await withScheduler(remindersOn: remindersOn) { scheduler, now in
-                let backend = FakeAlarmBackend(authorization: .authorized)
+        await withScheduler(remindersOn: false) { scheduler, now in
+            let backend = FakeAlarmBackend(authorization: .authorized)
+            backend.store.seed(UUID(), ringing: true)
+            backend.store.seed(UUID())
+            scheduler.alarmBackendOverride = backend
+            scheduler.notificationSinkOverride = FakeSink()
+            scheduler.authStatusOverride = .authorized
+
+            await scheduler.reschedule(from: eligible(now), now: now)
+
+            #expect(backend.store.scheduledIDs.isEmpty)
+        }
+    }
+
+    // MARK: Refusing notifications is not refusing alarms
+
+    /// The notification permission and the AlarmKit permission are two
+    /// questions, and declining notifications is the commonest onboarding
+    /// answer. A pass used to take every alarm back and return as soon as it
+    /// saw the notification refusal (hardening plan C2, NOT-02).
+    private func declinedRig(
+        _ scheduler: NotificationScheduler, status: UNAuthorizationStatus,
+        alarms: BerserkAlarmAuthorization, answer: BerserkAlarmAuthorization = .authorized
+    ) -> (FakeAlarmBackend, FakeSink) {
+        let backend = FakeAlarmBackend(authorization: alarms, answer: answer)
+        let sink = FakeSink()
+        scheduler.alarmBackendOverride = backend
+        scheduler.notificationSinkOverride = sink
+        scheduler.authStatusOverride = status
+        return (backend, sink)
+    }
+
+    @Test("With notifications refused or unanswered, the alarms are still planned and reconciled", arguments: [
+        UNAuthorizationStatus.denied, .notDetermined,
+    ])
+    func declinedNotificationsStillPlanAlarms(status: UNAuthorizationStatus) async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = declinedRig(scheduler, status: status, alarms: .authorized)
+            let items = eligible(now)
+            let stale = UUID(), ringing = UUID()
+            backend.store.seed(stale)
+            backend.store.seed(ringing, ringing: true)
+
+            await scheduler.reschedule(from: items + noise(now), now: now)
+
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))).union([ringing]),
+                    "every eligible item has its alarm, the stale one is gone, the ringing one rings on")
+            #expect(backend.cancelAllCalls == 0, "nothing here is the student's own off")
+            #expect(sink.requests.isEmpty && sink.removals == 0,
+                    "nothing can be delivered, so the notification center is not touched")
+        }
+    }
+
+    @Test("With notifications refused, AlarmKit's own refusal, the loud switch and preview still take every alarm back")
+    func declinedNotificationsKeepTheAlarmOffSwitches() async {
+        let rows: [(name: String, alarms: BerserkAlarmAuthorization, loudOn: Bool, fixture: Bool)] = [
+            ("AlarmKit refused", .denied, true, false),
+            ("loud switch off", .authorized, false, false),
+            ("preview or demo data", .authorized, true, true),
+        ]
+        for row in rows {
+            await withScheduler(remindersOn: true) { scheduler, now in
+                let (backend, sink) = declinedRig(scheduler, status: .denied, alarms: row.alarms)
+                scheduler.setLoudAlertEnabled(row.loudOn)
+                scheduler.fixtureDataProbe = { row.fixture }
                 backend.store.seed(UUID(), ringing: true)
                 backend.store.seed(UUID())
-                scheduler.alarmBackendOverride = backend
-                scheduler.notificationSinkOverride = FakeSink()
-                scheduler.authStatusOverride = status
 
                 await scheduler.reschedule(from: eligible(now), now: now)
 
-                #expect(backend.store.scheduledIDs.isEmpty, "reminders \(remindersOn), notifications \(status)")
+                #expect(backend.store.scheduledIDs.isEmpty, "\(row.name)")
+                #expect(sink.requests.isEmpty, "\(row.name)")
             }
+        }
+    }
+
+    @Test("With notifications refused, AlarmKit's own question is still asked once, and a yes means alarms")
+    func declinedNotificationsStillAskAlarmKit() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = declinedRig(scheduler, status: .denied, alarms: .notDetermined, answer: .authorized)
+            let items = eligible(now)
+
+            await scheduler.reschedule(from: items, now: now)
+            await scheduler.reschedule(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 1)
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))))
+        }
+    }
+
+    @Test("With notifications refused, a finished item's ringing alarm is still stopped")
+    func declinedNotificationsStillStopFinishedAlarms() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = declinedRig(scheduler, status: .denied, alarms: .authorized)
+            let done = item("CIS 1200", "done", due: now + 300, completed: true)
+            backend.store.seed(alarmID(of: done), ringing: true)
+
+            await scheduler.reschedule(from: [done], now: now)
+
+            #expect(backend.store.stopCalls == [alarmID(of: done)])
+            #expect(backend.store.scheduledIDs.isEmpty)
         }
     }
 

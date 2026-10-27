@@ -115,8 +115,21 @@ extension NotificationScheduler {
     /// `mayPrompt` is false for a background re-plan
     /// (`rescheduleWithoutPrompting`): the permission question is then never
     /// asked, and a permission that was never asked delivers the buzzes.
+    ///
+    /// `notificationsAllowed` is false when the student has refused (or never
+    /// answered) the notification permission. Then steps 1, 2 and 4 still run
+    /// and the notification half (steps 3 and 5) does not: nothing can be
+    /// delivered through the notification center, so nothing is added to it
+    /// and what it already holds is left alone, and the alarms are planned,
+    /// reconciled and taken back exactly as they would be with notifications
+    /// on. AlarmKit is its own permission, and the decision's own reasons
+    /// (the loud switch, preview data, a refusal from AlarmKit itself) are the
+    /// only ones that take an alarm back. The one difference is the fallback
+    /// the settlement describes: if AlarmKit throws there are no buzzes to put
+    /// back, and the idle alarms are taken back as the settlement says.
     func applyReminders(
-        from items: [DashItem], now: Date, sink: any PendingNotificationSink, mayPrompt: Bool = true
+        from items: [DashItem], now: Date, sink: any PendingNotificationSink,
+        mayPrompt: Bool = true, notificationsAllowed: Bool = true
     ) async {
         var now = now
         var alarmPlan = plannedAlarms(from: items, now: now)
@@ -138,6 +151,11 @@ extension NotificationScheduler {
             }
         })
         activeAlarmBackend()?.stopRinging(among: finished)
+
+        guard notificationsAllowed else {
+            _ = await syncAlarms(plan: alarmPlan, decision: decision)
+            return
+        }
 
         sink.prepare()
         let firstPassAsAlarms = decision.delivery == .alarms
@@ -236,9 +254,10 @@ extension NotificationScheduler {
     }
 
     /// Cancels every alarm, ringing or not. Called when reminders are turned
-    /// off, when notifications are refused, and by `ContentView` on entering
-    /// preview mode: the student's own "off". Does not need the intents
-    /// registered: taking an alarm back works whether or not one could be made.
+    /// off and by `ContentView` on entering preview mode: the student's own
+    /// "off". Refusing notifications is not one (AlarmKit is its own
+    /// permission). Does not need the intents registered: taking an alarm back
+    /// works whether or not one could be made.
     func cancelAlarms() {
         activeAlarmBackend()?.cancelAll()
     }
