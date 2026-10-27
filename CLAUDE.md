@@ -1099,7 +1099,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2914 tests / 262 suites, all green, on `claude/sharp-newton-qwv18v` at `c6d404b` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.3 s), second run.** The first run (`99d4006`, 17.7 s) failed one test, `AskCitationLinkTests` "the encoded request is byte-identical…", whose golden string `aeaf982` (2026-10-25, blind) re-typed with a bare `/` where `JSONEncoder` writes `\/`; `c6d404b` fixed the string. These runs are the first compile of the 2026-10-25 tree-plan work and of the update lock (`f89d908`, seven new `UpdateGateStoreTests`). The iOS build of the same tree (widget included) has not been run yet.
+**Current: 2914 tests / 262 suites, all green, on `claude/sharp-newton-qwv18v` at `c6d404b` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.3 s), second run.** The first run (`99d4006`, 17.7 s) failed one test, `AskCitationLinkTests` "the encoded request is byte-identical…", whose golden string `aeaf982` (2026-10-25, blind) re-typed with a bare `/` where `JSONEncoder` writes `\/`; `c6d404b` fixed the string. These runs are the first compile of the 2026-10-25 tree-plan work and of the update lock (`f89d908`, seven new `UpdateGateStoreTests`). The iOS Debug build of the same tree (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`, widget included) succeeded on Olisa's Mac the same day.
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
@@ -2624,11 +2624,12 @@ none is a ship line.
 
 ## Known gaps
 
-- **The hardened update lock (2026-10-27) has compiled for macOS only.**
-  `swift test --no-parallel` built it and passed its seven new
-  `UpdateGateStoreTests` on Olisa's Mac the same day (Test baseline); the
-  iOS build, which is the only one that compiles the widget's "update
-  smooth" view, has not run, and nothing of it has been on a phone. The `update-floor` workflow has not run against the real App Store
+- **The hardened update lock (2026-10-27) is compiled but not seen on a
+  phone.** `swift test --no-parallel` (2914/262 green) and the iOS Debug
+  build, widget included, both passed on Olisa's Mac the same day. Not yet
+  watched: the wall replacing the app with a sheet open, notifications
+  cleared, the widget's "update smooth" view (build with
+  `MARKETING_VERSION=1.0.0` to see the wall for real). The `update-floor` workflow has not run against the real App Store
   lookup yet (the container cannot reach Apple), and the backend version
   check is not deployed.
 - **A class's Ed posts can vanish from the phone and come back**
