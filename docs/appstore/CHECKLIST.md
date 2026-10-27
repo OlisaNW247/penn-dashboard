@@ -1,5 +1,45 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
+## 3.3.0 (16) submission, 2026-10-27 (Olisa uploads the same day)
+
+What ships beyond 3.2.1 (15), archived from `4fe7a4f`: the feedback card
+and Profile row (`LISTING.md` → What's New in 3.3.0), the update lock (a
+build below the floor shows only the wall, clears its reminders, and the
+widget says "update smooth"; backend requests carry `X-Smooth-Version`),
+the tree's local dates and kept table structure (`aeaf982`), and the
+Chrome-extension-only commits, which do not touch the app. Branch:
+`claude/sharp-newton-qwv18v` (all of `v8` at `2908e1c` merged in).
+
+1. **Compile** on the Mac, in this order, each the only build running:
+   `cd LowHangingFruitKit && swift test --no-parallel` (2914 + the
+   feedback tests, all green), then from the repo root
+   `xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`.
+2. **On a phone** (Debug build over the store copy): the card shows under
+   the header once the manifest carries `feedback` (it does since
+   2026-10-27); tapping it opens the form in Safari and it does not come
+   back after a relaunch; × does the same without opening; Profile → the
+   last section "feedback" → "send feedback" opens the form. Preview mode
+   shows no card.
+3. **TestFlight → Builds:** confirm no build 16 exists; if one does, bump
+   `CURRENT_PROJECT_VERSION` in `project.yml` (both targets) and
+   `project.pbxproj` (all four) by hand. Do not run `xcodegen generate`.
+4. **Archive and upload** (the CLAUDE.md "Release upload" commands):
+   `xcodebuild … -configuration Release -destination 'generic/platform=iOS' -archivePath build/Smooth.xcarchive -allowProvisioningUpdates archive`,
+   then `xcodebuild -exportArchive … -exportOptionsPlist docs/appstore/ExportOptions.plist -allowProvisioningUpdates`.
+5. **App Store Connect:** new iOS version **3.3.0**, attach build 16, paste
+   What's New from `LISTING.md`, keep the review notes, Add for Review →
+   Submit. App Privacy answers do not change: the form opens in Safari,
+   outside the app, and the app sends it nothing.
+6. **After it goes live:** nothing for the floor. The `update-floor`
+   workflow raises it to 3.3.0 six hours after the store serves it, which
+   is what puts every student on the build with the card. If 3.3.0 turns
+   out to crash on launch (the unexplained 3.2.x first-launch crash of
+   2026-10-25 is still open), set the repository variable
+   `UPDATE_FLOOR_HOLD` to `true` inside those six hours.
+7. **Backend:** the version check (`0f529d2`) can deploy with the next
+   backend deploy; leave `LHF_REQUIRE_VERSION_HEADER` unset until the floor
+   is 3.3.0 or higher, since 3.3.0 is the first build that sends the header.
+
 ## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
 
 **2026-10-27:** 3.2.1 (15) is live, and the update-manifest floor is
