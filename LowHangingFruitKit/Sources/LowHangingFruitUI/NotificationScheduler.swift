@@ -170,6 +170,22 @@ final class NotificationScheduler: ObservableObject {
     /// it. The nearest ten are the ones the cap keeps.
     nonisolated static let maxLoudItems = 10
 
+    /// How far ahead a reminder counts as urgent when the slots are shared
+    /// out: one that fires inside this window is given a slot before any that
+    /// fires later (`allocate`). Two days, because that is the longest a
+    /// student can go without opening the app and still be expected to be
+    /// reminded of what is about to be due; anything further out is certain to
+    /// be re-planned long before it would fire.
+    nonisolated static let urgentWindow: TimeInterval = 48 * 3600
+
+    /// Whether a reminder that fires at `fireDate` is urgent at `now`: the
+    /// window's end is inclusive, so one firing at exactly 48 hours is. Judged
+    /// on when the reminder fires, not on when the work is due: a 2-day lead on
+    /// work due in 50 hours fires in 2, and is the one that matters first.
+    nonisolated static func isUrgent(fireDate: Date, now: Date) -> Bool {
+        fireDate <= now.addingTimeInterval(urgentWindow)
+    }
+
     init(defaults: UserDefaults = .lhf) {
         self.defaults = defaults
         let d = defaults
@@ -653,6 +669,24 @@ final class NotificationScheduler: ObservableObject {
     /// then on the request identifier, so the same inputs always produce the
     /// same plan — `Set<LeadOffset>` has no iteration order to rely on.
     ///
+    /// # Urgent first, then round-robin
+    ///
+    /// Round-robin by class says who gets a slot, and nothing about when the
+    /// reminder fires. With sixty slots and a busy fortnight that is the wrong
+    /// thing to be even-handed about: a class with a dozen assignments due next
+    /// month took slots in the same rotation as the class whose problem set is
+    /// due tomorrow, so a reminder for tomorrow could be the one the cut fell
+    /// on while a reminder three weeks out was kept (hardening plan C4,
+    /// NOT-04). So the candidates are split at `urgentWindow` (48 hours) and
+    /// the slots are shared out in two rounds: the reminders that fire inside
+    /// the window first, round-robin by class among themselves, and only what
+    /// is left goes round-robin by class to the rest. If more than the budget
+    /// fires inside the window, the urgent round is itself shared by class, so
+    /// even then no class goes quiet. The reasons for round-robin above all
+    /// still hold inside each round. The wrong fix is a flat sort by fire date
+    /// with no rotation: that is the original plan, and it let the class whose
+    /// lead times had been tuned take every slot.
+    ///
     /// # The loud alerts come out of the same sixty
     ///
     /// The loud 10-minute alert (`loudAlerts`) is planned first and its
@@ -669,15 +703,23 @@ final class NotificationScheduler: ObservableObject {
     ///
     /// When the loud alert is delivered as an AlarmKit alarm instead
     /// (`BerserkAlarmPlan`), the three buzzes must not also go out. Passing
-    /// `true` leaves exactly the loud buzzes out of the result and changes
-    /// nothing else: the same items are still chosen by `loudAlerts`, so they
-    /// still get no plain "10 minutes before" reminder (the alarm replaces it
-    /// just as the buzzes did), and the budget is still divided as if the
-    /// buzzes were there, so every other request is the one that was planned
-    /// before. The wrong fix is to hand the freed slots to the round-robin:
-    /// that would make the same student's other reminders differ with the
-    /// delivery mode, and a fallback to buzzes after an AlarmKit error could
-    /// then push the plan over the cap. `false` is today's output, untouched.
+    /// `true` leaves exactly the loud buzzes out of the result, and **the slots
+    /// they would have taken are given to the other reminders**: the budget
+    /// counts only the requests that are actually returned. The same items are
+    /// still chosen by `loudAlerts`, so they still get no plain "10 minutes
+    /// before" reminder (the alarm replaces it just as the buzzes did).
+    ///
+    /// Until C4 the budget was spent on the buzzes whether or not they were
+    /// emitted, so a student in alarm mode, who is the one with the most
+    /// ringing for them, had thirty of sixty slots sitting idle in a busy
+    /// fortnight. It was kept that way on the reasoning that a fallback to
+    /// buzzes after an AlarmKit error could otherwise push the plan over the
+    /// cap, and that reasoning does not hold: a pass plans against the delivery
+    /// it ends up with, and the fallback pass plans again from scratch with the
+    /// buzzes counted (`applyReminders`), so no plan is ever larger than
+    /// `maxPending`. The cost is the one the old note named: the same student's
+    /// other reminders differ with the delivery mode. That is the point.
+    /// `false` is today's output, untouched.
     func plannedRequests(
         from items: [DashItem],
         now: Date = Date(),
@@ -750,12 +792,13 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        // The budget is spent on the buzzes whether or not they are emitted;
-        // see `loudAlertsAsAlarms` above.
-        let budget = Self.maxPending - loudRequests.count
+        // Only the buzzes that are really returned take slots; in alarm mode
+        // there are none. See `loudAlertsAsAlarms` above.
+        let buzzes = loudAlertsAsAlarms ? [] : loudRequests
+        let budget = Self.maxPending - buzzes.count
         let calendar = Calendar.current
 
-        let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
+        let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget, now: now).map { pair in
             let content = UNMutableNotificationContent()
             // The class name is the headline; the body is the assignment's
             // name and then the lead phrase ("Problem Set 4. Due in 1 hour").
@@ -794,7 +837,7 @@ final class NotificationScheduler: ObservableObject {
                                          content: content, trigger: trigger)
         }
 
-        return (loudAlertsAsAlarms ? [] : loudRequests) + requests
+        return buzzes + requests
     }
 
     // MARK: The loud 10-minute alert
@@ -1049,13 +1092,40 @@ final class NotificationScheduler: ObservableObject {
         "due:\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
     }
 
-    /// Shares `budget` slots out across the per-course queues, round-robin. See
-    /// `plannedRequests` for why this is round-robin and not a flat sort.
+    /// Shares `budget` slots out: the reminders that fire inside `urgentWindow`
+    /// first, then the rest, each round shared round-robin across the courses.
+    /// See `plannedRequests` for why it is round-robin and not a flat sort, and
+    /// why the urgent ones go first.
     ///
     /// Returned in fire-date order rather than in the order they were taken,
-    /// because the caller's output is easier to reason about — and to assert on
-    /// — when it reads as a timeline rather than as an interleaving artefact.
-    private static func allocate(_ byCourse: [String: [Candidate]], budget: Int) -> [Candidate] {
+    /// because the caller's output is easier to reason about, and to assert
+    /// on, when it reads as a timeline rather than as an interleaving
+    /// artefact.
+    private static func allocate(
+        _ byCourse: [String: [Candidate]], budget: Int, now: Date
+    ) -> [Candidate] {
+        guard budget > 0, !byCourse.isEmpty else { return [] }
+
+        var urgent: [String: [Candidate]] = [:]
+        var later: [String: [Candidate]] = [:]
+        for (course, candidates) in byCourse {
+            for candidate in candidates {
+                if isUrgent(fireDate: candidate.fireDate, now: now) {
+                    urgent[course, default: []].append(candidate)
+                } else {
+                    later[course, default: []].append(candidate)
+                }
+            }
+        }
+
+        let first = roundRobin(urgent, budget: budget)
+        let rest = roundRobin(later, budget: budget - first.count)
+        return (first + rest).sorted(by: isMoreUrgent)
+    }
+
+    /// One round of the sharing: takes up to `budget` candidates, one course at
+    /// a time in turn, the most urgent of each course's own queue first.
+    private static func roundRobin(_ byCourse: [String: [Candidate]], budget: Int) -> [Candidate] {
         guard budget > 0, !byCourse.isEmpty else { return [] }
 
         // Each course's own queue, most urgent first.
@@ -1091,7 +1161,7 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        return chosen.sorted(by: isMoreUrgent)
+        return chosen
     }
 
     /// Soonest-firing first, then real coursework ahead of recurring
