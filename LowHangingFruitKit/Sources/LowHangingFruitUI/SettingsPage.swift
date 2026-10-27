@@ -23,6 +23,8 @@ struct SettingsPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.feedbackFormURL) private var feedbackFormURL
     @State private var showRecurring = false
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
@@ -193,6 +195,27 @@ struct SettingsPage: View {
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
+
+            // Always last of the student's sections. The link is the live
+            // notice's when the manifest has one, else the default form; no
+            // query parameters are ever added (see `FeedbackForm`).
+            Section {
+                Button {
+                    openURL(feedbackFormURL)
+                } label: {
+                    HStack {
+                        Text("send feedback")
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .foregroundStyle(Color.v2DateText)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } header: {
+                SmoothSectionHeader("feedback", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothCobalt)
 
             // Debug builds only. The troubleshooting section was removed from
             // Settings on purpose so students never see it, but these two rows

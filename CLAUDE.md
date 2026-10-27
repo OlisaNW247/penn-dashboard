@@ -62,7 +62,8 @@ server); the server stores ciphertext it cannot read. Name, reminder
 settings and grades are never in it. Backend requests carry the app's
 marketing version (`X-Smooth-Version`, since 2026-10-27) so the server can
 refuse builds below the update floor; it is the same for every copy of a
-release. The
+release. The feedback card and Profile row (3.3.0) open a
+Google Form in Safari; the app adds nothing to the link. The
 PennKey password is saved automatically (since 2026-10-23) after a verified
 Penn Canvas sign-in inside the app's own login page, with a one-line
 disclosure above that page; it stays in this phone's Keychain
@@ -610,6 +611,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
+  - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
+    mockup): under the header, a one-time card ("how's smooth so far?" /
+    "takes 2 minutes.", grape speech bubble, ×) styled like the update
+    banner (`FeedbackNoticeCard.swift`). Tap opens the form in Safari, ×
+    dismisses; either marks the notice's id handled in `UserDefaults.lhf`
+    (`lhf.feedbackNoticeHandled.<id>`), so it never returns, and a new id
+    shows again. It exists only while the update manifest carries a
+    `feedback` object (`FeedbackNotice`, sanitized: https to
+    `docs.google.com` or `forms.gle` only), never in preview or demo,
+    during onboarding or behind the update wall. Remove the object from
+    `lhf-update.json` to stop it without a release. The link carries
+    nothing about the student.
   - **Turned in** (how a card knows, read from the code on 2026-10-18).
     A card is done when the student swiped it; when Canvas's grades fetch
     reports its assignment submitted (`submittedCanvasAssignmentIDs`,
@@ -892,6 +905,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
+  8. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
+     opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
+     or the live notice's link when the manifest carries one)
 
   `ProfileSemesterSection` (semester rollover, "add a class") exists but
   is only reachable from its `#Preview`; `VisualStructureTests` forbids
@@ -1574,6 +1590,10 @@ variable `UPDATE_FLOOR_HOLD` to `true`; set it **before** hand-lowering the
 floor, or the next run raises it straight back. It was written because
 students were still on builds below 3.2.0 after the floor was raised by hand
 on 2026-10-25.
+
+The manifest may also carry an optional `feedback` object (3.3.0+, the
+dashboard's feedback card, What the app does). It is decoded with `try?` so
+a bad one can never cost `minimumVersion`, and older builds ignore the key.
 
 The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
 only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
@@ -2624,6 +2644,12 @@ none is a ship line.
 
 ## Known gaps
 
+- **The feedback card and Profile row (3.3.0) have never compiled**
+  (2026-10-27, written in a cloud container): `FeedbackNotice.swift`,
+  `FeedbackNoticeCard.swift`, the `UpdatePolicy`/`UpdateGateStore` fields,
+  `FeedbackNoticeTests`, and a pinned "feedback" section in
+  `VisualStructureTests`. Run `swift test --no-parallel` and the iOS build
+  before archiving 3.3.0 (16).
 - **The hardened update lock (2026-10-27) is compiled but not seen on a
   phone.** `swift test --no-parallel` (2914/262 green) and the iOS Debug
   build, widget included, both passed on Olisa's Mac the same day. Not yet

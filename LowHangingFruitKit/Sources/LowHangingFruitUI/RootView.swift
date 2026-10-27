@@ -22,6 +22,7 @@ struct RootCore: View {
     @StateObject private var updateGate = UpdateGateStore()
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     /// The `smooth://pair` link the phone was opened with, while the sheet that
     /// asks "pair this laptop?" is up (`AppState+DeviceSync.swift`).
@@ -118,6 +119,24 @@ struct RootCore: View {
 #endif
     }
 
+    /// The feedback card's notice and its two actions, or nil when there is
+    /// nothing to show (none published, already handled, behind the wall).
+    /// Opening the form counts as handling it. Handing it over by environment
+    /// keeps `ContentView` constructible bare.
+    private var feedbackContext: FeedbackNoticeContext? {
+        guard let notice = updateGate.visibleFeedbackNotice else { return nil }
+        return FeedbackNoticeContext(
+            notice: notice,
+            open: {
+                openURL(notice.url)
+                withAnimation { updateGate.markFeedbackNoticeHandled() }
+            },
+            dismiss: {
+                withAnimation { updateGate.markFeedbackNoticeHandled() }
+            }
+        )
+    }
+
     @ViewBuilder
     private var mainContent: some View {
         if state.needsOnboarding {
@@ -154,6 +173,9 @@ struct RootCore: View {
             ContentView()
                 .environmentObject(state)
                 .environmentObject(scheduler)
+                // Dashboard only, never the intro or onboarding above.
+                .environment(\.feedbackNoticeContext, feedbackContext)
+                .environment(\.feedbackFormURL, updateGate.feedbackNotice?.url ?? FeedbackForm.defaultURL)
                 .transition(.opacity)
                 .task {
                     // Canvas-only: refresh from the cookieless calendar feed.

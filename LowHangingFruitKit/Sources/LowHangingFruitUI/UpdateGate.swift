@@ -81,6 +81,13 @@ final class UpdateGateStore: ObservableObject {
     /// meant to carry it.
     @Published private(set) var appStoreURL: URL?
 
+    /// The manifest's one-time feedback card, from the cached policy at
+    /// launch and from each successful fetch. Same fail-open contract as
+    /// `verdict`: a failed fetch leaves it as it was. Left nil by a forced
+    /// DEBUG verdict, demo mode and an unparseable installed version, which
+    /// are the states that must show nothing extra.
+    @Published private(set) var feedbackNotice: FeedbackNotice?
+
     private let installedVersion: AppVersion?
     private let manifestURL: URL?
     private let session: URLSession
@@ -227,6 +234,7 @@ final class UpdateGateStore: ObservableObject {
             if let cached = cache.load(now: now()) {
                 self.verdict = cached.verdict(forInstalled: installedVersion)
                 self.appStoreURL = cached.appStoreURL
+                self.feedbackNotice = cached.feedback
             }
         } else {
             // Unparseable bundle version: inert rather than guessing. See
@@ -322,6 +330,7 @@ final class UpdateGateStore: ObservableObject {
             let previous = verdict
             verdict = policy.verdict(forInstalled: installedVersion)
             appStoreURL = policy.appStoreURL
+            feedbackNotice = policy.feedback
             verdictDidChange(from: previous)
         } catch {
             // Fail open: no state changes at all. Deliberately not even
@@ -355,5 +364,34 @@ final class UpdateGateStore: ObservableObject {
     var isAvailableBannerDismissed: Bool {
         guard case .updateAvailable(let latest) = verdict else { return false }
         return defaults.bool(forKey: Self.bannerDismissedKey(for: latest))
+    }
+
+    /// Where "the student has dealt with this feedback card" is recorded.
+    /// Keyed by the notice's id, like the banner's per-version key: handling
+    /// one card says nothing about the next, so publishing a new id in the
+    /// manifest shows the card again with no "un-handle" step. Lives in the
+    /// store's `defaults` (`UserDefaults.lhf` in production), never
+    /// `.standard`.
+    private static func feedbackHandledKey(for id: String) -> String {
+        "lhf.feedbackNoticeHandled.\(id)"
+    }
+
+    /// Tapping the card or its x. Never shown again for this id.
+    func markFeedbackNoticeHandled() {
+        guard let feedbackNotice else { return }
+        // Computed `visibleFeedbackNotice` depends on a defaults read, so
+        // there is nothing for Combine to watch; tell SwiftUI explicitly,
+        // as `dismissAvailableBanner` does.
+        objectWillChange.send()
+        defaults.set(true, forKey: Self.feedbackHandledKey(for: feedbackNotice.id))
+    }
+
+    /// The card to draw: a notice the student has not handled, and never on a
+    /// build that is behind the update wall.
+    var visibleFeedbackNotice: FeedbackNotice? {
+        guard let feedbackNotice else { return nil }
+        if case .updateRequired = verdict { return nil }
+        guard !defaults.bool(forKey: Self.feedbackHandledKey(for: feedbackNotice.id)) else { return nil }
+        return feedbackNotice
     }
 }

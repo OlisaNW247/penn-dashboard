@@ -203,6 +203,16 @@ carry the app's version number, for example "3.3.0", so the backend can refuse
 a version that is no longer supported. The version number is the same for
 every copy of that release and says nothing about you.
 
+## Feedback form
+
+Smooth may show a card on the dashboard asking how the app is going, and
+Profile has a "send feedback" row. Either one opens a Google Form in
+Safari. The app adds nothing to the link and sends the form nothing about
+you, your device or your coursework; whatever you type is sent to Google by
+the form itself, under Google's privacy policy, and is read by the
+developer. The card's wording and link come from the same public update
+file described above, so checking for it sends nothing new.
+
 ## The Chrome extension (optional, Penn)
 
 Smooth has a Chrome extension for your laptop. It is optional and does
