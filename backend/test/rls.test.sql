@@ -687,6 +687,85 @@ begin
 end $$;
 rollback;
 
+-- ask_usage_counts' monthly figure (20261027110000_ask_usage_month_range.sql):
+-- the same rows as before, found with a range on the bare `day` column so an
+-- index can serve it. Rows on both sides of both month boundaries, so an
+-- off-by-one in either bound shows up.
+set role service_role;
+insert into auth.users (id) values ('66666666-6666-6666-6666-666666666666');
+insert into public.ask_usage (user_id, day, requests) values
+  ('66666666-6666-6666-6666-666666666666', date_trunc('month', (now() at time zone 'utc')::date)::date - 1, 1000),
+  ('66666666-6666-6666-6666-666666666666', date_trunc('month', (now() at time zone 'utc')::date)::date, 100),
+  ('66666666-6666-6666-6666-666666666666', (date_trunc('month', (now() at time zone 'utc')::date) + interval '1 month')::date - 1, 10),
+  ('66666666-6666-6666-6666-666666666666', (date_trunc('month', (now() at time zone 'utc')::date) + interval '1 month')::date, 100000);
+
+do $$
+declare
+  r record;
+  expected bigint;
+begin
+  -- An independent formulation of "this calendar month": compare the year-month text.
+  select coalesce(sum(requests), 0) into expected from public.ask_usage
+    where to_char(day, 'YYYY-MM') = to_char((now() at time zone 'utc')::date, 'YYYY-MM');
+  select * into r from public.ask_usage_counts('66666666-6666-6666-6666-666666666666'::uuid);
+  if r.month_requests <> expected then
+    raise exception 'month_requests should be % (this month only), got %', expected, r.month_requests;
+  end if;
+  if r.month_requests >= 1000 then
+    raise exception 'month_requests counted a row from outside this month: %', r.month_requests;
+  end if;
+end $$;
+reset role;
+
+-- Sargable: with sequential scans made as unattractive as possible, the
+-- range form's plan uses an index condition on `day`, and the old
+-- function-of-the-column form cannot (it can at best scan the whole index and
+-- filter). This is a statement about the predicate, run directly, because a
+-- function body's plan is not visible from outside.
+do $$
+declare
+  line record;
+  range_plan text := '';
+  old_plan text := '';
+begin
+  perform set_config('enable_seqscan', 'off', true);
+  for line in execute $q$
+    explain select sum(requests) from public.ask_usage
+     where day >= date_trunc('month', current_date)::date
+       and day <  (date_trunc('month', current_date) + interval '1 month')::date
+  $q$ loop
+    range_plan := range_plan || line."QUERY PLAN" || E'\n';
+  end loop;
+  for line in execute $q$
+    explain select sum(requests) from public.ask_usage
+     where date_trunc('month', day) = date_trunc('month', current_date)
+  $q$ loop
+    old_plan := old_plan || line."QUERY PLAN" || E'\n';
+  end loop;
+  if range_plan !~ 'ask_usage_day_idx' or range_plan !~ 'Index Cond: .*day >=' then
+    raise exception E'the range predicate should use an index condition on day, plan was:\n%', range_plan;
+  end if;
+  if old_plan ~ 'Index Cond: .*day >=' then
+    raise exception E'control failed: the function-of-column predicate should not give an index condition on day, plan was:\n%', old_plan;
+  end if;
+end $$;
+
+-- And the functions themselves use that form: no function applied to the
+-- `day` column anywhere in either body.
+do $$
+declare
+  fn text;
+begin
+  foreach fn in array array['public.ask_usage_counts(uuid)', 'public.reserve_ask_usage(uuid, integer, bigint)'] loop
+    if pg_get_functiondef(fn::regprocedure) ~* 'date_trunc\([^)]*,\s*(au\.)?day\s*\)' then
+      raise exception '% applies a function to the day column (not sargable)', fn;
+    end if;
+    if pg_get_functiondef(fn::regprocedure) !~ 'au\.day >=' then
+      raise exception '% does not use a range on day for the monthly count', fn;
+    end if;
+  end loop;
+end $$;
+
 -- A catch-all over the catalog, so the next function someone adds cannot
 -- repeat this: apart from is_enrolled, no function in `public` may be
 -- executable by anon or authenticated, whether through the PUBLIC grant or
