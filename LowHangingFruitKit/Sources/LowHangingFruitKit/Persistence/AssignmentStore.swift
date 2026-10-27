@@ -319,6 +319,50 @@ public final class AssignmentStore {
         saveChanges()
     }
 
+    /// Disconnect's version of `purge(source:)`: removes the unfinished feed
+    /// rows of a source and KEEPS every row that records something the student
+    /// did, flagged `isGoneFromFeed` so nothing reads it as still listed.
+    ///
+    /// Kept: a row that is finished (`isFinished`: ticked off, or reported
+    /// turned in by either platform) and a completion-only row (the
+    /// bookkeeping row that carries a completion for an id the ledger never
+    /// held a real row for). Removed: everything else, which is exactly the
+    /// feed's own copy of work nobody finished, and which a reconnect fetches
+    /// again.
+    ///
+    /// Why not `purge(source:)`. Disconnecting Canvas is also the only repair
+    /// a student whose login is stuck can reach, and `purge` took their whole
+    /// Done history and every completion with it, on a path whose
+    /// confirmation never says so. CLAUDE.md's invariant is that nothing the
+    /// student did is ever lost, and a tick is the clearest thing they did.
+    /// The wrong fix is "keep finished rows but unflag them": an unflagged
+    /// row with no session behind it reads as live, `isAgedOut` only ever
+    /// considers rows that are gone from the feed, and a row the feed no
+    /// longer lists is precisely what the flag says.
+    ///
+    /// Not `purgeIncomplete(source:)`, which has another job (re-deriving a
+    /// source from scratch after an extractor change) and deletes a
+    /// completion-only row that is not finished. Returns how many rows were
+    /// removed.
+    @discardableResult
+    public func purgeKeepingStudentWork(source: Assignment.Source) -> Int {
+        var removed = 0
+        var flagged = false
+        for row in rows(source: source) {
+            if row.isFinished || row.isCompletionOnly {
+                if !row.isGoneFromFeed {
+                    row.isGoneFromFeed = true
+                    flagged = true
+                }
+            } else {
+                context.delete(row)
+                removed += 1
+            }
+        }
+        if removed > 0 || flagged { saveChanges() }
+        return removed
+    }
+
     /// `purge(source:)`'s narrower sibling: deletes every row for a source
     /// EXCEPT ones the student has already finished (`isFinished` — ticked
     /// off, or reported turned in by either platform). Written for the

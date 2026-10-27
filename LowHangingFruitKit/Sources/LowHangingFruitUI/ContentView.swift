@@ -763,6 +763,11 @@ struct ContentView: View {
     /// session-expiry check and silent renewal, the Duo read, the reload, the
     /// badge and the reminder replan.
     private func settleAfterFetch() async {
+        // A server-side account deletion a disconnect asked for and the
+        // network refused is retried here, in the background, on every pass
+        // until it lands (`PendingBackendDeletion`). Not awaited: it must
+        // never hold up the reload and the reminder replan below.
+        state.startPendingBackendDeletionRetryIfNeeded()
         state.refreshCanvasSessionExpiredState()
         // Retry a silent Canvas renewal if the policy says one is due (it
         // does nothing while awaiting Duo, after a rejected password, or

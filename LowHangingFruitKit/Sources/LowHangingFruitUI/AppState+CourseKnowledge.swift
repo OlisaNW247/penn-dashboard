@@ -666,16 +666,14 @@ extension AppState {
     /// succeeded; on failure the local cache is left as-is and a notice
     /// explains why, rather than silently wiping ask's memory for a request
     /// that didn't actually reach the server.
+    ///
+    /// A failure is also remembered (`PendingBackendDeletion`), and the
+    /// launch pass and the refresh loop retry it until the server confirms
+    /// (`startPendingBackendDeletionRetryIfNeeded`), so a disconnect made
+    /// offline still ends with the rows gone.
     func deleteBackendData() async -> Bool {
         guard let client = BackendServices.client else { return true }
-        do {
-            try await client.deleteAccount()
-            clearCourseKnowledge()
-            return true
-        } catch {
-            courseKnowledgeNotice = "couldn't delete your data from lhf's server: \(error.localizedDescription)"
-            return false
-        }
+        return await performBackendDeletion { try await client.deleteAccount() }
     }
 
     /// Settings → Diagnostics' course-materials section — see

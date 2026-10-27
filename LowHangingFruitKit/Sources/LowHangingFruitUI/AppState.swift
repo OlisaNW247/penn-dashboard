@@ -3863,7 +3863,7 @@ final class AppState: ObservableObject {
         guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
         if installation != canvasInstallation,
            (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
-            disconnectCanvas()
+            disconnectCanvas(keepingStudentWork: false)
         }
         canvasInstallation = installation
         hasChosenCanvasInstallation = true
@@ -3924,7 +3924,20 @@ final class AppState: ObservableObject {
     /// Canvas and Gradescope can both leave cookies on `upenn.edu` (Penn
     /// SSO) — so disconnecting one service never silently signs the user out
     /// of the other.
-    func disconnectCanvas() {
+    ///
+    /// **What it keeps (`keepingStudentWork`, the default).** The ledger rows
+    /// the student finished or that carry only a completion, and the observed
+    /// grade history. Disconnect is also the only repair a student with a
+    /// stuck login can reach, and it used to delete their whole Done history,
+    /// every tick and the grade trail with it, on a confirmation that never
+    /// says so; CLAUDE.md's invariant is that nothing the student did is ever
+    /// lost. Unfinished rows, which are only the feed's own copy, still go.
+    /// `selectCanvasInstallation` passes `false`: switching school must keep
+    /// removing every row, because the kept ones are keyed on ids from the
+    /// old school's Canvas and a numeric id means something else at the new
+    /// one. Keeping across schools needs rows stamped with the account they
+    /// came from (hardening plan B1, second bullet), which does not exist yet.
+    func disconnectCanvas(keepingStudentWork: Bool = true) {
         let websiteDataHints = canvasInstallation.websiteDataDomainHints
         // Disconnecting Canvas is the student saying "forget my Canvas" —
         // the stored PennKey password goes with it. Called first, ahead of
@@ -3988,15 +4001,24 @@ final class AppState: ObservableObject {
         // Canvas account) would otherwise inherit and caveat incorrectly.
         noSubmissionCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
-        gradeWatcher.clearAll()
+        gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
-        // account's work survives in the store and reappears on the dashboard.
-        assignmentStore?.purge(source: .canvas)
+        // account's unfinished work survives in the store and reappears on
+        // the dashboard. Finished and completion-only rows stay, flagged
+        // gone from the feed (`purgeKeepingStudentWork`).
+        let purgeLedger: (Assignment.Source) -> Void = { [assignmentStore] source in
+            if keepingStudentWork {
+                assignmentStore?.purgeKeepingStudentWork(source: source)
+            } else {
+                assignmentStore?.purge(source: source)
+            }
+        }
+        purgeLedger(.canvas)
         // Module-imported readings are session-derived the same way the probe
         // state above is — purge their ledger rows too, or a disconnected
         // account's readings survive the reconnect and reappear once the
         // course re-qualifies for a decision.
-        assignmentStore?.purge(source: .canvasModules)
+        purgeLedger(.canvasModules)
         moduleReadingItems = []
         // Announcement-extracted tasks are session-derived the identical way
         // — purge the ledger rows (a disconnected/reconnected account,
@@ -4004,7 +4026,7 @@ final class AppState: ObservableObject {
         // extracted tasks reappear) and clear the in-memory array so they
         // vanish from the dashboard immediately rather than waiting for the
         // next `syncAnnouncements()` to notice they're gone.
-        assignmentStore?.purge(source: .canvasAnnouncement)
+        purgeLedger(.canvasAnnouncement)
         announcementItems = []
         // The plain announcement list is Canvas-derived text too, and goes
         // here, unconditionally: `clearCourseKnowledge()` only runs when the

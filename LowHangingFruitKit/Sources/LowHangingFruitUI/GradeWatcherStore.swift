@@ -434,16 +434,32 @@ final class GradeWatcherStore: ObservableObject {
 
     /// Drops every fetched and derived grade artifact. Called when the user
     /// disconnects Canvas — grades are downstream of that session, so leaving
-    /// snapshots (and the observed-history trail behind the week delta) on
-    /// disk after a sign-out would keep showing a signed-out student's grades.
+    /// snapshots on disk after a sign-out would keep showing a signed-out
+    /// student's grades.
     /// User-authored settings (manual weights, confirmed Gradescope mappings,
     /// syllabus schemes) are preserved: re-connecting shouldn't make the user
     /// redo their setup.
-    func clearAll() {
+    ///
+    /// `keepingHistory` is what disconnect passes. The observed-history trail
+    /// (the memory behind the "this week" delta) is the student's own record
+    /// of how their grades moved, not something the Canvas session derives:
+    /// it is keyed on course ids and holds a percent per observation, nothing
+    /// that identifies anyone, and wiping it on every disconnect, which is
+    /// also the only repair a stuck student can reach, threw away weeks of
+    /// observations for a reconnect that restores the same courses. When
+    /// kept, `history` is re-read from the store so the published cache
+    /// matches what is on disk, the shape `clearPreviewFixtures` already
+    /// has. The default stays the full wipe for any caller that really means
+    /// "forget everything".
+    func clearAll(keepingHistory: Bool = false) {
         snapshots = [:]
         gradescopeItemsByCourse = [:]
-        history = [:]
-        historyStore?.clearAll()
+        if keepingHistory {
+            history = historyStore?.allHistory() ?? [:]
+        } else {
+            history = [:]
+            historyStore?.clearAll()
+        }
         lastRefreshed = nil
         isSessionExpired = false
         error = nil
