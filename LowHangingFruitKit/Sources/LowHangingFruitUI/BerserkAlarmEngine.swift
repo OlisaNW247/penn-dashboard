@@ -32,8 +32,9 @@ protocol BerserkAlarmStore: AnyObject {
 struct BerserkReconcileReport: Equatable, Sendable {
     /// Wanted alarms the store does not hold after the pass.
     var unscheduled: [UUID] = []
-    /// Alarms the plan does not want that are still there (idle ones: a
-    /// ringing alarm is never offered for cancelling).
+    /// Alarms the plan does not want that are still there after the cancel and
+    /// its one retry (idle ones: a ringing alarm is never offered for
+    /// cancelling).
     var uncancelled: [UUID] = []
 
     var isClean: Bool { unscheduled.isEmpty && uncancelled.isEmpty }
@@ -76,9 +77,19 @@ enum BerserkAlarmEngine {
     /// whose alarms are all fine to the buzzes, and (before the error path
     /// stopped touching ringing alarms) silenced one that was ringing.
     ///
-    /// An alarm that could not be cancelled is reported but changes nothing
-    /// for the items that are wanted: their alarms are fine, and the stale one
-    /// is offered to the next pass's diff again.
+    /// **A cancel that failed is tried once more before it is reported.** The
+    /// old throw path ended in `cancelIdle`, which cancelled every idle alarm
+    /// again, so a cancel that failed once got a second attempt for free; the
+    /// isolated version would have dropped it. That matters most for a
+    /// background wake, which has no next pass: an alarm for work the student
+    /// has handed in, whose first cancel failed, would ring. So every id that
+    /// failed is cancelled once more at the end, after the scheduling (a moment
+    /// later, and AlarmKit's own state may have settled), and only an alarm
+    /// that is still there after that is reported in `uncancelled`. A stale
+    /// alarm that survives both attempts changes nothing for the items that are
+    /// wanted: their alarms are fine, and it is offered to the next pass's diff
+    /// again. The wrong fix is `cancelIdle` for the retry: it would cancel the
+    /// wanted alarms that had just been scheduled.
     @discardableResult
     static func reconcile(
         _ plan: [PlannedAlarm], in store: any BerserkAlarmStore
@@ -87,12 +98,8 @@ enum BerserkAlarmEngine {
         let diff = BerserkAlarmPlan.reconcile(desired: plan, existingIDs: existing)
         var report = BerserkReconcileReport()
 
-        for id in diff.toCancel {
-            do {
-                try store.cancel(id: id)
-            } catch {
-                if !isAbsent(id, in: store) { report.uncancelled.append(id) }
-            }
+        for id in diff.toCancel where !cancelled(id, in: store) {
+            report.uncancelled.append(id)
         }
         for planned in diff.toSchedule {
             do {
@@ -101,7 +108,20 @@ enum BerserkAlarmEngine {
                 if !isPresent(planned.id, in: store) { report.unscheduled.append(planned.id) }
             }
         }
+        // The second attempt; see above. What is still there is what is reported.
+        report.uncancelled = report.uncancelled.filter { !cancelled($0, in: store) }
         return report
+    }
+
+    /// One cancel, judged by what the store holds: done if it did not throw, or
+    /// threw for an alarm that is in fact gone.
+    private static func cancelled(_ id: UUID, in store: any BerserkAlarmStore) -> Bool {
+        do {
+            try store.cancel(id: id)
+            return true
+        } catch {
+            return isAbsent(id, in: store)
+        }
     }
 
     /// Cancels every alarm that is not ringing. For an AlarmKit error and for

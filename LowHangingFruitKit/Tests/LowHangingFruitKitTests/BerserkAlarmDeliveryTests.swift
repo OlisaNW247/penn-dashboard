@@ -26,6 +26,9 @@ final class FakeAlarmStore: BerserkAlarmStore {
     var vanishingCancelIDs: Set<UUID> = []
     /// `cancel` throws and leaves the alarm.
     var failingCancelIDs: Set<UUID> = []
+    /// The first `cancel` of each of these throws and leaves the alarm; a later
+    /// one works (a transient failure).
+    var failingFirstCancelIDs: Set<UUID> = []
     /// `alarms` throws.
     var readFailure: Error?
 
@@ -42,6 +45,9 @@ final class FakeAlarmStore: BerserkAlarmStore {
     func cancel(id: UUID) throws {
         cancelAttempts.append(id)
         if failingCancelIDs.contains(id) { throw FakeAlarmError.boom }
+        if failingFirstCancelIDs.contains(id), cancelAttempts.filter({ $0 == id }).count == 1 {
+            throw FakeAlarmError.boom
+        }
         let existed = alarms.removeValue(forKey: id) != nil
         if vanishingCancelIDs.contains(id) || !existed { throw FakeAlarmError.notFound }
     }
@@ -658,6 +664,61 @@ struct BerserkAlarmDeliveryTests {
         let report = try await BerserkAlarmEngine.reconcile([], in: failing)
         #expect(report.uncancelled == [stuck])
         #expect(report.unscheduled.isEmpty)
+        #expect(failing.cancelAttempts.filter { $0 == stuck }.count == 2, "tried, then tried once more")
+    }
+
+    /// The old throw path ended in `cancelIdle`, which cancelled every idle alarm
+    /// a second time, so a cancel that failed once got a retry. A background wake
+    /// has no next pass, so without the retry an alarm for work already handed
+    /// in could ring.
+    @Test("A cancel that fails once is retried, and the alarm is gone and not reported")
+    func failedCancelIsRetriedOnce() async throws {
+        let stale = UUID()
+        let store = FakeAlarmStore()
+        store.seed(stale)
+        store.failingFirstCancelIDs = [stale]
+
+        let report = try await BerserkAlarmEngine.reconcile([], in: store)
+
+        #expect(store.scheduledIDs.isEmpty, "the stale alarm is gone")
+        #expect(report.isClean && report.uncancelled.isEmpty)
+        #expect(store.cancelAttempts.filter { $0 == stale }.count == 2)
+    }
+
+    @Test("The retry cancels only what failed: the alarms just scheduled are left alone")
+    func retryOnlyTouchesTheFailedCancels() async throws {
+        let wanted = planAlarm("wanted")
+        let stale = UUID(), fine = UUID()
+        let store = FakeAlarmStore()
+        store.seed(stale)
+        store.seed(fine)
+        store.failingFirstCancelIDs = [stale]
+
+        let report = try await BerserkAlarmEngine.reconcile([wanted], in: store)
+
+        #expect(report.isClean)
+        #expect(store.scheduledIDs == [wanted.id])
+        #expect(store.cancelAttempts.filter { $0 == fine }.count == 1, "a cancel that worked is not repeated")
+        #expect(!store.cancelAttempts.contains(wanted.id), "a wanted alarm is never cancelled")
+    }
+
+    @Test("A pass takes back a finished item's alarm whose first cancel failed, with nothing left uncancelled")
+    func passRetriesAFailedCancel() async {
+        await withScheduler { scheduler, now in
+            var items = eligible(now)
+            let (backend, sink) = arrange(Scenario(name: "", expectation: .alarms), scheduler)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let before = alarmID(of: items[0])
+            #expect(backend.store.scheduledIDs.contains(before))
+
+            items[0].isCompleted = true                       // handed in; no next pass will follow
+            backend.store.failingFirstCancelIDs = [before]
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(!backend.store.scheduledIDs.contains(before), "it must not ring")
+            #expect(report.alarmsUncancelled == 0)
+            #expect(report.isClean)
+        }
     }
 
     /// The first failure used to end the pass: the alarms after it in the diff
