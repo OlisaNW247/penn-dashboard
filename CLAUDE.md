@@ -181,7 +181,7 @@ judgments and the server exam dates until `extract-announcement` and
 `sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
-**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Creating the 3.3.0 version record, attaching build 16 and submitting are Olisa's steps in App Store Connect; not recorded here as done yet. The branch is not merged into `v8`.
+**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Olisa created the 3.3.0 version record, attached build 16 and submitted it for review on 2026-10-27, per his word that day; approval and release are not recorded yet. The live manifest has carried the feedback object (`2026-10-smoothie`) since the same day, checked against the sanitizer's rules; builds below 3.3.0 ignore it. The branch is not merged into `v8`.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
 archived. The `update-manifest` floor is **3.2.1** since
 2026-10-27 (`9a49cc5`, the first real run of the `update-floor` workflow,
