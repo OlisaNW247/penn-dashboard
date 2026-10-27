@@ -143,8 +143,33 @@ public struct ParsedQuestion: Sendable, Hashable {
 /// Rule-based question understanding. Deterministic on purpose: it runs on
 /// every device with no model, and its output is exact where dates are involved.
 public enum QuestionParser {
+    /// The most characters of a question the parser reads. A real question is
+    /// a sentence; 2,000 characters is a paragraph and a half, which is more
+    /// than anyone types and enough for a pasted assignment prompt that ends
+    /// in the question. Past it the text is cut, at a character boundary, so
+    /// the cut never splits an emoji or an accent.
+    ///
+    /// **Why it exists.** `classify` runs a dozen regular expressions over
+    /// the question, and some of them have two `.*` in them
+    /// (`\b(what|which|anything)\b.*\b(not|...)\b.*\b(submit|...)\b`), which
+    /// backtrack: on a pasted 100,000-character syllabus that is billions of
+    /// steps on the main actor, a frozen app with no crash and nothing to
+    /// read (`KCR-13` in `docs/HARDENING_PLAN_2026-10-25.md`). The bound is
+    /// applied before anything else touches the text, so it also bounds the
+    /// lowercasing, the replacements, the course search and the `lookup`
+    /// query that goes on to retrieval. The wrong fix is a timeout around the
+    /// regexes: the work would still be done, just abandoned, and the
+    /// question would then be answered from half a classification.
+    public static let maxQuestionLength = 2_000
+
+    /// `question` cut to `maxQuestionLength` characters. Walks only as far as
+    /// the cap, so a megabyte of pasted text is not scanned to be discarded.
+    static func bounded(_ question: String) -> String {
+        String(question.prefix(maxQuestionLength))
+    }
+
     public static func parse(_ question: String, courses: [CourseSummary]) -> ParsedQuestion {
-        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = bounded(question).trimmingCharacters(in: .whitespacesAndNewlines)
         let match = CourseMatcher.match(in: trimmed, courses: courses)
         var q = " " + trimmed.lowercased()
             .replacingOccurrences(of: "’", with: "'")
