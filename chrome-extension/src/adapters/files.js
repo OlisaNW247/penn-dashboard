@@ -18,6 +18,15 @@
 // is already signed), and `credentials: "include"` through the redirect (what
 // failed). The public URL is a bearer link valid for hours: it is never logged,
 // stored or put in a summary.
+//
+// Linked files (2026-10-27): most Penn courses hide the Files tab, so the listing
+// above answers 401/403 and nothing was collected, while the same courses link
+// PDFs from their pages, assignments, syllabi and modules. `linkedFileIDs` are the
+// ids found in those links (core/canvasApi.js `canvasFileIDsFromLinks`, plus File
+// module items); each is looked up with `/api/v1/courses/:c/files/:id`, the form
+// Canvas checks against course visibility, and only PDFs go on to the same
+// public_url path. Rejected: scraping the Files HTML page (it is the hidden
+// thing, and HTML is brittle), and a host permission for the S3 bucket (see above).
 import {
   DEFAULT_BASE_URL, MAX_PAGES, stripAntiHijackPrefix, looksLikeHTML, nextPageURL,
 } from "../core/canvasApi.js";
@@ -29,6 +38,13 @@ export const FILE_MAX_BYTES = 25 * 1024 * 1024;
 
 export function filePublicURLEndpoint(fileID, { baseURL = DEFAULT_BASE_URL } = {}) {
   return `${baseURL.replace(/\/+$/, "")}/api/v1/files/${fileID}/public_url`;
+}
+
+// The `seen` value for a linked file Canvas said is not a PDF.
+export const NOT_PDF = "not-pdf";
+
+export function fileMetadataURL(courseID, fileID, { baseURL = DEFAULT_BASE_URL } = {}) {
+  return `${baseURL.replace(/\/+$/, "")}/api/v1/courses/${courseID}/files/${fileID}`;
 }
 
 export function filesListURL(courseID, { baseURL = DEFAULT_BASE_URL } = {}) {
@@ -90,18 +106,23 @@ export function decodeFileEntry(raw) {
 //                it a 401/403 on a live session is "forbidden": the listing is skipped
 //                quietly (counts.forbidden) or one download is skipped. Without it a
 //                401 is "out", as before.
+//   linkedFileIDs  string[] of file ids found in the course's own links (default []);
+//                looked up one by one after the listing, whatever the listing did,
+//                PDFs only, sharing `maxFiles` with the listing. counts.linked is
+//                how many ids were taken; counts.linkedForbidden how many answered
+//                401/403 on a live session.
 //   limits       { maxFiles = 60, delayMs = 250, maxBytes = 25 MB, sleep }
 // Returns { documents, seen, stopped, counts }. `seen` is the new map (old
 // entries for files still listed, plus every file handled this run, including
 // scans that had no text; failed downloads are not recorded so they retry).
 // `stopped` is null, "rateLimited" or "out" (the caller stops its Canvas run
 // on rateLimited). Never throws.
-export async function collectFiles({ fetch: fetchFn, courseID, course, extractText, seen = {}, now, sleep, confirmSession, limits = {} } = {}) {
+export async function collectFiles({ fetch: fetchFn, courseID, course, extractText, seen = {}, now, sleep, confirmSession, linkedFileIDs = [], limits = {} } = {}) {
   const delayMs = limits.delayMs ?? FILES_DEFAULT_DELAY_MS;
   const maxFiles = limits.maxFiles ?? FILES_DEFAULT_MAX;
   const maxBytes = limits.maxBytes ?? FILE_MAX_BYTES;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
-  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0 };
+  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0, linked: 0, linkedForbidden: 0 };
   const result = { documents: [], seen: { ...seen }, stopped: null, counts };
   const fetchedAt = now === undefined ? new Date() : new Date(now);
 
@@ -128,6 +149,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
 
   // ---- list (paginated); a failed later page keeps the earlier ones
   const entries = [];
+  let listingOK = true;
   try {
     let next = filesListURL(courseID);
     for (let i = 0; next !== null && i < MAX_PAGES; i++) {
@@ -149,8 +171,9 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     }
   } catch (e) {
     if (e instanceof Stop && (e.kind === "rateLimited" || e.kind === "out")) { result.stopped = e.kind; return result; }
-    if (e instanceof Stop && e.kind === "forbidden") { counts.forbidden += 1; return result; } // Files tab hidden: skip quietly
-    if (entries.length === 0) return result;
+    listingOK = false;
+    if (e instanceof Stop && e.kind === "forbidden") counts.forbidden += 1; // Files tab hidden: skip quietly
+    else if (entries.length > 0) listingOK = true;
   }
 
   // ---- choose: newest first, unlocked, small, changed
@@ -164,11 +187,22 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     if (seen[e.id] !== undefined && seen[e.id] === e.updatedAt) { counts.unchanged += 1; continue; }
     todo.push(e);
   }
-  // Forget files that are no longer listed.
-  for (const id of Object.keys(result.seen)) if (!seenIDs.has(id)) delete result.seen[id];
+  const linkedIDs = [];
+  for (const raw of Array.isArray(linkedFileIDs) ? linkedFileIDs : []) {
+    const id = String(raw);
+    if (/^[0-9]+$/.test(id) && !linkedIDs.includes(id)) linkedIDs.push(id);
+  }
+  // Forget files that are no longer listed (or linked). A listing that failed says
+  // nothing about what is listed, so then nothing is forgotten.
+  if (listingOK) {
+    for (const id of Object.keys(result.seen)) if (!seenIDs.has(id) && !linkedIDs.includes(id)) delete result.seen[id];
+  }
 
   const displayCode = typeof course === "string" ? course : course?.code ?? "";
-  for (const e of todo.slice(0, maxFiles)) {
+
+  // One file's bytes to a document: public_url (with the session), then the signed
+  // link without credentials. Returns "stop" when the run must end.
+  async function handle(e) {
     counts.attempted += 1;
     try {
       const meta = await get(filePublicURLEndpoint(e.id), "application/json");
@@ -194,17 +228,17 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       }
       if (!res.ok) throw new Stop("http");
       const bytes = new Uint8Array(await res.arrayBuffer());
-      if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) { counts.skipped += 1; result.seen[e.id] = e.updatedAt; continue; }
+      if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) { counts.skipped += 1; result.seen[e.id] = e.updatedAt; return null; }
       let text;
       try {
         text = cleanFileText(await extractText(bytes));
       } catch {
         counts.failed += 1; // unparseable PDF: retry next run only if it changes
         result.seen[e.id] = e.updatedAt;
-        continue;
+        return null;
       }
       result.seen[e.id] = e.updatedAt;
-      if (text === "") { counts.empty += 1; continue; } // scan: no text layer
+      if (text === "") { counts.empty += 1; return null; } // scan: no text layer
       result.documents.push(fileDocument({
         courseID, course: displayCode, fileID: e.id, displayName: e.name,
         url: `${DEFAULT_BASE_URL}/courses/${courseID}/files/${e.id}`,
@@ -213,9 +247,53 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       }));
       counts.extracted += 1;
     } catch (err) {
-      if (err instanceof Stop && (err.kind === "rateLimited" || err.kind === "out")) { result.stopped = err.kind; break; }
+      if (err instanceof Stop && (err.kind === "rateLimited" || err.kind === "out")) { result.stopped = err.kind; return "stop"; }
       counts.failed += 1; // network / http / forbidden: not recorded in `seen`, so it is tried again next run
     }
+    return null;
+  }
+
+  let slots = maxFiles;
+  for (const e of todo.slice(0, maxFiles)) {
+    slots -= 1;
+    if ((await handle(e)) === "stop") return result;
+  }
+
+  // ---- linked files: the ids the course's own material points at. A file the
+  // listing already covered is not fetched twice. Metadata lookups are bounded
+  // (twice the file cap) because a link-heavy course can name hundreds.
+  let lookups = 0;
+  for (const id of linkedIDs) {
+    if (slots <= 0 || lookups >= maxFiles * 2) break;
+    if (seenIDs.has(id)) continue;
+    // A file's type does not change, so a link already found not to be a PDF
+    // (a .docx, an image) is not looked up again on every run.
+    if (seen[id] === NOT_PDF) { result.seen[id] = NOT_PDF; counts.unchanged += 1; continue; }
+    counts.linked += 1;
+    lookups += 1;
+    let e;
+    try {
+      const res = await get(fileMetadataURL(courseID, id), "application/json");
+      const text = stripAntiHijackPrefix(await res.text());
+      if (looksLikeHTML(text)) throw new Stop("out");
+      let raw;
+      try { raw = JSON.parse(text); } catch { throw new Stop("decode"); }
+      e = decodeFileEntry(raw);
+      if (e) {
+        const ct = isObject(raw) && typeof raw["content-type"] === "string" ? raw["content-type"] : "";
+        if (!(/^application\/pdf\b/i.test(ct) || /\.pdf$/i.test(e.name))) { result.seen[id] = NOT_PDF; e = null; }
+      }
+    } catch (err) {
+      if (err instanceof Stop && (err.kind === "rateLimited" || err.kind === "out")) { result.stopped = err.kind; return result; }
+      if (err instanceof Stop && err.kind === "forbidden") counts.linkedForbidden += 1;
+      else counts.failed += 1;
+      continue;
+    }
+    if (!e) { counts.skipped += 1; continue; } // not a PDF, or undecodable
+    if (e.skip || e.size > maxBytes) { counts.skipped += 1; continue; }
+    if (seen[e.id] !== undefined && seen[e.id] === e.updatedAt) { counts.unchanged += 1; continue; }
+    slots -= 1;
+    if ((await handle(e)) === "stop") return result;
   }
   return result;
 }

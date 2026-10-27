@@ -531,3 +531,9 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   held NUL characters, which Postgres refuses. Every document's title and
   text is now cleaned before hashing (`storableText`: NULs dropped, lone
   surrogates to U+FFFD). 488 tests. The server-side guard is not deployed.
+- 2026-10-27: PDFs linked from a course's pages, assignments, syllabus and
+  File module items are collected too (`canvasFileIDsFromLinks`, the
+  `linkedFileIDs` path in `collectFiles`), because most courses hide the
+  Files listing. Non-PDF links are remembered and skipped; the summary's
+  `files` gains `linked` and `linkedForbidden`. 498 tests. Not yet run
+  against real Canvas.

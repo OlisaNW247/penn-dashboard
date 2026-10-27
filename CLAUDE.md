@@ -1078,7 +1078,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 488 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
+counts): 498 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -2718,6 +2718,19 @@ none is a ship line.
   of `"a\u0000b \ud800c"` was stored as `"ab \ufffdc"`, and every row it
   made was deleted after. The client's hash is kept as sent, so a phone
   that hashed the dirty text does not re-upload in a loop.
+- **PDFs linked from a course's own pages now reach the extension**
+  (2026-10-27, not yet run against real Canvas). Most Penn courses hide
+  the Files tab, so the Files listing answers 401/403 and only "Physics
+  Exam Archive" ever yielded PDFs, while the server held 58 CIS 4500, 17
+  PHYS 0151 and 10 ACCT 1010 documents linking them. `collectFiles` now
+  also takes the file ids in that course's page, assignment and syllabus
+  links (`canvasFileIDsFromLinks`) and File module items, looks each up
+  with `/api/v1/courses/:c/files/:id`, and sends PDFs down the same
+  `public_url` path; a non-PDF is remembered (`seen[id] = "not-pdf"`) so
+  it is not looked up every run, and lookups are capped at twice the
+  60-file cap per course. Unknown until a live run: whether Canvas
+  answers that metadata call for a file in a course whose Files tab is
+  hidden (the summary's `files.linked` and `files.linkedForbidden` say).
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

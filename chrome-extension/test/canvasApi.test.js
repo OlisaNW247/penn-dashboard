@@ -150,3 +150,31 @@ test("pageBodyURL encodes the slug like .urlPathAllowed", () => {
   assert.equal(pageBodyURL("1234", "course-policies"), "https://canvas.upenn.edu/api/v1/courses/1234/pages/course-policies");
   assert.equal(pageBodyURL("1234", "week 1/intro?"), "https://canvas.upenn.edu/api/v1/courses/1234/pages/week%201/intro%3F");
 });
+
+import { canvasFileIDsFromLinks } from "../src/core/canvasApi.js";
+
+test("canvasFileIDsFromLinks: Canvas file links in their usual forms, distinct, in order", () => {
+  const ids = canvasFileIDsFromLinks([
+    { href: "https://canvas.upenn.edu/courses/111/files/55/download?download_frd=1" },
+    { href: "/courses/111/files/56?wrap=1#x" },
+    { href: "/files/57/preview" },
+    { href: "https://canvas.upenn.edu/files/55" },
+    { href: "https://canvas.upenn.edu/courses/111/files/58/" },
+  ]);
+  assert.deepEqual(ids, ["55", "56", "57", "58"]);
+});
+
+test("canvasFileIDsFromLinks: other hosts, folders, non-file paths and junk are ignored", () => {
+  assert.deepEqual(canvasFileIDsFromLinks([
+    { href: "https://example.com/courses/1/files/9" },
+    { href: "https://canvas.upenn.edu.evil.com/files/9" },
+    { href: "http://canvas.upenn.edu/files/9" },
+    { href: "/courses/111/files/folder/Lectures" },
+    { href: "/courses/111/files" },
+    { href: "/courses/111/assignments/9" },
+    { href: "/files/abc" },
+    { href: "/files/9/other" },
+    { href: "" }, { href: 5 }, null, {},
+  ]), []);
+  assert.deepEqual(canvasFileIDsFromLinks(undefined), []);
+});

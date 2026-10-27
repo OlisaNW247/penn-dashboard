@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-27_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -209,7 +209,8 @@ nothing until you pair it with your phone.
   Chrome's memory and is gone when Chrome closes.
 - **It collects course material your phone can't reach**: every course
   announcement, every course page, and the text of PDFs in a course's
-  Files (slides, readings), plus Ed announcements, pinned posts and staff posts under the same
+  Files or linked from its pages, assignments and modules (slides,
+  readings), plus Ed announcements, pinned posts and staff posts under the same
   rule as the phone (never a student's post, never an author's name). That
   material is pooled per class exactly like the phone's ("What is sent to
   our server"), so classmates share one copy.
