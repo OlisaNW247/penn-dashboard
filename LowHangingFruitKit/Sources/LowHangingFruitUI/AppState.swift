@@ -7681,12 +7681,14 @@ final class AppState: ObservableObject {
             confirmedPairings: storedPairings
         )
         assignmentStore?.recordPairings(pairings)
-        // Passing the resolved pairings straight through means the heuristic
-        // isn't run a second time inside `merge`.
+        // `merge(pairs:)` collapses exactly the pairs just resolved and runs no
+        // heuristic. This used to pass them back as `confirmedPairings`, which
+        // are only the first step of `matchPairs`, so the whole pairing scan
+        // ran a second time over every unmatched item.
         let dedupedCoursework = AssignmentDeduplicator.merge(
             canvasItems: canvasRelevant,
             gradescopeItems: gradescopePool,
-            confirmedPairings: pairings
+            pairs: pairings
         )
         mergedCoursework = dedupedCoursework
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)

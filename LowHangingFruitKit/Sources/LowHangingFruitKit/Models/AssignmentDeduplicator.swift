@@ -73,11 +73,38 @@ public enum AssignmentDeduplicator {
         titleB: String,
         dueB: Date?
     ) -> Bool {
-        let tokensA = normalize(titleA)
-        let tokensB = normalize(titleB)
-        guard !tokensA.isEmpty, !tokensB.isEmpty else { return false }
+        isLikelyDuplicate(
+            PreparedTitle(titleA), dueA: dueA,
+            PreparedTitle(titleB), dueB: dueB
+        )
+    }
 
-        if tokensA == tokensB {
+    /// A title reduced to what the comparisons need, once. `normalize` runs
+    /// five regex passes, and the pairing used to run it on both titles of
+    /// every same-course pair (and again to score each candidate), so a
+    /// student's whole history was re-normalised hundreds of times per
+    /// rebuild. It is now run once per item.
+    struct PreparedTitle {
+        let tokens: [String]
+        let tokenSet: Set<String>
+
+        init(_ title: String) {
+            let tokens = AssignmentDeduplicator.normalize(title)
+            self.tokens = tokens
+            self.tokenSet = Set(tokens)
+        }
+    }
+
+    /// The heuristic itself, over titles that are already normalised. The
+    /// public `isLikelyDuplicate(titleA:...)` is this plus the two
+    /// normalisations, so the two cannot disagree.
+    private static func isLikelyDuplicate(
+        _ a: PreparedTitle, dueA: Date?,
+        _ b: PreparedTitle, dueB: Date?
+    ) -> Bool {
+        guard !a.tokens.isEmpty, !b.tokens.isEmpty else { return false }
+
+        if a.tokens == b.tokens {
             if let dueA, let dueB, abs(dueA.timeIntervalSince(dueB)) > sameTitleMaxDueGap {
                 return false
             }
@@ -88,7 +115,7 @@ public enum AssignmentDeduplicator {
               abs(dueA.timeIntervalSince(dueB)) <= similarTitleDueDateTolerance
         else { return false }
 
-        return jaccardSimilarity(Set(tokensA), Set(tokensB)) >= similarTitleThreshold
+        return jaccardSimilarity(a.tokenSet, b.tokenSet) >= similarTitleThreshold
     }
 
     /// Announcement prose often wraps the real assignment title in an
@@ -374,19 +401,39 @@ public enum AssignmentDeduplicator {
             matches.append(pairing)
         }
 
+        // Bucket the Gradescope side by course and normalise each title once,
+        // so a canvas item only meets the items of its own class and no title
+        // is normalised per pair. This used to be a canvas x gradescope scan
+        // across the student's whole history (every class, every past term),
+        // normalising both titles of every same-course pair and again to
+        // score it, and `merge` then ran the whole thing a second time over
+        // the leftovers. Bucket order is input order, and the candidates are
+        // generated in the same canvas-then-gradescope order as the scan was,
+        // so the sort below sees the same array and the pairing is identical
+        // (`AssignmentDeduplicatorPairOnceTests` holds it to the old scan).
+        struct Prepared {
+            let item: Assignment
+            let title: PreparedTitle
+        }
+        var gradescopeByCourse: [String: [Prepared]] = [:]
+        for gradescopeItem in gradescopeItems where !usedGradescopeIDs.contains(gradescopeItem.id) {
+            gradescopeByCourse[gradescopeItem.course, default: []]
+                .append(Prepared(item: gradescopeItem, title: PreparedTitle(gradescopeItem.title)))
+        }
+
         var candidates: [Candidate] = []
         for canvasItem in canvasItems where !usedCanvasIDs.contains(canvasItem.id) {
-            for gradescopeItem in gradescopeItems
-            where gradescopeItem.course == canvasItem.course
-                && !usedGradescopeIDs.contains(gradescopeItem.id) {
+            guard let bucket = gradescopeByCourse[canvasItem.course] else { continue }
+            let canvasTitle = PreparedTitle(canvasItem.title)
+            for gradescope in bucket {
                 guard isLikelyDuplicate(
-                    titleA: canvasItem.title, dueA: canvasItem.dueAt,
-                    titleB: gradescopeItem.title, dueB: gradescopeItem.dueAt
+                    canvasTitle, dueA: canvasItem.dueAt,
+                    gradescope.title, dueB: gradescope.item.dueAt
                 ) else { continue }
                 candidates.append(Candidate(
                     canvas: canvasItem,
-                    gradescope: gradescopeItem,
-                    score: matchScore(canvasItem, gradescopeItem)
+                    gradescope: gradescope.item,
+                    score: matchScore(canvasTitle, gradescope.title)
                 ))
             }
         }
@@ -412,11 +459,9 @@ public enum AssignmentDeduplicator {
         return matches
     }
 
-    private static func matchScore(_ canvas: Assignment, _ gradescope: Assignment) -> Double {
-        let tokensA = normalize(canvas.title)
-        let tokensB = normalize(gradescope.title)
-        if tokensA == tokensB { return 2.0 } // exact-title tier always outranks fuzzy
-        return jaccardSimilarity(Set(tokensA), Set(tokensB))
+    private static func matchScore(_ canvas: PreparedTitle, _ gradescope: PreparedTitle) -> Double {
+        if canvas.tokens == gradescope.tokens { return 2.0 } // exact-title tier always outranks fuzzy
+        return jaccardSimilarity(canvas.tokenSet, gradescope.tokenSet)
     }
 
     private static func dueDateGap(_ a: Date?, _ b: Date?) -> TimeInterval {
@@ -442,6 +487,29 @@ public enum AssignmentDeduplicator {
             gradescopeItems: gradescopeItems,
             confirmedPairings: confirmedPairings
         )
+        return merge(canvasItems: canvasItems, gradescopeItems: gradescopeItems, pairs: matches)
+    }
+
+    /// `merge` for a caller that already ran `matchPairs`: collapses exactly
+    /// the pairs it is given and runs no heuristic at all.
+    ///
+    /// The dashboard rebuild pairs once (it records the pairs on the ledger)
+    /// and used to hand them back to `merge(confirmedPairings:)`, whose
+    /// comment said the heuristic "isn't run a second time inside `merge`".
+    /// It was: stored pairings are only the *first* step of `matchPairs`, so
+    /// the whole canvas x gradescope scan ran again over every item the pairs
+    /// left unmatched, which is nearly all of them. The result of that second
+    /// run is always the same pairs (anything still pairable was a candidate
+    /// the first run already considered), so this is a straight saving, and
+    /// `AssignmentDeduplicatorPairOnceTests` asserts the two paths agree.
+    ///
+    /// A pair whose ids are not in the two lists collapses nothing, and a
+    /// repeated id on either side resolves to the first, as in `merge`.
+    public static func merge(
+        canvasItems: [Assignment],
+        gradescopeItems: [Assignment],
+        pairs matches: [Match]
+    ) -> [Assignment] {
         guard !matches.isEmpty else { return canvasItems + gradescopeItems }
 
         // First wins on a repeated id in either table: both are keyed on ids scraped from Gradescope and Canvas, and a duplicate key must not trap the merge.
