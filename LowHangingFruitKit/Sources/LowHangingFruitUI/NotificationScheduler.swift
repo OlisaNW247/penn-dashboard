@@ -731,6 +731,10 @@ final class NotificationScheduler: ObservableObject {
     /// other reminders differ with the delivery mode. That is the point.
     /// `false` is today's output, untouched.
     ///
+    /// `calendar` is where the ordinary reminders' wall-clock triggers are read
+    /// and pinned; the app passes nothing and gets the phone's current one, a
+    /// test passes a fixed zone.
+    ///
     /// `buzzFallbackAssignmentIDs` names the items (`Assignment.id`) whose
     /// alarm AlarmKit would not take while it took the others
     /// (`BerserkAlarmPlan.Settlement`): with `loudAlertsAsAlarms` true they
@@ -741,7 +745,8 @@ final class NotificationScheduler: ObservableObject {
         now: Date = Date(),
         preferences: CoursePreferencesStore? = nil,
         loudAlertsAsAlarms: Bool = false,
-        buzzFallbackAssignmentIDs: Set<String> = []
+        buzzFallbackAssignmentIDs: Set<String> = [],
+        calendar: Calendar = .current
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
@@ -820,7 +825,6 @@ final class NotificationScheduler: ObservableObject {
             .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
             .flatMap(\.requests)
         let budget = Self.maxPending - buzzes.count
-        let calendar = Calendar.current
 
         let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget, now: now).map { pair in
             let content = UNMutableNotificationContent()
@@ -855,7 +859,25 @@ final class NotificationScheduler: ObservableObject {
             )
             content.sound = .default
             content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
-            let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
+            var comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
+            // Pin the zone the wall-clock components were read in. Without one
+            // the system reads them in whatever zone the phone is in when the
+            // reminder is due, so a plan made in New York and a student who
+            // lands in Tokyo that night is reminded at 9:00 Tokyo time, 13 hours
+            // late (hardening plan C6, NOT-06). Measured on this Mac:
+            // `UNCalendarNotificationTrigger.nextTriggerDate()` of Tokyo
+            // components came back 13 hours after the instant planned with no
+            // zone and on it with one (`ReminderTimeZoneTests`).
+            //
+            // The other fix is the loud buzzes' interval trigger. It was not
+            // taken here: an interval is measured from the moment of the add
+            // and the plan is re-added on every pass, so each reminder's
+            // trigger would differ from its last pass's; a calendar trigger
+            // with a zone is the same request every time the plan is unchanged,
+            // and it follows the wall clock if the student sets the time by
+            // hand. The price is the existing one: components stop at the
+            // minute, so it can land up to 59 seconds early.
+            comps.timeZone = calendar.timeZone
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             return UNNotificationRequest(identifier: Self.identifier(for: pair),
                                          content: content, trigger: trigger)

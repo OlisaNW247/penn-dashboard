@@ -217,10 +217,15 @@ struct DueDateEditTests {
         let dayBefore = try #require(requests.first { $0.identifier == "due:\(ahead.id):86400" })
         let trigger = try #require(dayBefore.trigger as? UNCalendarNotificationTrigger)
         let calendar = Calendar.current
-        #expect(trigger.dateComponents == calendar.dateComponents(
-            [.year, .month, .day, .hour, .minute], from: moved.addingTimeInterval(-86_400)))
-        #expect(trigger.dateComponents != calendar.dateComponents(
-            [.year, .month, .day, .hour, .minute], from: original.addingTimeInterval(-86_400)))
+        // Trigger components carry the zone they were read in
+        // (`ReminderTimeZoneTests`), so both expected values do too.
+        func components(_ date: Date) -> DateComponents {
+            var parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+            parts.timeZone = calendar.timeZone
+            return parts
+        }
+        #expect(trigger.dateComponents == components(moved.addingTimeInterval(-86_400)))
+        #expect(trigger.dateComponents != components(original.addingTimeInterval(-86_400)))
 
         // The widget snapshot.
         let widget = try #require(h.state.widgetNextDueItems().first { $0.title == "Quoted everywhere" })
