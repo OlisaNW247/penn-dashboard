@@ -59,6 +59,21 @@ extension BackendError: LocalizedError {
     }
 }
 
+/// Where `BackendSession` keeps its anonymous identity, as three closures so a
+/// test can hand it an in-memory store, or one that refuses to answer, without
+/// touching the Keychain. The live value is `BackendIdentityStore`.
+struct BackendIdentityPersistence: Sendable {
+    var read: @Sendable () -> KeychainRead<BackendIdentity>
+    var save: @Sendable (BackendIdentity) -> Void
+    var clear: @Sendable () -> Void
+
+    static let keychain = BackendIdentityPersistence(
+        read: { BackendIdentityStore.read() },
+        save: { BackendIdentityStore.save($0) },
+        clear: { BackendIdentityStore.clear() }
+    )
+}
+
 /// Holds the access token that authenticates every call to LHF's own
 /// backend, and knows how to get a new one. See `backend/PROTOCOL.md`'s
 /// "Auth (Supabase GoTrue)" section — this type is the client-side half of
@@ -73,6 +88,7 @@ extension BackendError: LocalizedError {
 actor BackendSession {
     private let configuration: BackendConfiguration
     private let urlSession: URLSession
+    private let persistence: BackendIdentityPersistence
 
     /// `nil` until the first successful sign-up or refresh. There is
     /// deliberately no persisted access token — only the refresh token in
@@ -83,9 +99,14 @@ actor BackendSession {
     private var cachedToken: String?
     private var cachedTokenExpiresAt: Date?
 
-    init(configuration: BackendConfiguration, urlSession: URLSession = .shared) {
+    init(
+        configuration: BackendConfiguration,
+        urlSession: URLSession = .shared,
+        persistence: BackendIdentityPersistence = .keychain
+    ) {
         self.configuration = configuration
         self.urlSession = urlSession
+        self.persistence = persistence
     }
 
     /// A usable access token: the cached one if it still has more than a
@@ -107,12 +128,28 @@ actor BackendSession {
             return token
         }
 
-        guard let identity = BackendIdentityStore.load() else {
+        // Three answers, because "no identity" means "create a new anonymous
+        // account" and "the Keychain would not say" must never mean that. A
+        // locked or refusing Keychain (before first unlock, a background wake
+        // right after a reboot) used to read as nil here, so the very next ask
+        // or sync signed up a second account while the first one's refresh
+        // token was sitting unread in the Keychain, orphaning its quota and
+        // its rows. On `unavailable` this call fails as the backend being
+        // unreachable (`ask` then answers on-device and a sync waits for the
+        // next loop) and the next call reads again, so a Keychain that comes
+        // back is used. Nothing is cached about it.
+        let saved: BackendIdentity
+        switch persistence.read() {
+        case let .found(found):
+            saved = found
+        case .notFound:
             return try await signUpAnonymously()
+        case .unavailable:
+            throw BackendError.transport
         }
 
         do {
-            return try await refresh(with: identity)
+            return try await refresh(with: saved)
         } catch BackendError.http(400), BackendError.http(401) {
             // The refresh token itself is no longer good — expired,
             // revoked, or the row was deleted server-side. There is no
@@ -120,7 +157,7 @@ actor BackendSession {
             // and a brand new anonymous identity takes its place, exactly
             // as `backend/PROTOCOL.md`'s anonymous-sign-in model intends
             // (there is no student-facing "log back in" to offer instead).
-            BackendIdentityStore.clear()
+            persistence.clear()
             return try await signUpAnonymously()
         }
     }
@@ -132,7 +169,7 @@ actor BackendSession {
     func forgetIdentity() {
         cachedToken = nil
         cachedTokenExpiresAt = nil
-        BackendIdentityStore.clear()
+        persistence.clear()
     }
 
     // MARK: - GoTrue calls
@@ -190,7 +227,7 @@ actor BackendSession {
             throw BackendError.decoding
         }
 
-        BackendIdentityStore.save(BackendIdentity(userID: decoded.user.id, refreshToken: decoded.refreshToken))
+        persistence.save(BackendIdentity(userID: decoded.user.id, refreshToken: decoded.refreshToken))
         cachedToken = decoded.accessToken
         cachedTokenExpiresAt = Date().addingTimeInterval(decoded.expiresIn)
         return decoded.accessToken

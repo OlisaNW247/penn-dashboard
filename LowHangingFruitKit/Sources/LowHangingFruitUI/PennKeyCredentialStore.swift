@@ -23,6 +23,12 @@ enum PennKeyCredentialStore {
     }
 
     /// Update atomically, retaining the previous item if Keychain refuses the write.
+    ///
+    /// The model for every Keychain store in the app, now shared as
+    /// `KeychainItem.write` (update first, add only on `errSecItemNotFound`,
+    /// every status counted). The signature and the outcomes are unchanged,
+    /// including the injectable `update` and `add` that
+    /// `PennKeyCredentialWriteTests` drive.
     @discardableResult
     static func save(
         username: String,
@@ -31,37 +37,28 @@ enum PennKeyCredentialStore {
         add: (CFDictionary) -> OSStatus = { SecItemAdd($0, nil) }
     ) -> Bool {
         guard let data = try? JSONEncoder().encode(Payload(username: username, password: password)) else { return false }
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
-        let status = update(baseQuery() as CFDictionary, attributes as CFDictionary)
-        if status == errSecSuccess { return true }
-        guard status == errSecItemNotFound else { return false }
-        var query = baseQuery()
-        attributes.forEach { query[$0.key] = $0.value }
-        return add(query as CFDictionary) == errSecSuccess
+        return KeychainItem.write(data, base: baseQuery(), update: update, add: add) == errSecSuccess
+    }
+
+    /// The persisted PennKey username/password in three answers (see
+    /// `KeychainRead`). `load()` below is the old "a pair or nil" view.
+    static func read() -> KeychainRead<(username: String, password: String)> {
+        KeychainItem.read(baseQuery()).decoded { data in
+            guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else { return nil }
+            return (payload.username, payload.password)
+        }
     }
 
     /// The persisted PennKey username/password, if any.
     static func load() -> (username: String, password: String)? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else { return nil }
-        return (payload.username, payload.password)
+        read().value
     }
 
     /// Removes the persisted credentials outright — called when the "stay
     /// signed in" toggle goes off (`AppState.disableStayLoggedIn()`) and,
     /// transitively, on Canvas disconnect.
     static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
     }
 
     /// Whether a credential pair is currently on file, without exposing

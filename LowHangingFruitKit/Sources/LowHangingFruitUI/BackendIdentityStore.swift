@@ -40,31 +40,36 @@ enum BackendIdentityStore {
         ]
     }
 
-    static func save(_ identity: BackendIdentity) {
-        guard let data = try? JSONEncoder().encode(identity) else { return }
-        // Keychain has no upsert — delete any existing item, then add, the
-        // same two-step every store in this Kit uses.
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+    /// Stores `identity`, replacing any earlier one: update in place, add only
+    /// when nothing is there (`KeychainItem.write`). It used to be
+    /// delete-then-add with neither status checked, and the window between the
+    /// two is the dangerous part here: this is the only copy of the refresh
+    /// token, a refresh rotates it, and an add that failed after the delete
+    /// left the device with no identity at all, so the next launch minted a
+    /// new anonymous account and orphaned the old one's quota and rows. False
+    /// when the Keychain refused, in which case the previous identity is still
+    /// in place.
+    @discardableResult
+    static func save(_ identity: BackendIdentity) -> Bool {
+        guard let data = try? JSONEncoder().encode(identity) else { return false }
+        return KeychainItem.write(data, base: baseQuery()) == errSecSuccess
+    }
+
+    /// The persisted identity in three answers (see `KeychainRead`).
+    ///
+    /// `BackendSession` must read this form, not `load()`: "no identity" means
+    /// sign up for a new anonymous account, and "the Keychain would not say"
+    /// must never mean that. A locked or refusing Keychain answers
+    /// `unavailable`, and the backend is skipped for that call instead.
+    static func read() -> KeychainRead<BackendIdentity> {
+        KeychainItem.read(baseQuery()).decoded { try? JSONDecoder().decode(BackendIdentity.self, from: $0) }
     }
 
     static func load() -> BackendIdentity? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let identity = try? JSONDecoder().decode(BackendIdentity.self, from: data)
-        else { return nil }
-        return identity
+        read().value
     }
 
     static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
     }
 }

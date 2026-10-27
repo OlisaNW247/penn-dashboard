@@ -370,4 +370,115 @@ struct SessionCookieStoreTests {
         #expect(state.canvasSessionExpired)
         #expect(state.canUseGradeWatcher)
     }
+
+    // MARK: - A refused Keychain read is not "signed out" (hardening plan A5)
+    //
+    // The Keychain can decline to answer (locked before first unlock, a
+    // refused access list). The old code read that as `[]`, and `[]` is what
+    // "nothing saved" and "everything aged out" both look like, so a refusal
+    // raised the banner, started a renewal, or wrote back over the saved set.
+    // The decisions are driven through their injectable halves, because a
+    // test cannot make the real Keychain refuse.
+
+    private typealias Entries = [[String: String]]
+    private let refused = KeychainRead<Entries>.unavailable(errSecInteractionNotAllowed)
+
+    private func entry(_ name: String) -> [String: String] {
+        ["name": name, "value": "v", "domain": "canvas.upenn.edu", "path": "/"]
+    }
+
+    @Test("hasSavedCookies reads an unavailable Keychain as saved, a missing item as not saved")
+    func hasSavedThreeWays() {
+        #expect(SessionCookieStore.hasSavedCookies(from: refused))
+        #expect(!SessionCookieStore.hasSavedCookies(from: .notFound))
+        #expect(!SessionCookieStore.hasSavedCookies(from: .found([])))
+        #expect(SessionCookieStore.hasSavedCookies(from: .found([entry("a")])))
+    }
+
+    @Test("isExpired reads an unavailable Keychain as not expired, and never asks for the fresh set")
+    func isExpiredUnavailable() {
+        var freshAsked = false
+        let expired = SessionCookieStore.isExpired(
+            service: .canvas,
+            read: { _ in self.refused },
+            fresh: { _ in freshAsked = true; return [] }
+        )
+        #expect(!expired)
+        #expect(!freshAsked)
+    }
+
+    @Test("isExpired is false for a missing item and for an empty saved set")
+    func isExpiredNothingSaved() {
+        for read in [KeychainRead<Entries>.notFound, .found([])] {
+            #expect(!SessionCookieStore.isExpired(service: .canvas, read: { _ in read }, fresh: { _ in [] }))
+        }
+    }
+
+    @Test("isExpired is true only when entries are saved, nothing is fresh, and the set is still there on a re-read")
+    func isExpiredConfirmed() {
+        #expect(SessionCookieStore.isExpired(
+            service: .canvas, read: { _ in .found([self.entry("a")]) }, fresh: { _ in [] }))
+        #expect(!SessionCookieStore.isExpired(
+            service: .canvas,
+            read: { _ in .found([self.entry("a")]) },
+            fresh: { _ in [self.cookie(name: "sid", domain: "canvas.upenn.edu")] }))
+    }
+
+    @Test("a read refused only on the confirming re-read does not pass for everything-aged-out")
+    func isExpiredRefusedOnSecondRead() {
+        var reads = 0
+        let expired = SessionCookieStore.isExpired(
+            service: .canvas,
+            read: { _ in
+                reads += 1
+                return reads == 1 ? .found([self.entry("a")]) : self.refused
+            },
+            fresh: { _ in [] }   // load() came back empty because its own read was refused
+        )
+        #expect(!expired)
+        #expect(reads == 2)
+    }
+
+    @Test("save never writes back over a set it could not read, and starts fresh from a missing one")
+    func saveWriteBackGuard() {
+        let incoming = [cookie(name: "new", domain: "canvas.upenn.edu")]
+        #expect(SessionCookieStore.storedSet(afterSaving: incoming, into: refused) == nil)
+
+        let fromNothing = SessionCookieStore.storedSet(afterSaving: incoming, into: .notFound)
+        #expect(fromNothing?.map { $0["name"] } == ["new"])
+    }
+
+    @Test("save merges into a found set: the incoming cookie replaces its twin and the rest is kept")
+    func saveMergesIntoFound() {
+        let existing: Entries = [entry("keep"), entry("replace")]
+        let incoming = [cookie(name: "replace", domain: "canvas.upenn.edu")]
+        let merged = SessionCookieStore.storedSet(afterSaving: incoming, into: .found(existing))
+        #expect(Set(merged?.compactMap { $0["name"] } ?? []) == ["keep", "replace"])
+        #expect(merged?.count == 2)
+        // The replaced entry now carries a capture stamp from this save.
+        #expect(merged?.first { $0["name"] == "replace" }?["capturedAt"] != nil)
+    }
+
+    @Test("a second save updates the item in place: both saves' cookies are there, one item")
+    func realKeychainTwoSavesKeepBoth() {
+        withCleanStore {
+            SessionCookieStore.save([cookie(name: "one", domain: "canvas.upenn.edu")], service: .canvas)
+            SessionCookieStore.save([cookie(name: "two", domain: "canvas.upenn.edu")], service: .canvas)
+            let names = Set(SessionCookieStore.load(service: .canvas).map(\.name))
+            #expect(names == ["one", "two"])
+            #expect(SessionCookieStore.hasSavedCookies(service: .canvas))
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("the real Keychain says not saved after a clear, and saved after a save")
+    func realKeychainSavedState() {
+        withCleanStore {
+            #expect(!SessionCookieStore.hasSavedCookies(service: .gradescope))
+            SessionCookieStore.save([cookie(name: "g", domain: "www.gradescope.com")], service: .gradescope)
+            #expect(SessionCookieStore.hasSavedCookies(service: .gradescope))
+            SessionCookieStore.remove(service: .gradescope)
+            #expect(!SessionCookieStore.hasSavedCookies(service: .gradescope))
+        }
+    }
 }

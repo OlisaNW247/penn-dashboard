@@ -48,15 +48,39 @@ enum SessionCookieStore {
 
     /// Merge the given cookies into `service`'s persisted set (replacing any
     /// with the same name+domain+path).
+    ///
+    /// A read-modify-write, and the read decides whether the write happens.
+    /// When the Keychain will not answer (`unavailable`: a device locked
+    /// before first unlock, a refused access list) nothing is written:
+    /// treating that as "nothing saved yet" would replace the whole stored
+    /// set, session cookie included, with just the cookies in hand. The fresh
+    /// cookies are lost for this call, which costs one more renewal; the saved
+    /// set is not.
     static func save(_ cookies: [HTTPCookie], service: Service) {
         guard !cookies.isEmpty else { return }
-        var stored = loadDicts(service: service)
+        guard let stored = storedSet(afterSaving: cookies, into: readDicts(service: service)) else { return }
+        write(stored, service: service)
+    }
+
+    /// Pure half of `save`: the set to persist after adding `cookies` to what
+    /// the read found, or `nil` when the read was `unavailable` and nothing
+    /// may be written. `notFound` starts from an empty set.
+    static func storedSet(
+        afterSaving cookies: [HTTPCookie],
+        into read: KeychainRead<[[String: String]]>
+    ) -> [[String: String]]? {
+        var stored: [[String: String]]
+        switch read {
+        case let .found(dicts): stored = dicts
+        case .notFound: stored = []
+        case .unavailable: return nil
+        }
         for cookie in cookies {
             let d = dict(from: cookie)
             stored.removeAll { $0["name"] == d["name"] && $0["domain"] == d["domain"] && $0["path"] == d["path"] }
             stored.append(d)
         }
-        write(stored, service: service)
+        return stored
     }
 
     /// Merges freshly re-issued cookies into the persisted set for `service`:
@@ -243,8 +267,37 @@ enum SessionCookieStore {
     /// polluted set, which switched off the 24-hour renew-on-open trigger.
     /// No code here had to change; the wrong fix was filtering the harvests
     /// alone, which leaves sets already on students' phones broken.
+    ///
+    /// **Unavailable is "not expired".** This reads the Keychain twice (the
+    /// saved entries, then `load(service:)`), and a read the Keychain refuses
+    /// used to come back as `[]` from either. A refusal on the second read
+    /// alone looked exactly like "something saved and nothing fresh left", so
+    /// it raised the banner and started a renewal over a perfectly good saved
+    /// session. A refused read is no evidence that anything aged out: it
+    /// answers false, and an empty `load` is only believed after a third read
+    /// confirms the set is still there.
     static func isExpired(service: Service) -> Bool {
-        !loadDicts(service: service).isEmpty && load(service: service).isEmpty
+        isExpired(
+            service: service,
+            read: { readDicts(service: $0) },
+            fresh: { load(service: $0) }
+        )
+    }
+
+    /// The decision behind `isExpired(service:)`, with both Keychain reads
+    /// injected so a test can refuse one.
+    static func isExpired(
+        service: Service,
+        read: (Service) -> KeychainRead<[[String: String]]>,
+        fresh: (Service) -> [HTTPCookie]
+    ) -> Bool {
+        guard case let .found(entries) = read(service), !entries.isEmpty else { return false }
+        guard fresh(service).isEmpty else { return false }
+        // `fresh` read the Keychain itself. An empty answer from a read that
+        // was refused only that second time looks identical to "every cookie
+        // aged out", so ask once more before believing it.
+        guard case .found = read(service) else { return false }
+        return true
     }
 
     /// True when `service` has ANY persisted cookie entry, live or stale.
@@ -253,8 +306,24 @@ enum SessionCookieStore {
     /// "saved but aged out", which `isExpired` already reports, from "nothing
     /// saved at all", which is the state a rejected Grade Watcher fetch leaves
     /// behind (`GradeWatcherView.performRefresh` removes the item).
+    ///
+    /// **Unavailable is "saved".** A Keychain that will not answer has not
+    /// said the cookies are gone, and "nothing saved" is what raises the
+    /// "your login is gone" banner (`AppState.canvasLoginIsMissing`). Failing
+    /// toward "saved" costs a banner that appears one launch later if the
+    /// cookies really are missing; failing toward "nothing saved" signs a
+    /// student out of a session that is sitting in the Keychain.
     static func hasSavedCookies(service: Service) -> Bool {
-        !loadDicts(service: service).isEmpty
+        hasSavedCookies(from: readDicts(service: service))
+    }
+
+    /// The decision behind `hasSavedCookies(service:)`, on an injected read.
+    static func hasSavedCookies(from read: KeychainRead<[[String: String]]>) -> Bool {
+        switch read {
+        case let .found(entries): return !entries.isEmpty
+        case .notFound: return false
+        case .unavailable: return true
+        }
     }
 
     /// How long a true session cookie (no server-supplied expiry) is trusted
@@ -312,14 +381,14 @@ enum SessionCookieStore {
 
     /// Removes every service's persisted cookies.
     static func clear() {
-        for s in Service.allCases { SecItemDelete(baseQuery(service: s) as CFDictionary) }
+        for s in Service.allCases { KeychainItem.delete(baseQuery(service: s)) }
     }
 
     /// Removes only `service`'s persisted cookies, leaving every other
     /// service's session untouched — including one that happens to share a
     /// domain (e.g. both flowing through `upenn.edu` Penn SSO).
     static func remove(service: Service) {
-        SecItemDelete(baseQuery(service: service) as CFDictionary)
+        KeychainItem.delete(baseQuery(service: service))
     }
 
     #if DEBUG
@@ -369,29 +438,31 @@ enum SessionCookieStore {
         ]
     }
 
-    private static func loadDicts(service: Service) -> [[String: String]] {
-        var query = baseQuery(service: service)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let dicts = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
-        else { return [] }
-        return dicts
+    /// The persisted entries in three answers (see `KeychainRead`). A blob
+    /// that is present but is not the JSON we wrote reads as `notFound`: it is
+    /// corrupt, no later read will fix it, and the next `save` replaces it.
+    private static func readDicts(service: Service) -> KeychainRead<[[String: String]]> {
+        KeychainItem.read(baseQuery(service: service)).decoded {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: String]]
+        }
     }
 
-    private static func write(_ dicts: [[String: String]], service: Service) {
-        guard let data = try? JSONSerialization.data(withJSONObject: dicts) else { return }
-        // Keychain has no upsert — delete any existing item, then add.
-        SecItemDelete(baseQuery(service: service) as CFDictionary)
-        var query = baseQuery(service: service)
-        query[kSecValueData as String] = data
-        // Readable after first unlock so the launch-time auto-sync can replay the
-        // session; never migrated off this device.
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+    /// The entries, or `[]` for anything but a successful read. Kept for the
+    /// callers that only want the entries (`load(service:)` among them). The
+    /// two decisions that must tell "empty" from "refused" (`isExpired`,
+    /// `hasSavedCookies`) and the read-modify-write (`save`) use `readDicts`.
+    private static func loadDicts(service: Service) -> [[String: String]] {
+        readDicts(service: service).value ?? []
+    }
+
+    /// Persists `dicts`, replacing the item in place (`KeychainItem.write`:
+    /// update first, add only when nothing is there, every status counted).
+    /// The old "Keychain has no upsert, so delete then add" left a window with
+    /// no session saved at all, and discarded the add's status.
+    @discardableResult
+    private static func write(_ dicts: [[String: String]], service: Service) -> Bool {
+        guard let data = try? JSONSerialization.data(withJSONObject: dicts) else { return false }
+        return KeychainItem.write(data, base: baseQuery(service: service)) == errSecSuccess
     }
 
     // MARK: - Serialization

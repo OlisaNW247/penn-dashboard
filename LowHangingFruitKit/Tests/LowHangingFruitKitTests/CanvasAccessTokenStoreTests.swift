@@ -69,6 +69,27 @@ struct CanvasAccessTokenStoreTests {
         }
     }
 
+    @Test("read() answers found after a save and not found after a clear, never unavailable on a healthy Keychain")
+    func readThreeWays() {
+        withCleanStore {
+            #expect(CanvasAccessTokenStore.read() == .notFound)
+            let original = token()
+            CanvasAccessTokenStore.save(original)
+            #expect(CanvasAccessTokenStore.read() == .found(original))
+            CanvasAccessTokenStore.clear()
+            #expect(CanvasAccessTokenStore.read() == .notFound)
+        }
+    }
+
+    @Test("save() reports that the Keychain took the write")
+    func saveReportsSuccess() {
+        withCleanStore {
+            #expect(CanvasAccessTokenStore.save(token()))
+            #expect(CanvasAccessTokenStore.save(token(secret: "second", id: "2")), "the update-in-place path reports success too")
+            #expect(CanvasAccessTokenStore.load()?.token == "second")
+        }
+    }
+
     @Test("load() is nil when nothing was ever saved")
     func loadNilWhenEmpty() {
         withCleanStore {
