@@ -2667,6 +2667,16 @@ none is a ship line.
   Settings", the disclosure line) is capitalised and says "Settings" where
   the app says Profile; the copy rule is Marco's own, so it is his to
   settle, not rewritten here.
+- **Website crawls can be retired by a phone that has not downloaded
+  them yet** (seen 2026-10-26, ECON 0100: five `website` rows fetched at
+  14:33 UTC and marked gone at 14:54 by a classmate's phone sync).
+  Server-crawled rows carry the default `collector = 'phone'`, so a
+  phone's complete-set report that does not list them retires them; the
+  next discovery recreates them, so nothing is lost for long, but ask
+  loses them in between. Pre-existing, not the extension's (it has never
+  uploaded to that course). The likely fix is a `'server'` collector for
+  crawls that no client report retires; not done, because it is a
+  migration and a `sync` deploy.
 - **The extension downloads Canvas Files for at least one course**
   (2026-10-24: 53 PDF `file` documents in the pool, all from one course
   whose Files tab is visible; whether a course with a hidden Files tab,

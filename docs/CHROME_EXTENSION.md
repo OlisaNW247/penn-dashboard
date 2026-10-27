@@ -508,3 +508,14 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   once-per-run `/users/self` check (482 node tests); the collector's
   hourly throttle (`collectRunAtV1`) has to be cleared once for the fixed
   build to run before the hour is up.
+- 2026-10-24 to 2026-10-27: **the collector works on real Canvas.** After
+  the fix, Olisa's laptop uploaded 685 documents as `collector =
+  'extension'`: 396 pages (CIS 4500 alone 384; the phone stops at 40),
+  145 assignments, 70 modules, 18 announcements, 3 syllabi and 53 PDFs
+  (322 to 5,278 characters of text each, none near empty; all from
+  "Physics Exam Archive", the one site with visible Files). No extra host
+  permission was needed for the download redirect. The extension retired
+  nothing: the 16 rows marked gone in those days are all in courses it
+  never uploaded to (one is the website-crawl gap in CLAUDE.md).
+  Encrypted sync was still exchanging on 2026-10-27 (phone 01:45, laptop
+  12:05 UTC).
