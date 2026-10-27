@@ -1104,7 +1104,8 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
+**Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
+Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
@@ -2985,10 +2986,9 @@ none is a ship line.
   `Current date:` is a UTC instant, so an 11:59 pm Eastern deadline is the
   next calendar day to the model and from 8 pm Eastern "today" is already
   tomorrow. UTC was chosen for the byte-stable prefix, which a fixed
-  per-student zone keeps just as well. **Fixed blind on 2026-10-25**
+  per-student zone keeps just as well. **Fixed on 2026-10-25**
   (zone-aware due times in the document, the local-date line at the top
-  of the excerpts block; 13 tests predicted, none compiled): the Mac
-  compile and an evening "what's due tomorrow" on the phone are the
+  of the excerpts block; compiled green on 2026-10-27, 2933/264):  an evening "what's due tomorrow" on the phone are the
   checks. Before the fix the on-device answerer, which uses the device
   calendar, was the only path that got the day right.
 - **The phone's `discover-websites` call fails whenever more than three
@@ -2999,9 +2999,9 @@ none is a ship line.
   crawl. On 2026-10-24 `course_websites` held 213 candidates, 3 verified
   and no row ever crawled; CIS 2400 and CIS 2620 have nothing in the pool
   but Ed posts because their syllabi live on external sites. The extension
-  chunks by three and is the only caller that ever has. **Fixed blind on
+  chunks by three and is the only caller that ever has. **Fixed on
   2026-10-25** (`WebsiteDiscoveryBatches`, one call per three distinct
-  ids, 3 tests): after the build is on a phone and one sync has run,
+  ids, 3 tests; compiled green 2026-10-27, 2933/264, not yet on a phone): after the build is on a phone and one sync has run,
   `course_websites` should show `verified` rows and a `last_crawled_at`
   for the CIS courses; if candidates stay candidates, the next suspects
   are the verification rule (code and term in the first 3,000 characters)
