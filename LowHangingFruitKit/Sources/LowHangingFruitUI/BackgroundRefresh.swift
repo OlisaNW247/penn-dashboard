@@ -146,35 +146,45 @@ public enum LHFBackgroundRefresh {
     /// `announceTurnedIn` drain plus the same sync calls `RootView`'s
     /// `AppState`/`AutoSyncCoordinator` make on launch/activation.
     ///
-    /// Builds a FRESH `AppState` and `NotificationScheduler` rather than
-    /// reaching for the live UI's instances, for three reasons:
-    /// 1. A background launch has no live view hierarchy — `RootView`
-    ///    (which owns both as `@StateObject`) may not even exist yet, so
-    ///    there is no "the" scheduler to reuse the way the foreground
-    ///    convention (a view-owned `NotificationScheduler`) assumes.
+    /// **The `AppState` is the live one when the process has one.** A wake in
+    /// a process that is already running (iOS wakes a suspended app, it does
+    /// not always launch a fresh one) used to build a second `AppState` and so
+    /// a second SwiftData container on the same ledger file, with both able to
+    /// write (hardening plan B13, DAT-04, UCR-6, SYN-11). Now
+    /// `LiveAppStateRegistry.beginWake` hands back the scene's own `AppState`,
+    /// whose store is the only one open, and builds a second only when the
+    /// process has none, a cold launch by the system for the wake alone, where
+    /// no other writer exists. Sharing is safe for the same reason it is
+    /// everywhere else: everything on `AppState` is main-actor isolated, so the
+    /// wake and the UI's own passes are serialized, never torn. The wake marks
+    /// the state `.background` for its length and `wake.end()` puts the
+    /// context back, which a shared state needs: left at `.background` it
+    /// would refuse every foreground renewal and device sync afterwards.
+    ///
+    /// The `NotificationScheduler` is still a fresh one, for two reasons:
+    /// 1. A background launch has no live view hierarchy, so there may be no
+    ///    scheduler to reuse; `RootView`'s is a `@StateObject` that may not
+    ///    exist yet.
     /// 2. `NotificationScheduler` carries no cross-instance state worth
     ///    sharing: its stored properties are UserDefaults-backed
     ///    preferences (re-read on every `init`) plus a live
     ///    authorization-status check (`refreshAuthStatus()`, run per-post)
     ///    — a fresh instance observes exactly what a long-lived one would.
-    /// 3. `AppState` hydrates its in-memory pools from the on-disk ledger
-    ///    and defaults in `init()`, so a fresh instance here starts from
-    ///    the same durable truth the UI's instance did. If the UI's
-    ///    `AppState` happens to be alive concurrently (app suspended
-    ///    mid-refresh), both are `@MainActor`-isolated and thus serialized
-    ///    with respect to each other — never torn — and by existing design
-    ///    the UI re-syncs its own instance from the ledger on next
-    ///    foreground activation anyway, so it picks up whatever this
-    ///    background pass wrote.
+    ///
+    /// A cold wake's own `AppState` hydrates its in-memory pools from the
+    /// on-disk ledger and defaults in `init()`, so it starts from the same
+    /// durable truth the UI's would.
     @MainActor
     private static func run() async {
-        let state = AppState()
-        // First statement after `init` and before any suspension point, so
-        // the context is in place before anything else on the main actor
-        // (including any renewal `Task` `init` itself queued) can run: every
-        // renewal this wake makes is `.background` (no latching dead, no
-        // credential offer once Duo has asked, 20 s budget).
-        state.renewalContext = .background
+        // First statements, before any suspension point, so the context is in
+        // place before anything else on the main actor (including any renewal
+        // `Task` `AppState.init` itself queued) can run: every renewal this
+        // wake makes is `.background` (no latching dead, no credential offer
+        // once Duo has asked, 20 s budget). `beginWake` sets it before it
+        // returns.
+        let wake = LiveAppStateRegistry.shared.beginWake()
+        defer { wake.end() }
+        let state = wake.state
         let scheduler = NotificationScheduler()
 
         // Fixture/demo/preview data must never trigger real network activity

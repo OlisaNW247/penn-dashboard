@@ -170,7 +170,7 @@ public struct RootView: View {
 /// Owns the `AppState`/`NotificationScheduler` for a standalone `RootView()`.
 /// Split out so `RootView` itself can stay a trivial, stable wrapper type.
 private struct OwnedRootView: View {
-    @StateObject private var state = AppState()
+    @StateObject private var state = LiveAppStateRegistry.shared.makeLive()
     @StateObject private var scheduler = NotificationScheduler()
 
     var body: some View {
