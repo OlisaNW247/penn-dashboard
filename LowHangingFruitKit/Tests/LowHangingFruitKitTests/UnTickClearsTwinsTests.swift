@@ -65,7 +65,7 @@ struct UnTickClearsTwinsTests {
         for _ in 0..<3 { state.rebuildDashboardItemsForTesting(now: Self.now) }
         #expect(!state.isCompleted(canvasRow))
         #expect(!state.completedAssignmentIDs.contains(moduleRow.id))
-        #expect(store.completionRecord().ids.isEmpty)
+        #expect(store.completionRecord()?.ids.isEmpty == true)
     }
 
     @Test("ticking the card itself and un-ticking it round-trips, with the twin untouched")
@@ -76,7 +76,7 @@ struct UnTickClearsTwinsTests {
         state.markActive(canvasRow)
         state.rebuildDashboardItemsForTesting(now: Self.now)
         #expect(!state.isCompleted(canvasRow))
-        #expect(store.completionRecord().ids.isEmpty)
+        #expect(store.completionRecord()?.ids.isEmpty == true)
     }
 
     @Test("a carry fires once per tick: an un-tick that left the twin ticked is not undone by later rebuilds")
@@ -89,7 +89,7 @@ struct UnTickClearsTwinsTests {
         // one id), straight into the ledger.
         store.setCompleted(ids: [], at: nil, clearing: [canvasRow.id])
         state.reloadCompletionFromLedger()
-        #expect(store.completionRecord().ids.contains(moduleRow.id))
+        #expect(store.completionRecord()?.ids.contains(moduleRow.id) == true)
         for _ in 0..<3 { state.rebuildDashboardItemsForTesting(now: Self.now) }
         #expect(!state.completedAssignmentIDs.contains(canvasRow.id), "the same tick is not carried a second time")
     }

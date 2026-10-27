@@ -47,7 +47,7 @@ struct DisconnectKeepsStudentWorkTests {
         #expect(Set(rows.keys) == ["canvas:1"])
         #expect(rows["canvas:1"]?.userCompleted == true)
         #expect(rows["canvas:1"]?.isGoneFromFeed == true)
-        #expect(store.completionRecord().ids.contains("canvas:1"))
+        #expect(store.completionRecord()?.ids.contains("canvas:1") == true)
         #expect(store.goneFromFeedIDs(source: .canvas) == ["canvas:1"])
     }
 
