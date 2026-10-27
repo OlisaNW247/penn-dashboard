@@ -553,6 +553,20 @@ final class AppState: ObservableObject {
     let coursePreferences: CoursePreferencesStore
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
+    /// The saved verdict that Gradescope's server stopped recognising this
+    /// phone: a login-form response on two runs at least an hour apart, with
+    /// no accepted fetch between (`GradescopeReauthRule`). Independent of
+    /// `isGradescopeConnected`, which this never touches: the rows, the
+    /// cookies and the syncing all carry on, and the dashboard shows one
+    /// reconnect line (`needsGradescopeConnection`).
+    @Published private(set) var gradescopeNeedsReauth: Bool
+    /// The rule's full state, held in memory and written through, so each run
+    /// advances this instance's own copy instead of re-reading the shared
+    /// defaults (a read-modify-write there is exactly what another suite's
+    /// `AppState` could race in tests; see the `canvasSessionConfirmedDeadV1`
+    /// trap in CLAUDE.md). One `AppState` lives per process; a cold background
+    /// launch builds a new one that loads what this one saved.
+    private var gradescopeReauthState: GradescopeReauthRule.State
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var onboardingDestination: OnboardingDestination = .full
     /// True while a single-service reconnect (Canvas or Gradescope) is open as
@@ -971,6 +985,9 @@ final class AppState: ObservableObject {
             || !SessionCookieStore.load(service: .canvas).isEmpty
         self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
+        let loadedGradescopeReauth = GradescopeReauthStore.load()
+        self.gradescopeReauthState = loadedGradescopeReauth
+        self.gradescopeNeedsReauth = loadedGradescopeReauth.needsReauth
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
         self.hasSeenIntro = UserDefaults.lhf.bool(forKey: Self.introSeenKey)
         self.isPreviewMode = UserDefaults.lhf.bool(forKey: Self.previewModeKey)
@@ -1940,30 +1957,28 @@ final class AppState: ObservableObject {
         cookieSessionExpiredOverrideForTesting = value
     }
 
-    /// True when the dashboard is quietly missing a whole data source — the
-    /// "half your work" warning this pair of properties exists to drive. Both
-    /// gaps below are reachable even though onboarding requires Canvas before
-    /// it lets anyone reach the dashboard at all (so "nothing connected"
-    /// itself is not a state a live user can be in): Gradescope is never
-    /// required by onboarding, and Canvas has two connection paths that look
-    /// identical from `isCanvasConnected`'s point of view but are not
-    /// equivalent in what they unlock.
+    /// True when Gradescope was connected and its server has stopped
+    /// recognising this phone, so the dashboard should say so with one
+    /// reconnect line (`ContentView`). Gradescope's own "half your work"
+    /// state, "never connected", is deliberately NOT this: Gradescope is
+    /// optional (onboarding lets a student skip it), and a line that nagged
+    /// every student who skipped it would be a banner for a choice, not a
+    /// fault. Until 2026-10-27 this was `!isUsingFixtureData &&
+    /// !isGradescopeConnected` and nothing read it; giving it its first reader
+    /// with that meaning would have put "reconnect gradescope" on every
+    /// Canvas-only install.
     ///
-    /// Explicitly excludes `isUsingFixtureData`, unlike `canvasIsLinkOnly`
-    /// below, because nothing else in this expression supplies that guard:
-    /// `isGradescopeConnected` is backed by a plain persisted flag that
-    /// starts (and stays) `false` for a reviewer in preview mode, since
-    /// `enterPreviewMode()` never touches it. Preview mode is deliberately
-    /// the ONE path through this app for someone who cannot pass Penn SSO —
-    /// notably an App Store reviewer — and it renders entirely off bundled
-    /// fixtures that were never going to come from Gradescope either. Without
-    /// this guard, that reviewer would be shown a "connect your accounts" nag
-    /// on the one screen the app promises will just work; the fixture data
-    /// itself would look fine, so the bug would read as a small copy problem
-    /// rather than the "reviewer sees a broken-looking dashboard" risk it
-    /// actually is.
+    /// Needs `isGradescopeConnected` too: an explicit disconnect resets the
+    /// verdict (`setGradescopeConnected`), and the Profile row already says
+    /// "not connected" for a student who never connected.
+    ///
+    /// Explicitly excludes `isUsingFixtureData`: preview mode is the ONE path
+    /// through this app for someone who cannot pass Penn SSO, notably an App
+    /// Store reviewer, and it renders entirely off bundled fixtures. A
+    /// reviewer must never be shown a reconnect nag for a service the demo
+    /// never had.
     var needsGradescopeConnection: Bool {
-        !isUsingFixtureData && !isGradescopeConnected
+        !isUsingFixtureData && isGradescopeConnected && gradescopeNeedsReauth
     }
 
     /// True when Canvas is connected only by a pasted calendar feed link
@@ -4374,9 +4389,20 @@ final class AppState: ObservableObject {
     /// that an unreadable ledger leaves the pool alone. It posts no notice,
     /// as before; a Gradescope sync that did not land is not announced either.
     func reconcileGradescopeFetch(_ fetched: [Assignment], into store: AssignmentStore) {
-        let result = store.reconcile(fetched, source: .gradescope)
+        // `holdingEmptiedCourses` is the A4 rule: a course that had rows and
+        // now reads empty is held rather than emptied (see `AssignmentStore.
+        // reconcile`), and the B6 rule is that a ledger read failure is a
+        // failure, not an empty fetch. Both have to hold here, which is why
+        // the two groups' edits met in this one function.
+        let result = store.reconcile(fetched, source: .gradescope, holdingEmptiedCourses: true)
         guard !result.readFailed else { return }
         gradescopeItems = result.items
+        // A fetch the ledger refused as partial (nothing came back for the
+        // whole source, or for one course that had work) kept the saved rows.
+        // Say so with the existing refresh-failure line.
+        if result.wasSuspectedPartial {
+            syncNotice = "Gradescope couldn\u{2019}t refresh right now."
+        }
         reloadCompletionFromLedger()
     }
 
@@ -4506,9 +4532,10 @@ final class AppState: ObservableObject {
     }
 
     /// Scrapes the user's Gradescope assignments using the captured login cookies
-    /// and folds them into the dashboard. Only a response that proves the
-    /// session is rejected marks Gradescope disconnected; an offline/temporary
-    /// failure keeps the session and retries on the next normal refresh.
+    /// and folds them into the dashboard. Nothing here marks Gradescope
+    /// disconnected: a login-form response counts toward a saved reconnect
+    /// verdict (`GradescopeReauthRule`) and every other failure keeps the
+    /// session and retries on the next normal refresh.
     func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool) async {
         // Reentrancy guard: the 5-min loop and a scene-activation can both fire a
         // sync; without this they'd run two full scrapes concurrently. The check
@@ -4520,7 +4547,10 @@ final class AppState: ObservableObject {
 
         guard !cookies.isEmpty else {
             if reportErrors { error = "No Gradescope session was found yet. Finish logging in, then try again." }
-            setGradescopeConnected(false)
+            // Not `setGradescopeConnected(false)`: an empty cookie set proves
+            // nothing about the server's session (a read that came back empty,
+            // a pane read before its cookies landed), and a disconnect here
+            // stopped the coordinator for good. See `GradescopeReauthRule`.
             return
         }
 
@@ -4560,14 +4590,23 @@ final class AppState: ObservableObject {
             // `fetchAssignments`), and `merge` itself drops any with a past
             // expiry, so nothing the server deleted is resurrected. This
             // sits on the success path only: a failed or rejected fetch never
-            // refreshes the clock, so a dead session still ages out.
+            // re-stamps anything. Since 2026-10-27 the 24-hour clock this
+            // refreshed is gone for Gradescope (`SessionCookieStore.maxAge`
+            // is nil), so the merge now only keeps the saved set equal to
+            // the cookies the server last accepted.
             SessionCookieStore.merge(cookies, service: .gradescope)
             setGradescopeConnected(true)
+            recordGradescopeOutcome(.sessionAccepted)
             rebuildDashboardItems()
         } catch {
-            let needsLogin = (error as? GradescopeClient.Error)?.requiresReauthentication == true
-            if needsLogin { setGradescopeConnected(false) }
-            let message = needsLogin
+            // Never `setGradescopeConnected(false)` from here: one failed
+            // fetch, even a login form, is a single observation. Only a login
+            // form counts as evidence, and it takes a second one an hour
+            // later to raise the reconnect line (`GradescopeReauthRule`).
+            // A 401/403, a timeout or an unreadable page changes nothing.
+            let sawLoginForm = (error as? GradescopeClient.Error)?.sawLoginForm == true
+            let verdict = recordGradescopeOutcome(sawLoginForm ? .loginForm : .inconclusive)
+            let message = verdict.needsReauth
                 ? "Gradescope needs you to reconnect."
                 : "Gradescope couldn\u{2019}t refresh right now."
             if reportErrors {
@@ -4581,6 +4620,28 @@ final class AppState: ObservableObject {
     func setGradescopeConnected(_ connected: Bool) {
         isGradescopeConnected = connected
         UserDefaults.lhf.set(connected, forKey: Self.gradescopeConnectedKey)
+        // An explicit disconnect is a fresh start: a verdict about the old
+        // session must not follow the student into the next one.
+        if !connected {
+            gradescopeReauthState = .clear
+            GradescopeReauthStore.reset()
+            gradescopeNeedsReauth = false
+        }
+    }
+
+    /// Feeds one Gradescope run's result into the saved reconnect verdict
+    /// (`GradescopeReauthRule`) and publishes it. Never disconnects, hides rows
+    /// or touches cookies: the only effect of a verdict is the reconnect line.
+    @discardableResult
+    func recordGradescopeOutcome(
+        _ outcome: GradescopeReauthRule.Outcome,
+        now: Date = Date()
+    ) -> GradescopeReauthRule.State {
+        let next = GradescopeReauthRule.advance(gradescopeReauthState, after: outcome, now: now)
+        gradescopeReauthState = next
+        GradescopeReauthStore.save(next)
+        if gradescopeNeedsReauth != next.needsReauth { gradescopeNeedsReauth = next.needsReauth }
+        return next
     }
 
     /// Refreshes Grade Watcher for the SELECTED courses only (docs/grades.md

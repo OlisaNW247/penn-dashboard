@@ -76,7 +76,7 @@ struct EdWiringTests {
         #expect(SessionCookieStore.Service.ed.rawValue == "ed")
     }
 
-    @Test("an Ed cookie never goes stale on a clock; Canvas and Gradescope still do at 24 hours")
+    @Test("Ed and Gradescope cookies never go stale on a clock; Canvas still does at 24 hours")
     func staleness() {
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         let twentyFiveHoursAgo = now.addingTimeInterval(-25 * 3600)
@@ -89,7 +89,11 @@ struct EdWiringTests {
 
         #expect(SessionCookieStore.isStale(capturedAt: twentyFiveHoursAgo, now: now, service: .canvas))
         #expect(!SessionCookieStore.isStale(capturedAt: oneHourAgo, now: now, service: .canvas))
-        #expect(SessionCookieStore.isStale(capturedAt: twentyFiveHoursAgo, now: now, service: .gradescope))
+        // Gradescope lost the clock on 2026-10-27: nothing on the phone can renew
+        // its session, so its age here could only ever sign the student out.
+        #expect(SessionCookieStore.maxAge(for: .gradescope) == nil)
+        #expect(!SessionCookieStore.isStale(capturedAt: twentyFiveHoursAgo, now: now, service: .gradescope))
+        #expect(!SessionCookieStore.isStale(capturedAt: aMonthAgo, now: now, service: .gradescope))
         // The boundary is the old `< sessionCookieMaxAge` rule: exactly 24h is stale.
         #expect(SessionCookieStore.isStale(capturedAt: now.addingTimeInterval(-24 * 3600), now: now, service: .canvas))
     }

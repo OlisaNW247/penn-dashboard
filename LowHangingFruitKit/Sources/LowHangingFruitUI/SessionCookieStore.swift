@@ -265,17 +265,35 @@ enum SessionCookieStore {
     private static let sessionCookieMaxAge: TimeInterval = 24 * 60 * 60
 
     /// The no-expiry trust window for `service`, or `nil` for a service that
-    /// has none. Canvas and Gradescope keep exactly the rule they had
-    /// (`sessionCookieMaxAge`); Ed has no clock at all. The wrong version of
-    /// adding `.ed` is letting it inherit the 24 hours by falling through
-    /// `load(service:)` unchanged: the Ed session would silently die a day
-    /// after every launch, and unlike Canvas nothing renews it on the next
-    /// open except a fresh LTI launch the coordinator only makes when the
-    /// store comes back empty or Ed answers 401.
+    /// has none. Only Canvas keeps the 24 hours (`sessionCookieMaxAge`); Ed
+    /// and, since 2026-10-27, Gradescope have no clock at all.
+    ///
+    /// **Why Canvas keeps it.** The 24-hour rule is Canvas's renewal
+    /// *trigger*: it is what flips `canvasSessionExpired` and starts the
+    /// silent re-login, which the app can actually perform (the saved PennKey,
+    /// Duo's trust cookie).
+    ///
+    /// **Why Gradescope lost it.** Nothing on the phone can renew a Gradescope
+    /// session, so for Gradescope the clock was only ever a way to sign the
+    /// student out: a day after the last save `load` read the set as empty and
+    /// `AutoSyncCoordinator` took that for "disconnected" (SYN-01, SES-008 in
+    /// `docs/HARDENING_PLAN_2026-10-25.md`). Gradescope's server decides when
+    /// its session is dead, and the proof is a response that is a login form
+    /// (`GradescopeHTMLParser.isLoginPage`, judged by `GradescopeReauthRule`),
+    /// not a cookie's age on this phone. The wrong fix is raising 24 hours to
+    /// seven days: that is the same clock, later, and it still can only sign a
+    /// student out.
+    ///
+    /// The same shape as Ed's, and for the same reason; the wrong version of
+    /// adding `.ed` was letting it inherit the 24 hours by falling through
+    /// `load(service:)` unchanged: the session would silently die a day after
+    /// every launch, and unlike Canvas nothing renews it on the next open
+    /// except a fresh LTI launch the coordinator only makes when the store
+    /// comes back empty or Ed answers 401.
     static func maxAge(for service: Service) -> TimeInterval? {
         switch service {
-        case .canvas, .gradescope: return sessionCookieMaxAge
-        case .ed: return nil
+        case .canvas: return sessionCookieMaxAge
+        case .gradescope, .ed: return nil
         }
     }
 

@@ -120,6 +120,17 @@ struct ContentView: View {
                             .padding(.top, 10)
                     }
 
+                    // Gradescope's own line, for a student whose connection the
+                    // server stopped recognising on two runs an hour apart
+                    // (`GradescopeReauthRule`). One line, no second-guessing
+                    // state: nothing renews a Gradescope session from the
+                    // phone, so there is no silent attempt to hide it behind.
+                    if state.needsGradescopeConnection {
+                        gradescopeReconnectBanner
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                    }
+
                     HStack(alignment: .center, spacing: 8) {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
@@ -642,6 +653,32 @@ struct ContentView: View {
         if rejected { return "update it in profile." }
         if awaitingDuo { return "tap yes, this is my device" }
         return nil
+    }
+
+    /// The Gradescope counterpart of `canvasSessionExpiredBanner`, without its
+    /// rejected-password and Duo branches (neither exists for Gradescope).
+    /// Opens the same single-service reconnect, which presents as a cover over
+    /// this dashboard (`AppState.restartOnboarding(for:)`).
+    private var gradescopeReconnectBanner: some View {
+        Button {
+            state.restartOnboarding(for: .gradescope)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("reconnect gradescope")
+                    .font(.lhfSans(12, weight: .semibold))
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.v2DateText)
+            }
+            .foregroundStyle(Color.v2Ink)
+            .padding(12)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("reconnect gradescope")
     }
 
     // MARK: Header

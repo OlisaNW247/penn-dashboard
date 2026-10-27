@@ -300,10 +300,23 @@ public final class AssignmentStore {
     /// Merges a freshly-fetched set for one source into the ledger and returns
     /// the current active union for that source. Never deletes: items missing
     /// from `fetched` are flagged `isGoneFromFeed`, not removed.
+    ///
+    /// - Parameter holdingEmptiedCourses: Gradescope's guard against a page
+    ///   that quietly stopped parsing. The source-level guard below only fires
+    ///   when the *whole* fetch is empty, so one course whose page changed
+    ///   shape (a redesign, a half-loaded response) returned no rows while
+    ///   every other course still did, and its rows were flagged gone and,
+    ///   if long overdue, pruned in that same call. With this on, a course
+    ///   the ledger shows work for, that is missing from `fetched` entirely,
+    ///   is held (`heldCourses`): its rows are not flagged this call, nothing
+    ///   is pruned, and the result reports `wasSuspectedPartial`. Off by
+    ///   default and for Canvas, whose feed legitimately drops a whole
+    ///   course's events when a class ends.
     public func reconcile(
         _ fetched: [Assignment],
         source: Assignment.Source,
-        now: Date = Date()
+        now: Date = Date(),
+        holdingEmptiedCourses: Bool = false
     ) -> ReconcileResult {
         // One id-keyed view of the *whole* ledger, duplicates already collapsed.
         // Every lookup below goes through it, because it is now the only thing
@@ -343,6 +356,20 @@ public final class AssignmentStore {
 
         let seenIDs = Set(fetched.map(\.id))
 
+        // Courses to leave untouched this call. Read before the loop below
+        // refreshes any row, because it compares the ledger's labels with the
+        // fetch's.
+        let held: Set<String> = holdingEmptiedCourses
+            ? Self.heldCourses(
+                ledger: existing
+                    .filter { !$0.isCompletionOnly && !$0.isFinished && !$0.isArchived && !$0.isGoneFromFeed }
+                    .map { HeldCourseCandidate(id: $0.id, course: $0.course, lastSeenInFeed: $0.lastSeenInFeed) },
+                fetchedIDs: seenIDs,
+                fetchedCourses: Set(fetched.map(\.course)),
+                now: now
+            )
+            : []
+
         for item in fetched {
             if let row = byID[item.id] {
                 row.refresh(from: item, now: now)
@@ -357,7 +384,7 @@ public final class AssignmentStore {
                 byID[item.id] = row
             }
         }
-        for row in existing where !seenIDs.contains(row.id) {
+        for row in existing where !seenIDs.contains(row.id) && !held.contains(row.course) {
             row.isGoneFromFeed = true
         }
         let saved = saveChanges()
@@ -376,13 +403,63 @@ public final class AssignmentStore {
         // this very reconcile just confirmed are both gone from the feed and
         // long past due. Completion-only rows are safe — they're finished by
         // definition, and `isAgedOut` exempts finished work.
-        pruneAgedOut(now: now)
+        //
+        // Not in a call that held a course back: that call is the one that
+        // suspects the fetch, and a collection pass after a suspect fetch is
+        // how a redesigned page used to cost the student rows for good.
+        if held.isEmpty { pruneAgedOut(now: now) }
 
         return ReconcileResult(
             items: active,
-            wasSuspectedPartial: false,
+            wasSuspectedPartial: !held.isEmpty,
             saved: saved
         )
+    }
+
+    /// One unfinished, still-listed ledger row, reduced to what the hold rule
+    /// reads.
+    struct HeldCourseCandidate: Equatable {
+        let id: String
+        let course: String
+        let lastSeenInFeed: Date
+    }
+
+    /// How long a course may stay missing from a fetch before it is believed.
+    /// A broken page or a flaky response mends within hours, so for a day a
+    /// vanished course is a suspicion; after that it is a fact (the class
+    /// ended, the student dropped it, the term rolled over and the account
+    /// page stopped listing it) and ordinary flagging and aging take over.
+    /// Without the limit a course that really left would be held forever and
+    /// its work would sit in the overdue pile for good. Measured from the
+    /// course's newest `lastSeenInFeed`, which only a sighting advances, so
+    /// holding it does not extend its own patience.
+    nonisolated static let heldCoursePatience: TimeInterval = 24 * 60 * 60
+
+    /// Pure rule behind `holdingEmptiedCourses`: which course labels to leave
+    /// unflagged this call. A course is held when the ledger lists unfinished
+    /// work for it, none of that work came back (`fetchedIDs`), nothing at all
+    /// came back under its label (`fetchedCourses`, so a course whose work was
+    /// replaced by new rows is an ordinary change, not an emptied page), and it
+    /// was last seen within `heldCoursePatience`. Matched by id first, label
+    /// second, because a course renamed on Gradescope keeps its assignment ids
+    /// and changes its label: by label alone the ledger's old name would look
+    /// emptied while every one of its rows was present.
+    nonisolated static func heldCourses(
+        ledger: [HeldCourseCandidate],
+        fetchedIDs: Set<String>,
+        fetchedCourses: Set<String>,
+        now: Date
+    ) -> Set<String> {
+        var held: Set<String> = []
+        for (course, rows) in Dictionary(grouping: ledger, by: \.course) {
+            guard !course.isEmpty, !fetchedCourses.contains(course) else { continue }
+            guard !rows.contains(where: { fetchedIDs.contains($0.id) }) else { continue }
+            guard let newest = rows.map(\.lastSeenInFeed).max(),
+                  now.timeIntervalSince(newest) < heldCoursePatience
+            else { continue }
+            held.insert(course)
+        }
+        return held
     }
 
     /// The whole active ledger across sources, for seeding `canvasItems` /
