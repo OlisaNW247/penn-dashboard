@@ -325,7 +325,7 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   Marco wrote it), plus three fresh patches (the launch pass without the
   notification drains, the partial-course sync semantics with 403 per
   course, the Ed tabs restore). Left: Olisa's compile (predicted 2736),
-  the phone, `sync` v13 for the exam dates (needs a go), and telling Marco.
+  the phone, `sync` from `v8` for the exam dates (v14 or later; v13 is the NUL guard alone; needs a go), and telling Marco.
 - **An AI keep-check for the megaphone** (asked for by Marco on
   2026-10-23; **built that evening on `fix/megaphone-every-class`, with
   the phone side compiled and tested and the backend tested but NOT

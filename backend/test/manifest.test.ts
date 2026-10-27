@@ -22,6 +22,7 @@ import {
   retirableCollector,
   validateCourse,
   validateDocument,
+  storableText,
   validateDocuments,
   WINDOW_KIND_MAX_AGE_DAYS,
   WINDOW_KINDS,
@@ -541,4 +542,34 @@ Deno.test("validateDocuments: one empty-text document is rejected alone and the 
   assertEquals(rejected[1].id, "");
   // validateDocument itself still throws, which is what the loop catches.
   assertThrows(() => validateDocument(bad), ManifestValidationError);
+});
+
+// 2026-10-27: one PDF whose text held NULs made Postgres refuse the upsert,
+// and the whole 200-document batch failed with a 500.
+Deno.test("storableText drops NULs and mends lone surrogates, keeping real pairs", () => {
+  assertEquals(storableText("a\u0000b\u0000"), "ab");
+  assertEquals(storableText("x\ud800y"), "x\ufffdy");
+  assertEquals(storableText("x\udc00y"), "x\ufffdy");
+  assertEquals(storableText("ok \ud83d\ude00"), "ok \ud83d\ude00");
+});
+
+Deno.test("validateDocument cleans title, course, url and text, and keeps the client's hash", () => {
+  const doc = validateDocument(validDocumentInput({
+    title: "Exam\u0000 1", course: "PHYS\u0000 151", url: "https://x.test/\u0000a", text: "Q1\u0000 \ud800done",
+  }));
+  assertEquals(doc.title, "Exam 1");
+  assertEquals(doc.course, "PHYS 151");
+  assertEquals(doc.url, "https://x.test/a");
+  assertEquals(doc.text, "Q1 \ufffddone");
+  assertEquals(doc.contentHash, "abc123");
+  assertEquals(JSON.stringify(doc).includes("\\u0000"), false);
+});
+
+Deno.test("validateDocuments: a document whose text is only NULs is rejected alone", () => {
+  const { documents, rejected } = validateDocuments([
+    validDocumentInput(),
+    validDocumentInput({ id: "syllabus:100:2", sourceID: "2", text: "\u0000\u0000" }),
+  ]);
+  assertEquals(documents.map((d) => d.id), ["syllabus:100:1"]);
+  assertEquals(rejected, [{ id: "syllabus:100:2", reason: 'expected non-empty string field "text"' }]);
 });

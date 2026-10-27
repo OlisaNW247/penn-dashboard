@@ -129,6 +129,10 @@ every function that resolves a caller now knows a paired laptop. `sync` v12 (the
 window-kind rules of `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2) went
 live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
 40 live announcement documents, every one from spring 2026, and 97 Ed.
+`sync` v13 went live on 2026-10-27 at about 14:22 UTC, at Olisa's go: v12's
+own source (`a2e2b1b`) plus the NUL guard in `validateDocuments`, deployed
+from a worktree on purpose so that `v8`'s undeployed `sync` changes (the
+server exam dates) did not ride along.
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
@@ -174,7 +178,8 @@ weak). Creating the 3.2.1 version record, attaching build 15 and
 submitting are Olisa's steps in App Store Connect; whether done is not
 recorded here yet (`docs/appstore/CHECKLIST.md`, top). The What's New in `LISTING.md` leaves out the AI
 judgments and the server exam dates until `extract-announcement` and
-`sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
+a `sync` carrying them is deployed (v14 or later; v13 is the NUL guard
+alone, see below) (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
@@ -1444,13 +1449,18 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
+- Deno: 471 passed, 0 failed on `v8` (2026-10-27, Deno 2.9.8 `--no-check`,
+  `deno check --no-lock` of `sync` clean): the 468 of PR #13 plus 3 for
+  `storableText` (NULs and lone surrogates). The deployed `sync` v13 is
+  v12's source `a2e2b1b` with the same patch: 422 there (419 plus 3).
 - Deno, pending: 428 passed, 0 failed on `v8-merge-marco` (2026-10-23, the
   merge of Marco's `v8-server-exam-dates`: +9 in `db.test.ts` and
   `profile.test.ts` for `examDates`, the first run of them under real
   Deno; Deno 2.9.8 `--no-check`, and `deno check --no-lock` of every
   function's `index.ts` clean under 2.1.4). The merged tree is not
-  compiled in Swift and `sync` is not redeployed (the next deploy would be
-  v13).
+  compiled in Swift and `sync` is not redeployed with it (v13, of
+  2026-10-27, is v12's source plus the NUL guard only, so the exam dates
+  wait for v14).
 - Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
   posts exempt from the complete-set rule, a 120-day age-out on read,
@@ -2561,7 +2571,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` v13 deploy before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
+| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` deploy from `v8`, v14 or later, before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
@@ -2569,7 +2579,7 @@ it holds work that exists nowhere else.
 | `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
 | `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
 | `parked/gradescope-unverified-submission` | **Was parked; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
-| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
+| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v13 is live without it, v12's source plus the NUL guard; a deploy from `v8`, v14 or later, would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
@@ -2697,13 +2707,17 @@ none is a ship line.
   2026-10-27 12:57 UTC: `sync error: unexpected [object Object]`, then
   Postgres's `unsupported Unicode escape sequence`). Postgres text cannot
   hold `\u0000` or a lone surrogate, and `validateDocuments` does not
-  check for either, so the error surfaces at the upsert and is not a
-  per-document `rejected` entry. The extension now cleans every document's
-  title and text before hashing (`storableText` in
-  `chrome-extension/src/core/canvasDocuments.js`). Not done: the same
-  cleaning in `validateDocuments` server-side (a `sync` deploy, needs the
-  owner's go), which would also cover the phone, whose PDF syllabus text
-  goes through the same upsert unchecked.
+  checked for either, so the error surfaced at the upsert and was not a
+  per-document `rejected` entry. Fixed on both sides: the extension cleans
+  every document's title and text before hashing (`storableText` in
+  `chrome-extension/src/core/canvasDocuments.js`), and since `sync` v13
+  (2026-10-27) the server cleans title, course, url and text in
+  `validateDocument` (`storableText` in `_shared/manifest.ts`; a document
+  that is nothing but NULs is a `rejected` entry), which covers the phone's
+  PDF syllabus text too. Seen live the same day: a throwaway user's upload
+  of `"a\u0000b \ud800c"` was stored as `"ab \ufffdc"`, and every row it
+  made was deleted after. The client's hash is kept as sent, so a phone
+  that hashed the dirty text does not re-upload in a loop.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

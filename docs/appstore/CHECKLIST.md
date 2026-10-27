@@ -83,7 +83,7 @@ tree has run on a phone yet** (both phones were unplugged), and
 
 ### C. Backend (needs a person's go and the Supabase management token; the
 dev Mac has none, Olisa's environment injects it)
-11. `node backend/scripts/deploy-function.mjs sync` → v13 (server exam
+11. `node backend/scripts/deploy-function.mjs sync` → v14 (v13 was the NUL guard alone, 2026-10-27; server exam
     dates). Old server is safe: the app falls back to on-device parsing.
 12. `node backend/scripts/deploy-function.mjs extract-announcement`
     (relevance field + the empty-answer 502 fix). Old server is safe: the
