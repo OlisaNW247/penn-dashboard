@@ -37,7 +37,14 @@ public enum GradescopeReauthRule {
     public enum Outcome: Sendable, Equatable {
         /// A fetch the server accepted: the session is alive.
         case sessionAccepted
-        /// A response that was a login form: the server did not know us.
+        /// Evidence that the server cannot know us: a response that was a login
+        /// form, or a saved cookie set that is definitively gone (a read that
+        /// answered "not found", as after a restore onto a new phone, where
+        /// this-device-only Keychain items do not come along). Without that
+        /// second kind a connected Gradescope with no cookies at all stayed
+        /// silent and stale forever, because nothing was ever sent to Gradescope
+        /// to be turned away. A Keychain that merely would not answer is NOT
+        /// this (`inconclusive`).
         case loginForm
         /// Anything else: offline, a timeout, a 5xx, a 403, an unreadable
         /// page, an empty cookie set. Says nothing about the session either

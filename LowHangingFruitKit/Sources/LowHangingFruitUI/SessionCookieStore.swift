@@ -326,6 +326,43 @@ enum SessionCookieStore {
         }
     }
 
+    /// What an empty Gradescope cookie set means for the reconnect verdict
+    /// (`GradescopeReauthRule`), given the Keychain's answer about the saved
+    /// set. The coordinator asks only after it has found nothing to replay.
+    ///
+    /// - A saved set that is definitively gone (not found, or entries that are
+    ///   all expired by their own server-set dates) is a `loginForm`-grade
+    ///   sighting: Gradescope's server cannot recognise a phone that holds no
+    ///   session, and with nothing to send, no response will ever say so. Two
+    ///   such runs an hour apart raise the line like any other.
+    /// - A Keychain that would not answer is `inconclusive`: it says nothing
+    ///   about whether the cookies exist.
+    ///
+    /// `isExpired` is injected and only asked about a non-empty set, because
+    /// it reads the Keychain itself and confirms with a second read.
+    static func emptySetOutcome(
+        read: KeychainRead<[[String: String]]>,
+        isExpired: () -> Bool
+    ) -> GradescopeReauthRule.Outcome {
+        switch read {
+        case .unavailable:
+            return .inconclusive
+        case .notFound:
+            return .loginForm
+        case let .found(entries):
+            if entries.isEmpty { return .loginForm }
+            return isExpired() ? .loginForm : .inconclusive
+        }
+    }
+
+    /// `emptySetOutcome` against the real Keychain, for Gradescope.
+    static func emptyGradescopeSetOutcome() -> GradescopeReauthRule.Outcome {
+        emptySetOutcome(
+            read: readDicts(service: .gradescope),
+            isExpired: { isExpired(service: .gradescope) }
+        )
+    }
+
     /// How long a true session cookie (no server-supplied expiry) is trusted
     /// after capture before it's treated as dead and dropped rather than
     /// replayed. Penn SSO/Canvas sessions don't survive this long in

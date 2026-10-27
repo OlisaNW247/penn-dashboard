@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
@@ -243,7 +244,8 @@ struct GradescopeSessionKeepTests {
             await AutoSyncCoordinator.syncConnectedServices(
                 state: state,
                 now: Date(),
-                gradescopeCookieProvider: { asked += 1; return [] }
+                gradescopeCookieProvider: { asked += 1; return [] },
+                emptySetOutcome: { .inconclusive }
             )
 
             #expect(asked == 1, "the tick did read cookies")
@@ -262,9 +264,72 @@ struct GradescopeSessionKeepTests {
             state.setGradescopeConnected(true)
             for _ in 0..<5 {
                 await AutoSyncCoordinator.syncConnectedServices(
-                    state: state, now: Date(), gradescopeCookieProvider: { [] }
+                    state: state, now: Date(), gradescopeCookieProvider: { [] },
+                    emptySetOutcome: { .inconclusive }
                 )
             }
+            #expect(state.isGradescopeConnected)
+        }
+    }
+
+    // A restored phone: "connected" flag and rows, no Keychain items.
+    // Nothing is sent to Gradescope, so no login form ever answers; the
+    // definitive not-found read has to stand in for one.
+
+    @Test("a definitively gone cookie set, seen on two runs an hour apart, raises the reconnect verdict and still does not disconnect")
+    @MainActor
+    func goneCookiesRaiseTheVerdict() async {
+        await withRestoredDefaults {
+            let state = makeState()
+            state.setGradescopeConnected(true)
+            let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+            await AutoSyncCoordinator.syncConnectedServices(
+                state: state, now: t0, gradescopeCookieProvider: { [] }, emptySetOutcome: { .loginForm }
+            )
+            #expect(!state.gradescopeNeedsReauth, "one sighting raises nothing")
+
+            await AutoSyncCoordinator.syncConnectedServices(
+                state: state, now: t0.addingTimeInterval(3600), gradescopeCookieProvider: { [] }, emptySetOutcome: { .loginForm }
+            )
+            #expect(state.gradescopeNeedsReauth)
+            #expect(state.needsGradescopeConnection, "the banner's condition")
+            #expect(state.isGradescopeConnected, "and the connection itself is left alone")
+            #expect(state.lastGradescopeSync == nil, "no sync ran")
+        }
+    }
+
+    @Test("two gone-cookie ticks inside the hour are one event")
+    @MainActor
+    func goneCookiesInsideTheHour() async {
+        await withRestoredDefaults {
+            let state = makeState()
+            state.setGradescopeConnected(true)
+            let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+            for minutes in [0.0, 5, 20, 59] as [TimeInterval] {
+                await AutoSyncCoordinator.syncConnectedServices(
+                    state: state, now: t0.addingTimeInterval(minutes * 60),
+                    gradescopeCookieProvider: { [] }, emptySetOutcome: { .loginForm }
+                )
+            }
+            #expect(!state.gradescopeNeedsReauth)
+        }
+    }
+
+    @Test("a Keychain that would not answer counts for nothing, however many hours it goes on")
+    @MainActor
+    func unavailableCountsForNothing() async {
+        await withRestoredDefaults {
+            let state = makeState()
+            state.setGradescopeConnected(true)
+            let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+            for hours in [0.0, 2, 5, 30] as [TimeInterval] {
+                await AutoSyncCoordinator.syncConnectedServices(
+                    state: state, now: t0.addingTimeInterval(hours * 3600),
+                    gradescopeCookieProvider: { [] }, emptySetOutcome: { .inconclusive }
+                )
+            }
+            #expect(!state.gradescopeNeedsReauth)
             #expect(state.isGradescopeConnected)
         }
     }
@@ -277,7 +342,8 @@ struct GradescopeSessionKeepTests {
             state.setGradescopeConnected(false)
             var asked = 0
             await AutoSyncCoordinator.syncConnectedServices(
-                state: state, now: Date(), gradescopeCookieProvider: { asked += 1; return [] }
+                state: state, now: Date(), gradescopeCookieProvider: { asked += 1; return [] },
+                emptySetOutcome: { .inconclusive }
             )
             #expect(asked == 0)
         }
@@ -292,7 +358,8 @@ struct GradescopeSessionKeepTests {
             state.lastGradescopeSync = Date()
             var asked = 0
             await AutoSyncCoordinator.syncConnectedServices(
-                state: state, now: Date(), gradescopeCookieProvider: { asked += 1; return [] }
+                state: state, now: Date(), gradescopeCookieProvider: { asked += 1; return [] },
+                emptySetOutcome: { .inconclusive }
             )
             #expect(asked == 0)
         }
@@ -393,6 +460,41 @@ struct GradescopeSessionKeepTests {
         let file = sources.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: file.path) else { return "" }
         return try String(contentsOf: file, encoding: .utf8)
+    }
+}
+
+// MARK: - Reading an empty cookie set
+
+@Suite("Gradescope empty cookie set outcome")
+struct GradescopeEmptySetOutcomeTests {
+    private let entry: [String: String] = ["name": "n", "value": "v", "domain": "www.gradescope.com", "path": "/"]
+
+    @Test("a saved set that is not found is login-form-grade evidence, without asking whether it expired")
+    func notFound() {
+        var asked = false
+        let outcome = SessionCookieStore.emptySetOutcome(read: .notFound, isExpired: { asked = true; return false })
+        #expect(outcome == .loginForm)
+        #expect(!asked)
+    }
+
+    @Test("an empty found set is the same as not found")
+    func foundEmpty() {
+        #expect(SessionCookieStore.emptySetOutcome(read: .found([]), isExpired: { false }) == .loginForm)
+    }
+
+    @Test("a Keychain that would not answer is inconclusive, whatever it refused with, and never asks about expiry",
+          arguments: [errSecInteractionNotAllowed, errSecAuthFailed, errSecNotAvailable, errSecIO])
+    func unavailable(status: OSStatus) {
+        var asked = false
+        let outcome = SessionCookieStore.emptySetOutcome(read: .unavailable(status), isExpired: { asked = true; return true })
+        #expect(outcome == .inconclusive)
+        #expect(!asked)
+    }
+
+    @Test("entries that are all expired by their own dates are gone too; entries still fresh are not")
+    func foundEntries() {
+        #expect(SessionCookieStore.emptySetOutcome(read: .found([entry]), isExpired: { true }) == .loginForm)
+        #expect(SessionCookieStore.emptySetOutcome(read: .found([entry]), isExpired: { false }) == .inconclusive)
     }
 }
 
