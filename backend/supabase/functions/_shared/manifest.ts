@@ -592,6 +592,7 @@ export function liveIDsRetirableBy<T extends { id: string; kind: string; collect
   const only = retirableCollector(client);
   return liveRows
     .filter((row) => !isWindowKind(row.kind))
+    .filter((row) => (row.collector ?? "phone") !== "server")
     .filter((row) => only === undefined || (row.collector ?? "phone") === only)
     .map((row) => row.id);
 }

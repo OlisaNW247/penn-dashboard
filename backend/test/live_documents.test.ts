@@ -125,3 +125,15 @@ Deno.test("the complete-set id read excludes every window kind and scopes by col
     ["eq", "collector", "phone"],
   ]);
 });
+
+// 2026-10-27: a crawl's rows are the server's; no client report retires them.
+Deno.test("the extension's complete-set read leaves out server-written rows", async () => {
+  const { client, recorded } = fakeClient([{ id: "page:c:1" }]);
+  await selectLiveDocumentIDsForCourse(client, "c", undefined);
+  assertEquals(recorded[0].calls, [
+    ["eq", "course_id", "c"],
+    ["not", "kind", "in", "(announcement,ed)"],
+    ["is", "gone_at", null],
+    ["neq", "collector", "server"],
+  ]);
+});

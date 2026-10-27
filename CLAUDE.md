@@ -132,7 +132,11 @@ live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
 `sync` v13 went live on 2026-10-27 at about 14:22 UTC, at Olisa's go: v12's
 own source (`a2e2b1b`) plus the NUL guard in `validateDocuments`, deployed
 from a worktree on purpose so that `v8`'s undeployed `sync` changes (the
-server exam dates) did not ride along.
+server exam dates) did not ride along. `sync` v14 and `discover-websites` v5
+followed the same day at Olisa's go, with migration
+`20261027150000_server_collector.sql`, from the same v12 base plus both
+patches (exam dates still left out): crawled website rows are stamped
+`collector = 'server'` and no client's complete-set report retires them.
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
@@ -1449,6 +1453,10 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
+- Deno: 473 passed, 0 failed on `v8` (2026-10-27, later): +2 for the
+  `'server'` collector (the in-memory rule and the query's `neq`). The
+  deployed `sync` v14 / `discover-websites` v5 source is v12's `a2e2b1b`
+  with both patches: 424 there.
 - Deno: 471 passed, 0 failed on `v8` (2026-10-27, Deno 2.9.8 `--no-check`,
   `deno check --no-lock` of `sync` clean): the 468 of PR #13 plus 3 for
   `storableText` (NULs and lone surrogates). The deployed `sync` v13 is
@@ -2677,16 +2685,19 @@ none is a ship line.
   Settings", the disclosure line) is capitalised and says "Settings" where
   the app says Profile; the copy rule is Marco's own, so it is his to
   settle, not rewritten here.
-- **Website crawls can be retired by a phone that has not downloaded
+- **Website crawls were retired by a phone that had not downloaded
   them yet** (seen 2026-10-26, ECON 0100: five `website` rows fetched at
-  14:33 UTC and marked gone at 14:54 by a classmate's phone sync).
-  Server-crawled rows carry the default `collector = 'phone'`, so a
-  phone's complete-set report that does not list them retires them; the
-  next discovery recreates them, so nothing is lost for long, but ask
-  loses them in between. Pre-existing, not the extension's (it has never
-  uploaded to that course). The likely fix is a `'server'` collector for
-  crawls that no client report retires; not done, because it is a
-  migration and a `sync` deploy.
+  14:33 UTC and marked gone at 14:54 by a classmate's phone sync), because
+  crawled rows took the column's default, `collector = 'phone'`. Fixed
+  2026-10-27 at Olisa's go: migration `20261027150000_server_collector.sql`
+  (the `'server'` value; the 8 existing website rows restamped),
+  `discover-websites` v5 stamps its rows `'server'`, and `sync` v14 never
+  lets a client report retire one (`selectLiveDocumentIDsForCourse`,
+  `liveIDsRetirableBy`); the crawl retires its own pages. Checked live the
+  same day with a throwaway user: a phone's empty complete-set report
+  retired the course's phone page and left the server row live, and
+  every row it made was deleted after. A real crawl writing `'server'`
+  has not been seen yet.
 - **Canvas Files reach the extension through `public_url`, not the
   download link** (2026-10-27, not yet seen on the owner's laptop). Until
   then only one course's 53 PDFs arrived: `files.js` fetched

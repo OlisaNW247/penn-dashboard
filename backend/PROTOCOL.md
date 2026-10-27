@@ -226,7 +226,9 @@ discarded may still score.
 `client` (on both steps; absent means `"phone"`, every shipped build; any
 other value is a 400) says which kind of client is reporting. Upload stamps
 `course_documents.collector` (`'phone'` or `'extension'`) on every document
-it upserts, so the row belongs to whoever uploaded it last. `file` is an
+it upserts, so the row belongs to whoever uploaded it last. The third value,
+`'server'`, marks the rows `discover-websites` writes from a course's own
+website (since 2026-10-27). `file` is an
 accepted document kind on upload (extracted text of a Canvas File, at most
 200,000 characters like every kind). It is never profile input and does not
 set `profile_stale`.
@@ -238,8 +240,9 @@ with the phone rather than a second one.
 Server: upserts docs by id (clearing `gone_at`), sets `gone_at = now()` on
 live docs of a fully-synced course whose id is absent from `documentIDs`
 (when the reporting `client` is the phone, only docs with
-`collector = 'phone'`; when it is the extension, docs of any collector;
-window kinds, `announcement` and `ed`, are exempt for both), sets `courses.last_full_sync_at = now()` for those courses, sets
+`collector = 'phone'`; when it is the extension, docs of any collector but
+`'server'`; window kinds, `announcement` and `ed`, are exempt for both, and so
+are `'server'` rows, which only a later crawl retires), sets `courses.last_full_sync_at = now()` for those courses, sets
 `courses.profile_stale = true` for any course whose set of
 `(id, contentHash)` for kinds `syllabus|home|page|website` changed, and
 scores `links` into `course_websites` candidate rows. Answers

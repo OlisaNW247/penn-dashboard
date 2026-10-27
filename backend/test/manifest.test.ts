@@ -573,3 +573,14 @@ Deno.test("validateDocuments: a document whose text is only NULs is rejected alo
   assertEquals(documents.map((d) => d.id), ["syllabus:100:1"]);
   assertEquals(rejected, [{ id: "syllabus:100:2", reason: 'expected non-empty string field "text"' }]);
 });
+
+// 2026-10-27: ECON 0100 lost five fresh crawl rows to a phone that had not
+// downloaded them yet. A server-written row is retired only by the crawl.
+Deno.test("complete-set: no client retires a server-written (crawled website) row", () => {
+  const live = [
+    { id: "page:1:1", kind: "page", collector: "phone" },
+    { id: "website:1:a", kind: "website", collector: "server" },
+  ];
+  assertEquals(liveIDsRetirableBy(live, "phone"), ["page:1:1"]);
+  assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1"]);
+});
