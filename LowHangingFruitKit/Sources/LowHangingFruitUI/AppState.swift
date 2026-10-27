@@ -503,6 +503,21 @@ final class AppState: ObservableObject {
     @Published private(set) var isGradescopeConnected: Bool
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var onboardingDestination: OnboardingDestination = .full
+    /// True while a single-service reconnect (Canvas or Gradescope) is open as
+    /// a cover over the dashboard (`ContentView`), as opposed to the whole app
+    /// having been sent back to onboarding. It is set only by
+    /// `restartOnboarding(for:)`, and only when `reconnectsInCover` says the
+    /// cover is the right shape. Three things clear it: `completeOnboarding()`,
+    /// `dismissReconnect()`, and the other branch of `restartOnboarding(for:)`
+    /// itself (the whole walk, preview exit, a first run), which sets it false
+    /// because that path replaces the root and leaves no cover to be open.
+    ///
+    /// Deliberately never true over a first-run root (`needsOnboarding`) or in
+    /// preview mode. `OnboardingView` hides its "preview with sample data" door
+    /// while this is true, because a signed-in student reconnecting should not
+    /// be one stray tap from sample data over their own dashboard; over a
+    /// first-run root that would hide the one door App Review can get in by.
+    @Published private(set) var isReconnecting = false
     /// Whether the first-run mission panes (`IntroView`) have been shown.
     /// Deliberately *separate* from `hasCompletedOnboarding`: the Settings
     /// reconnect buttons call `restartOnboarding()`, which clears that flag to
@@ -3660,6 +3675,7 @@ final class AppState: ObservableObject {
 
     func completeOnboarding() {
         onboardingDestination = .full
+        isReconnecting = false
         hasCompletedOnboarding = true
         UserDefaults.lhf.set(true, forKey: Self.onboardingCompletedKey)
     }
@@ -3725,13 +3741,48 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Whether a reconnect for `destination` opens as a cover over the
+    /// dashboard (`isReconnecting`) rather than sending the whole app back to
+    /// onboarding. Only a single-service reconnect, from a real (non-preview)
+    /// install that has finished onboarding: `.full` is the whole walk and has
+    /// always replaced the root, preview mode must keep exiting through the
+    /// old path (which is what drops its fixtures), and a first-run root has
+    /// no dashboard underneath to keep mounted. Pure so it can be tested.
+    ///
+    /// `nonisolated` for the same reason as `OnboardingView.initialPhase`:
+    /// tests call it off the main actor.
+    nonisolated static func reconnectsInCover(
+        for destination: OnboardingDestination,
+        isPreviewMode: Bool,
+        hasCompletedOnboarding: Bool
+    ) -> Bool {
+        destination != .full && !isPreviewMode && hasCompletedOnboarding
+    }
+
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
     /// buttons). Already-connected services stay connected and show as done.
+    ///
+    /// A single-service reconnect from a finished, non-preview install opens
+    /// as a cover over the still-mounted dashboard (`reconnectsInCover`,
+    /// `isReconnecting`) and touches neither `hasCompletedOnboarding` nor its
+    /// persisted flag, so closing the cover, or the app being killed with it
+    /// open, leaves the student on the dashboard they came from. Everything
+    /// else takes the original path below: clear the flag and let `RootView`
+    /// swap the root to `OnboardingView`.
     ///
     /// Deliberately leaves `hasSeenIntro` alone: this lands the user on the
     /// connect checklist, not back at the first-run pitch.
     func restartOnboarding(for destination: OnboardingDestination = .full) {
         onboardingDestination = destination
+        if Self.reconnectsInCover(
+            for: destination,
+            isPreviewMode: isPreviewMode,
+            hasCompletedOnboarding: hasCompletedOnboarding
+        ) {
+            isReconnecting = true
+            return
+        }
+        isReconnecting = false
         hasCompletedOnboarding = false
         UserDefaults.lhf.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
@@ -3743,11 +3794,25 @@ final class AppState: ObservableObject {
             // Drop the fixtures on the way out. They'd never render again
             // (their course ids leave with preview mode), but leaving demo
             // grades in the store means the first real refresh merges into
-            // sample data rather than starting clean.
+            // sample data rather than starting clean. Not `clearAll()`: that
+            // also wipes the observed grade history, which belongs to a real
+            // student who tapped Preview out of curiosity (see
+            // `GradeWatcherStore.clearPreviewFixtures`).
             canvasItems = []
-            gradeWatcher.clearAll()
+            gradeWatcher.clearPreviewFixtures()
             rebuildDashboardItems()
         }
+    }
+
+    /// Closes the reconnect cover without connecting anything (the cover's
+    /// close control, and the macOS sheet's own dismissal). The student never
+    /// left the dashboard, so there is nothing to restore beyond forgetting
+    /// which service the cover was for. A no-op when no cover is open, so it
+    /// is safe to call from a presentation binding's setter.
+    func dismissReconnect() {
+        guard isReconnecting else { return }
+        isReconnecting = false
+        onboardingDestination = .full
     }
 
     /// Enters a read-only demo populated with sample courses and assignments, so

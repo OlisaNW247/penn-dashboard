@@ -318,6 +318,16 @@ struct ContentView: View {
                 }
             }
         }
+        // The reconnect cover (below) keeps this view mounted, so nothing
+        // remounts it when the cover closes. The launch-time pass used to run
+        // on that remount, because the old reconnect swapped the whole root to
+        // `OnboardingView` and back, which re-ran `.task`; it has to be run
+        // again here. Runs on a cancel as well as on a connect: a pass over an
+        // unchanged session is cheap and settles the banner either way.
+        .onChange(of: state.isReconnecting) { wasReconnecting, isReconnecting in
+            guard wasReconnecting, !isReconnecting else { return }
+            Task { await refreshSessionSourcesAtLaunch() }
+        }
         .sheet(item: $editing, onDismiss: rescheduleNotifications) { item in
             EditDueSheet(
                 assignment: item.assignment,
@@ -346,6 +356,22 @@ struct ContentView: View {
                 onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) }
             )
         }
+        // A Canvas or Gradescope reconnect (`AppState.restartOnboarding(for:)`
+        // with a single service, from a signed-in install) opens over the
+        // dashboard instead of replacing the root, so the dashboard, its
+        // refresh loop and its navigation stack stay where they were and a
+        // cancelled reconnect costs the student nothing. iOS gets a full-screen
+        // cover; macOS has no such presentation, so the same walk is a sheet.
+        // Any other restart (the whole walk, preview mode, a first run) still
+        // swaps the root, and `isReconnecting` is never true for them.
+        // Presented from here, not from `RootView`: Settings and Grades are
+        // pushes on this view's stack, never modal sheets, so there is no
+        // second presentation for it to collide with.
+        #if os(iOS)
+        .fullScreenCover(isPresented: reconnectCoverBinding) { reconnectCover }
+        #else
+        .sheet(isPresented: reconnectCoverBinding) { reconnectCover }
+        #endif
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
         // was removed 2026-08-27 (docs/decisions.md): readings now import
@@ -360,6 +386,34 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+    }
+
+    /// Reads `AppState.isReconnecting`; the only write it makes is closing the
+    /// cover, which a macOS sheet's own dismissal (Escape) also arrives at.
+    private var reconnectCoverBinding: Binding<Bool> {
+        Binding(
+            get: { state.isReconnecting },
+            set: { if !$0 { state.dismissReconnect() } }
+        )
+    }
+
+    /// The same `OnboardingView` the root shows, started at the service being
+    /// reconnected. A presentation inherits neither the app's colour scheme nor
+    /// its theme (`SheetTheme.swift`), so it is re-applied here; the two
+    /// environment objects are passed explicitly, as every other presentation
+    /// in this app does. A macOS sheet sizes to its content, so it is given the
+    /// root window's minimum.
+    private var reconnectCover: some View {
+        OnboardingView(
+            destination: state.onboardingDestination,
+            hasChosenSchool: state.hasChosenCanvasInstallation
+        )
+        .environmentObject(state)
+        .environmentObject(scheduler)
+        .lhfSheetTheme()
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 600)
+        #endif
     }
 
     private var assistantButton: some View {

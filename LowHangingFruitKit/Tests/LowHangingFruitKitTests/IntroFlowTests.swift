@@ -127,12 +127,17 @@ struct IntroFlowTests {
         withFlags(onboarded: true, seenIntro: true) {
             let state = makeState()
 
+            // A single-service reconnect from a finished install is a cover
+            // over the dashboard (`isReconnecting`), not a trip back through
+            // onboarding: the root never leaves the dashboard.
             state.restartOnboarding(for: .gradescope)
             #expect(state.onboardingDestination == .gradescope)
-            #expect(state.needsOnboarding)
+            #expect(state.isReconnecting)
+            #expect(!state.needsOnboarding)
 
             state.completeOnboarding()
             #expect(state.onboardingDestination == .full)
+            #expect(!state.isReconnecting)
             #expect(!state.needsOnboarding)
         }
     }

@@ -272,7 +272,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     the session is dead ("reconnect canvas", "duo needs you", or "pennkey
     password rejected"), and, since 2026-10-10, "not saving on this
     phone" when the ledger is running in memory or its last save failed
-    (`StorageHealth`; never in preview or demo mode).
+    (`StorageHealth`; never in preview or demo mode). Since 2026-10-27
+    tapping the Canvas banner opens the sign-in as a cover over the
+    dashboard, with an xmark to close it; it no longer restarts
+    onboarding (the lock-out trap below).
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
@@ -679,7 +682,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
      only when Penn rejected a saved PennKey password; "sign in to
      canvas" under the canvas row when Canvas is connected with no saved
-     login, since 2026-10-18). The sign-in health lines and the "ed
+     login, since 2026-10-18; since 2026-10-27 every reconnect row opens
+     the sign-in as a cover over the dashboard, never the first-run
+     walk). The sign-in health lines and the "ed
      discussion" status row that `v8` added here were taken off the page
      on 2026-10-10 ("a whole yap about Canvas", Marco), moved into one
      collapsed "sign-in diagnostics" disclosure, and on 2026-10-18 put
@@ -1832,6 +1837,28 @@ itself.
 
 ## Traps that have already bitten
 
+- **A persisted "onboarding not done" flag is a lock-out, not a
+  navigation state.** `restartOnboarding(for: .canvas)` used to write
+  `hasCompletedOnboarding = false` to disk so `RootView` would show the
+  sign-in walk, and the walk's Canvas step had only a back chevron to
+  the school picker. A student who tapped "reconnect canvas" with no
+  signal, without their Duo phone, or who force-quit mid-login woke up
+  on the first-run walk on every relaunch, their ledger intact but
+  unreachable. Four auditors found it independently on 2026-10-25
+  (hardening plan A2). Since 2026-10-27 a reconnect from the banner,
+  Profile → accounts or the grades screen is a memory-only
+  `isReconnecting` cover over the dashboard (`fullScreenCover` on iOS, a
+  sheet on macOS) with an xmark close on every step, and a force-quit
+  lands on the dashboard; only "start over" (`.full`) still clears the
+  flag, and preview mode still takes the old root swap. The wrong fixes:
+  a skip on the first-run Canvas step, which must stay required, and
+  removing the preview link, which is App Review's only way in. Two
+  tells for next time: a flag another launch reads must never be
+  written to express where the UI is right now; and a cover that keeps
+  the dashboard mounted must re-run whatever the old root swap re-ran on
+  remount (here `refreshSessionSourcesAtLaunch`, from
+  `.onChange(of: isReconnecting)`), or the reconnect looks done and
+  nothing refreshes until the next five-minute tick.
 - **A slug built from outside names is not a unique key, and
   `Dictionary(uniqueKeysWithValues:)` turns the first collision into a
   crash.** `GradeCategoryMapBuilder.mirroringCanvas` gave every Canvas

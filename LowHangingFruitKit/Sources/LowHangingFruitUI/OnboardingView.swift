@@ -222,6 +222,14 @@ struct OnboardingView: View {
 
     private var schoolSelectionStep: some View {
         VStack(spacing: 0) {
+            // The picker has no header of its own. While a reconnect cover is
+            // open it gets the shared top bar, whose trailing end carries the
+            // close control (`reconnectCloseButton`), as a row above the
+            // scroll view so it never overlaps the picker's content. A first
+            // run has no cover to close and keeps the bare picker.
+            if state.isReconnecting {
+                topBar(onBack: nil)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Where do you use Canvas?")
@@ -360,8 +368,24 @@ struct OnboardingView: View {
             // `c999c38`. Pinned to the bottom safe area, below the entire
             // login pane above it, so it never competes with actually
             // connecting a real account.
+            //
+            // Not shown to a student who is already signed in and has a real
+            // dashboard underneath (a reconnect cover): the door's job is for
+            // someone who cannot sign in at all. Keyed on `isReconnecting`
+            // *or* `hasCompletedOnboarding`, not on the first alone, because
+            // `completeOnboarding()` clears `isReconnecting` before the
+            // cover's dismiss animation has finished, and the footer would
+            // flash back under the Canvas step as it slid away. A cover leaves
+            // `hasCompletedOnboarding` true throughout (`restartOnboarding`
+            // never clears it on that path), so the pair covers the whole
+            // animation. Neither can hide the door from the reviewer: a true
+            // first run has both false, and the "start over" and preview-exit
+            // path (`.full`, or preview mode) writes `hasCompletedOnboarding`
+            // false, which is what puts a reviewer back on this screen.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                previewFooter
+                if !(state.isReconnecting || state.hasCompletedOnboarding) {
+                    previewFooter
+                }
             }
             .background(Color.v2Bg.ignoresSafeArea())
     }
@@ -688,11 +712,41 @@ struct OnboardingView: View {
                     .font(.lhfSans(14, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
             }
+
+            reconnectCloseButton
         }
         .padding(.horizontal, 24)
         .padding(.top, 18)
         .padding(.bottom, 16)
         .background(Color.v2Bg)
+    }
+
+    /// The way out of a reconnect cover: an `xmark` at the trailing end of the
+    /// header or top bar of every step the cover can show (the Canvas sign-in,
+    /// the school picker, the Gradescope step, and the confirmation panes). It
+    /// closes the cover and nothing else, so the student is back on the
+    /// dashboard they left. Absent everywhere else: the root walk has nothing
+    /// to return to. No text, per the app's copy rule; the accessibility label
+    /// carries the word.
+    ///
+    /// No fixed frame, on purpose: `loginHeader` aligns on the title's text
+    /// baseline, which a framed image would shift, so it is sized like the
+    /// back chevron beside it and given a larger touch area instead.
+    @ViewBuilder
+    private var reconnectCloseButton: some View {
+        if state.isReconnecting {
+            Button {
+                lhfHapticLight()
+                state.dismissReconnect()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .contentShape(Rectangle().inset(by: -12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("close")
+        }
     }
 
     /// Shared back/skip chrome for the non-login steps.
@@ -704,8 +758,16 @@ struct OnboardingView: View {
             backButton(onBack)
                 .frame(width: 44, height: 32, alignment: .leading)
             Spacer()
-            skipButton(skip)
-                .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
+            HStack(spacing: 16) {
+                // The 44x32 placeholder `skipButton` returns for "no skip"
+                // keeps the bar's height; while a reconnect cover shows the
+                // close control instead it would only add dead space beside it.
+                if skip != nil || !state.isReconnecting {
+                    skipButton(skip)
+                }
+                reconnectCloseButton
+            }
+            .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -959,12 +1021,14 @@ private struct CanvasLoginPane: View {
             state.isCanvasLoginPaneActive = true
             // Belt-and-suspenders (2026-09-21 review): `navObserver` is a
             // fresh `LoginNavigationObserver()` every time this pane gets a
-            // NEW identity in the view tree (each `restartOnboarding()` call
-            // swaps `RootView.mainContent`'s top-level branch from
-            // `ContentView` to a brand-new `OnboardingView`, and nothing in
-            // this file reuses the same pane instance across two separate
-            // login attempts today), so `autoLoginAttempts` already starts
-            // at 0 for every real attempt without this call. It's here
+            // NEW identity in the view tree. Each `restartOnboarding()` call
+            // builds a brand-new `OnboardingView`: as the reconnect cover
+            // `ContentView` presents for a single-service reconnect, or, for
+            // the whole walk and the exit from preview, by swapping
+            // `RootView.mainContent`'s top-level branch from `ContentView`.
+            // Nothing in this file reuses the same pane instance across two
+            // separate login attempts today, so `autoLoginAttempts` already
+            // starts at 0 for every real attempt without this call. It's here
             // anyway, cheap and idempotent on a fresh observer, in case that
             // stops being true later — a stale attempt count of 1 carried
             // over from a previous login would make the very FIRST real

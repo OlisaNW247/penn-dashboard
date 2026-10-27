@@ -29,15 +29,28 @@ struct LaunchRefreshStructureTests {
     private static let sleep = "Task.sleep"
     private static let excludedAtLaunch = ["announceGradeChanges", "announceTurnedIn", "deviceSyncPass"]
 
-    @Test("the launch pass is called once, before the loop's sleep, and never via refresh()")
+    @Test("the launch pass is called once before the loop's sleep, never via refresh(), and re-run only when the reconnect cover closes")
     func launchPassPrecedesSleep() throws {
         let source = Self.codeOnly(try Self.uiSource("ContentView.swift"))
         let loop = try #require(source.range(of: Self.loop))
         let sleep = try #require(source.range(of: Self.sleep, range: loop.lowerBound..<source.endIndex))
 
+        // Two call sites, and only two. The launch task's is the one below.
+        // The other is the reconnect cover's close: the cover keeps the
+        // dashboard mounted, so the pass the old remount used to run has to
+        // be run again (`ReconnectCoverTests` pins the cover itself). A third
+        // call, or a second one anywhere else, is a double fetch at launch.
         let calls = Self.ranges(of: Self.launchCall, in: source)
-        #expect(calls.count == 1, "exactly one call to the launch pass in the whole file")
+        #expect(calls.count == 2, "the launch task, and the re-run when the reconnect cover closes")
+        let rerun = try #require(calls.last)
+        let cover = try #require(source.range(of: ".onChange(of: state.isReconnecting)"))
+        let nearestOnChange = try #require(
+            source.range(of: ".onChange(", options: .backwards, range: source.startIndex..<rerun.lowerBound)
+        )
+        #expect(nearestOnChange.lowerBound == cover.lowerBound,
+                "the second call belongs to the isReconnecting onChange, not to any other closure")
         let call = try #require(calls.first)
+        #expect(call.lowerBound < rerun.lowerBound)
         #expect(call.lowerBound < loop.lowerBound)
         #expect(call.lowerBound < sleep.lowerBound)
 

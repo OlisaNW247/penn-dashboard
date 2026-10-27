@@ -449,6 +449,26 @@ final class GradeWatcherStore: ObservableObject {
         error = nil
     }
 
+    /// Drops what preview mode loaded (`loadPreviewSnapshots`) and nothing
+    /// else. The way out of preview used to be `clearAll()`, which also calls
+    /// `historyStore?.clearAll()`: a real student who tapped Preview out of
+    /// curiosity and then connected Canvas lost their observed grade history
+    /// (the memory behind the "this week" delta) on the way.
+    ///
+    /// `history` is re-read from the store rather than emptied, so the
+    /// published cache again matches what is on disk. Preview never records
+    /// into `historyStore`: `recordHistory` only runs from `refresh`, and
+    /// `AppState.refreshGradeWatcher` returns at its fixture guard before
+    /// reaching it, so there is nothing of the demo's to remove there.
+    func clearPreviewFixtures() {
+        snapshots = [:]
+        gradescopeItemsByCourse = [:]
+        history = historyStore?.allHistory() ?? [:]
+        lastRefreshed = nil
+        isSessionExpired = false
+        error = nil
+    }
+
     /// Seeds the store from bundled fixtures for preview (demo) mode — no
     /// network, no cookies, no error banner. Everything downstream (the
     /// engine, the overlay, projections, the report) then runs its real code
