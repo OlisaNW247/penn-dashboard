@@ -181,11 +181,12 @@ judgments and the server exam dates until `extract-announcement` and
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
-archived. The `update-manifest` floor is **3.2.0** since
-2026-10-25 (`feec931`, at Olisa's word, once 3.2.0 was live; it had been
-1.2.1 since 2026-09-09), so every gated build below 3.2.0 shows the update
-wall. Raise it to 3.2.1 only once 3.2.1 is downloadable, and only at
-Olisa's word. Marco's
+archived. The `update-manifest` floor is **3.2.1** since
+2026-10-27 (`9a49cc5`, the first real run of the `update-floor` workflow,
+at Olisa's word; 3.2.1 had been live about 42 hours). It was 3.2.0 from
+2026-10-25 (`feec931`) and 1.2.1 from 2026-09-09. Every gated build below
+3.2.1 shows the update wall. From here the workflow raises it on each
+release (Update gate, below). Marco's
 read of the public iTunes lookup on 2026-10-08
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
 (build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to

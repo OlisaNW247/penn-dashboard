@@ -2,10 +2,9 @@
 
 ## 3.2.0 (14) submission: everything left, in order (written 2026-10-23 late)
 
-**2026-10-25:** 3.2.0 (14) is live (Olisa), 3.2.1 (15) is submitted for
-review (Olisa), and the update-manifest floor is 3.2.0 (`feec931`). When
-3.2.1 is live, raise `minimumVersion` and `latestVersion` to 3.2.1 on the
-`update-manifest` branch, at Olisa's word.
+**2026-10-27:** 3.2.1 (15) is live, and the update-manifest floor is
+3.2.1 (`9a49cc5`), raised by the `update-floor` workflow, which now does
+this on every release (step 21).
 
 **2026-10-24 20:52 EDT: build 15 ships as 3.2.1, not 3.2.0.** The first
 export of 3.2.0 (15) was refused by App Store Connect: "The train version
