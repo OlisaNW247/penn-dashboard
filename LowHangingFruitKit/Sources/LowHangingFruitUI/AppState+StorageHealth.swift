@@ -55,11 +55,16 @@ enum StorageHealth {
     struct Failures: Sendable, Equatable {
         var ledgerReads = 0
         var ledgerSaves = 0
+        /// Grade history (`GradeHistoryStore`). A history file that could not
+        /// be opened at launch counts as one failed read: the store then runs
+        /// in memory, which is the load failing, not a fetch failing.
+        var historyReads = 0
+        var historySaves = 0
 
         /// Failed fetches across every store.
-        nonisolated var reads: Int { ledgerReads }
+        nonisolated var reads: Int { ledgerReads + historyReads }
         /// Failed writes across every store.
-        nonisolated var saves: Int { ledgerSaves }
+        nonisolated var saves: Int { ledgerSaves + historySaves }
         nonisolated var isClean: Bool { reads == 0 && saves == 0 }
     }
 }
@@ -86,7 +91,11 @@ extension AppState {
     /// failed once and then succeeded still shows, which is the point of
     /// counting. Nothing reads it in a release build yet.
     var storageFailures: StorageHealth.Failures {
-        StorageHealth.Failures(ledgerReads: assignmentStore?.failedReadCount ?? 0,
-                               ledgerSaves: assignmentStore?.failedSaveCount ?? 0)
+        let history = gradeHistoryStore
+        return StorageHealth.Failures(
+            ledgerReads: assignmentStore?.failedReadCount ?? 0,
+            ledgerSaves: assignmentStore?.failedSaveCount ?? 0,
+            historyReads: (history?.failedReadCount ?? 0) + (history?.storageFailureReason == nil ? 0 : 1),
+            historySaves: history?.failedSaveCount ?? 0)
     }
 }
