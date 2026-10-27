@@ -66,9 +66,17 @@ public enum LedgerWidgetReader {
         // iCloud container today, so .automatic happens to resolve to nothing —
         // but "happens to" is exactly what the pin replaces with "by
         // construction" (see AssignmentStore's local inits).
-        guard let container = try? ModelContainer(
-            for: StoredAssignment.self,
-            configurations: ModelConfiguration(url: url, cloudKitDatabase: .none)
+        //
+        // Opened through `LedgerContainer`, the same versioned schema and
+        // migration plan the app uses, not an anonymous `StoredAssignment`
+        // container. The widget used to ask for the unversioned model, which
+        // is fine with one schema version and breaks the day there are two:
+        // whichever process the system launches first after an update
+        // migrates the file, and the other must open it the same way. The
+        // door also takes the pre-migration copy, so a migration that
+        // happens to run in the widget is as safe as one in the app.
+        guard let container = try? LedgerContainer.make(
+            ModelConfiguration(url: url, cloudKitDatabase: .none)
         ) else { return nil }
 
         let context = ModelContext(container)
