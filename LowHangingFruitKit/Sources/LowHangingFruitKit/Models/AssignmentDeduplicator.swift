@@ -882,6 +882,16 @@ public enum AssignmentDeduplicator {
     /// [i, clicker] / [ph, d], which only matters against a spelling of the
     /// same title typed in a different case.
     static func normalize(_ raw: String) -> [String] {
+        tokenMemo.value(for: raw, compute: computeTokens)
+    }
+
+    /// Remembers the tokens of titles already seen. A title's tokens depend
+    /// on nothing but the title, and the same few hundred titles are
+    /// compared again on every dashboard rebuild, so after the first pass
+    /// `normalize` is a dictionary lookup.
+    static let tokenMemo = BoundedMemo<[String]>(capacity: 4096)
+
+    private static func computeTokens(_ raw: String) -> [String] {
         var s = replacing(camelBoundaryRegex, in: raw, with: " ").lowercased()
         s = replacing(nonWordRegex, in: s, with: " ")
         // Phrase-level collapses before word-splitting, so multi-word phrases

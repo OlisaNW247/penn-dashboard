@@ -141,7 +141,7 @@ public enum AnnouncementTaskClassifier {
     }
 
     private static func matches(_ pattern: String, in text: String) -> Bool {
-        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        RegexCache.contains(pattern, in: text, options: [.caseInsensitive])
     }
 }
 

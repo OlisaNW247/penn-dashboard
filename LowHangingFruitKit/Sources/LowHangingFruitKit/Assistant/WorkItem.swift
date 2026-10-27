@@ -43,7 +43,7 @@ public struct WorkItem: Sendable, Hashable, Identifiable {
     public static func looksLikeAssessment(title: String, kind: Assignment.Kind) -> Bool {
         if kind == .quiz { return true }
         let pattern = #"(?i)\b(midterms?|exams?|quiz|quizzes|prelims?|finals|final exam)\b"#
-        return title.range(of: pattern, options: .regularExpression) != nil
+        return RegexCache.contains(pattern, in: title)
     }
 
     /// Whether this item names a real course rather than the "(unknown

@@ -31,7 +31,7 @@ public enum CourseMatcher {
     public static func normalize(_ code: String) -> String {
         let lower = code.lowercased()
         let pattern = #"^\s*([a-z]{2,5})\s?-?(\d{3,4}[a-z]?)"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
+        if let regex = RegexCache.regex(pattern),
            let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
            let dept = Range(match.range(at: 1), in: lower),
            let num = Range(match.range(at: 2), in: lower) {
@@ -82,7 +82,7 @@ public enum CourseMatcher {
         let q = question.lowercased()
 
         // 1. Explicit code anywhere in the question: "cis 2400", "cis2400".
-        if let regex = try? NSRegularExpression(pattern: #"\b([a-z]{2,5})\s?-?(\d{3,4}[a-z]?)\b"#) {
+        if let regex = RegexCache.regex(#"\b([a-z]{2,5})\s?-?(\d{3,4}[a-z]?)\b"#) {
             for m in regex.matches(in: q, range: NSRange(q.startIndex..., in: q)) {
                 guard let dept = Range(m.range(at: 1), in: q), let num = Range(m.range(at: 2), in: q),
                       let whole = Range(m.range, in: q) else { continue }

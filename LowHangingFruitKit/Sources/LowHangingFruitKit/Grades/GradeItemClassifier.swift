@@ -41,11 +41,11 @@ public enum GradeItemClassifier {
     /// attendance/participation — distinct from `isAttendanceItem`, which
     /// asks the same question about one assignment.
     public static func isAttendanceCategoryName(_ name: String) -> Bool {
-        name.range(of: #"(?i)\b(attendance|participation)\b"#, options: .regularExpression) != nil
+        RegexCache.contains(#"(?i)\b(attendance|participation)\b"#, in: name)
     }
 
     private static func isAttendanceLikeName(_ name: String) -> Bool {
-        name.range(of: #"(?i)\b(attendance|roll call|participation)\b"#, options: .regularExpression) != nil
+        RegexCache.contains(#"(?i)\b(attendance|roll call|participation)\b"#, in: name)
     }
 
     /// Additions a map should make automatically, before anything the student

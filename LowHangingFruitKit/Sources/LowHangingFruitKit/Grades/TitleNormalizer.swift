@@ -14,12 +14,21 @@ import Foundation
 public enum TitleNormalizer {
     /// Canonical token sequence for a title.
     public static func tokens(_ raw: String) -> [String] {
+        tokenMemo.value(for: raw, compute: computeTokens)
+    }
+
+    /// Titles repeat across every rebuild and every pair compared, and the
+    /// answer depends on nothing but the title (three regex passes and a
+    /// split, a hundred microseconds a title). Remembered, bounded.
+    static let tokenMemo = BoundedMemo<[String]>(capacity: 4096)
+
+    private static func computeTokens(_ raw: String) -> [String] {
         var s = raw.lowercased()
-        s = s.replacingOccurrences(of: #"[^a-z0-9\s]"#, with: " ", options: .regularExpression)
+        s = RegexCache.replacing(#"[^a-z0-9\s]"#, in: s, with: " ")
         // Phrase-level collapse before word-splitting so "problem set" (two
         // words) lines up with single-word "pset"/"homework".
-        s = s.replacingOccurrences(of: #"\bproblem\s+sets?\b"#, with: "hw", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        s = RegexCache.replacing(#"\bproblem\s+sets?\b"#, in: s, with: "hw")
+        s = RegexCache.replacing(#"\s+"#, in: s, with: " ")
             .trimmingCharacters(in: .whitespaces)
 
         guard !s.isEmpty else { return [] }

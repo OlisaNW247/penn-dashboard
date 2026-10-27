@@ -102,7 +102,7 @@ public enum WorkKindFilter: Sendable, Hashable {
         case .any: return true
         case .assessment: return item.isAssessment
         case .quiz:
-            return item.kind == .quiz || item.title.range(of: #"(?i)\bquiz(zes)?\b"#, options: .regularExpression) != nil
+            return item.kind == .quiz || RegexCache.contains(#"(?i)\bquiz(zes)?\b"#, in: item.title)
         case .exam:
             // `ExamDetector` is the shared, negation-aware rule (see its
             // header for the phone transcript that made a bare keyword
