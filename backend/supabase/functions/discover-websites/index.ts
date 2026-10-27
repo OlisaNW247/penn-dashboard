@@ -10,6 +10,7 @@
 // back through `_shared/db.ts`.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import type { CatalogCourseRow } from "../_shared/catalog.ts";
 import { crawlSite } from "../_shared/crawl.ts";
@@ -403,6 +404,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     if (req.method !== "POST") {
       throw new HttpError(405, "method_not_allowed", "discover-websites only accepts POST");
     }

@@ -3,6 +3,7 @@
 // "extract-profile" section for the wire contract.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
@@ -45,6 +46,11 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     const { userId, serviceClient } = await requireUser(req);
     const body = parseBody(await readJSON<unknown>(req));
     if (!body) {
@@ -92,7 +98,8 @@ Deno.serve(async (req) => {
     return json(200, { updated });
   } catch (err) {
     if (err instanceof HttpError) {
-      return errorResponse("unauthorized", err.message, err.status);
+      // 426 must keep its own code: the app keys its update wall on "update_required".
+      return errorResponse(err.status === 426 ? err.code : "unauthorized", err.message, err.status);
     }
     console.error("extract-profile: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);

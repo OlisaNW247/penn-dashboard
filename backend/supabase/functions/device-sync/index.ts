@@ -4,6 +4,7 @@
 // base64 of at most 2 MB and stores the string. Never logs ids or
 // ciphertext. Decisions are in `_shared/devices.ts`.
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { selectDeviceBlobs, selectLinkedDeviceIDs, upsertDeviceBlob } from "../_shared/db.ts";
 import {
@@ -21,6 +22,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     if (req.method !== "POST") {
       throw new HttpError(405, "method_not_allowed", "device-sync only accepts POST");
     }

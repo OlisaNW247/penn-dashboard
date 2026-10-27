@@ -22,6 +22,7 @@
 // code, not a parallel reimplementation that could drift.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
 import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
@@ -227,6 +228,13 @@ export async function handleAsk(
   };
 
   try {
+    // Second lock behind the app's update wall (_shared/version.ts).
+    // Skipped for ask-canary (allowProbeOverrides): it is a probe harness
+    // (scripts/ask-probe.mjs) that sends no X-Smooth-Version, and no
+    // shipped app calls it, so there is nothing to gate and probes must keep
+    // working even when LHF_REQUIRE_VERSION_HEADER is on.
+    if (!options.allowProbeOverrides) await enforceMinimumVersion(req);
+
     const { userId, serviceClient } = await timed("auth", () => withAuthTimeout(requireUser(req)));
     const rawBody = await timed("parse", () => readJSON<unknown>(req));
     const body = parseAskRequestBody(rawBody);
@@ -394,7 +402,8 @@ export async function handleAsk(
     }));
   } catch (err) {
     if (err instanceof HttpError) {
-      return errorResponse("unauthorized", err.message, err.status);
+      // 426 must keep its own code: the app keys its update wall on "update_required".
+      return errorResponse(err.status === 426 ? err.code : "unauthorized", err.message, err.status);
     }
     console.error("ask: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);
