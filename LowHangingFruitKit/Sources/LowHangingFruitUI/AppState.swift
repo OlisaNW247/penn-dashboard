@@ -5966,7 +5966,8 @@ final class AppState: ObservableObject {
     }
 
     private func persistEnrolledCanvasCourses() {
-        let byID = Dictionary(uniqueKeysWithValues: enrolledCanvasCourses.map { ($0.id, $0.name) })
+        // First wins if Canvas lists a course id twice; a duplicate key must not trap on the way to disk.
+        let byID = Dictionary(enrolledCanvasCourses.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         UserDefaults.lhf.set(byID, forKey: Self.enrolledCanvasCoursesKey)
     }
 

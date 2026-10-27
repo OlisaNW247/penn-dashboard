@@ -785,8 +785,10 @@ final class GradeWatcherStore: ObservableObject {
         // list `SyllabusMatcher.match` actually walked to build `matches` —
         // same ids either way, but matching the matcher's own input avoids
         // ever having to reason about whether the two lists could diverge.
+        // First wins on a repeated syllabus category id; a duplicate key must not trap.
         let expectedBySyllabusID = Dictionary(
-            uniqueKeysWithValues: syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) }
+            syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) },
+            uniquingKeysWith: { first, _ in first }
         )
         return match.matches.reduce(into: [:]) { result, m in
             guard m.isApplied,
@@ -1643,8 +1645,9 @@ final class GradeWatcherStore: ObservableObject {
         let built = GradeCategoryMapBuilder.fromSharedMapping(mapping, scheme: syllabus.scheme, canvasCategories: gradeCategories(courseID: courseID))
         guard let local = suggestedCategoryMap(courseID: courseID) else { return built }
 
-        let builtGroups = Dictionary(uniqueKeysWithValues: built.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
-        let localGroups = Dictionary(uniqueKeysWithValues: local.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
+        // First wins on a repeated map category id in either map; a duplicate key must not trap.
+        let builtGroups = Dictionary(built.categories.map { ($0.id, Set($0.canvasGroupIDs)) }, uniquingKeysWith: { first, _ in first })
+        let localGroups = Dictionary(local.categories.map { ($0.id, Set($0.canvasGroupIDs)) }, uniquingKeysWith: { first, _ in first })
         guard builtGroups != localGroups || built.itemAssignments != local.itemAssignments else { return nil }
         return built
     }

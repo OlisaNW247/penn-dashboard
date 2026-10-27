@@ -142,9 +142,12 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.2.0 (build 14)** (App Store
-id `6783911002`), per Olisa on 2026-10-25; **3.2.1 (build 15)** was
-submitted for review by Olisa on 2026-10-25. Before them, **3.1.0 (build
+**Release state.** Live on the App Store: **3.2.1 (build 15)** (App Store
+id `6783911002`), released 2026-10-25 at 18:46 UTC per the public iTunes
+lookup, read 2026-10-26. It is the build the launch-day installs of
+2026-10-26 got, and it carries the launch crash recorded in
+`docs/LAUNCH_CRASH_2026-10-26.md` (Known gaps). Before it, **3.2.0 (build
+14)**, live per Olisa on 2026-10-25. Before them, **3.1.0 (build
 13)**, released 2026-10-21 at 19:07 UTC per the public iTunes lookup, read
 2026-10-23
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`); before it,
@@ -1095,7 +1098,9 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
+**Current: 2924 tests / 263 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix; 2026-10-26, `swift test --no-parallel`, on Marco's Mac), one failure: `AskCitationLinkTests` "the encoded request is byte-identical…", the stale `\/` golden the 2026-10-25 audit recorded (fix the golden, not the encoder).** The 17 new tests are `DuplicateCategoryIDTests`, for the launch crash (`docs/LAUNCH_CRASH_2026-10-26.md`); run against the original source they die with the production trap. Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
+
+Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
 Either tree compiles for iOS in Debug and Release (`xcodebuild
@@ -1827,6 +1832,32 @@ itself.
 
 ## Traps that have already bitten
 
+- **A slug built from outside names is not a unique key, and
+  `Dictionary(uniqueKeysWithValues:)` turns the first collision into a
+  crash.** `GradeCategoryMapBuilder.mirroringCanvas` gave every Canvas
+  assignment group the id `"map:" + slug(name)`, where the slug is the
+  lowercased alphanumeric runs of the name, and `GradeEngine` keyed
+  `Dictionary(uniqueKeysWithValues:)` on it. Two groups named "Homework"
+  and "homework", or "Quiz (EC)" and "Quiz - EC", or the two
+  "Assignments" groups a Canvas course copy leaves behind, share an id,
+  and the dictionary traps. The automatic sync runs the grade fetch at
+  launch for every selected course, in Release, with the grades UI
+  hidden, and `recordHistory → breakdown` runs the engine on the result:
+  so the app died a few seconds after every open, for every student in
+  such a course, with nothing on screen and no way to reinstall out of
+  it. It shipped in every build since Grade Watcher existed and was
+  found by the 2026-10-25 audit the day before the 2026-10-26 launch made
+  it visible (`docs/LAUNCH_CRASH_2026-10-26.md`). The tells: a crash
+  that follows the dashboard by a few seconds, is per course rather than
+  per phone, and survives a reinstall. Two wrong fixes: dropping one of
+  the colliding groups (its weight and items vanish from the grade,
+  silently), and changing the id scheme for everyone (student edits and
+  the server's suggested mappings are persisted keyed on the bare id, so
+  a non-colliding name must keep exactly `"map:" + slug`). The right
+  shape: suffix only the collision with the Canvas group id, and make
+  every dictionary keyed on Canvas, Gradescope, syllabus or server ids
+  first-wins (`uniquingKeysWith:`), because a trap on outside data is
+  never the right failure mode.
 - **Canvas answers 401 for "not allowed", not only for "signed out".**
   On 2026-10-23 the owner paired the Chrome extension, sync worked both
   ways, and 40 minutes later the collector had uploaded nothing. Every
@@ -2596,6 +2627,18 @@ none is a ship line.
 
 ## Known gaps
 
+- **3.2.1 (15), the live build, crashes a few seconds after every open for
+  any student in a course whose Canvas assignment groups have two names
+  that slug alike** ("Homework" and "homework", two "Assignments" groups
+  in a recycled site). Reported on launch day, 2026-10-26, by several of
+  the few hundred people who installed that day, and by a few before.
+  Traced in the code (the slug trap below) to hardening plan item A1; the
+  fix is on `fix/duplicate-category-ids` for 3.2.2 (16).
+  `docs/LAUNCH_CRASH_2026-10-26.md` is the record and the plan. **Not yet
+  proven from a crash report**: Xcode's Organizer needs Marco's Apple ID
+  signed in before it lists App Store users' crashes, and no affected
+  phone has been read. Treat the first `.ips` that arrives as the proof,
+  and look for `EXC_BREAKPOINT` inside `GradeEngine`.
 - **A class's Ed posts can vanish from the phone and come back**
   (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
   over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620

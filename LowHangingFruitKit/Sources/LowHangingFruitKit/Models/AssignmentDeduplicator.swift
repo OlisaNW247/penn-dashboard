@@ -444,8 +444,9 @@ public enum AssignmentDeduplicator {
         )
         guard !matches.isEmpty else { return canvasItems + gradescopeItems }
 
-        let gradescopeByID = Dictionary(uniqueKeysWithValues: gradescopeItems.map { ($0.id, $0) })
-        let gradescopeIDByCanvasID = Dictionary(uniqueKeysWithValues: matches.map { ($0.canvasID, $0.gradescopeID) })
+        // First wins on a repeated id in either table: both are keyed on ids scraped from Gradescope and Canvas, and a duplicate key must not trap the merge.
+        let gradescopeByID = Dictionary(gradescopeItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let gradescopeIDByCanvasID = Dictionary(matches.map { ($0.canvasID, $0.gradescopeID) }, uniquingKeysWith: { first, _ in first })
         let matchedGradescopeIDs = Set(matches.map(\.gradescopeID))
 
         let mergedCanvas = canvasItems.map { canvasItem -> Assignment in

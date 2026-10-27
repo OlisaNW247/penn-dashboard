@@ -352,7 +352,13 @@ struct GradeReportView: View {
     /// ellipsis, so a caller doing its own character-budget arithmetic (like
     /// `gradescopeMatchText`) can rely on the result never exceeding
     /// `maxLength`.
-    private static func truncatedName(_ name: String, maxLength: Int) -> String {
+    ///
+    /// `nonisolated` on purpose: a `static func` on a `View` is main-actor
+    /// isolated, and Swift 6 asserts that at run time when it is reached from
+    /// nonisolated code, and `gradescopeMatchText` (already `nonisolated`, and
+    /// called straight from tests) is exactly that caller. Left isolated it
+    /// dies with `_dispatch_assert_queue_fail` and no message.
+    nonisolated private static func truncatedName(_ name: String, maxLength: Int) -> String {
         guard name.count > maxLength else { return name }
         return "\(name.prefix(maxLength - 1))\u{2026}"
     }

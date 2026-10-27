@@ -174,7 +174,8 @@ public struct CourseKnowledgeCollector: Sendable {
         var links: [CourseLink] = []
 
         // Announcements come from one call for every course at once.
-        let byCourse = Dictionary(uniqueKeysWithValues: courses.map { ($0.courseID, $0) })
+        // First wins if the course list repeats a Canvas course id; a duplicate key must not trap the sync.
+        let byCourse = Dictionary(courses.map { ($0.courseID, $0) }, uniquingKeysWith: { first, _ in first })
         do {
             let client = CanvasAnnouncementsClient(baseURL: baseURL, cookies: cookies, session: session, accessToken: accessToken)
             let since = now.addingTimeInterval(-Double(Self.announcementLookbackDays) * 86_400)

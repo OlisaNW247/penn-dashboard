@@ -102,8 +102,12 @@ private struct BerserkAlarmCountdown: View {
 
     var body: some View {
         if let dueAt, !soon {
-            if dueAt > Date.now {
-                Text(timerInterval: Date.now...dueAt, countsDown: true)
+            // One read of the clock: with two, the instant can tick past
+            // `dueAt` between the comparison and the range, and
+            // `now...dueAt` with now > dueAt is an invalid range that traps.
+            let now = Date.now
+            if dueAt > now {
+                Text(timerInterval: now...dueAt, countsDown: true)
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
             } else {

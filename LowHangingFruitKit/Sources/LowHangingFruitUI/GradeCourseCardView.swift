@@ -298,7 +298,9 @@ struct GradeSourceBadge: View {
 
 /// "91.4%" — one decimal, trimmed when it's a whole number ("100%" not "100.0%").
 func formatPercent(_ value: Double) -> String {
-    let rounded = (value * 10).rounded() / 10
+    // `Int(rounded)` below traps on infinity, NaN and anything past `Int.max`, and a 0-point item can make a ratio infinite or NaN: read those as 0 and clamp the rest, the same rule as `GradeExplanation`'s formatters.
+    let finite = value.isFinite ? min(max(value, -1_000_000), 1_000_000) : 0
+    let rounded = (finite * 10).rounded() / 10
     if rounded == rounded.rounded() {
         return "\(Int(rounded))%"
     }
@@ -308,8 +310,10 @@ func formatPercent(_ value: Double) -> String {
 /// "34/40 pts" — whole numbers unless the value genuinely has a fraction
 /// (extra credit / partial credit can produce non-integers).
 func formatPoints(_ value: Double) -> String {
-    if value == value.rounded() {
-        return "\(Int(value))"
+    // Same trap as `formatPercent` above: `inf == inf.rounded()` is true, so an infinite score would reach `Int(value)` and trap; read non-finite as 0 and clamp the rest.
+    let finite = value.isFinite ? min(max(value, -1_000_000), 1_000_000) : 0
+    if finite == finite.rounded() {
+        return "\(Int(finite))"
     }
-    return String(format: "%.1f", value)
+    return String(format: "%.1f", finite)
 }

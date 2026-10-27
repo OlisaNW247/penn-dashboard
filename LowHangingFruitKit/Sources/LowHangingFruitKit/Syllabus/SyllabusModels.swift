@@ -120,9 +120,22 @@ extension SyllabusGradingScheme {
         let sum = profile.weights.reduce(0) { $0 + $1.percent }
         guard SyllabusParser.acceptedSumRange.contains(sum) else { return nil }
 
-        let categories = profile.weights.map { weight in
+        // The id is the name's `categoryKey` so a confirmed mapping survives a
+        // re-import, but the server's weight list is not deduplicated the way
+        // `SyllabusParser.weightCandidates` dedupes a local parse: "Quiz" and
+        // "Quizzes" both normalize to "quiz". Two categories under one id
+        // made `SyllabusMatcher`'s results and every `[syllabusCategoryID:
+        // match]` table downstream collide. The first keeps the bare key, so
+        // an id that doesn't collide is exactly what it was and a persisted
+        // confirmation still resolves; later ones get an ordinal (`quiz-2`).
+        // The wrong fix is dropping the repeat, which would throw away a
+        // weight the syllabus really lists and leave the sum short.
+        let ids = GradeCategoryMapBuilder.disambiguatedIDs(
+            profile.weights.map { TitleNormalizer.categoryKey($0.name) }
+        )
+        let categories = profile.weights.enumerated().map { index, weight in
             SyllabusCategory(
-                id: TitleNormalizer.categoryKey(weight.name),
+                id: ids[index],
                 name: weight.name,
                 weightPercent: weight.percent,
                 dropLowest: weight.dropLowest ?? 0,

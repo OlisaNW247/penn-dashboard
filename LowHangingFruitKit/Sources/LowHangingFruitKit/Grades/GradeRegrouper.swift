@@ -36,7 +36,8 @@ public enum GradeRegrouper {
     }
 
     public static func apply(_ map: GradeCategoryMap, to canvasCategories: [GradeCategory]) -> Output {
-        let canvasByID = Dictionary(uniqueKeysWithValues: canvasCategories.map { ($0.id, $0) })
+        // First wins if Canvas hands back a group id twice; a duplicate key must not trap.
+        let canvasByID = Dictionary(canvasCategories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         // A Canvas group can be folded into at most one map category — the
         // map is the one place that decides this, so if a group somehow
@@ -147,10 +148,12 @@ public enum GradeRegrouper {
             )
         }
 
+        // First wins on a repeated map category id, same as the engine's tables: a malformed map must not trap.
         let groupNamesByCategoryID: [String: [String]] = Dictionary(
-            uniqueKeysWithValues: map.categories.map { category in
+            map.categories.map { category in
                 (category.id, category.canvasGroupIDs.compactMap { canvasByID[$0]?.name })
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
 
         return Output(

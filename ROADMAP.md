@@ -42,6 +42,17 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
+  few hundred people installed 3.2.1 (15) on launch day and some of them
+  crash a few seconds after every open. The code says why: two Canvas
+  assignment groups whose names slug to the same id trap
+  `GradeEngine`'s `Dictionary(uniqueKeysWithValues:)` on every grade
+  fetch, which the automatic sync runs at launch for everyone.
+  `docs/LAUNCH_CRASH_2026-10-26.md` is the record and the plan: the fix
+  is on `fix/duplicate-category-ids`, then 3.2.2 (16) with an expedited
+  review, then the floor. Not yet proven from a crash report: Xcode's
+  Organizer needs Marco's Apple ID signed in before it will list them.
+
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).
   Collector, encrypted phone sync with QR pairing, Canvas Files, Penn

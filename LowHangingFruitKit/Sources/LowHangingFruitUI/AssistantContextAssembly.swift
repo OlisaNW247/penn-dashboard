@@ -185,8 +185,10 @@ extension AppState {
             // `ask` and Grade Watcher never disagree about how a course is
             // graded.
             guard let breakdown = gradeWatcher.breakdown(courseID: courseID) else { continue }
+            // First wins if Canvas hands back a group id twice; a duplicate key must not trap while building ask's context.
             let rawByID = Dictionary(
-                uniqueKeysWithValues: gradeWatcher.gradeCategories(courseID: courseID).map { ($0.id, $0) }
+                gradeWatcher.gradeCategories(courseID: courseID).map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             for category in breakdown.categories {
                 guard !seenNames.contains(category.name) else { continue }
