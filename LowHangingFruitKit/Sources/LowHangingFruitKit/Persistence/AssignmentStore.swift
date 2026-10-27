@@ -69,6 +69,33 @@ public final class AssignmentStore {
     public private(set) var lastSaveError: String?
     public private(set) var failedSaveCount: Int = 0
 
+    /// The read-side counterpart of the two properties above: the most recent
+    /// failed fetch of the ledger, and how many failed this session.
+    ///
+    /// A fetch that throws is not an empty ledger, and for a long time the
+    /// store treated it as one (`allRows` returned `[]`): a sync read "nothing
+    /// here", flagged nothing, refused or inserted accordingly, and the next
+    /// read, a second later, might see everything. The two callers that decide
+    /// something from the answer abort instead (`reconcile`, `completionRecord`,
+    /// `holdsFeedRows`), and every failure, whoever handles it, is counted here
+    /// so `StorageHealth` can say the ledger could not be read, which is a
+    /// different fact from "nothing is being saved". Cleared by the next fetch
+    /// that succeeds, like `lastSaveError`.
+    public private(set) var lastReadError: String?
+    public private(set) var failedReadCount: Int = 0
+
+    /// Test seam: how many fetches succeed before `readFailureForTesting` takes
+    /// effect, for the case that matters to `reconcile`: a pass whose first
+    /// fetch works and whose next one does not. Zero, the default, fails from
+    /// the first.
+    var readsBeforeFailureForTesting = 0
+
+    /// Test seam: while set, every fetch of the ledger throws this instead of
+    /// reading. A closed or corrupted container fails in ways a test cannot
+    /// arrange on demand, and the interesting behaviour is what the callers do
+    /// when the answer is an error. Never set outside tests.
+    var readFailureForTesting: (any Error)?
+
     public struct ReconcileResult: Sendable {
         /// The current active set for the reconciled source — what the caller
         /// should assign to `canvasItems` / `gradescopeItems`.
@@ -77,6 +104,20 @@ public final class AssignmentStore {
         /// (empty result for a source that previously had items). The prior data
         /// was kept; the caller may want to surface a soft "couldn't refresh".
         public let wasSuspectedPartial: Bool
+        /// True when the ledger could not be read, so nothing was reconciled:
+        /// nothing written, nothing flagged gone, nothing aged out, and no
+        /// verdict on whether the fetch looked suspiciously empty (the guard
+        /// compares the fetch with what the ledger holds, and the ledger could
+        /// not say). `items` is empty and means nothing in that case. The
+        /// caller must keep the pool it already has, not replace it with
+        /// `items`, or a read error becomes a wiped dashboard.
+        public let readFailed: Bool
+
+        init(items: [Assignment], wasSuspectedPartial: Bool, readFailed: Bool = false) {
+            self.items = items
+            self.wasSuspectedPartial = wasSuspectedPartial
+            self.readFailed = readFailed
+        }
     }
 
     // MARK: Construction
@@ -252,7 +293,19 @@ public final class AssignmentStore {
         // One id-keyed view of the *whole* ledger, duplicates already collapsed.
         // Every lookup below goes through it, because it is now the only thing
         // keeping one assignment to one row.
-        var byID = rowsByID()
+        //
+        // If the ledger cannot be read, stop here. Treating the failure as an
+        // empty ledger is the one reading that does damage, whichever way the
+        // fetch went: an empty fetch would pass the guard below as a legitimate
+        // first sync, and a non-empty one would insert a twin of every row the
+        // student already has. The fetched data is refetchable on the next
+        // sync; nothing it would have written is worth guessing at.
+        var byID: [String: StoredAssignment]
+        do {
+            byID = try resolvedRowsByID()
+        } catch {
+            return ReconcileResult(items: [], wasSuspectedPartial: false, readFailed: true)
+        }
         let existing = byID.values.filter { $0.sourceRaw == source.rawValue }
 
         // Partial-fetch guard: a source that previously had items suddenly
@@ -263,8 +316,12 @@ public final class AssignmentStore {
         // items" — they're bookkeeping, and letting them arm the guard would
         // refuse a legitimately empty first sync for a migrated user.
         if fetched.isEmpty && existing.contains(where: { !$0.isCompletionOnly }) {
+            // Read off the rows already in hand, for the reason given at
+            // `active` below: a fresh fetch that failed here would hand the
+            // caller an empty list and a notice saying it is showing the
+            // saved assignments.
             return ReconcileResult(
-                items: activeAssignments(source: source, now: now),
+                items: existing.filter { isVisible($0, now: now) }.map(\.assignment),
                 wasSuspectedPartial: true
             )
         }
@@ -290,6 +347,16 @@ public final class AssignmentStore {
         }
         saveChanges()
 
+        // The answer is read off the map this pass already holds rather than
+        // from a fresh fetch afterwards. A second fetch that failed here would
+        // come back empty and hand the caller `items: []` with `readFailed`
+        // false, which is a wiped dashboard by another route. Taken before the
+        // prune below, which is safe: it deletes only what `isVisible` already
+        // excludes.
+        let active = byID.values
+            .filter { $0.sourceRaw == source.rawValue && isVisible($0, now: now) }
+            .map(\.assignment)
+
         // Sync is the natural place to collect: the rows dropped here are ones
         // this very reconcile just confirmed are both gone from the feed and
         // long past due. Completion-only rows are safe — they're finished by
@@ -297,7 +364,7 @@ public final class AssignmentStore {
         pruneAgedOut(now: now)
 
         return ReconcileResult(
-            items: activeAssignments(source: source, now: now),
+            items: active,
             wasSuspectedPartial: false
         )
     }
@@ -321,7 +388,7 @@ public final class AssignmentStore {
     /// archive is untouchable here.
     @discardableResult
     public func pruneAgedOut(now: Date = Date()) -> Int {
-        let doomed = allRows().filter { isAgedOut($0, now: now) }
+        let doomed = ((try? allRows()) ?? []).filter { isAgedOut($0, now: now) }
         guard !doomed.isEmpty else { return 0 }
         for row in doomed { context.delete(row) }
         saveChanges()
@@ -489,12 +556,23 @@ public final class AssignmentStore {
     /// breaks, and a narrower lookup is precisely what would let it insert a
     /// twin. Scanning the whole table on each call is affordable at a
     /// student's few hundred rows, and a duplicated assignment is not.
+    ///
+    /// This is the forgiving form: a ledger that cannot be read reads as empty,
+    /// and the failure is counted (`failedReadCount`). That is right for the
+    /// many callers whose worst outcome is doing nothing (a purge or a flag
+    /// finds no rows), and wrong for the ones that decide something from the
+    /// answer, which use `resolvedRowsByID()` and handle the throw themselves.
     @discardableResult
     private func rowsByID() -> [String: StoredAssignment] {
+        (try? resolvedRowsByID()) ?? [:]
+    }
+
+    /// `rowsByID()` that says when the ledger could not be read.
+    private func resolvedRowsByID() throws -> [String: StoredAssignment] {
         var byID: [String: StoredAssignment] = [:]
         var doomed: [StoredAssignment] = []
 
-        for row in allRows() {
+        for row in try allRows() {
             guard let kept = byID[row.id] else {
                 byID[row.id] = row
                 continue
@@ -534,8 +612,24 @@ public final class AssignmentStore {
     /// The raw table, duplicates and all. Only `rowsByID()` (which resolves
     /// them) and the diagnostics in `stats()` (which count them) may use this —
     /// everything else goes through a deduplicated view.
-    private func allRows() -> [StoredAssignment] {
-        (try? context.fetch(FetchDescriptor<StoredAssignment>())) ?? []
+    ///
+    /// **Throws on a failed fetch; it used to return `[]`.** An empty ledger and
+    /// an unreadable one are different facts, and the first was reported for
+    /// both (hardening plan 2026-10-25, KCR-02 and DAT-10). Every failure is
+    /// counted here, once, whether the caller aborts on it or carries on.
+    private func allRows(_ operation: String = #function) throws -> [StoredAssignment] {
+        do {
+            if let injected = readFailureForTesting {
+                if readsBeforeFailureForTesting > 0 { readsBeforeFailureForTesting -= 1 } else { throw injected }
+            }
+            let rows = try context.fetch(FetchDescriptor<StoredAssignment>())
+            lastReadError = nil
+            return rows
+        } catch {
+            failedReadCount += 1
+            lastReadError = "\(operation) — \(error.localizedDescription)"
+            throw error
+        }
     }
 
     private func activeAssignments(source: Assignment.Source, now: Date) -> [Assignment] {
@@ -801,7 +895,10 @@ public final class AssignmentStore {
     /// they go gone-from-feed and age out.
     public func delete(ids: Set<String>) {
         guard !ids.isEmpty else { return }
-        for row in allRows() where ids.contains(row.id) { context.delete(row) }
+        // Nothing to delete is found in a ledger that cannot be read, and
+        // saving is then pointless; the failed read is already counted.
+        guard let rows = try? allRows() else { return }
+        for row in rows where ids.contains(row.id) { context.delete(row) }
         saveChanges()
     }
 
@@ -824,10 +921,17 @@ public final class AssignmentStore {
         public static let empty = CompletionRecord(ids: [], dates: [:])
     }
 
-    public func completionRecord() -> CompletionRecord {
+    ///
+    /// **Nil means the ledger could not be read, which is not "nothing is
+    /// completed".** The caller that took `.empty` for that overwrote its
+    /// in-memory record of what the student had finished with nothing, and
+    /// every finished card went back to open on the next rebuild. A caller gets
+    /// nil and keeps what it has (`AppState.reloadCompletionFromLedger`).
+    public func completionRecord() -> CompletionRecord? {
+        guard let rows = try? resolvedRowsByID() else { return nil }
         var ids: Set<String> = []
         var dates: [String: Date] = [:]
-        for row in rowsByID().values where row.isCompletedByUser {
+        for row in rows.values where row.isCompletedByUser {
             ids.insert(row.id)
             if let completedAt = row.completedAt { dates[row.id] = completedAt }
         }
@@ -893,8 +997,8 @@ public final class AssignmentStore {
     /// mirrored onto rows, and when the two drifted the Done tab and the aging
     /// exemption disagreed about what was finished — with that exemption being
     /// the only thing standing between completed work and deletion.
-    public func completionDates() -> [String: Date] {
-        completionRecord().dates
+    public func completionDates() -> [String: Date]? {
+        completionRecord()?.dates
     }
 
     /// One-time import of the pre-ledger completion state — the
@@ -1121,8 +1225,16 @@ public final class AssignmentStore {
     /// forwards a sample item's completion to `AppState`), but "a student who
     /// previewed first is still a new student" must not depend on that staying
     /// true.
-    public func holdsFeedRows(ignoring ignoredIDs: Set<String> = []) -> Bool {
-        allRows().contains { row in
+    ///
+    /// **Nil means the ledger could not be read.** Answering `false` there says
+    /// "this is a new student", which is the one conclusion the backlog rule
+    /// must not draw from a failure: a student whose ledger is merely locked
+    /// for a moment would then be classed as new when their first feed arrives,
+    /// and their older work hidden. The caller leaves the decision for a launch
+    /// that can read (`AppState.recordSignupBacklogForExistingInstallIfNeeded`).
+    public func holdsFeedRows(ignoring ignoredIDs: Set<String> = []) -> Bool? {
+        guard let rows = try? allRows() else { return nil }
+        return rows.contains { row in
             guard let source = Assignment.Source(rawValue: row.sourceRaw),
                   SignupBacklog.isFeedSource(source)
             else { return false }
@@ -1133,7 +1245,7 @@ public final class AssignmentStore {
     // MARK: Test/diagnostic access
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.
-    public func rowCount() -> Int { allRows().count }
+    public func rowCount() -> Int { ((try? allRows()) ?? []).count }
 
     /// The ledger's rows, duplicates already collapsed, for tests that need to
     /// assert on stored fields the value-type `Assignment` doesn't carry —
@@ -1151,11 +1263,16 @@ public final class AssignmentStore {
         /// Most recent failed write this session, and the running count.
         public let lastSaveError: String?
         public let failedSaveCount: Int
+        /// The read-side counterpart: the most recent failed fetch this
+        /// session, and the running count (`AssignmentStore.failedReadCount`).
+        public let lastReadError: String?
+        public let failedReadCount: Int
 
-        /// True only when the ledger is on disk *and* its writes are landing.
-        /// Settings should key off this rather than `isPersistent` alone.
+        /// True only when the ledger is on disk, its writes are landing *and*
+        /// it can be read. Settings should key off this rather than
+        /// `isPersistent` alone.
         public var isHealthy: Bool {
-            isPersistent && storageFailureReason == nil && failedSaveCount == 0
+            isPersistent && storageFailureReason == nil && failedSaveCount == 0 && failedReadCount == 0
         }
         public let total: Int
         public let canvas: Int
@@ -1184,12 +1301,14 @@ public final class AssignmentStore {
     /// Completion-only rows are excluded: the panel answers "what is the ledger
     /// holding for me", and a hidden bookkeeping row is not an assignment.
     public func stats() -> LedgerStats {
-        let rows = allRows().filter { !$0.isCompletionOnly }
+        let rows = ((try? allRows()) ?? []).filter { !$0.isCompletionOnly }
         return LedgerStats(
             isPersistent: isPersistent,
             storageFailureReason: storageFailureReason,
             lastSaveError: lastSaveError,
             failedSaveCount: failedSaveCount,
+            lastReadError: lastReadError,
+            failedReadCount: failedReadCount,
             total: rows.count,
             canvas: rows.filter { $0.sourceRaw == Assignment.Source.canvas.rawValue }.count,
             gradescope: rows.filter { $0.sourceRaw == Assignment.Source.gradescope.rawValue }.count,

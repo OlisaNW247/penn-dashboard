@@ -176,7 +176,7 @@ struct DuplicateRowCompletionTests {
         #expect(store.rowCount() == 1)
         let shown = try #require(store.currentAssignments().first, "the real assignment must still be on the dashboard")
         #expect(shown.title == "Problem set 4")
-        #expect(store.completionRecord().ids == [id], "and still ticked")
+        #expect(store.completionRecordOrFail().ids == [id], "and still ticked")
     }
 
     @MainActor

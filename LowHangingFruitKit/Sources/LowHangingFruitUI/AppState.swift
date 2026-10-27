@@ -398,6 +398,20 @@ final class AppState: ObservableObject {
     /// `recordSignupBacklogForExistingInstallIfNeeded`.
     private var signupBacklogPersistedFlagsOverride: (complete: Bool, inPreview: Bool)?
 
+    /// Set for the life of this process when the launch-time check for an
+    /// existing install could not read the ledger (`AssignmentStore.holdsFeedRows`
+    /// answered nil). While set, placement 2 takes no decision either.
+    ///
+    /// The check stays undecided on a failed read, which is right, but
+    /// "undecided" is also exactly what placement 2 reads as "a student who has
+    /// not synced yet" and records a sign-up for when their first feed items
+    /// arrive. A ledger that was only briefly unreadable (protected data not yet
+    /// available, a locked store) would then be taken for a new student the
+    /// moment it could be read again, and everything of theirs older than a week
+    /// hidden. In memory only: the next launch asks the question again against
+    /// a ledger it can read, and decides properly.
+    private var signupBacklogDecisionDeferred = false
+
     /// How many otherwise-visible unfinished items the sign-up rule withholds
     /// from the dashboard (or would, while `signupBacklogRevealed`). Zero for an
     /// existing install and for anyone before their first sync. Drives the
@@ -1141,7 +1155,13 @@ final class AppState: ObservableObject {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
             // survives a reinstall.
-            let completion = store.completionRecord()
+            //
+            // `nil` is a ledger that could not be read, not a student who has
+            // finished nothing. Nothing is overwritten by taking it as empty
+            // here, because these sets start empty, and the first rebuild that
+            // can read the ledger fills them (`reloadCompletionFromLedger`,
+            // which keeps what it has on a failed read).
+            let completion = store.completionRecord() ?? .empty
             self.completedAssignmentIDs = completion.ids
             self.completionDates = completion.dates
 
@@ -1643,10 +1663,26 @@ final class AppState: ObservableObject {
         let firstLaunch = backlogStore.claimFirstLaunch()
         let onboardingComplete = signupBacklogPersistedFlagsOverride?.complete ?? hasCompletedOnboarding
         let inPreview = signupBacklogPersistedFlagsOverride?.inPreview ?? isPreviewMode
+        // A ledger that cannot be read answers neither yes nor no. `false`
+        // would be "no feed rows, so a new student", and that conclusion is
+        // not the failure's to draw; the decision is left for a launch that can
+        // read, and `signupBacklogDecisionDeferred` keeps placement 2 from
+        // taking it in the meantime. Evaluated lazily, as before: the scan runs
+        // only on the launches that need it.
+        var ledgerUnreadable = false
+        func ledgerHoldsFeedRows() -> Bool {
+            guard let store = assignmentStore else { return false }
+            guard let holds = store.holdsFeedRows(ignoring: Self.sampleDataIDs) else {
+                ledgerUnreadable = true
+                return false
+            }
+            return holds
+        }
         backlogStore.recordExistingInstallIfUndecided(
             preDatesFeature: firstLaunch && onboardingComplete && !inPreview,
-            ledgerHoldsFeedRows: assignmentStore?.holdsFeedRows(ignoring: Self.sampleDataIDs) ?? false
+            ledgerHoldsFeedRows: ledgerHoldsFeedRows()
         )
+        if ledgerUnreadable { signupBacklogDecisionDeferred = true }
     }
 
     /// Placement 2: called from `rebuildDashboardItems()` just before its
@@ -1658,6 +1694,7 @@ final class AppState: ObservableObject {
     /// only be items that arrived since launch: a first sign-up.
     private func recordSignupBacklogAtFirstFeedIfNeeded(now: Date) {
         guard !isUsingFixtureData,
+              !signupBacklogDecisionDeferred,
               let backlogStore = signupBacklogStore,
               backlogStore.decision == .undecided,
               !(canvasItems.isEmpty && gradescopeItems.isEmpty
@@ -4282,6 +4319,48 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// The notice a Canvas sync leaves when it could not safely replace what the
+    /// dashboard shows: the fetch looked suspiciously empty, or the ledger could
+    /// not be read to reconcile it into. Either way the saved assignments stay.
+    private static let canvasKeptSavedNotice =
+        "couldn't fully refresh canvas just now. showing your saved assignments."
+
+    /// What `sync()` does with a fetched Canvas feed once it has one: reconcile
+    /// it into the ledger and take the ledger's answer as the pool. A function
+    /// of its own so a test can drive it without a network.
+    ///
+    /// If the ledger could not be read (`readFailed`), nothing was reconciled
+    /// and the pool is left exactly as it was. Replacing it with the result's
+    /// empty `items` would turn a read error into a wiped dashboard, and
+    /// replacing it with `fetched` would show the feed's rolling window as if
+    /// it were everything the student has. Same notice as a suspiciously empty
+    /// fetch, because to the student it is the same thing: Canvas could not be
+    /// refreshed just now, and what they see is what was saved.
+    func reconcileCanvasFetch(_ fetched: [Assignment], into store: AssignmentStore) {
+        let result = store.reconcile(fetched, source: .canvas)
+        guard !result.readFailed else {
+            syncNotice = Self.canvasKeptSavedNotice
+            return
+        }
+        canvasItems = result.items.sorted(by: Self.byDueDate)
+        if result.wasSuspectedPartial {
+            syncNotice = Self.canvasKeptSavedNotice
+        }
+        // Rows this reconcile just created may be the ones a carried-over
+        // completion has been waiting for.
+        reloadCompletionFromLedger()
+    }
+
+    /// The Gradescope half of `reconcileCanvasFetch`: same ledger, same rule
+    /// that an unreadable ledger leaves the pool alone. It posts no notice,
+    /// as before; a Gradescope sync that did not land is not announced either.
+    func reconcileGradescopeFetch(_ fetched: [Assignment], into store: AssignmentStore) {
+        let result = store.reconcile(fetched, source: .gradescope)
+        guard !result.readFailed else { return }
+        gradescopeItems = result.items
+        reloadCompletionFromLedger()
+    }
+
     func sync() async {
         guard let url = URL(string: canvasICSURL), !canvasICSURL.isEmpty else {
             error = "Paste your Canvas calendar feed URL first."
@@ -4309,14 +4388,7 @@ final class AppState: ObservableObject {
             // items that dropped out of the rolling feed are retained, and a
             // suspiciously empty fetch is refused so one blip can't wipe the list.
             if let store = assignmentStore {
-                let result = store.reconcile(fetched, source: .canvas)
-                canvasItems = result.items.sorted(by: Self.byDueDate)
-                if result.wasSuspectedPartial {
-                    syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
-                }
-                // Rows this reconcile just created may be the ones a carried-over
-                // completion has been waiting for.
-                reloadCompletionFromLedger()
+                reconcileCanvasFetch(fetched, into: store)
             } else {
                 canvasItems = fetched
             }
@@ -4450,8 +4522,7 @@ final class AppState: ObservableObject {
             )
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
-                gradescopeItems = store.reconcile(fetched, source: .gradescope).items
-                reloadCompletionFromLedger()
+                reconcileGradescopeFetch(fetched, into: store)
             } else {
                 gradescopeItems = fetched
             }
@@ -7971,6 +8042,11 @@ final class AppState: ObservableObject {
     /// so the two can never drift; without one (store creation failed — see
     /// `assignmentStore`), the optimistic values stand and completion is
     /// session-only, which is the same degradation the rest of the ledger has.
+    ///
+    /// A ledger that cannot be read answers nil, and then nothing changes: the
+    /// sets keep what they hold. Taking that for "no completions" overwrote the
+    /// student's finished work with an empty set and reopened every card,
+    /// though every row was intact on disk.
     func reloadCompletionFromLedger() {
         guard let record = assignmentStore?.completionRecord() else { return }
         completedAssignmentIDs = record.ids

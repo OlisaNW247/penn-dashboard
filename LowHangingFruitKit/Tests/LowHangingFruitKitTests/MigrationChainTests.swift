@@ -110,7 +110,7 @@ struct MigrationChainTests {
         #expect(summary.didRun)
         #expect(summary.completionsImported == 0)
         #expect(summary.observationsImported == 0)
-        #expect(ledger.completionRecord().ids.isEmpty)
+        #expect(ledger.completionRecordOrFail().ids.isEmpty)
         #expect(history.allHistory().isEmpty)
         // Both migrations must record that they ran, or every later launch
         // re-scans a domain that will never have anything in it.
@@ -133,7 +133,7 @@ struct MigrationChainTests {
 
         // Completions reached SwiftData — all three, including the two sources.
         #expect(summary.completionsImported == 3)
-        let record = ledger.completionRecord()
+        let record = ledger.completionRecordOrFail()
         #expect(record.ids == Set(completedIDs))
 
         // Timestamps survive, and the one that never had a timestamp still
@@ -217,7 +217,7 @@ struct MigrationChainTests {
         launch(legacy: legacy, shared: shared,
                assignmentStore: ledger, gradeHistoryStore: history)
 
-        #expect(ledger.completionRecord().ids == Set(completedIDs))
+        #expect(ledger.completionRecordOrFail().ids == Set(completedIDs))
         #expect(history.allHistory().count == 2)
     }
 
@@ -239,7 +239,7 @@ struct MigrationChainTests {
             let ledger = try AssignmentStore(url: ledgerURL)
             let history = try GradeHistoryStore(url: historyURL)
             launch(legacy: legacy, shared: shared, assignmentStore: ledger, gradeHistoryStore: history)
-            #expect(ledger.completionRecord().ids.count == 3)
+            #expect(ledger.completionRecordOrFail().ids.count == 3)
         }
 
         // Launch 2 — same defaults, same stores on disk.
@@ -254,7 +254,7 @@ struct MigrationChainTests {
 
         // And nothing doubled: three completions, not six; two courses of
         // history with their original observation counts, not four.
-        #expect(ledger.completionRecord().ids.count == 3)
+        #expect(ledger.completionRecordOrFail().ids.count == 3)
         #expect(ledger.stats().duplicateIDs == 0)
         #expect(history.allHistory().count == 2)
         #expect(history.history(courseID: "CIS 1200").count == 2)
@@ -318,7 +318,7 @@ struct MigrationChainTests {
         // archived" rather than as anything invented.
         let reopened = try AssignmentStore(url: ledgerURL)
         #expect(reopened.rowCount() == 1)
-        #expect(reopened.completionRecord().ids == ["canvas:v4a"])
+        #expect(reopened.completionRecordOrFail().ids == ["canvas:v4a"])
         #expect(reopened.archivedAssignmentIDs().isEmpty)
         #expect(reopened.archivedTerms().isEmpty)
         #expect(reopened.stats().archived == 0)
@@ -490,7 +490,7 @@ struct MigrationChainTests {
         // Degraded, not broken: everything still lands on the ledger, read out
         // of the only domain there is.
         #expect(summary.completionsImported == 3)
-        #expect(ledger.completionRecord().ids == Set(completedIDs))
+        #expect(ledger.completionRecordOrFail().ids == Set(completedIDs))
         #expect(history.allHistory().count == 2)
 
         // Crucially the App Group marker is NOT set, so a later launch that
@@ -562,7 +562,7 @@ struct MigrationChainTests {
         let visible = ledger.currentAssignments()
         #expect(visible.count == 1)
         #expect(visible.first?.id == "canvas:101")
-        #expect(ledger.completionRecord().ids.contains("canvas:101"))
+        #expect(ledger.completionRecordOrFail().ids.contains("canvas:101"))
         #expect(ledger.stats().duplicateIDs == 0)
     }
 
@@ -583,6 +583,6 @@ struct MigrationChainTests {
         try seedLegacyData(legacy, completedAt: Date(timeIntervalSince1970: 1_700_000_000))
         launch(legacy: legacy, shared: shared, assignmentStore: ledger, gradeHistoryStore: history)
 
-        #expect(ledger.completionRecord().dates["canvas:101"] == authoritative)
+        #expect(ledger.completionRecordOrFail().dates["canvas:101"] == authoritative)
     }
 }

@@ -102,7 +102,7 @@ struct CloudReadyLedgerTests {
         let id = Assignment.Source.canvas.rawValue + ":1"
 
         store.setCompleted(ids: [id], at: Date(timeIntervalSince1970: 500))
-        let record = store.completionRecord()
+        let record = store.completionRecordOrFail()
 
         // `userCompleted`/`canvasSubmitted`/`gradescopeSubmitted` all gained
         // `= false` defaults; this proves a real completion still flips

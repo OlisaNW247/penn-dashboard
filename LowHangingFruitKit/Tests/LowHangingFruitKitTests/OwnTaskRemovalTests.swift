@@ -282,7 +282,7 @@ struct OwnTaskRemovalTests {
         vm.reload()
         #expect(titles(vm.doneSections()).contains(task.title), "finished work is in prev before it is deleted")
         if onDisk {
-            #expect(h.store.completionRecord().ids.contains(task.asAssignment().id))
+            #expect(h.store.completionRecordOrFail().ids.contains(task.asAssignment().id))
         }
 
         // The card has no button once the task is finished (a finished task is
@@ -295,7 +295,7 @@ struct OwnTaskRemovalTests {
         // nothing. The id is a fresh UUID, so no later task can collide with it.
         #expect(!titles(vm.doneSections()).contains(task.title))
         if onDisk {
-            #expect(!h.store.completionRecord().ids.contains(task.asAssignment().id))
+            #expect(!h.store.completionRecordOrFail().ids.contains(task.asAssignment().id))
         }
 
         try h.relaunch()
@@ -381,18 +381,18 @@ struct OwnTaskRemovalTests {
         let vm = DashboardViewModel()
         vm.bind(to: h.state)
         vm.complete(try #require(vm.items.first { $0.id == finished.id }))
-        #expect(h.store.completionRecord().ids.contains(finished.id))
-        let completedAt = try #require(h.store.completionRecord().dates[finished.id])
+        #expect(h.store.completionRecordOrFail().ids.contains(finished.id))
+        let completedAt = try #require(h.store.completionRecordOrFail().dates[finished.id])
 
         vm.removeOwnTask(try #require(vm.items.first { $0.id == untouched.id }))
 
         // The record is the ledger's, not the task's, and stopping the task
         // touches only the task.
         #expect(h.state.isCompleted(finished))
-        #expect(h.store.completionRecord().ids.contains(finished.id))
-        #expect(h.store.completionRecord().dates[finished.id] == completedAt)
+        #expect(h.store.completionRecordOrFail().ids.contains(finished.id))
+        #expect(h.store.completionRecordOrFail().dates[finished.id] == completedAt)
         #expect(!h.state.isCompleted(untouched))
-        #expect(!h.store.completionRecord().ids.contains(untouched.id))
+        #expect(!h.store.completionRecordOrFail().ids.contains(untouched.id))
 
         try h.relaunch()
         #expect(h.state.recurringTasks.isEmpty)

@@ -406,7 +406,7 @@ struct SyllabusExamServerRowsTests {
         let stored = store.assignments(source: .canvasAnnouncement, now: Self.now)
         #expect(stored.count == 2)
         #expect(stored.first { $0.id == phone.id }?.dueAt == Self.date(10, 30, 23, 59, 59))
-        #expect(store.completionRecord().ids.contains(phone.id))
+        #expect(store.completionRecordOrFail().ids.contains(phone.id))
 
         // And a third reading, the same, adds nothing.
         #expect(store.upsert(server, now: Self.now) == 0)

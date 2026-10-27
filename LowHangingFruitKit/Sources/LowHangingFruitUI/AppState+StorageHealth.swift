@@ -38,6 +38,30 @@ enum StorageHealth {
         guard !isFixtureData else { return false }
         return !isPersistent || lastSaveFailed
     }
+
+    /// How many times each store failed this session, by direction.
+    ///
+    /// The banner above is a verdict about writing: nothing is being kept. A
+    /// ledger that cannot be *read* is a different fact, and it used to leave no
+    /// trace at all, because the store answered a failed fetch as an empty one
+    /// (hardening plan 2026-10-25, B6). This is the read-side counterpart, kept
+    /// as counts rather than a second verdict. Whether a failed read should also
+    /// raise the banner is a product decision that was not made here: its text
+    /// says "not saving", which is not what a failed read means, and no new
+    /// words were allowed.
+    ///
+    /// Plain `Sendable` values so a test can build one and a rule over it needs
+    /// no store and no actor (CLAUDE.md, the `decidedText` trap).
+    struct Failures: Sendable, Equatable {
+        var ledgerReads = 0
+        var ledgerSaves = 0
+
+        /// Failed fetches across every store.
+        nonisolated var reads: Int { ledgerReads }
+        /// Failed writes across every store.
+        nonisolated var saves: Int { ledgerSaves }
+        nonisolated var isClean: Bool { reads == 0 && saves == 0 }
+    }
 }
 
 extension AppState {
@@ -55,5 +79,14 @@ extension AppState {
         return StorageHealth.showsNotSavingBanner(isFixtureData: isUsingFixtureData,
                                                   isPersistent: store.isPersistent,
                                                   lastSaveFailed: store.lastSaveError != nil)
+    }
+
+    /// What the stores have failed to read or write this session. See
+    /// `StorageHealth.Failures`. Session counts, not "failing now": a read that
+    /// failed once and then succeeded still shows, which is the point of
+    /// counting. Nothing reads it in a release build yet.
+    var storageFailures: StorageHealth.Failures {
+        StorageHealth.Failures(ledgerReads: assignmentStore?.failedReadCount ?? 0,
+                               ledgerSaves: assignmentStore?.failedSaveCount ?? 0)
     }
 }

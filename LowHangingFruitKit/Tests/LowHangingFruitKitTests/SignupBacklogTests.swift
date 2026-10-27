@@ -291,14 +291,14 @@ struct SignupBacklogLedgerQuestionTests {
 
     @Test("an empty ledger holds no feed rows")
     func emptyLedger() throws {
-        #expect(try AssignmentStore(inMemory: true).holdsFeedRows() == false)
+        #expect(try AssignmentStore(inMemory: true).holdsFeedRowsOrFail() == false)
     }
 
     @Test("manual work alone is not a feed row")
     func manualIsNotFeed() throws {
         let store = try AssignmentStore(inMemory: true)
         store.upsert([feed(.manual, "manual-1")])
-        #expect(store.holdsFeedRows() == false)
+        #expect(store.holdsFeedRowsOrFail() == false)
     }
 
     @Test("a row from any feed source counts",
@@ -306,25 +306,25 @@ struct SignupBacklogLedgerQuestionTests {
     func feedRowCounts(source: Assignment.Source) throws {
         let store = try AssignmentStore(inMemory: true)
         store.upsert([feed(source, "row-1")])
-        #expect(store.holdsFeedRows())
+        #expect(store.holdsFeedRowsOrFail())
     }
 
     @Test("a hidden completion-only feed row counts: someone has used this install")
     func completionOnlyCounts() throws {
         let store = try AssignmentStore(inMemory: true)
         store.setCompleted(ids: ["canvas:ticked-before-it-ever-synced"], at: Date())
-        #expect(store.holdsFeedRows())
+        #expect(store.holdsFeedRowsOrFail())
     }
 
     @Test("rows the caller names as not real (preview samples) are ignored")
     func ignoredIDs() throws {
         let store = try AssignmentStore(inMemory: true)
         store.setCompleted(ids: ["canvas:s-1"], at: Date())
-        #expect(store.holdsFeedRows())
-        #expect(store.holdsFeedRows(ignoring: ["canvas:s-1"]) == false)
+        #expect(store.holdsFeedRowsOrFail())
+        #expect(store.holdsFeedRowsOrFail(ignoring: ["canvas:s-1"]) == false)
         // ...but a real row beside it still counts.
         store.upsert([feed(.canvas, "real-1")])
-        #expect(store.holdsFeedRows(ignoring: ["canvas:s-1"]))
+        #expect(store.holdsFeedRowsOrFail(ignoring: ["canvas:s-1"]))
     }
 }
 

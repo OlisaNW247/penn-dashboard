@@ -40,7 +40,7 @@ struct AnnouncementDeletionTests {
         #expect(store.goneFromFeedIDs(source: .canvasAnnouncement) == [a.id])
         // Nothing was deleted, and the completion is intact.
         #expect(Set(store.assignments(source: .canvasAnnouncement).map(\.id)) == [a.id, b.id])
-        #expect(store.completionRecord().ids == [a.id])
+        #expect(store.completionRecordOrFail().ids == [a.id])
         // Idempotent.
         #expect(store.markGoneFromFeed(ids: [a.id]) == 0)
 
@@ -376,7 +376,7 @@ struct AnnouncementDeletionTests {
             await h.state.syncAnnouncements(now: now)
 
             #expect(h.state.isCompleted(finished))
-            #expect(h.store.completionRecord().ids.contains(finished.id))
+            #expect(h.store.completionRecordOrFail().ids.contains(finished.id))
             let vm = DashboardViewModel()
             vm.bind(to: h.state)
             let prev = vm.doneSections().flatMap(\.items).filter { $0.assignment.course == "ANDEL 9601" }

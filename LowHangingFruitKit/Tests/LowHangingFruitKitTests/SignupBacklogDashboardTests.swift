@@ -681,7 +681,7 @@ struct SignupBacklogDashboardTests {
         h.state.rebuildDashboardItemsForTesting(now: now)
         let sample = try #require(SampleData.items(now: now).first?.assignment)
         h.store.setCompleted(ids: [sample.id], at: now, prototypes: [sample])
-        #expect(h.store.holdsFeedRows(), "the leaked sample row is on the ledger")
+        #expect(h.store.holdsFeedRowsOrFail(), "the leaked sample row is on the ledger")
 
         // What `restartOnboarding` does on the way out of preview: fixture mode
         // ends, the samples leave memory, the dashboard rebuilds. That rebuild

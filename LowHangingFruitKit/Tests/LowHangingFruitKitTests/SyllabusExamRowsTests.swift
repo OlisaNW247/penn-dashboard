@@ -227,6 +227,6 @@ struct SyllabusExamRowsTests {
         let stored = store.assignments(source: .canvasAnnouncement, now: Self.now)
         #expect(stored.count == 1)
         #expect(stored.first?.dueAt == Self.date(10, 30, 23, 59, 59))
-        #expect(store.completionRecord().ids.contains(original.id))
+        #expect(store.completionRecordOrFail().ids.contains(original.id))
     }
 }
