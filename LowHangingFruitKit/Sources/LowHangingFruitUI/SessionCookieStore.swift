@@ -268,14 +268,21 @@ enum SessionCookieStore {
     /// No code here had to change; the wrong fix was filtering the harvests
     /// alone, which leaves sets already on students' phones broken.
     ///
-    /// **Unavailable is "not expired".** This reads the Keychain twice (the
-    /// saved entries, then `load(service:)`), and a read the Keychain refuses
-    /// used to come back as `[]` from either. A refusal on the second read
-    /// alone looked exactly like "something saved and nothing fresh left", so
-    /// it raised the banner and started a renewal over a perfectly good saved
-    /// session. A refused read is no evidence that anything aged out: it
-    /// answers false, and an empty `load` is only believed after a third read
-    /// confirms the set is still there.
+    /// **Unavailable is "not expired".** The first read decides it: a Keychain
+    /// that refuses it (`unavailable`) or answers "not found" is not expired,
+    /// so a refusal can no longer raise the banner or start a renewal over a
+    /// good saved session, which the old `[]` from a refused read did.
+    ///
+    /// What follows reads the Keychain again, because `load(service:)` does,
+    /// and an empty `load` is either "every cookie aged out" or a refusal of
+    /// its own read. The confirming read afterwards guards exactly one case: a
+    /// refusal that PERSISTS across `load`'s read and the confirming one, where
+    /// `load` is empty only because it was refused and the re-read is refused
+    /// too. It does not catch a refusal that clears between those two reads;
+    /// that still looks like expiry and is believed. The residual cost is one
+    /// renewal attempt (the write-back guard in `save` keeps it from damaging
+    /// the saved set); closing it for good needs `load`'s freshness decision
+    /// run over the same read, and `load` is deliberately left as it was.
     static func isExpired(service: Service) -> Bool {
         isExpired(
             service: service,
@@ -293,9 +300,11 @@ enum SessionCookieStore {
     ) -> Bool {
         guard case let .found(entries) = read(service), !entries.isEmpty else { return false }
         guard fresh(service).isEmpty else { return false }
-        // `fresh` read the Keychain itself. An empty answer from a read that
-        // was refused only that second time looks identical to "every cookie
-        // aged out", so ask once more before believing it.
+        // `fresh` read the Keychain itself, so its empty answer is either
+        // "every cookie aged out" or a refusal of that read. Ask once more: if
+        // the Keychain is still refusing, the empty answer was a refusal and
+        // is not believed. This catches a refusal that lasts across both
+        // reads; one that has cleared by now looks the same as expiry.
         guard case .found = read(service) else { return false }
         return true
     }

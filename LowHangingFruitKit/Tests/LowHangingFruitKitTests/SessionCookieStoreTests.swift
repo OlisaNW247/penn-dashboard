@@ -424,8 +424,8 @@ struct SessionCookieStoreTests {
             fresh: { _ in [self.cookie(name: "sid", domain: "canvas.upenn.edu")] }))
     }
 
-    @Test("a read refused only on the confirming re-read does not pass for everything-aged-out")
-    func isExpiredRefusedOnSecondRead() {
+    @Test("a refusal that lasts through load()'s read and the confirming re-read is not taken for everything-aged-out")
+    func isExpiredRefusalPersistsPastLoad() {
         var reads = 0
         let expired = SessionCookieStore.isExpired(
             service: .canvas,
@@ -437,6 +437,19 @@ struct SessionCookieStoreTests {
         )
         #expect(!expired)
         #expect(reads == 2)
+    }
+
+    // The limit of the confirming read, stated so nobody mistakes it for more:
+    // a refusal that has cleared by the time of the re-read is
+    // indistinguishable from expiry and is believed.
+    @Test("a refusal that has cleared by the confirming re-read still reads as expired (the known limit)")
+    func isExpiredRefusalClearedBeforeReRead() {
+        let expired = SessionCookieStore.isExpired(
+            service: .canvas,
+            read: { _ in .found([self.entry("a")]) },
+            fresh: { _ in [] }
+        )
+        #expect(expired)
     }
 
     @Test("save never writes back over a set it could not read, and starts fresh from a missing one")
