@@ -367,7 +367,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   let forbidden = 0;
   let filesForbidden = 0;
   const filesSeen = { ...(files?.seen ?? {}) };
-  const fileCounts = { extracted: 0, empty: 0, failed: 0, linked: 0, linkedForbidden: 0 };
+  const fileCounts = { extracted: 0, empty: 0, failed: 0, linked: 0, linkedForbidden: 0, linkedMissing: 0, unparseable: 0 };
   for (const course of list) {
     const failed = [];
     const courseLinks = [];

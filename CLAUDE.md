@@ -1078,7 +1078,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 498 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
+counts): 499 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -2728,9 +2728,16 @@ none is a ship line.
   with `/api/v1/courses/:c/files/:id`, and sends PDFs down the same
   `public_url` path; a non-PDF is remembered (`seen[id] = "not-pdf"`) so
   it is not looked up every run, and lookups are capped at twice the
-  60-file cap per course. Unknown until a live run: whether Canvas
-  answers that metadata call for a file in a course whose Files tab is
-  hidden (the summary's `files.linked` and `files.linkedForbidden` say).
+  60-file cap per course. **It works**: the owner's run of 2026-10-27
+  (about 14:15 UTC) uploaded 47 PDFs, PHYS 0151's 16 and MATH 1400's 13
+  among them (both had none before), from 92 linked lookups with none
+  refused; 19 failed and CIS 4500 and ACCT 1010 still have none. The
+  likely cause, fixed the same hour and not yet seen live: a page linking
+  a file that lives in another course's site, which the course-scoped
+  lookup answers with a 404, so a non-OK answer is now asked again as
+  `/api/v1/files/:id` and the document links `/files/<id>`. The summary's
+  `files` now also says `linkedMissing` (not found either way) and
+  `unparseable` (pdf.js could not read it), so the next run tells which.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

@@ -47,6 +47,10 @@ export function fileMetadataURL(courseID, fileID, { baseURL = DEFAULT_BASE_URL }
   return `${baseURL.replace(/\/+$/, "")}/api/v1/courses/${courseID}/files/${fileID}`;
 }
 
+export function globalFileMetadataURL(fileID, { baseURL = DEFAULT_BASE_URL } = {}) {
+  return `${baseURL.replace(/\/+$/, "")}/api/v1/files/${fileID}`;
+}
+
 export function filesListURL(courseID, { baseURL = DEFAULT_BASE_URL } = {}) {
   return `${baseURL.replace(/\/+$/, "")}/api/v1/courses/${courseID}/files?content_types%5B%5D=application/pdf&per_page=100`;
 }
@@ -122,7 +126,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
   const maxFiles = limits.maxFiles ?? FILES_DEFAULT_MAX;
   const maxBytes = limits.maxBytes ?? FILE_MAX_BYTES;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
-  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0, linked: 0, linkedForbidden: 0 };
+  const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0, linked: 0, linkedForbidden: 0, linkedMissing: 0, unparseable: 0 };
   const result = { documents: [], seen: { ...seen }, stopped: null, counts };
   const fetchedAt = now === undefined ? new Date() : new Date(now);
 
@@ -234,6 +238,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
         text = cleanFileText(await extractText(bytes));
       } catch {
         counts.failed += 1; // unparseable PDF: retry next run only if it changes
+        counts.unparseable += 1;
         result.seen[e.id] = e.updatedAt;
         return null;
       }
@@ -241,7 +246,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       if (text === "") { counts.empty += 1; return null; } // scan: no text layer
       result.documents.push(fileDocument({
         courseID, course: displayCode, fileID: e.id, displayName: e.name,
-        url: `${DEFAULT_BASE_URL}/courses/${courseID}/files/${e.id}`,
+        url: e.pageURL ?? `${DEFAULT_BASE_URL}/courses/${courseID}/files/${e.id}`,
         updatedAt: e.updatedAt === "" ? undefined : e.updatedAt,
         text, fetchedAt,
       }));
@@ -272,8 +277,26 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     counts.linked += 1;
     lookups += 1;
     let e;
+    let viaCourse = true;
     try {
-      const res = await get(fileMetadataURL(courseID, id), "application/json");
+      // Course-scoped first; a page can link a file that lives in another
+      // course's site (`/courses/<other>/files/<id>`), which that form answers
+      // with a 404, so a non-OK answer is asked once more as `/api/v1/files/:id`,
+      // which Canvas serves for any file the student can see (2026-10-27: 19 of
+      // 92 linked lookups failed on the owner's first run).
+      let res;
+      try {
+        res = await get(fileMetadataURL(courseID, id), "application/json");
+      } catch (first) {
+        if (!(first instanceof Stop && first.kind === "http")) throw first;
+        viaCourse = false;
+        try {
+          res = await get(globalFileMetadataURL(id), "application/json");
+        } catch (second) {
+          if (second instanceof Stop && second.kind === "http") throw new Stop("missing");
+          throw second;
+        }
+      }
       const text = stripAntiHijackPrefix(await res.text());
       if (looksLikeHTML(text)) throw new Stop("out");
       let raw;
@@ -286,12 +309,16 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     } catch (err) {
       if (err instanceof Stop && (err.kind === "rateLimited" || err.kind === "out")) { result.stopped = err.kind; return result; }
       if (err instanceof Stop && err.kind === "forbidden") counts.linkedForbidden += 1;
+      else if (err instanceof Stop && err.kind === "missing") counts.linkedMissing += 1;
       else counts.failed += 1;
       continue;
     }
     if (!e) { counts.skipped += 1; continue; } // not a PDF, or undecodable
     if (e.skip || e.size > maxBytes) { counts.skipped += 1; continue; }
     if (seen[e.id] !== undefined && seen[e.id] === e.updatedAt) { counts.unchanged += 1; continue; }
+    // A file found only through the global form may belong to another course;
+    // `/files/<id>` opens it wherever it lives.
+    if (!viaCourse) e = { ...e, pageURL: `${DEFAULT_BASE_URL}/files/${e.id}` };
     slots -= 1;
     if ((await handle(e)) === "stop") return result;
   }

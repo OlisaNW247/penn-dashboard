@@ -537,3 +537,7 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   Files listing. Non-PDF links are remembered and skipped; the summary's
   `files` gains `linked` and `linkedForbidden`. 498 tests. Not yet run
   against real Canvas.
+- 2026-10-27: linked PDFs confirmed live (47 uploaded, PHYS 0151 and MATH
+  1400 among them; 92 lookups, 0 refused, 19 failed). A link to a file in
+  another course's site is now retried as `/api/v1/files/:id`; the summary
+  adds `linkedMissing` and `unparseable`. 499 tests.

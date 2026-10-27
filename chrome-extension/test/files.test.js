@@ -333,6 +333,22 @@ test("linked: a file found not to be a PDF is remembered and not looked up again
   assert.equal(second.counts.linked, 0);
 });
 
+test("linked: a file the course-scoped form cannot find is asked for globally, and linked by /files/<id>", async () => {
+  const { fn: base, log } = linkedFake({ meta: {} });
+  const fn = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname === "/api/v1/files/7") return res(JSON.stringify({ id: 7, display_name: "other.pdf", "content-type": "application/pdf", url: "https://canvas.upenn.edu/files/7/download", size: 10, updated_at: "2026-09-12T10:00:00Z" }), { type: "application/json" });
+    if (u.pathname === "/api/v1/files/8") return res("{}", { status: 404 });
+    return base(url, init);
+  };
+  const out = await run(fn, { linkedFileIDs: ["7", "8"] });
+  assert.deepEqual(out.documents.map((d) => d.sourceID), ["7"]);
+  assert.equal(out.documents[0].url, "https://canvas.upenn.edu/files/7");
+  assert.equal(out.counts.linkedMissing, 1); // 8: 404 on both forms
+  assert.equal(out.counts.failed, 0);
+  assert.ok(log.urls.some((u) => u.endsWith("/api/v1/courses/111/files/7")));
+});
+
 test("linked: an id the listing already covered is fetched once", async () => {
   const { fn, log } = linkedFake({ meta: { 2: { name: "b.pdf", type: "application/pdf" } }, listing: () => list([entry(1)]) });
   const out = await run(fn, { linkedFileIDs: ["1", "2"] });
