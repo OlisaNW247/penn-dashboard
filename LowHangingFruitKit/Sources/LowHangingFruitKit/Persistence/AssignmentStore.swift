@@ -309,9 +309,10 @@ public final class AssignmentStore {
     ///   if long overdue, pruned in that same call. With this on, a course
     ///   the ledger shows work for, that is missing from `fetched` entirely,
     ///   is held (`heldCourses`): its rows are not flagged this call, nothing
-    ///   is pruned, and the result reports `wasSuspectedPartial`. Off by
-    ///   default and for Canvas, whose feed legitimately drops a whole
-    ///   course's events when a class ends.
+    ///   is pruned, and the result reports `wasSuspectedPartial`. The refusal
+    ///   of an entirely empty fetch gets the same patience
+    ///   (`emptyFetchIsSuspect`). Off by default and for Canvas, whose feed
+    ///   legitimately drops a whole course's events when a class ends.
     public func reconcile(
         _ fetched: [Assignment],
         source: Assignment.Source,
@@ -343,7 +344,21 @@ public final class AssignmentStore {
         // Completion-only rows don't count as "this source previously had
         // items" — they're bookkeeping, and letting them arm the guard would
         // refuse a legitimately empty first sync for a migrated user.
-        if fetched.isEmpty && existing.contains(where: { !$0.isCompletionOnly }) {
+        //
+        // With `holdingEmptiedCourses` (Gradescope) the refusal has the same
+        // 24-hour patience as the per-course hold (`emptyFetchIsSuspect`).
+        // Without it, a student whose Gradescope really has no rows was shown
+        // "couldn't refresh" on every sync, forever, now that the partial
+        // result is surfaced. Past the patience, empty is real: the rows fall
+        // through to the ordinary flagging and aging below, and the notice
+        // stops. Canvas keeps the refusal indefinitely, as before.
+        let listedRows = existing.filter { !$0.isCompletionOnly }
+        if fetched.isEmpty && !listedRows.isEmpty
+            && Self.emptyFetchIsSuspect(
+                lastSeen: listedRows.map(\.lastSeenInFeed),
+                now: now,
+                withPatience: holdingEmptiedCourses
+            ) {
             // Read off the rows already in hand, for the reason given at
             // `active` below: a fresh fetch that failed here would hand the
             // caller an empty list and a notice saying it is showing the
@@ -434,6 +449,20 @@ public final class AssignmentStore {
     /// course's newest `lastSeenInFeed`, which only a sighting advances, so
     /// holding it does not extend its own patience.
     nonisolated static let heldCoursePatience: TimeInterval = 24 * 60 * 60
+
+    /// Whether an entirely empty fetch for a source that has listed rows should
+    /// still be refused as partial. `lastSeen` is each listed row's
+    /// `lastSeenInFeed`; the source was last non-empty at the newest of them.
+    /// Without patience (Canvas) the answer is always yes. With it
+    /// (`holdingEmptiedCourses`) it is yes only until `heldCoursePatience` has
+    /// passed since that sighting, and then the empty result is believed. Only
+    /// a sighting advances `lastSeenInFeed`, so refusing does not extend its
+    /// own patience, and the next non-empty fetch restarts it.
+    nonisolated static func emptyFetchIsSuspect(lastSeen: [Date], now: Date, withPatience: Bool) -> Bool {
+        guard let newest = lastSeen.max() else { return false }
+        guard withPatience else { return true }
+        return now.timeIntervalSince(newest) < heldCoursePatience
+    }
 
     /// Pure rule behind `holdingEmptiedCourses`: which course labels to leave
     /// unflagged this call. A course is held when the ledger lists unfinished

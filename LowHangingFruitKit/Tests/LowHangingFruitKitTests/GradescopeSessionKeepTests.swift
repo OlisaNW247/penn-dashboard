@@ -593,6 +593,73 @@ struct GradescopeEmptiedCourseHoldTests {
         #expect(store.rowCount() == 3)
     }
 
+    // A Gradescope that really has no rows (the course ended, the student left
+    // it) must stop being reported as a failed refresh. The refusal of an
+    // entirely empty fetch has the same one-day patience as the per-course hold.
+
+    @Test("an entirely empty fetch is refused inside the day and believed after it")
+    @MainActor
+    func legitimatelyEmptySourceIsBelievedAfterPatience() throws {
+        let store = try seededStore()
+
+        let early = store.reconcile([], source: .gradescope, now: t0.addingTimeInterval(3600),
+                                    holdingEmptiedCourses: true)
+        #expect(early.wasSuspectedPartial)
+        #expect(store.rowCount() == 3, "nothing flagged or pruned while it is only a suspicion")
+
+        let late = store.reconcile([], source: .gradescope, now: t0.addingTimeInterval(25 * 3600),
+                                   holdingEmptiedCourses: true)
+        #expect(!late.wasSuspectedPartial, "past the day, empty is real and the notice stops")
+        #expect(Set(late.items.map(\.sourceID)) == ["b1"], "the long-overdue rows age out as for any vanished work")
+        #expect(store.rowCount() == 1)
+
+        // And it stays quiet on every later empty sync (the surviving row is
+        // still listed, but its last sighting is long past).
+        let after = store.reconcile([], source: .gradescope, now: t0.addingTimeInterval(26 * 3600),
+                                    holdingEmptiedCourses: true)
+        #expect(!after.wasSuspectedPartial)
+    }
+
+    @Test("rows seen again restart the patience")
+    @MainActor
+    func seeingRowsRestartsThePatience() throws {
+        let store = try seededStore()
+        _ = store.reconcile([row("b1", course: "CIS 2400", due: future)], source: .gradescope,
+                            now: t0.addingTimeInterval(20 * 3600), holdingEmptiedCourses: true)
+        // 30 hours after the first sighting but only 10 after the last.
+        let result = store.reconcile([], source: .gradescope, now: t0.addingTimeInterval(30 * 3600),
+                                     holdingEmptiedCourses: true)
+        #expect(result.wasSuspectedPartial)
+    }
+
+    @Test("without the opt-in an empty fetch stays refused indefinitely, as before (Canvas)")
+    @MainActor
+    func canvasEmptyRefusalHasNoPatience() throws {
+        let store = try AssignmentStore(inMemory: true)
+        let item = Assignment(source: .canvas, sourceID: "1", kind: .assignment, course: "CIS 1200",
+                              title: "HW", dueAt: longOverdue, url: nil)
+        _ = store.reconcile([item], source: .canvas, now: t0)
+        let result = store.reconcile([], source: .canvas, now: t0.addingTimeInterval(90 * day))
+        #expect(result.wasSuspectedPartial)
+        #expect(store.rowCount() == 1)
+    }
+
+    @Test("the empty-fetch rule is pure: no rows is not suspect, no patience always is, the day is the boundary")
+    func emptyFetchRule() {
+        let now = t0.addingTimeInterval(100 * day)
+        let patience = AssignmentStore.heldCoursePatience
+        // No listed rows: nothing to suspect.
+        #expect(!AssignmentStore.emptyFetchIsSuspect(lastSeen: [], now: now, withPatience: true))
+        #expect(!AssignmentStore.emptyFetchIsSuspect(lastSeen: [], now: now, withPatience: false))
+        // Without patience: always.
+        #expect(AssignmentStore.emptyFetchIsSuspect(lastSeen: [t0], now: now, withPatience: false))
+        // With patience: measured from the newest sighting, boundary exclusive.
+        let seen = now.addingTimeInterval(-patience + 1)
+        #expect(AssignmentStore.emptyFetchIsSuspect(lastSeen: [t0, seen], now: now, withPatience: true))
+        #expect(!AssignmentStore.emptyFetchIsSuspect(lastSeen: [t0, now.addingTimeInterval(-patience)], now: now, withPatience: true))
+        #expect(!AssignmentStore.emptyFetchIsSuspect(lastSeen: [t0], now: now, withPatience: true))
+    }
+
     @Test("a course renamed on Gradescope keeps its assignment ids and is not mistaken for an emptied one")
     @MainActor
     func renamedCourseIsNotEmptied() throws {
