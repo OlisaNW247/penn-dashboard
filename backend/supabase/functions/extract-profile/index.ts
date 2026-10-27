@@ -1,7 +1,7 @@
 // Rebuilds `course_profiles` rows for courses the caller is enrolled in
 // and whose `profile_stale` flag is set. See PROTOCOL.md's
 // "extract-profile" section for the wire contract.
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";

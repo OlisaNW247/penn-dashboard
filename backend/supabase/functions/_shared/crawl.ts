@@ -12,7 +12,7 @@
 // static Penn course site -- and every limit here (40 pages, depth 2, an
 // 8-second per-request timeout, a 200 KB cap on any one PDF) is sized for
 // that, not for crawling an arbitrary site politely at scale.
-import { extractText, getDocumentProxy } from "npm:unpdf@1";
+import { extractText, getDocumentProxy } from "npm:unpdf@1.8.1";
 import {
   extractLinks,
   htmlToText,

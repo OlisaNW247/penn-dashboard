@@ -30,7 +30,7 @@ import {
   structureHash,
   type CategoryMapping,
 } from "../_shared/categoryMap.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 
 const DEFAULT_MAP_DAILY_LIMIT = 20;
 

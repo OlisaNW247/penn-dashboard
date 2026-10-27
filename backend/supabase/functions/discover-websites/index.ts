@@ -8,7 +8,7 @@
 // injected `fetchImpl`); this file's only job is fetching the rows those
 // modules need, calling them in the right order, and writing the results
 // back through `_shared/db.ts`.
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import type { CatalogCourseRow } from "../_shared/catalog.ts";

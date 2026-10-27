@@ -20,7 +20,7 @@
 // canary result is only useful if it predicts production, which means it
 // has to run through the exact same prompt-building, quota, and streaming
 // code, not a parallel reimplementation that could drift.
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, NO_LEASE, reserveUsage, type UsageLease, type UsageReservation } from "../_shared/quota.ts";
