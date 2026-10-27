@@ -240,6 +240,20 @@ final class AppState: ObservableObject {
     /// falls back to the due date to place those, and the weekly ring skips
     /// them — so the absence is load-bearing, not a gap to paper over.
     @Published private(set) var completionDates: [String: Date] = [:]
+    /// Which ledger ids each dashboard card stands in for, `[survivor id:
+    /// hidden ids]`, as the most recent `rebuildDashboardItems` found them in
+    /// its collapse passes (`carryCompletion` records every pair it is shown,
+    /// ticked or not). `markActive` clears the whole set so an un-tick is not
+    /// undone by the next rebuild carrying a hidden twin's old completion back
+    /// onto the card. Derived, rebuilt from nothing on every rebuild, never
+    /// persisted. See `CompletionTwins`.
+    private var completionTwins: [String: Set<String>] = [:]
+    /// The carries `carryCompletion` has already made (`CompletionTwins
+    /// .carryKey`), so one tick on a hidden twin lands on its card once. In
+    /// memory only: the twin's own completion is cleared in the ledger by
+    /// `markActive`, so after a relaunch there is nothing left to carry, and a
+    /// persisted record would only have to be pruned.
+    private var carriedCompletions: Set<String> = []
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh, so a Canvas correction (a
@@ -7238,11 +7252,23 @@ final class AppState: ObservableObject {
     /// `markCompleted` ends by calling `rebuildDashboardItems()` itself, and
     /// this helper is only ever called FROM `rebuildDashboardItems`, so
     /// routing through it here would recurse.
+    ///
+    /// **Two guards against undoing an un-tick (hardening plan B4).** Every
+    /// call records the pair as a twin (`completionTwins`) whether or not a
+    /// carry is due, so `markActive` can clear the hidden copy as well as the
+    /// card. And a carry fires once per tick (`carriedCompletions`): this runs
+    /// on every rebuild, so a hidden twin that still held the old completion
+    /// after the student un-ticked the card, for any reason, would otherwise
+    /// tick the card again each time. A fresh tick on the twin has a new
+    /// completion time and so a new key, and does carry.
     private func carryCompletion(from hiddenID: String, to survivorID: String) {
+        completionTwins[survivorID, default: []].insert(hiddenID)
         guard completedAssignmentIDs.contains(hiddenID),
               !completedAssignmentIDs.contains(survivorID)
         else { return }
         let completedAt = completionDates[hiddenID]
+        let key = CompletionTwins.carryKey(hiddenID: hiddenID, survivorID: survivorID, completedAt: completedAt)
+        guard carriedCompletions.insert(key).inserted else { return }
         assignmentStore?.setCompleted(ids: [survivorID], at: completedAt)
         completedAssignmentIDs.insert(survivorID)
         if let completedAt {
@@ -7251,6 +7277,9 @@ final class AppState: ObservableObject {
     }
 
     func rebuildDashboardItems(now: Date = Date()) {
+        // Found afresh by the collapse passes below (`carryCompletion`), so a
+        // pair that no longer exists is not cleared with an unrelated card.
+        completionTwins = [:]
         updateCanvasCourseIDCache()
         refreshArchiveState(now: now)
         let recurringAssignments = effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
@@ -7832,20 +7861,29 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Un-ticks `assignment`, and every hidden twin that stood in for it.
+    ///
+    /// The card is often several ledger ids (`completionTwins`), and a tick
+    /// on any of them shows on the card (`carryCompletion`), so clearing only
+    /// the card's own id left the hidden copy ticked and the rebuild at the
+    /// end of this method put the tick straight back: the student saw the
+    /// card flick off and on. The sync stamp stays on the ids the student
+    /// actually touched, which is what the other device is told.
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
         recordSyncChange(.completion, ids: Array(touched))
+        let cleared = CompletionTwins.closure(of: touched, twins: completionTwins)
 
         guard assignmentStore != nil else {
             // Same session-only degradation as `applyCompletionInMemory`: with
             // no store there is nowhere for the un-tick to be recorded either.
-            completedAssignmentIDs.subtract(touched)
-            for id in touched { completionDates[id] = nil }
+            completedAssignmentIDs.subtract(cleared)
+            for id in cleared { completionDates[id] = nil }
             rebuildDashboardItems()
             return
         }
-        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: cleared)
         reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
