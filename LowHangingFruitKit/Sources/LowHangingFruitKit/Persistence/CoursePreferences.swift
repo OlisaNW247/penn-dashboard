@@ -729,10 +729,29 @@ public final class CoursePreferencesStore: ObservableObject {
     /// without needing the main actor — the reason `LedgerWidgetReader` can't
     /// simply construct this store today.
     public nonisolated static func decodeMap(_ data: Data?) -> [String: CoursePreferences] {
+        decodeMapReport(data).map
+    }
+
+    /// `decodeMap`, with the damage counted.
+    ///
+    /// Per course. `init(from:)` above defaults every missing field, but a
+    /// field that is *present with the wrong type* (a `Bool` stored as a
+    /// string by a hand edit, an iCloud pull from a build that changed a
+    /// type) still throws, and under a plain `decode([String: ...].self)` one
+    /// such record threw for the whole map: `byCourseKey` came back `[:]`,
+    /// every class the student had hidden, renamed or deleted reappeared, and
+    /// the next `commit` persisted that blank map over the stored blob. Now
+    /// the record that cannot be read resets to defaults (the same as a
+    /// course nobody ever touched) and every other record survives.
+    /// `droppedCount` is how many records that was; a blob that is not a map
+    /// at all reads as empty with nothing counted, as before.
+    public nonisolated static func decodeMapReport(
+        _ data: Data?
+    ) -> (map: [String: CoursePreferences], droppedCount: Int) {
         guard let data,
-              let map = try? JSONDecoder().decode([String: CoursePreferences].self, from: data)
-        else { return [:] }
-        return map
+              let decoded = try? JSONDecoder().decode(LossyDictionary<CoursePreferences>.self, from: data)
+        else { return ([:], 0) }
+        return (decoded.entries, decoded.droppedCount)
     }
 
     // MARK: - Migration off the four legacy keys

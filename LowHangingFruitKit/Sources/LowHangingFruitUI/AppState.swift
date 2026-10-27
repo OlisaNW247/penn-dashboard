@@ -8639,10 +8639,8 @@ final class AppState: ObservableObject {
     }
 
     private static func loadRecurringTasks(from defaults: UserDefaults) -> [RecurringTask] {
-        guard let data = defaults.data(forKey: recurringTasksKey),
-              let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
-        else { return [] }
-        return tasks
+        // Lossy: one unreadable task costs that task, not the list.
+        RecurringTask.decodeAll(defaults.data(forKey: recurringTasksKey)).tasks
     }
 
     private func persistManualAssignments() {

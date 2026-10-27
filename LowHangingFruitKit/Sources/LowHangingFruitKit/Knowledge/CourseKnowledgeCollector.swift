@@ -262,9 +262,23 @@ public struct CourseKnowledgeCollector: Sendable {
             }
 
             do {
-                let items = try await modules.fetchModuleItems(courseID: course.courseID)
+                let decoded = try await modules.fetchModuleItemsReport(courseID: course.courseID)
+                let items = decoded.items
                 documents.append(contentsOf: CourseDocumentBuilder.modules(from: items, course: course, now: now))
                 links.append(contentsOf: CourseDocumentBuilder.links(from: items, course: course))
+                if decoded.droppedCount > 0 {
+                    // Canvas answered, but part of the answer could not be
+                    // read (one module item, one module, one page). The
+                    // items above are real, so they are kept, but they are
+                    // not the whole set: counting this as an error is what
+                    // makes the course read as partial below, so its stored
+                    // module documents are not retired as "gone from Canvas".
+                    // The wrong fix is to treat a drop as a clean sync, which
+                    // is exactly what a decode that threw for the whole page
+                    // and was swallowed by `try?` used to do.
+                    courseErrors += 1
+                    errors.append("\(course.code) modules: \(decoded.droppedCount) unreadable")
+                }
             } catch {
                 courseErrors += 1
                 errors.append("\(course.code) modules: \(error.localizedDescription)")

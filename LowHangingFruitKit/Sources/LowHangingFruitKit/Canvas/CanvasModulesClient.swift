@@ -82,6 +82,25 @@ public struct CanvasModulesClient: Sendable {
         }
     }
 
+    /// What decoding a course's modules produced: the items that were
+    /// readable, and how many pieces of the response were not.
+    public struct ModuleDecodeResult: Sendable, Equatable {
+        public let items: [ModuleItem]
+        /// Pieces of the response that were present and could not be
+        /// decoded: a module item that failed, a module that failed, or a
+        /// whole page that was not a list of modules. Zero means the items
+        /// are everything Canvas sent. Anything above zero means the course's
+        /// readings are *partial*, and a caller that retires what Canvas no
+        /// longer lists must not treat the items as the complete set
+        /// (`CourseKnowledgeCollector` counts it as a course error).
+        public let droppedCount: Int
+
+        public init(items: [ModuleItem], droppedCount: Int) {
+            self.items = items
+            self.droppedCount = droppedCount
+        }
+    }
+
     private let baseURL: URL
     private let cookies: [HTTPCookie]
     private let session: URLSession
@@ -103,9 +122,17 @@ public struct CanvasModulesClient: Sendable {
 
     /// GET .../courses/:id/modules?include[]=items&per_page=100, following the
     /// `Link: rel="next"` header until exhausted, then decoding every page.
+    ///
+    /// Drops what it cannot read without saying so. A caller that must know
+    /// (the course-materials sync) uses `fetchModuleItemsReport` instead.
     public func fetchModuleItems(courseID: String) async throws -> [ModuleItem] {
+        try await fetchModuleItemsReport(courseID: courseID).items
+    }
+
+    /// `fetchModuleItems`, plus how much of the response could not be read.
+    public func fetchModuleItemsReport(courseID: String) async throws -> ModuleDecodeResult {
         let pages = try await fetchAllModulePages(courseID: courseID)
-        return Self.moduleItems(fromPages: pages)
+        return Self.decodeModules(fromPages: pages)
     }
 
     /// GET /api/v1/planner/items?start_date=...&end_date=...&per_page=100,
@@ -255,18 +282,43 @@ public struct CanvasModulesClient: Sendable {
 
     /// Decodes raw (possibly XSSI-prefixed) modules-page JSON into flat
     /// `ModuleItem`s, with no network I/O — the seam tests use so fixtures can
-    /// stand in for real Canvas responses. Never throws: a malformed page
-    /// contributes no items rather than failing every other page in the
-    /// batch, since one bad page here is cosmetic (a missing reading, not a
+    /// stand in for real Canvas responses. Never throws: a malformed piece
+    /// contributes no items rather than failing every other piece in the
+    /// batch, since one bad item here is cosmetic (a missing reading, not a
     /// wrong grade) unlike `CanvasGradesClient.decodeSnapshot`.
+    ///
+    /// Use `decodeModules(fromPages:)` when the caller needs to know whether
+    /// anything was left out.
     public static func moduleItems(fromPages pages: [Data]) -> [ModuleItem] {
+        decodeModules(fromPages: pages).items
+    }
+
+    /// `moduleItems(fromPages:)` with the damage counted.
+    ///
+    /// The decode is per element at every level, so one module item Canvas
+    /// sent oddly (a null title, an id that is not a number) costs that item
+    /// and not its module's other items, the page's other modules, or the
+    /// course's other pages. It used to cost the whole page: a single bad
+    /// item made `decode([ModuleDTO].self)` throw, `try?` turned that into
+    /// `continue`, and the course read as a clean sync with a hundred
+    /// readings missing, so the collector then retired the stored module
+    /// documents it had on disk as if Canvas had removed them.
+    public static func decodeModules(fromPages pages: [Data]) -> ModuleDecodeResult {
         let decoder = JSONDecoder()
         var items: [ModuleItem] = []
+        var dropped = 0
         for page in pages {
             let stripped = CanvasGradesClient.stripXSSIPrefix(page)
-            guard let modules = try? decoder.decode([ModuleDTO].self, from: stripped) else { continue }
-            for module in modules {
-                for item in module.items ?? [] where item.type != "SubHeader" {
+            guard let modules = try? decoder.decode(LossyArray<ModuleDTO>.self, from: stripped) else {
+                // Not a list of modules at all (an error object, truncated
+                // JSON). One page, counted once.
+                dropped += 1
+                continue
+            }
+            dropped += modules.droppedCount
+            for module in modules.elements {
+                dropped += module.droppedItemCount
+                for item in module.items where item.type != "SubHeader" {
                     items.append(ModuleItem(
                         id: String(item.id),
                         title: item.title,
@@ -284,7 +336,7 @@ public struct CanvasModulesClient: Sendable {
                 }
             }
         }
-        return items
+        return ModuleDecodeResult(items: items, droppedCount: dropped)
     }
 
     private static func parseDate(_ raw: String?) -> Date? {
@@ -471,7 +523,32 @@ public struct PlannerDatedItem: Sendable, Hashable {
 
 private struct ModuleDTO: Decodable {
     let name: String?
-    let items: [ModuleItemDTO]?
+    let items: [ModuleItemDTO]
+    /// Items in this module that were present and unreadable. Not on the
+    /// wire: the lossy decode below counts them as it skips them.
+    let droppedItemCount: Int
+
+    enum CodingKeys: String, CodingKey { case name, items }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A module whose name is not a string is still a module with items.
+        name = try? container.decodeIfPresent(String.self, forKey: .name)
+        // Absent or null `items` is a module with none, as it always was.
+        // A value that is present and not a list is one dropped piece, not a
+        // silent empty module: the page used to throw for it.
+        if !container.contains(.items) || ((try? container.decodeNil(forKey: .items)) ?? false) {
+            items = []
+            droppedItemCount = 0
+        } else if var list = try? container.nestedUnkeyedContainer(forKey: .items) {
+            let result = LossyDecoding.drain(&list, as: ModuleItemDTO.self)
+            items = result.elements
+            droppedItemCount = result.dropped
+        } else {
+            items = []
+            droppedItemCount = 1
+        }
+    }
 }
 
 private struct ModuleItemDTO: Decodable {

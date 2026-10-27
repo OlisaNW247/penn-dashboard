@@ -157,6 +157,31 @@ public struct GradeItemOverride: Sendable, Hashable, Codable {
     /// an actual correction. The engine treats an empty override as if it
     /// weren't present at all.
     public var isEmpty: Bool { score == nil && pointsPossible == nil && !isExcluded }
+
+    /// Reads the persisted `courseID -> itemID -> override` blob, losing only
+    /// the override that is wrong.
+    ///
+    /// The student's corrections are typed in by hand ("what if I get a 90"),
+    /// so they are the one grade input that cannot be re-fetched from Canvas.
+    /// Read with a plain `decode`, one override that failed (a score stored as
+    /// a string, a value from a build that changed the shape) threw for the
+    /// whole blob, `GradeWatcherStore` fell back to `[:]`, and the next
+    /// `setItemOverride` persisted that over every correction in every
+    /// course. Lossy at both levels: a bad item drops that item, a bad course
+    /// entry drops that course's map, and `droppedCount` is the sum. A blob
+    /// that is not a map at all reads as empty with nothing counted.
+    public static func decodeMap(
+        _ data: Data?
+    ) -> (map: [String: [String: GradeItemOverride]], droppedCount: Int) {
+        guard let data,
+              let outer = try? JSONDecoder().decode(
+                  LossyDictionary<LossyDictionary<GradeItemOverride>>.self, from: data
+              )
+        else { return ([:], 0) }
+        let map = outer.entries.mapValues(\.entries)
+        let inner = outer.entries.values.reduce(0) { $0 + $1.droppedCount }
+        return (map, outer.droppedCount + inner)
+    }
 }
 
 /// Where the weighted-vs-points decision -- and, in weighted mode, the

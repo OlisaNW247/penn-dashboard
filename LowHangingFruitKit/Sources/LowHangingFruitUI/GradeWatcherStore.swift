@@ -917,10 +917,9 @@ final class GradeWatcherStore: ObservableObject {
     }
 
     private static func loadItemOverrides() -> [String: [String: GradeItemOverride]] {
-        guard let data = UserDefaults.lhf.data(forKey: itemOverridesKey),
-              let dict = try? JSONDecoder().decode([String: [String: GradeItemOverride]].self, from: data)
-        else { return [:] }
-        return dict
+        // Lossy: one unreadable override costs that override, not every
+        // correction in every course (`GradeItemOverride.decodeMap`).
+        GradeItemOverride.decodeMap(UserDefaults.lhf.data(forKey: itemOverridesKey)).map
     }
 
     private func persistModeOverrides() {

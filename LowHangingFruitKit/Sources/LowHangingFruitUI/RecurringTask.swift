@@ -79,6 +79,23 @@ struct RecurringTask: Codable, Hashable, Identifiable {
         return adopted
     }
 
+    /// Reads the persisted task list, losing only the task that is wrong.
+    ///
+    /// These are the student's own rules, typed in by hand, so a read that
+    /// loses all of them over one bad element is the worse failure. A plain
+    /// `decode([RecurringTask].self)` threw for the whole list on one task
+    /// with an `origin` a newer build wrote or a weekday stored as a string;
+    /// `AppState` fell back to `[]` and the next `persistRecurringTasks`
+    /// wrote that empty list over every task. Now the readable ones survive
+    /// and `droppedCount` says how many did not. A blob that is not a list at
+    /// all reads as empty with nothing counted.
+    static func decodeAll(_ data: Data?) -> (tasks: [RecurringTask], droppedCount: Int) {
+        guard let data,
+              let decoded = try? JSONDecoder().decode(LossyArray<RecurringTask>.self, from: data)
+        else { return ([], 0) }
+        return (decoded.elements, decoded.droppedCount)
+    }
+
     func upcomingAssignments(from now: Date = Date(), weeksAhead: Int = 10) -> [Assignment] {
         let calendar = Calendar.current
         let horizon = calendar.date(byAdding: .day, value: weeksAhead * 7, to: now) ?? now
