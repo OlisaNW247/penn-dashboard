@@ -2,5 +2,11 @@
   "minimumVersion": "3.2.1",
   "latestVersion": "3.2.1",
   "message": "A new version of Smooth is required to keep going. It only takes a moment.",
-  "appStoreURL": "https://apps.apple.com/app/id6783911002"
+  "appStoreURL": "https://apps.apple.com/app/id6783911002",
+  "feedback": {
+    "id": "2026-10-smoothie",
+    "title": "how's smooth so far?",
+    "subtitle": "takes 2 minutes.",
+    "url": "https://docs.google.com/forms/d/e/1FAIpQLScZJ4BBXicAOFYSbCkHGcM5kWcDD8OXSSWtkK64kSSUO4WcJQ/viewform"
+  }
 }
