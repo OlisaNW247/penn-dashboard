@@ -166,6 +166,7 @@ actor BackendSession {
         request.httpMethod = "POST"
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        BackendVersionHeader.apply(to: &request)
         return request
     }
 

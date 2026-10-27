@@ -119,9 +119,12 @@ dev Mac has none, Olisa's environment injects it)
     approval is set).
 
 ### F. After it is downloadable
-21. Raise the `update-manifest` floor (orphan branch, GitHub web UI) to the
-    new version, `minimumVersion` = `latestVersion`, only once the store
-    serves it; Olisa's call.
+21. Nothing to do for the floor: since 2026-10-27 the `update-floor`
+    workflow (`.github/workflows/update-floor.yml`, must be on `main`)
+    raises `minimumVersion` = `latestVersion` to the live version six hours
+    after the App Store starts serving it. If the new build misbehaves, set
+    the repository variable `UPDATE_FLOOR_HOLD` to `true` within those six
+    hours; clear it again afterwards.
 22. Delete merged branches: `parked/*`, `fix/ed-posts-durable`,
     `v8-merge-marco`, `fix/relevance-backfill`, `codex/automatic-canvas-login`.
 

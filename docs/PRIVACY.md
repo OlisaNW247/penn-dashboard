@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-27_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -194,7 +194,14 @@ that stops the app from opening again until you update; if a newer version
 simply exists, it shows a dismissible banner instead. If the check fails for
 any reason — no signal, the file is unreachable, anything — the app opens
 normally and relies on the last successful check, kept for up to 30 days, in
-the meantime.
+the meantime. While that notice is up, the app also clears the reminders it
+had scheduled and the Home Screen widget shows "update smooth" instead of your
+work; both come back once you update.
+
+Requests the app makes to its own backend (the Penn features above) also
+carry the app's version number, for example "3.3.0", so the backend can refuse
+a version that is no longer supported. The version number is the same for
+every copy of that release and says nothing about you.
 
 ## The Chrome extension (optional, Penn)
 

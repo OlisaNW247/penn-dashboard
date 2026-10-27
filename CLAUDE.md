@@ -59,7 +59,10 @@ shares completions, due-date edits, their own tasks and the work list
 with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
 goes from the laptop's screen to the phone's camera and never to the
 server); the server stores ciphertext it cannot read. Name, reminder
-settings and grades are never in it. The
+settings and grades are never in it. Backend requests carry the app's
+marketing version (`X-Smooth-Version`, since 2026-10-27) so the server can
+refuse builds below the update floor; it is the same for every copy of a
+release. The
 PennKey password is saved automatically (since 2026-10-23) after a verified
 Penn Canvas sign-in inside the app's own login page, with a one-line
 disclosure above that page; it stays in this phone's Keychain
@@ -1558,8 +1561,31 @@ and because GitHub's web UI can edit it from a phone, which is the only way to
 lift a bad block.
 
 `minimumVersion` and `latestVersion` are kept **equal** — every release is
-mandatory, so `UpdateAvailableBanner` never fires in practice. Bump both on each
-release, but **only once the new build is actually downloadable**. A floor above
+mandatory, so `UpdateAvailableBanner` never fires in practice. **Since
+2026-10-27 nobody bumps them by hand.** `.github/workflows/update-floor.yml`
+(script and tests in `scripts/update-floor/`; `node --test
+"scripts/update-floor/*.test.mjs"`) asks Apple's public lookup every 30 minutes
+and raises both to the live version once it has been live six hours. It never
+lowers the floor and writes nothing on an odd lookup. It only runs from the
+default branch, `main`. To pause it (a new build crashes), set the repository
+variable `UPDATE_FLOOR_HOLD` to `true`; set it **before** hand-lowering the
+floor, or the next run raises it straight back. It was written because
+students were still on builds below 3.2.0 after the floor was raised by hand
+on 2026-10-25.
+
+The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
+only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
+are gone), the store clears pending and delivered notifications, and writes
+`lhf.updateRequired` so the widget shows "update smooth". Backend functions
+refuse a present `X-Smooth-Version` below the floor with 426
+(`backend/supabase/functions/_shared/version.ts`, fail open);
+`LHF_REQUIRE_VERSION_HEADER=true` also refuses requests with no header, and
+should be set only once the floor is at or above the first build that sends
+it. `delete-account` is never gated, and functions the Chrome extension calls
+never require the header. The macOS menu-bar extra (`LHFScenes`) is outside
+`RootCore` and keeps syncing behind the wall: a known gap.
+
+The floor must never be above what is actually downloadable. A floor above
 what the App Store will serve is the one unrecoverable mistake here: the wall's
 button leads to a version that still fails the check, and everyone is stuck. The
 30-day ceiling in `UpdatePolicyCache` only rescues people who are offline.
@@ -2596,6 +2622,14 @@ none is a ship line.
 
 ## Known gaps
 
+- **The hardened update lock (2026-10-27) has never compiled.** Written
+  in a cloud container with no Swift toolchain: `RootView.swift`,
+  `UpdateGate.swift`, `BackendVersionHeader.swift`, the widget's
+  "update smooth" view and seven new `UpdateGateStoreTests`. Run
+  `swift test --no-parallel` and the iOS build before anything ships from
+  this. The `update-floor` workflow has not run against the real App Store
+  lookup yet (the container cannot reach Apple), and the backend version
+  check is not deployed.
 - **A class's Ed posts can vanish from the phone and come back**
   (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
   over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620

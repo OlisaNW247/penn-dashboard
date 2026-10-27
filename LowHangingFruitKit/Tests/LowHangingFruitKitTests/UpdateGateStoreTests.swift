@@ -293,4 +293,250 @@ struct UpdateGateStoreTests {
         #expect(newerLatest == (try version("2.2.0")))
         #expect(!newerStore.isAvailableBannerDismissed)
     }
+
+    // MARK: - Walled-build side effects (widget flag, notification clearing)
+
+    /// Counts how often the store's notification-clearing closure fires. The
+    /// default closure is the real `UNUserNotificationCenter` call, which no
+    /// test may reach, so every test below injects one of these.
+    private final class ClearCounter {
+        var count = 0
+    }
+
+    /// Answers the manifest request from its path alone, with a fixed body per
+    /// path, so there is no shared mutable stub state for parallel tests to
+    /// trample. `/required.json` blocks a 1.0.0 install; `/ok.json` does not.
+    private final class ManifestURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            let body: String
+            switch request.url?.path {
+            case "/required.json": body = #"{"minimumVersion":"9.0.0"}"#
+            default: body = #"{"minimumVersion":"0.1.0"}"#
+            }
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
+    }
+
+    private func manifestSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ManifestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    private static let requiredManifestURL = URL(string: "https://example.com/required.json")!
+    private static let okManifestURL = URL(string: "https://example.com/ok.json")!
+
+    @Test("a cached blocking policy writes the flag true and clears notifications once at init")
+    func cachedBlockWritesFlagAndClearsAtInit() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        let cache = UpdatePolicyCache(defaults: cacheDefaults)
+        cache.save(
+            UpdatePolicy(minimumVersion: try version("3.0.0")),
+            at: Date(timeIntervalSince1970: 1_000_000)
+        )
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: nil,
+            session: failingSession(),
+            cache: cache,
+            now: { Date(timeIntervalSince1970: 1_000_100) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        guard case .updateRequired = store.verdict else {
+            Issue.record("expected .updateRequired, got \(store.verdict)")
+            return
+        }
+        #expect(storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+    }
+
+    @Test("an ok verdict at init writes the flag false, overwriting a stale true, and clears nothing")
+    func okAtInitWritesFlagFalse() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        // A flag left behind by an earlier, blocked build.
+        storeDefaults.set(true, forKey: SharedDefaults.updateRequiredKey)
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: nil,
+            session: failingSession(),
+            cache: UpdatePolicyCache(defaults: cacheDefaults),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        #expect(store.verdict == .ok)
+        #expect(storeDefaults.object(forKey: SharedDefaults.updateRequiredKey) != nil)
+        #expect(!storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 0)
+    }
+
+    @Test("a fetch that moves ok to required writes the flag true and clears notifications exactly once")
+    func refreshIntoRequiredFiresOnce() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: Self.requiredManifestURL,
+            session: manifestSession(),
+            cache: UpdatePolicyCache(defaults: cacheDefaults),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        #expect(store.verdict == .ok)
+        #expect(!storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 0)
+
+        await store.refresh()
+        guard case .updateRequired = store.verdict else {
+            Issue.record("expected .updateRequired, got \(store.verdict)")
+            return
+        }
+        #expect(storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+
+        // Already required: a required-to-required refresh is not a
+        // transition, so it must not clear again.
+        await store.refresh()
+        #expect(storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+    }
+
+    @Test("a fetch that keeps the verdict ok never clears notifications")
+    func refreshStayingOkClearsNothing() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: Self.okManifestURL,
+            session: manifestSession(),
+            cache: UpdatePolicyCache(defaults: cacheDefaults),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        await store.refresh()
+        #expect(store.verdict == .ok)
+        #expect(!storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 0)
+    }
+
+    @Test("a fetch that lifts the block writes the flag false without clearing again")
+    func refreshOutOfRequiredWritesFlagFalse() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        let cache = UpdatePolicyCache(defaults: cacheDefaults)
+        cache.save(
+            UpdatePolicy(minimumVersion: try version("3.0.0")),
+            at: Date(timeIntervalSince1970: 1_000_000)
+        )
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: Self.okManifestURL,
+            session: manifestSession(),
+            cache: cache,
+            now: { Date(timeIntervalSince1970: 1_000_100) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        #expect(storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+
+        await store.refresh()
+        #expect(store.verdict == .ok)
+        #expect(!storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+    }
+
+    @Test("a failed fetch leaves the flag and the notifications alone")
+    func failedFetchLeavesFlagAlone() async throws {
+        let (cacheDefaults, cacheName) = scratchDefaults()
+        let (storeDefaults, storeName) = scratchDefaults()
+        defer {
+            destroy(cacheName)
+            destroy(storeName)
+        }
+        let cache = UpdatePolicyCache(defaults: cacheDefaults)
+        cache.save(
+            UpdatePolicy(minimumVersion: try version("3.0.0")),
+            at: Date(timeIntervalSince1970: 1_000_000)
+        )
+        let counter = ClearCounter()
+
+        let store = UpdateGateStore(
+            installedVersion: try version("1.0.0"),
+            manifestURL: Self.manifestURL,
+            session: failingSession(),
+            cache: cache,
+            now: { Date(timeIntervalSince1970: 1_000_100) },
+            defaults: storeDefaults,
+            clearNotifications: { counter.count += 1 }
+        )
+        await store.refresh()
+        guard case .updateRequired = store.verdict else {
+            Issue.record("network failure cleared a cached block: \(store.verdict)")
+            return
+        }
+        #expect(storeDefaults.bool(forKey: SharedDefaults.updateRequiredKey))
+        #expect(counter.count == 1)
+    }
+
+    // MARK: - X-Smooth-Version header value
+
+    @Test("the version header value is the trimmed marketing string, or nil when missing or blank")
+    func versionHeaderValueNormalization() {
+        #expect(BackendVersionHeader.name == "X-Smooth-Version")
+        #expect(BackendVersionHeader.normalized("3.2.1") == "3.2.1")
+        #expect(BackendVersionHeader.normalized(" 3.2.1\n") == "3.2.1")
+        #expect(BackendVersionHeader.normalized("   ") == nil)
+        #expect(BackendVersionHeader.normalized("") == nil)
+        #expect(BackendVersionHeader.normalized(nil) == nil)
+        #expect(BackendVersionHeader.normalized(321) == nil)
+    }
 }
