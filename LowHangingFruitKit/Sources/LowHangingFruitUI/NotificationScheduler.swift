@@ -82,6 +82,14 @@ final class NotificationScheduler: ObservableObject {
     }
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
+    /// What the latest reschedule pass did, counted: the notifications the
+    /// center took or refused, the stale ones taken back, the alarms AlarmKit
+    /// would not hold. Nil until a pass has run. Not shown to the student and
+    /// not persisted; it exists so a failed add is a number somewhere
+    /// (`ReminderPassReport`, hardening plan C5). Set by `applyReminders`, so
+    /// a pass that never got that far (reminders off) leaves the last one.
+    var lastPassReport: ReminderPassReport?
+
     // Lazy so launch on an unbundled binary never touches the notification center.
     private lazy var center = UNUserNotificationCenter.current()
 
@@ -408,13 +416,15 @@ final class NotificationScheduler: ObservableObject {
     /// Re-plans from `lastScheduledItems` after the student changed a per-course
     /// preference, coalescing a burst of edits into one pass.
     ///
-    /// The debounce is not politeness. Rescheduling is a full
-    /// `removeAllPendingNotificationRequests()` followed by up to sixty
-    /// `add(_:)` calls, and a student setting up a class flips five or six
-    /// switches in about as many seconds — running the whole cycle per switch
-    /// would mean the app spends that entire interval with an empty or
-    /// half-populated pending queue. Coalescing means it is empty once, briefly,
-    /// after they stop.
+    /// The debounce is not politeness. Rescheduling is up to sixty awaited
+    /// `add(_:)` calls plus a read of what is pending, and a student setting up
+    /// a class flips five or six switches in about as many seconds — running
+    /// the whole cycle per switch would mean the app spends that entire
+    /// interval re-planning and re-adding the same requests. Coalescing means
+    /// it happens once, after they stop. (It used to be a full
+    /// `removeAllPendingNotificationRequests()` first, and the debounce also
+    /// kept the queue from sitting empty; a pass now removes only what the plan
+    /// no longer holds, `applyNotifications`.)
     func rescheduleAfterPreferenceChange(debounce: Duration = .milliseconds(600)) {
         pendingPreferenceReschedule?.cancel()
         guard isEnabled, !itemsForPreferenceReschedule().isEmpty else { return }
@@ -720,11 +730,18 @@ final class NotificationScheduler: ObservableObject {
     /// `maxPending`. The cost is the one the old note named: the same student's
     /// other reminders differ with the delivery mode. That is the point.
     /// `false` is today's output, untouched.
+    ///
+    /// `buzzFallbackAssignmentIDs` names the items (`Assignment.id`) whose
+    /// alarm AlarmKit would not take while it took the others
+    /// (`BerserkAlarmPlan.Settlement`): with `loudAlertsAsAlarms` true they
+    /// alone keep their buzzes, so every item the loud alert covers has an
+    /// alarm or its buzzes, and the budget counts the buzzes that are returned.
     func plannedRequests(
         from items: [DashItem],
         now: Date = Date(),
         preferences: CoursePreferencesStore? = nil,
-        loudAlertsAsAlarms: Bool = false
+        loudAlertsAsAlarms: Bool = false,
+        buzzFallbackAssignmentIDs: Set<String> = []
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
@@ -740,7 +757,11 @@ final class NotificationScheduler: ObservableObject {
         // reminder, if the student asked for one, because otherwise it would
         // have neither.
         let loudItemIDs = Set(loud.map(\.item.id))
-        let loudRequests = loud.flatMap { Self.loudRequests(for: $0, now: now, nameOverrides: nameOverrides, minutes: sweeperMinutes, sound: sweeperSound) }
+        let loudByItem = loud.map { alert in
+            (id: alert.item.assignment.id,
+             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides,
+                                         minutes: sweeperMinutes, sound: sweeperSound))
+        }
 
         var byCourse: [String: [Candidate]] = [:]
         for item in items {
@@ -793,8 +814,11 @@ final class NotificationScheduler: ObservableObject {
         }
 
         // Only the buzzes that are really returned take slots; in alarm mode
-        // there are none. See `loudAlertsAsAlarms` above.
-        let buzzes = loudAlertsAsAlarms ? [] : loudRequests
+        // that is none, or just those of the items whose alarm AlarmKit would
+        // not take. See `loudAlertsAsAlarms` above.
+        let buzzes = loudByItem
+            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
+            .flatMap(\.requests)
         let budget = Self.maxPending - buzzes.count
         let calendar = Calendar.current
 
@@ -1193,5 +1217,20 @@ extension NotificationScheduler: PendingNotificationSink {
 
     func removeAllPending() { cancelAll() }
 
-    func add(_ request: UNNotificationRequest) async { try? await center.add(request) }
+    func pendingIdentifiers() async -> [String] {
+        await center.pendingNotificationRequests().map(\.identifier)
+    }
+
+    func removePending(identifiers: [String]) {
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+
+    func add(_ request: UNNotificationRequest) async -> Bool {
+        do {
+            try await center.add(request)
+            return true
+        } catch {
+            return false
+        }
+    }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import UserNotifications
 
 /// What the scheduler needs from AlarmKit, as a protocol, so that
@@ -16,8 +17,9 @@ protocol BerserkAlarmBackend: AnyObject {
     /// Puts the one-time system question to the student.
     func requestAuthorization() async -> BerserkAlarmAuthorization
     /// Makes AlarmKit hold exactly `plan`, leaving a ringing alarm alone
-    /// (`BerserkAlarmEngine.reconcile`).
-    func reconcile(_ plan: [PlannedAlarm]) async throws
+    /// (`BerserkAlarmEngine.reconcile`), and reports the alarms it could not
+    /// bring in line. Throws only when AlarmKit cannot be read at all.
+    func reconcile(_ plan: [PlannedAlarm]) async throws -> BerserkReconcileReport
     /// Cancels every alarm that is not ringing.
     func cancelIdle()
     /// Cancels every alarm, ringing or not. Only for the student's own "off".
@@ -57,8 +59,64 @@ protocol PendingNotificationSink: AnyObject {
     /// Called once per pass before anything is added; the real sink makes sure
     /// the shared delegate is the center's.
     func prepare()
+    /// Takes every pending request back. For "reminders off", never for a
+    /// re-plan (`applyNotifications`).
     func removeAllPending()
-    func add(_ request: UNNotificationRequest) async
+    /// The identifier of every request pending now.
+    func pendingIdentifiers() async -> [String]
+    /// Takes the named pending requests back and nothing else.
+    func removePending(identifiers: [String])
+    /// Adds the request, replacing a pending one with the same identifier.
+    /// False when the center refused it.
+    func add(_ request: UNNotificationRequest) async -> Bool
+}
+
+/// What one reminder pass did, counted so a failure is a number somewhere
+/// instead of a silent shortfall. Nothing here is shown to the student; the
+/// scheduler keeps the latest as `lastPassReport` and logs a pass that was not
+/// clean.
+struct ReminderPassReport: Equatable, Sendable {
+    /// Notification requests handed to the center and accepted, and those the
+    /// center refused. Both are the pass's final application of the plan: a
+    /// fallback re-applies the whole plan, so the first application's refusals
+    /// are tried again there, not added up. A refused request is tried again
+    /// by the next pass.
+    var notificationsAdded = 0
+    var notificationsFailed = 0
+    /// Pending requests that were no longer in the plan and were taken back,
+    /// over every application in the pass.
+    var staleNotificationsRemoved = 0
+    /// Wanted alarms AlarmKit would not hold, and unwanted ones it would not
+    /// let go (`BerserkReconcileReport`).
+    var alarmsUnscheduled = 0
+    var alarmsUncancelled = 0
+
+    var isClean: Bool { notificationsFailed == 0 && alarmsUnscheduled == 0 && alarmsUncancelled == 0 }
+
+    mutating func record(_ applied: NotificationApplyResult) {
+        notificationsAdded = applied.added
+        notificationsFailed = applied.failed
+        staleNotificationsRemoved += applied.staleRemoved
+    }
+
+    mutating func record(_ alarms: BerserkReconcileReport) {
+        alarmsUnscheduled += alarms.unscheduled.count
+        alarmsUncancelled += alarms.uncancelled.count
+    }
+}
+
+/// The counts from one `applyNotifications`.
+struct NotificationApplyResult: Equatable, Sendable {
+    var added = 0
+    var failed = 0
+    var staleRemoved = 0
+}
+
+/// What `syncAlarms` did: the settlement the pass goes on with, and what the
+/// reconcile could not do.
+struct AlarmSyncResult: Sendable {
+    let settlement: BerserkAlarmPlan.Settlement
+    let report: BerserkReconcileReport
 }
 
 /// The outcome of `resolveLoudDelivery`.
@@ -98,19 +156,23 @@ extension NotificationScheduler {
     ///    prompt can appear, which is why it needs the plan: no prompt for a
     ///    student who has nothing to be alarmed about.
     /// 2. Stop any ringing alarm whose item is finished.
-    /// 3. Add the notifications, with the loud buzzes left out in alarm mode.
+    /// 3. Bring the notifications in line (`applyNotifications`), with the loud
+    ///    buzzes left out in alarm mode.
     /// 4. Reconcile the alarms against what AlarmKit already holds.
     /// 5. Settle (`BerserkAlarmPlan.settlement`): if AlarmKit threw in step 4,
-    ///    the notifications are added again with the buzzes in. A student who
-    ///    allowed alarms and then hit an AlarmKit error must still be warned,
-    ///    not left with neither. The wrong fix is to leave the buzzes out
-    ///    "because alarms are on" without checking that the alarms were really
-    ///    scheduled.
+    ///    or would not take the alarm of some items, the notifications are
+    ///    brought in line again with the buzzes in, for every item in the first
+    ///    case and for just those items in the second. A student who allowed
+    ///    alarms and then hit an AlarmKit error must still be warned, not left
+    ///    with neither. The wrong fix is to leave the buzzes out "because alarms
+    ///    are on" without checking that the alarms were really scheduled.
     ///
-    /// `removeAllPending()` is notifications-only on purpose: this runs every
-    /// few minutes, and an alarm that was cancelled and re-added each time
-    /// would leave a window with nothing scheduled and would cancel one that
-    /// is ringing right now.
+    /// The pending notifications are never all removed and re-added
+    /// (`applyNotifications` says why); `removeAllPending()` is for "reminders
+    /// off" alone. It is notifications-only on purpose: this runs every few
+    /// minutes, and an alarm that was cancelled and re-added each time would
+    /// leave a window with nothing scheduled and would cancel one that is
+    /// ringing right now.
     ///
     /// `mayPrompt` is false for a background re-plan
     /// (`rescheduleWithoutPrompting`): the permission question is then never
@@ -125,12 +187,17 @@ extension NotificationScheduler {
     /// on. AlarmKit is its own permission, and the decision's own reasons
     /// (the loud switch, preview data, a refusal from AlarmKit itself) are the
     /// only ones that take an alarm back. The one difference is the fallback
-    /// the settlement describes: if AlarmKit throws there are no buzzes to put
-    /// back, and the idle alarms are taken back as the settlement says.
+    /// the settlement describes: with no buzzes to put back, an item whose
+    /// alarm AlarmKit would not take has no alert until the next pass tries
+    /// it again.
+    ///
+    /// Returns what the pass did, counted (`ReminderPassReport`), and logs it
+    /// when anything failed.
+    @discardableResult
     func applyReminders(
         from items: [DashItem], now: Date, sink: any PendingNotificationSink,
         mayPrompt: Bool = true, notificationsAllowed: Bool = true
-    ) async {
+    ) async -> ReminderPassReport {
         var now = now
         var alarmPlan = plannedAlarms(from: items, now: now)
         let decision = await resolveLoudDelivery(plan: alarmPlan, mayPrompt: mayPrompt)
@@ -152,26 +219,83 @@ extension NotificationScheduler {
         })
         activeAlarmBackend()?.stopRinging(among: finished)
 
+        var report = ReminderPassReport()
+
         guard notificationsAllowed else {
-            _ = await syncAlarms(plan: alarmPlan, decision: decision)
-            return
+            report.record(await syncAlarms(plan: alarmPlan, decision: decision).report)
+            return logged(report)
         }
 
         sink.prepare()
         let firstPassAsAlarms = decision.delivery == .alarms
-        sink.removeAllPending()
-        for request in plannedRequests(from: items, now: now, loudAlertsAsAlarms: firstPassAsAlarms) {
-            await sink.add(request)
-        }
+        report.record(await applyNotifications(
+            plannedRequests(from: items, now: now, loudAlertsAsAlarms: firstPassAsAlarms), to: sink))
 
-        let settlement = await syncAlarms(plan: alarmPlan, decision: decision)
-        if settlement.loudAlertsAsAlarms != firstPassAsAlarms {
-            sink.removeAllPending()
-            for request in plannedRequests(from: items, now: now,
-                                           loudAlertsAsAlarms: settlement.loudAlertsAsAlarms) {
-                await sink.add(request)
-            }
+        let synced = await syncAlarms(plan: alarmPlan, decision: decision)
+        report.record(synced.report)
+        let settlement = synced.settlement
+        if settlement.loudAlertsAsAlarms != firstPassAsAlarms || !settlement.buzzFallbackAssignmentIDs.isEmpty {
+            report.record(await applyNotifications(
+                plannedRequests(from: items, now: now, loudAlertsAsAlarms: settlement.loudAlertsAsAlarms,
+                                buzzFallbackAssignmentIDs: settlement.buzzFallbackAssignmentIDs),
+                to: sink))
         }
+        return logged(report)
+    }
+
+    /// Brings the pending notifications in line with `planned`: takes back the
+    /// ones the plan no longer holds, then adds every planned request, and
+    /// counts the adds the center refused.
+    ///
+    /// **Why not remove everything and add everything.** That is what a
+    /// re-plan used to be, and it is not atomic (hardening plan C5, UCR-4,
+    /// NOT-10): for the length of up to sixty awaited `add` calls the queue
+    /// held only what had been re-added so far, and a pass that was cut short
+    /// (the process killed, a wake out of budget) left the student with
+    /// whatever fraction of their reminders it had reached. It also threw the
+    /// result of every `add` away, so a refusal was a reminder that quietly
+    /// never existed.
+    ///
+    /// **Why the stale ones go first and the adds second.** A wanted request
+    /// is never removed, so there is no moment at which a reminder the student
+    /// should have is missing: `add` replaces a pending request of the same
+    /// identifier in one step. The stale ones go first, not last, because of
+    /// the cap: iOS keeps only about sixty-four pending requests and drops the
+    /// rest, so adding a whole new plan beside the old one and removing the old
+    /// afterwards could hold more than the cap for a moment and lose some of
+    /// the new. Removing first keeps the queue at most the size of the plan at
+    /// every step. The wrong fix is "add everything, then remove everything
+    /// that was there before", which fails twice: it can pass the cap, and it
+    /// removes the requests it has just replaced.
+    ///
+    /// A refused add is counted, not retried here: the next pass re-adds the
+    /// whole plan, and a retry loop in a pass that runs every few minutes would
+    /// only delay the ones that work.
+    func applyNotifications(
+        _ planned: [UNNotificationRequest], to sink: any PendingNotificationSink
+    ) async -> NotificationApplyResult {
+        var result = NotificationApplyResult()
+        let plannedIDs = Set(planned.map(\.identifier))
+        let stale = await sink.pendingIdentifiers().filter { !plannedIDs.contains($0) }
+        if !stale.isEmpty {
+            sink.removePending(identifiers: stale)
+            result.staleRemoved = stale.count
+        }
+        for request in planned {
+            if await sink.add(request) { result.added += 1 } else { result.failed += 1 }
+        }
+        return result
+    }
+
+    /// Keeps the pass's report as `lastPassReport` and says so in the log when
+    /// something failed. Counts only; nothing about the student's work.
+    private func logged(_ report: ReminderPassReport) -> ReminderPassReport {
+        lastPassReport = report
+        if !report.isClean {
+            Logger(subsystem: "com.lhf.lowhangingfruit", category: "reminders").error(
+                "reminder pass incomplete: \(report.notificationsFailed) notifications refused, \(report.alarmsUnscheduled) alarms not scheduled, \(report.alarmsUncancelled) alarms not cancelled")
+        }
+        return report
     }
 
     /// Decides how this reschedule delivers the loud alert, asking for alarm
@@ -223,20 +347,27 @@ extension NotificationScheduler {
     }
 
     /// Brings AlarmKit in line with the decision and returns what the
-    /// reschedule finally does (`BerserkAlarmPlan.settlement`).
+    /// reschedule finally does (`BerserkAlarmPlan.settlement`), with what the
+    /// reconcile could not do.
     ///
-    /// - A delivery of `.alarms` reconciles. If AlarmKit throws, the outcome
-    ///   is `.alarmKitThrew`, which takes back the alarms that are not ringing
-    ///   and puts the buzzes back for this pass: a half-scheduled set of
-    ///   alarms plus no buzzes would leave some work with no alert at all.
+    /// - A delivery of `.alarms` reconciles. If AlarmKit would not take the
+    ///   alarm of some items, those items alone get the buzzes
+    ///   (`.alarmsPartlyReconciled`) and the rest keep their alarms. If AlarmKit
+    ///   cannot be used at all the outcome is `.alarmKitThrew`, which takes
+    ///   back the alarms that are not ringing and puts the buzzes back for
+    ///   every item: with nothing known about the alarms, a half-scheduled set
+    ///   plus no buzzes would leave some work with no alert at all.
     /// - Anything else takes alarms back by the decision's scope.
-    func syncAlarms(plan: [PlannedAlarm], decision: LoudDeliveryDecision) async -> BerserkAlarmPlan.Settlement {
+    func syncAlarms(plan: [PlannedAlarm], decision: LoudDeliveryDecision) async -> AlarmSyncResult {
         let backend = activeAlarmBackend()
         let outcome: BerserkAlarmPlan.Outcome
+        var report = BerserkReconcileReport()
         if decision.delivery == .alarms, let backend {
             do {
-                try await backend.reconcile(plan)
-                outcome = .alarmsReconciled
+                report = try await backend.reconcile(plan)
+                let unscheduled = Set(report.unscheduled)
+                let buzzFor = Set(plan.filter { unscheduled.contains($0.id) }.map(\.assignmentID))
+                outcome = buzzFor.isEmpty ? .alarmsReconciled : .alarmsPartlyReconciled(buzzFor: buzzFor)
             } catch {
                 outcome = .alarmKitThrew
             }
@@ -250,7 +381,7 @@ extension NotificationScheduler {
         case .cancelIdle: backend?.cancelIdle()
         case .cancelAll: backend?.cancelAll()
         }
-        return settlement
+        return AlarmSyncResult(settlement: settlement, report: report)
     }
 
     /// Cancels every alarm, ringing or not. Called when reminders are turned

@@ -89,7 +89,7 @@ final class BerserkAlarmScheduler: BerserkAlarmBackend, BerserkAlarmStore {
 
     // MARK: BerserkAlarmBackend (the decisions are the engine's)
 
-    func reconcile(_ plan: [PlannedAlarm]) async throws {
+    func reconcile(_ plan: [PlannedAlarm]) async throws -> BerserkReconcileReport {
         try await BerserkAlarmEngine.reconcile(plan, in: self)
     }
 

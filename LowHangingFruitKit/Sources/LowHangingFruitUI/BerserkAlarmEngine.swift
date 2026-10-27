@@ -27,17 +27,42 @@ protocol BerserkAlarmStore: AnyObject {
     func schedule(_ planned: PlannedAlarm) async throws
 }
 
+/// What a reconcile could not do, by alarm id. Empty lists mean the store
+/// holds the plan.
+struct BerserkReconcileReport: Equatable, Sendable {
+    /// Wanted alarms the store does not hold after the pass.
+    var unscheduled: [UUID] = []
+    /// Alarms the plan does not want that are still there (idle ones: a
+    /// ringing alarm is never offered for cancelling).
+    var uncancelled: [UUID] = []
+
+    var isClean: Bool { unscheduled.isEmpty && uncancelled.isEmpty }
+}
+
 @MainActor
 enum BerserkAlarmEngine {
 
-    /// Cancels the stale alarms and schedules the missing ones, and throws if
-    /// the store ends up not holding the plan.
+    /// Cancels the stale alarms and schedules the missing ones, and reports
+    /// which of them it could not. Throws only when the store cannot be read
+    /// at all, because then nothing is known about any alarm.
     ///
     /// **A ringing alarm is left alone.** The reschedule runs while the app is
     /// open, which is also when an alarm can be going off on top of it, and an
     /// alarm that has started ringing is no longer "wanted" by the plan (its
     /// time is past). Cancelling it would silence it for the student, so only
     /// the alarms that have not started ringing are offered to the diff.
+    ///
+    /// **One alarm's failure is that alarm's, not the pass's.** This used to
+    /// throw at the first call that failed, which did two things at once: the
+    /// alarms after it in the diff were never tried, and the caller read the
+    /// throw as "AlarmKit does not work", put the buzzes back for every item
+    /// and cancelled every idle alarm, including all the ones that had been
+    /// scheduled fine (hardening plan C5, NOT-07). One item whose alarm
+    /// AlarmKit refused downgraded the rest. Now every call in the diff is
+    /// tried, and the returned report names the alarms that are not as the
+    /// plan wanted, so the caller can give just those items the buzzes. The
+    /// wrong fix is to swallow the failures: an item whose alarm never got
+    /// scheduled would then have no alert of either kind.
     ///
     /// **A call that throws is judged by what the store holds, not by the
     /// throw.** AlarmKit can throw for an alarm that is in fact there (a
@@ -46,29 +71,37 @@ enum BerserkAlarmEngine {
     /// or the student stopped it). Both are the state the reconcile wanted, so
     /// after a throw the store is read again: a scheduled alarm that is present
     /// counts as scheduled, and a cancelled one that is absent counts as
-    /// cancelled. Anything else is a real failure and is rethrown, and the
-    /// caller falls back to the buzzes. The wrong fix is to treat every throw
-    /// as a failure: that sends a student whose alarms are all fine to the
-    /// buzzes, and (before the error path stopped touching ringing alarms)
-    /// silenced one that was ringing.
-    static func reconcile(_ plan: [PlannedAlarm], in store: any BerserkAlarmStore) async throws {
+    /// cancelled. Anything else is a real failure and goes in the report. The
+    /// wrong fix is to treat every throw as a failure: that sends a student
+    /// whose alarms are all fine to the buzzes, and (before the error path
+    /// stopped touching ringing alarms) silenced one that was ringing.
+    ///
+    /// An alarm that could not be cancelled is reported but changes nothing
+    /// for the items that are wanted: their alarms are fine, and the stale one
+    /// is offered to the next pass's diff again.
+    @discardableResult
+    static func reconcile(
+        _ plan: [PlannedAlarm], in store: any BerserkAlarmStore
+    ) async throws -> BerserkReconcileReport {
         let existing = try store.storedAlarms().filter { !$0.isRinging }.map(\.id)
         let diff = BerserkAlarmPlan.reconcile(desired: plan, existingIDs: existing)
+        var report = BerserkReconcileReport()
 
         for id in diff.toCancel {
             do {
                 try store.cancel(id: id)
             } catch {
-                guard isAbsent(id, in: store) else { throw error }
+                if !isAbsent(id, in: store) { report.uncancelled.append(id) }
             }
         }
         for planned in diff.toSchedule {
             do {
                 try await store.schedule(planned)
             } catch {
-                guard isPresent(planned.id, in: store) else { throw error }
+                if !isPresent(planned.id, in: store) { report.unscheduled.append(planned.id) }
             }
         }
+        return report
     }
 
     /// Cancels every alarm that is not ringing. For an AlarmKit error and for
