@@ -1210,12 +1210,24 @@ final class AppState: ObservableObject {
             // blob while the ledger is the in-memory fallback would destroy the
             // user's own assignments on the next launch, which is the precise
             // opposite of the point.
+            //
+            // The blob is released only after the save that holds its contents
+            // has landed. `upsert` used to swallow a failed save, and this line
+            // then removed the only durable copy of the student's own tasks on
+            // the strength of rows that were still in memory: a full disk, or
+            // protected data not yet available, and the next launch started
+            // with none of them (hardening plan 2026-10-25, B5: DAT-07). On a
+            // failed save the blob stays, and so does the list read from it;
+            // the next launch tries again.
             if store.isPersistent {
-                store.upsert(self.manualAssignments.map { $0.asAssignment() })
-                self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
-                self.manualAssignments = store
-                    .assignments(source: .manual)
-                    .compactMap(ManualAssignment.init)
+                let migrated = self.manualAssignments.isEmpty
+                    || store.upsert(self.manualAssignments.map { $0.asAssignment() }).saved
+                if migrated {
+                    self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
+                    self.manualAssignments = store
+                        .assignments(source: .manual)
+                        .compactMap(ManualAssignment.init)
+                }
             }
         }
 
@@ -5783,6 +5795,10 @@ final class AppState: ObservableObject {
 
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
+        // The posts whose extraction produced rows, which are only "read" once
+        // those rows are on disk. A post that found nothing, or was judged
+        // informational, has nothing to lose and is recorded either way.
+        var idsNeedingSave: Set<String> = []
         // Each post's relevance judgment, by read-state key, for the megaphone
         // sheet (`recordAnnouncementRelevance`).
         var relevanceByKey: [String: AnnouncementRelevance] = [:]
@@ -5903,6 +5919,7 @@ final class AppState: ObservableObject {
             // dashboard presentation rule; the announcements page remains a
             // complete, inspectable inbox even when official coursework wins.
             collected.append(contentsOf: candidates)
+            if !candidates.isEmpty { idsNeedingSave.insert(announcement.id) }
             // Marked processed even when extraction yielded zero results —
             // per the method's own doc comment on `processedAnnouncementIDs`,
             // "extracted, found nothing actionable" is a completed parse, not
@@ -5910,8 +5927,16 @@ final class AppState: ObservableObject {
             newlyProcessedIDs.append(announcement.id)
         }
 
-        if !collected.isEmpty {
-            store.upsert(collected)
+        // Save first, then forget. "Read" is a ratchet: a recorded id is never
+        // sent to an extractor again, so recording one whose rows were never
+        // written loses the task for good. `upsert` used to swallow a failed
+        // save, and the ids were recorded all the same (hardening plan
+        // 2026-10-25, B5: DAT-07). Now the ids of posts that produced rows wait
+        // for a save that landed, and are simply read again on the next sync
+        // if it did not. The rows themselves stay in the context and show on
+        // the dashboard meanwhile, and the next save that works writes them.
+        if !collected.isEmpty, !store.upsert(collected).saved {
+            newlyProcessedIDs.removeAll { idsNeedingSave.contains($0) }
         }
         recordProcessedAnnouncementIDs(newlyProcessedIDs)
         // Before the rebuild below, which ends in the badge: the sheet's list

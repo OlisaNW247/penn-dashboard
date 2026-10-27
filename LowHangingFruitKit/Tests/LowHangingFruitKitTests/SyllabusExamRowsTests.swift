@@ -199,7 +199,7 @@ struct SyllabusExamRowsTests {
     func ledgerRoundTrip() throws {
         let store = try AssignmentStore(inMemory: true)
         let found = rows([document(.syllabus, text: "Midterm 1: Oct 23\nFinal Exam: Dec 15")])
-        #expect(store.upsert(found, now: Self.now) == 2)
+        #expect(store.upsert(found, now: Self.now).created == 2)
 
         let stored = store.assignments(source: .canvasAnnouncement, now: Self.now)
         #expect(Set(stored.map(\.id)) == Set(found.map(\.id)))
@@ -208,7 +208,7 @@ struct SyllabusExamRowsTests {
         #expect(stored.first { $0.title == "Midterm 1" }?.url == Self.syllabusURL)
 
         // The second run finds the same two, so nothing new is created.
-        #expect(store.upsert(rows([document(.syllabus, text: "Midterm 1: Oct 23\nFinal Exam: Dec 15")]), now: Self.now) == 0)
+        #expect(store.upsert(rows([document(.syllabus, text: "Midterm 1: Oct 23\nFinal Exam: Dec 15")]), now: Self.now).created == 0)
         #expect(store.assignments(source: .canvasAnnouncement, now: Self.now).count == 2)
     }
 

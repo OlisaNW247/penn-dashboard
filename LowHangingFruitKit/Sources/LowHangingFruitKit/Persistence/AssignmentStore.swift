@@ -96,6 +96,13 @@ public final class AssignmentStore {
     /// when the answer is an error. Never set outside tests.
     var readFailureForTesting: (any Error)?
 
+    /// Test seam, the write-side twin of `readFailureForTesting`: while set,
+    /// every save that has something to save fails with this instead of
+    /// writing. The pending changes stay in the context, exactly as after a real
+    /// failed save, so the next save that works carries them. Never set outside
+    /// tests.
+    var saveFailureForTesting: (any Error)?
+
     public struct ReconcileResult: Sendable {
         /// The current active set for the reconciled source — what the caller
         /// should assign to `canvasItems` / `gradescopeItems`.
@@ -112,11 +119,18 @@ public final class AssignmentStore {
         /// caller must keep the pool it already has, not replace it with
         /// `items`, or a read error becomes a wiped dashboard.
         public let readFailed: Bool
+        /// False when the reconcile's changes are in memory but the save that
+        /// should have made them durable failed. The dashboard still shows them,
+        /// and they are written by the next save that works; a caller that is
+        /// about to forget something because "it is on disk now" must not
+        /// forget it on this.
+        public let saved: Bool
 
-        init(items: [Assignment], wasSuspectedPartial: Bool, readFailed: Bool = false) {
+        init(items: [Assignment], wasSuspectedPartial: Bool, readFailed: Bool = false, saved: Bool = true) {
             self.items = items
             self.wasSuspectedPartial = wasSuspectedPartial
             self.readFailed = readFailed
+            self.saved = saved
         }
     }
 
@@ -270,6 +284,7 @@ public final class AssignmentStore {
     func saveChanges(_ operation: String = #function) -> Bool {
         guard context.hasChanges else { return true }
         do {
+            if let injected = saveFailureForTesting { throw injected }
             try context.save()
             lastSaveError = nil
             return true
@@ -345,7 +360,7 @@ public final class AssignmentStore {
         for row in existing where !seenIDs.contains(row.id) {
             row.isGoneFromFeed = true
         }
-        saveChanges()
+        let saved = saveChanges()
 
         // The answer is read off the map this pass already holds rather than
         // from a fresh fetch afterwards. A second fetch that failed here would
@@ -365,7 +380,8 @@ public final class AssignmentStore {
 
         return ReconcileResult(
             items: active,
-            wasSuspectedPartial: false
+            wasSuspectedPartial: false,
+            saved: saved
         )
     }
 
@@ -834,9 +850,20 @@ public final class AssignmentStore {
     ///
     /// Goes through `rowsByID()` rather than `allRows()` so the uniqueness
     /// invariant this class now enforces in code holds on this path too.
+    ///
+    /// The result says whether the rows are on disk (`saved`), not only how many
+    /// were new. It used to return the count alone and swallow a failed save, so
+    /// a caller that then forgot its source copy (the legacy manual-task blob)
+    /// or recorded a post as read (an announcement id) did so for rows that
+    /// were never written (hardening plan 2026-10-25, B5: DAT-07).
+    ///
+    /// Written even when the ledger cannot be read, which is deliberate: a row
+    /// inserted blind can at worst become a twin, and twins fold together
+    /// (`StoredAssignment.absorb`) when the ledger reads again, whereas
+    /// refusing leaves the caller's data nowhere.
     @discardableResult
-    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> Int {
-        guard !assignments.isEmpty else { return 0 }
+    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> UpsertResult {
+        guard !assignments.isEmpty else { return UpsertResult(created: 0, saved: true) }
         var byID = rowsByID()
         var created = 0
         for item in assignments {
@@ -849,8 +876,14 @@ public final class AssignmentStore {
                 created += 1
             }
         }
-        saveChanges()
-        return created
+        return UpsertResult(created: created, saved: saveChanges())
+    }
+
+    /// What `upsert` did: how many rows were new, and whether the save that
+    /// makes them durable landed.
+    public struct UpsertResult: Sendable, Equatable {
+        public let created: Int
+        public let saved: Bool
     }
 
     /// The active rows for one source, as value types. Projects manual work
@@ -893,13 +926,18 @@ public final class AssignmentStore {
     /// outcome rather than the bug it was built to prevent: the user deleted
     /// their own item and means it. Feed items still never take this path —
     /// they go gone-from-feed and age out.
-    public func delete(ids: Set<String>) {
-        guard !ids.isEmpty else { return }
+    ///
+    /// Returns whether the deletion is on disk: false when the ledger could not
+    /// be read (nothing was found to delete) or the save failed. Nothing to do
+    /// is a success.
+    @discardableResult
+    public func delete(ids: Set<String>) -> Bool {
+        guard !ids.isEmpty else { return true }
         // Nothing to delete is found in a ledger that cannot be read, and
         // saving is then pointless; the failed read is already counted.
-        guard let rows = try? allRows() else { return }
+        guard let rows = try? allRows() else { return false }
         for row in rows where ids.contains(row.id) { context.delete(row) }
-        saveChanges()
+        return saveChanges()
     }
 
     // MARK: Completion & submission truth
@@ -952,16 +990,27 @@ public final class AssignmentStore {
     ///
     /// Un-completing deletes any row that existed *only* to hold the completion,
     /// so toggling an item on and off leaves the ledger exactly as it found it.
+    ///
+    /// Returns whether the change is on disk. False when the save failed, and
+    /// also when `clearing` could not be carried out because the ledger could
+    /// not be read: an un-tick cannot find the row it is meant to clear. A tick
+    /// on a ledger that cannot be read is still written, as a completion-only
+    /// row, because that write only ever adds (the row folds into the real one
+    /// when the ledger reads again, `StoredAssignment.absorb`) and refusing it
+    /// would lose the one thing the student just did.
+    @discardableResult
     public func setCompleted(
         ids: Set<String>,
         at date: Date?,
         clearing: Set<String> = [],
         prototypes: [Assignment] = [],
         now: Date = Date()
-    ) {
-        guard !ids.isEmpty || !clearing.isEmpty else { return }
+    ) -> Bool {
+        guard !ids.isEmpty || !clearing.isEmpty else { return true }
         var unrecorded = ids
-        for row in rowsByID().values {
+        let existing = try? resolvedRowsByID()
+        if existing == nil, !clearing.isEmpty { return false }
+        for row in (existing ?? [:]).values {
             if ids.contains(row.id) {
                 row.markCompleted(at: date ?? now)
                 unrecorded.remove(row.id)
@@ -984,7 +1033,7 @@ public final class AssignmentStore {
             ) else { continue }
             context.insert(row)
         }
-        saveChanges()
+        return saveChanges()
     }
 
     /// Completion as a plain id-to-date map.
@@ -1149,8 +1198,11 @@ public final class AssignmentStore {
     /// Pairings are only ever added here, never cleared: dropping one because
     /// the live heuristic stopped agreeing is precisely the failure this is
     /// meant to prevent. `purge(source:)` is what clears them, on disconnect.
-    public func recordPairings(_ matches: [AssignmentDeduplicator.Match], now: Date = Date()) {
-        guard !matches.isEmpty else { return }
+    ///
+    /// Returns whether the pairings are on disk; nothing to record is a success.
+    @discardableResult
+    public func recordPairings(_ matches: [AssignmentDeduplicator.Match], now: Date = Date()) -> Bool {
+        guard !matches.isEmpty else { return true }
         let gradescopeByID = Dictionary(
             rows(source: .gradescope).map { ($0.id, $0) },
             uniquingKeysWith: { a, _ in a }
@@ -1172,7 +1224,7 @@ public final class AssignmentStore {
                 changed = true
             }
         }
-        if changed { saveChanges() }
+        return changed ? saveChanges() : true
     }
 
     /// The persisted Canvas submission set, for seeding `AppState` at launch
