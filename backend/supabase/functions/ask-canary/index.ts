@@ -10,11 +10,21 @@
 // `ask` would have done with the same overrides rather than exercising a
 // parallel implementation that could quietly drift from it.
 //
+// Closed by default (hardening BE-A, 2026-10-27): it answers only a request
+// carrying `x-lhf-probe-secret` equal to the `LHF_PROBE_SECRET` secret, and
+// 404s everyone when that secret is unset; the overrides it honours are
+// clamped to an allow-list (`_shared/probe.ts`'s `ProbePolicy`). Before
+// that, any anonymous Supabase JWT could pick the model, token cap and
+// provider on LHF's own OpenRouter key through this door.
+//
 // This function still counts against the caller's quota and still writes
 // `ask_outcomes` rows (tag them with the `x-lhf-probe` header to tell a
 // harness run apart from a real question -- see `_shared/probe.ts`'s
 // `readProbeTag`) -- it is not a free, unmetered side door, only an
 // overridable one. Deploy it alongside `ask`, never in place of it.
 import { handleAsk } from "../ask/index.ts";
+import { gateCanary } from "../_shared/probe.ts";
 
-Deno.serve((req) => handleAsk(req, { allowProbeOverrides: true }));
+Deno.serve((req) =>
+  gateCanary(req, Deno.env.get("LHF_PROBE_SECRET"), (gated) => handleAsk(gated, { allowProbeOverrides: true }))
+);

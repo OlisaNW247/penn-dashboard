@@ -21,6 +21,17 @@
 // (the phone links a chip only then), how many used kind `ed`, and how many
 // "where is the midterm" answers named the newer post's room.
 //
+// `ask-canary` is closed unless the request carries `x-lhf-probe-secret`
+// equal to the function's `LHF_PROBE_SECRET` secret (2026-10-27, hardening
+// BE-A): export the same value as `LHF_PROBE_SECRET` in the shell running
+// this script and it is sent on every request; the script refuses to start
+// against a canary slug without it rather than print a wall of 404s. The
+// canary also holds `model`/`fallbackModel` to an allow-list (the two
+// production models, the configured ones, and the function's
+// `LHF_PROBE_MODELS`), clamps `maxTokens` to 4096, and refuses a `provider`
+// or `reasoning` carrying anything beyond the few keys it forwards, with a
+// 400 that names the field. Production `ask` does not use the secret.
+//
 // Exit code is 1 if any run came back empty (a `done` with zero deltas) or
 // errored, so this can gate a loop; 0 if every run produced an answer.
 
@@ -89,6 +100,9 @@ function parseArgs(argv) {
     }
   }
   if (!opts.slug) usageAndExit("--slug is required");
+  if (opts.slug.includes("canary") && !process.env.LHF_PROBE_SECRET) {
+    usageAndExit(`${opts.slug} needs LHF_PROBE_SECRET set in the environment (the function's x-lhf-probe-secret)`);
+  }
   if (!Number.isInteger(opts.runs) || opts.runs < 1) usageAndExit("--runs must be a positive integer");
   if (!["exam", "policy", "short", "mixed", "citations"].includes(opts.set)) {
     usageAndExit(`--set must be one of exam, policy, short, mixed, citations (got "${opts.set}")`);
@@ -350,6 +364,9 @@ async function runOnce({ slug, session, tag, requestBody }) {
       apikey: PUBLISHABLE_KEY,
       "Content-Type": "application/json",
       "x-lhf-probe": tag ?? "probe",
+      // Only ever read from the environment, never a flag, so the secret does
+      // not land in shell history or `ps` output.
+      ...(process.env.LHF_PROBE_SECRET ? { "x-lhf-probe-secret": process.env.LHF_PROBE_SECRET } : {}),
     },
     body: JSON.stringify(requestBody),
   });

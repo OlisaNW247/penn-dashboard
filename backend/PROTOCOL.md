@@ -281,6 +281,16 @@ Request:
   "history": [ { "role": "user" | "assistant", "content": string } ] } -- may be []
 ```
 
+Size caps (`_shared/askRequest.ts`, since 2026-10-27): `contextDocument` at
+most 400,000 characters, `excerpts` 100,000, `question` 20,000, `history` 40
+turns and 100,000 characters in all. A body over any cap is refused before the
+model is called with `413 { "error": "payload_too_large", "message":
+"ask request over size cap: <field>" }` (the message names the field, never
+echoes content) and an `ask_outcomes` row of outcome `client_error`. A wrong
+shape is a `400 bad_request`. The caps are ceilings on abuse, not on a heavy
+student: a syllabus-sized prompt is about 56,000 characters of context
+document.
+
 A request may also carry an optional `x-lhf-probe` request header (at most
 40 characters, `[A-Za-z0-9-]` only) to tag the `ask_outcomes` row this
 request produces as belonging to a specific harness run rather than a real
@@ -412,6 +422,34 @@ to both. This table has no read policy for `anon`/`authenticated` at all
 something a student's own client ever reads back.
 
 ## `ask-canary`
+
+**Closed by default (2026-10-27).** The function answers only a request that
+carries `x-lhf-probe-secret` equal, compared in constant time, to the
+function secret `LHF_PROBE_SECRET`. With that secret unset, or with a missing
+or wrong header, every request (OPTIONS included) gets Supabase's own
+`404 { "code": "NOT_FOUND", "message": "Requested function was not found" }`,
+so a gated canary looks undeployed. A valid anonymous JWT alone no longer
+opens it: before this, anyone could pick the model, token cap and provider on
+LHF's own OpenRouter key through it. Even with the secret, `probe` values are
+held to a policy (`_shared/probe.ts`'s `ProbePolicy`):
+
+- `model` and `fallbackModel` must be `openai/gpt-4.1-mini`,
+  `z-ai/glm-5.3-flash`, the current `LHF_MODEL` / `LHF_ASK_FALLBACK_MODEL`, an
+  entry of the comma-separated secret `LHF_PROBE_MODELS`, or start with
+  `invalid/` (which cannot run; it is how to force the primary to fail).
+- `maxTokens` is clamped to 4096, `hedgeAfterMs` to 30000, `temperature` to
+  0..2.
+- `provider` may carry only `order` (at most 8 plain names),
+  `allow_fallbacks` and `data_collection: "deny"`; `reasoning` only `effort`
+  (`low`/`medium`/`high`), `enabled` and `exclude`.
+
+A well-formed value the policy refuses is a `400 bad_request` whose message
+names the field (`probe.model is not on the canary's model allow-list`), with
+a `client_error` outcome row; it is never silently replaced by the default,
+which would record the default model's numbers under the candidate's tag. A
+wrong-typed field is still dropped, as before. The harness
+(`scripts/ask-probe.mjs`) reads the secret from the `LHF_PROBE_SECRET`
+environment variable.
 
 A harness-only twin of `ask` (`ask-canary/index.ts`), serving the exact same
 `handleAsk` logic (`ask/index.ts`) with one difference: an optional

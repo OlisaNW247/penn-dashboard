@@ -24,12 +24,19 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
-import { buildMessages, type HistoryTurn } from "../_shared/prompt.ts";
+import { buildMessages } from "../_shared/prompt.ts";
+import { parseAskRequestBody } from "../_shared/askRequest.ts";
 import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
 import { academicSemester, activityForSection, rowsForSemester, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
 import { chatCompletionStream, type StreamEvent, UpstreamError } from "../_shared/openrouter.ts";
 import { streamResponse, type SSEEvent } from "../_shared/sse.ts";
-import { applyContextTrim, extractProbeOverrides, readProbeTag } from "../_shared/probe.ts";
+import {
+  applyContextTrim,
+  extractProbeOverrides,
+  ProbeRejectedError,
+  probePolicyFromEnv,
+  readProbeTag,
+} from "../_shared/probe.ts";
 import { classifyStreamOutcome, recordOutcome } from "../_shared/outcomes.ts";
 import {
   outcomeDetailForFallback,
@@ -38,46 +45,6 @@ import {
   remainingBudget,
   shouldStartHedge,
 } from "../_shared/fallback.ts";
-
-interface AskRequestBody {
-  question: string;
-  contextDocument: string;
-  excerpts: string;
-  askedAt: string;
-  courseIDs: string[];
-  history: HistoryTurn[];
-}
-
-function isHistoryTurn(value: unknown): value is HistoryTurn {
-  if (typeof value !== "object" || value === null) return false;
-  const turn = value as Record<string, unknown>;
-  return (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string";
-}
-
-function parseAskRequestBody(value: unknown): AskRequestBody | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const body = value as Record<string, unknown>;
-  if (
-    typeof body.question !== "string" ||
-    typeof body.contextDocument !== "string" ||
-    typeof body.excerpts !== "string" ||
-    typeof body.askedAt !== "string" ||
-    !Array.isArray(body.courseIDs) ||
-    !body.courseIDs.every((id): id is string => typeof id === "string") ||
-    !Array.isArray(body.history) ||
-    !body.history.every(isHistoryTurn)
-  ) {
-    return undefined;
-  }
-  return {
-    question: body.question,
-    contextDocument: body.contextDocument,
-    excerpts: body.excerpts,
-    askedAt: body.askedAt,
-    courseIDs: body.courseIDs,
-    history: body.history,
-  };
-}
 
 const MAX_TOKENS = 3000;
 const TEMPERATURE = 0.2;
@@ -229,12 +196,28 @@ export async function handleAsk(
   try {
     const { userId, serviceClient } = await timed("auth", () => withAuthTimeout(requireUser(req)));
     const rawBody = await timed("parse", () => readJSON<unknown>(req));
-    const body = parseAskRequestBody(rawBody);
+    const parsed = parseAskRequestBody(rawBody);
 
     // Only ever non-`undefined` when `options.allowProbeOverrides` is true
     // (i.e. this is `ask-canary`, never production `ask`) -- see
-    // `_shared/probe.ts`'s `extractProbeOverrides`.
-    const probeOverrides = extractProbeOverrides(rawBody, options.allowProbeOverrides);
+    // `_shared/probe.ts`'s `extractProbeOverrides`. A value outside the
+    // canary's allow-list or clamps is refused with a 400 naming the field,
+    // not silently replaced: a harness that asked for model X and was
+    // quietly served the default would record the default's numbers under
+    // X's tag.
+    let probeOverrides: ReturnType<typeof extractProbeOverrides>;
+    let probeRejection: string | undefined;
+    try {
+      probeOverrides = extractProbeOverrides(
+        rawBody,
+        options.allowProbeOverrides,
+        options.allowProbeOverrides ? probePolicyFromEnv(Deno.env) : undefined,
+      );
+    } catch (err) {
+      if (!(err instanceof ProbeRejectedError)) throw err;
+      probeOverrides = undefined;
+      probeRejection = err.message;
+    }
     const model = probeOverrides?.model ?? Deno.env.get("LHF_MODEL") ?? "openai/gpt-4.1-mini";
     // `resolvedFallbackModel`/`fallbackDisabled`/`hedgeAfterMs` are resolved
     // once here so both branches of `runHedgedRace` (the immediate
@@ -252,17 +235,32 @@ export async function handleAsk(
     const fallbackDisabled = probeOverrides?.disableFallback ?? false;
     const hedgeAfterMs = probeOverrides?.hedgeAfterMs ?? HEDGE_AFTER_MS;
 
-    if (!body) {
+    if (probeRejection !== undefined) {
       scheduleBackground(recordOutcome(serviceClient, {
         userId,
         model,
         outcome: "client_error",
-        detail: "malformed ask request",
+        detail: probeRejection,
         latencyMs: Date.now() - startedAt,
         probe: probeTag,
       }));
-      return errorResponse("bad_request", "malformed ask request", 400);
+      return errorResponse("bad_request", probeRejection, 400);
     }
+
+    if (!parsed.ok) {
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model,
+        outcome: "client_error",
+        detail: parsed.reason,
+        latencyMs: Date.now() - startedAt,
+        probe: probeTag,
+      }));
+      return parsed.kind === "too_large"
+        ? errorResponse("payload_too_large", parsed.reason, 413)
+        : errorResponse("bad_request", parsed.reason, 400);
+    }
+    const body = parsed.body;
 
     // The quota check and loading which of the request's `courseIDs` this
     // user is actually enrolled in are independent of each other -- neither
