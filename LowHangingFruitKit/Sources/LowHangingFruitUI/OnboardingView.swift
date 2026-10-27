@@ -433,7 +433,15 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var gradescopeStep: some View {
-        if state.isGradescopeConnected {
+        // `!state.gradescopeNeedsReauth`: a connected Gradescope whose server
+        // stopped recognising this phone (`GradescopeReauthRule`) still has
+        // `isGradescopeConnected` true on purpose (its rows, cookies and
+        // syncing carry on), and the "reconnect gradescope" banner opens this
+        // step as a cover. Without the second half that cover showed
+        // "gradescope is connected." and a continue button, a dead end that
+        // could never clear the verdict. First-time connect and a disconnected
+        // Gradescope are unchanged.
+        if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
             connectedStep(
                 step: 2,
                 message: "gradescope is connected.",

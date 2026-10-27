@@ -359,6 +359,31 @@ struct GradescopeSessionKeepTests {
         #expect(!syncBody.contains("requiresReauthentication"), "a bare 401/403 must not reach the verdict")
     }
 
+    // The cover the "reconnect gradescope" banner opens is the Gradescope step
+    // of the onboarding walk, and that step shows "gradescope is connected."
+    // instead of the login pane whenever it believes Gradescope is connected.
+    // A raised verdict leaves `isGradescopeConnected` true by design, so the
+    // step has to look at the verdict too. The step is a SwiftUI view builder
+    // with no seam to drive from a test, so the condition is pinned on the
+    // source, in the same style as `ReconnectCoverTests`.
+    @Test("the Gradescope step shows the login pane, not 'connected', while the reconnect verdict is raised")
+    func gradescopeStepChecksTheVerdict() throws {
+        let source = try Self.uiSource("OnboardingView.swift")
+        guard !source.isEmpty else { return }
+        let start = try #require(source.range(of: "private var gradescopeStep: some View {"))
+        let end = try #require(source.range(of: "private func gradescopeConnected()", range: start.upperBound..<source.endIndex))
+        let step = String(source[start.upperBound..<end.lowerBound])
+        let code = step.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+
+        #expect(code.contains("if state.isGradescopeConnected && !state.gradescopeNeedsReauth {"))
+        // And the login pane is still the other branch.
+        let connected = try #require(code.range(of: "connectedStep("))
+        let pane = try #require(code.range(of: "GradescopeLoginPane("))
+        #expect(connected.lowerBound < pane.lowerBound)
+    }
+
     private static func uiSource(_ filename: String) throws -> String {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
