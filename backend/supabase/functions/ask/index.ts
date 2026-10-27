@@ -23,7 +23,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
+import { limitsFromEnv, NO_LEASE, reserveUsage, type UsageLease, type UsageReservation } from "../_shared/quota.ts";
 import { buildMessages } from "../_shared/prompt.ts";
 import { parseAskRequestBody } from "../_shared/askRequest.ts";
 import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
@@ -121,7 +121,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | unde
  * runtime is free to tear the isolate down, and there is no guarantee an
  * `await` sitting after the generator's last `yield` gets to run before
  * that happens. `EdgeRuntime.waitUntil` is Supabase's answer to exactly
- * this. `recordUsage`/`recordOutcome` never throw (both hold themselves to
+ * this. `settleUsage`/`recordOutcome` never throw (`recordUsage` did the same job before BE-C) (both hold themselves to
  * the same fail-open discipline PROTOCOL.md's quota section describes), so
  * there's nothing to catch here; the fallback branch (no `EdgeRuntime`, in
  * a local `supabase functions serve` or any future runtime that doesn't
@@ -146,6 +146,24 @@ export async function handleAsk(
   }
 
   const startedAt = Date.now();
+
+  // One signal for "the student is no longer reading", fed by both ways the
+  // runtime can tell us: `req.signal` (the connection closed) and the SSE
+  // body being cancelled (`streamResponse`'s `onCancel`). It aborts every
+  // upstream model request, so a stalled call stops billing the moment the
+  // client leaves instead of running to its token cap, and it is how the
+  // lease below knows an abandoned request from a failed one.
+  const clientGone = new AbortController();
+  if (req.signal.aborted) clientGone.abort();
+  else req.signal.addEventListener("abort", () => clientGone.abort(), { once: true });
+
+  // The reservation for this request, taken before the model call
+  // (`reserveAskQuota`). Exactly one party settles it: this function's
+  // `finally` for every exit before a stream exists, or the stream
+  // generator's own `finally` once `leaseHandedToStream` is set.
+  let lease: UsageLease = NO_LEASE;
+  let leaseHandedToStream = false;
+
   // Independent of `allowProbeOverrides`: tagging an outcome row doesn't
   // change how the request is served, so production `ask` honors it too --
   // a harness pointed at production (rather than `ask-canary`) can still
@@ -266,12 +284,16 @@ export async function handleAsk(
     // user is actually enrolled in are independent of each other -- neither
     // reads anything the other writes -- so they run concurrently rather
     // than back-to-back. This does not change the early-return semantics: a
-    // 429 from `checkAskQuota` is still returned regardless of what
+    // 429 from `reserveAskQuota` is still returned regardless of what
     // `loadEnrolledCourseIDs` came back with (its result is simply unused
     // and discarded on that path, a small wasted read rather than a
     // correctness risk).
     const [quotaResponse, enrolledIDs] = await Promise.all([
-      timed("quota", () => checkAskQuota(serviceClient, userId)),
+      timed("quota", async () => {
+        const reservation = await reserveAskQuota(serviceClient, userId);
+        if (reservation.status === "granted") lease = reservation.lease;
+        return reservation.status === "denied" ? reservation.response : undefined;
+      }),
       timed("enrolled", () => loadEnrolledCourseIDs(serviceClient, userId, body.courseIDs)),
     ]);
     if (quotaResponse) {
@@ -362,6 +384,7 @@ export async function handleAsk(
       hedgeAfterMs,
       totalBudgetMs: TOTAL_BUDGET_MS,
       startedAt,
+      clientGone: clientGone.signal,
     });
 
     timing.race = Date.now() - raceStartedAt;
@@ -382,20 +405,39 @@ export async function handleAsk(
       return errorResponse("upstream", "the model backend failed", 502);
     }
 
-    return streamResponse(runAskStream(race.winner.iterator, race.winner.first, serviceClient, userId, {
-      model: race.winner.model,
-      startedAt,
-      probe: probeTag,
-      outcomeDetail: race.winner.detail,
-      preRaceMs: timing.preRace,
-      raceMs: timing.race,
-    }));
+    // From here the stream owns the lease: its `finally` settles the tokens
+    // whether it ends cleanly, breaks, or is cut off by the client leaving.
+    leaseHandedToStream = true;
+    return streamResponse(
+      runAskStream(race.winner.iterator, race.winner.first, serviceClient, userId, {
+        model: race.winner.model,
+        startedAt,
+        probe: probeTag,
+        outcomeDetail: race.winner.detail,
+        preRaceMs: timing.preRace,
+        raceMs: timing.race,
+        lease,
+        clientGone: clientGone.signal,
+        abortUpstream: () => race.winner.abort.abort(),
+      }),
+      { onCancel: () => clientGone.abort() },
+    );
   } catch (err) {
     if (err instanceof HttpError) {
       return errorResponse("unauthorized", err.message, err.status);
     }
     console.error("ask: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);
+  } finally {
+    // Every exit that did not hand the stream a lease: a 429 (nothing was
+    // reserved, `NO_LEASE`), a refused body, a missing key, a failed race,
+    // a thrown error. The model was never called, or was called and gave
+    // the student nothing while they were still here, so the unit goes
+    // back. If they had already left, it stays counted: refunding an
+    // abandoned request is the free loop this reservation exists to close.
+    if (!leaseHandedToStream) {
+      scheduleBackground(clientGone.signal.aborted ? lease.settle(0, 0) : lease.release());
+    }
   }
 }
 
@@ -414,23 +456,24 @@ if (import.meta.main) {
   Deno.serve((req) => handleAsk(req, { allowProbeOverrides: false }));
 }
 
-async function checkAskQuota(
+/** Reserves this request's unit of quota before anything expensive happens
+ *  (`_shared/quota.ts`'s `reserveUsage`: check and charge in one statement,
+ *  so parallel requests cannot all pass one stale count). A counter that
+ *  stalls or errors lets the request through unmetered with `NO_LEASE`
+ *  (PROTOCOL.md's quota section, the 2026-09-13 incident), so the 1.5 s
+ *  deadline the old lookup carried is unchanged. */
+async function reserveAskQuota(
   serviceClient: SupabaseClient,
   userId: string,
-): Promise<Response | undefined> {
-  const lookup = await lookupUsageCounts(serviceClient, userId);
-  if (!lookup.ok) {
-    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
-    // section for the 2026-09-13 incident this guards against. A stalled
-    // counter must never turn into a dead "ask" for the student in front
-    // of it.
-    console.warn(`ask: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
+): Promise<{ status: "denied"; response: Response } | { status: "granted"; lease: UsageLease }> {
+  const reservation: UsageReservation = await reserveUsage(serviceClient, userId, limitsFromEnv(Deno.env));
+  if (reservation.status === "denied") {
+    return {
+      status: "denied",
+      response: json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() }),
+    };
   }
-  const decision = quotaDecision(lookup, limitsFromEnv(Deno.env), new Date());
-  if (!decision.allowed) {
-    return json(429, { error: "quota_exceeded", resetAt: decision.resetAt.toISOString() });
-  }
-  return undefined;
+  return { status: "granted", lease: reservation.lease };
 }
 
 /**
@@ -630,7 +673,7 @@ function describeUpstreamError(err: unknown): string {
  * of the primary winning outright, so an unremarkable request's outcome row
  * looks exactly as it did before any of this existed.
  */
-async function* runAskStream(
+export async function* runAskStream(
   iterator: AsyncIterator<StreamEvent>,
   first: IteratorResult<StreamEvent>,
   serviceClient: SupabaseClient,
@@ -642,6 +685,15 @@ async function* runAskStream(
     outcomeDetail?: string;
     preRaceMs?: number;
     raceMs?: number;
+    /** The reservation taken before the model call. Settled exactly once, in
+     *  this generator's `finally`, with whatever token usage had been seen
+     *  by then. */
+    lease: UsageLease;
+    /** Aborted when the student is no longer reading (connection closed or
+     *  body cancelled). */
+    clientGone: AbortSignal;
+    /** Aborts the winning model request. */
+    abortUpstream: () => void;
   },
 ): AsyncGenerator<SSEEvent> {
   let promptTokens = 0;
@@ -652,102 +704,177 @@ async function* runAskStream(
   let contentChars = 0;
   let firstDeltaMs: number | undefined;
   let current = first;
+  // Set once any path below has written this request's `ask_outcomes` row,
+  // so the `finally` knows whether the generator was cut off at a `yield`
+  // (the consumer returned it) before any path got the chance.
+  let outcomeRecorded = false;
+
+  // The student leaving must stop the model call, not just stop us reading
+  // it: a stalled upstream never yields again, so nothing else would notice,
+  // and the request would run to its token cap on LHF's key. Aborting turns
+  // the pending `iterator.next()` into a rejection, which lands in the
+  // `catch` below.
+  const onClientGone = () => telemetry.abortUpstream();
+  if (telemetry.clientGone.aborted) onClientGone();
+  else telemetry.clientGone.addEventListener("abort", onClientGone, { once: true });
 
   try {
-    while (!current.done) {
-      const event = current.value;
-      if (event.type === "delta") {
-        if (deltaCount === 0) {
-          firstDeltaMs = Date.now() - telemetry.startedAt;
+    try {
+      while (!current.done) {
+        const event = current.value;
+        if (event.type === "delta") {
+          if (deltaCount === 0) {
+            firstDeltaMs = Date.now() - telemetry.startedAt;
+          }
+          deltaCount += 1;
+          contentChars += event.text.length;
+          yield { type: "delta", text: event.text };
+        } else if (event.type === "usage") {
+          promptTokens = event.promptTokens;
+          completionTokens = event.completionTokens;
+          cachedTokens = event.cachedTokens;
+          reasoningTokens = event.reasoningTokens;
         }
-        deltaCount += 1;
-        contentChars += event.text.length;
-        yield { type: "delta", text: event.text };
-      } else if (event.type === "usage") {
-        promptTokens = event.promptTokens;
-        completionTokens = event.completionTokens;
-        cachedTokens = event.cachedTokens;
-        reasoningTokens = event.reasoningTokens;
+        current = await iterator.next();
       }
-      current = await iterator.next();
+    } catch (err) {
+      if (telemetry.clientGone.aborted) {
+        // Not an upstream failure: the student left and we cut the model call
+        // off. Nothing is yielded (nobody is reading, and a `yield` with no
+        // reader would park this generator forever, `finally` never running).
+        // The unit stays counted, with the tokens seen so far, in `finally`.
+        outcomeRecorded = true;
+        scheduleBackground(recordOutcome(serviceClient, {
+          userId,
+          model: telemetry.model,
+          outcome: "client_error",
+          promptTokens,
+          completionTokens,
+          reasoningTokens,
+          cachedTokens,
+          contentChars,
+          deltaCount,
+          latencyMs: Date.now() - telemetry.startedAt,
+          firstDeltaMs,
+          detail: "client disconnected",
+          probe: telemetry.probe,
+          preRaceMs: telemetry.preRaceMs,
+          raceMs: telemetry.raceMs,
+        }));
+        return;
+      }
+      logUpstreamFailure("mid-stream", err);
+      outcomeRecorded = true;
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model: telemetry.model,
+        outcome: "upstream_error",
+        promptTokens,
+        completionTokens,
+        reasoningTokens,
+        cachedTokens,
+        contentChars,
+        deltaCount,
+        latencyMs: Date.now() - telemetry.startedAt,
+        firstDeltaMs,
+        upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
+        // A mid-stream failure after content had already reached the student
+        // (`contentChars > 0`, guaranteed here since `first` is always a
+        // delta) is never eligible for a fallback -- the race is long over by
+        // the time this generator is even running -- so `outcomeDetail` is
+        // folded in only to say *how this stream was chosen*, never to try
+        // another model now.
+        detail: telemetry.outcomeDetail
+          ? `${telemetry.outcomeDetail}; then upstream_error: ${describeUpstreamError(err)}`.slice(0, 200)
+          : describeUpstreamError(err),
+        probe: telemetry.probe,
+        preRaceMs: telemetry.preRaceMs,
+        raceMs: telemetry.raceMs,
+      }));
+      yield { type: "error", code: "upstream", message: "the model backend failed" };
+      return;
     }
-  } catch (err) {
-    logUpstreamFailure("mid-stream", err);
+
+    // `first` is always a content delta (see this function's doc comment), so
+    // `deltaCount` is at least 1 by construction and this branch should be
+    // unreachable in practice -- left as a defensive check, and worth an
+    // alarmed log rather than a silent pass, exactly because reaching it
+    // would mean the guarantee above stopped holding somewhere upstream.
+    if (deltaCount === 0) {
+      console.warn(`ask: stream ended with no text despite a delta first-event; completion tokens ${completionTokens}`);
+    }
+
+    const outcome = classifyStreamOutcome({ contentChars, streamFailed: false });
+    const latencyMs = Date.now() - telemetry.startedAt;
+
+    // Scheduled as background work via `scheduleBackground`, and `done` is
+    // yielded *after* the call is made -- not after it has settled. (The
+    // usage settlement is in `finally` below now, so it also runs when the
+    // student leaves; the outcome row stays here.)
+    // The previous version of this file `await`ed `recordUsage` after
+    // `yield done`; see `scheduleBackground`'s doc comment above for why
+    // that was the actual bug (Supabase's Edge Runtime is free to tear this
+    // isolate down as soon as the client has read everything this generator
+    // is ever going to produce, which can be before an `await` placed after
+    // the last `yield` ever runs) and why `EdgeRuntime.waitUntil` -- not
+    // simply moving these two calls earlier and awaiting them before
+    // `yield done` -- is the fix: awaiting them here would delay the
+    // student's `done` event, and therefore their answer finishing render,
+    // by however long two RPC round-trips take, for telemetry they get
+    // nothing from.
+    outcomeRecorded = true;
     scheduleBackground(recordOutcome(serviceClient, {
       userId,
       model: telemetry.model,
-      outcome: "upstream_error",
+      outcome,
       promptTokens,
       completionTokens,
       reasoningTokens,
       cachedTokens,
       contentChars,
       deltaCount,
-      latencyMs: Date.now() - telemetry.startedAt,
+      latencyMs,
       firstDeltaMs,
-      upstreamStatus: err instanceof UpstreamError ? err.status : undefined,
-      // A mid-stream failure after content had already reached the student
-      // (`contentChars > 0`, guaranteed here since `first` is always a
-      // delta) is never eligible for a fallback -- the race is long over by
-      // the time this generator is even running -- so `outcomeDetail` is
-      // folded in only to say *how this stream was chosen*, never to try
-      // another model now.
-      detail: telemetry.outcomeDetail
-        ? `${telemetry.outcomeDetail}; then upstream_error: ${describeUpstreamError(err)}`.slice(0, 200)
-        : describeUpstreamError(err),
+      detail: telemetry.outcomeDetail,
       probe: telemetry.probe,
       preRaceMs: telemetry.preRaceMs,
       raceMs: telemetry.raceMs,
     }));
-    yield { type: "error", code: "upstream", message: "the model backend failed" };
-    return;
+
+    yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
+  } finally {
+    telemetry.clientGone.removeEventListener("abort", onClientGone);
+    // Every way out of this generator ends here: a clean finish, a stream
+    // that broke after content, the student leaving (the consumer returns
+    // the generator, or `clientGone` aborted the pending read), or a throw.
+    // The model was called and billed in all of them, so the reservation
+    // stays counted and gets the tokens; a lease already settled is a no-op.
+    scheduleBackground(telemetry.lease.settle(promptTokens, completionTokens));
+    if (!outcomeRecorded) {
+      // Returned at a `yield`: the student left between two events.
+      scheduleBackground(recordOutcome(serviceClient, {
+        userId,
+        model: telemetry.model,
+        outcome: "client_error",
+        promptTokens,
+        completionTokens,
+        reasoningTokens,
+        cachedTokens,
+        contentChars,
+        deltaCount,
+        latencyMs: Date.now() - telemetry.startedAt,
+        firstDeltaMs,
+        detail: "client disconnected",
+        probe: telemetry.probe,
+        preRaceMs: telemetry.preRaceMs,
+        raceMs: telemetry.raceMs,
+      }));
+    }
+    // Cut the upstream connection if anything is still on it (harmless
+    // after a clean end), and let the model iterator unwind.
+    telemetry.abortUpstream();
+    Promise.resolve(iterator.return?.()).catch(() => {});
   }
-
-  // `first` is always a content delta (see this function's doc comment), so
-  // `deltaCount` is at least 1 by construction and this branch should be
-  // unreachable in practice -- left as a defensive check, and worth an
-  // alarmed log rather than a silent pass, exactly because reaching it
-  // would mean the guarantee above stopped holding somewhere upstream.
-  if (deltaCount === 0) {
-    console.warn(`ask: stream ended with no text despite a delta first-event; completion tokens ${completionTokens}`);
-  }
-
-  const outcome = classifyStreamOutcome({ contentChars, streamFailed: false });
-  const latencyMs = Date.now() - telemetry.startedAt;
-
-  // Scheduled as background work via `scheduleBackground`, and `done` is
-  // yielded *after* both calls are made -- not after either has settled.
-  // The previous version of this file `await`ed `recordUsage` after
-  // `yield done`; see `scheduleBackground`'s doc comment above for why
-  // that was the actual bug (Supabase's Edge Runtime is free to tear this
-  // isolate down as soon as the client has read everything this generator
-  // is ever going to produce, which can be before an `await` placed after
-  // the last `yield` ever runs) and why `EdgeRuntime.waitUntil` -- not
-  // simply moving these two calls earlier and awaiting them before
-  // `yield done` -- is the fix: awaiting them here would delay the
-  // student's `done` event, and therefore their answer finishing render,
-  // by however long two RPC round-trips take, for telemetry they get
-  // nothing from.
-  scheduleBackground(recordUsage(serviceClient, userId, promptTokens, completionTokens));
-  scheduleBackground(recordOutcome(serviceClient, {
-    userId,
-    model: telemetry.model,
-    outcome,
-    promptTokens,
-    completionTokens,
-    reasoningTokens,
-    cachedTokens,
-    contentChars,
-    deltaCount,
-    latencyMs,
-    firstDeltaMs,
-    detail: telemetry.outcomeDetail,
-    probe: telemetry.probe,
-    preRaceMs: telemetry.preRaceMs,
-    raceMs: telemetry.raceMs,
-  }));
-
-  yield { type: "done", usage: { promptTokens, completionTokens, cachedTokens } };
 }
 
 // ---------------------------------------------------------------------
@@ -763,6 +890,10 @@ interface RaceWinner {
   model: string;
   iterator: AsyncIterator<StreamEvent>;
   first: IteratorResult<StreamEvent>;
+  /** Aborts this model request. The loser's controller was already aborted
+   *  when the race was decided; the winner's is kept so the stream can cut
+   *  the call off when the student leaves. */
+  abort: AbortController;
   /** `outcomeDetailForHedgeWin`/`outcomeDetailForFallback`'s output, or
    *  `undefined` when the primary answered on its own with no race and no
    *  fallback ever started -- the ordinary case, which should leave
@@ -833,20 +964,28 @@ function describeRacerOutcome(outcome: Racer["outcome"]): string {
  * `delta` is -- so such events just re-arm that racer's `.next()` and the
  * race continues.
  */
-async function runHedgedRace(options: {
+export async function runHedgedRace(options: {
   buildStreamOptions: (model: string, reasoning: unknown, signal: AbortSignal) => Parameters<typeof chatCompletionStream>[0];
   primary: RaceCandidate;
   fallback: RaceCandidate | undefined;
   hedgeAfterMs: number;
   totalBudgetMs: number;
   startedAt: number;
+  /** Aborted when the student is no longer reading (`handleAsk`'s
+   *  `clientGone`). Every racer still on the wire is aborted, and a racer
+   *  that would start after it (the hedge firing late) is aborted before it
+   *  sends anything, so a request the client has left stops spending. */
+  clientGone?: AbortSignal;
 }): Promise<{ ok: true; winner: RaceWinner } | { ok: false; failure: RaceFailure }> {
-  const { buildStreamOptions, primary, fallback, hedgeAfterMs, totalBudgetMs, startedAt } = options;
+  const { buildStreamOptions, primary, fallback, hedgeAfterMs, totalBudgetMs, startedAt, clientGone } = options;
 
   const allRacers: Racer[] = [];
 
   function startRacer(name: "primary" | "fallback", candidate: RaceCandidate): Racer {
     const abort = new AbortController();
+    // Before `armNext`: `chatCompletionStream` sends its request on the first
+    // `next()`, so an already-aborted signal stops it before it leaves.
+    if (clientGone?.aborted) abort.abort();
     const upstream = chatCompletionStream(buildStreamOptions(candidate.model, candidate.reasoning, abort.signal));
     const racer: Racer = {
       name,
@@ -869,6 +1008,13 @@ async function runHedgedRace(options: {
       if (racer.pending) racer.abort.abort();
     }
   }, remainingBudget(startedAt, Date.now(), totalBudgetMs));
+
+  const abortAllRacers = () => {
+    for (const racer of allRacers) {
+      if (racer.pending) racer.abort.abort();
+    }
+  };
+  clientGone?.addEventListener("abort", abortAllRacers, { once: true });
 
   const primaryRacer = startRacer("primary", primary);
   let fallbackRacer: Racer | undefined;
@@ -968,7 +1114,7 @@ async function runHedgedRace(options: {
           : outcomeDetailForFallback(primary.model, primaryRacer.outcome?.failed ? "upstream_error" : "empty");
         return {
           ok: true,
-          winner: { model: racer.model, iterator: racer.iterator, first: settled.value, detail },
+          winner: { model: racer.model, iterator: racer.iterator, first: settled.value, detail, abort: racer.abort },
         };
       }
 
@@ -978,6 +1124,7 @@ async function runHedgedRace(options: {
   } finally {
     clearTimeout(totalBudgetTimer);
     if (hedgeTimerID !== undefined) clearTimeout(hedgeTimerID);
+    clientGone?.removeEventListener("abort", abortAllRacers);
   }
 
   // Every racer that ever started exhausted with nothing. `fallback`

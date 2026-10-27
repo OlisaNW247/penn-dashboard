@@ -4,7 +4,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
+import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import {
   PROFILE_INSTRUCTIONS,
@@ -100,30 +100,34 @@ Deno.serve(async (req) => {
 });
 
 /**
- * Checks the same daily/monthly quota `ask` uses, and -- if the caller is
- * under quota -- immediately records one request against it. This call
- * counts once per invocation, not once per course rebuilt: a single
- * `extract-profile` call can rebuild several courses' profiles at once
- * (the sync client fires it once per upload with every `profileStale` id
- * from that run), and metering per course would let one sync spend the
- * quota as fast as several separate calls would.
+ * Reserves one request against the same daily/monthly quota `ask` uses, or
+ * refuses with a 429. The check and the charge are one statement
+ * (`reserveUsage`), where this used to read the count, decide, and then
+ * write: ten parallel calls all read the same count and all went through,
+ * which for a function that makes up to twenty model calls per invocation
+ * is the expensive end of the hole. Counted once per invocation, not once
+ * per course rebuilt: a single `extract-profile` call can rebuild several
+ * courses' profiles at once (the sync client fires it once per upload with
+ * every `profileStale` id from that run), and metering per course would let
+ * one sync spend the quota as fast as several separate calls would. Charged
+ * up front and never given back, exactly as before: the work is paid for
+ * once started, whatever it finds. A counter that stalls fails open
+ * (unmetered), as in `ask`.
+ *
+ * Deliberately not tied to the client's connection: the sync client fires
+ * this without awaiting it and a suspended app drops the connection, while
+ * the profile it is building is shared with every classmate, so aborting on
+ * disconnect would throw away paid work and leave `profile_stale` set for
+ * the next sync to pay for again.
  */
 async function checkAndConsumeQuota(
   serviceClient: SupabaseClient,
   userId: string,
 ): Promise<Response | undefined> {
-  const lookup = await lookupUsageCounts(serviceClient, userId);
-  if (!lookup.ok) {
-    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
-    // section for the 2026-09-13 incident this guards against.
-    console.warn(`extract-profile: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
+  const reservation = await reserveUsage(serviceClient, userId, limitsFromEnv(Deno.env));
+  if (reservation.status === "denied") {
+    return json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() });
   }
-  const quota = quotaDecision(lookup, limitsFromEnv(Deno.env), new Date());
-  if (!quota.allowed) {
-    return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
-  }
-
-  await recordUsage(serviceClient, userId, 0, 0);
   return undefined;
 }
 

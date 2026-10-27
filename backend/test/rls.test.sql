@@ -525,6 +525,168 @@ begin
 end $$;
 reset role;
 
+-- reserve_ask_usage / settle_ask_usage (20261027100000_reserve_ask_usage.sql):
+-- the check and the charge are one statement, so a request over the limit
+-- never gets a reservation and a refused request never moves the counter.
+-- (Real parallelism cannot be shown from one psql session; what is shown
+-- here is the outcome of the single statement that makes it safe: the
+-- increment happens only `where requests < limit`.)
+set role service_role;
+insert into auth.users (id) values
+  ('44444444-4444-4444-4444-444444444444'),
+  ('55555555-5555-5555-5555-555555555555');
+
+do $$
+declare
+  r record;
+  i int;
+begin
+  for i in 1..3 loop
+    select * into r from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+    if not r.allowed or r.today_requests <> i then
+      raise exception 'reservation % of 3 should be allowed with today_requests=%, got allowed=% today=%', i, i, r.allowed, r.today_requests;
+    end if;
+    if r.reserved_day <> (now() at time zone 'utc')::date then
+      raise exception 'reserved_day should be today UTC, got %', r.reserved_day;
+    end if;
+  end loop;
+
+  -- Over the limit: refused, and refusing does not move the counter.
+  for i in 1..2 loop
+    select * into r from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+    if r.allowed or r.today_requests <> 3 then
+      raise exception 'reservation over the daily limit should be refused at today_requests=3, got allowed=% today=%', r.allowed, r.today_requests;
+    end if;
+  end loop;
+  select requests into i from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if i <> 3 then
+    raise exception 'refused reservations must not increment: expected 3, got %', i;
+  end if;
+end $$;
+
+-- Another user is unaffected by the first user's limit.
+do $$
+declare
+  r record;
+begin
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 3, 1000000::bigint);
+  if not r.allowed or r.today_requests <> 1 then
+    raise exception 'a different user should get their own first reservation, got allowed=% today=%', r.allowed, r.today_requests;
+  end if;
+end $$;
+
+-- Settling adds tokens without changing the request count; p_refund gives
+-- the request back; a refund never takes the counter below zero; and a
+-- settle against another day touches nothing.
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, (now() at time zone 'utc')::date, 100, 50);
+do $$
+declare
+  r record;
+begin
+  select * into r from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if r.requests <> 3 or r.prompt_tokens <> 100 or r.completion_tokens <> 50 then
+    raise exception 'settle should add tokens only: expected 3/100/50, got %/%/%', r.requests, r.prompt_tokens, r.completion_tokens;
+  end if;
+end $$;
+
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, ((now() at time zone 'utc')::date - 1), 999, 999, true);
+do $$
+declare
+  r record;
+  g record;
+begin
+  select * into r from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if r.requests <> 2 or r.prompt_tokens <> 100 then
+    raise exception 'refund should give back one request and leave other days alone: got %/%', r.requests, r.prompt_tokens;
+  end if;
+  -- The refunded unit can be reserved again.
+  select * into g from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+  if not g.allowed or g.today_requests <> 3 then
+    raise exception 'a refunded unit should be reservable again, got allowed=% today=%', g.allowed, g.today_requests;
+  end if;
+end $$;
+
+select public.settle_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+select public.settle_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+do $$
+declare
+  n int;
+begin
+  select requests into n from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  if n <> 0 then
+    raise exception 'a refund must never take requests below zero, got %', n;
+  end if;
+end $$;
+
+-- The global monthly limit: refused without touching the user's counter.
+do $$
+declare
+  r record;
+  total bigint;
+  before_count int;
+  after_count int;
+begin
+  select sum(requests) into total from public.ask_usage
+    where day >= date_trunc('month', (now() at time zone 'utc')::date)::date;
+  select requests into before_count from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 40, total);
+  if r.allowed or r.month_requests <> total then
+    raise exception 'a month already at the global limit should refuse, got allowed=% month=% (total %)', r.allowed, r.month_requests, total;
+  end if;
+  select requests into after_count from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  if after_count <> before_count then
+    raise exception 'a monthly refusal must not increment the user''s counter (% -> %)', before_count, after_count;
+  end if;
+  -- One below the limit still reserves, and reports the month including itself.
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 40, total + 1);
+  if not r.allowed or r.month_requests <> total + 1 then
+    raise exception 'one below the monthly limit should reserve, got allowed=% month=%', r.allowed, r.month_requests;
+  end if;
+end $$;
+reset role;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+do $$
+begin
+  begin
+    perform public.reserve_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1000, 1000000::bigint);
+    raise exception 'authenticated was able to call reserve_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.settle_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, current_date, 0, 0, true);
+    raise exception 'authenticated was able to call settle_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+begin
+  begin
+    perform public.reserve_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1000, 1000000::bigint);
+    raise exception 'anon was able to call reserve_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.settle_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, current_date, 0, 0, true);
+    raise exception 'anon was able to call settle_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
 -- A catch-all over the catalog, so the next function someone adds cannot
 -- repeat this: apart from is_enrolled, no function in `public` may be
 -- executable by anon or authenticated, whether through the PUBLIC grant or

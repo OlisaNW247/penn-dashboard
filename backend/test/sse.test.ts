@@ -81,3 +81,43 @@ Deno.test("streamResponse produces an empty body for a generator that yields not
   const body = await drain(response);
   assert.equal(body, "");
 });
+
+// When the client goes away the runtime cancels the response body. The
+// generator behind `events` must then be left (so its `finally` runs), the
+// caller must be told (so it can abort its upstream request), and nothing
+// may be enqueued on, or closed on, the dead stream.
+Deno.test("streamResponse: cancelling the body calls onCancel, leaves the generator, and does not touch the dead stream", async () => {
+  let cancelCalls = 0;
+  let generatorFinished = false;
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+
+  async function* events(): AsyncGenerator<SSEEvent> {
+    try {
+      yield { type: "delta", text: "one" };
+      await gate; // the upstream goes quiet
+      yield { type: "delta", text: "two" }; // would be enqueued on a cancelled stream
+    } finally {
+      generatorFinished = true;
+    }
+  }
+
+  const response = streamResponse(events(), { onCancel: () => cancelCalls++ });
+  const reader = response.body!.getReader();
+  const first = await reader.read();
+  assert.ok(new TextDecoder().decode(first.value).includes("one"));
+
+  await reader.cancel();
+  assert.equal(cancelCalls, 1);
+  // The upstream wakes up after the client is gone.
+  release!();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(generatorFinished, true, "the generator's finally must run once the client is gone");
+});
+
+Deno.test("streamResponse: without a cancel the behaviour is unchanged (onCancel is optional)", async () => {
+  const response = streamResponse(eventsOf({ type: "delta", text: "a" }));
+  const reader = response.body!.getReader();
+  await reader.read();
+  await reader.cancel();
+});

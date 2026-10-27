@@ -18,7 +18,7 @@
 // the same fact for every student in the course, not a private one.
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
+import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import { selectCourseProfileForCategoryMap, selectEnrolledCourseIDs, storeCategoryMap } from "../_shared/db.ts";
 import {
@@ -176,32 +176,28 @@ Deno.serve(async (req) => {
  * function in this backend, not a separate counter per function, which is
  * why this reads `ASK_MONTHLY_GLOBAL_LIMIT` for the monthly half via
  * `limitsFromEnv` while overriding only the daily half with this
- * function's own env var. Records one request against the quota
+ * function's own env var. Reserves one request against the quota
  * immediately, before the model call actually happens, mirroring
- * `extract-profile`'s and `extract-announcement`'s own ordering; unlike
- * either of those, this function only ever reaches this point on a cache
- * *miss* (see the cache-hit branch and the no-profile early return above),
- * so "recorded unconditionally once this line runs" and "cache hits don't
- * count" are the same rule stated from two directions.
+ * `extract-profile`'s own ordering; unlike it, this function only ever
+ * reaches this point on a cache *miss* (see the cache-hit branch and the
+ * no-profile early return above), so "recorded unconditionally once this
+ * line runs" and "cache hits don't count" are the same rule stated from two
+ * directions. The check and the charge are one statement (`reserveUsage`),
+ * where this used to read the count, decide, and then write, so a burst of
+ * parallel requests all passed one stale count. Charged up front and not
+ * given back, as before; not tied to the client's connection, because the
+ * mapping it pays for is cached on the course for every classmate.
  */
 async function checkAndConsumeQuota(
   serviceClient: SupabaseClient,
   userId: string,
 ): Promise<Response | undefined> {
-  const lookup = await lookupUsageCounts(serviceClient, userId);
-  if (!lookup.ok) {
-    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
-    // section for the 2026-09-13 incident this guards against.
-    console.warn(`map-categories: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
-  }
   const dailyLimit = parsePositiveInt(Deno.env.get("MAP_DAILY_LIMIT"), DEFAULT_MAP_DAILY_LIMIT);
   const monthlyGlobalLimit = limitsFromEnv(Deno.env).monthlyGlobalLimit;
-  const quota = quotaDecision(lookup, { dailyLimit, monthlyGlobalLimit }, new Date());
-  if (!quota.allowed) {
-    return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
+  const reservation = await reserveUsage(serviceClient, userId, { dailyLimit, monthlyGlobalLimit });
+  if (reservation.status === "denied") {
+    return json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() });
   }
-
-  await recordUsage(serviceClient, userId, 0, 0);
   return undefined;
 }
 

@@ -372,15 +372,39 @@ actually produced the streamed answer, not necessarily the primary.
 
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month
-(default 100000). Usage is recorded in `ask_usage` after the stream ends;
-questions and answers are never stored.
+(default 100000). **A request is reserved before the model is called and
+settled afterwards** (since 2026-10-27, hardening BE-C): `reserve_ask_usage`
+checks both limits and charges one request in a single statement, so ten
+parallel requests at 39 of 40 get exactly one reservation (the daily limit
+is atomic; the global monthly limit is a snapshot read in the same call and
+can overshoot by the number of requests in flight), and a refused request
+never reaches the model and never moves the counter. `settle_ask_usage`
+then adds the request's tokens to the day it was reserved on, in the
+stream's `finally`, so it runs whether the stream ends cleanly, breaks, or
+the student leaves. A reserved request stays counted if the model was called
+and the student was shown something or walked away; it is given back
+(`settle_ask_usage` with `p_refund`) only when it never reached the model or
+failed before the student was shown anything *while still connected*.
+Refunding an abandoned request would make "send a large prompt, hang up, get
+the unit back" a free loop, so a client that left is never refunded. When the
+client goes away (`req.signal`, or the response body being cancelled) every
+upstream model request is aborted, including a hedge that would have started
+afterwards. Questions and answers are never stored. The same reservation
+guards `extract-announcement` (given back on a failure while the student is
+still there, so a deterministic failure the phone keeps retrying cannot drain
+the asks), `extract-profile` and `map-categories` (charged up front and not
+given back, as before, and deliberately not aborted on disconnect: their
+work is shared with classmates). The older `record_ask_usage` and
+`ask_usage_counts` RPCs remain in the database for functions deployed before
+`20261027100000_reserve_ask_usage.sql`; apply that migration before
+deploying functions that call the new pair.
 
-The quota lookup (`ask_usage_counts`) and record (`record_ask_usage`) RPCs
-each carry a 4s client-side deadline (`_shared/quota.ts`'s
-`lookupUsageCounts` / `recordUsage`) and fail open with a `console.warn`
-rather than propagate the failure: a lookup that times out or errors is
-treated as "allow this call, unmetered," and a record that times out or
-errors just drops one request from the count. A database stall degrades
+The reservation RPC carries a 1.5s client-side deadline and the settle RPC
+4s (`_shared/quota.ts`'s `reserveUsage` / `settleUsage`), and both fail open
+with a `console.warn` rather than propagate the failure: a reservation that
+times out or errors is treated as "allow this call, unmetered" (no lease, so
+nothing to settle), and a settle that times out or errors just leaves one
+request's tokens uncounted, or one refund undone. A database stall degrades
 the quota counter to "unmetered for that call," never a 502 -- the counter
 protects the aggregate budget, not the individual student, so it must
 never be the thing that makes `ask` (or the extract functions) unusable.
@@ -398,15 +422,16 @@ with zero characters -- the 2026-09-14 "reasoning ate the whole output cap"
 shape this table exists to catch happening again, unnoticed, a second
 time), `upstream_error` (the model backend failed, before or during
 streaming), `quota` (the 429 path) or `client_error` (a malformed request
-body); `timeout` is reserved in the schema for a future caller (such as a
-canary harness's own client-side deadline) and nothing in `ask/index.ts`
+body, a refused or oversized one, or, with `detail` `"client disconnected"`, a
+student who left mid-stream); `timeout` is reserved in the schema for a
+future caller (such as a canary harness's own client-side deadline) and nothing in `ask/index.ts`
 produces it today. The row carries the model, token counts (including
 `reasoning_tokens` when OpenRouter's response reports one), content-length
 and delta-count counters, latency, and -- for a failure -- the upstream
 status and a capped error message, but never the question, the context
 document, the excerpts or the answer; `probe` carries the `x-lhf-probe` tag
 above, or is `null` for an ordinary request. Both this write and
-`record_ask_usage` are scheduled via Supabase Edge Runtime's
+the usage settlement (`settle_ask_usage`) are scheduled via Supabase Edge Runtime's
 `EdgeRuntime.waitUntil` rather than awaited before the SSE stream's `done`
 event is yielded (the SSE stream itself is always yielded last): awaiting
 either one first would hold up the student's answer for a database

@@ -22,6 +22,20 @@
 // with a warning, not surfaced, exactly like every existing call site
 // already treats a `record_ask_usage` failure.
 
+// Reserve, then settle (hardening BE-C, 2026-10-27). The functions above
+// (`lookupUsageCounts`, `quotaDecision`, `recordUsage`) check first and charge
+// afterwards, which leaves two holes: requests that overlap all read the same
+// count and all go through, and a request the client abandons before the
+// stream ends never reaches the line that charges, although the model has
+// been called and billed. `reserveUsage` below does the check and the
+// charge as one database statement BEFORE the model call, and a `UsageLease`
+// settles the tokens (or gives the request back) afterwards. The three old
+// functions are no longer called by any Edge Function; they stay because the
+// SQL they wrap does (functions deployed before the migration still use it)
+// and because their tests pin the fail-open rules `reserveUsage` inherits.
+// Delete them with `record_ask_usage` and `ask_usage_counts` once nothing
+// deployed calls either.
+
 /** The two limits PROTOCOL.md's "ask" section defines. */
 export interface QuotaLimits {
   /** Per-user, per-UTC-day request limit. Protocol default: 40. */
@@ -335,5 +349,202 @@ export async function recordUsage(
   } finally {
     clearTimeout(abortTimer);
     clearTimeout(warnTimer);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Reserve, then settle
+// ---------------------------------------------------------------------
+
+/** What a granted reservation lets its holder do afterwards, exactly once.
+ *  Whichever of `settle` and `release` runs first wins; the other, and any
+ *  repeat, does nothing, so every exit path of a handler can call one
+ *  without tracking which already ran. Neither throws. */
+export interface UsageLease {
+  /** Keep the request counted and add the tokens it used. Use for every
+   *  request that reached the model and was not abandoned before it
+   *  started, including a stream that broke after content was sent, and
+   *  one the client walked away from (`settle(0, 0)` if no usage was seen):
+   *  the model was called and the provider billed it. */
+  settle(promptTokens: number, completionTokens: number): Promise<void>;
+  /** Give the request back. Only for a request that never reached the model,
+   *  or failed before the student was shown anything while still connected.
+   *  Never for a client that left: refunding an abandoned request would make
+   *  "send a large prompt, hang up, get the unit back" a free loop, which is
+   *  the hole this exists to close. */
+  release(): Promise<void>;
+}
+
+/** The lease of a request that is not metered (the counter failed open):
+ *  nothing was reserved, so there is nothing to settle or give back. */
+export const NO_LEASE: UsageLease = {
+  settle: () => Promise.resolve(),
+  release: () => Promise.resolve(),
+};
+
+export type UsageReservation =
+  | { status: "denied"; resetAt: Date }
+  /** `degraded` is true when the reservation call timed out or errored and
+   *  the request was let through unmetered (the 2026-09-13 rule: a counter
+   *  stall must never become a dead feature). `lease` is `NO_LEASE` then. */
+  | { status: "granted"; lease: UsageLease; degraded: boolean };
+
+type RPCCall =
+  | { ok: true; data: unknown }
+  | { ok: false; reason: "timeout" | "error"; message: string };
+
+/** One RPC with the deadline pattern every call in this file uses: an
+ *  `AbortController` wired into `.abortSignal()` so supabase-js really
+ *  cancels the fetch, a plain timer raced against it in case a builder
+ *  ignores the signal, and both timers cleared in `finally` (an uncleared
+ *  one keeps the isolate's event loop open and, for the warning variant,
+ *  logs a lie on every request; see `recordUsage`). Never throws. */
+async function callRPCWithDeadline(
+  client: RPCClientLike,
+  fn: string,
+  params: Record<string, unknown>,
+  deadlineMs: number,
+): Promise<RPCCall> {
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), deadlineMs);
+
+  const request = (async (): Promise<RPCCall> => {
+    try {
+      const { data, error } = await client.rpc(fn, params).abortSignal(controller.signal);
+      if (error) return { ok: false, reason: controller.signal.aborted ? "timeout" : "error", message: error.message };
+      return { ok: true, data };
+    } catch (err) {
+      return {
+        ok: false,
+        reason: controller.signal.aborted ? "timeout" : "error",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+  })();
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<RPCCall>((resolve) => {
+    timer = setTimeout(() => {
+      resolve({ ok: false, reason: "timeout", message: `${fn} exceeded ${deadlineMs}ms deadline` });
+    }, deadlineMs);
+  });
+
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    clearTimeout(abortTimer);
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Reserves one unit of quota for `userId` before a model call, in one
+ * database statement (`reserve_ask_usage`, 20261027100000_reserve_ask_usage.sql):
+ * granted only if the user's count for today is under `limits.dailyLimit`
+ * (atomic against parallel requests) and the month's global count is under
+ * `limits.monthlyGlobalLimit` (a snapshot, so it can overshoot by the number
+ * of requests in flight). Never throws.
+ *
+ * The deadline is 1.5 s, the same as the lookup it replaces, and the
+ * failure rule is the same: a timeout or database error lets the request
+ * through unmetered (`degraded: true`, `NO_LEASE`) instead of turning a
+ * stalled counter into a dead `ask`. A reservation that actually committed
+ * after the client gave up on it stays counted with no tokens and no way to
+ * be given back; that is one over-counted request, the safe direction.
+ *
+ * The wrong version of this would have been `lookupUsageCounts` followed by
+ * a separate increment: that is the race this replaces, with the same
+ * single round-trip saved for nothing.
+ */
+export async function reserveUsage(
+  client: RPCClientLike,
+  userId: string,
+  limits: QuotaLimits,
+  now: Date = new Date(),
+  deadlineMs = DEFAULT_LOOKUP_DEADLINE_MS,
+): Promise<UsageReservation> {
+  const call = await callRPCWithDeadline(client, "reserve_ask_usage", {
+    p_user_id: userId,
+    p_daily_limit: limits.dailyLimit,
+    p_monthly_global_limit: limits.monthlyGlobalLimit,
+  }, deadlineMs);
+
+  const failOpen = (reason: string, message: string): UsageReservation => {
+    console.warn(`quota: reserve_ask_usage ${reason}, failing open: ${message}`);
+    return { status: "granted", lease: NO_LEASE, degraded: true };
+  };
+  if (!call.ok) return failOpen(call.reason, call.message);
+
+  const row = (Array.isArray(call.data) ? call.data[0] : call.data) as
+    | { allowed?: unknown; reserved_day?: unknown; today_requests?: unknown; month_requests?: unknown }
+    | null
+    | undefined;
+  if (!row || typeof row.allowed !== "boolean") {
+    return failOpen("error", "reserve_ask_usage returned no usable row");
+  }
+
+  if (!row.allowed) {
+    const result = checkQuota({
+      todayRequests: Number(row.today_requests ?? 0),
+      monthRequests: Number(row.month_requests ?? 0),
+      dailyLimit: limits.dailyLimit,
+      monthlyGlobalLimit: limits.monthlyGlobalLimit,
+      now,
+    });
+    return { status: "denied", resetAt: result.resetAt };
+  }
+
+  if (typeof row.reserved_day !== "string") {
+    // Granted but with no day to settle against: the unit is counted and
+    // cannot be adjusted. Let the request run rather than fail it.
+    return failOpen("error", "reserve_ask_usage returned no reserved_day");
+  }
+  return { status: "granted", lease: makeLease(client, userId, row.reserved_day), degraded: false };
+}
+
+function makeLease(client: RPCClientLike, userId: string, day: string): UsageLease {
+  let finished = false;
+  return {
+    settle(promptTokens, completionTokens) {
+      if (finished) return Promise.resolve();
+      finished = true;
+      return settleUsage(client, userId, day, promptTokens, completionTokens, false);
+    },
+    release() {
+      if (finished) return Promise.resolve();
+      finished = true;
+      return settleUsage(client, userId, day, 0, 0, true);
+    },
+  };
+}
+
+/**
+ * `settle_ask_usage` with the same 4 s deadline and never-throws rule as
+ * `recordUsage`: it runs in the background after the student has their
+ * answer (or after they left), so a stall costs one missing token count, or
+ * with `refund` one request that stays counted, never a delayed response.
+ * `day` is the UTC date the reservation was made on, so a request that
+ * straddles midnight adjusts the right row.
+ */
+export async function settleUsage(
+  client: RPCClientLike,
+  userId: string,
+  day: string,
+  promptTokens: number,
+  completionTokens: number,
+  refund: boolean,
+  deadlineMs = DEFAULT_RECORD_DEADLINE_MS,
+): Promise<void> {
+  const call = await callRPCWithDeadline(client, "settle_ask_usage", {
+    p_user_id: userId,
+    p_day: day,
+    p_prompt_tokens: Math.max(0, Math.floor(promptTokens) || 0),
+    p_completion_tokens: Math.max(0, Math.floor(completionTokens) || 0),
+    p_refund: refund,
+  }, deadlineMs);
+  if (!call.ok) {
+    console.warn(
+      `quota: settle_ask_usage ${call.reason}, ${refund ? "one request stays counted" : "tokens go uncounted"}: ${call.message}`,
+    );
   }
 }
