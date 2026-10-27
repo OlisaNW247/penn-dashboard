@@ -214,7 +214,7 @@ export async function lookupUsageCounts(
     }
   })();
 
-  let warnTimer: number | undefined;
+  let warnTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<UsageLookup>((resolve) => {
     warnTimer = setTimeout(() => {
       resolve({ ok: false, reason: "timeout", message: `ask_usage_counts exceeded ${deadlineMs}ms deadline` });
@@ -322,7 +322,7 @@ export async function recordUsage(
     }
   })();
 
-  let warnTimer: number | undefined;
+  let warnTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => {
     warnTimer = setTimeout(() => {
       console.warn(`quota: record_ask_usage exceeded ${deadlineMs}ms deadline, one request will go under-counted`);

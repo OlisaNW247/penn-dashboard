@@ -156,7 +156,7 @@ export async function recordOutcome(
     }
   })();
 
-  let warnTimer: number | undefined;
+  let warnTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => {
     warnTimer = setTimeout(() => {
       console.warn(`ask: record_ask_outcome exceeded ${deadlineMs}ms deadline`);

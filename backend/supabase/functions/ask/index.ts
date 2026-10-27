@@ -216,7 +216,7 @@ export async function handleAsk(
   // surfacing as an unhandled promise rejection in the isolate's logs.
   const AUTH_TIMEOUT_MS = 3000;
   const withAuthTimeout = <T>(promise: Promise<T>): Promise<T> => {
-    let timer: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         promise.catch(() => {});
@@ -874,7 +874,7 @@ async function runHedgedRace(options: {
 
   const primaryRacer = startRacer("primary", primary);
   let fallbackRacer: Racer | undefined;
-  let hedgeTimerID: number | undefined;
+  let hedgeTimerID: ReturnType<typeof setTimeout> | undefined;
   let hedgeSignal: Promise<"hedge"> | undefined;
   if (fallback) {
     hedgeSignal = new Promise((resolve) => {
