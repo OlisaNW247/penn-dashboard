@@ -1103,7 +1103,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2924 tests / 263 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix; 2026-10-26, `swift test --no-parallel`, on Marco's Mac), one failure: `AskCitationLinkTests` "the encoded request is byte-identical…", the stale `\/` golden the 2026-10-25 audit recorded (fix the golden, not the encoder).** The 17 new tests are `DuplicateCategoryIDTests`, for the launch crash (`docs/LAUNCH_CRASH_2026-10-26.md`); run against the original source they die with the production trap. Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
+**Current: 2953 tests / 266 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, A2 and A3; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), one failure: `AskCitationLinkTests` "the encoded request is byte-identical…", the stale `\/` golden the 2026-10-25 audit recorded (fix the golden, not the encoder).** The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
@@ -2570,6 +2570,20 @@ itself.
   day: the saved password was on file and worked, and the Canvas Student
   app (installed, 8.12.1) did not take the hidden renewer's return hop.
   Penn's app-association file now claims only `/canvas/login`.
+  **Fixed at read time on 2026-10-27** (hardening plan A3, on
+  `fix/duplicate-category-ids`): `SessionCookieStore.load` runs its old
+  per-cookie pass and then `gatedOnLiveSession`: a Canvas set that once
+  held a session-named cookie (`canvas_session`, `_normandy_session`)
+  and has none fresh reads empty, so `isExpired` trips and renew-on-open
+  runs; a set that never held one keeps the old rule, so an unknown
+  school is never read as signed out; a fresh session cookie returns the
+  whole set, analytics included. The harvests still save `_ga` on
+  purpose (Olisa's `39b2fff` code, untouched), because the gate heals
+  sets already on students' phones and a harvest filter never would. One
+  tell above has moved: `debugRenewalLogV1`'s "still fresh" count is now
+  taken after the gate, so a polluted phone reads 0 there, and the
+  `-LHFSessionDiagnostics` lines, which now mark session cookies with
+  `| session`, are what to read. Not yet run on a phone.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -3170,9 +3184,11 @@ none is a ship line.
 - **Stay signed in is fragile in 3.0.0 (11), the live build** (Marco's
   phone, 2026-10-08: the refresh banner sometimes clears by itself and
   sometimes stays). Three causes, the first proven on the device and the
-  other two read from the code, none fixed yet (`ROADMAP.md` → Now):
+  other two read from the code (`ROADMAP.md` → Now); the first is fixed
+  on `fix/duplicate-category-ids` (2026-10-27, A3) but not yet run on a
+  phone, the other two are not fixed:
   1. The 24-hour trigger is off on a phone with a saved analytics cookie
-     (the trap above).
+     (the trap above, and its fix at read time).
   2. Any silent attempt that fails to finish is recorded as "confirmed
      dead" and raises the banner: a network error (`SettleWaiter`'s
      `.failed` falls through to `.landedOnLoginPage`), the 30-second cap,

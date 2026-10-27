@@ -52,6 +52,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   is on `fix/duplicate-category-ids`, then 3.2.2 (16) with an expedited
   review, then the floor. Not yet proven from a crash report: Xcode's
   Organizer needs Marco's Apple ID signed in before it will list them.
+  On 2026-10-27, at Marco's say, A2 (reconnect as a cover over the
+  dashboard, never a persisted "not onboarded" flag) and A3 ("expired"
+  decided by whether a session cookie is still fresh) landed on the same
+  branch, each in its own commit so either can be dropped; both compiled
+  and tested, neither run on a phone.
 
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).

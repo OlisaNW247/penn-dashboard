@@ -114,9 +114,21 @@ enum SessionCookieStore {
     /// live session forever, regardless of whether the server-side session
     /// died hours or weeks ago — exactly the mechanism behind
     /// docs/CANVAS_LOGIN_DIAGNOSIS.md's H1/H2.
+    ///
+    /// For Canvas, what survives that per-cookie check is then gated on the
+    /// session cookie itself (`gatedOnLiveSession`): a set that once held
+    /// `canvas_session` reads as empty the moment `canvas_session` is gone,
+    /// even if analytics cookies saved beside it are still inside their own
+    /// far-future `expiresDate`. Without the gate those cookies keep this
+    /// method from ever returning empty, so `isExpired` never goes true and
+    /// the renew-on-open trigger never fires (found on a real phone,
+    /// 2026-10-08). The decision is made here, at read time, on purpose:
+    /// sets already saved on students' phones are polluted, and filtering
+    /// the two cookie harvests alone would leave every one of them broken.
     static func load(service: Service) -> [HTTPCookie] {
         let now = Date()
-        return loadDicts(service: service).compactMap { entry -> HTTPCookie? in
+        let entries = loadDicts(service: service)
+        let fresh = entries.compactMap { entry -> HTTPCookie? in
             guard let cookie = cookie(from: entry) else { return nil }
             if let expiresString = entry["expiresDate"], let expires = isoFormatter.date(from: expiresString) {
                 return expires > now ? cookie : nil
@@ -130,6 +142,69 @@ enum SessionCookieStore {
             // untraceable cookie of unknown age.
             return nil
         }
+        return gatedOnLiveSession(fresh: fresh, persistedNames: entries.compactMap { $0["name"] }, service: service)
+    }
+
+    /// Canvas's own session cookie names, matched as a case-insensitive
+    /// substring of the cookie's `name`: `canvas_session` is Canvas's own
+    /// Rails session cookie, `_normandy_session` is Instructure's shared
+    /// Normandy auth service cookie (so `_legacy_normandy_session` counts
+    /// too). Either one present on a Canvas cookie means "a real session was
+    /// minted." `CanvasSessionRenewer` keeps its own private copy of these
+    /// same two markers for its harvest check, left untouched on purpose
+    /// (the harvests stay as `39b2fff` ran them); if one list ever changes,
+    /// change the other, or the renewer and the read-time gate will disagree
+    /// about what a session cookie is.
+    private static let canvasSessionCookieNameMarkers = ["canvas_session", "_normandy_session"]
+
+    /// True when `name` is one of Canvas's session cookie names (see
+    /// `canvasSessionCookieNameMarkers`), as opposed to a CSRF token, a
+    /// Canvas "log_session_id", or an analytics cookie such as `_ga`.
+    static func isCanvasSessionCookieName(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        return canvasSessionCookieNameMarkers.contains { lowered.contains($0) }
+    }
+
+    /// The read-time gate behind `load(service:)`: a Canvas set that once
+    /// held a session cookie is only as alive as that cookie. `fresh` is what
+    /// survived the per-cookie staleness check (`isStale`, or the cookie's own
+    /// `expiresDate`); `persistedNames` is every name on record for the
+    /// service, stale or not. Pure, so the tests call it without touching
+    /// the Keychain.
+    ///
+    /// Why it exists: the harvests save more than the session.
+    /// `CanvasLoginPane.connect()` keeps every cookie on the Canvas host and
+    /// `CanvasSessionRenewer` keeps every cookie whose domain contains
+    /// "canvas", so `_ga`, `_gid` and `last_known_canvas_host` ride along with
+    /// real expiry dates months or a year out. They are never stale, so
+    /// `load` never came back empty once `canvas_session` itself had aged
+    /// out, and `isExpired` (the renew-on-open trigger) read false forever.
+    /// The wrong fix is filtering the harvests alone: the sets already saved
+    /// on students' phones stay polluted, and whether a phone is polluted is
+    /// a race at each harvest (was the analytics script done when the
+    /// cookies were read), so only a decision made at read time reaches all
+    /// of them. The harvests are left as they were for the same reason as
+    /// above, and this gate does not make them necessary.
+    ///
+    /// The rules:
+    /// - Not Canvas: returned unchanged. Gradescope never had this problem,
+    ///   Ed's session is judged by Ed's own 401, and their cookie names are
+    ///   not ours to judge. (A `guard`, not an exhaustive `switch`, so `.ed`
+    ///   and any service case added later falls through unchanged.)
+    /// - No session-named cookie was ever persisted: returned unchanged. A
+    ///   Canvas install whose session cookie has a name we do not know (an
+    ///   unverified school's) keeps exactly the old rule. The wrong version
+    ///   of this gate returns empty here, which reads such an install as
+    ///   signed out forever.
+    /// - `fresh` still holds a session-named cookie: returned unchanged,
+    ///   analytics cookies included. This is not a filter on what gets
+    ///   replayed to Canvas.
+    /// - Otherwise the session is gone and only bystanders are left: `[]`.
+    static func gatedOnLiveSession(fresh: [HTTPCookie], persistedNames: [String], service: Service) -> [HTTPCookie] {
+        guard service == .canvas else { return fresh }
+        guard persistedNames.contains(where: isCanvasSessionCookieName) else { return fresh }
+        guard !fresh.contains(where: { isCanvasSessionCookieName($0.name) }) else { return fresh }
+        return []
     }
 
     /// Every service's persisted cookies, folded together. Only for read
@@ -160,6 +235,14 @@ enum SessionCookieStore {
     /// install did log in once", lives in `AppState` (`canvasLoginEverCaptured`),
     /// which is where the other half of the decision is, and it asks the store
     /// only `hasSavedCookies(service:)` below.
+    ///
+    /// "Every persisted entry was dropped" is read through the live-session
+    /// gate in `load(service:)`, so for Canvas it also holds when the session
+    /// cookie is gone and only analytics cookies with far-future expiry dates
+    /// remain. That is the case that used to keep this false forever on a
+    /// polluted set, which switched off the 24-hour renew-on-open trigger.
+    /// No code here had to change; the wrong fix was filtering the harvests
+    /// alone, which leaves sets already on students' phones broken.
     static func isExpired(service: Service) -> Bool {
         !loadDicts(service: service).isEmpty && load(service: service).isEmpty
     }
@@ -252,7 +335,8 @@ enum SessionCookieStore {
     static func debugEntrySummaries(service: Service) -> [String] {
         loadDicts(service: service).map { entry in
             let name = (entry["name"] ?? "?").split(separator: "|").first.map(String.init) ?? "?"
-            return "\(entry["domain"] ?? "?") | \(name) | expires \(entry["expiresDate"] ?? "none") | captured \(entry["capturedAt"] ?? "none")"
+            let marker = isCanvasSessionCookieName(name) ? " | session" : ""
+            return "\(entry["domain"] ?? "?") | \(name) | expires \(entry["expiresDate"] ?? "none") | captured \(entry["capturedAt"] ?? "none")\(marker)"
         }
     }
     #endif

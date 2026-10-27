@@ -171,6 +171,68 @@ struct SessionCookieStoreTests {
         }
     }
 
+    // The read-time live-session gate, end to end through the real Keychain
+    // (the pure rules are in `SessionCookieLiveSessionTests`; this is the only
+    // test that proves `load(service:)` actually routes through them). It
+    // uses a real past `expiresDate` for `canvas_session` rather than a
+    // no-expiry cookie aged past 24 hours: there is no seam that can age a
+    // saved cookie under `swift test` (`dict(from:)` stamps `capturedAt` as
+    // now, and `ageCanvasSessionForTesting` is a no-op for the test runner),
+    // and for the gate the two are the same state, "session-named cookie
+    // persisted and no longer fresh".
+    @Test("isExpired is true when only an analytics cookie outlives the Canvas session cookie (the 2026-10-08 phone's shape)")
+    func isExpiredTrueWhenOnlyAnalyticsCookieSurvives() {
+        withCleanStore {
+            let past = Date().addingTimeInterval(-3600)
+            let farFuture = Date().addingTimeInterval(365 * 24 * 60 * 60)
+            SessionCookieStore.save([
+                cookie(name: "canvas_session", domain: "canvas.upenn.edu", expiresDate: past),
+                cookie(name: "_ga", domain: "canvas.upenn.edu", expiresDate: farFuture),
+            ], service: .canvas)
+            #expect(SessionCookieStore.hasSavedCookies(service: .canvas))
+            #expect(SessionCookieStore.load(service: .canvas).isEmpty)
+            #expect(SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("a polluted set recovers once a fresh canvas_session is saved over the stale one, the state a successful silent renewal leaves")
+    func pollutedSetRecoversAfterFreshSessionIsSaved() {
+        withCleanStore {
+            let past = Date().addingTimeInterval(-3600)
+            let farFuture = Date().addingTimeInterval(365 * 24 * 60 * 60)
+            SessionCookieStore.save([
+                cookie(name: "canvas_session", domain: "canvas.upenn.edu", expiresDate: past),
+                cookie(name: "_ga", domain: "canvas.upenn.edu", expiresDate: farFuture),
+            ], service: .canvas)
+            #expect(SessionCookieStore.isExpired(service: .canvas))
+
+            // Same name, domain and path, so `save` replaces the stale entry
+            // rather than adding a second one. No expiry: a true session
+            // cookie, captured just now, which is what Canvas re-issues.
+            SessionCookieStore.save([cookie(name: "canvas_session", domain: "canvas.upenn.edu")], service: .canvas)
+
+            let loaded = SessionCookieStore.load(service: .canvas)
+            #expect(!loaded.isEmpty)
+            #expect(loaded.contains { $0.name == "canvas_session" })
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
+    @Test("a healthy set, a fresh canvas_session beside a far-future _ga, loads both and is not expired: the gate is not a filter on what is replayed")
+    func healthySetLoadsEveryCookie() {
+        withCleanStore {
+            let farFuture = Date().addingTimeInterval(365 * 24 * 60 * 60)
+            SessionCookieStore.save([
+                cookie(name: "canvas_session", domain: "canvas.upenn.edu"),
+                cookie(name: "_ga", domain: "canvas.upenn.edu", expiresDate: farFuture),
+            ], service: .canvas)
+
+            let names = Set(SessionCookieStore.load(service: .canvas).map(\.name))
+            #expect(names == ["canvas_session", "_ga"])
+            #expect(!SessionCookieStore.isExpired(service: .canvas))
+        }
+    }
+
     // The store-level half of the "Canvas login is gone" rule
     // (`CanvasLoginMissingTests`). `isExpired` stays exactly as it was: it is
     // false for a deleted item, indistinguishable from a never-connected
