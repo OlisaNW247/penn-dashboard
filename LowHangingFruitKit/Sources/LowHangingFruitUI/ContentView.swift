@@ -175,6 +175,7 @@ struct ContentView: View {
                         knowledge: state.assistantKnowledge,
                         work: state.assistantWorkItems(),
                         userName: state.userName,
+                        canvasHost: state.canvasBaseURL.host,
                         allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id
                     )
                 case .grades:
