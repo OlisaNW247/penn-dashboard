@@ -13,16 +13,17 @@ import Testing
 ///
 /// Every test builds its own registry: the app's is `shared`, and a test that
 /// registered into it would hand another test's wake a stranger's `AppState`.
-@MainActor
 @Suite("One ledger store per process")
 struct LiveAppStateTests {
 
     /// An `AppState` over its own in-memory store, as the other suites make.
+    @MainActor
     private func makeState() -> AppState {
         AppState(assignmentStore: try? AssignmentStore(inMemory: true))
     }
 
     @Test("A wake in a warm process works on the live AppState and opens nothing of its own")
+    @MainActor
     func warmWakeReusesTheLiveState() {
         let registry = LiveAppStateRegistry()
         let live = makeState()
@@ -38,6 +39,7 @@ struct LiveAppStateTests {
     }
 
     @Test("A wake with no live AppState opens exactly one of its own")
+    @MainActor
     func coldWakeOpensItsOwn() {
         let registry = LiveAppStateRegistry()
         var opened = 0
@@ -51,6 +53,7 @@ struct LiveAppStateTests {
     }
 
     @Test("The wake marks the state background for its length and puts the live app's context back")
+    @MainActor
     func contextIsBackgroundThenRestored() {
         let registry = LiveAppStateRegistry()
         let live = makeState()
@@ -66,6 +69,7 @@ struct LiveAppStateTests {
     }
 
     @Test("A wake restores the context the state had, whatever it was")
+    @MainActor
     func restoresWhatWasThere() {
         let registry = LiveAppStateRegistry()
         let live = makeState()
@@ -78,6 +82,7 @@ struct LiveAppStateTests {
     }
 
     @Test("makeLive records what it builds, and a later one replaces it")
+    @MainActor
     func makeLiveRegisters() {
         let registry = LiveAppStateRegistry()
         let first = registry.makeLive { makeState() }
@@ -88,6 +93,7 @@ struct LiveAppStateTests {
     }
 
     @Test("The registry does not keep an AppState alive")
+    @MainActor
     func registryHoldsNothingStrongly() {
         let registry = LiveAppStateRegistry()
         registry.register(makeState())

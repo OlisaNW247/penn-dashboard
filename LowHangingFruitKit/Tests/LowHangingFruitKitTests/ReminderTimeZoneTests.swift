@@ -19,12 +19,12 @@ import UserNotifications
 /// Zones a long way apart, so at least three of them are not the machine's.
 private let reminderZones = ["Asia/Tokyo", "Pacific/Auckland", "America/Los_Angeles", "Europe/London"]
 
-@MainActor
 @Suite("Reminder time zone")
 struct ReminderTimeZoneTests {
 
     @Test("An ordinary reminder's trigger means the instant it was planned for, whatever zone the phone is in later",
           arguments: reminderZones)
+    @MainActor
     func triggerIsTheInstantItWasPlannedFor(zone: String) throws {
         let timeZone = try #require(TimeZone(identifier: zone))
         var calendar = Calendar(identifier: .gregorian)
@@ -57,6 +57,7 @@ struct ReminderTimeZoneTests {
     }
 
     @Test("With no calendar given, the zone pinned is the phone's current one")
+    @MainActor
     func defaultsToTheCurrentZone() throws {
         let (scheduler, name) = try makeScheduler()
         defer { UserDefaults.standard.removePersistentDomain(forName: name) }
@@ -75,6 +76,7 @@ struct ReminderTimeZoneTests {
     /// A scheduler over a scratch suite, loud alert off (its buzzes use
     /// interval triggers and are not under test), with the two default lead
     /// times on.
+    @MainActor
     private func makeScheduler() throws -> (NotificationScheduler, String) {
         let name = "lhf.tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
