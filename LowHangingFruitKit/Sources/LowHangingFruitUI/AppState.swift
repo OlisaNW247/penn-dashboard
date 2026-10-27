@@ -254,6 +254,15 @@ final class AppState: ObservableObject {
     /// `markActive`, so after a relaunch there is nothing left to carry, and a
     /// persisted record would only have to be pruned.
     private var carriedCompletions: Set<String> = []
+
+    /// Re-plans reminders and alarms from what the dashboard now shows.
+    /// `ContentView` wires it (next to `NotificationScheduler.liveItems`),
+    /// because the scheduler and the dashboard's items belong to the view
+    /// layer and `AppState` stays free of notification plumbing. Nil while no
+    /// dashboard is mounted, which is also when there is nothing to re-plan
+    /// from. `disconnectCanvas` runs it (`replanRemindersAfterDisconnect`).
+    var reminderReplanner: (@MainActor () async -> Void)?
+    private var pendingReminderReplan: Task<Void, Never>?
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh, so a Canvas correction (a
@@ -4107,6 +4116,9 @@ final class AppState: ObservableObject {
         // (`hasOfferedStayLoggedIn` is never reset) cannot bring it back.
         setCanvasLoginEverCaptured(false)
         refreshCanvasSessionExpiredState()
+        // Last of the synchronous teardown, after the ledger purge and the
+        // dashboard rebuild above, so the re-plan sees the work that is left.
+        replanRemindersAfterDisconnect()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
         // store, not just the Keychain copy above — otherwise a still-resident
         // WKWebsiteDataStore session survives disconnect and gets presented
@@ -4120,6 +4132,36 @@ final class AppState: ObservableObject {
                 in: LoginDataStores.canvas
             )
         }
+    }
+
+    /// Re-plans reminders and alarms at the end of a Canvas disconnect, through
+    /// the same path every other re-plan takes (`NotificationScheduler.reschedule
+    /// (from:)`, wired in `reminderReplanner`).
+    ///
+    /// Until this, the notifications and Berserk alarms already scheduled for a
+    /// Canvas assignment kept ringing after the student disconnected, until
+    /// they next opened the dashboard (the screen that re-plans), so a student
+    /// who had just taken their Canvas off the phone was still woken for work
+    /// from it (hardening plan C9). `reschedule` removes
+    /// what is pending and adds back only what the items still justify, so the
+    /// Gradescope and manual work that is left keeps its reminders.
+    ///
+    /// Not `rescheduleAfterPreferenceChange`, which looks cheaper: it returns
+    /// at once when the item list is empty, and for a student whose only
+    /// source was Canvas the list is exactly empty after a disconnect, which is
+    /// the one case where everything pending has to go. Run as a task so the
+    /// disconnect stays synchronous; with no dashboard mounted
+    /// (`reminderReplanner` is nil: a school switch or a login reset from
+    /// onboarding) there are no items to plan from and the dashboard's own
+    /// re-plan covers it on its return.
+    func replanRemindersAfterDisconnect() {
+        guard let replanner = reminderReplanner else { return }
+        pendingReminderReplan = Task { @MainActor in await replanner() }
+    }
+
+    /// Waits for the re-plan `disconnectCanvas` started, if any.
+    func awaitPendingReminderReplan() async {
+        await pendingReminderReplan?.value
     }
 
     /// Lazy decision used by `disconnectCanvas`: when the token experiment is

@@ -195,6 +195,18 @@ struct ContentView: View {
             // that moment (see `NotificationScheduler.liveItems`). Captures
             // the view model itself, not this struct.
             scheduler.liveItems = { [vm] in vm.items }
+            // The other direction: `AppState.disconnectCanvas` re-plans through
+            // this, so the alarms and reminders scheduled for the Canvas work
+            // that has just gone stop at once instead of when the dashboard is
+            // next opened. The view model hears about state changes a
+            // main-actor hop later, so it is asked to rebuild from state now,
+            // the same two calls `settleAfterFetch` makes. Weak: `AppState`
+            // owns this closure and must not keep a dashboard alive.
+            state.reminderReplanner = { [weak vm, weak scheduler] in
+                guard let vm, let scheduler else { return }
+                vm.reload(preservingEdits: true)
+                await scheduler.reschedule(from: vm.items)
+            }
             // Berserk alarms never ring for preview or demo data. The scheduler
             // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
             // probe rather than a flag copied in here, where it would go stale
