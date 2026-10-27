@@ -44,6 +44,8 @@ export interface StubRequest {
   url: URL;
   /** The request body as text ("" when there is none). */
   body: string;
+  /** The request's abort signal, so a route can model a call that hangs until it is cancelled. */
+  signal?: AbortSignal;
 }
 
 export interface StubOptions {
@@ -142,7 +144,7 @@ export function installStub(options: StubOptions): Stub {
 
     if (options.route) {
       const body = request ? await request.clone().text() : String(init?.body ?? "");
-      const answered = await options.route({ method: request?.method ?? init?.method ?? "GET", url, body });
+      const answered = await options.route({ method: request?.method ?? init?.method ?? "GET", url, body, signal });
       if (answered) {
         stub.log.push(`route:${url.pathname}`);
         return answered;

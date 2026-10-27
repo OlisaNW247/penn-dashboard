@@ -188,8 +188,9 @@ export async function handleAsk(
     }
   };
 
-  // `requireUser` (`_shared/auth.ts`) has no deadline of its own -- it
-  // awaits GoTrue's `auth.getUser()` unbounded -- and its contract is
+  // `requireUser` (`_shared/auth.ts`) has no deadline on GoTrue's
+  // `auth.getUser()` (its `device_links` lookup got its own 3 s deadline
+  // on 2026-10-27, BE-11) -- and its contract is
   // shared by five other edge functions (delete-account, discover-websites,
   // extract-announcement, extract-profile, map-categories, sync), so it is
   // not changed here; a 3s client-side race around the call, local to this

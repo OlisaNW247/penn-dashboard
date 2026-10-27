@@ -52,7 +52,19 @@ function requireEnv(name: string): string {
  * PROTOCOL.md, "a 401 means refresh and retry once" is the client's job,
  * not this function's -- it only ever answers the single question of
  * whether *this* request is authenticated. */
-export async function requireUser(req: Request): Promise<AuthContext> {
+/** How long the `device_links` lookup below may take before the request is
+ *  failed. Every function runs this lookup (it is how a linked device is
+ *  resolved to its owner), so a stall in it used to hang every function at
+ *  once, and the only bound was whatever the caller put around the whole of
+ *  `requireUser` (`ask` wraps it in a 3 s race; the others never did). A
+ *  failed lookup must fail the request, never fall back to "not linked", so
+ *  the deadline's outcome is the same 502 an error already gets. */
+export const LINK_LOOKUP_DEADLINE_MS = 3000;
+
+export async function requireUser(
+  req: Request,
+  options: { linkLookupDeadlineMs?: number } = {},
+): Promise<AuthContext> {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader || !/^Bearer\s+\S+/i.test(authHeader)) {
     throw new HttpError(401, "unauthorized", "missing or malformed Authorization header");
@@ -89,11 +101,20 @@ export async function requireUser(req: Request): Promise<AuthContext> {
   // Falling back to the token's own id would quietly treat a linked device
   // as a fresh student with no enrollments and a full ask quota, which is
   // wrong in a way nobody would notice.
-  const { data: link, error: linkError } = await serviceClient
-    .from("device_links")
-    .select("owner_user_id")
-    .eq("device_user_id", data.user.id)
-    .maybeSingle();
+  const linkController = new AbortController();
+  const linkTimer = setTimeout(() => linkController.abort(), options.linkLookupDeadlineMs ?? LINK_LOOKUP_DEADLINE_MS);
+  let linkResult;
+  try {
+    linkResult = await serviceClient
+      .from("device_links")
+      .select("owner_user_id")
+      .eq("device_user_id", data.user.id)
+      .abortSignal(linkController.signal)
+      .maybeSingle();
+  } finally {
+    clearTimeout(linkTimer);
+  }
+  const { data: link, error: linkError } = linkResult;
   //
   // The one exception is the table not existing at all (Postgres 42P01, or
   // PostgREST's PGRST205 when its schema cache lacks it). Then no link can
