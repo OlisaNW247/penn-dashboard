@@ -177,6 +177,12 @@ actor BackendSession {
     /// The body of one flight: read the saved identity and refresh it, or sign
     /// up when there is none.
     private func mintOrRefresh(epoch startedAt: Int) async throws -> String {
+        // A flight can be handed an epoch that is already stale: it was
+        // scheduled, then `forgetIdentity()` ran before it first executed. It
+        // belongs to an identity that is gone and must not read, refresh or
+        // sign up on its behalf.
+        guard epoch == startedAt else { throw BackendError.transport }
+
         // Three answers, because "no identity" means "create a new anonymous
         // account" and "the Keychain would not say" must never mean that. A
         // locked or refusing Keychain (before first unlock, a background wake
@@ -200,6 +206,13 @@ actor BackendSession {
         do {
             return try await refresh(with: saved, epoch: startedAt)
         } catch BackendError.http(400), BackendError.http(401) {
+            // Checked before anything below touches the Keychain. This rejection
+            // may be the answer to a refresh that was in flight when the
+            // identity was forgotten, and a newer identity may have been
+            // minted and saved since. Clearing here would wipe that one and the
+            // sign-up after it would orphan an account, so a stale flight stops
+            // at its own failure.
+            guard epoch == startedAt else { throw BackendError.transport }
             // The refresh token itself is no longer good — expired,
             // revoked, or the row was deleted server-side. There is no
             // partial-credit retry here: the identity is discarded outright

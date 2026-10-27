@@ -20,13 +20,20 @@ final class GoTrueScript: @unchecked Sendable {
     private var _signupStatuses: [Int]
 
     let signupDelay: TimeInterval
+    let refreshDelay: TimeInterval
 
     /// - Parameters:
     ///   - refreshStatuses: statuses for successive refresh calls (the last
     ///     repeats); 200 serves a token.
     ///   - signupStatuses: the same for sign-ups.
-    init(signupDelay: TimeInterval = 0, refreshStatuses: [Int] = [200], signupStatuses: [Int] = [200]) {
+    init(
+        signupDelay: TimeInterval = 0,
+        refreshDelay: TimeInterval = 0,
+        refreshStatuses: [Int] = [200],
+        signupStatuses: [Int] = [200]
+    ) {
         self.signupDelay = signupDelay
+        self.refreshDelay = refreshDelay
         self._refreshStatuses = refreshStatuses
         self._signupStatuses = signupStatuses
     }
@@ -55,8 +62,8 @@ final class GoTrueScript: @unchecked Sendable {
                 let status = _refreshStatuses.count > 1 ? _refreshStatuses.removeFirst() : (_refreshStatuses.first ?? 200)
                 return (_refreshes, status)
             }
-            if status == 200 { return (200, Self.goTrueBody(n: n, prefix: "refresh"), 0) }
-            return (status, Data("{}".utf8), 0)
+            if status == 200 { return (200, Self.goTrueBody(n: n, prefix: "refresh"), refreshDelay) }
+            return (status, Data("{}".utf8), refreshDelay)
         }
         return (404, Data("{}".utf8), 0)
     }

@@ -167,4 +167,40 @@ struct BackendSessionSingleFlightTests {
         #expect(token == "signup-access-2")
         #expect(identity.saves.count == 1)
     }
+
+    // The recovery path of a flight is where a stale one used to do damage: a
+    // refresh that was in flight when the identity was forgotten comes back
+    // 400/401, and the old catch cleared the persisted identity (by then a NEW
+    // one) and signed up again, orphaning an account.
+
+    @Test("a refresh rejected after the identity was forgotten leaves the newer identity intact")
+    func forgetDuringFailingRefresh() async throws {
+        let script = GoTrueScript(refreshDelay: 0.5, refreshStatuses: [400])
+        let identity = MemoryIdentity(.found(BackendIdentity(userID: "old-user", refreshToken: "old-refresh")))
+        let session = session(script, identity)
+        defer { GoTrueStubProtocol.script = nil }
+
+        // Flight 1: refreshing the old identity; the server will say 400 late.
+        let stale = Task { try await session.accessToken() }
+        for _ in 0..<200 where script.refreshes == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(script.refreshes == 1)
+
+        // The student's data is deleted, and a NEW identity is minted before
+        // flight 1's answer arrives.
+        await session.forgetIdentity()
+        let fresh = try await session.accessToken()
+        #expect(fresh == "signup-access-1")
+        let newIdentity = BackendIdentity(userID: "signup-user-1", refreshToken: "signup-refresh-1")
+        #expect(identity.current == .found(newIdentity))
+        #expect(identity.clears == 1, "only the forget has cleared anything so far")
+
+        // Flight 1's 400 now lands.
+        await #expect(throws: BackendError.transport) { _ = try await stale.value }
+
+        #expect(identity.clears == 1, "the stale flight must not clear the newer identity")
+        #expect(identity.current == .found(newIdentity))
+        #expect(script.signups == 1, "and must not sign up a second account")
+    }
 }
