@@ -86,17 +86,24 @@ struct ReminderPassReport: Equatable, Sendable {
     /// Pending requests that were no longer in the plan and were taken back,
     /// over every application in the pass.
     var staleNotificationsRemoved = 0
+    /// How many times the center did not list what was pending within
+    /// `pendingReadDeadline`. The pass added its plan anyway and left the stale
+    /// ones for the next pass.
+    var pendingReadTimeouts = 0
     /// Wanted alarms AlarmKit would not hold, and unwanted ones it would not
     /// let go (`BerserkReconcileReport`).
     var alarmsUnscheduled = 0
     var alarmsUncancelled = 0
 
-    var isClean: Bool { notificationsFailed == 0 && alarmsUnscheduled == 0 && alarmsUncancelled == 0 }
+    var isClean: Bool {
+        notificationsFailed == 0 && alarmsUnscheduled == 0 && alarmsUncancelled == 0 && pendingReadTimeouts == 0
+    }
 
     mutating func record(_ applied: NotificationApplyResult) {
         notificationsAdded = applied.added
         notificationsFailed = applied.failed
         staleNotificationsRemoved += applied.staleRemoved
+        if applied.readTimedOut { pendingReadTimeouts += 1 }
     }
 
     mutating func record(_ alarms: BerserkReconcileReport) {
@@ -110,6 +117,9 @@ struct NotificationApplyResult: Equatable, Sendable {
     var added = 0
     var failed = 0
     var staleRemoved = 0
+    /// The center did not say what was pending in time, so no stale request
+    /// was removed.
+    var readTimedOut = false
 }
 
 /// What `syncAlarms` did: the settlement the pass goes on with, and what the
@@ -271,15 +281,32 @@ extension NotificationScheduler {
     /// A refused add is counted, not retried here: the next pass re-adds the
     /// whole plan, and a retry loop in a pass that runs every few minutes would
     /// only delay the ones that work.
+    ///
+    /// **The read of what is pending has a deadline** (`pendingReadDeadline`,
+    /// five seconds). A pass holds the `RescheduleSerializer` for as long as it
+    /// runs, so a center that never answered would stop every reschedule after
+    /// it: no re-plan on a sync, none after a tick, none from the wake. On
+    /// timeout the stale removal is skipped for this pass and the plan is added
+    /// regardless (an add replaces a pending request of the same identifier, so
+    /// nothing wanted is lost); the stale ones go on the next pass that gets an
+    /// answer. The price is the cap: with the old requests still pending, the
+    /// queue can briefly hold more than the plan until that pass. The timeout
+    /// is counted (`ReminderPassReport.pendingReadTimeouts`). The wrong fix is
+    /// to treat a timeout as "nothing is pending" and carry on as if the
+    /// removal had happened, or to wait: the read may never return.
     func applyNotifications(
         _ planned: [UNNotificationRequest], to sink: any PendingNotificationSink
     ) async -> NotificationApplyResult {
         var result = NotificationApplyResult()
         let plannedIDs = Set(planned.map(\.identifier))
-        let stale = await sink.pendingIdentifiers().filter { !plannedIDs.contains($0) }
-        if !stale.isEmpty {
-            sink.removePending(identifiers: stale)
-            result.staleRemoved = stale.count
+        if let pending = await Deadline.run(after: pendingReadDeadline, { await sink.pendingIdentifiers() }) {
+            let stale = pending.filter { !plannedIDs.contains($0) }
+            if !stale.isEmpty {
+                sink.removePending(identifiers: stale)
+                result.staleRemoved = stale.count
+            }
+        } else {
+            result.readTimedOut = true
         }
         for request in planned {
             if await sink.add(request) { result.added += 1 } else { result.failed += 1 }
@@ -293,7 +320,7 @@ extension NotificationScheduler {
         lastPassReport = report
         if !report.isClean {
             Logger(subsystem: "com.lhf.lowhangingfruit", category: "reminders").error(
-                "reminder pass incomplete: \(report.notificationsFailed) notifications refused, \(report.alarmsUnscheduled) alarms not scheduled, \(report.alarmsUncancelled) alarms not cancelled")
+                "reminder pass incomplete: \(report.notificationsFailed) notifications refused, \(report.alarmsUnscheduled) alarms not scheduled, \(report.alarmsUncancelled) alarms not cancelled, \(report.pendingReadTimeouts) pending reads timed out")
         }
         return report
     }

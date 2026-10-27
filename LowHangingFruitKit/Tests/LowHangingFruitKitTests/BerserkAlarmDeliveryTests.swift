@@ -132,6 +132,11 @@ final class FakeSink: PendingNotificationSink {
     /// `add` of these identifiers is refused, as the center does when it
     /// rejects a request.
     var refusedIdentifiers: Set<String> = []
+    /// `pendingIdentifiers` never returns (until `releaseStuckReads`), as a
+    /// center that hangs would. Several reads can be stuck at once.
+    var hangsOnPendingRead = false
+    private var stuckReads: [CheckedContinuation<Void, Never>] = []
+    private(set) var pendingReadAttempts = 0
 
     func prepare() {}
 
@@ -147,7 +152,19 @@ final class FakeSink: PendingNotificationSink {
     }
 
     func pendingIdentifiers() async -> [String] {
-        requests.map(\.identifier)
+        pendingReadAttempts += 1
+        if hangsOnPendingRead {
+            await withCheckedContinuation { stuckReads.append($0) }
+        }
+        return requests.map(\.identifier)
+    }
+
+    /// Lets the reads that are stuck return, so the tasks parked on them end
+    /// with the test instead of lingering.
+    func releaseStuckReads() {
+        let parked = stuckReads
+        stuckReads = []
+        for read in parked { read.resume() }
     }
 
     func removePending(identifiers: [String]) {
@@ -1119,6 +1136,77 @@ struct BerserkAlarmDeliveryTests {
             #expect(sink.removedIdentifiers.isEmpty, "the buzzes were added to what the first pass left")
             #expect(sink.buzzCount(for: items[1].assignment.id) == NotificationScheduler.loudAlertCount)
             #expect(sink.buzzCount(for: items[0].assignment.id) == 0)
+        }
+    }
+
+    // MARK: A center that does not answer
+
+    /// A pass holds the `RescheduleSerializer` while it runs, so a read of the
+    /// pending requests that never came back would stop every reschedule after
+    /// it. The read has a deadline; on timeout the stale removal is skipped and
+    /// the plan is added regardless.
+    @Test("A pending read that never returns times out: the plan is added, nothing is removed, and the timeout is counted")
+    func pendingReadTimeoutStillAddsThePlan() async {
+        await withScheduler { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now) + noise(now)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let planned = Set(sink.requests.map(\.identifier))
+            // A request an earlier plan left that this one no longer holds.
+            let stale = "due:canvas:gone:3600"
+            sink.seed(UNNotificationRequest(identifier: stale, content: UNMutableNotificationContent(), trigger: nil))
+            sink.hangsOnPendingRead = true
+            defer { sink.releaseStuckReads() }
+
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(report.pendingReadTimeouts == 1)
+            #expect(!report.isClean)
+            #expect(sink.removedIdentifiers.isEmpty, "nothing is known to be stale, so nothing is removed")
+            #expect(planned.isSubset(of: Set(sink.requests.map(\.identifier))), "the whole plan was added")
+            #expect(report.notificationsAdded == planned.count && report.notificationsFailed == 0)
+            #expect(sink.requests.contains { $0.identifier == stale }, "left for the next pass that gets an answer")
+        }
+    }
+
+    @Test("The pass after a timeout removes what the timed-out one left")
+    func nextPassRemovesTheLeftovers() async {
+        await withScheduler { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now)
+            let stale = "due:canvas:gone:3600"
+            sink.seed(UNNotificationRequest(identifier: stale, content: UNMutableNotificationContent(), trigger: nil))
+            sink.hangsOnPendingRead = true
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            sink.hangsOnPendingRead = false
+            sink.releaseStuckReads()
+
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(report.pendingReadTimeouts == 0 && report.isClean)
+            #expect(sink.removedIdentifiers == [stale])
+        }
+    }
+
+    @Test("A hung read does not wedge the serializer: later reschedules still run, and the scheduler keeps the count")
+    func hungReadDoesNotWedgeReschedules() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = wakeRig(scheduler, authorization: .denied)
+            sink.hangsOnPendingRead = true
+            defer { sink.releaseStuckReads() }
+            let items = eligible(now)
+
+            await scheduler.reschedule(from: items, now: now)
+            #expect(scheduler.lastPassReport?.pendingReadTimeouts == 1)
+
+            // The serializer is idle again, so this runs a pass of its own.
+            let readsBefore = sink.pendingReadAttempts
+            await scheduler.reschedule(from: items + noise(now), now: now)
+            #expect(sink.pendingReadAttempts > readsBefore, "a second pass ran")
+            #expect(sink.requests.contains { $0.identifier.hasPrefix("due:canvas:reading:") })
         }
     }
 

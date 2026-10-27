@@ -90,6 +90,15 @@ final class NotificationScheduler: ObservableObject {
     /// a pass that never got that far (reminders off) leaves the last one.
     var lastPassReport: ReminderPassReport?
 
+    /// How long a pass waits for the notification center to list what is
+    /// pending before it gives up on removing the stale ones
+    /// (`applyNotifications`). Five seconds: the read is a local IPC and
+    /// normally takes milliseconds, and the pass that waits on it holds the
+    /// `RescheduleSerializer`, so a read that never came back would stop every
+    /// later reschedule. A property, not a constant, so a test can shorten it.
+    var pendingReadDeadline: TimeInterval = NotificationScheduler.defaultPendingReadDeadline
+    nonisolated static let defaultPendingReadDeadline: TimeInterval = 5
+
     // Lazy so launch on an unbundled binary never touches the notification center.
     private lazy var center = UNUserNotificationCenter.current()
 
