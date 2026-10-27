@@ -104,23 +104,31 @@ deno task test    # unit tests against test/, no network
 deno task check   # type-checks the sync and delete-account functions
 ```
 
-The RLS policies and the `ask_usage` quota functions need a real Postgres to
-exercise, but not a full Supabase stack (Docker is unavailable in some
-environments this runs in). Against a scratch local Postgres:
+The RLS policies, the grants on the usage functions and the `ask_usage` quota
+functions need a real Postgres to exercise, but not a full Supabase stack
+(Docker is unavailable in some environments this runs in). Against a scratch
+local Postgres, connecting as one role throughout (the stub's default
+privileges apply to the role that runs it, and must be the role that then
+creates the objects):
 
 ```bash
 psql <scratch-db-url> -f test/local_auth_stub.sql
-psql <scratch-db-url> -f supabase/migrations/20260907000000_init.sql
+for f in supabase/migrations/*.sql; do psql <scratch-db-url> -v ON_ERROR_STOP=1 -f "$f"; done
 psql <scratch-db-url> -v ON_ERROR_STOP=1 -f test/rls.test.sql
 ```
 
 `local_auth_stub.sql` stands in for the slice of Supabase's managed `auth`
 schema the migration depends on (an `auth.users` table and `auth.uid()`
 reading the same JWT-claims GUC PostgREST sets on every real request) so the
-schema can be tested against bare Postgres. `rls.test.sql` is a sequence of
-`RAISE EXCEPTION`-on-failure checks proving the policies match `PROTOCOL.md` —
-a nonzero `psql` exit means something failed and names what. Never run either
-script against a database that might be a real project's.
+schema can be tested against bare Postgres. It also reproduces Supabase's
+default privileges (every new table, function and sequence in `public` is
+granted to `anon`, `authenticated` and `service_role`): leaving them out is
+how this suite could pass while the usage functions were callable by anyone
+holding an anonymous JWT, because a migration's `revoke ... from public`
+does not remove those per-role grants. `rls.test.sql` is a sequence of
+`RAISE EXCEPTION`-on-failure checks proving the policies and grants match
+`PROTOCOL.md` — a nonzero `psql` exit means something failed and names what.
+Never run either script against a database that might be a real project's.
 
 ## Cost expectations
 

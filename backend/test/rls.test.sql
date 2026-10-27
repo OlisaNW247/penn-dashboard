@@ -1,16 +1,22 @@
--- Proves the RLS policies and the two ask_usage functions in
+-- Proves the RLS policies, the grants on the usage functions and the
+-- tables, and the ask_usage functions in
 -- supabase/migrations/20260907000000_init.sql, plus the course-website
 -- tables added by 20260907180000_websites.sql, behave as PROTOCOL.md
 -- requires. Run against a scratch database after local_auth_stub.sql and
--- every migration in order:
+-- every migration in order, as ONE role throughout (the stub's default
+-- privileges apply to the role that runs it, and must be the role that
+-- then creates the objects, as `postgres` is on a real project):
 --
 --   psql ... -f test/local_auth_stub.sql
---   psql ... -f supabase/migrations/20260907000000_init.sql
---   psql ... -f supabase/migrations/20260907120000_catalog.sql
---   psql ... -f supabase/migrations/20260907180000_websites.sql
---   psql ... -f supabase/migrations/20261002090000_ed_kind.sql
---   psql ... -f supabase/migrations/20261022090000_chrome_extension.sql
+--   for f in supabase/migrations/*.sql; do psql ... -v ON_ERROR_STOP=1 -f "$f"; done
 --   psql ... -v ON_ERROR_STOP=1 -f test/rls.test.sql
+--
+-- The stub reproduces Supabase's default privileges (every new object in
+-- `public` is granted to anon, authenticated and service_role). Without
+-- that, the "authenticated cannot call the usage functions" checks below
+-- could pass against a schema that was wide open on a real project, because
+-- a bare Postgres has only the PUBLIC grant a migration's `revoke ... from
+-- public` removes. See 20261027090000_revoke_usage_functions.sql.
 --
 -- Every check is a `DO $$ ... RAISE EXCEPTION ... $$` block so a failure
 -- aborts the script with a nonzero exit and a message naming what failed,
@@ -438,6 +444,132 @@ begin
 end $$;
 
 rollback;
+
+-- The same refusal for `anon` (an unauthenticated caller with only the
+-- publishable key), and for `record_ask_outcome`, which was exposed the same
+-- way as the two usage functions.
+begin;
+set local role anon;
+select set_config('request.jwt.claims', '', true);
+
+do $$
+begin
+  begin
+    perform public.record_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1::bigint, 1::bigint);
+    raise exception 'anon was able to call record_ask_usage directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    perform public.ask_usage_counts('11111111-1111-1111-1111-111111111111'::uuid);
+    raise exception 'anon was able to call ask_usage_counts directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    perform public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+    raise exception 'anon was able to call record_ask_outcome directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+
+do $$
+begin
+  begin
+    perform public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+    raise exception 'authenticated was able to call record_ask_outcome directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+-- is_enrolled is the one function the API roles are meant to be able to
+-- run (RLS policies call it as `authenticated`).
+do $$
+begin
+  perform public.is_enrolled('100');
+end $$;
+
+rollback;
+
+-- The service role still can: the Edge Functions run as it.
+set role service_role;
+select public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.ask_outcomes where model = 'm' and outcome = 'answered';
+  if n <> 1 then
+    raise exception 'expected service_role to record exactly 1 ask_outcomes row, saw %', n;
+  end if;
+end $$;
+reset role;
+
+-- A catch-all over the catalog, so the next function someone adds cannot
+-- repeat this: apart from is_enrolled, no function in `public` may be
+-- executable by anon or authenticated, whether through the PUBLIC grant or
+-- an explicit one (has_function_privilege sees both).
+do $$
+declare
+  fn record;
+begin
+  for fn in
+    select p.oid, p.oid::regprocedure as signature
+    from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.proname <> 'is_enrolled'
+  loop
+    if has_function_privilege('anon', fn.oid, 'execute') then
+      raise exception '% is executable by anon', fn.signature;
+    end if;
+    if has_function_privilege('authenticated', fn.oid, 'execute') then
+      raise exception '% is executable by authenticated', fn.signature;
+    end if;
+  end loop;
+end $$;
+
+-- The default privileges themselves: a function created now must not be
+-- handed to anon or authenticated by the schema's defaults. (PUBLIC's
+-- built-in grant is not asserted here; the catch-all above is what holds a
+-- new function to an explicit revoke from it.)
+create function public._acl_probe() returns int language sql as 'select 1';
+do $$
+declare
+  grantee_name text;
+begin
+  select r.rolname into grantee_name
+  from pg_proc p
+  cross join lateral aclexplode(p.proacl) a
+  join pg_roles r on r.oid = a.grantee
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname = '_acl_probe'
+    and r.rolname in ('anon', 'authenticated')
+  limit 1;
+  if grantee_name is not null then
+    raise exception 'a new function in public is granted to % by default privileges', grantee_name;
+  end if;
+end $$;
+drop function public._acl_probe();
 
 -- Chrome extension tables (20261022090000_chrome_extension.sql): service
 -- role only. Neither anon nor authenticated may read or write pairings,
