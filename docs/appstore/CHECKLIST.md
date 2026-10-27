@@ -15,8 +15,8 @@ Chrome-extension-only commits, which do not touch the app. Branch:
    feedback tests, all green), then from the repo root
    `xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`.
 2. **On a phone** (Debug build over the store copy): the card shows under
-   the header once the manifest carries `feedback` (it does since
-   2026-10-27); tapping it opens the form in Safari and it does not come
+   the header once the manifest carries `feedback` (add it on the
+   `update-manifest` branch first; shape in `docs/update-manifest.example.json`); tapping it opens the form in Safari and it does not come
    back after a relaunch; × does the same without opening; Profile → the
    last section "feedback" → "send feedback" opens the form. Preview mode
    shows no card.
