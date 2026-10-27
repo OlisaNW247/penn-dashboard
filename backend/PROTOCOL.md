@@ -733,6 +733,39 @@ documents. A crawled page whose title or URL matches
 true`, since that page is exactly the kind `extract-profile` wants to read
 (see below).
 
+**What it may fetch** (since 2026-10-27, hardening BE-F; `_shared/netguard.ts`).
+Candidate URLs include any link a phone reported from a course page, so the
+function holds every request, from verification and the CIS directory to
+`robots.txt` and each crawled page, to these rules:
+
+- **https only**, on the default port, no credentials in the URL, and the
+  host must be a *name* ending in an allow-listed suffix: `upenn.edu` plus
+  the comma-separated function secret `LHF_DISCOVERY_HOSTS` (for a course
+  site on its own domain, such as `cis1912.org`). IP literals are never
+  fetched. A candidate the rules refuse is left exactly as it was, like a
+  network failure, so it is picked up again if the allow-list grows, and a
+  `verified` site the rules refuse is skipped rather than crawled into an
+  empty result (an empty crawl would mark the course's existing website
+  documents gone).
+- **Public addresses only.** The name is resolved (`Deno.resolveDns`, 3 s)
+  and every address must be outside loopback, private, link-local (including
+  the `169.254.169.254` metadata service), carrier-grade NAT, multicast,
+  reserved and documentation ranges, in IPv4 and IPv6 (IPv4-mapped, NAT64,
+  6to4 and Teredo forms included). A name that does not resolve is refused.
+  If the runtime has no DNS API at all, the check falls back to the hostname
+  rules with a warning in the log. Residual risk: the name is resolved here
+  and again by `fetch`, so DNS that changes between the two is not caught;
+  the allow-list is what bounds that.
+- **Redirects are followed by the function, hop by hop** (`redirect:
+  "manual"`, at most 5), and every hop is held to the rules above before it
+  is requested. `redirect: "follow"` checked nothing.
+- **Bodies are streamed with a cap and a deadline** and the connection is
+  cancelled at either: HTML pages 1 MB (cut, and the text read so far is
+  used), `robots.txt` 100 KB, a PDF 200 KB (over it, skipped), a
+  verification fetch 500 KB, the CIS directory 2 MB (a truncated directory is
+  not cached). The deadline per body is the request timeout (8 s). The crawl
+  also stops starting pages once the call's 45 s budget is spent.
+
 ## `discover-websites`
 
 Request `{ "courseIDs": [courseID] }`, at most 3 per call (batch a longer

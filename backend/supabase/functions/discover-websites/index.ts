@@ -13,6 +13,7 @@ import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_share
 import { requireUser } from "../_shared/auth.ts";
 import type { CatalogCourseRow } from "../_shared/catalog.ts";
 import { crawlSite } from "../_shared/crawl.ts";
+import { guardedFetch, isFetchableURL, type NetGuard, productionNetGuard, readTextCapped } from "../_shared/netguard.ts";
 import {
   conventionURLs,
   lastPathSegment,
@@ -69,6 +70,14 @@ const CRAWL_MAX_DEPTH = 2;
 
 const USER_AGENT = "LowHangingFruit/1 (course-website discovery; contact in repo)";
 
+// How much of a body is read before the connection is cancelled (see
+// `_shared/netguard.ts`). Verification looks at a page's title and the first
+// few thousand characters (`VERIFY_BODY_HEAD_CHARS`), so half a megabyte is
+// far more than it needs; the CIS directory is a few hundred links. The
+// crawl's own caps live in `_shared/crawl.ts`.
+const VERIFY_MAX_BYTES = 500_000;
+const DIRECTORY_MAX_BYTES = 2_000_000;
+
 // Confidence values for the three candidate sources this function itself
 // produces (a `canvas-link` candidate's confidence instead comes from
 // `sync/index.ts`'s `candidateFromLink` call). Relative ordering matters
@@ -117,21 +126,17 @@ interface DiscoverContext {
   catalogRowByCode: Map<string, CatalogCourseRow>;
   deadline: number;
   getDirectoryEntries: () => Promise<DirectoryEntry[]>;
+  /** What this function may fetch (`_shared/netguard.ts`): https, an
+   *  allow-listed host, public addresses, every redirect hop re-checked. */
+  guard: NetGuard;
 }
 
-async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(url, {
-      method: "GET",
-      headers: { "User-Agent": USER_AGENT },
-      redirect: "follow",
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+/** One guarded GET. Throws for a blocked URL and for a network failure
+ *  alike, which is how every caller below already reads "could not fetch
+ *  this": leave the row as it was. A candidate URL the phone reported can be
+ *  anything; this is what keeps "anything" from reaching an internal host. */
+function fetchWithTimeout(fetchImpl: typeof fetch, url: string, timeoutMs: number, guard: NetGuard): Promise<Response> {
+  return guardedFetch(fetchImpl, url, { timeoutMs, headers: { "User-Agent": USER_AGENT } }, guard);
 }
 
 /**
@@ -147,6 +152,7 @@ async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, timeoutMs:
 async function loadDirectoryEntries(
   serviceClient: SupabaseClient,
   fetchImpl: typeof fetch,
+  guard: NetGuard,
   now: Date,
 ): Promise<DirectoryEntry[]> {
   const cached = await selectDirectoryCache(serviceClient, CIS_DIRECTORY_CACHE_KEY);
@@ -155,13 +161,18 @@ async function loadDirectoryEntries(
   }
 
   try {
-    const response = await fetchWithTimeout(fetchImpl, CIS_DIRECTORY_URL, VERIFY_TIMEOUT_MS);
+    const response = await fetchWithTimeout(fetchImpl, CIS_DIRECTORY_URL, VERIFY_TIMEOUT_MS, guard);
     if (!response.ok) {
       return cached ? parseCisDirectory(cached.body) : [];
     }
-    const body = await response.text();
-    await upsertDirectoryCache(serviceClient, CIS_DIRECTORY_CACHE_KEY, body);
-    return parseCisDirectory(body);
+    // A directory cut at the cap is not cached: half a page would replace a
+    // good cached one for a day, and the real page is nowhere near the cap.
+    const read = await readTextCapped(response, { maxBytes: DIRECTORY_MAX_BYTES, deadlineMs: VERIFY_TIMEOUT_MS });
+    if (!read || read.truncated) {
+      return cached ? parseCisDirectory(cached.body) : [];
+    }
+    await upsertDirectoryCache(serviceClient, CIS_DIRECTORY_CACHE_KEY, read.text);
+    return parseCisDirectory(read.text);
   } catch {
     return cached ? parseCisDirectory(cached.body) : [];
   }
@@ -244,11 +255,14 @@ async function verifyCandidates(
 
     let response: Response;
     try {
-      response = await fetchWithTimeout(ctx.fetchImpl, row.url, VERIFY_TIMEOUT_MS);
+      response = await fetchWithTimeout(ctx.fetchImpl, row.url, VERIFY_TIMEOUT_MS, ctx.guard);
     } catch {
-      // Network failure/timeout: leave the row exactly as it was. Per the
-      // brief, this is bundled with a 404 below -- neither is evidence
-      // the URL is *wrong*, only that this attempt to check it failed.
+      // Network failure/timeout, or a URL the guard refuses (not https, not
+      // on the allow-list, or pointing at a private address): leave the row
+      // exactly as it was. Per the brief, this is bundled with a 404 below
+      // -- none of these is evidence the URL is *wrong*, only that this
+      // attempt to check it failed, and a refused URL is simply picked up
+      // again if the allow-list ever grows.
       discovered.push({ courseID, url: row.url, status: row.status });
       continue;
     }
@@ -257,7 +271,13 @@ async function verifyCandidates(
       continue;
     }
 
-    const html = await response.text();
+    const read = await readTextCapped(response, { maxBytes: VERIFY_MAX_BYTES, deadlineMs: VERIFY_TIMEOUT_MS });
+    if (!read) {
+      // The body stalled or broke: same as a failed fetch.
+      discovered.push({ courseID, url: row.url, status: row.status });
+      continue;
+    }
+    const html = read.text;
     const finalURL = response.url || row.url;
     const result = verifyPage({ html, finalURL, catalogCode, semester });
 
@@ -295,6 +315,11 @@ async function crawlBestSite(
   const eligible = rows
     .filter((row) => row.status === "verified")
     .filter((row) => row.lastCrawledAt === null || olderThan(row.lastCrawledAt, now, SEVEN_DAYS_MS))
+    // A site the guard would refuse is not picked at all, rather than
+    // crawled into an empty result: an empty crawl retires every website
+    // document the course already has (`markDocumentsGone` below), and a
+    // policy refusal is not evidence the pages are gone.
+    .filter((row) => isFetchableURL(row.url, ctx.guard))
     .sort((a, b) => b.confidence - a.confidence);
 
   const target = eligible[0];
@@ -307,6 +332,8 @@ async function crawlBestSite(
     maxDepth: CRAWL_MAX_DEPTH,
     timeoutMs: CRAWL_TIMEOUT_MS,
     userAgent: USER_AGENT,
+    guard: ctx.guard,
+    deadline: ctx.deadline,
   });
 
   const liveBeforeIDs = await selectLiveWebsiteDocumentIDsForCourse(ctx.serviceClient, courseID);
@@ -443,6 +470,7 @@ Deno.serve(async (req: Request) => {
     const catalogRowByCode = await selectCatalogCoursesByCodes(serviceClient, catalogCodes);
 
     const deadline = Date.now() + DISCOVERY_BUDGET_MS;
+    const guard = productionNetGuard();
     // The CIS directory fetch is shared across every course in this call
     // (a student can easily have two or three CIS courses in one batch)
     // rather than repeated per course -- lazily created on first use and
@@ -450,7 +478,7 @@ Deno.serve(async (req: Request) => {
     // past this one request.
     let directoryEntriesPromise: Promise<DirectoryEntry[]> | undefined;
     const getDirectoryEntries = (): Promise<DirectoryEntry[]> => {
-      directoryEntriesPromise ??= loadDirectoryEntries(serviceClient, fetch, new Date());
+      directoryEntriesPromise ??= loadDirectoryEntries(serviceClient, fetch, guard, new Date());
       return directoryEntriesPromise;
     };
 
@@ -461,6 +489,7 @@ Deno.serve(async (req: Request) => {
       catalogRowByCode,
       deadline,
       getDirectoryEntries,
+      guard,
     };
 
     const discovered: DiscoveredEntry[] = [];

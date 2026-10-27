@@ -22,6 +22,7 @@ import {
   pageTitle,
   type ExtractedLink,
 } from "./websites.ts";
+import { guardedFetch, type NetGuard, productionNetGuard, readCapped, readTextCapped } from "./netguard.ts";
 
 export interface CrawlOptions {
   /** Injected, never the global `fetch` -- see the module doc comment. */
@@ -35,6 +36,14 @@ export interface CrawlOptions {
   maxDepth?: number;
   timeoutMs?: number;
   userAgent: string;
+  /** Which hosts and addresses may be fetched, and how redirects are
+   *  handled (`_shared/netguard.ts`). Defaults to the production guard, so
+   *  a caller that says nothing gets the safe behaviour; tests pass one
+   *  with a fake resolver. */
+  guard?: NetGuard;
+  /** `Date.now()` value after which no further page is started. Without it
+   *  a slow site could hold this call for forty pages' worth of timeouts. */
+  deadline?: number;
 }
 
 export interface CrawledPage {
@@ -70,6 +79,12 @@ const DEFAULT_TIMEOUT_MS = 8000;
 // text extracted from it) keeps a pathological linked PDF from spending
 // this call's time budget on a multi-megabyte download.
 const PDF_MAX_BYTES = 200_000;
+// An HTML page is read as a stream and cut at this many bytes (the text of
+// what was read is still used, so a huge page costs a truncated page, not
+// the crawl), and robots.txt at a tenth of that. Without a cap
+// `response.text()` reads until the server stops sending.
+const HTML_MAX_BYTES = 1_000_000;
+const ROBOTS_MAX_BYTES = 100_000;
 // Matches `_shared/manifest.ts`'s `MAX_TEXT_LENGTH` posture toward a single
 // document's text: bounded so one page can never dominate the input a
 // later `ask` retrieval or `extract-profile` call has to work with.
@@ -77,24 +92,18 @@ const PDF_MAX_TEXT_CHARS = 60_000;
 
 const EMPTY_RESULT: CrawlResult = { pages: [], links: [], blockedByRobots: [] };
 
-async function fetchWithTimeout(
+/** One guarded GET: https and allow-listed host only, every redirect hop
+ *  re-checked, never `redirect: "follow"` (see `_shared/netguard.ts`). Throws
+ *  for a blocked URL and for a network failure alike, and every caller below
+ *  already treats a throw as "skip this URL". */
+function fetchWithTimeout(
   fetchImpl: typeof fetch,
   url: string,
   timeoutMs: number,
   userAgent: string,
+  guard: NetGuard,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(url, {
-      method: "GET",
-      headers: { "User-Agent": userAgent },
-      redirect: "follow",
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+  return guardedFetch(fetchImpl, url, { timeoutMs, headers: { "User-Agent": userAgent } }, guard);
 }
 
 /**
@@ -160,12 +169,14 @@ async function fetchRobotsDisallow(
   siteOrigin: URL,
   timeoutMs: number,
   userAgent: string,
+  guard: NetGuard,
 ): Promise<string[]> {
   const robotsURL = `${siteOrigin.protocol}//${siteOrigin.host}/robots.txt`;
   try {
-    const response = await fetchWithTimeout(fetchImpl, robotsURL, timeoutMs, userAgent);
+    const response = await fetchWithTimeout(fetchImpl, robotsURL, timeoutMs, userAgent, guard);
     if (!response.ok) return [];
-    return parseRobotsDisallow(await response.text());
+    const body = await readTextCapped(response, { maxBytes: ROBOTS_MAX_BYTES, deadlineMs: timeoutMs });
+    return body ? parseRobotsDisallow(body.text) : [];
   } catch {
     // No robots.txt, a network blip fetching it, or a timeout all mean the
     // same thing for this crawler's purposes: no stated restriction, so
@@ -182,12 +193,20 @@ async function fetchRobotsDisallow(
  * the same "skip, don't fail the whole crawl" posture every other
  * per-page failure in this file takes.
  */
-async function pdfToPage(response: Response, url: URL, depth: number): Promise<CrawledPage | undefined> {
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength === 0 || buffer.byteLength > PDF_MAX_BYTES) return undefined;
+async function pdfToPage(
+  response: Response,
+  url: URL,
+  depth: number,
+  timeoutMs: number,
+): Promise<CrawledPage | undefined> {
+  // Streamed and cut at the cap, so a linked multi-gigabyte "PDF" costs 200 KB
+  // of reading and a cancelled connection, not its whole download in memory.
+  // Over the cap means skipped, as before; `truncated` is how that is known.
+  const capped = await readCapped(response, { maxBytes: PDF_MAX_BYTES, deadlineMs: timeoutMs });
+  if (!capped || capped.truncated || capped.bytes.byteLength === 0) return undefined;
 
   try {
-    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const pdf = await getDocumentProxy(capped.bytes);
     const { text } = await extractText(pdf, { mergePages: true });
     return {
       url: url.toString(),
@@ -235,11 +254,13 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
     maxDepth = DEFAULT_MAX_DEPTH,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     userAgent,
+    deadline,
   } = options;
+  const guard = options.guard ?? productionNetGuard();
 
   let startResponse: Response;
   try {
-    startResponse = await fetchWithTimeout(fetchImpl, startURL, timeoutMs, userAgent);
+    startResponse = await fetchWithTimeout(fetchImpl, startURL, timeoutMs, userAgent, guard);
   } catch {
     return EMPTY_RESULT;
   }
@@ -254,7 +275,7 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
 
   const rootHost = finalURL.hostname.toLowerCase();
   const rootPrefix = rootPrefixFromFinalURL(finalURL);
-  const disallowPrefixes = await fetchRobotsDisallow(fetchImpl, finalURL, timeoutMs, userAgent);
+  const disallowPrefixes = await fetchRobotsDisallow(fetchImpl, finalURL, timeoutMs, userAgent, guard);
 
   const pages: CrawledPage[] = [];
   const linksByHref = new Map<string, ExtractedLink>();
@@ -272,7 +293,7 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
     const contentType = contentTypeOf(response);
 
     if (contentType === "application/pdf") {
-      const page = await pdfToPage(response, url, depth);
+      const page = await pdfToPage(response, url, depth, timeoutMs);
       if (page) pages.push(page);
       return; // A PDF has no HTML links to follow.
     }
@@ -283,7 +304,11 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
     // that's almost certainly HTML just because a header was missing.
     if (contentType.length > 0 && !contentType.startsWith("text/html")) return;
 
-    const html = await response.text();
+    // Cut at `HTML_MAX_BYTES`; a body that cannot be read in time or at all
+    // skips this page, like any other per-page failure here.
+    const body = await readTextCapped(response, { maxBytes: HTML_MAX_BYTES, deadlineMs: timeoutMs });
+    if (!body) return;
+    const html = body.text;
     if (pages.length >= maxPages) return;
 
     pages.push({
@@ -318,6 +343,7 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
   await processResponse(startResponse, finalURL, 0);
 
   while (queue.length > 0 && pages.length < maxPages) {
+    if (deadline !== undefined && Date.now() > deadline) break;
     const item = queue.shift()!;
 
     let url: URL;
@@ -338,7 +364,7 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
 
     let response: Response;
     try {
-      response = await fetchWithTimeout(fetchImpl, url.toString(), timeoutMs, userAgent);
+      response = await fetchWithTimeout(fetchImpl, url.toString(), timeoutMs, userAgent, guard);
     } catch {
       continue;
     }
