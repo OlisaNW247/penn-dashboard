@@ -6,6 +6,18 @@
 // collector's complete-set reasoning ignores kind `file`). Sequential, spaced,
 // bounded per course per run. No cookie is read; Canvas gets
 // `credentials: "include"`.
+//
+// How a file's bytes are fetched (2026-10-27): `/files/:id/download` redirects
+// to a signed URL on Instructure's S3 bucket, which answers
+// `Access-Control-Allow-Origin: *`; Chrome refuses a wildcard on a request whose
+// credentials mode is "include", so every course stored there failed (and the
+// error panel printed the signed URL). Instead we ask Canvas, with the session,
+// for `/api/v1/files/:id/public_url` and fetch that link with
+// `credentials: "omit"`, which the wildcard permits. Rejected: a host permission
+// for the bucket (shown at install, and it would send nothing useful: the link
+// is already signed), and `credentials: "include"` through the redirect (what
+// failed). The public URL is a bearer link valid for hours: it is never logged,
+// stored or put in a summary.
 import {
   DEFAULT_BASE_URL, MAX_PAGES, stripAntiHijackPrefix, looksLikeHTML, nextPageURL,
 } from "../core/canvasApi.js";
@@ -14,6 +26,10 @@ import { fileDocument } from "../core/canvasDocuments.js";
 export const FILES_DEFAULT_MAX = 60;
 export const FILES_DEFAULT_DELAY_MS = 250;
 export const FILE_MAX_BYTES = 25 * 1024 * 1024;
+
+export function filePublicURLEndpoint(fileID, { baseURL = DEFAULT_BASE_URL } = {}) {
+  return `${baseURL.replace(/\/+$/, "")}/api/v1/files/${fileID}/public_url`;
+}
 
 export function filesListURL(courseID, { baseURL = DEFAULT_BASE_URL } = {}) {
   return `${baseURL.replace(/\/+$/, "")}/api/v1/courses/${courseID}/files?content_types%5B%5D=application/pdf&per_page=100`;
@@ -155,9 +171,28 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
   for (const e of todo.slice(0, maxFiles)) {
     counts.attempted += 1;
     try {
-      const res = await get(e.url, "application/pdf,*/*");
-      const type = res.headers && typeof res.headers.get === "function" ? res.headers.get("Content-Type") : null;
-      if (type && /text\/html/i.test(type)) throw new Stop("out");
+      const meta = await get(filePublicURLEndpoint(e.id), "application/json");
+      let publicURL;
+      try {
+        const text = stripAntiHijackPrefix(await meta.text());
+        if (looksLikeHTML(text)) throw new Stop("out");
+        const u = JSON.parse(text)?.public_url;
+        if (typeof u !== "string" || new URL(u).protocol !== "https:") throw new Stop("decode");
+        publicURL = u;
+      } catch (err) {
+        if (err instanceof Stop) throw err;
+        throw new Stop("decode");
+      }
+      // The bucket, not Canvas: no credentials, so its wildcard CORS is accepted.
+      // A non-Canvas host is expected here and is not a signed-out signal.
+      counts.requests += 1;
+      let res;
+      try {
+        res = await fetchFn(publicURL, { credentials: "omit", redirect: "follow" });
+      } catch {
+        throw new Stop("network");
+      }
+      if (!res.ok) throw new Stop("http");
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) { counts.skipped += 1; result.seen[e.id] = e.updatedAt; continue; }
       let text;

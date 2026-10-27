@@ -1073,7 +1073,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 482 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+counts): 486 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -2677,20 +2677,18 @@ none is a ship line.
   uploaded to that course). The likely fix is a `'server'` collector for
   crawls that no client report retires; not done, because it is a
   migration and a `sync` deploy.
-- **The extension downloads Canvas Files for at least one course**
-  (2026-10-24: 53 PDF `file` documents in the pool, all from one course
-  whose Files tab is visible; whether a course with a hidden Files tab,
-  which answers 401, ever yields any is still unknown, and so is the
-  redirect host question below for other courses). Written 2026-10-22,
-  when it was unknown: Canvas redirects a file download to a separate signed
-  file host (Inst-FS for Instructure-hosted Canvas; Penn's not
-  confirmed), and a service-worker fetch with credentials can only read
-  it if that host's CORS allows it or the extension holds a host
-  permission for it. None was added: the host is unknown and a wildcard
-  would be a broad grant shown at install. A failed download is skipped
-  and retried next run, never fatal. The owner's first run says which:
-  if files never appear, read the redirect host off one download in
-  Chrome's network panel and add exactly that host.
+- **Canvas Files reach the extension through `public_url`, not the
+  download link** (2026-10-27, not yet seen on the owner's laptop). Until
+  then only one course's 53 PDFs arrived: `files.js` fetched
+  `/files/:id/download` with credentials, Canvas redirected to a signed
+  URL on `instructure-uploads.s3.amazonaws.com`, and that bucket answers
+  `Access-Control-Allow-Origin: *`, which Chrome refuses for a request
+  carrying credentials (seen in the extension's error panel). Now each
+  file costs one Canvas call, `/api/v1/files/:id/public_url`, and the
+  returned signed URL is fetched with `credentials: "omit"`. Rejected: a
+  host permission for the bucket (shown at install, and cookies there do
+  nothing) and keeping credentials through the redirect. The signed URL is
+  a bearer link for hours and is never logged or stored.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

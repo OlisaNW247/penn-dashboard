@@ -519,3 +519,9 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   never uploaded to (one is the website-crawl gap in CLAUDE.md).
   Encrypted sync was still exchanging on 2026-10-27 (phone 01:45, laptop
   12:05 UTC).
+- 2026-10-27: the owner's extension error panel showed why the other
+  courses' PDFs never arrived: the download redirect lands on Instructure's
+  S3 bucket, whose wildcard CORS Chrome refuses for a credentialed fetch.
+  Files now go through `/api/v1/files/:id/public_url` and an
+  uncredentialed fetch of the signed URL (486 node tests). Not yet run on
+  his laptop.
