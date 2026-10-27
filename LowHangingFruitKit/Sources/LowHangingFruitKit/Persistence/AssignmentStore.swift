@@ -38,6 +38,20 @@ public final class AssignmentStore {
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
+    /// The due dates the student edited by hand, `[assignment id: Date]`, handed
+    /// in by `AppState` (which owns them; they live in defaults, not the
+    /// ledger) so the aging rule can see them. Empty until `AppState` says
+    /// otherwise, which is the old behaviour exactly.
+    ///
+    /// A property rather than a parameter on `reconcile`, `pruneAgedOut` and
+    /// every read, because the aging predicate runs on all of them
+    /// (`isVisible` guards `currentAssignments`, `assignments(source:)` and the
+    /// `reconcile` result, and `reconcile` prunes through it), and a path that
+    /// forgot to pass the dates would quietly hide, or delete, exactly what the
+    /// rule is here to keep. `AppState` pushes the dictionary on every change
+    /// and before the first read at launch. See `isAgedOut`.
+    public var editedDueDates: [String: Date] = [:]
+
     /// False when the ledger is the in-memory fallback — i.e. nothing is
     /// actually surviving a relaunch. Surfaced in Settings because "persistence
     /// is silently not persisting" is otherwise indistinguishable from working.
@@ -570,10 +584,30 @@ public final class AssignmentStore {
     /// the predicate. An abandoned announcement row costs a few bytes and is
     /// hidden from every list by `AppState.announcementRowsToShow` and
     /// `isTooOld`; it does not need to be collected.
+    ///
+    /// **The student's own date counts (`editedDueDates`).** This used to read
+    /// only `row.dueAt`, the feed's date. A student who was granted an
+    /// extension and moved the card to next week had a row whose feed date was
+    /// long past; once Canvas stopped listing it (which is what happens to a
+    /// finished-looking old item) the row was "gone and 14 days overdue" and
+    /// `pruneAgedOut` deleted it out from under a card the student could see
+    /// was not due yet, after which `AppState.pruneDueDateEdits` found the id
+    /// missing from the ledger and forgot the edit too, so nothing was left to
+    /// show it had existed. An item now ages only when every date it has is
+    /// old: the later of the feed's and the student's, so an edit that is
+    /// still ahead keeps it, and an edit earlier than the feed's never makes
+    /// it age sooner than it did. An undated row still never ages, edit or no
+    /// edit, as before. The wrong fix is to age by the edited date alone,
+    /// which would delete rows the feed still says are ahead.
+    ///
+    /// The widget's own copy of this rule (`LedgerWidgetReader.isAgedOut`) is
+    /// not changed here; it only matters when there is no published snapshot,
+    /// since the snapshot the app writes uses the edited dates.
     private func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
         guard !row.isFinished, !row.isArchived else { return false }
         guard row.sourceRaw != Assignment.Source.canvasAnnouncement.rawValue else { return false }
-        guard row.isGoneFromFeed, let due = row.dueAt else { return false }
+        guard row.isGoneFromFeed, let feedDue = row.dueAt else { return false }
+        let due = max(feedDue, editedDueDates[row.id] ?? feedDue)
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
     }
 

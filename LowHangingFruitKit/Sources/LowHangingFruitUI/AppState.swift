@@ -393,7 +393,15 @@ final class AppState: ObservableObject {
     /// through `setDueDateEdit` and `pruneDueDateEdits` (`AppState+DueDateEdits
     /// .swift`, where the rules are); internal rather than `private(set)`
     /// because `private` is file-scoped and those live in that extension.
-    @Published var dueDateEdits: [String: Date] = [:]
+    ///
+    /// Every change is pushed to the ledger (`AssignmentStore.editedDueDates`),
+    /// because the aging rule has to know which rows the student moved ahead
+    /// (hardening plan B3). `init` also pushes the loaded copy by name, before
+    /// the ledger is first read, so that ordering does not rest on whether a
+    /// property observer fires inside an initializer.
+    @Published var dueDateEdits: [String: Date] = [:] {
+        didSet { assignmentStore?.editedDueDates = dueDateEdits }
+    }
 
     /// The edits' persisted copy (`DueDateEditStore`). Nil under the test runner
     /// unless a test constructed this `AppState` with `dueDateEditsDefaults:` (a
@@ -1086,6 +1094,26 @@ final class AppState: ObservableObject {
         signupBacklogPersistedFlagsOverride = persistedFlagsForSignupBacklog
         recordSignupBacklogForExistingInstallIfNeeded()
 
+        // The student's edited due dates, read back before the ledger is first
+        // read: `currentAssignments()` just below hides a row the aging rule
+        // calls gone and overdue, and the rule has to know about an edit that
+        // moves the date ahead (`AssignmentStore.editedDueDates`), or a
+        // launch would seed `canvasItems` without that row and the first
+        // rebuild's `pruneDueDateEdits` would then forget the edit as well.
+        // Also before the first rebuild, which publishes the widget snapshot
+        // (it carries them) and may prune them: a prune against an empty
+        // in-memory copy would write that emptiness over what the last launch
+        // saved.
+        if let dueDateEditsDefaults {
+            precondition(
+                dueDateEditsDefaults !== UserDefaults.lhf,
+                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
+        }
+        dueDateEdits = dueDateEditStore?.load() ?? [:]
+        store?.editedDueDates = dueDateEdits
+
         if let store {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
@@ -1205,19 +1233,8 @@ final class AppState: ObservableObject {
             scheduleSyllabusExamPass()
         }
 
-        // The student's edited due dates, read back before the first rebuild:
-        // that rebuild publishes the widget snapshot (which carries them) and
-        // may prune them, and a prune against an empty in-memory copy would
-        // write that emptiness over what the last launch saved.
-        if let dueDateEditsDefaults {
-            precondition(
-                dueDateEditsDefaults !== UserDefaults.lhf,
-                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
-            )
-            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
-        }
-        dueDateEdits = dueDateEditStore?.load() ?? [:]
-
+        // (The student's edited due dates were read back above, before the
+        // ledger's first read; see there.)
         rebuildDashboardItems()
 
         // Backfill for anyone who onboarded before the intro existed: they have
