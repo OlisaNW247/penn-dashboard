@@ -525,3 +525,9 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   Files now go through `/api/v1/files/:id/public_url` and an
   uncredentialed fetch of the signed URL (486 node tests). Not yet run on
   his laptop.
+- 2026-10-27: Files through `public_url` confirmed on the owner's laptop
+  (50 PDFs extracted in one run, 16 empty, 0 failed), but the upload
+  stopped at its first batch: `sync` answered 500 because one PDF's text
+  held NUL characters, which Postgres refuses. Every document's title and
+  text is now cleaned before hashing (`storableText`: NULs dropped, lone
+  surrogates to U+FFFD). 488 tests. The server-side guard is not deployed.

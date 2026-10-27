@@ -1077,7 +1077,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 486 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+counts): 488 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -2724,7 +2724,22 @@ none is a ship line.
   returned signed URL is fetched with `credentials: "omit"`. Rejected: a
   host permission for the bucket (shown at install, and cookies there do
   nothing) and keeping credentials through the redirect. The signed URL is
-  a bearer link for hours and is never logged or stored.
+  a bearer link for hours and is never logged or stored. **The fix works**:
+  the owner's next run (2026-10-27 12:49 UTC) extracted 50 PDFs, 16 empty
+  (scans with no text layer), none failed. It then uploaded nothing,
+  because one PDF's text held NUL characters and the server's `sync` answered
+  the whole batch with a 500 (next entry).
+- **One NUL in one document fails a whole `sync` upload batch** (seen
+  2026-10-27 12:57 UTC: `sync error: unexpected [object Object]`, then
+  Postgres's `unsupported Unicode escape sequence`). Postgres text cannot
+  hold `\u0000` or a lone surrogate, and `validateDocuments` does not
+  check for either, so the error surfaces at the upsert and is not a
+  per-document `rejected` entry. The extension now cleans every document's
+  title and text before hashing (`storableText` in
+  `chrome-extension/src/core/canvasDocuments.js`). Not done: the same
+  cleaning in `validateDocuments` server-side (a `sync` deploy, needs the
+  owner's go), which would also cover the phone, whose PDF syllabus text
+  goes through the same upsert unchecked.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy

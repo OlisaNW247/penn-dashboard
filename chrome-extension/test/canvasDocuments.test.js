@@ -9,7 +9,7 @@ import {
   syllabusBodyCandidate, syllabusPageCandidate, syllabusTextFromHTML, syllabusNormalizedText,
   announcementPlainText, decodeAnnouncements, announcementDocument, decodeModuleItems, moduleDocuments,
   linksFromPage, linksFromAssignment, linksFromModuleItems, linksFromSyllabusCandidate, dedupeLinks,
-  fileDocument, FILE_TEXT_MAX_CHARS, CanvasDecodeError,
+  fileDocument, FILE_TEXT_MAX_CHARS, CanvasDecodeError, storableText,
 } from "../src/core/canvasDocuments.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/canvas/${name}`, import.meta.url), "utf8");
@@ -465,4 +465,27 @@ test("fileDocument: id, hash, ISO dates, 60,000-character cap", () => {
   assert.equal(fileDocument({ courseID: "1", course: "C", fileID: 1, displayName: "f", text: "y".repeat(60_000), fetchedAt: now }).text.length, 60_000);
   const emoji = "x".repeat(59_999) + "\u{1F600}";
   assert.equal(fileDocument({ courseID: "1", course: "C", fileID: 1, displayName: "f", text: emoji, fetchedAt: now }).text, "x".repeat(59_999));
+});
+
+// 2026-10-27: a PDF whose text held NULs failed a whole upload batch with a
+// 500 ("unsupported Unicode escape sequence" from Postgres).
+test("storableText drops NULs and replaces lone surrogates, keeping real pairs", () => {
+  assert.equal(storableText("a\u0000b\u0000"), "ab");
+  assert.equal(storableText("x\ud800y"), "x�y");
+  assert.equal(storableText("x\udc00y"), "x�y");
+  assert.equal(storableText("ok 😀"), "ok 😀");
+  assert.equal(storableText(undefined), undefined);
+});
+
+test("a document's text, title and hash describe the cleaned text", () => {
+  const dirty = fileDocument({
+    courseID: "1", course: "PHYS 0151", fileID: 9, displayName: "Exam\u0000 1",
+    text: "Q1\u0000 \ud800done", fetchedAt: new Date("2026-10-27T00:00:00Z"),
+  });
+  const clean = fileDocument({
+    courseID: "1", course: "PHYS 0151", fileID: 9, displayName: "Exam 1",
+    text: "Q1 �done", fetchedAt: new Date("2026-10-27T00:00:00Z"),
+  });
+  assert.deepEqual(dirty, clean);
+  assert.ok(!JSON.stringify(dirty).includes("\\u0000"));
 });
