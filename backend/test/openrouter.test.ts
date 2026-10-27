@@ -131,15 +131,68 @@ Deno.test("chatCompletionStream throws UpstreamError with no fallback configured
   );
 });
 
-Deno.test("chatCompletionStream's UpstreamError message includes the upstream error body text", async () => {
-  const errorBody = JSON.stringify({ error: { message: "reasoning.enabled is not supported for this model" } });
+// An UpstreamError's message is logged and, for `ask`, stored in
+// `ask_outcomes.detail`. A provider's refusal can quote the request back, and
+// the request is a student's course material and question, so the message
+// carries the status and the body's length and never its text (hardening
+// BE-16). It used to carry the first 400 characters.
+Deno.test("an UpstreamError carries the status and the body's length, never the body's text", async () => {
+  const errorBody = JSON.stringify({
+    error: { message: "context length exceeded near: SECRET-QUESTION about my grades in PHYS 0151" },
+  });
   const { fetchImpl } = scriptedFetch([new Response(errorBody, { status: 400 })]);
 
   await assert.rejects(
     () => collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, fetchImpl })),
     (err: unknown) => {
       assert.ok(err instanceof UpstreamError);
-      assert.match((err as UpstreamError).message, /reasoning\.enabled is not supported for this model/);
+      const message = (err as UpstreamError).message;
+      assert.equal((err as UpstreamError).status, 400);
+      assert.match(message, /400/);
+      assert.match(message, new RegExp(`${errorBody.length} chars`));
+      assert.doesNotMatch(message, /SECRET-QUESTION|context length|PHYS 0151/);
+      return true;
+    },
+  );
+});
+
+Deno.test("the fallback request's UpstreamError also leaves the body out", async () => {
+  const primaryBody = JSON.stringify({ error: { message: "PRIMARY-LEAK" } });
+  const fallbackBody = JSON.stringify({ error: { message: "FALLBACK-LEAK" } });
+  const { fetchImpl } = scriptedFetch([
+    new Response(primaryBody, { status: 503 }),
+    new Response(fallbackBody, { status: 502 }),
+  ]);
+
+  await assert.rejects(
+    () => collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, fallbackModel: "openai/gpt-5.6-luna", fetchImpl })),
+    (err: unknown) => {
+      assert.ok(err instanceof UpstreamError);
+      const message = (err as UpstreamError).message;
+      assert.equal((err as UpstreamError).status, 502);
+      assert.match(message, /fallback responded 502/);
+      assert.doesNotMatch(message, /LEAK/);
+      return true;
+    },
+  );
+});
+
+Deno.test("an unreadable error body is reported as such, and the status still comes through", async () => {
+  const broken = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("connection reset"));
+      },
+    }),
+    { status: 500 },
+  );
+  const { fetchImpl } = scriptedFetch([broken]);
+  await assert.rejects(
+    () => collect(chatCompletionStream({ ...BASE_STREAM_OPTIONS, fetchImpl })),
+    (err: unknown) => {
+      assert.ok(err instanceof UpstreamError);
+      assert.equal((err as UpstreamError).status, 500);
+      assert.match((err as UpstreamError).message, /unreadable/);
       return true;
     },
   );

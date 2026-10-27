@@ -644,9 +644,9 @@ function logUpstreamFailure(when: string, err: unknown): void {
   }
 }
 
-/** `err.message` when it's an `UpstreamError` (which already carries
- *  OpenRouter's own rejection body, capped to 400 characters by
- *  `_shared/openrouter.ts`'s `readErrorBody`), otherwise any other
+/** `err.message` when it's an `UpstreamError` (which carries the status and
+ *  the length of OpenRouter's rejection body, never its text -- see
+ *  `_shared/openrouter.ts`'s `describeErrorBody`), otherwise any other
  *  `Error`'s message, otherwise its string form -- the same fallback chain
  *  `loadCatalogCourses`/`loadCourseProfiles` already use for an unknown
  *  thrown value. Feeds `ask_outcomes.detail`, which caps it again to 200

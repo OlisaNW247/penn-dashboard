@@ -428,8 +428,11 @@ future caller (such as a canary harness's own client-side deadline) and nothing 
 produces it today. The row carries the model, token counts (including
 `reasoning_tokens` when OpenRouter's response reports one), content-length
 and delta-count counters, latency, and -- for a failure -- the upstream
-status and a capped error message, but never the question, the context
-document, the excerpts or the answer; `probe` carries the `x-lhf-probe` tag
+status and a capped error message (for an upstream error, the status and
+the length of the provider's error body; since 2026-10-27 never the body's
+text, in the log or the row, because a provider's refusal can quote the
+prompt back), but never the question, the context document, the excerpts or
+the answer; `probe` carries the `x-lhf-probe` tag
 above, or is `null` for an ordinary request. Both this write and
 the usage settlement (`settle_ask_usage`) are scheduled via Supabase Edge Runtime's
 `EdgeRuntime.waitUntil` rather than awaited before the SSE stream's `done`
