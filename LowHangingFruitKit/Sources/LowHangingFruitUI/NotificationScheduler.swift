@@ -121,8 +121,22 @@ final class NotificationScheduler: ObservableObject {
     /// same reason. Nil in the app.
     var authStatusOverride: UNAuthorizationStatus?
 
+    /// What one reschedule pass is asked to do: plan from `items`, and whether
+    /// it may put the alarm-permission question to the student.
+    ///
+    /// The permission rides in the serializer's input, not beside it, because a
+    /// call folded into a running pass is applied by that pass's rerun
+    /// (`RescheduleSerializer`), and the rerun has to honour the folded call's
+    /// permission, not the first caller's. A background re-plan that arrived
+    /// behind a foreground pass must not be allowed to prompt just because
+    /// the pass it joined was.
+    private struct PassRequest {
+        let items: [DashItem]
+        let mayPrompt: Bool
+    }
+
     /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
-    private let reschedulePasses = RescheduleSerializer<[DashItem]>()
+    private let reschedulePasses = RescheduleSerializer<PassRequest>()
 
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
@@ -323,17 +337,40 @@ final class NotificationScheduler: ObservableObject {
     ///
     /// See `applyReminders` for what one pass does, and why in that order.
     func reschedule(from items: [DashItem], now: Date = Date()) async {
-        lastScheduledItems = items
+        await submitPass(PassRequest(items: items, mayPrompt: true), now: now)
+    }
+
+    /// The re-plan for code that runs without the student: a background wake
+    /// (`LHFBackgroundRefresh`). The same pass as `reschedule`, except that it
+    /// never shows the alarm-permission prompt.
+    ///
+    /// **Why this is not `reschedule` called as it is.** `resolveLoudDelivery`
+    /// asks AlarmKit for permission whenever it has never been asked and
+    /// there is an alarm to ring, and AlarmKit cannot show that question from
+    /// the background: the request would hang or throw in a process nobody is
+    /// looking at, and the first thing the feature ever said to a student
+    /// would be a system prompt out of nowhere on the lock screen. Here a
+    /// permission that was never asked reads as "not allowed yet", so the
+    /// loud alert is the three buzzes for this pass, and the question is put
+    /// the next time the app is open (the dashboard's own `reschedule`). The
+    /// wrong fix is to call `reschedule` and rely on the wake never
+    /// reaching the prompt: nothing in `reschedule` knows it is in a wake.
+    func rescheduleWithoutPrompting(from items: [DashItem], now: Date = Date()) async {
+        await submitPass(PassRequest(items: items, mayPrompt: false), now: now)
+    }
+
+    private func submitPass(_ request: PassRequest, now: Date) async {
+        lastScheduledItems = request.items
         rescheduleGeneration += 1
         var firstPassNow: Date? = now
-        await reschedulePasses.submit(items) { items in
+        await reschedulePasses.submit(request) { request in
             let passNow = firstPassNow ?? Date()
             firstPassNow = nil
-            await self.performReschedule(from: items, now: passNow)
+            await self.performReschedule(from: request.items, now: passNow, mayPrompt: request.mayPrompt)
         }
     }
 
-    private func performReschedule(from items: [DashItem], now: Date) async {
+    private func performReschedule(from items: [DashItem], now: Date, mayPrompt: Bool) async {
         let sink: any PendingNotificationSink = notificationSinkOverride ?? self
         guard isEnabled else { sink.removeAllPending(); cancelAlarms(); return }
         await refreshAuthStatus()
@@ -341,7 +378,7 @@ final class NotificationScheduler: ObservableObject {
         // asked to hear from: with notifications refused there is no loud
         // alert to replace, so an alarm left over from an earlier state goes.
         guard authStatus == .authorized || authStatus == .provisional else { cancelAlarms(); return }
-        await applyReminders(from: items, now: now, sink: sink)
+        await applyReminders(from: items, now: now, sink: sink, mayPrompt: mayPrompt)
     }
 
     /// Re-plans from `lastScheduledItems` after the student changed a per-course

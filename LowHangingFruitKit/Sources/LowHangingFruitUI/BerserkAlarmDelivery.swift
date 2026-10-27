@@ -111,10 +111,16 @@ extension NotificationScheduler {
     /// few minutes, and an alarm that was cancelled and re-added each time
     /// would leave a window with nothing scheduled and would cancel one that
     /// is ringing right now.
-    func applyReminders(from items: [DashItem], now: Date, sink: any PendingNotificationSink) async {
+    ///
+    /// `mayPrompt` is false for a background re-plan
+    /// (`rescheduleWithoutPrompting`): the permission question is then never
+    /// asked, and a permission that was never asked delivers the buzzes.
+    func applyReminders(
+        from items: [DashItem], now: Date, sink: any PendingNotificationSink, mayPrompt: Bool = true
+    ) async {
         var now = now
         var alarmPlan = plannedAlarms(from: items, now: now)
-        let decision = await resolveLoudDelivery(plan: alarmPlan)
+        let decision = await resolveLoudDelivery(plan: alarmPlan, mayPrompt: mayPrompt)
         if decision.didPrompt {
             // The student may have sat on the permission prompt for minutes,
             // and the buzzes' time-interval triggers are measured from the
@@ -169,7 +175,13 @@ extension NotificationScheduler {
     /// cannot show its prompt from the background. If the request throws, or
     /// the answer is no, the delivery is buzzes, and the question is not asked
     /// again: `.denied` is final until the student changes it in Settings.
-    func resolveLoudDelivery(plan: [PlannedAlarm]) async -> LoudDeliveryDecision {
+    ///
+    /// **`mayPrompt: false` is the background's version of "from here".** A
+    /// re-plan with nobody at the phone (`LHFBackgroundRefresh`) must not put
+    /// the question, so a permission that was never asked is treated like one
+    /// that could not be: the buzzes, taking back only idle alarms (there can
+    /// be none to take, but a ringing one is never ours to stop).
+    func resolveLoudDelivery(plan: [PlannedAlarm], mayPrompt: Bool = true) async -> LoudDeliveryDecision {
         func buzzes(_ scope: BerserkAlarmPlan.CancelScope, prompted: Bool = false) -> LoudDeliveryDecision {
             LoudDeliveryDecision(delivery: .buzzes, didPrompt: prompted, cancelScope: scope)
         }
@@ -180,7 +192,7 @@ extension NotificationScheduler {
 
         var state = backend.authorization
         var prompted = false
-        if state == .notDetermined, !plan.isEmpty {
+        if state == .notDetermined, !plan.isEmpty, mayPrompt {
             state = await backend.requestAuthorization()
             prompted = true
         }

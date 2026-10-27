@@ -729,6 +729,99 @@ struct BerserkAlarmDeliveryTests {
         }
     }
 
+    // MARK: A re-plan with nobody at the phone (the background wake)
+
+    /// A rig for `reschedule` and `rescheduleWithoutPrompting`: reminders on,
+    /// notifications allowed, AlarmKit as the scenario says.
+    private func wakeRig(
+        _ scheduler: NotificationScheduler,
+        authorization: BerserkAlarmAuthorization,
+        answer: BerserkAlarmAuthorization = .authorized
+    ) -> (FakeAlarmBackend, FakeSink) {
+        let backend = FakeAlarmBackend(authorization: authorization, answer: answer)
+        let sink = FakeSink()
+        scheduler.alarmBackendOverride = backend
+        scheduler.notificationSinkOverride = sink
+        scheduler.authStatusOverride = .authorized
+        return (backend, sink)
+    }
+
+    /// The background wake cannot show AlarmKit's permission question. A
+    /// never-asked permission therefore means "not allowed yet": the buzzes
+    /// for this pass, and the question stays for the next time the app is
+    /// open. The control half is the same scheduler through `reschedule`,
+    /// which does ask, so the test cannot pass because the question was
+    /// never going to be asked.
+    @Test("A re-plan without a prompt never asks AlarmKit for permission, and a never-asked permission means the buzzes")
+    func replanWithoutPromptNeverAsks() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = wakeRig(scheduler, authorization: .notDetermined)
+            let items = eligible(now)
+
+            await scheduler.rescheduleWithoutPrompting(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 0, "nobody is looking at the phone")
+            #expect(backend.store.scheduledIDs.isEmpty)
+            #expect(items.allSatisfy { sink.buzzCount(for: $0.assignment.id) == NotificationScheduler.loudAlertCount },
+                    "the student is still warned, by the buzzes")
+
+            await scheduler.reschedule(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 1, "the foreground pass puts the question")
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))))
+        }
+    }
+
+    @Test("A re-plan without a prompt takes back the alarm of work handed in since, and stops one that is ringing")
+    func replanWithoutPromptTakesBackFinishedWork() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = wakeRig(scheduler, authorization: .authorized)
+            var items = eligible(now)
+            // Due in five minutes, so its alarm time has passed: it is
+            // ringing, and the plan no longer wants it.
+            let late = item("CIS 1200", "late", due: now + 300)
+            backend.store.seed(alarmID(of: late), ringing: true)
+            await scheduler.reschedule(from: items + [late], now: now)
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))).union([alarmID(of: late)]))
+
+            // Between the two passes the student hands in `a` and `late` on
+            // Canvas, and the wake's sync learns it.
+            items[0].isCompleted = true
+            let lateDone = item("CIS 1200", "late", due: now + 300, completed: true)
+            await scheduler.rescheduleWithoutPrompting(from: items + [lateDone], now: now)
+
+            #expect(!backend.store.scheduledIDs.contains(alarmID(of: items[0])), "the finished item's alarm is gone")
+            #expect(backend.store.stopCalls == [alarmID(of: lateDone)], "the ringing one is stopped")
+            #expect(backend.store.scheduledIDs == [alarmID(of: items[1]), alarmID(of: items[2])])
+            #expect(backend.authorizationRequests == 0)
+            #expect(sink.buzzCount(for: items[0].assignment.id) == 0)
+        }
+    }
+
+    /// The serializer folds a call that arrives mid-pass into the running
+    /// pass's rerun. That rerun has to be judged by the folded call's
+    /// permission: the question is never answered here (`.failed` leaves the
+    /// permission unasked), so a rerun that kept the first caller's right to
+    /// prompt would ask a second time, from what is now a background pass.
+    @Test("A background re-plan that joins a running pass keeps its no-prompt rule for the rerun")
+    func foldedNoPromptCallKeepsItsRule() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = wakeRig(scheduler, authorization: .notDetermined, answer: .failed)
+            let gate = Gate()
+            backend.duringRequest = { await gate.wait() }
+            let a = item("CIS 1200", "a", due: now + 3 * 3600)
+            let b = item("CIS 1200", "b", due: now + 4 * 3600)
+
+            let foreground = Task { await scheduler.reschedule(from: [a], now: now) }
+            while !gate.isWaiting { await Task.yield() }
+            await scheduler.rescheduleWithoutPrompting(from: [a, b], now: now)
+            gate.open()
+            await foreground.value
+
+            #expect(backend.authorizationRequests == 1, "the rerun is the background call's, and must not ask again")
+        }
+    }
+
     // MARK: - Fixture
 
     /// A scheduler over a scratch `UserDefaults` suite. `remindersOn` primes the

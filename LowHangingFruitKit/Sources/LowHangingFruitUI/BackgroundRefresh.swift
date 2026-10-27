@@ -187,6 +187,20 @@ public enum LHFBackgroundRefresh {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
 
+        // Re-plan the reminders and alarms from what the syncs just found.
+        // Until this existed a wake synced and could post "Turned in ✓" but
+        // never touched the plan, so work handed in while the app was closed
+        // still rang at its alarm time, and a deadline moved earlier rang
+        // late (docs/HARDENING_PLAN_2026-10-25.md, C1). It goes before the
+        // renewal wait below on purpose: that wait can spend most of what is
+        // left of the wake's budget, the renewal changes nothing in the item
+        // list, and an alarm for finished work is the failure that matters
+        // here. It is `rescheduleWithoutPrompting`, never `reschedule`:
+        // `reschedule` can put the AlarmKit permission question to the
+        // student (`resolveLoudDelivery`), which cannot be shown from the
+        // background.
+        await replan(scheduler: scheduler, state: state)
+
         // The renewal `AppState.init` (expired cookie) or the grade refresh
         // above (a 401) started is a separate task nothing else awaits, so
         // without this the wake told iOS it was done while the renewal was
@@ -212,6 +226,31 @@ public enum LHFBackgroundRefresh {
         guard !notices.isEmpty else { return }
         state.pendingTurnedInNotices = []
         await scheduler.postTurnedInNotifications(notices)
+    }
+
+    /// One reminder and alarm pass over the dashboard's items as they stand
+    /// after the wake's syncs, with no permission prompt.
+    ///
+    /// The items come from a `DashboardViewModel` bound to `state`, the same
+    /// assembly the foreground and the menu-bar loop plan from, so a due date
+    /// the student edited and an item they completed are honoured exactly as
+    /// they are on screen. The pass cancels the alarm of anything now
+    /// finished (a ringing one is stopped, an idle one is dropped by the
+    /// reconcile) and the pending buzzes and reminders that no longer belong
+    /// to the plan, because a plan built from the finished item's absence
+    /// simply does not contain them. A wake with reminders switched off plans
+    /// nothing: turning them off already took everything back
+    /// (`NotificationScheduler.setEnabled`).
+    @MainActor
+    private static func replan(scheduler: NotificationScheduler, state: AppState) async {
+        guard scheduler.isEnabled else { return }
+        let dashboard = DashboardViewModel()
+        dashboard.bind(to: state)
+        // `bind` has loaded once; this is the call the foreground makes after a
+        // fetch (`ContentView.settleAfterFetch`), so the items are the post-sync
+        // ones even if a publish from the syncs has not been handled yet.
+        dashboard.reload(preservingEdits: true)
+        await scheduler.rescheduleWithoutPrompting(from: dashboard.items)
     }
 }
 #endif
