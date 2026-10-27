@@ -499,10 +499,13 @@ public final class AssignmentStore {
                 byID[row.id] = row
                 continue
             }
-            // The copy seen in the feed most recently carries the current
-            // title/date/URL, so it survives and supplies the display fields;
-            // everything worth keeping from the other is merged into it.
-            let survivor = row.lastSeenInFeed > kept.lastSeenInFeed ? row : kept
+            // `outranks` picks the survivor: a real row over a bookkeeping
+            // one, then the copy seen in the feed most recently (it carries the
+            // current title/date/URL), then a content-derived tie-break that
+            // does not depend on fetch order. Everything worth keeping from the
+            // other is merged into it, display fields included when the other
+            // is the one that ought to supply them (`StoredAssignment.absorb`).
+            let survivor = row.outranks(kept) ? row : kept
             let absorbed = survivor === row ? kept : row
             survivor.absorb(absorbed)
             byID[row.id] = survivor
