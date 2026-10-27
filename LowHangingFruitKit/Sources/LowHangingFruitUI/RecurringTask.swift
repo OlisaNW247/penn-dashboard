@@ -96,8 +96,17 @@ struct RecurringTask: Codable, Hashable, Identifiable {
         return (decoded.elements, decoded.droppedCount)
     }
 
-    func upcomingAssignments(from now: Date = Date(), weeksAhead: Int = 10) -> [Assignment] {
-        let calendar = Calendar.current
+    /// - Parameter calendar: injectable so a test can put the phone in any
+    ///   time zone or calendar system; callers pass nothing. Whatever it is,
+    ///   the weekly walk below runs in the Gregorian calendar in its zone
+    ///   (`Calendar.gregorian(matching:)`), so a phone set to a Buddhist or
+    ///   Japanese calendar generates the same occurrences as any other.
+    func upcomingAssignments(
+        from now: Date = Date(),
+        weeksAhead: Int = 10,
+        calendar: Calendar = .current
+    ) -> [Assignment] {
+        let calendar = Calendar.gregorian(matching: calendar)
         let horizon = calendar.date(byAdding: .day, value: weeksAhead * 7, to: now) ?? now
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
         components.weekday = weekday
@@ -107,7 +116,7 @@ struct RecurringTask: Codable, Hashable, Identifiable {
 
         guard var due = calendar.date(from: components) else { return [] }
         if due < calendar.startOfDay(for: startDate) {
-            due = nextDueDate(onOrAfter: startDate) ?? due
+            due = nextDueDate(onOrAfter: startDate, calendar: calendar) ?? due
         }
         if due < now {
             due = calendar.date(byAdding: .day, value: 7, to: due) ?? due
@@ -118,7 +127,7 @@ struct RecurringTask: Codable, Hashable, Identifiable {
             if let endDate, due > endDate { break }
             assignments.append(Assignment(
                 source: source,
-                sourceID: Self.occurrenceSourceID(taskID: id, due: due),
+                sourceID: Self.occurrenceSourceID(taskID: id, due: due, zone: calendar.timeZone),
                 kind: .assignment,
                 course: course,
                 title: title,
@@ -139,13 +148,13 @@ struct RecurringTask: Codable, Hashable, Identifiable {
         }
     }
 
-    private func nextDueDate(onOrAfter date: Date) -> Date? {
+    private func nextDueDate(onOrAfter date: Date, calendar: Calendar) -> Date? {
         var components = DateComponents()
         components.weekday = weekday
         components.hour = hour
         components.minute = minute
         components.second = 0
-        return Calendar.current.nextDate(after: date, matching: components, matchingPolicy: .nextTime)
+        return calendar.nextDate(after: date, matching: components, matchingPolicy: .nextTime)
     }
 }
 
@@ -184,10 +193,54 @@ struct RecurringTask: Codable, Hashable, Identifiable {
 ///   and so fails the length test).
 extension RecurringTask {
 
-    /// The `sourceID` an occurrence due at `due` carries. Frozen — see the note
-    /// above on why this string cannot be redesigned.
-    static func occurrenceSourceID(taskID: UUID, due: Date) -> String {
-        "\(taskID.uuidString)-\(Int(due.timeIntervalSince1970))"
+    /// The `sourceID` an occurrence due at `due` carries. The *shape* is frozen
+    /// — see the note above on why this string cannot be redesigned — and the
+    /// number on the end is `occurrenceStamp(due:zone:)`.
+    ///
+    /// - Parameter zone: the zone `due`'s wall-clock time is read in, which is
+    ///   the phone's current zone for a caller that passes nothing.
+    static func occurrenceSourceID(taskID: UUID, due: Date, zone: TimeZone = .current) -> String {
+        "\(taskID.uuidString)-\(occurrenceStamp(due: due, zone: zone))"
+    }
+
+    /// The zone every occurrence id is counted in, wherever the phone is.
+    ///
+    /// An occurrence is "Tuesday at 9 pm", a local calendar date and a wall
+    /// clock time, but the id used to end in the **instant** that lands on in
+    /// the phone's zone. Fly home for break and the same Tuesday is a
+    /// different instant, so the id changed under it: the ticks the student
+    /// had made were filed under ids that no longer existed, the week's
+    /// readings came back as owed, and the due-date edits keyed by the old id
+    /// were gone too (`DAT-12` in `docs/HARDENING_PLAN_2026-10-25.md`). The
+    /// id now ends in the instant that same local date and clock time would
+    /// be in this fixed zone, so it is the same string in every zone.
+    ///
+    /// **Why Eastern, and why not the date as digits.** The obvious fix is to
+    /// end the id in `20261027`. It would also orphan every tick and due-date
+    /// edit the student has already made, once, on the day this ships, which
+    /// is the failure the note above rules out. Counting in
+    /// `America/New_York` makes the new id *byte for byte the old id* for a
+    /// phone that is, or was when it minted the ids, in Eastern time, which is
+    /// where Penn, Brown, Columbia, Cornell, Dartmouth, Harvard, Princeton
+    /// and Yale all are. A phone in another zone gets new ids once, and then
+    /// keeps them. A different constant would be equally stable and would
+    /// orphan everyone; do not change this one, for the same reason the
+    /// format is frozen.
+    static let occurrenceAnchorZone: TimeZone =
+        TimeZone(identifier: "America/New_York") ?? TimeZone(secondsFromGMT: -5 * 3600) ?? .gmt
+
+    /// The number an occurrence's id ends in: the local calendar date and
+    /// clock time of `due` in `zone`, re-read in `occurrenceAnchorZone`.
+    /// Both reads are Gregorian, so the phone's calendar system cannot change
+    /// it either.
+    static func occurrenceStamp(due: Date, zone: TimeZone) -> Int {
+        var local = Calendar(identifier: .gregorian)
+        local.timeZone = zone
+        let parts = local.dateComponents([.year, .month, .day, .hour, .minute, .second], from: due)
+        var anchor = Calendar(identifier: .gregorian)
+        anchor.timeZone = occurrenceAnchorZone
+        let instant = anchor.date(from: parts) ?? due
+        return Int(instant.timeIntervalSince1970)
     }
 
     /// The task a `sourceID` was generated by, or `nil` if it wasn't generated

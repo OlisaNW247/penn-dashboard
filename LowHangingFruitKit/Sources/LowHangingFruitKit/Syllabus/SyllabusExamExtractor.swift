@@ -114,7 +114,10 @@ public enum SyllabusExamExtractor {
         calendar: Calendar = .current,
         timeZone: TimeZone? = nil
     ) -> [ExamCandidate] {
-        var calendar = calendar
+        // Gregorian whatever the phone is set to: a syllabus writes "2026" and
+        // means the Gregorian year, and a Buddhist-calendar phone read it as
+        // 1483 CE and dropped the exam as stale. The zone is kept.
+        var calendar = Calendar.gregorian(matching: calendar)
         if let timeZone { calendar.timeZone = timeZone }
 
         var found: [ExamCandidate] = []

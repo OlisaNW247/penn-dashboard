@@ -105,6 +105,9 @@ public struct CourseGradingProfile: Sendable, Hashable, Codable, Identifiable {
         /// has no date. Nothing here invents a time: the caller stores a
         /// syllabus exam with no time of day at the end of its day.
         public func day(in calendar: Calendar) -> Date? {
+            // The day is a Gregorian `YYYY-MM-DD`; read in a Buddhist calendar
+            // "2026" is the year 1483 CE (`Calendar.gregorian(matching:)`).
+            let calendar = Calendar.gregorian(matching: calendar)
             guard let date, let day = Self.dayParts(of: date),
                   let start = calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day))
             else { return nil }
