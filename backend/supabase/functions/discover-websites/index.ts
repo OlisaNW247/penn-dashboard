@@ -127,7 +127,8 @@ interface DiscoverContext {
   deadline: number;
   getDirectoryEntries: () => Promise<DirectoryEntry[]>;
   /** What this function may fetch (`_shared/netguard.ts`): https, an
-   *  allow-listed host, public addresses, every redirect hop re-checked. */
+   *  public host (allow-listed too, when `LHF_DISCOVERY_HOSTS` is set), public
+   *  addresses, every redirect hop re-checked. */
   guard: NetGuard;
 }
 
@@ -257,12 +258,12 @@ async function verifyCandidates(
     try {
       response = await fetchWithTimeout(ctx.fetchImpl, row.url, VERIFY_TIMEOUT_MS, ctx.guard);
     } catch {
-      // Network failure/timeout, or a URL the guard refuses (not https, not
-      // on the allow-list, or pointing at a private address): leave the row
-      // exactly as it was. Per the brief, this is bundled with a 404 below
-      // -- none of these is evidence the URL is *wrong*, only that this
-      // attempt to check it failed, and a refused URL is simply picked up
-      // again if the allow-list ever grows.
+      // Network failure/timeout, or a URL the guard refuses (not https, an
+      // internal name, off the allow-list when one is set, or pointing at a
+      // private address): leave the row exactly as it was. Per the brief,
+      // this is bundled with a 404 below -- none of these is evidence the URL
+      // is *wrong*, only that this attempt to check it failed, and a refused
+      // URL is simply picked up again if the rules ever change.
       discovered.push({ courseID, url: row.url, status: row.status });
       continue;
     }

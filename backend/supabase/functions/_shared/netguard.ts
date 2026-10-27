@@ -15,15 +15,22 @@
 // Four rules, each of which is a different attack:
 //
 //   1. https only, on the default port, with no credentials in the URL, and
-//      the host must be a NAME ending in an allow-listed suffix
-//      (`upenn.edu` plus whatever `LHF_DISCOVERY_HOSTS` adds). An IP
-//      literal is never a name, so `https://127.0.0.1/` and
-//      `https://[::1]/` fail here without a lookup. The allow-list is the
-//      main control; it also stops the function being used as a general
-//      fetch proxy.
+//      the host must be a NAME, not an IP literal and not a name that only
+//      means something inside a network (`localhost`, `*.local`,
+//      `*.internal`, a single label). So `https://127.0.0.1/` and
+//      `https://[::1]/` fail here without a lookup. Course sites live on
+//      their own domains (`cis1912.org`, `*.github.io`, a lab's own site),
+//      and finding exactly those is what discovery is for, so by default
+//      ANY public name is allowed. Setting the function secret
+//      `LHF_DISCOVERY_HOSTS` turns on an allow-list instead: only
+//      `upenn.edu` and the listed suffixes. That is the switch for
+//      narrowing the function if it is ever abused; rules 2 to 4 hold
+//      either way.
 //   2. The name must resolve, and every address it resolves to must be
-//      public. A name under an allowed suffix could still point at a
-//      private address; this is the "resolve and check" half.
+//      public. With no allow-list this is the control that matters: any
+//      attacker-chosen name can be pointed at a private address, so a
+//      runtime that cannot resolve names at all cannot be trusted to fetch
+//      (see `assertSafeURL`).
 //   3. Redirects are followed here, one hop at a time, and every hop is
 //      held to rules 1 and 2 before it is requested. `fetch`'s own
 //      `redirect: "follow"` checks nothing, so a page on an allowed host
@@ -34,10 +41,10 @@
 //
 // Known limit, stated so nobody assumes more: rule 2 resolves the name
 // itself and `fetch` then resolves it again, so a DNS answer that changes
-// between the two (rebinding) is not caught. The allow-list is what bounds
-// that: the attacker has to control DNS for a name under an allowed suffix,
-// not for any name on the internet. Deno offers no way to pin the address
-// `fetch` connects to.
+// between the two (rebinding) is not caught. Deno offers no way to pin the
+// address `fetch` connects to. With no allow-list an attacker who controls
+// the DNS for a name they hand us can try it; setting `LHF_DISCOVERY_HOSTS`
+// narrows that to names under suffixes they would have to control.
 
 /** Thrown when a URL, a redirect hop or a resolved address breaks a rule
  *  above. Never carries the URL's query string or credentials. */
@@ -61,8 +68,8 @@ export class ResolverUnavailableError extends Error {
 export interface NetGuard {
   /** Host suffixes a URL's host must end in (matched on a label boundary:
    *  `upenn.edu` allows `www.seas.upenn.edu` and `upenn.edu`, never
-   *  `evilupenn.edu`). */
-  allowedHostSuffixes: readonly string[];
+   *  `evilupenn.edu`), or `null` for no restriction: any public name. */
+  allowedHostSuffixes: readonly string[] | null;
   /** Resolves a name to its A and AAAA addresses as text. Rejects when the
    *  name does not resolve; rejects with `ResolverUnavailableError` when the
    *  runtime cannot do lookups at all. Injected so tests never touch the
@@ -74,20 +81,27 @@ export interface NetGuard {
   resolveTimeoutMs: number;
 }
 
-const DEFAULT_ALLOWED_HOST_SUFFIXES = ["upenn.edu"];
+/** Always in the list once an allow-list is configured, so setting
+ *  `LHF_DISCOVERY_HOSTS=cis1912.org` narrows discovery to Penn plus that site
+ *  rather than silently dropping every Penn-hosted course site. Not used when
+ *  the secret is unset. */
+const PENN_HOST_SUFFIX = "upenn.edu";
 const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_RESOLVE_TIMEOUT_MS = 3000;
 
-/** The production guard: `upenn.edu` plus the comma-separated suffixes in
- *  the function secret `LHF_DISCOVERY_HOSTS` (for a course site on its own
- *  domain, which the CIS handbook does list), resolved with `Deno.resolveDns`. */
+/** The production guard. With the function secret `LHF_DISCOVERY_HOSTS`
+ *  unset, blank, or only commas there is no host restriction (any public
+ *  name, `allowedHostSuffixes: null`); a blank value is read as unset, not as
+ *  "allow nothing", so a typo cannot switch discovery off. With it set to a
+ *  comma-separated suffix list, hosts are restricted to `upenn.edu` plus those
+ *  suffixes. Names are resolved with `Deno.resolveDns` either way. */
 export function productionNetGuard(env: { get(name: string): string | undefined } = Deno.env): NetGuard {
   const extra = (env.get("LHF_DISCOVERY_HOSTS") ?? "")
     .split(",")
     .map((entry) => entry.trim().toLowerCase().replace(/^\*?\./, ""))
     .filter((entry) => entry.length > 0);
   return {
-    allowedHostSuffixes: [...new Set([...DEFAULT_ALLOWED_HOST_SUFFIXES, ...extra])],
+    allowedHostSuffixes: extra.length > 0 ? [...new Set([PENN_HOST_SUFFIX, ...extra])] : null,
     resolve: resolveWithDeno,
     maxRedirects: DEFAULT_MAX_REDIRECTS,
     resolveTimeoutMs: DEFAULT_RESOLVE_TIMEOUT_MS,
@@ -265,8 +279,25 @@ function hostIsAllowed(host: string, suffixes: readonly string[]): boolean {
   return suffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
 }
 
+/** Top-level names that only mean something inside a network (RFC 6761,
+ *  RFC 6762, RFC 8375 and the usual private conventions). A public resolver
+ *  never answers for these, but a runtime inside a cloud network can (the
+ *  `metadata.google.internal` host answers with a metadata address there), so
+ *  they are refused by name as well as by address: the address check is the
+ *  second layer, and on a runtime that cannot resolve names it is absent. */
+const INTERNAL_TLDS: ReadonlySet<string> = new Set([
+  "localhost", "local", "internal", "intranet", "lan", "home", "corp", "private", "invalid", "test", "example", "onion",
+]);
+
+function isInternalName(host: string): boolean {
+  if (host === "home.arpa" || host.endsWith(".home.arpa")) return true;
+  const labels = host.split(".");
+  return INTERNAL_TLDS.has(labels[labels.length - 1]);
+}
+
 /** The checks that need no lookup: https, the default port, no credentials,
- *  a name (not an IP literal) with a dot in it, ending in an allowed suffix.
+ *  a public-looking name (not an IP literal, not an internal name) with a dot
+ *  in it, and, when an allow-list is configured, ending in an allowed suffix.
  *  Throws `BlockedURLError`. Cheap enough to run on every candidate before
  *  deciding whether to try it at all. */
 export function checkURLShape(url: URL, guard: Pick<NetGuard, "allowedHostSuffixes">): void {
@@ -277,8 +308,10 @@ export function checkURLShape(url: URL, guard: Pick<NetGuard, "allowedHostSuffix
   if (host.startsWith("[") || /^\d+(\.\d+){0,3}$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) {
     throw new BlockedURLError("IP-address hosts are not fetched");
   }
-  if (!host.includes(".")) throw new BlockedURLError("host is not a public name");
-  if (!hostIsAllowed(host, guard.allowedHostSuffixes)) throw new BlockedURLError("host is not on the allow-list");
+  if (!host.includes(".") || isInternalName(host)) throw new BlockedURLError("host is not a public name");
+  if (guard.allowedHostSuffixes !== null && !hostIsAllowed(host, guard.allowedHostSuffixes)) {
+    throw new BlockedURLError("host is not on the allow-list");
+  }
 }
 
 /** `checkURLShape` as a yes/no for a URL held as text. */
@@ -294,11 +327,16 @@ export function isFetchableURL(raw: string, guard: Pick<NetGuard, "allowedHostSu
 let warnedResolverUnavailable = false;
 
 /** The full check for one URL: its shape, then its name's addresses. A name
- *  that does not resolve is refused (the fetch would fail anyway). A
- *  resolver that cannot answer at all, because the runtime has no DNS API,
- *  falls back to the shape check alone with a warning rather than switching
- *  the whole function off: the allow-list is the main control and the
- *  address check is the second layer; log it so the gap is visible. */
+ *  that does not resolve is refused (the fetch would fail anyway).
+ *
+ *  A resolver that cannot answer at all, because the runtime has no DNS API,
+ *  is handled by whether an allow-list is configured. With one, the allow-list
+ *  is the main control and the address check the second layer, so the shape
+ *  check alone stands, with a warning so the gap is visible. With none, any
+ *  name an attacker hands us could point at a private address and the address
+ *  check is the only thing standing between it and the fetch, so the URL is
+ *  refused: on such a runtime discovery stays off until `LHF_DISCOVERY_HOSTS`
+ *  is set. */
 export async function assertSafeURL(url: URL, guard: NetGuard): Promise<void> {
   checkURLShape(url, guard);
   const host = normalizedHost(url);
@@ -314,6 +352,9 @@ export async function assertSafeURL(url: URL, guard: NetGuard): Promise<void> {
     ]);
   } catch (err) {
     if (err instanceof ResolverUnavailableError) {
+      if (guard.allowedHostSuffixes === null) {
+        throw new BlockedURLError("addresses cannot be checked on this runtime and no host allow-list is set");
+      }
       if (!warnedResolverUnavailable) {
         warnedResolverUnavailable = true;
         console.warn("netguard: this runtime cannot resolve DNS, checking hostnames only");

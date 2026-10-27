@@ -40,6 +40,17 @@ const GUARD = guardWith({
   "v6.upenn.edu": ["fd00:ec2::254"],
 });
 
+/** The default production shape: no host restriction, any public name. */
+const OPEN_GUARD = guardWith({
+  "www.seas.upenn.edu": [PUBLIC],
+  "cis1912.org": [PUBLIC],
+  "someone.github.io": ["185.199.108.153"],
+  "lab.example.edu": [PUBLIC],
+  "evil.example.com": ["10.0.0.5"], // an attacker's name pointed at the inside of a network
+  "metadata-alias.example.com": ["169.254.169.254"],
+  "dual.example.com": [PUBLIC, "fd00:ec2::254"],
+}, { allowedHostSuffixes: null });
+
 // ---------------------------------------------------------------------
 // Addresses
 // ---------------------------------------------------------------------
@@ -156,17 +167,71 @@ Deno.test("checkURLShape: local names and names off the allow-list are refused",
   blocked("https://github.com/just-the-docs/just-the-docs");
 });
 
-Deno.test("productionNetGuard: upenn.edu by default, extended by LHF_DISCOVERY_HOSTS", () => {
-  const plain = productionNetGuard({ get: () => undefined });
-  assert.deepEqual(plain.allowedHostSuffixes, ["upenn.edu"]);
-  assert.equal(isFetchableURL("https://cis1912.org/", plain), false);
+// The host allow-list is opt-in. Course sites live on their own domains
+// (cis1912.org, *.github.io, a lab's own site) and finding those is what
+// discovery is for, so with nothing configured any public name is allowed;
+// LHF_DISCOVERY_HOSTS narrows it.
+Deno.test("productionNetGuard: with LHF_DISCOVERY_HOSTS unset, any public https host is allowed", () => {
+  for (const env of [new Map<string, string>(), new Map([["LHF_DISCOVERY_HOSTS", ""]]), new Map([["LHF_DISCOVERY_HOSTS", " , ,"]])]) {
+    const open = productionNetGuard({ get: (name) => env.get(name) });
+    assert.equal(open.allowedHostSuffixes, null, "unset, blank and only-commas all mean no restriction");
+    for (
+      const url of [
+        "https://cis1912.org/syllabus",
+        "https://someone.github.io/cis1912/",
+        "https://www.seas.upenn.edu/~cis2400/current/",
+        "https://lab.example.edu/course/",
+        "https://example.org/",
+      ]
+    ) {
+      assert.equal(isFetchableURL(url, open), true, url);
+    }
+  }
+});
 
+Deno.test("productionNetGuard: with LHF_DISCOVERY_HOSTS set, only upenn.edu and the listed suffixes are allowed", () => {
   const env = new Map([["LHF_DISCOVERY_HOSTS", " CIS1912.org, *.github.io ,,.example.edu"]]);
-  const extended = productionNetGuard({ get: (name) => env.get(name) });
-  assert.deepEqual(extended.allowedHostSuffixes, ["upenn.edu", "cis1912.org", "github.io", "example.edu"]);
-  assert.equal(isFetchableURL("https://cis1912.org/syllabus", extended), true);
-  assert.equal(isFetchableURL("https://someone.github.io/cis1912/", extended), true);
-  assert.equal(isFetchableURL("https://notgithub.io/", extended), false);
+  const restricted = productionNetGuard({ get: (name) => env.get(name) });
+  assert.deepEqual(restricted.allowedHostSuffixes, ["upenn.edu", "cis1912.org", "github.io", "example.edu"]);
+  for (
+    const url of [
+      "https://cis1912.org/syllabus",
+      "https://someone.github.io/cis1912/",
+      "https://lab.example.edu/",
+      "https://www.seas.upenn.edu/~cis2400/",
+    ]
+  ) {
+    assert.equal(isFetchableURL(url, restricted), true, url);
+  }
+  for (const url of ["https://example.org/", "https://notgithub.io/", "https://evilupenn.edu/", "https://other-course-site.com/"]) {
+    assert.equal(isFetchableURL(url, restricted), false, url);
+  }
+});
+
+Deno.test("with no allow-list, every other rule still holds: scheme, port, credentials, IP literals, internal names", () => {
+  for (
+    const url of [
+      "http://cis1912.org/",
+      "https://cis1912.org:8443/",
+      "https://user:pw@cis1912.org/",
+      "https://127.0.0.1/",
+      "https://169.254.169.254/latest/meta-data/",
+      "https://[::1]/",
+      "https://2130706433/",
+      "https://localhost/",
+      "https://printer/",
+      "https://metadata.google.internal/computeMetadata/v1/",
+      "https://nas.local/",
+      "https://wiki.intranet/",
+      "https://router.lan/",
+      "https://thing.home.arpa/",
+      "https://app.corp/",
+      "https://site.localhost/",
+      "https://x.onion/",
+    ]
+  ) {
+    assert.equal(isFetchableURL(url, OPEN_GUARD), false, url);
+  }
 });
 
 // ---------------------------------------------------------------------
@@ -205,6 +270,26 @@ Deno.test("assertSafeURL: a runtime with no DNS API falls back to the hostname r
   await assertSafeURL(new URL("https://www.seas.upenn.edu/"), noDNS);
   await assert.rejects(() => assertSafeURL(new URL("https://127.0.0.1/"), noDNS), BlockedURLError);
   await assert.rejects(() => assertSafeURL(new URL("https://example.org/"), noDNS), BlockedURLError);
+});
+
+Deno.test("assertSafeURL, no allow-list: public names pass, and the address check is what stops a name pointed inward", async () => {
+  await assertSafeURL(new URL("https://cis1912.org/"), OPEN_GUARD);
+  await assertSafeURL(new URL("https://someone.github.io/x/"), OPEN_GUARD);
+  for (const name of ["evil.example.com", "metadata-alias.example.com", "dual.example.com"]) {
+    await assert.rejects(() => assertSafeURL(new URL(`https://${name}/`), OPEN_GUARD), BlockedURLError, name);
+  }
+  await assert.rejects(() => assertSafeURL(new URL("https://nowhere.example.com/"), OPEN_GUARD), BlockedURLError);
+});
+
+Deno.test("assertSafeURL: a runtime with no DNS API is refused when there is no allow-list, and tolerated when there is one", async () => {
+  const noDNS = (allowed: readonly string[] | null) =>
+    guardWith({}, { allowedHostSuffixes: allowed, resolve: () => Promise.reject(new ResolverUnavailableError("no dns")) });
+  // Nothing else would stop an attacker's name resolving to a private address.
+  await assert.rejects(() => assertSafeURL(new URL("https://cis1912.org/"), noDNS(null)), BlockedURLError);
+  await assert.rejects(() => assertSafeURL(new URL("https://www.seas.upenn.edu/"), noDNS(null)), BlockedURLError);
+  // With an allow-list the hostname rules are the main control, so they stand.
+  await assertSafeURL(new URL("https://www.seas.upenn.edu/"), noDNS(["upenn.edu"]));
+  await assert.rejects(() => assertSafeURL(new URL("https://cis1912.org/"), noDNS(["upenn.edu"])), BlockedURLError);
 });
 
 // ---------------------------------------------------------------------
@@ -272,6 +357,29 @@ Deno.test("guardedFetch: every redirect hop is held to the rules, and a refused 
       target,
     );
     assert.deepEqual(calls.map((call) => call.url), ["https://www.seas.upenn.edu/start"], `${target} must not be requested`);
+  }
+});
+
+Deno.test("guardedFetch, no allow-list: follows a redirect to another public host, and still refuses one that resolves inward", async () => {
+  const ok = hopFetch({
+    "https://www.seas.upenn.edu/~cis1912/": { status: 301, location: "https://cis1912.org/" },
+    "https://cis1912.org/": { status: 200, body: "the course's own site" },
+  });
+  const res = await guardedFetch(ok.fetchImpl, "https://www.seas.upenn.edu/~cis1912/", { timeoutMs: 500 }, OPEN_GUARD);
+  assert.equal(await res.text(), "the course's own site");
+  assert.equal(res.url, "https://cis1912.org/");
+
+  for (const target of ["https://evil.example.com/", "https://metadata-alias.example.com/", "https://127.0.0.1/", "https://metadata.google.internal/"]) {
+    const bad = hopFetch({
+      "https://cis1912.org/start": { status: 302, location: target },
+      [target]: { status: 200, body: "should never be fetched" },
+    });
+    await assert.rejects(
+      () => guardedFetch(bad.fetchImpl, "https://cis1912.org/start", { timeoutMs: 500 }, OPEN_GUARD),
+      BlockedURLError,
+      target,
+    );
+    assert.deepEqual(bad.calls.map((call) => call.url), ["https://cis1912.org/start"], `${target} must not be requested`);
   }
 });
 

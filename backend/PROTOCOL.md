@@ -742,23 +742,32 @@ function holds every request, from verification and the CIS directory to
 `robots.txt` and each crawled page, to these rules:
 
 - **https only**, on the default port, no credentials in the URL, and the
-  host must be a *name* ending in an allow-listed suffix: `upenn.edu` plus
-  the comma-separated function secret `LHF_DISCOVERY_HOSTS` (for a course
-  site on its own domain, such as `cis1912.org`). IP literals are never
-  fetched. A candidate the rules refuse is left exactly as it was, like a
-  network failure, so it is picked up again if the allow-list grows, and a
-  `verified` site the rules refuse is skipped rather than crawled into an
-  empty result (an empty crawl would mark the course's existing website
-  documents gone).
-- **Public addresses only.** The name is resolved (`Deno.resolveDns`, 3 s)
-  and every address must be outside loopback, private, link-local (including
-  the `169.254.169.254` metadata service), carrier-grade NAT, multicast,
-  reserved and documentation ranges, in IPv4 and IPv6 (IPv4-mapped, NAT64,
-  6to4 and Teredo forms included). A name that does not resolve is refused.
-  If the runtime has no DNS API at all, the check falls back to the hostname
-  rules with a warning in the log. Residual risk: the name is resolved here
-  and again by `fetch`, so DNS that changes between the two is not caught;
-  the allow-list is what bounds that.
+  host must be a *name*: never an IP literal, never a name that only means
+  something inside a network (`localhost`, a single label, `*.local`,
+  `*.internal`, `*.intranet`, `*.lan`, `*.home.arpa`, `*.corp`, and the other
+  reserved top-level names). **Any public host is allowed by default**,
+  because a course's own site is often on its own domain (`cis1912.org`,
+  `*.github.io`, a lab's site) and finding those is what discovery is for.
+  The **host allow-list is opt-in**: setting the function secret
+  `LHF_DISCOVERY_HOSTS` to a comma-separated list of suffixes restricts
+  discovery to `upenn.edu` plus those suffixes (a blank value counts as
+  unset). It is the switch for narrowing the function if it is ever abused.
+  A candidate the rules refuse is left exactly as it was, like a network
+  failure, so it is picked up again if the rules change, and a `verified`
+  site the rules refuse is skipped rather than crawled into an empty result
+  (an empty crawl would mark the course's existing website documents gone).
+- **Public addresses only**, with or without an allow-list. The name is
+  resolved (`Deno.resolveDns`, 3 s) and every address must be outside
+  loopback, private, link-local (including the `169.254.169.254` metadata
+  service), carrier-grade NAT, multicast, reserved and documentation ranges,
+  in IPv4 and IPv6 (IPv4-mapped, NAT64, 6to4 and Teredo forms included). A
+  name that does not resolve is refused. With no allow-list this is the
+  control that stops an attacker-chosen name pointed at a private address, so
+  if the runtime has no DNS API at all the URL is refused (discovery stays
+  off until `LHF_DISCOVERY_HOSTS` is set); with an allow-list the hostname
+  rules stand on their own, with a warning in the log. Residual risk: the
+  name is resolved here and again by `fetch`, so DNS that changes between the
+  two is not caught; an allow-list narrows who could try it.
 - **Redirects are followed by the function, hop by hop** (`redirect:
   "manual"`, at most 5), and every hop is held to the rules above before it
   is requested. `redirect: "follow"` checked nothing.

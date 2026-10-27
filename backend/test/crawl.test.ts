@@ -369,9 +369,48 @@ Deno.test("crawlSite: a deadline in the past fetches the start page and nothing 
   assert.equal(site.calls.includes(SCHEDULE_URL), false);
 });
 
-Deno.test("crawlSite: with no guard given it uses the production one (upenn.edu only), so a caller that forgets is still safe", async () => {
-  const site = fakeSite({ "https://example.org/course/": () => htmlResponse("https://example.org/course/", "<title>x</title>") });
-  const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL: "https://example.org/course/", userAgent: USER_AGENT });
+Deno.test("crawlSite: with no guard given the scheme, port and address rules still apply, with no DNS needed", async () => {
+  // The default guard is the production one (any public host unless
+  // LHF_DISCOVERY_HOSTS is set). These start URLs fail its shape rules before
+  // any lookup, so the test never touches DNS.
+  for (const startURL of ["http://www.seas.upenn.edu/~cis2400/", "https://127.0.0.1/", "https://169.254.169.254/latest/", "https://localhost/", "https://svc.internal/"]) {
+    const site = fakeSite({ [startURL]: () => htmlResponse(startURL, "<title>x</title>") });
+    const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL, userAgent: USER_AGENT });
+    assert.deepEqual(result.pages, [], startURL);
+    assert.deepEqual(site.calls, [], `${startURL} must not be requested`);
+  }
+});
+
+// A course site on its own domain is exactly what discovery exists to find, so
+// with no host allow-list configured it is crawled like any other; the
+// address and redirect rules still bind it.
+const OPEN_GUARD: NetGuard = {
+  allowedHostSuffixes: null,
+  resolve: (hostname) =>
+    hostname === "trap.example.com" ? Promise.resolve(["10.0.0.5"]) : Promise.resolve(["203.0.114.7"]),
+  maxRedirects: 5,
+  resolveTimeoutMs: 1000,
+};
+
+Deno.test("crawlSite, no allow-list: crawls a course site on its own domain", async () => {
+  const start = "https://cis1912.org/";
+  const syllabus = "https://cis1912.org/syllabus/";
+  const site = fakeSite({
+    [start]: () => htmlResponse(start, `<title>CIS 1912</title><a href="/syllabus/">syllabus</a>`),
+    ["https://cis1912.org/robots.txt"]: () => new Response("", { status: 404 }),
+    [syllabus]: () => htmlResponse(syllabus, "<title>Syllabus</title><body>grading</body>"),
+  });
+  const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL: start, userAgent: USER_AGENT, guard: OPEN_GUARD });
+  assert.deepEqual(result.pages.map((page) => page.title).sort(), ["CIS 1912", "Syllabus"]);
+});
+
+Deno.test("crawlSite, no allow-list: a public site that redirects to a name resolving inward is not followed", async () => {
+  const start = "https://cis1912.org/";
+  const site = fakeSite({
+    [start]: () => redirectResponse("https://trap.example.com/admin"),
+    "https://trap.example.com/admin": () => htmlResponse("https://trap.example.com/admin", "internal"),
+  });
+  const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL: start, userAgent: USER_AGENT, guard: OPEN_GUARD });
   assert.deepEqual(result.pages, []);
-  assert.deepEqual(site.calls, []);
+  assert.deepEqual(site.calls, [start], "the inward-resolving target must never be requested");
 });

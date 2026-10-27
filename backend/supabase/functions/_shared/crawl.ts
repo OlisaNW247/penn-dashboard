@@ -92,8 +92,8 @@ const PDF_MAX_TEXT_CHARS = 60_000;
 
 const EMPTY_RESULT: CrawlResult = { pages: [], links: [], blockedByRobots: [] };
 
-/** One guarded GET: https and allow-listed host only, every redirect hop
- *  re-checked, never `redirect: "follow"` (see `_shared/netguard.ts`). Throws
+/** One guarded GET: https and a public host only (and, if configured, an
+ *  allow-listed one), every redirect hop re-checked, never `redirect: "follow"` (see `_shared/netguard.ts`). Throws
  *  for a blocked URL and for a network failure alike, and every caller below
  *  already treats a throw as "skip this URL". */
 function fetchWithTimeout(
