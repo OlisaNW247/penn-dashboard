@@ -140,7 +140,7 @@ public struct CanvasCourseContentClient: Sendable {
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         // Only 401 means the session is dead; 403 falls through to `http(403)`.
         if http.statusCode == 401 { throw Error.sessionExpired }

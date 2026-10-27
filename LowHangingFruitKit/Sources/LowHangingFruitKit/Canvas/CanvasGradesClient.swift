@@ -181,7 +181,7 @@ public struct CanvasGradesClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         if http.statusCode == 401 { throw Error.sessionExpired }
         guard (200..<300).contains(http.statusCode) else {

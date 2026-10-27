@@ -174,13 +174,19 @@ public struct CanvasSyllabusClient: Sendable {
     }
 
     private func shouldAttachCookies(to url: URL) -> Bool {
-        guard let host = url.host?.lowercased(), let baseHost = baseURL.host?.lowercased() else { return false }
-        return host == baseHost
+        CredentialOrigin.isSameOrigin(url, as: baseURL)
     }
 
     private func fetch(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url)
-        request.httpShouldHandleCookies = true
+        // Off, like every other Canvas client (`CanvasModulesClient.fetchRaw`):
+        // the session cookie is attached by hand below, and only to Canvas's
+        // own host. With this `true`, `URLSession` also adds whatever the
+        // shared cookie storage holds for the request's host, and for a
+        // pre-signed file URL on another host that is a second, unguarded
+        // path for cookies, past the check `shouldAttachCookies` exists to
+        // make (`KCR-04`).
+        request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         // `shouldAttachCookies` is the guard that keeps a session cookie off
         // a pre-signed, non-Canvas file-download URL; a bearer token needs
@@ -191,7 +197,7 @@ public struct CanvasSyllabusClient: Sendable {
             CanvasAuth.apply(to: &request, cookies: cookies, accessToken: accessToken)
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         if http.statusCode == 401 { throw Error.sessionExpired }
         guard (200..<300).contains(http.statusCode) else { throw Error.http(status: http.statusCode) }

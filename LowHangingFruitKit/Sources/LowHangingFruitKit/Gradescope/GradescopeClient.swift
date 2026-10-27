@@ -6,6 +6,10 @@ public struct GradescopeClient: Sendable {
         case notHTTP
         case invalidResponseEncoding
         case notLoggedIn
+        /// A request the client refused to make because it was not to
+        /// Gradescope over HTTPS (`CredentialOrigin`). Not an authentication
+        /// failure: it says nothing about the session.
+        case untrustedURL(URL)
 
         public var errorDescription: String? {
             switch self {
@@ -17,6 +21,8 @@ public struct GradescopeClient: Sendable {
                 return "Gradescope returned a page the app could not read."
             case .notLoggedIn:
                 return "Gradescope needs you to log in again."
+            case .untrustedURL:
+                return "Gradescope pointed at a page that is not on Gradescope, so the app did not open it."
             }
         }
 
@@ -37,7 +43,7 @@ public struct GradescopeClient: Sendable {
                 return true
             case let .http(status, _):
                 return status == 401 || status == 403
-            case .notHTTP, .invalidResponseEncoding:
+            case .notHTTP, .invalidResponseEncoding, .untrustedURL:
                 return false
             }
         }
@@ -107,7 +113,13 @@ public struct GradescopeClient: Sendable {
         }
 
         var assignments: [Assignment] = []
-        for course in result.courses {
+        // A course link is read out of the page's HTML, and an absolute
+        // `href` stays absolute through `URL(string:relativeTo:)`, so it can
+        // name any host. Only Gradescope's own pages are fetched, because the
+        // student's Gradescope cookie goes on every request this client makes.
+        // The link is skipped, not an error: failing the whole scrape over one
+        // odd link would also read as a broken session.
+        for course in result.courses where CredentialOrigin.isSameOrigin(course.url, as: baseURL) {
             let html = try await fetchHTML(course.url)
             let courseAssignments = GradescopeHTMLParser.assignments(
                 from: html,
@@ -209,6 +221,13 @@ public struct GradescopeClient: Sendable {
     }
 
     private func fetchHTML(_ url: URL) async throws -> String {
+        // The cookie is attached by hand below, to whatever URL is passed.
+        // Every URL here is built from `baseURL` or scraped from a Gradescope
+        // page, and the scraped ones can be absolute, so this is where
+        // "the right host, over HTTPS" is enforced (`CredentialOrigin`).
+        guard CredentialOrigin.isSameOrigin(url, as: baseURL) else {
+            throw Error.untrustedURL(url)
+        }
         var request = URLRequest(url: url)
         // See `CanvasDiscoveryClient.fetchHTML`'s matching comment — an
         // explicit `Cookie` header below means this must be `false`
@@ -224,7 +243,7 @@ public struct GradescopeClient: Sendable {
             request.setValue(value, forHTTPHeaderField: field)
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         guard (200..<300).contains(http.statusCode) else {
             throw Error.http(status: http.statusCode, url: url)
