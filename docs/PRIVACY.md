@@ -1,19 +1,24 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-27_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
 the app does with your information.
 
-**In short:** your grades, your work, and your Canvas/Gradescope logins stay on
-your phone, or, if you pair the Smooth Chrome extension, travel only
-end-to-end encrypted between your own phone and your own laptop, where we
-cannot read them. Course materials — syllabi, course pages, assignment descriptions,
+**In short:** your grades and your Canvas/Gradescope logins stay on your
+phone. Your list of work stays there too, with three exceptions described
+below: a summary of it, including which items are done, goes with each
+question you ask "the tree"; if you pair the Smooth Chrome extension, it
+travels end-to-end encrypted between your own phone and your own laptop,
+where we cannot read it; and if you turn on iCloud sync, it goes to your own
+iCloud. Course materials — syllabi, course pages, assignment descriptions,
 announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
-ask "the tree" are answered by an AI model running on our server and are not
-stored.
+ask "the tree" are answered by an AI model running on our server. The
+question and the answer are not stored; a small record of each request (when,
+which model, how long, how many tokens, never the text) is. Deleting the app
+does not remove everything it saved on the phone: see "Deleting your data".
 
 ## What stays on your phone
 
@@ -23,15 +28,26 @@ stored.
   explains that Smooth also saves the PennKey credentials you submit after a
   successful connection, to reconnect automatically. Gradescope and other
   schools' passwords are not captured. See "Automatic Canvas reconnection" below.
+  iOS keeps Keychain items when an app is deleted, so these can outlast the
+  app; see "Deleting your data" below.
 - **Your grades, completions, and submission state.** What you've turned in,
   what you've checked off, any grade the Grade Watcher has observed — all of it
-  stays local. None of it is uploaded in readable form; the one exception is
-  the end-to-end encrypted sync with your own paired laptop, described in
-  "The Chrome extension" below.
+  is kept on this phone. Grades and scores are never sent to our server. Three
+  things carry part of it off the phone, and only these: whether each item is
+  done (never a grade) goes to our server in the summary sent with each
+  question to "the tree" (see "What is sent to our server"); completions go,
+  end-to-end encrypted, to a laptop you pair (see "The Chrome extension"); and
+  if you turn on iCloud sync, your record of each item, including the score
+  you earned on it, goes to your own iCloud (see "iCloud sync").
 - **Your work list and your name.** Assignments you add yourself, due-date
-  edits, reminder settings, and the first name you enter never leave the
-  device, except encrypted, to your own paired laptop (below). Your name and
-  your reminder settings are never part of that sync.
+  edits, reminder settings, and the first name you enter never go to our
+  server. The work Canvas and Gradescope give you is the exception: its titles
+  and due dates are in the summary sent with each question you ask "the tree"
+  (see "What is sent to our server"), though your own tasks and your due-date
+  edits are not. Your own tasks and due-date edits are shared, encrypted, with
+  a laptop you pair (below). With iCloud sync on, your own tasks and your
+  per-class settings go to your own iCloud (below). Your name is never part of
+  either sync, and your reminder settings are never part of the laptop's.
 - **The widget snapshot.** A small "next due" summary written to a private
   container shared only between the app and its widget on your device.
 - **The announcements list.** The megaphone on the dashboard lists your
@@ -66,6 +82,33 @@ stored.
   goes anywhere. On a phone or language where on-device recognition is not
   available, the mic is simply not shown rather than sending audio to a
   server.
+
+## iCloud sync (optional, off by default)
+
+Profile → sync has a switch, "sync between my devices". It is off until you
+turn it on, and it takes effect the next time you open the app. With it on,
+the app keeps two things in your own iCloud account, using Apple's CloudKit
+and iCloud key-value storage, so your other devices signed in to the same
+Apple ID (a Mac running Smooth, for example) see them:
+
+- **Your record of your work.** For each item: its class, title, due date and
+  link, where it came from, whether you checked it off or it was turned in
+  (and when), the score you earned and its maximum when Canvas or Gradescope
+  has given one, and the tasks you added yourself.
+- **Your per-class settings.** The names you gave classes, which classes are
+  hidden or deleted, each class's reminder choices, and the app's per-class
+  choices about course content.
+
+It does not carry your name, your Canvas or Gradescope logins, cookies,
+calendar feed address or saved PennKey password (those stay in each device's
+own Keychain and are never synced), your grade history over time, or due
+dates you changed.
+
+This copy lives in your iCloud, under your Apple ID, with the protection
+Apple gives iCloud data. It does not pass through our server, and we cannot
+read it. Turning the switch off stops new changes going up; it does not
+delete what is already in your iCloud, and neither does deleting the app. You
+can remove it in iOS Settings → your name → iCloud → Manage Account Storage.
 
 ## Automatic Canvas reconnection
 
@@ -121,18 +164,30 @@ on-device alone:
   phone's Keychain like your Canvas session and deleted with it. (The
   "AI assist" switch below also covers these posts.)
 
-  **What is never included:** your grades, completions, submission state, your
-  work list, your name, or anything else specific to you. Only the shared,
-  public-to-the-class content described above. The only other request the app
-  makes on its own is the anonymous update-policy check described below.
+  **What is never included in that upload:** your grades, completions,
+  submission state, your work list, your name, or anything else specific to
+  you. Only the shared, public-to-the-class content described above. The only
+  other request the app makes on its own is the anonymous update-policy check
+  described below.
 
 - **Questions you ask "the tree."** When you ask a question, the app sends the
-  question, an on-device summary of your dashboard (built without your name,
-  grades, or completion state), the most relevant excerpts of the pooled
-  course material, and your phone's time zone (so that due times and
-  "tomorrow" read correctly) to our server, which forwards them to an AI
-  model to generate an answer streamed back to you. Neither the question nor
-  the answer is stored anywhere — see "What we keep and for how long" below.
+  question, a summary of your classes and work that the app builds on your
+  phone, the most relevant excerpts of the pooled course material, the Canvas
+  ids of your classes, and the time of the question and your phone's time zone
+  (so that due times and "tomorrow" read correctly) to our server, which
+  forwards them to an AI model to generate an answer streamed back to you.
+  Neither the question nor the answer is stored anywhere — see "What we keep
+  and for how long" below.
+
+  What the summary holds: for each class, its code, any name you gave it, and
+  the grading weights (percentages) from its syllabus or Grade Watcher; and,
+  for each item of work from Canvas and Gradescope, each reading, and each
+  task the app found in an announcement, its class, its title, the due date
+  Canvas or Gradescope gave, where it came from, and **whether it is done**
+  (you checked it off or it was turned in), still outstanding, or has nothing
+  to submit. So your completion state is sent: one word per item, beside the
+  item. The summary does not hold your name, any grade or score, a due date
+  you changed, a task you added yourself, or your reminder settings.
 
   The Announcement Watcher's "AI assist" toggle is on by default (you can turn
   it off in Settings). With it on, extracting a task and due date from an
@@ -214,19 +269,33 @@ nothing until you pair it with your phone.
   material is pooled per class exactly like the phone's ("What is sent to
   our server"), so classmates share one copy.
 - **Pairing.** The extension shows a QR code; you scan it with your iPhone and
-  confirm "pair this laptop?" in Smooth. The code carries a secret key made
-  on the laptop. The key goes from the laptop's screen to your phone's camera
-  and is never sent to our server. The server only learns that the
-  extension's anonymous account now belongs with your phone's.
+  confirm "pair this laptop?" in Smooth. The code contains the secret key
+  itself, made on the laptop, so anyone who can see or photograph the code
+  while it is on screen could read the key: pair in private. The key goes from
+  the laptop's screen to your phone's camera and is never sent to our server.
+  The code works once, expires after ten minutes, and links nothing unless
+  your own phone confirms; an unused code leaves nothing saved on the laptop.
+  The server only learns that the extension's anonymous account now belongs
+  with your phone's.
 - **End-to-end encrypted sync.** With that key, your phone and laptop share
   what you've checked off, due dates you've changed, tasks you've added, and
   your list of what's due. Each device encrypts its copy (AES-256-GCM) before
   it leaves, and our server stores only that encrypted copy. We cannot read
   it, and neither can Supabase. Your name, reminder settings and grades are
   never part of it.
+- **What the laptop keeps.** In the extension's storage in Chrome, on your
+  laptop: the secret key, the extension's anonymous sign-in, its own copy of
+  your checked-off items, due-date edits, tasks and list of what's due, and,
+  after each sync, your phone's list of what's due. Chrome stores that the way
+  it stores any extension's data; the extension adds no encryption of its own
+  on the laptop, so protect the laptop (a screen lock and disk encryption) as
+  you would for any saved login.
 - **Unpairing** (from the extension, or Profile → accounts → laptop on the
   phone) deletes the extension's account and its encrypted copy from our
-  server. Disconnecting Canvas on the phone does the same for every paired
+  server, and removes the key and your phone's list from the laptop. The
+  extension keeps its own copy of your checked-off items, due-date edits and
+  tasks there until you remove the extension or clear its data. Disconnecting
+  Canvas on the phone does the same on the server side for every paired
   laptop, along with everything listed under "Deleting your data".
 
 ## Who we send data to
@@ -253,9 +322,19 @@ and API access.
   your account doesn't delete a course's shared material, because it isn't
   your data; it's the course site's public content.
 - **Questions and answers are never stored**, not even briefly for debugging.
-  We keep only a per-user daily count of how many questions were asked and a
-  running token total, used solely to enforce fair-use limits. There is no
-  transcript.
+  There is no transcript. What we do keep about asking is two kinds of record,
+  both tied to your anonymous account id and to nothing else about you:
+  - a per-day count of how many questions were asked and a running token
+    total, used to enforce fair-use limits; and
+  - one log row for each request: when it was made, which model answered, how
+    it ended (answered, empty, error, over the daily limit), how many tokens
+    went in and came out, how many characters and pieces of the answer
+    streamed back, how long each stage took, and, if it failed, a short error
+    note (at most 200 characters). No column in that table can hold the
+    question, the summary, the excerpts or the answer. We read these rows to
+    see whether answers are quick and working; the app never reads them back;
+    they have no automatic expiry today; and they are deleted with your
+    anonymous account when you disconnect Canvas.
 - **Your enrollment list** (which Canvas courses you're synced to) is kept so
   the pooling and quota system work, and is deleted if you delete your
   account.
@@ -267,14 +346,33 @@ and API access.
 
 **Disconnecting Canvas** (Profile → accounts → canvas) deletes your class data
 from our server along with your login on the device: your enrollment records,
-your usage counters, and the anonymous account itself, and it removes the
-Ed Discussion session from this phone, and it unpairs every laptop: their
-anonymous accounts and encrypted sync copies are deleted too. The
-confirmation says so before you tap it. It does not delete the shared course material other students
-are still using, because that material was never yours alone — it's the same
-syllabus and assignment pages every enrolled student can already see on
-Canvas. Deleting the app also removes everything stored on your device,
-including the Keychain-stored sessions.
+your usage counters, your per-request log rows (see "What we keep"), and the
+anonymous account itself, and it removes the Canvas calendar feed address, the
+saved PennKey password and the Ed Discussion session from this phone, and it
+unpairs every laptop: their anonymous accounts and encrypted sync copies are
+deleted too. The confirmation says so before you tap it. If our server can't
+be reached at that moment, the app says so and nothing is deleted there;
+reconnect, then disconnect again. It does not delete the shared course
+material other students are still using, because that material was never
+yours alone — it's the same syllabus and assignment pages every enrolled
+student can already see on Canvas. Disconnecting Gradescope removes your
+Gradescope login and its synced work from this phone.
+
+**Deleting the app does not remove everything.** iOS removes the app's own
+storage with it: your list of work and what you've checked off, your grade
+readings and settings, the announcements list and the widget snapshot. iOS
+does not remove Keychain items when an app is deleted. If you delete Smooth
+and install it again on the same phone, these can still be there: your Canvas
+and Gradescope session cookies, your Canvas calendar feed address, a PennKey
+password you saved, your Ed Discussion session, the key that signs the phone
+in to its anonymous account, and a laptop pairing key. Smooth does not clear
+them when it is installed fresh, so a reinstall is not a clean sign-out. They
+are kept on this phone only (never in iCloud or on another device), and a
+saved PennKey password only ever goes to Penn's own login page, as described
+above. To remove them, disconnect Canvas and Gradescope in Settings before you
+delete the app. Deleting the app also does not delete anything on our server
+(only disconnecting Canvas does that) or the copy in your iCloud if you turned
+sync on (you remove that in iOS Settings, as described under "iCloud sync").
 
 ## Anonymous accounts
 
@@ -299,7 +397,8 @@ worth stating plainly rather than implying a guarantee we haven't built.
   bundled in.
 - **No push notifications.** Reminders are scheduled and delivered locally on
   your device.
-- We don't sell your data. There's nothing to sell — we don't have it.
+- We don't sell your data. There's nothing to sell: we keep no questions,
+  answers, grades or lists of your work that we can read.
 
 ## Affiliation
 
