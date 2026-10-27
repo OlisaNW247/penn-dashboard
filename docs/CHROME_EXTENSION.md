@@ -541,3 +541,6 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   1400 among them; 92 lookups, 0 refused, 19 failed). A link to a file in
   another course's site is now retried as `/api/v1/files/:id`; the summary
   adds `linkedMissing` and `unparseable`. 499 tests.
+- 2026-10-27, later: the next run looked up 186 linked ids, found 23
+  missing both ways and 3 refused, and had nothing new to extract. The
+  remaining courses without PDFs link none the student can open.

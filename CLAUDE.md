@@ -2738,6 +2738,13 @@ none is a ship line.
   `/api/v1/files/:id` and the document links `/files/<id>`. The summary's
   `files` now also says `linkedMissing` (not found either way) and
   `unparseable` (pdf.js could not read it), so the next run tells which.
+  It did (2026-10-27, about 17:00 UTC): 186 linked ids, 23 missing both
+  ways, 3 refused, 0 unparseable, nothing new to extract. So the earlier
+  failures were files Canvas no longer serves to students (deleted or
+  unpublished), not a wrong lookup, and CIS 4500 and ACCT 1010 hold no
+  PDF the student can open through Canvas; their text carries no
+  `http…pdf` link either. Their material, if it exists, lives on an
+  outside site, which is the server's website crawl, not the extension.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy
