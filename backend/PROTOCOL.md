@@ -797,6 +797,17 @@ one `course_profiles` row from that course's live `syllabus`, `home` and
 matching website page, then home, then page) and clears `profile_stale`.
 Response `{ "updated": [courseID] }`.
 
+**Time budget** (since 2026-10-27, hardening BE-12): one call may rebuild up
+to 20 profiles, one model call after another, and now has a 40 second budget
+(`EXTRACT_PROFILE_BUDGET_MS`). Past it no further course is started and a
+model call in flight is aborted. A course not reached, or whose call was cut
+off, keeps `profile_stale` set and is simply absent from `updated`, the same
+outcome as an upstream failure, so the next sync's call picks it up. The wire
+shape is unchanged. Still charged once per call, not per course: charging per
+course would let a sync of several courses spend several of the student's 40
+daily requests, and `profile_stale` is re-set whenever a page's content
+changes, so that is a product decision, not part of this change.
+
 Profile JSON (every field optional, strings are verbatim quotes or close
 paraphrases of the source, never inferred):
 

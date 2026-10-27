@@ -32,7 +32,7 @@ export type OpenRouterBehaviour =
   /** Streams `text`, then usage, then [DONE]. */
   | { kind: "answer"; text?: string; promptTokens?: number; completionTokens?: number }
   /** A non-streaming JSON completion whose message content is `content`. */
-  | { kind: "json"; content: string }
+  | { kind: "json"; content: string; delayMs?: number }
   /** Streams one delta, then goes quiet until its request is aborted. */
   | { kind: "stall-after-first-delta" }
   /** Sends nothing until its request is aborted. */
@@ -105,6 +105,16 @@ export function installStub(options: StubOptions): Stub {
       if (signal?.aborted) throw new DOMException("aborted", "AbortError");
       if (behaviour.kind === "fail") return new Response("upstream is down", { status: behaviour.status });
       if (behaviour.kind === "json") {
+        if (behaviour.delayMs) {
+          // Slow to answer, but gives up if its request is aborted, as a real fetch does.
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, behaviour.delayMs);
+            signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new DOMException("aborted", "AbortError"));
+            }, { once: true });
+          });
+        }
         return new Response(JSON.stringify({ choices: [{ message: { content: behaviour.content } }] }), {
           status: 200,
           headers: { "content-type": "application/json" },

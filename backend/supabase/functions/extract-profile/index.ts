@@ -16,6 +16,16 @@ import {
 
 const MAX_COURSE_IDS = 20;
 const DEFAULT_PROFILE_INPUT_CHARS = 60000;
+// One call may rebuild up to MAX_COURSE_IDS profiles, each a model call over up
+// to PROFILE_INPUT_CHARS of material, run one after another, and nothing used
+// to bound the total: twenty slow calls could outlast the function's wall-clock
+// limit and be cut off in the middle of a write. Past this budget no further
+// course is started, and a call already in flight is aborted at it. A course
+// that was not reached, or whose call was cut off, keeps `profile_stale` set,
+// which is exactly how an upstream failure is already handled, so the next
+// sync's call picks it up. The budget sits inside the 60 s a phone waits and
+// well inside the runtime's own limit.
+const DEFAULT_PROFILE_BUDGET_MS = 40_000;
 // `website` is included here even though not every `website`-kind row is
 // actually used -- `selectProfileInput` (see `_shared/profile.ts`) filters
 // those further to the ones whose title/URL looks profile-relevant
@@ -39,7 +49,7 @@ function parseBody(value: unknown): ExtractProfileBody | undefined {
   return { courseIDs };
 }
 
-Deno.serve(async (req) => {
+export async function handleExtractProfile(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -75,18 +85,40 @@ Deno.serve(async (req) => {
       DEFAULT_PROFILE_INPUT_CHARS,
     );
 
+    const budgetMs = parsePositiveInt(Deno.env.get("EXTRACT_PROFILE_BUDGET_MS"), DEFAULT_PROFILE_BUDGET_MS);
+    const deadline = Date.now() + budgetMs;
+
     const updated: string[] = [];
+    let skipped = 0;
     for (const courseID of staleIDs) {
-      const wasUpdated = await rebuildProfile({
-        serviceClient,
-        courseID,
-        maxChars,
-        apiKey,
-        model,
-        fallbackModel,
-        provider: providerFromEnv(),
-      });
-      if (wasUpdated) updated.push(courseID);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        skipped += 1;
+        continue;
+      }
+      // The model call is aborted when the budget runs out, so one slow
+      // course cannot carry the call past it.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), remaining);
+      try {
+        const wasUpdated = await rebuildProfile({
+          serviceClient,
+          courseID,
+          maxChars,
+          apiKey,
+          model,
+          fallbackModel,
+          provider: providerFromEnv(),
+          signal: controller.signal,
+        });
+        if (wasUpdated) updated.push(courseID);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (skipped > 0) {
+      // Counts only, never a course id or any material.
+      console.warn(`extract-profile: time budget spent, ${skipped} course(s) left stale for the next call`);
     }
 
     return json(200, { updated });
@@ -97,7 +129,14 @@ Deno.serve(async (req) => {
     console.error("extract-profile: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);
   }
-});
+}
+
+// Guarded by `import.meta.main`, like `ask/index.ts`, so a test can import
+// `handleExtractProfile` without starting a second server. Deployed, this file
+// is the entry point the runtime executes, so it serves exactly as before.
+if (import.meta.main) {
+  Deno.serve(handleExtractProfile);
+}
 
 /**
  * Reserves one request against the same daily/monthly quota `ask` uses, or
@@ -175,6 +214,8 @@ interface RebuildProfileOptions {
   model: string;
   fallbackModel: string;
   provider?: { order?: string[] };
+  /** Aborts the model call when the call's time budget runs out. */
+  signal?: AbortSignal;
 }
 
 /** Rebuilds one course's profile. Returns whether it actually produced and
@@ -224,6 +265,7 @@ async function rebuildProfile(options: RebuildProfileOptions): Promise<boolean> 
       ],
       maxTokens: 2000,
       temperature: 0,
+      signal: options.signal,
     });
   } catch (err) {
     const status = err instanceof UpstreamError ? err.status : undefined;
