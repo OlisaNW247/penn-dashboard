@@ -196,6 +196,62 @@ xcrun devicectl device process launch --device 8A287085-9C88-5A87-816B-1A8EF80D6
 ```
 
 Then open it, let one refresh run, and read the phone's crash log
-folder for any new `Smooth-<date>.ips` (CLAUDE.md → Commands). Still not
-done: reading one real crash report (step 2), the upload, and the
-decision on the rest of Release A.
+folder for any new `Smooth-<date>.ips` (CLAUDE.md → Commands).
+
+## Release A on the same branch (2026-10-27, afternoon)
+
+At Marco's say, A2 and A3 from `docs/HARDENING_PLAN_2026-10-25.md`
+landed on `fix/duplicate-category-ids` after the crash fix, each in its
+own commit so either can be dropped, each read by an independent
+verifier before it was committed:
+
+- **A2, `a3af5b9`: a reconnect is a cover over the dashboard.** Tapping
+  the Canvas banner, a Profile → accounts row or the grades screen's
+  reconnect now presents the sign-in walk over the dashboard
+  (`fullScreenCover` on iOS, a sheet on macOS) with an xmark on every
+  step, and never writes `hasCompletedOnboarding = false`; a force-quit
+  mid-login lands on the dashboard. The launch-time refresh is re-run
+  when the cover closes. The preview footer is hidden for a signed-in
+  install. Leaving preview no longer wipes the grade history. "Start
+  over" and preview keep the old root swap.
+- **A3, `9350b2a`: "expired" is decided by whether a session cookie is
+  still fresh.** `SessionCookieStore.load` returns empty for a Canvas set
+  whose `canvas_session` has aged out while `_ga` lives on, so the
+  24-hour renew-on-open trigger fires again on polluted phones. The
+  harvests and the renewer are untouched; a parity test pins the two
+  cookie-name matchers together.
+- **`d4c1d78`: the stale citation-link golden fixed**, so the suite is
+  all green: 2953 tests / 266 suites.
+
+**What a phone has to answer before any of this ships** (none of it has
+run on a device):
+
+1. A2, from Profile → accounts: the row calls `dismiss()` and then
+   presents the cover in the same tick; the cover must appear every
+   time, there and from the banner and the grades screen.
+2. A2, the xmark on each step (Canvas login, the school picker through
+   the back chevron, the connected pane, the Gradescope step), and that
+   closing lands on the dashboard unchanged with a refresh running.
+3. A2, a reconnect that completes: the dashboard reflects the fresh
+   session without waiting for the five-minute tick.
+4. A2, the refresh loop keeps running under the cover now; a silent
+   renewal may start while the school picker is showing and is aborted
+   when the login pane appears. Watch the `LHF-RENEW` log for one.
+5. A2, dark mode and the Berserk takeover or update wall arriving while
+   the cover is open (they sit under it until it closes).
+6. A3, on Marco's phone (polluted on 2026-10-08): run
+   `-LHFSessionDiagnostics` (the `| session` marker shows which saved
+   cookies are session cookies), then `-LHFAgeCanvasSession`, and expect
+   `canvasSessionExpired false -> true` in `debugRenewalLogV1` and a
+   renewal in that launch.
+
+**Rebuilt from this tip on 2026-10-27**, both exit 0 with no `error:`
+lines, both 3.2.2 (16), AlarmKit weak in the archive's app binary: the
+Debug device app at the same path as above (16:46 UTC) and the Release
+archive at `build/Smooth.xcarchive` (16:48 UTC; the earlier archive was
+replaced). The install commands above are unchanged. The archive was
+built with the tree at `9350b2a`; `d4c1d78` after it changes a test and
+CLAUDE.md only, so the binary is the branch tip's.
+
+Still not done: reading one real crash report (step 2), the upload, and
+A4 onward of the hardening plan.
