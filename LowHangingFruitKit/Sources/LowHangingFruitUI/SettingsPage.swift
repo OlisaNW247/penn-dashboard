@@ -34,6 +34,11 @@ struct SettingsPage: View {
     /// `stayLoggedInRows`) and by its "update password" button after a
     /// rejection.
     @State private var showStayLoggedInSheet = false
+    /// Whether a PennKey is on file, read from the Keychain once on appearing
+    /// and again when `PennKeyCredentialsSheet` closes, never from `body`.
+    /// `nil` until the first read, so the "save pennkey" row cannot flash up
+    /// for the student who already has one saved.
+    @State private var pennKeyCredentialSaved: Bool?
     /// Shown under the accounts rows when the server-side delete that
     /// disconnecting Canvas triggers didn't go through.
     @State private var backendDataDeletionError: String?
@@ -158,6 +163,7 @@ struct SettingsPage: View {
                     }
                     #endif
                     stayLoggedInRows
+                    savePennKeyRow
                     // Only while a pairing key is held; pairing starts from
                     // the laptop's QR code.
                     ProfileLaptopRow()
@@ -252,7 +258,11 @@ struct SettingsPage: View {
         }
         .task {
             state.refreshPairedLaptop()
+            refreshPennKeyCredentialSaved()
             await scheduler.refreshAuthStatus()
+        }
+        .onChange(of: showStayLoggedInSheet) { _, _ in
+            refreshPennKeyCredentialSaved()
         }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
@@ -694,6 +704,42 @@ struct SettingsPage: View {
                 showStayLoggedInSheet = true
             }
         }
+    }
+
+    /// Whether the accounts section offers "save pennkey": Canvas is connected
+    /// at Penn and no PennKey is on file. Pure so a test can pin it.
+    ///
+    /// The password vault used to be reachable from exactly one place, the
+    /// "update password" button, and that appears only after Penn has
+    /// rejected a password that was saved. A student who skipped or lost the
+    /// save (the automatic one after a Canvas sign-in can fail, and says so
+    /// once) had no way to put a PennKey back, so every Duo-free renewal was
+    /// off for good. Penn only, because the sheet asks for a PennKey and no
+    /// other school may ever see it. The wrong fix is to show it whenever
+    /// `autoLoginDisabledReason` is set: a rejection already has its own row,
+    /// and a missing credential is a different state.
+    nonisolated static func showsSavePennKey(
+        installation: CanvasInstallation,
+        isCanvasConnected: Bool,
+        credentialSaved: Bool
+    ) -> Bool {
+        installation.id == CanvasInstallation.penn.id && isCanvasConnected && !credentialSaved
+    }
+
+    @ViewBuilder
+    private var savePennKeyRow: some View {
+        if let saved = pennKeyCredentialSaved,
+           Self.showsSavePennKey(installation: state.canvasInstallation,
+                                 isCanvasConnected: state.isCanvasConnected,
+                                 credentialSaved: saved) {
+            Button("save pennkey") {
+                showStayLoggedInSheet = true
+            }
+        }
+    }
+
+    private func refreshPennKeyCredentialSaved() {
+        pennKeyCredentialSaved = PennKeyCredentialStore.hasCredentials
     }
 
     /// One tappable source row. Its trailing status says what is true; tapping

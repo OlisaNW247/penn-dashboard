@@ -895,6 +895,51 @@ struct OnboardingView: View {
 
 // MARK: - Canvas login pane
 
+/// What the Canvas login pane does when a connect attempt comes back
+/// unconnected, as a pure rule so a test can pin it without a WebView.
+///
+/// Two things pull against each other. At Penn, `39b2fff`'s rule is that a
+/// failed connect never calls `LoginNavigationObserver.reset()`: that also
+/// zeroes `autoLoginAttempts`, the counter that holds the saved PennKey
+/// password to one auto-submission per pane appearance, and resetting it with
+/// the pane still mid-Duo lets a re-rendered credential form be filled a
+/// second time. So Penn only ever shows the failure and waits for the student.
+/// Everywhere else the reset is what brings the login page back after a
+/// custom host commits its landing page before a session exists, and it is
+/// also a loop: a single sign-on that bounces straight back to Canvas arrives
+/// "signed in", fails to connect, is reset, bounces back, and so on with a
+/// spinner behind it. Two automatic resets per pane lifetime is enough for
+/// the landing-page case (one is the bounce, the second is a slow cookie
+/// write) and a hard stop for the loop; after that the student has the
+/// "try again" button and the "I've finished signing in" button.
+///
+/// The wrong fix is a longer cap or a timer between resets: a bouncing
+/// sign-on is not a timing problem, and a loop that eventually ends is still
+/// a loop the student sits behind.
+enum CanvasConnectRetryRule {
+
+    /// The most automatic reset-and-retry cycles one pane lifetime gets at a
+    /// school other than Penn.
+    static let maxAutomaticResets = 2
+
+    enum FailedConnectAction: Equatable {
+        /// Leave the observer (and so its auto-login counter) alone: show the
+        /// failure and the retry control. Penn always, and any other school
+        /// once the cap is spent.
+        case showFailureKeepingCounter
+        /// `LoginNavigationObserver.reset()` and let the page come back.
+        case resetAndRetry
+    }
+
+    nonisolated static func failedConnectAction(
+        for installation: CanvasInstallation,
+        automaticResetsSoFar: Int
+    ) -> FailedConnectAction {
+        if installation.id == CanvasInstallation.penn.id { return .showFailureKeepingCounter }
+        return automaticResetsSoFar < maxAutomaticResets ? .resetAndRetry : .showFailureKeepingCounter
+    }
+}
+
 /// Canvas login WebView whose "Connect" action captures the ICS feed URL,
 /// syncs Canvas, and scans for requirements in one step.
 private struct CanvasLoginPane: View {
@@ -906,6 +951,18 @@ private struct CanvasLoginPane: View {
     @State private var isReadingCookies = false
     @State private var isPurging = true
     @State private var message: String?
+    /// True once a connect has failed with the observer's
+    /// `reachedSignedInDestination` still latched. That flag is `private(set)`
+    /// and its only clearer, `reset()`, also zeroes the auto-login counter
+    /// (see `CanvasConnectRetryRule`), so the pane keeps its own record that
+    /// the destination no longer means "connecting": without it the body kept
+    /// showing the spinner forever, with no message and no button, because
+    /// `onChange` only fires on a change and the flag never changed back.
+    @State private var connectFailed = false
+    /// How many times a failed connect has already reset the observer and
+    /// retried by itself in this pane's lifetime
+    /// (`CanvasConnectRetryRule.maxAutomaticResets`).
+    @State private var automaticResets = 0
     @StateObject private var navObserver: LoginNavigationObserver
 
     init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void) {
@@ -945,7 +1002,7 @@ private struct CanvasLoginPane: View {
 
     var body: some View {
         Group {
-            if isPurging || isReadingCookies || navObserver.reachedSignedInDestination {
+            if isPurging || isReadingCookies || (navObserver.reachedSignedInDestination && !connectFailed) {
                 VStack {
                     Spacer()
                     ProgressView()
@@ -955,13 +1012,19 @@ private struct CanvasLoginPane: View {
             } else {
                 VStack(spacing: 0) {
                     if let message {
-                        Text(message)
-                            .font(.lhfSans(12, weight: .medium))
-                            .foregroundStyle(Color.smoothTomatoInk)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.smoothTomato.opacity(0.13))
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(message)
+                                .font(.lhfSans(12, weight: .medium))
+                                .foregroundStyle(Color.smoothTomatoInk)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button("try again", action: reloadLogin)
+                                .font(.lhfSans(12, weight: .semibold))
+                                .foregroundStyle(Color.smoothTomatoInk)
+                                .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.smoothTomato.opacity(0.13))
                     }
                     if installation.id == CanvasInstallation.penn.id {
                         Text("Signing in securely saves your PennKey on this device so Smooth can reconnect. Disconnect at any time in Settings.")
@@ -1175,24 +1238,55 @@ private struct CanvasLoginPane: View {
 
                     guard paneActive else { return }
                     onConnected(persistenceNotice)
-                } else if installation.id != CanvasInstallation.penn.id {
-                    // A custom host can commit its landing page before a
-                    // session exists. Return to the WebView instead of
-                    // leaving the pane behind an endless progress spinner.
-                    //
-                    // Never at Penn, where a failed connect stays the silent
-                    // no-op it was at 39b2fff, the build that has kept a real
-                    // phone signed in. `navObserver.reset()` zeroes
-                    // `autoLoginAttempts`, the counter that holds the saved
-                    // PennKey password to one auto-submission per pane
-                    // appearance; resetting it while Penn's pane is still
-                    // mid-Duo would let a re-rendered credential form be
-                    // auto-filled a second time.
+                } else {
+                    // The student's own fixed sentence, never the raw sync
+                    // error (`state.error` can be a bare `localizedDescription`;
+                    // DashboardSmallFixesTests pins this since 9e1ccae).
                     message = "couldn't sign in. try again."
-                    navObserver.reset()
+                    switch CanvasConnectRetryRule.failedConnectAction(
+                        for: installation,
+                        automaticResetsSoFar: automaticResets
+                    ) {
+                    case .resetAndRetry:
+                        // A custom host can commit its landing page before a
+                        // session exists. Return to the WebView instead of
+                        // leaving the pane behind an endless progress
+                        // spinner, at most twice (`CanvasConnectRetryRule`).
+                        automaticResets += 1
+                        navObserver.reset()
+                    case .showFailureKeepingCounter:
+                        // Penn, or any school whose retries are spent. Never
+                        // `navObserver.reset()` here: at Penn a failed connect
+                        // stays as `39b2fff`, the build that has kept a real
+                        // phone signed in, left it, because `reset()` zeroes
+                        // `autoLoginAttempts`, the counter that holds the
+                        // saved PennKey password to one auto-submission per
+                        // pane appearance, and resetting it while the pane is
+                        // still mid-Duo would let a re-rendered credential
+                        // form be auto-filled a second time. The counter is
+                        // the part of `39b2fff` worth keeping; its spinner is
+                        // not (it had the same dead end, where the destination
+                        // flag stays latched and the spinner never clears). So
+                        // the pane records that the connect failed and shows
+                        // the WebView again, with the message and "try again"
+                        // above it.
+                        connectFailed = true
+                    }
                 }
             }
         }
+    }
+
+    /// "try again": loads the login start URL into the WebView already on
+    /// screen. It does not touch the observer's counters, for the reason in
+    /// `connect()`'s failure branch, and it does not call `connect()`: a
+    /// reload is a new sign-in, and if it lands signed in the student's
+    /// "I've finished signing in" button, below the page, completes it.
+    private func reloadLogin() {
+        message = nil
+        navObserver.webView?.load(
+            URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        )
     }
 }
 
