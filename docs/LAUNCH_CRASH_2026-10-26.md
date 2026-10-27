@@ -169,5 +169,33 @@ Done on `fix/duplicate-category-ids`, uncommitted at the time of writing:
   the iOS Simulator Debug build of app plus widget succeeded on the first
   round (the second round, the id rule and the two clamps, was compiled
   by `swift build` only).
-- Not yet done: a device install, the 3.2.2 (16) stamp, the archive and
-  upload, and reading one real crash report (step 2).
+
+**2026-10-27, morning.** Committed on the branch at Marco's say: the fix
+as `b73b603`, the 3.2.2 (16) stamp as `f4e448a` (by hand in both
+`project.yml` and `project.pbxproj`, no `xcodegen`). Two products were
+then built from that tree, both exit 0 with no `error:` lines, both
+reading 3.2.2 (16), AlarmKit weak-linked in the archive's app binary:
+
+- the Debug device app, for the phone test:
+  `.claude/worktrees/fix-dup-category-ids/build/DerivedData/Build/Products/Debug-iphoneos/Smooth.app`
+- the Release archive, ready for `-exportArchive` (the upload step),
+  **not uploaded**:
+  `.claude/worktrees/fix-dup-category-ids/build/Smooth.xcarchive`
+  (created 2026-10-27 16:03 UTC)
+
+Marco had no USB-C cable that day, so the phone test waits. When the
+phone is plugged in (CoreDevice id `8A287085-9C88-5A87-816B-1A8EF80D67AD`;
+it already runs a developer build, so the container stays readable):
+
+```bash
+xcrun devicectl device install app --device 8A287085-9C88-5A87-816B-1A8EF80D67AD /Users/marcoopertti/penn-dashboard/.claude/worktrees/fix-dup-category-ids/build/DerivedData/Build/Products/Debug-iphoneos/Smooth.app
+```
+
+```bash
+xcrun devicectl device process launch --device 8A287085-9C88-5A87-816B-1A8EF80D67AD com.lhf.lowhangingfruit
+```
+
+Then open it, let one refresh run, and read the phone's crash log
+folder for any new `Smooth-<date>.ips` (CLAUDE.md → Commands). Still not
+done: reading one real crash report (step 2), the upload, and the
+decision on the rest of Release A.
