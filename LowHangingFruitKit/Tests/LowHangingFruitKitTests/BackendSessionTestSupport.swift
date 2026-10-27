@@ -17,14 +17,18 @@ final class GoTrueScript: @unchecked Sendable {
     private var _refreshes = 0
     private var _refreshTokensSeen: [String] = []
     private var _refreshStatuses: [Int]
+    private var _signupStatuses: [Int]
 
     let signupDelay: TimeInterval
 
-    /// - Parameter refreshStatuses: statuses for successive refresh calls (the
-    ///   last repeats); 200 serves a token.
-    init(signupDelay: TimeInterval = 0, refreshStatuses: [Int] = [200]) {
+    /// - Parameters:
+    ///   - refreshStatuses: statuses for successive refresh calls (the last
+    ///     repeats); 200 serves a token.
+    ///   - signupStatuses: the same for sign-ups.
+    init(signupDelay: TimeInterval = 0, refreshStatuses: [Int] = [200], signupStatuses: [Int] = [200]) {
         self.signupDelay = signupDelay
         self._refreshStatuses = refreshStatuses
+        self._signupStatuses = signupStatuses
     }
 
     var signups: Int { lock.withLock { _signups } }
@@ -34,8 +38,13 @@ final class GoTrueScript: @unchecked Sendable {
     func reply(to request: URLRequest) -> (status: Int, body: Data, delay: TimeInterval) {
         let path = request.url?.path ?? ""
         if path.hasSuffix("/auth/v1/signup") {
-            let n = lock.withLock { () -> Int in _signups += 1; return _signups }
-            return (200, Self.goTrueBody(n: n, prefix: "signup"), signupDelay)
+            let (n, status) = lock.withLock { () -> (Int, Int) in
+                _signups += 1
+                let status = _signupStatuses.count > 1 ? _signupStatuses.removeFirst() : (_signupStatuses.first ?? 200)
+                return (_signups, status)
+            }
+            if status == 200 { return (200, Self.goTrueBody(n: n, prefix: "signup"), signupDelay) }
+            return (status, Data("{}".utf8), signupDelay)
         }
         if path.hasSuffix("/auth/v1/token") {
             let body = Self.bodyData(of: request)

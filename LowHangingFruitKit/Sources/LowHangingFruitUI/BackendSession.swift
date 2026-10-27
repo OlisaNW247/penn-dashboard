@@ -99,6 +99,28 @@ actor BackendSession {
     private var cachedToken: String?
     private var cachedTokenExpiresAt: Date?
 
+    /// The one mint or refresh that is running, if any. Every caller that
+    /// needs a token while it runs awaits it instead of starting its own.
+    ///
+    /// **Why an actor is not enough.** The actor serialises the synchronous
+    /// stretches of `accessToken`, but every network call in it is an `await`,
+    /// and an actor is re-entrant across an `await`: while the first caller is
+    /// suspended inside `signUpAnonymously`, a second one enters, finds no
+    /// cached token and no saved identity (the first has not saved it yet),
+    /// and signs up too. Two anonymous accounts exist, the second overwrites
+    /// the first in the Keychain, and the first is orphaned with whatever it
+    /// already did on the server. A cold launch does exactly this: the
+    /// dashboard's course-material sync and an `ask` both want a token inside
+    /// the same second. The wrong fix is a lock around `accessToken` (a
+    /// blocked caller would hold the actor, and an `await` cannot sit inside
+    /// an `NSLock`); a task handle everyone awaits is the single-flight.
+    private var inFlight: Task<String, Error>?
+
+    /// Bumped by `forgetIdentity()`. A mint that began under an older epoch
+    /// belongs to an identity that has since been thrown away, and must not
+    /// save it or cache its token.
+    private var epoch = 0
+
     init(
         configuration: BackendConfiguration,
         urlSession: URLSession = .shared,
@@ -120,6 +142,12 @@ actor BackendSession {
     /// was still good but the server has already revoked (identity deleted
     /// server-side, a manual token rotation) needs to bypass the cache
     /// entirely rather than hand back the same stale token a second time.
+    ///
+    /// **One sign-in at a time** (`inFlight`). A caller that arrives while a
+    /// mint or refresh is running joins it and gets the same token, or the
+    /// same error; a failure clears the flight, so the next call tries again.
+    /// A joiner passing `forceRefresh` is satisfied by the running flight too:
+    /// whatever it returns was minted after the token that was just rejected.
     func accessToken(forceRefresh: Bool = false) async throws -> String {
         if !forceRefresh,
            let token = cachedToken,
@@ -128,6 +156,27 @@ actor BackendSession {
             return token
         }
 
+        if let inFlight { return try await inFlight.value }
+
+        let startedAt = epoch
+        // A `Task` made inside an actor method runs on the actor, so the body
+        // below may touch actor state directly. It cannot start before this
+        // method suspends at `task.value`, which is after `inFlight` is set.
+        let task = Task { () throws -> String in
+            defer {
+                // `forgetIdentity()` may have dropped this flight already and
+                // a newer one may be running; leave that one alone.
+                if self.epoch == startedAt { self.inFlight = nil }
+            }
+            return try await self.mintOrRefresh(epoch: startedAt)
+        }
+        inFlight = task
+        return try await task.value
+    }
+
+    /// The body of one flight: read the saved identity and refresh it, or sign
+    /// up when there is none.
+    private func mintOrRefresh(epoch startedAt: Int) async throws -> String {
         // Three answers, because "no identity" means "create a new anonymous
         // account" and "the Keychain would not say" must never mean that. A
         // locked or refusing Keychain (before first unlock, a background wake
@@ -143,13 +192,13 @@ actor BackendSession {
         case let .found(found):
             saved = found
         case .notFound:
-            return try await signUpAnonymously()
+            return try await signUpAnonymously(epoch: startedAt)
         case .unavailable:
             throw BackendError.transport
         }
 
         do {
-            return try await refresh(with: saved)
+            return try await refresh(with: saved, epoch: startedAt)
         } catch BackendError.http(400), BackendError.http(401) {
             // The refresh token itself is no longer good — expired,
             // revoked, or the row was deleted server-side. There is no
@@ -158,7 +207,7 @@ actor BackendSession {
             // as `backend/PROTOCOL.md`'s anonymous-sign-in model intends
             // (there is no student-facing "log back in" to offer instead).
             persistence.clear()
-            return try await signUpAnonymously()
+            return try await signUpAnonymously(epoch: startedAt)
         }
     }
 
@@ -166,7 +215,13 @@ actor BackendSession {
     /// successful `delete-account` call (`BackendClient.deleteAccount()`) so
     /// the very next `ask` after that starts a brand new anonymous identity
     /// rather than one the server just told us it deleted.
+    ///
+    /// Also drops any flight that is still running: it was minting (or
+    /// refreshing) the identity being forgotten, and when it lands it must not
+    /// write that identity back (`performAuth` checks the epoch).
     func forgetIdentity() {
+        epoch += 1
+        inFlight = nil
         cachedToken = nil
         cachedTokenExpiresAt = nil
         persistence.clear()
@@ -174,23 +229,23 @@ actor BackendSession {
 
     // MARK: - GoTrue calls
 
-    private func signUpAnonymously() async throws -> String {
+    private func signUpAnonymously(epoch startedAt: Int) async throws -> String {
         var request = authRequest(path: "auth/v1/signup")
         // Anonymous sign-in per `backend/PROTOCOL.md`: an empty JSON object,
         // not an absent body — GoTrue's anonymous-signup endpoint requires a
         // `Content-Type: application/json` request with a parseable (if
         // empty) JSON body.
         request.httpBody = Data("{}".utf8)
-        return try await performAuth(request)
+        return try await performAuth(request, epoch: startedAt)
     }
 
-    private func refresh(with identity: BackendIdentity) async throws -> String {
+    private func refresh(with identity: BackendIdentity, epoch startedAt: Int) async throws -> String {
         var request = authRequest(
             path: "auth/v1/token",
             queryItems: [URLQueryItem(name: "grant_type", value: "refresh_token")]
         )
         request.httpBody = try? JSONEncoder().encode(RefreshRequestBody(refreshToken: identity.refreshToken))
-        return try await performAuth(request)
+        return try await performAuth(request, epoch: startedAt)
     }
 
     private func authRequest(path: String, queryItems: [URLQueryItem] = []) -> URLRequest {
@@ -213,7 +268,7 @@ actor BackendSession {
     /// `ClaudeAssistantResponder`'s header insisted on for its own
     /// credential: nothing here ever logs `request`, `data`, or the decoded
     /// tokens, on success or failure.
-    private func performAuth(_ request: URLRequest) async throws -> String {
+    private func performAuth(_ request: URLRequest, epoch startedAt: Int) async throws -> String {
         let data: Data
         let response: URLResponse
         do {
@@ -226,6 +281,11 @@ actor BackendSession {
         guard let decoded = try? JSONDecoder().decode(GoTrueResponse.self, from: data) else {
             throw BackendError.decoding
         }
+
+        // The identity was forgotten while this request was out: the account
+        // it just created or rotated is the one the student asked to delete,
+        // so it is neither saved nor cached.
+        guard epoch == startedAt else { throw BackendError.transport }
 
         persistence.save(BackendIdentity(userID: decoded.user.id, refreshToken: decoded.refreshToken))
         cachedToken = decoded.accessToken
