@@ -327,6 +327,9 @@ struct ContentView: View {
             if phase == .active {
                 Task {
                     await scheduler.refreshAuthStatus()
+                    // Before `refresh()`, whose first step is the network. See
+                    // `replanFromLedger`.
+                    await replanFromLedger()
                     await refresh()
                 }
             }
@@ -750,6 +753,10 @@ struct ContentView: View {
     /// session check, then reload and replan. No feed sync, no laptop sync and
     /// no notification drains; see the comment at the call in `.task`.
     private func refreshSessionSourcesAtLaunch() async {
+        // First, before the renewal wait and every fetch below: the reminders
+        // and alarms are re-planned from the ledger as it stands. See
+        // `replanFromLedger`.
+        await replanFromLedger()
         // `AppState.init` has already judged the saved Canvas session, and when
         // it found the cookies aged or missing it started a silent renewal.
         // That renewal is the whole reason this pass exists on a phone that
@@ -762,6 +769,39 @@ struct ContentView: View {
         await state.awaitPendingSilentRenewal()
         await fetchSessionSources()
         await settleAfterFetch()
+    }
+
+    /// Reloads the dashboard from the ledger and re-plans the reminders and
+    /// alarms from it, with no network in front.
+    ///
+    /// The plan used to be rebuilt only at the end of a pass, after the feed
+    /// fetch, the Canvas chain and, at a cold launch, a silent renewal that
+    /// can wait out thirty seconds (`awaitPendingSilentRenewal`). So on a slow
+    /// or dead network the reminders and alarms were as old as the last pass
+    /// that got through, and an item the student had ticked off, or an edit
+    /// they had made, was still ringing for it (hardening plan C7, NOT-12,
+    /// SYN-08). The ledger is on disk and `AppState` loaded it in `init`, so
+    /// what is already known can be planned at once; the pass after the fetch
+    /// (`settleAfterFetch`) plans again from whatever the fetch added. The
+    /// wrong fix is to move the replan out of `settleAfterFetch`: the fetch's
+    /// news still has to reach the plan.
+    ///
+    /// **Only once the dashboard is bound.** Until `.onAppear` has bound the
+    /// view model, `vm.items` is empty, and a plan made from an empty list
+    /// takes every pending reminder and alarm back (the same trap
+    /// `NotificationActionInbox.drain` guards). `.task` and `.onAppear` can
+    /// start in either order, so the flag is checked, not assumed; when it is
+    /// not set yet this does nothing and the pass after the fetch plans.
+    ///
+    /// Run at launch (`refreshSessionSourcesAtLaunch`, so also when the
+    /// reconnect cover closes) and on returning to the foreground. Not in
+    /// `refresh()`'s five-minute loop: a pass there plans after its fetch
+    /// anyway, and a second plan before it would only be a second full re-add
+    /// of the queue every five minutes.
+    private func replanFromLedger() async {
+        guard isDashboardBound else { return }
+        vm.reload(preservingEdits: true)
+        if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
     }
 
     /// Gradescope's scrape, then the Canvas fetch that is the only source of
