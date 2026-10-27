@@ -20,6 +20,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // Identity
 // ---------------------------------------------------------------------
 
+/** True for GoTrue's "no such user" answer, from either a token whose user
+ *  was deleted (`getUser`, 403) or an admin delete of an id that is already
+ *  gone (`admin.deleteUser`, 404). Current GoTrue sends the code
+ *  `user_not_found` for both; the message check covers an older server that
+ *  sends only text. A bare 404 is not enough on its own: a misconfigured
+ *  auth URL also answers 404, and that must not read as "already deleted". */
+export function isAuthUserGone(
+  error: { code?: string | null; message?: string | null },
+): boolean {
+  if (error.code === "user_not_found") return true;
+  return /user (from sub claim in jwt )?(does not exist|not found)/i.test(error.message ?? "");
+}
+
 export interface ResolvedIdentity {
   /** The student every data rule scopes to: the owner when the caller is a
    *  linked device, else the caller. */

@@ -1040,6 +1040,18 @@ user, the device links and every sync blob, then the auth user. Shared
 course material is untouched (it is not the user's data). Response
 `{ "deleted": true }`.
 
+**Idempotent** (since 2026-10-27, hardening BE-14): a second call, or a
+retry after a failure part way, completes the deletion and answers 200
+`{ "deleted": true }`. An owner's linked devices are deleted first, while the
+link rows that name them still exist (deleting a device's auth user cascades
+its link away), then the owner's rows, then the owner; an auth user that is
+already gone is skipped rather than failing the call, so it can fail at any
+step and be called again. A call whose token is genuine but whose account no
+longer exists (GoTrue answers `user_not_found`, which `requireUser` surfaces
+as a 401 with code `user_not_found`) is answered 200 by this function only:
+the deletion already finished. A bad or expired token is still 401
+`unauthorized`.
+
 From a **linked device**: never deletes the owner. It behaves as `unpair` of
 that device (link, blob row, auth user) and answers `{ "deleted": true }`.
 Identity resolution makes a device's `userId` its owner's, so the rule is

@@ -17,7 +17,7 @@
 // every role except service_role.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { HttpError } from "./http.ts";
-import { resolveIdentity } from "./devices.ts";
+import { isAuthUserGone, resolveIdentity } from "./devices.ts";
 
 export interface AuthContext {
   /** The student every enrollment and quota rule scopes to. For a caller
@@ -69,6 +69,14 @@ export async function requireUser(req: Request): Promise<AuthContext> {
 
   const { data, error } = await userClient.auth.getUser();
   if (error || !data.user) {
+    // GoTrue checks the token's signature first, then looks the user up:
+    // "user_not_found" therefore means a genuine token whose account has
+    // been deleted, which is not the same as a bad or expired one. Still a
+    // 401 to everyone, but with its own code so `delete-account` can answer
+    // a retry of a deletion that already finished.
+    if (error && isAuthUserGone(error)) {
+      throw new HttpError(401, "user_not_found", "this account no longer exists");
+    }
     throw new HttpError(401, "unauthorized", "invalid or expired session");
   }
 

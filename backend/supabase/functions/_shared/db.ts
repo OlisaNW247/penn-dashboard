@@ -14,6 +14,7 @@ import type {
   SyncClient,
 } from "./manifest.ts";
 import { WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
+import { isAuthUserGone } from "./devices.ts";
 import {
   catalogEntryWire,
   academicSemester,
@@ -1341,7 +1342,9 @@ export async function removeDevices(
 
   for (const id of deviceUserIds) {
     const { error } = await client.auth.admin.deleteUser(id);
-    if (error) throw new Error("failed to delete device auth user");
+    // A device user that is already gone is the outcome this call wants, so
+    // unpairing twice (or retrying after a failure part way) is not an error.
+    if (error && !isAuthUserGone(error)) throw new Error("failed to delete device auth user");
   }
   return deviceUserIds.length;
 }

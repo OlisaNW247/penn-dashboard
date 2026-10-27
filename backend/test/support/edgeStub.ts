@@ -39,7 +39,18 @@ export type OpenRouterBehaviour =
   | { kind: "stall-before-first-byte" }
   | { kind: "fail"; status: number };
 
+export interface StubRequest {
+  method: string;
+  url: URL;
+  /** The request body as text ("" when there is none). */
+  body: string;
+}
+
 export interface StubOptions {
+  /** First refusal on every non-OpenRouter request: return a Response to
+   *  answer it, or `undefined` to fall through to the defaults below. How a
+   *  test gives GoTrue's admin API or a table its own behaviour. */
+  route?: (request: StubRequest) => Response | undefined | Promise<Response | undefined>;
   /** What `reserve_ask_usage` answers. A function is called once per reservation. */
   reserve: () => unknown;
   /** Non-200 status for `reserve_ask_usage`, to simulate a stalled or broken counter. */
@@ -127,6 +138,15 @@ export function installStub(options: StubOptions): Stub {
         });
       }
       return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }
+
+    if (options.route) {
+      const body = request ? await request.clone().text() : String(init?.body ?? "");
+      const answered = await options.route({ method: request?.method ?? init?.method ?? "GET", url, body });
+      if (answered) {
+        stub.log.push(`route:${url.pathname}`);
+        return answered;
+      }
     }
 
     if (url.pathname === "/auth/v1/user") {
