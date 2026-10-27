@@ -282,9 +282,16 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 
     /// Mirrors every redirect-log entry to the unified system log, so the
     /// chain is visible live in Xcode's console (or Console.app) while
-    /// reproducing a login failure — no in-app export step needed. Same
-    /// privacy budget as the report: host + path + status only, which is
-    /// why `.public` is safe here.
+    /// reproducing a login failure — no in-app export step needed. The entry
+    /// is host + path + status, no query and no cookie.
+    ///
+    /// `.private`, not `.public` (2026-10-27, SEC-17). Host and path are a
+    /// URL, and a URL is where a student's school, their identity provider
+    /// and sometimes a course or user id show up; a Release build writes this
+    /// log too and a sysdiagnose carries it off the phone. The in-app redirect
+    /// report (`redirectLog`, `LoginDiagnosticsLog`) is unchanged, and an
+    /// attached debugger still shows the values, which is how a login failure
+    /// is reproduced.
     private static let consoleLog = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "LHF",
         category: "login-redirects"
@@ -292,7 +299,7 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 
     fileprivate func appendLogEntry(host: String, path: String, status: Int?) {
         let entry = LoginRedirectLogEntry(host: host, path: path, status: status, at: Date())
-        Self.consoleLog.info("\(entry.description, privacy: .public)")
+        Self.consoleLog.info("\(entry.description, privacy: .private)")
         redirectLog.insert(entry, at: 0)
         if redirectLog.count > maxLogEntries {
             redirectLog.removeLast(redirectLog.count - maxLogEntries)

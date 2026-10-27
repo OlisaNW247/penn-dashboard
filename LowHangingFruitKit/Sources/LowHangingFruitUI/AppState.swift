@@ -6489,10 +6489,18 @@ final class AppState: ObservableObject {
 
     /// Console-log mirror of `courseIntelDiagnosticLines`, so a puzzling
     /// on-device profile is visible live in Xcode's console without the user
-    /// having to export the copyable report. Same privacy budget as that
-    /// report — `.public` is safe here because the content is built to stay
-    /// inside it. Skipped in fixture/preview mode: that's sample data, not a
-    /// real account worth logging.
+    /// having to export the copyable report. Skipped in fixture/preview mode:
+    /// that's sample data, not a real account worth logging.
+    ///
+    /// `.private`, not `.public` (2026-10-27, SEC-17). The report is built to
+    /// stay inside a privacy budget (course keys, Canvas course ids and
+    /// counts, never a title), and that budget is right for a report the
+    /// student chooses to copy out. It is the wrong one for the unified log,
+    /// which a Release build writes too and which a sysdiagnose carries off
+    /// the phone: these lines name every class the student takes and how many
+    /// items each has. An attached debugger still shows the values, which is
+    /// the only place this was ever read; the wrong fix would be to delete the
+    /// mirror, since the live console is how a puzzling profile gets seen.
     private static let courseIntelLog = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "LHF",
         category: "course-intel"
@@ -6501,7 +6509,7 @@ final class AppState: ObservableObject {
     private func logCourseIntelDiagnostics() {
         guard !isUsingFixtureData else { return }
         for line in courseIntelDiagnosticLines {
-            Self.courseIntelLog.info("\(line, privacy: .public)")
+            Self.courseIntelLog.info("\(line, privacy: .private)")
         }
     }
 
