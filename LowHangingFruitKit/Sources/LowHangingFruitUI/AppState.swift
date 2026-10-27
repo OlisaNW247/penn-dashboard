@@ -4103,8 +4103,10 @@ final class AppState: ObservableObject {
         courseContentDecisions = [:]
         CourseContentDecisionStore.clear()
         // Propagate the clear to the iCloud copy too, or the next external
-        // pull resurrects decisions this disconnect just threw away.
-        if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
+        // pull resurrects decisions this disconnect just threw away. A
+        // removal, so `pushRemoval`: `push(key:)` never removes, because an
+        // absent local value is not the same as a cleared one.
+        if cloudSyncEnabled { cloudPrefsMirror.pushRemoval(key: "courseContentDecisionsV1") }
         submittedCanvasAssignmentIDs = []
         // The no-submission cache is Canvas-session-derived the same way the
         // submitted-ids side channel is — clear it wholesale rather than

@@ -12,6 +12,18 @@ import LowHangingFruitKit
 /// `SharedDefaults.sharedSuite()` used to reach the real Mac app's App Group
 /// container before that guard existed.
 ///
+/// **Removals and first meetings (hardening plan B11, DAT-09).** Two rules
+/// sit on top of the semantics below, both decided by pure functions in
+/// `CloudPrefsMerge` so they can be tested without iCloud. A removal is never
+/// inferred from absence: the launch seed pushes only the values this device
+/// has, and a key is removed from iCloud only through `pushRemoval`, an
+/// explicit act (disconnecting Canvas clears the content decisions). And the
+/// first launch with sync on merges this device's copy of each key with
+/// iCloud's instead of overwriting either. Both fix the same bug: a second
+/// device switching sync on had no preferences of its own, so the old seed
+/// deleted every key the first device had pushed, and the first device then
+/// pulled those deletions.
+///
 /// **Conflict semantics: whole-value, last-writer-wins.** Every mirrored key
 /// holds one small JSON blob or a short array/dictionary — the entire
 /// decision map, the entire deleted-courses set, the entire rename map, the
@@ -90,12 +102,33 @@ final class CloudPrefsMirror: @unchecked Sendable {
     /// sandboxed `swift test` run.
     let isActive: Bool
 
+    /// Set once this device has merged with iCloud for the first time since
+    /// sync was last off. A launch with sync OFF clears it, so turning sync
+    /// off and on again is a first meeting again. `UserDefaults.lhf`, and not
+    /// in `mirroredKeys`: a second device has its own.
+    static let firstMergeDoneKey = "cloudPrefsFirstMergeDoneV1"
+
+    /// How long a first enable waits for iCloud's initial download before it
+    /// merges with whatever it has. The download normally lands in seconds;
+    /// the wait only matters when it never does (no iCloud data yet, or no
+    /// connection), where a late merge is better than seeding blind.
+    static let initialSyncGrace: TimeInterval = 20
+
     private var observerToken: NSObjectProtocol?
+
+    /// True between a first enable that found iCloud empty and the moment its
+    /// initial download (or the grace period) lets the merge run. Guarded by
+    /// `stateLock`: set on the launching thread, cleared from the observer
+    /// (main queue) and the grace timer.
+    private var firstMergePending = false
+    private let stateLock = NSLock()
 
     /// Fired after an external (other-device) change pulled fresh values for
     /// one or more mirrored keys into `UserDefaults.lhf`. `AppState` uses
     /// this to re-read the affected in-memory state and rebuild the
-    /// dashboard — see `AppState.reloadMirroredPreferences`.
+    /// dashboard — see `AppState.reloadMirroredPreferences`. Also fired, on the
+    /// main queue after `init` returns, when the first-enable merge adopted
+    /// values from iCloud, since `AppState` assigns it just after construction.
     var onExternalChange: (([String]) -> Void)?
 
     /// - Parameter enabled: the user's Settings toggle state at the point
@@ -106,7 +139,15 @@ final class CloudPrefsMirror: @unchecked Sendable {
     ///   .setCloudSyncEnabled` documents for the assignment ledger itself.
     init(enabled: Bool) {
         self.isActive = enabled && !SharedDefaults.isTestRunner
-        guard isActive else { return }
+        guard isActive else {
+            // Sync is off this launch, so the next time it is on is a first
+            // meeting again. Never under a test runner, whose `.lhf` is the
+            // process-wide `.standard`.
+            if !enabled && !SharedDefaults.isTestRunner {
+                UserDefaults.lhf.removeObject(forKey: Self.firstMergeDoneKey)
+            }
+            return
+        }
 
         let store = NSUbiquitousKeyValueStore.default
         // Documented kickstart: `synchronize()` asks the daemon to fetch any
@@ -114,20 +155,33 @@ final class CloudPrefsMirror: @unchecked Sendable {
         // of the first `didChangeExternallyNotification` (which otherwise
         // only fires for changes seen *after* this call).
         store.synchronize()
-        // Seeds iCloud with this device's current values on every launch
-        // sync is on. Whole-value last-writer-wins (see the type doc above)
-        // makes this safe even if a genuinely newer value from another
-        // device is mid-flight: that device's own next
-        // `didChangeExternallyNotification` still wins the very next update,
-        // it's just delayed by however long this round trip takes.
-        pushAll()
 
+        // Registered before the seed so a download that lands during it is
+        // not missed.
         observerToken = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: store,
             queue: .main
         ) { [weak self] notification in
             self?.handleExternalChange(notification)
+        }
+
+        let remoteHasAny = Self.mirroredKeys.contains { store.object(forKey: $0) != nil }
+        switch CloudPrefsMerge.launchAction(
+            markerSet: UserDefaults.lhf.bool(forKey: Self.firstMergeDoneKey),
+            remoteHasAny: remoteHasAny
+        ) {
+        case .seedOnly:
+            // Seeds iCloud with this device's current values on every launch
+            // sync is on, present values only (see `pushAll`).
+            pushAll()
+        case .mergeNow:
+            runFirstMerge()
+        case .deferMerge:
+            setFirstMergePending(true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.initialSyncGrace) { [weak self] in
+                self?.finishDeferredMergeIfPending()
+            }
         }
     }
 
@@ -138,13 +192,19 @@ final class CloudPrefsMirror: @unchecked Sendable {
     }
 
     /// Pushes every mirrored key's current `UserDefaults.lhf` value up to
-    /// iCloud. Called once at construction (see `init`); also usable
-    /// directly (e.g. by a future "force resync" affordance).
+    /// iCloud — the values this device HAS, and only those. A key it has no
+    /// value for is skipped, never removed from iCloud (see `CloudPrefsMerge`:
+    /// absence is not authorship). Called once at construction on an ordinary
+    /// launch (see `init`); also usable directly (e.g. by a future "force
+    /// resync" affordance).
     func pushAll() {
         guard isActive else { return }
-        for key in Self.mirroredKeys {
-            push(key: key)
-        }
+        let steps = CloudPrefsMerge.seedSteps(
+            keys: Self.mirroredKeys,
+            local: localValues(),
+            remote: remoteValues(NSUbiquitousKeyValueStore.default)
+        )
+        _ = apply(steps, to: NSUbiquitousKeyValueStore.default)
     }
 
     /// Pushes one mirrored key's current `UserDefaults.lhf` value to iCloud.
@@ -155,18 +215,29 @@ final class CloudPrefsMirror: @unchecked Sendable {
     /// `AppState.cloudSyncEnabled` at the call site. A key outside
     /// `mirroredKeys` is silently ignored rather than pushed — this class
     /// only ever touches its own frozen allowlist, on purpose.
+    ///
+    /// **Never a removal.** A key with no local value is a no-op here. The one
+    /// place that used to push removals from this method was the launch seed,
+    /// where "no local value" meant "this device never had one", not "the
+    /// student cleared it". An explicit clear goes through `pushRemoval`.
+    /// Skipped while the first-enable merge is still waiting for iCloud's
+    /// download: the merge pushes the current local value itself, and pushing
+    /// now would write over data this device has not received.
     func push(key: String) {
         guard isActive, Self.mirroredKeys.contains(key) else { return }
-        let store = NSUbiquitousKeyValueStore.default
-        if let value = UserDefaults.lhf.object(forKey: key) {
-            store.set(value, forKey: key)
-        } else {
-            // Absence is itself meaningful for these keys (e.g. "no course
-            // has been renamed"), so a locally-cleared key removes the
-            // iCloud copy too, rather than leaving a stale value behind for
-            // the next pull to resurrect.
-            store.removeObject(forKey: key)
-        }
+        guard !isFirstMergePending else { return }
+        guard let value = UserDefaults.lhf.object(forKey: key) else { return }
+        NSUbiquitousKeyValueStore.default.set(value, forKey: key)
+    }
+
+    /// Removes one mirrored key from iCloud, because THIS device's student just
+    /// cleared it (`AppState.disconnectCanvas` wipes the content decisions, and
+    /// without this the next pull would resurrect them). The only removal the
+    /// mirror makes; callers state it explicitly so that a missing local value
+    /// can never be mistaken for one.
+    func pushRemoval(key: String) {
+        guard isActive, Self.mirroredKeys.contains(key) else { return }
+        NSUbiquitousKeyValueStore.default.removeObject(forKey: key)
     }
 
     /// Pulls whichever mirrored keys changed on another device into
@@ -176,6 +247,10 @@ final class CloudPrefsMirror: @unchecked Sendable {
     /// app's iCloud key-value container, but a future key added elsewhere in
     /// the same container is a possibility worth not reacting to) are
     /// ignored.
+    ///
+    /// While the first-enable merge is pending, whatever arrives is merged
+    /// with this device's copy instead of replacing it, and the merge is
+    /// finished by the initial-sync delivery (or the grace timer).
     private func handleExternalChange(_ notification: Notification) {
         guard isActive,
               let userInfo = notification.userInfo,
@@ -185,14 +260,99 @@ final class CloudPrefsMirror: @unchecked Sendable {
         let relevant = changedKeys.filter { Self.mirroredKeys.contains($0) }
         guard !relevant.isEmpty else { return }
 
+        if isFirstMergePending {
+            let reason = userInfo[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int
+            runFirstMerge(finishing: reason == NSUbiquitousKeyValueStoreInitialSyncChange)
+            return
+        }
+
         let store = NSUbiquitousKeyValueStore.default
         for key in relevant {
             if let value = store.object(forKey: key) {
                 UserDefaults.lhf.set(value, forKey: key)
             } else {
+                // Another device cleared this key (`pushRemoval`), so this one
+                // follows. Not the launch seed: that never removes anything.
                 UserDefaults.lhf.removeObject(forKey: key)
             }
         }
         onExternalChange?(relevant)
+    }
+
+    // MARK: - First-enable merge
+
+    private var isFirstMergePending: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return firstMergePending
+    }
+
+    private func setFirstMergePending(_ value: Bool) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        firstMergePending = value
+    }
+
+    /// Merges this device's mirrored keys with iCloud's (`CloudPrefsMerge
+    /// .mergeSteps`) and writes each side what it lacks. Idempotent, so it can
+    /// run again as more of iCloud's data arrives. `finishing` ends the
+    /// pending state and records that this device has now met iCloud.
+    private func runFirstMerge(finishing: Bool = true) {
+        let store = NSUbiquitousKeyValueStore.default
+        let steps = CloudPrefsMerge.mergeSteps(
+            keys: Self.mirroredKeys,
+            local: localValues(),
+            remote: remoteValues(store)
+        )
+        let adopted = apply(steps, to: store)
+        if finishing {
+            setFirstMergePending(false)
+            UserDefaults.lhf.set(true, forKey: Self.firstMergeDoneKey)
+        }
+        // `AppState` assigns `onExternalChange` after it constructs this
+        // object, so a merge that ran inside `init` tells it on the next turn
+        // of the main queue.
+        if !adopted.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                self?.onExternalChange?(adopted)
+            }
+        }
+    }
+
+    /// The grace timer's half: the initial download never announced itself, so
+    /// merge with what the cache holds now (seeding iCloud if it is still
+    /// empty), unless the delivery already finished the job.
+    private func finishDeferredMergeIfPending() {
+        guard isFirstMergePending else { return }
+        runFirstMerge()
+    }
+
+    /// Performs `steps`, returning the keys written to this device's defaults.
+    private func apply(_ steps: [CloudPrefsMerge.Step], to store: NSUbiquitousKeyValueStore) -> [String] {
+        var adopted: [String] = []
+        for step in steps {
+            switch step {
+            case let .setRemote(key, value):
+                store.set(value, forKey: key)
+            case let .setLocal(key, value):
+                UserDefaults.lhf.set(value, forKey: key)
+                adopted.append(key)
+            }
+        }
+        return adopted
+    }
+
+    private func localValues() -> [String: Any] {
+        var values: [String: Any] = [:]
+        for key in Self.mirroredKeys {
+            if let value = UserDefaults.lhf.object(forKey: key) { values[key] = value }
+        }
+        return values
+    }
+
+    private func remoteValues(_ store: NSUbiquitousKeyValueStore) -> [String: Any] {
+        var values: [String: Any] = [:]
+        for key in Self.mirroredKeys {
+            if let value = store.object(forKey: key) { values[key] = value }
+        }
+        return values
     }
 }
