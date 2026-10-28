@@ -95,7 +95,7 @@ struct CanvasCompletionGuide: View {
 
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Preview data · practice only")
+                    Text("Preview")
                         .font(.lhfMono(10))
                         .foregroundStyle(Color.smoothMuted)
                     if let notice {

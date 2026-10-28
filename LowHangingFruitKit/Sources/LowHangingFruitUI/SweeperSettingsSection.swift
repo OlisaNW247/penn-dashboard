@@ -34,7 +34,7 @@ struct SweeperSettingsSection: View {
                     }
                 }
                 if scheduler.sweeperSound.filename != nil {
-                    Button("preview audio", systemImage: "play.circle") {
+                    Button("Preview", systemImage: "play.circle") {
                         preview?.stop()
                         guard let filename = scheduler.sweeperSound.filename,
                               let url = Bundle.main.url(forResource: filename, withExtension: nil) else { return }
