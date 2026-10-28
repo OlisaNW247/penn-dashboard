@@ -1172,6 +1172,12 @@ final class AppState: ObservableObject {
             )
             dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
         }
+        // Before the edits are read: moves ticks and edited dates on recurring
+        // occurrences to the zone-independent ids this build mints, once
+        // (`RecurringOccurrenceRekey`). A no-op on a phone in Eastern time.
+        // It sits here rather than later in init because B3 moved this read
+        // ahead of the ledger's first read, and the re-key has to precede it.
+        RecurringOccurrenceRekey.runIfNeeded(assignmentStore: store, dueDateEditStore: dueDateEditStore)
         dueDateEdits = dueDateEditStore?.load() ?? [:]
         store?.editedDueDates = dueDateEdits
 
