@@ -30,7 +30,9 @@ enum SyncKeyStore {
 
     /// Stores `key`, replacing any earlier one (a re-pair). False if the
     /// Keychain refused; the caller must then not tell the student they are
-    /// paired.
+    /// paired. Update in place, add only when nothing is there
+    /// (`KeychainItem.write`), so a refused re-pair leaves the old key
+    /// rather than none.
     @discardableResult
     static func save(_ key: SymmetricKey) -> Bool {
         // Never touch the developer's real Keychain item under `swift test`;
@@ -38,29 +40,23 @@ enum SyncKeyStore {
         guard !SharedDefaults.isTestRunner else { return false }
         let data = key.withUnsafeBytes { Data($0) }
         guard data.count == keyByteCount else { return false }
-        // Keychain has no upsert: delete, then add.
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        return KeychainItem.write(data, base: baseQuery()) == errSecSuccess
+    }
+
+    /// The stored key in three answers (see `KeychainRead`). A value of the
+    /// wrong length reads as not found (`key(from:)`).
+    static func read() -> KeychainRead<SymmetricKey> {
+        KeychainItem.read(baseQuery()).decoded { key(from: $0) }
     }
 
     static func load() -> SymmetricKey? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
-        return key(from: data)
+        read().value
     }
 
     /// Forgets the key: unpairing, or disconnecting Canvas.
     static func delete() {
         guard !SharedDefaults.isTestRunner else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
     }
 
     static let keyByteCount = 32

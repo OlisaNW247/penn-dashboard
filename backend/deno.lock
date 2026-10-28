@@ -2,7 +2,8 @@
   "version": "5",
   "specifiers": {
     "npm:@supabase/supabase-js@2": "2.115.0",
-    "npm:unpdf@1": "1.8.1"
+    "npm:@supabase/supabase-js@2.115.0": "2.115.0",
+    "npm:unpdf@1.8.1": "1.8.1"
   },
   "npm": {
     "@supabase/auth-js@2.115.0": {

@@ -47,38 +47,36 @@ enum EdSessionTokenStore {
         ]
     }
 
-    /// Stores `token`, replacing any earlier one. An empty string is ignored
+    /// Stores `token`, replacing any earlier one (`KeychainItem.write`: update
+    /// in place, add only when nothing is there). An empty string is ignored
     /// rather than stored, so a failed page read can never overwrite a good
-    /// token with nothing.
-    static func save(_ token: String) {
-        guard !SharedDefaults.isTestRunner else { return }
-        guard !token.isEmpty, let data = token.data(using: .utf8) else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+    /// token with nothing. False when the Keychain refused, in which case the
+    /// previous token is still in place.
+    @discardableResult
+    static func save(_ token: String) -> Bool {
+        guard !SharedDefaults.isTestRunner else { return false }
+        guard !token.isEmpty, let data = token.data(using: .utf8) else { return false }
+        return KeychainItem.write(data, base: baseQuery()) == errSecSuccess
+    }
+
+    /// The stored token in three answers (see `KeychainRead`).
+    static func read() -> KeychainRead<String> {
+        guard !SharedDefaults.isTestRunner else { return .notFound }
+        return KeychainItem.read(baseQuery()).decoded { data in
+            guard let token = String(data: data, encoding: .utf8), !token.isEmpty else { return nil }
+            return token
+        }
     }
 
     /// The stored token, if any.
     static func load() -> String? {
-        guard !SharedDefaults.isTestRunner else { return nil }
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8),
-              !token.isEmpty
-        else { return nil }
-        return token
+        read().value
     }
 
     /// Deletes the stored token. Safe to call when there is none.
     static func remove() {
         guard !SharedDefaults.isTestRunner else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
     }
 
     /// Whether a token is on file, without exposing it.

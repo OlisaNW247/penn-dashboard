@@ -8,6 +8,7 @@
 // protocol document already describes.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { academicSemester, catalogCode, fetchCatalogCourse, type CatalogEntryWire } from "../_shared/catalog.ts";
 import type { CourseProfileWire } from "../_shared/profile.ts";
@@ -464,6 +465,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     if (req.method !== "POST") {
       throw new HttpError(405, "method_not_allowed", "sync only accepts POST");
     }

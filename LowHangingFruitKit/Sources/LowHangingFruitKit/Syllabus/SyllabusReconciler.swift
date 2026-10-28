@@ -47,7 +47,8 @@ public enum SyllabusReconciler {
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let canvasByID = Dictionary(uniqueKeysWithValues: canvasCategories.map { ($0.id, $0) })
+        // First wins if Canvas hands back a group id twice; a duplicate key must not trap.
+        let canvasByID = Dictionary(canvasCategories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         return match.matches.compactMap { match -> SyllabusCountGap? in
             guard match.isApplied,

@@ -1,6 +1,33 @@
 import Foundation
 import SwiftData
 
+/// Versioned schema for the grade-history store, the twin of `LedgerSchemaV1`.
+///
+/// `GradeHistory.store` was opened with a bare `ModelContainer(for:)`, which
+/// pins the file to an anonymous, unversioned schema. That works until a field
+/// is added, and then the open throws, `makeDefault()` falls back to memory,
+/// and the week-delta chip loses its baseline with nothing to say why. Declaring
+/// the schema makes the next change a migration instead.
+///
+/// 1.0.0 is the version SwiftData gives an unversioned schema, so the file every
+/// shipped build wrote is adopted in place rather than treated as incompatible
+/// (`GradeHistoryStoreHealthTests` opens one written the old way). A store
+/// created from here on is stamped with this version.
+enum GradeHistorySchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
+
+    static var models: [any PersistentModel.Type] { [StoredGradeObservation.self] }
+}
+
+/// Every grade-history schema version the app has shipped. Empty `stages`
+/// because V1 is the first; wired into every container so a future version only
+/// has to append (see `LedgerMigrationPlan`).
+enum GradeHistoryMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [GradeHistorySchemaV1.self] }
+
+    static var stages: [MigrationStage] { [] }
+}
+
 /// Durable home for observed grade history — the trail of `(day, percent)`
 /// readings behind the week-delta chip (docs/grades.md §11).
 ///
@@ -38,6 +65,29 @@ public final class GradeHistoryStore {
     /// relaunch — mirrors `AssignmentStore.isPersistent`.
     public let isPersistent: Bool
 
+    /// Why history is running in memory when the on-disk file could not be
+    /// used. Nil on a store that opened on disk, and on the deliberate
+    /// in-memory path (tests and previews), which is not a failure. Before
+    /// this, `makeDefault()` swallowed the error and the fallback looked
+    /// exactly like a store that works (hardening plan 2026-10-25, B9: DAT-08).
+    public let storageFailureReason: String?
+
+    /// The most recent failed write and fetch, and how many failed this
+    /// session: the same two pairs `AssignmentStore` keeps, for the same
+    /// reason. `isPersistent` says only that the file opened; a full disk fails
+    /// every save while the store still reports itself persistent. These feed
+    /// `StorageHealth.Failures`.
+    public private(set) var lastSaveError: String?
+    public private(set) var failedSaveCount: Int = 0
+    public private(set) var lastReadError: String?
+    public private(set) var failedReadCount: Int = 0
+
+    /// Test seams, as on `AssignmentStore`: while set, every fetch (or every
+    /// save that has something to save) fails with this. Never set outside
+    /// tests.
+    var readFailureForTesting: (any Error)?
+    var saveFailureForTesting: (any Error)?
+
     /// One observed reading. Mirrors the shape `GradeWatcherStore` published
     /// before this store existed, so its callers and its `weekDelta` maths are
     /// unchanged by the move.
@@ -61,16 +111,30 @@ public final class GradeHistoryStore {
     // toggle or not. When grade history is meant to ride the iCloud sync
     // (the "later" this type's doc mentions), that gets its own opt-in
     // cloud init, like AssignmentStore.init(cloudKitGroupURL:).
-    public init(inMemory: Bool = false) throws {
+    /// Every container goes through the versioned schema and the migration
+    /// plan, as the ledger's do (`LedgerSchema.swift`).
+    private static func makeContainer(_ config: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(
+            for: Schema(versionedSchema: GradeHistorySchemaV1.self),
+            migrationPlan: GradeHistoryMigrationPlan.self,
+            configurations: config
+        )
+    }
+
+    /// - Parameter storageFailureReason: Non-nil only for the fallback
+    ///   `makeDefault()` builds after the file could not be used.
+    public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
-        self.container = try ModelContainer(for: StoredGradeObservation.self, configurations: config)
+        self.container = try Self.makeContainer(config)
         self.isPersistent = !inMemory
+        self.storageFailureReason = inMemory ? storageFailureReason : nil
     }
 
     public init(url: URL) throws {
         let config = ModelConfiguration(url: url, cloudKitDatabase: .none)
-        self.container = try ModelContainer(for: StoredGradeObservation.self, configurations: config)
+        self.container = try Self.makeContainer(config)
         self.isPersistent = true
+        self.storageFailureReason = nil
     }
 
     /// The store the real app uses. Same posture as `AssignmentStore.makeDefault`:
@@ -87,22 +151,46 @@ public final class GradeHistoryStore {
         // (the sandbox denies the read, and the run is merely buried in CoreData
         // errors); on a machine where the open succeeds, the suite reads and
         // writes a student's real grade history.
-        if !SharedDefaults.isTestRunner,
-           let groupURL = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
-            let url = groupURL.appending(path: "GradeHistory.store")
-            if let store = try? GradeHistoryStore(url: url) { return store }
+        if SharedDefaults.isTestRunner { return try? GradeHistoryStore(inMemory: true) }
+        let url = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
+            .appending(path: "GradeHistory.store")
+        return openOrFallBack(at: url)
+    }
+
+    /// Opens the file store at `url`, or builds the in-memory fallback and says
+    /// why. Falling back is right (losing the session's chip beats refusing to
+    /// launch), but doing it silently is how a store that is not keeping
+    /// anything looks exactly like one that is. A nil `url` is a missing App
+    /// Group container. Separate from `makeDefault()` so a test can hand it a
+    /// file that will not open.
+    static func openOrFallBack(at url: URL?) -> GradeHistoryStore? {
+        let failure: String
+        if let url {
+            do {
+                return try GradeHistoryStore(url: url)
+            } catch {
+                failure = "Saved grade history couldn't be opened (\(error.localizedDescription)). "
+                    + "This session is being kept in memory only."
+            }
+        } else {
+            failure = "The app isn't entitled for its shared App Group container, "
+                + "so grade history can't be saved to disk."
         }
-        return try? GradeHistoryStore(inMemory: true)
+        return try? GradeHistoryStore(inMemory: true, storageFailureReason: failure)
     }
 
     // MARK: Reading
 
     /// Every course's history, oldest first — the shape `GradeWatcherStore`
     /// publishes and `weekDelta` reads.
+    ///
+    /// A fetch that fails reads as no history, and is counted
+    /// (`failedReadCount`); a caller that decides something from the answer
+    /// uses the throwing reads below.
     public func allHistory() -> [String: [Observation]] {
         var byCourse: [String: [Observation]] = [:]
-        for row in allRows() {
+        for row in (try? allRows()) ?? [] {
             byCourse[row.courseID, default: []].append(
                 Observation(date: row.observedAt, percent: row.percent)
             )
@@ -112,7 +200,7 @@ public final class GradeHistoryStore {
 
     /// One course's history, oldest first.
     public func history(courseID: String) -> [Observation] {
-        rows(courseID: courseID)
+        ((try? rows(courseID: courseID)) ?? [])
             .map { Observation(date: $0.observedAt, percent: $0.percent) }
             .sorted { $0.date < $1.date }
     }
@@ -121,8 +209,15 @@ public final class GradeHistoryStore {
 
     /// Records `percent` as today's reading for `courseID`, replacing an earlier
     /// reading from the same calendar day and pruning to `retentionPerCourse`.
-    public func record(courseID: String, percent: Double, now: Date = Date()) {
-        let existing = rows(courseID: courseID)
+    ///
+    /// Returns whether the reading is on disk. A course whose existing rows
+    /// cannot be read gets no new reading at all: without them there is no
+    /// telling whether today already has one, and a second row for the day
+    /// would break the one-per-day rule the week delta stands on. The next
+    /// refresh records it.
+    @discardableResult
+    public func record(courseID: String, percent: Double, now: Date = Date()) -> Bool {
+        guard let existing = try? rows(courseID: courseID) else { return false }
         let calendar = Calendar.current
         if let today = existing.first(where: { calendar.isDate($0.observedAt, inSameDayAs: now) }) {
             today.observedAt = now
@@ -131,7 +226,7 @@ public final class GradeHistoryStore {
             context.insert(StoredGradeObservation(courseID: courseID, observedAt: now, percent: percent))
         }
         prune(courseID: courseID)
-        try? context.save()
+        return saveChanges()
     }
 
     /// One-time import of the old `gradeWatcherHistory` UserDefaults blob.
@@ -145,9 +240,40 @@ public final class GradeHistoryStore {
     /// history the live path would never have produced.
     @discardableResult
     public func importLegacyHistory(_ history: [String: [Observation]]) -> Int {
+        importingLegacyHistory(history).imported
+    }
+
+    /// What an import did, for a caller that decides whether it is finished.
+    public struct LegacyImportResult: Sendable, Equatable {
+        /// Observations written.
+        public let imported: Int
+        /// Courses with something to import whose existing rows could not be
+        /// read, so they were left alone. Not the courses skipped because the
+        /// store already has their history, which is the guard working: these
+        /// are courses the import has not yet been able to look at, and an
+        /// import that skipped any is not done.
+        public let unreadableCourses: Int
+    }
+
+    /// `importLegacyHistory`, reporting the courses it could not look at.
+    ///
+    /// A course whose rows cannot be read is skipped, not imported blind: the
+    /// already-has-rows guard exists so a re-run cannot duplicate what is
+    /// there, and it cannot be applied to a course that cannot be read. That is
+    /// the right thing for this pass and a trap for the caller, who used to
+    /// take "returned" for "finished" and record the migration as done, so the
+    /// blob was never imported (`LegacyStateMigration` now leaves its version
+    /// alone when `unreadableCourses` is not zero).
+    public func importingLegacyHistory(_ history: [String: [Observation]]) -> LegacyImportResult {
         var imported = 0
+        var unreadable = 0
         for (courseID, observations) in history {
-            guard !observations.isEmpty, rows(courseID: courseID).isEmpty else { continue }
+            guard !observations.isEmpty else { continue }
+            guard let existing = try? rows(courseID: courseID) else {
+                unreadable += 1
+                continue
+            }
+            guard existing.isEmpty else { continue }
             for observation in Self.collapsedByDay(observations).suffix(Self.retentionPerCourse) {
                 context.insert(StoredGradeObservation(
                     courseID: courseID,
@@ -157,16 +283,22 @@ public final class GradeHistoryStore {
                 imported += 1
             }
         }
-        if imported > 0 { try? context.save() }
-        return imported
+        if imported > 0 { saveChanges() }
+        return LegacyImportResult(imported: imported, unreadableCourses: unreadable)
     }
 
     /// Drops every observation. Called when the user disconnects Canvas —
     /// grades are downstream of that session, so a signed-out student's
     /// observed grades must not stay on disk.
-    public func clearAll() {
-        for row in allRows() { context.delete(row) }
-        try? context.save()
+    ///
+    /// Returns whether the history is gone from disk: false when it could not
+    /// be read (nothing was found to delete) or the save failed. A sign-out
+    /// that did not clear grades is something the caller may want to know.
+    @discardableResult
+    public func clearAll() -> Bool {
+        guard let rows = try? allRows() else { return false }
+        for row in rows { context.delete(row) }
+        return saveChanges()
     }
 
     // MARK: Internals
@@ -184,21 +316,57 @@ public final class GradeHistoryStore {
         return byDay.values.sorted { $0.date < $1.date }
     }
 
+    /// Saves pending changes, keeping the failure instead of discarding it.
+    /// Replaces the `try? context.save()` at each call site, where a failed
+    /// write was indistinguishable from a successful one.
+    @discardableResult
+    private func saveChanges(_ operation: String = #function) -> Bool {
+        guard context.hasChanges else { return true }
+        do {
+            if let injected = saveFailureForTesting { throw injected }
+            try context.save()
+            lastSaveError = nil
+            return true
+        } catch {
+            failedSaveCount += 1
+            lastSaveError = "\(operation) — \(error.localizedDescription)"
+            return false
+        }
+    }
+
     private func prune(courseID: String) {
-        let rows = rows(courseID: courseID).sorted { $0.observedAt < $1.observedAt }
+        let rows = ((try? rows(courseID: courseID)) ?? []).sorted { $0.observedAt < $1.observedAt }
         guard rows.count > Self.retentionPerCourse else { return }
         for row in rows.prefix(rows.count - Self.retentionPerCourse) { context.delete(row) }
     }
 
-    private func rows(courseID: String) -> [StoredGradeObservation] {
-        let descriptor = FetchDescriptor<StoredGradeObservation>(
+    private func rows(courseID: String) throws -> [StoredGradeObservation] {
+        try fetch(FetchDescriptor<StoredGradeObservation>(
             predicate: #Predicate { $0.courseID == courseID }
-        )
-        return (try? context.fetch(descriptor)) ?? []
+        ))
     }
 
-    private func allRows() -> [StoredGradeObservation] {
-        (try? context.fetch(FetchDescriptor<StoredGradeObservation>())) ?? []
+    private func allRows() throws -> [StoredGradeObservation] {
+        try fetch(FetchDescriptor<StoredGradeObservation>())
+    }
+
+    /// The one place a fetch happens, so a failure is counted once whoever
+    /// handles it. Throws; it used to return `[]`, and an unreadable history
+    /// read as an empty one.
+    private func fetch(
+        _ descriptor: FetchDescriptor<StoredGradeObservation>,
+        _ operation: String = #function
+    ) throws -> [StoredGradeObservation] {
+        do {
+            if let injected = readFailureForTesting { throw injected }
+            let rows = try context.fetch(descriptor)
+            lastReadError = nil
+            return rows
+        } catch {
+            failedReadCount += 1
+            lastReadError = "\(operation) — \(error.localizedDescription)"
+            throw error
+        }
     }
 
     // MARK: Diagnostics
@@ -214,7 +382,7 @@ public final class GradeHistoryStore {
     }
 
     public func stats() -> HistoryStats {
-        let rows = allRows()
+        let rows = (try? allRows()) ?? []
         return HistoryStats(
             isPersistent: isPersistent,
             courses: Set(rows.map(\.courseID)).count,

@@ -1,0 +1,22 @@
+-- Hardening BE-12 follow-up: remember that a course's profile build was cut
+-- off by extract-profile's time budget, so the next syncs do not pay for the
+-- same doomed attempt over and over.
+--
+-- extract-profile gives one call a 40 second budget and aborts the model call
+-- that runs past it, leaving `profile_stale` set so the next call retries,
+-- which is right for a transient slowness. A course whose build ALWAYS runs
+-- past the budget (a very large syllabus on a slow provider) turned that into
+-- a loop: every sync called extract-profile again, spent 40 seconds and a unit
+-- of the student's daily quota on it, and was aborted again. This column is the
+-- memory that breaks the loop. extract-profile stamps it when it aborts a
+-- course's model call on the budget, skips that course for 24 hours (and gives
+-- the call's quota unit back when nothing else was left to do), and clears it
+-- when a build finally succeeds.
+--
+-- A nullable column with no default: existing rows are untouched and read as
+-- "never aborted". extract-profile reads and writes it best-effort and treats
+-- a failure (the column not there yet) as "no cool-down", so this migration
+-- and the function can be applied in either order; until it is applied the
+-- loop is simply not broken.
+alter table public.courses
+  add column if not exists profile_budget_aborted_at timestamptz;

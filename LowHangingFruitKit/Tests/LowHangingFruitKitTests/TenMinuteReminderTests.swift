@@ -142,8 +142,11 @@ struct TenMinuteReminderTests {
             #expect(!trigger.repeats)
             let fire = due - 600
             let calendar = Calendar.current
-            #expect(trigger.dateComponents
-                    == calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire))
+            // The components carry the zone they were read in
+            // (`ReminderTimeZoneTests`), so the expected value does too.
+            var expected = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
+            expected.timeZone = calendar.timeZone
+            #expect(trigger.dateComponents == expected)
             let next = try #require(trigger.nextTriggerDate())
             #expect(next <= fire)
             #expect(fire.timeIntervalSince(next) < 60)

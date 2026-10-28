@@ -354,7 +354,12 @@ enum BerserkAlarmPlan {
     enum Outcome: Equatable, Sendable {
         /// Alarms were chosen and AlarmKit took the plan.
         case alarmsReconciled
-        /// Alarms were chosen and AlarmKit threw.
+        /// Alarms were chosen and AlarmKit took all of the plan but the alarms
+        /// of these items (their `Assignment.id`s). Those items get the
+        /// buzzes; every other item keeps its alarm.
+        case alarmsPartlyReconciled(buzzFor: Set<String>)
+        /// Alarms were chosen and AlarmKit could not be used at all (its store
+        /// could not be read), so nothing is known about any alarm.
         case alarmKitThrew
         /// Alarms were never chosen; the scope says which alarms to take back.
         case buzzes(CancelScope)
@@ -367,7 +372,7 @@ enum BerserkAlarmPlan {
         /// an AlarmKit error and for "alarms are not usable right now".
         case idleOnly
         /// Every alarm, ringing or not. Only for the student's own "off":
-        /// the loud-alert switch, reminders or notifications off, preview mode,
+        /// the loud-alert switch, reminders off, preview mode,
         /// and alarm permission revoked.
         case everything
     }
@@ -386,6 +391,10 @@ enum BerserkAlarmPlan {
         let loudAlertsAsAlarms: Bool
         /// What to do with AlarmKit's alarms.
         let alarmAction: AlarmAction
+        /// Items whose alarm AlarmKit would not take while it took the rest:
+        /// they get the buzzes even though `loudAlertsAsAlarms` is true. Empty
+        /// for every outcome but `alarmsPartlyReconciled`.
+        var buzzFallbackAssignmentIDs: Set<String> = []
     }
 
     /// **The invariant: every item the loud alert covers ends up with exactly
@@ -397,14 +406,24 @@ enum BerserkAlarmPlan {
     /// failed pass can never leave an item with both (the idle alarms are
     /// cancelled in the same breath).
     ///
+    /// The invariant is per item, and so is the fallback: when AlarmKit took
+    /// every alarm but one, only that item gets the buzzes
+    /// (`alarmsPartlyReconciled`), and the others keep the alarm AlarmKit did
+    /// schedule for them. Only when AlarmKit cannot be used at all
+    /// (`alarmKitThrew`) does every item fall back.
+    ///
     /// The wrong fix is to decide "alarms" up front and keep the buzzes out of
     /// the notifications for that reason alone: a reschedule that is told
     /// alarms are on, and then meets an error, would leave the student with no
-    /// alert at all, with nothing to show it.
+    /// alert at all, with nothing to show it. The other wrong fix is to let one
+    /// item's failure take the buzzes back to every item, which is what this
+    /// did before the partial outcome existed.
     nonisolated static func settlement(for outcome: Outcome) -> Settlement {
         switch outcome {
         case .alarmsReconciled:
             return Settlement(loudAlertsAsAlarms: true, alarmAction: .keep)
+        case .alarmsPartlyReconciled(let buzzFor):
+            return Settlement(loudAlertsAsAlarms: true, alarmAction: .keep, buzzFallbackAssignmentIDs: buzzFor)
         case .alarmKitThrew:
             return Settlement(loudAlertsAsAlarms: false, alarmAction: .cancelIdle)
         case .buzzes(.idleOnly):

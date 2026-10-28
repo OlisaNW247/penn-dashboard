@@ -58,6 +58,10 @@ enum LegacyStateMigration {
         var didRun = false
         var completionsImported = 0
         var observationsImported = 0
+        /// Courses in the legacy history blob that the store could not look at
+        /// (a failed read), so were not imported. While this is not zero the
+        /// migration is not done and its version is not recorded.
+        var historyCoursesSkipped = 0
         /// Course records the per-course fold actually *changed*. Zero on a
         /// re-run even though the same four keys were read again — which is the
         /// point, and what makes it a usable idempotence assertion.
@@ -110,9 +114,9 @@ enum LegacyStateMigration {
                 )
             }
             if let gradeHistoryStore {
-                summary.observationsImported = gradeHistoryStore.importLegacyHistory(
-                    legacyGradeHistory(in: defaults)
-                )
+                let result = gradeHistoryStore.importingLegacyHistory(legacyGradeHistory(in: defaults))
+                summary.observationsImported = result.imported
+                summary.historyCoursesSkipped = result.unreadableCourses
             }
         }
 
@@ -126,7 +130,14 @@ enum LegacyStateMigration {
         // the number alone costs step 2 one harmless re-run on the next launch
         // (`importLegacyCourseState` is a no-op when there is nothing to move)
         // and costs step 1 nothing at all.
-        if assignmentStore != nil && gradeHistoryStore != nil {
+        //
+        // Nor when the history import had to skip a course it could not read.
+        // The legacy blob is never deleted, so a later launch can still import
+        // it, but only if the version gate lets that launch run: recording the
+        // version after one failed read stranded the blob for good (hardening
+        // plan 2026-10-25, review of B9). The imports are idempotent, so the
+        // retry costs a re-read and nothing else.
+        if assignmentStore != nil && gradeHistoryStore != nil && summary.historyCoursesSkipped == 0 {
             defaults.set(currentVersion, forKey: versionKey)
         }
         return summary

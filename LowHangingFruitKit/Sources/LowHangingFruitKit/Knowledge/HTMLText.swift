@@ -16,14 +16,28 @@ public enum HTMLText {
         // never matched, and its CSS and JavaScript went on to be indexed
         // as if the instructor had written them. A Canvas page's embedded
         // stylesheet is almost always multi-line.
-        s = replace(in: s, pattern: #"<script\b[^>]*>[\s\S]*?</script>"#, with: " ")
-        s = replace(in: s, pattern: #"<style\b[^>]*>[\s\S]*?</style>"#, with: " ")
-        s = replace(in: s, pattern: #"<!--[\s\S]*?-->"#, with: " ")
+        //
+        // Every pattern below that has to find a closing token is run only up
+        // to the last closing token in the text (`replace(..., upToLast:)`),
+        // and the opening tags' attribute runs are capped at `maxTagAttributes`.
+        // Without both, each unclosed `<script`, `<li` or bare `<` scanned to
+        // the end of the page looking for a `>` that was not there, which is
+        // quadratic: 50,000 `<` characters stalled the flattener for twelve
+        // seconds (found by `AnnouncementFuzzTests`). Neither changes what
+        // matches: a match has to end at the closing token, so nothing after
+        // the last one can be part of one, and no real tag has four thousand
+        // characters of attributes. The attribute run is possessive (`+`)
+        // because `[^>]` can never give back a `>`, so backtracking into it
+        // finds nothing and only costs a second pass over the same four
+        // thousand characters for every unclosed opening.
+        s = replace(in: s, pattern: "<script\\b[^>]{0,\(maxTagAttributes)}+>[\\s\\S]*?</script>", with: " ", upToLast: "</script>")
+        s = replace(in: s, pattern: "<style\\b[^>]{0,\(maxTagAttributes)}+>[\\s\\S]*?</style>", with: " ", upToLast: "</style>")
+        s = replace(in: s, pattern: #"<!--[\s\S]*?-->"#, with: " ", upToLast: "-->")
 
         // Block boundaries → newline. `<br>` and closing block tags both count.
         s = replace(in: s, pattern: #"<br\s*/?>"#, with: "\n")
         s = replace(in: s, pattern: #"</(p|div|li|h[1-6]|tr|blockquote|section|article|header|footer|table|ul|ol|pre)\s*>"#, with: "\n")
-        s = replace(in: s, pattern: #"<(li)\b[^>]*>"#, with: "\n• ")
+        s = replace(in: s, pattern: "<(li)\\b[^>]{0,\(maxTagAttributes)}+>", with: "\n• ", upToLast: ">")
         // A table cell opener is marked rather than turned into " | " at
         // once, because the first cell of a row must not start its line with
         // a delimiter, and "first in its line" is only knowable once the
@@ -35,10 +49,10 @@ public enum HTMLText {
         // every row would open with a stray "| ", and a literal "| " that an
         // instructor typed at the start of a line would be indistinguishable
         // from it.
-        s = replace(in: s, pattern: #"<(td|th)\b[^>]*>"#, with: cellMark)
+        s = replace(in: s, pattern: "<(td|th)\\b[^>]{0,\(maxTagAttributes)}+>", with: cellMark, upToLast: ">")
 
         // Everything else: drop the tag.
-        s = replace(in: s, pattern: #"<[^>]+>"#, with: " ")
+        s = replace(in: s, pattern: #"<[^>]+>"#, with: " ", upToLast: ">")
 
         s = decodeEntities(s)
 
@@ -102,6 +116,24 @@ public enum HTMLText {
         }
         result += ns.substring(from: cursor)
         return result
+    }
+
+    /// The longest run of attributes an opening tag is read with. A real tag's
+    /// are a few hundred characters; the cap is what keeps an unclosed one
+    /// from scanning the rest of the page.
+    private static let maxTagAttributes = 4_096
+
+    /// `replace`, applied only to the text up to the end of the last
+    /// occurrence of `terminator` (case-insensitively); the rest is left as
+    /// it is. For a pattern whose every match must end in `terminator` this
+    /// is the same answer, and it stops each unterminated opening from
+    /// scanning to the end of the text.
+    private static func replace(
+        in text: String, pattern: String, with replacement: String, upToLast terminator: String
+    ) -> String {
+        guard let last = text.range(of: terminator, options: [.backwards, .caseInsensitive]) else { return text }
+        let head = String(text[..<last.upperBound])
+        return replace(in: head, pattern: pattern, with: replacement) + text[last.upperBound...]
     }
 
     private static func replace(in text: String, pattern: String, with replacement: String) -> String {

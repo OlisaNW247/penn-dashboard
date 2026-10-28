@@ -98,6 +98,10 @@ enum DebugSessionDiagnostics {
             "canvas cookies persisted: \(entries.count), still fresh: \(SessionCookieStore.load(service: .canvas).count), isExpired: \(SessionCookieStore.isExpired(service: .canvas))",
         ]
         lines.append(contentsOf: entries)
+        // After the reads above, so the snapshot's own are counted. A nonzero
+        // failure count here means the Keychain refused something this launch
+        // (`KeychainStatusLog`); the pairs say which call and which status.
+        lines.append("keychain statuses: \(KeychainStatusLog.shared.summary)")
         lines.forEach { print("LHF-DIAG \($0)") }
         UserDefaults.lhf.set(lines, forKey: key)
     }

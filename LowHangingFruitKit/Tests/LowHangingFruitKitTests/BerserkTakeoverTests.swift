@@ -528,7 +528,7 @@ struct BerserkTakeoverWiringTests {
         #expect(source.contains("UNNotificationDefaultActionIdentifier"))
         // The default-tap branch comes before the button parsing.
         let defaultTap = try #require(source.range(of: "response.actionIdentifier == UNNotificationDefaultActionIdentifier"))
-        let buttons = try #require(source.range(of: "guard let action = LoudAlertActions.action("))
+        let buttons = try #require(source.range(of: "else if let action = LoudAlertActions.action("))
         #expect(defaultTap.lowerBound < buttons.lowerBound)
     }
 

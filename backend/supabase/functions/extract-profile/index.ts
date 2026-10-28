@@ -1,12 +1,14 @@
 // Rebuilds `course_profiles` rows for courses the caller is enrolled in
 // and whose `profile_stale` flag is set. See PROTOCOL.md's
 // "extract-profile" section for the wire contract.
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { limitsFromEnv, lookupUsageCounts, quotaDecision, recordUsage } from "../_shared/quota.ts";
+import { limitsFromEnv, reserveUsage, type UsageLease } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import {
+  isCoolingDown,
   PROFILE_INSTRUCTIONS,
   type ProfileSourceDocument,
   parseProfile,
@@ -16,6 +18,16 @@ import {
 
 const MAX_COURSE_IDS = 20;
 const DEFAULT_PROFILE_INPUT_CHARS = 60000;
+// One call may rebuild up to MAX_COURSE_IDS profiles, each a model call over up
+// to PROFILE_INPUT_CHARS of material, run one after another, and nothing used
+// to bound the total: twenty slow calls could outlast the function's wall-clock
+// limit and be cut off in the middle of a write. Past this budget no further
+// course is started, and a call already in flight is aborted at it. A course
+// that was not reached, or whose call was cut off, keeps `profile_stale` set,
+// which is exactly how an upstream failure is already handled, so the next
+// sync's call picks it up. The budget sits inside the 60 s a phone waits and
+// well inside the runtime's own limit.
+const DEFAULT_PROFILE_BUDGET_MS = 40_000;
 // `website` is included here even though not every `website`-kind row is
 // actually used -- `selectProfileInput` (see `_shared/profile.ts`) filters
 // those further to the ones whose title/URL looks profile-relevant
@@ -39,20 +51,26 @@ function parseBody(value: unknown): ExtractProfileBody | undefined {
   return { courseIDs };
 }
 
-Deno.serve(async (req) => {
+export async function handleExtractProfile(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     const { userId, serviceClient } = await requireUser(req);
     const body = parseBody(await readJSON<unknown>(req));
     if (!body) {
       return errorResponse("bad_request", "malformed extract-profile request", 400);
     }
 
-    const quotaResponse = await checkAndConsumeQuota(serviceClient, userId);
-    if (quotaResponse) return quotaResponse;
+    const quota = await checkAndConsumeQuota(serviceClient, userId);
+    if (quota.response) return quota.response;
+    const lease = quota.lease;
 
     if (body.courseIDs.length === 0) {
       return json(200, { updated: [] });
@@ -60,6 +78,22 @@ Deno.serve(async (req) => {
 
     const staleIDs = await staleEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
     if (staleIDs.length === 0) {
+      return json(200, { updated: [] });
+    }
+
+    // Courses whose last build was cut off by the time budget are left alone
+    // for a day (`profile_budget_aborted_at`; see the migration): a course
+    // that always overruns would otherwise cost a unit of quota and 40
+    // seconds on every sync, for nothing. They stay stale and are tried again
+    // once the cool-down ends.
+    const stamps = await selectBudgetAbortStamps(serviceClient, staleIDs);
+    const now = new Date();
+    const attemptIDs = staleIDs.filter((id) => !isCoolingDown(stamps.get(id), now));
+    if (attemptIDs.length === 0) {
+      // Nothing left to do but courses that are cooling down: no model call
+      // is made, so the unit reserved up front is given back. (Safe to refund:
+      // no model spend happened, unlike a refund after an aborted call.)
+      await lease.release();
       return json(200, { updated: [] });
     }
 
@@ -75,56 +109,140 @@ Deno.serve(async (req) => {
       DEFAULT_PROFILE_INPUT_CHARS,
     );
 
+    const budgetMs = parsePositiveInt(Deno.env.get("EXTRACT_PROFILE_BUDGET_MS"), DEFAULT_PROFILE_BUDGET_MS);
+    const deadline = Date.now() + budgetMs;
+
     const updated: string[] = [];
-    for (const courseID of staleIDs) {
-      const wasUpdated = await rebuildProfile({
-        serviceClient,
-        courseID,
-        maxChars,
-        apiKey,
-        model,
-        fallbackModel,
-        provider: providerFromEnv(),
-      });
-      if (wasUpdated) updated.push(courseID);
+    let skipped = 0;
+    for (const courseID of attemptIDs) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        skipped += 1;
+        continue;
+      }
+      // The model call is aborted when the budget runs out, so one slow
+      // course cannot carry the call past it.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), remaining);
+      try {
+        const wasUpdated = await rebuildProfile({
+          serviceClient,
+          courseID,
+          maxChars,
+          apiKey,
+          model,
+          fallbackModel,
+          provider: providerFromEnv(),
+          signal: controller.signal,
+        });
+        if (wasUpdated) {
+          updated.push(courseID);
+          // A build that succeeds ends the cool-down it was in.
+          if (stamps.has(courseID)) await setBudgetAbortStamp(serviceClient, courseID, null);
+        } else if (controller.signal.aborted) {
+          // The budget cut this course's model call off: remember it.
+          await setBudgetAbortStamp(serviceClient, courseID, new Date().toISOString());
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (skipped > 0) {
+      // Counts only, never a course id or any material.
+      console.warn(`extract-profile: time budget spent, ${skipped} course(s) left stale for the next call`);
     }
 
     return json(200, { updated });
   } catch (err) {
     if (err instanceof HttpError) {
-      return errorResponse("unauthorized", err.message, err.status);
+      // 426 must keep its own code: the app keys its update wall on "update_required".
+      return errorResponse(err.status === 426 ? err.code : "unauthorized", err.message, err.status);
     }
     console.error("extract-profile: unhandled failure", err);
     return errorResponse("bad_request", "request failed", 400);
   }
-});
+}
+
+// Guarded by `import.meta.main`, like `ask/index.ts`, so a test can import
+// `handleExtractProfile` without starting a second server. Deployed, this file
+// is the entry point the runtime executes, so it serves exactly as before.
+if (import.meta.main) {
+  Deno.serve(handleExtractProfile);
+}
 
 /**
- * Checks the same daily/monthly quota `ask` uses, and -- if the caller is
- * under quota -- immediately records one request against it. This call
- * counts once per invocation, not once per course rebuilt: a single
- * `extract-profile` call can rebuild several courses' profiles at once
- * (the sync client fires it once per upload with every `profileStale` id
- * from that run), and metering per course would let one sync spend the
- * quota as fast as several separate calls would.
+ * Reserves one request against the same daily/monthly quota `ask` uses, or
+ * refuses with a 429. The check and the charge are one statement
+ * (`reserveUsage`), where this used to read the count, decide, and then
+ * write: ten parallel calls all read the same count and all went through,
+ * which for a function that makes up to twenty model calls per invocation
+ * is the expensive end of the hole. Counted once per invocation, not once
+ * per course rebuilt: a single `extract-profile` call can rebuild several
+ * courses' profiles at once (the sync client fires it once per upload with
+ * every `profileStale` id from that run), and metering per course would let
+ * one sync spend the quota as fast as several separate calls would. Charged
+ * up front and kept, exactly as before, once any course is attempted: the work
+ * is paid for once started, whatever it finds. The one exception is a call
+ * with nothing to attempt but courses cooling down after a budget abort, which
+ * makes no model call and gives the unit back (the caller releases the lease).
+ * A counter that stalls fails open (unmetered), as in `ask`.
+ *
+ * Deliberately not tied to the client's connection: the sync client fires
+ * this without awaiting it and a suspended app drops the connection, while
+ * the profile it is building is shared with every classmate, so aborting on
+ * disconnect would throw away paid work and leave `profile_stale` set for
+ * the next sync to pay for again.
  */
 async function checkAndConsumeQuota(
   serviceClient: SupabaseClient,
   userId: string,
-): Promise<Response | undefined> {
-  const lookup = await lookupUsageCounts(serviceClient, userId);
-  if (!lookup.ok) {
-    // Fail open -- see quota.ts's module comment and PROTOCOL.md's quota
-    // section for the 2026-09-13 incident this guards against.
-    console.warn(`extract-profile: quota lookup ${lookup.reason}, failing open: ${lookup.message}`);
+): Promise<{ response: Response; lease?: undefined } | { response?: undefined; lease: UsageLease }> {
+  const reservation = await reserveUsage(serviceClient, userId, limitsFromEnv(Deno.env));
+  if (reservation.status === "denied") {
+    return { response: json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() }) };
   }
-  const quota = quotaDecision(lookup, limitsFromEnv(Deno.env), new Date());
-  if (!quota.allowed) {
-    return json(429, { error: "quota_exceeded", resetAt: quota.resetAt.toISOString() });
-  }
+  return { lease: reservation.lease };
+}
 
-  await recordUsage(serviceClient, userId, 0, 0);
-  return undefined;
+/** `profile_budget_aborted_at` for the given courses, keyed by course id, only
+ *  those that have one. Best-effort on purpose: if the read fails (the
+ *  migration that adds the column has not been applied yet) it reads as "no
+ *  course is cooling down" and the function behaves as it did before, so the
+ *  function and the migration can go out in either order. The stale-course
+ *  read above is a separate query for the same reason: a missing column must
+ *  never be able to stop profiles being built. */
+async function selectBudgetAbortStamps(
+  serviceClient: SupabaseClient,
+  courseIDs: string[],
+): Promise<Map<string, string>> {
+  const stamps = new Map<string, string>();
+  const { data, error } = await serviceClient
+    .from("courses")
+    .select("course_id, profile_budget_aborted_at")
+    .in("course_id", courseIDs);
+  if (error || !data) {
+    console.warn("extract-profile: budget cool-down lookup failed, treating no course as cooling down");
+    return stamps;
+  }
+  for (const row of data as Array<{ course_id: string; profile_budget_aborted_at: string | null }>) {
+    if (row.profile_budget_aborted_at) stamps.set(row.course_id, row.profile_budget_aborted_at);
+  }
+  return stamps;
+}
+
+/** Stamps (or, with `null`, clears) a course's budget-abort marker. Best-effort,
+ *  for the same reason as the read: failing to write it costs one repeated
+ *  attempt, never a lost profile. */
+async function setBudgetAbortStamp(
+  serviceClient: SupabaseClient,
+  courseID: string,
+  stamp: string | null,
+): Promise<void> {
+  const { error } = await serviceClient
+    .from("courses")
+    .update({ profile_budget_aborted_at: stamp })
+    .eq("course_id", courseID);
+  if (error) console.warn("extract-profile: could not record the budget cool-down, it will be retried next call");
 }
 
 /** Intersects `courseIDs` with the caller's actual enrollments, then
@@ -171,6 +289,8 @@ interface RebuildProfileOptions {
   model: string;
   fallbackModel: string;
   provider?: { order?: string[] };
+  /** Aborts the model call when the call's time budget runs out. */
+  signal?: AbortSignal;
 }
 
 /** Rebuilds one course's profile. Returns whether it actually produced and
@@ -220,6 +340,7 @@ async function rebuildProfile(options: RebuildProfileOptions): Promise<boolean> 
       ],
       maxTokens: 2000,
       temperature: 0,
+      signal: options.signal,
     });
   } catch (err) {
     const status = err instanceof UpstreamError ? err.status : undefined;

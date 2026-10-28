@@ -1,0 +1,83 @@
+# update-floor: raises the forced-update floor automatically.
+#
+# Every 30 minutes this asks the App Store what version of Smooth is live and,
+# if it is newer than `minimumVersion` in lhf-update.json on the
+# `update-manifest` orphan branch, raises `minimumVersion` and `latestVersion`
+# to it (after a delay, see scripts/update-floor/update-floor.mjs). The result
+# is that only the latest release ever works. See CLAUDE.md, "Update gate".
+#
+# This file must live on the default branch (`main`) for the `schedule`
+# trigger to fire: GitHub only runs cron workflows from the default branch,
+# and silently ignores them anywhere else. `workflow_dispatch` (with
+# `dry_run`) can be used to try it by hand once it is there.
+#
+# To PAUSE it: repo Settings -> Secrets and variables -> Actions -> Variables,
+# set `UPDATE_FLOOR_HOLD` to `true`. Do that first if a new build turns out to
+# crash on launch; the delay exists to leave a window for exactly that.
+#
+# It NEVER LOWERS the floor. Lifting a bad block is therefore still a hand edit
+# of lhf-update.json on `update-manifest` (the GitHub web UI works from a
+# phone), and the hold must be set BEFORE that edit, or the next run will see
+# the live version above the lowered floor and raise it straight back.
+#
+# A failed lookup (network, HTTP, bad JSON) makes the run fail without touching
+# the manifest, so the run goes red and the owner gets an email.
+name: update-floor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Decide and print, but do not write or push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-floor
+  cancel-in-progress: false
+
+jobs:
+  update-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the script
+        uses: actions/checkout@v4
+
+      - name: Check out the manifest branch
+        uses: actions/checkout@v4
+        with:
+          ref: update-manifest
+          path: manifest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Decide
+        id: floor
+        env:
+          UPDATE_FLOOR_HOLD: ${{ vars.UPDATE_FLOOR_HOLD }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flag=""
+          if [ "$DRY_RUN" = "true" ]; then flag="--dry-run"; fi
+          node scripts/update-floor/update-floor.mjs --manifest manifest/lhf-update.json $flag
+
+      - name: Commit and push the raised floor
+        if: steps.floor.outputs.action == 'raise' && inputs.dry_run != true
+        working-directory: manifest
+        env:
+          TO: ${{ steps.floor.outputs.to }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
+          git add lhf-update.json
+          git commit -m "Require $TO, live on the App Store" \
+            -m "Raised automatically by the update-floor workflow."
+          git push origin HEAD:update-manifest

@@ -332,10 +332,11 @@ struct GradeWatcherView: View {
     /// `AutoSyncCoordinator.canvasCookies()` (persisted set folded with whatever
     /// the in-app WebView session currently holds, live values winning on
     /// overlap) so this view and the launch-time refresh agree on one
-    /// implementation. If the session still comes back expired, the persisted
-    /// cookies are stale — purge them so the next attempt doesn't keep retrying
-    /// dead cookies, and let the existing stale banner
-    /// (`GradeWatcherStore.isSessionExpired`) do the surfacing.
+    /// implementation. If the store reports the session expired, that verdict
+    /// is only as good as one course's 401, so the view asks Canvas about the
+    /// login itself (`CanvasSessionProbe`) and never deletes the saved cookies:
+    /// the existing stale banner (`GradeWatcherStore.isSessionExpired`) does
+    /// the surfacing, exactly as before.
     private func performRefresh() async {
         let cookies = await AutoSyncCoordinator.canvasCookies(forHost: state.canvasInstallation.host)
         // Captured BEFORE the refresh: if a bearer token was in use and got
@@ -356,9 +357,29 @@ struct GradeWatcherView: View {
                 // cookies here would throw away a session the token failure
                 // never actually touched.
             } else {
-                let hadPersisted = !SessionCookieStore.load(service: .canvas).isEmpty
-                if hadPersisted {
-                    SessionCookieStore.remove(service: .canvas)
+                // This used to delete the saved Canvas cookie item here, on
+                // the reading "nothing succeeded and a course said 401, so
+                // the cookies are dead". A concluded or restricted course
+                // answers 401 on a live session, so that deleted working
+                // logins (hardening plan A7, SES-006), and the delete was
+                // the one step with no undo: the cookies were the only copy.
+                // The wrong fix is a smarter reading of the 401's wording.
+                // Ask the endpoint that cannot mean "not allowed" instead.
+                //
+                // Only `.dead` acts HERE, and what it does is the recompute
+                // the launch, connect and disconnect sites already run, whose
+                // false-to-true edge starts the silent renewal
+                // (`refreshCanvasSessionExpiredState`). `.alive` and
+                // `.unknown` delete nothing and call nothing from this view.
+                // They do not stop a renewal that has already started:
+                // `AppState.refreshGradeWatcher`, which ran just above, starts
+                // a silent renewal on ANY store-level 401, probe or no probe,
+                // so a concluded course on a live session can still cost one
+                // needless renewal attempt. That is unchanged and out of this
+                // fix's scope; what changed is that nothing is deleted.
+                let verdict = await CanvasSessionProbe.probe(baseURL: state.canvasBaseURL, cookies: cookies)
+                if verdict == .dead {
+                    state.refreshCanvasSessionExpiredState()
                 }
             }
         }

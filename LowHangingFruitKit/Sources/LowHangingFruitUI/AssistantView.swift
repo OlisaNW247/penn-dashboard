@@ -118,6 +118,10 @@ struct AssistantView: View {
     var knowledge: CourseKnowledgeBase = .empty
     var work: [WorkItem] = []
     var userName: String = ""
+    /// The student's Canvas host (`AppState.canvasBaseURL.host`), the one
+    /// place besides Ed Discussion a link in an answer may open
+    /// (`AnswerLinkPolicy`). `nil` in previews, where only Ed passes.
+    var canvasHost: String? = nil
 
     /// Without a configured backend (`BackendServices.client` is `nil` —
     /// true for every student who hasn't been enrolled against LHF's server,
@@ -134,6 +138,7 @@ struct AssistantView: View {
         knowledge: CourseKnowledgeBase = .empty,
         work: [WorkItem] = [],
         userName: String = "",
+        canvasHost: String? = nil,
         allowBackend: Bool = true,
         preferScripted: Bool = false
     ) {
@@ -142,6 +147,7 @@ struct AssistantView: View {
         self.knowledge = knowledge
         self.work = work
         self.userName = userName
+        self.canvasHost = canvasHost
         let responder: AssistantResponder
         if allowBackend, !preferScripted, let client = BackendServices.client, !(knowledge.isEmpty && work.isEmpty) {
             responder = BackendAssistantResponder(client: client, fallback: OnDeviceAssistantResponder())
@@ -417,6 +423,9 @@ struct AssistantView: View {
                         .foregroundStyle(Color.v2Ink)
                         .lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
+                        // Only the answer's own links are filtered; the chips
+                        // below keep the system default (`AnswerLinkPolicy`).
+                        .environment(\.openURL, AnswerLinkPolicy.openURLAction(canvasHost: canvasHost))
                 }
 
                 if !message.citations.isEmpty && !message.isStreaming {

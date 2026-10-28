@@ -47,6 +47,22 @@ struct NextDueEntryView: View {
 
     var body: some View {
         Group {
+            if entry.updateRequired {
+                UpdateRequiredWidgetView(family: family)
+            } else {
+                content
+            }
+        }
+        // A widget's frame is fixed by the system, unlike a screen the app
+        // can scroll, so past `.xxLarge` the Small/Medium layouts would
+        // clip or overlap rather than reflow. `lineLimit`/
+        // `minimumScaleFactor` on individual labels handle the rest.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
             switch family {
             case .systemSmall:
                 SmallView(item: entry.snapshot.items.first)
@@ -62,11 +78,28 @@ struct NextDueEntryView: View {
                 SmallView(item: entry.snapshot.items.first)
             }
         }
-        // A widget's frame is fixed by the system, unlike a screen the app
-        // can scroll, so past `.xxLarge` the Small/Medium layouts would
-        // clip or overlap rather than reflow. `lineLimit`/
-        // `minimumScaleFactor` on individual labels handle the rest.
-        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+    }
+}
+
+// MARK: - Below the update floor
+
+/// What every family shows while the app is below the enforced version floor
+/// (`UpdateGateStore`): no assignments, just the instruction.
+private struct UpdateRequiredWidgetView: View {
+    let family: WidgetFamily
+
+    var body: some View {
+        if family == .accessoryInline {
+            Text("update smooth")
+        } else {
+            Text("update smooth")
+                .font(.system(.footnote, design: .rounded).weight(.medium))
+                .foregroundStyle(Palette.courseGrey)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(Palette.paper, for: .widget)
+        }
     }
 }
 

@@ -11,6 +11,7 @@
 //
 // Never logs user ids or codes, only outcome codes.
 import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import {
   consumePairing,
@@ -39,6 +40,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // The Chrome extension calls this function and never sends the version
+    // header, so only a present-and-below-floor header is refused here;
+    // never the "header required" switch (headerOptional).
+    await enforceMinimumVersion(req, { headerOptional: true });
+
     if (req.method !== "POST") {
       throw new HttpError(405, "method_not_allowed", "pair only accepts POST");
     }

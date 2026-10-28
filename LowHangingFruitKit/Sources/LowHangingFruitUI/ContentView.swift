@@ -32,6 +32,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.feedbackNoticeContext) private var feedbackNoticeContext
 
     /// Where taps on a loud alert's buttons wait for this view
     /// (`NotificationResponseRouter`); drained by `takeLoudAlertActions()`.
@@ -100,6 +101,18 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
 
+                    // One-time feedback card from the update manifest; the
+                    // context exists only when `RootCore` has an unhandled
+                    // notice, and never for preview or demo data.
+                    if let feedback = feedbackNoticeContext, !state.isUsingFixtureData {
+                        FeedbackNoticeCard(
+                            notice: feedback.notice,
+                            open: feedback.open,
+                            dismiss: feedback.dismiss
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
                     syncErrorBanner
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
@@ -116,6 +129,17 @@ struct ContentView: View {
                     // Watcher read as the truth about the cookie.
                     if state.canvasSessionExpired && !state.isSilentRenewalInFlight {
                         canvasSessionExpiredBanner
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                    }
+
+                    // Gradescope's own line, for a student whose connection the
+                    // server stopped recognising on two runs an hour apart
+                    // (`GradescopeReauthRule`). One line, no second-guessing
+                    // state: nothing renews a Gradescope session from the
+                    // phone, so there is no silent attempt to hide it behind.
+                    if state.needsGradescopeConnection {
+                        gradescopeReconnectBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
                     }
@@ -175,6 +199,7 @@ struct ContentView: View {
                         knowledge: state.assistantKnowledge,
                         work: state.assistantWorkItems(),
                         userName: state.userName,
+                        canvasHost: state.canvasBaseURL.host,
                         allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id
                     )
                 case .grades:
@@ -195,6 +220,18 @@ struct ContentView: View {
             // that moment (see `NotificationScheduler.liveItems`). Captures
             // the view model itself, not this struct.
             scheduler.liveItems = { [vm] in vm.items }
+            // The other direction: `AppState.disconnectCanvas` re-plans through
+            // this, so the alarms and reminders scheduled for the Canvas work
+            // that has just gone stop at once instead of when the dashboard is
+            // next opened. The view model hears about state changes a
+            // main-actor hop later, so it is asked to rebuild from state now,
+            // the same two calls `settleAfterFetch` makes. Weak: `AppState`
+            // owns this closure and must not keep a dashboard alive.
+            state.reminderReplanner = { [weak vm, weak scheduler] in
+                guard let vm, let scheduler else { return }
+                vm.reload(preservingEdits: true)
+                await scheduler.reschedule(from: vm.items)
+            }
             // Berserk alarms never ring for preview or demo data. The scheduler
             // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
             // probe rather than a flag copied in here, where it would go stale
@@ -314,9 +351,22 @@ struct ContentView: View {
             if phase == .active {
                 Task {
                     await scheduler.refreshAuthStatus()
+                    // Before `refresh()`, whose first step is the network. See
+                    // `replanFromLedger`.
+                    await replanFromLedger()
                     await refresh()
                 }
             }
+        }
+        // The reconnect cover (below) keeps this view mounted, so nothing
+        // remounts it when the cover closes. The launch-time pass used to run
+        // on that remount, because the old reconnect swapped the whole root to
+        // `OnboardingView` and back, which re-ran `.task`; it has to be run
+        // again here. Runs on a cancel as well as on a connect: a pass over an
+        // unchanged session is cheap and settles the banner either way.
+        .onChange(of: state.isReconnecting) { wasReconnecting, isReconnecting in
+            guard wasReconnecting, !isReconnecting else { return }
+            Task { await refreshSessionSourcesAtLaunch() }
         }
         .sheet(item: $editing, onDismiss: rescheduleNotifications) { item in
             EditDueSheet(
@@ -346,6 +396,22 @@ struct ContentView: View {
                 onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) }
             )
         }
+        // A Canvas or Gradescope reconnect (`AppState.restartOnboarding(for:)`
+        // with a single service, from a signed-in install) opens over the
+        // dashboard instead of replacing the root, so the dashboard, its
+        // refresh loop and its navigation stack stay where they were and a
+        // cancelled reconnect costs the student nothing. iOS gets a full-screen
+        // cover; macOS has no such presentation, so the same walk is a sheet.
+        // Any other restart (the whole walk, preview mode, a first run) still
+        // swaps the root, and `isReconnecting` is never true for them.
+        // Presented from here, not from `RootView`: Settings and Grades are
+        // pushes on this view's stack, never modal sheets, so there is no
+        // second presentation for it to collide with.
+        #if os(iOS)
+        .fullScreenCover(isPresented: reconnectCoverBinding) { reconnectCover }
+        #else
+        .sheet(isPresented: reconnectCoverBinding) { reconnectCover }
+        #endif
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
         // was removed 2026-08-27 (docs/decisions.md): readings now import
@@ -360,6 +426,34 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+    }
+
+    /// Reads `AppState.isReconnecting`; the only write it makes is closing the
+    /// cover, which a macOS sheet's own dismissal (Escape) also arrives at.
+    private var reconnectCoverBinding: Binding<Bool> {
+        Binding(
+            get: { state.isReconnecting },
+            set: { if !$0 { state.dismissReconnect() } }
+        )
+    }
+
+    /// The same `OnboardingView` the root shows, started at the service being
+    /// reconnected. A presentation inherits neither the app's colour scheme nor
+    /// its theme (`SheetTheme.swift`), so it is re-applied here; the two
+    /// environment objects are passed explicitly, as every other presentation
+    /// in this app does. A macOS sheet sizes to its content, so it is given the
+    /// root window's minimum.
+    private var reconnectCover: some View {
+        OnboardingView(
+            destination: state.onboardingDestination,
+            hasChosenSchool: state.hasChosenCanvasInstallation
+        )
+        .environmentObject(state)
+        .environmentObject(scheduler)
+        .lhfSheetTheme()
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 600)
+        #endif
     }
 
     private var assistantButton: some View {
@@ -574,6 +668,32 @@ struct ContentView: View {
         return nil
     }
 
+    /// The Gradescope counterpart of `canvasSessionExpiredBanner`, without its
+    /// rejected-password and Duo branches (neither exists for Gradescope).
+    /// Opens the same single-service reconnect, which presents as a cover over
+    /// this dashboard (`AppState.restartOnboarding(for:)`).
+    private var gradescopeReconnectBanner: some View {
+        Button {
+            state.restartOnboarding(for: .gradescope)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("reconnect gradescope")
+                    .font(.lhfSans(12, weight: .semibold))
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.v2DateText)
+            }
+            .foregroundStyle(Color.v2Ink)
+            .padding(12)
+            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("reconnect gradescope")
+    }
+
     // MARK: Header
 
     /// The original v5 hierarchy, with Smooth's visual identity layered on top.
@@ -683,6 +803,10 @@ struct ContentView: View {
     /// session check, then reload and replan. No feed sync, no laptop sync and
     /// no notification drains; see the comment at the call in `.task`.
     private func refreshSessionSourcesAtLaunch() async {
+        // First, before the renewal wait and every fetch below: the reminders
+        // and alarms are re-planned from the ledger as it stands. See
+        // `replanFromLedger`.
+        await replanFromLedger()
         // `AppState.init` has already judged the saved Canvas session, and when
         // it found the cookies aged or missing it started a silent renewal.
         // That renewal is the whole reason this pass exists on a phone that
@@ -697,6 +821,39 @@ struct ContentView: View {
         await settleAfterFetch()
     }
 
+    /// Reloads the dashboard from the ledger and re-plans the reminders and
+    /// alarms from it, with no network in front.
+    ///
+    /// The plan used to be rebuilt only at the end of a pass, after the feed
+    /// fetch, the Canvas chain and, at a cold launch, a silent renewal that
+    /// can wait out thirty seconds (`awaitPendingSilentRenewal`). So on a slow
+    /// or dead network the reminders and alarms were as old as the last pass
+    /// that got through, and an item the student had ticked off, or an edit
+    /// they had made, was still ringing for it (hardening plan C7, NOT-12,
+    /// SYN-08). The ledger is on disk and `AppState` loaded it in `init`, so
+    /// what is already known can be planned at once; the pass after the fetch
+    /// (`settleAfterFetch`) plans again from whatever the fetch added. The
+    /// wrong fix is to move the replan out of `settleAfterFetch`: the fetch's
+    /// news still has to reach the plan.
+    ///
+    /// **Only once the dashboard is bound.** Until `.onAppear` has bound the
+    /// view model, `vm.items` is empty, and a plan made from an empty list
+    /// takes every pending reminder and alarm back (the same trap
+    /// `NotificationActionInbox.drain` guards). `.task` and `.onAppear` can
+    /// start in either order, so the flag is checked, not assumed; when it is
+    /// not set yet this does nothing and the pass after the fetch plans.
+    ///
+    /// Run at launch (`refreshSessionSourcesAtLaunch`, so also when the
+    /// reconnect cover closes) and on returning to the foreground. Not in
+    /// `refresh()`'s five-minute loop: a pass there plans after its fetch
+    /// anyway, and a second plan before it would only be a second full re-add
+    /// of the queue every five minutes.
+    private func replanFromLedger() async {
+        guard isDashboardBound else { return }
+        vm.reload(preservingEdits: true)
+        if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+    }
+
     /// Gradescope's scrape, then the Canvas fetch that is the only source of
     /// Canvas submission state and carries course intel and the
     /// course-knowledge / Ed sync with it.
@@ -709,6 +866,11 @@ struct ContentView: View {
     /// session-expiry check and silent renewal, the Duo read, the reload, the
     /// badge and the reminder replan.
     private func settleAfterFetch() async {
+        // A server-side account deletion a disconnect asked for and the
+        // network refused is retried here, in the background, on every pass
+        // until it lands (`PendingBackendDeletion`). Not awaited: it must
+        // never hold up the reload and the reminder replan below.
+        state.startPendingBackendDeletionRetryIfNeeded()
         state.refreshCanvasSessionExpiredState()
         // Retry a silent Canvas renewal if the policy says one is due (it
         // does nothing while awaiting Duo, after a rejected password, or
@@ -891,7 +1053,10 @@ struct ContentView: View {
                                 vm.removeOwnTask(item)
                             }
                             rescheduleNotifications()
-                        }
+                        },
+                        // The swipe's write, made before the card animates away;
+                        // `onComplete` above follows and finds it done.
+                        onCommit: { item in vm.commitCompletion(item) }
                     )
                 }
             }

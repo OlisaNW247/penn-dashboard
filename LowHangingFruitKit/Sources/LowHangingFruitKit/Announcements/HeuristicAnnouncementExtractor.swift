@@ -153,8 +153,8 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     private static let abbreviationPeriodPlaceholder = "\u{2024}" // ONE DOT LEADER — never appears in real announcement text.
 
     private static func protectAbbreviationPeriods(in body: String) -> String {
-        guard let regex = try? NSRegularExpression(
-            pattern: "\\b(" + abbreviationsBeforePeriod.joined(separator: "|") + ")\\.",
+        guard let regex = RegexCache.regex(
+            "\\b(" + abbreviationsBeforePeriod.joined(separator: "|") + ")\\.",
             options: [.caseInsensitive]
         ) else { return body }
         let range = NSRange(location: 0, length: (body as NSString).length)
@@ -461,7 +461,7 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
     /// the caller's day-level resolution (end of day, or a class meeting's
     /// start time) is left as the answer.
     private static func applyClockTime(sentence: String, to date: Date, calendar: Calendar) -> Date? {
-        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b"#, options: [.caseInsensitive]) else {
+        guard let regex = RegexCache.regex(#"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b"#, options: [.caseInsensitive]) else {
             return nil
         }
         let ns = sentence as NSString
@@ -546,7 +546,7 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
         let monthPattern = "\\b(" + monthNumbers.keys.sorted { $0.count > $1.count }
             .map { NSRegularExpression.escapedPattern(for: $0) }
             .joined(separator: "|") + ")\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b"
-        if let regex = try? NSRegularExpression(pattern: monthPattern, options: [.caseInsensitive]),
+        if let regex = RegexCache.regex(monthPattern, options: [.caseInsensitive]),
            let match = regex.firstMatch(in: sentence, range: NSRange(location: 0, length: nsSentence.length)),
            match.numberOfRanges >= 3 {
             let monthText = nsSentence.substring(with: match.range(at: 1)).lowercased()
@@ -561,7 +561,7 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
         // trailing number after a second slash is more likely a fraction
         // ("3/4 of the class") than a date once a year is involved.
         let numericPattern = "\\b(\\d{1,2})/(\\d{1,2})\\b"
-        if let regex = try? NSRegularExpression(pattern: numericPattern),
+        if let regex = RegexCache.regex(numericPattern),
            let match = regex.firstMatch(in: sentence, range: NSRange(location: 0, length: nsSentence.length)),
            match.numberOfRanges >= 3 {
             let monthText = nsSentence.substring(with: match.range(at: 1))
@@ -632,19 +632,16 @@ public struct HeuristicAnnouncementExtractor: AnnouncementAssignmentExtractor {
 
     // MARK: - Regex helper
 
-    /// Every pattern here is built fresh per call rather than cached in a
-    /// stored `static let` — matching the convention `CanvasModulesClient
-    /// .parseDate` and friends already use for `ISO8601DateFormatter`.
-    /// `NSRegularExpression` is in fact immutable and thread-safe once
-    /// built, and elsewhere in this package (`SyllabusParser`,
-    /// `CanvasAnnouncementsClient`) cached `static let` patterns are the
-    /// convention. Building per call here is a choice, not a necessity:
-    /// this extractor runs a handful of times per sync, never hot enough
-    /// for compilation cost to matter, and per-call construction keeps the
-    /// type trivially `Sendable` without leaning on Foundation's
-    /// thread-safety documentation at all.
+    /// Every pattern here goes through `RegexCache`. It used to be built
+    /// fresh per call, on the reasoning that this extractor "runs a handful
+    /// of times per sync, never hot enough for compilation cost to matter".
+    /// That stopped being true once it ran over every announcement in every
+    /// class on each refresh, with a dozen cue patterns tried per sentence:
+    /// the compilation was most of its time. `NSRegularExpression` is
+    /// immutable and documented thread-safe, so the shared instances keep
+    /// this type `Sendable` as before.
     private static func regexMatches(_ pattern: String, in text: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+        guard let regex = RegexCache.regex(pattern, options: [.caseInsensitive]) else {
             return false
         }
         let range = NSRange(location: 0, length: (text as NSString).length)

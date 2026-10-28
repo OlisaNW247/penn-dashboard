@@ -48,21 +48,26 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
     public var latestVersion: AppVersion?
     public var message: String?
     public var appStoreURL: URL?
+    /// The optional one-time feedback card (`FeedbackNotice`). Nothing in the
+    /// version verdict reads it.
+    public var feedback: FeedbackNotice?
 
     public init(
         minimumVersion: AppVersion? = nil,
         latestVersion: AppVersion? = nil,
         message: String? = nil,
-        appStoreURL: URL? = nil
+        appStoreURL: URL? = nil,
+        feedback: FeedbackNotice? = nil
     ) {
         self.minimumVersion = minimumVersion
         self.latestVersion = latestVersion
         self.message = message
         self.appStoreURL = appStoreURL
+        self.feedback = feedback
     }
 
     private enum CodingKeys: String, CodingKey {
-        case minimumVersion, latestVersion, message, appStoreURL
+        case minimumVersion, latestVersion, message, appStoreURL, feedback
     }
 
     public init(from decoder: Decoder) throws {
@@ -80,6 +85,13 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         appStoreURL = Self.sanitizedAppStoreURL(
             try container.decodeIfPresent(String.self, forKey: .appStoreURL)
         )
+        // `try?`, never `try`: a malformed or forged `feedback` object must
+        // not make this whole decode throw, because a thrown decode falls
+        // back to the cached policy or none, which silently disables a
+        // `minimumVersion` block the maintainer meant to ship. The feedback
+        // card is the least important field in the file; it is flattened to
+        // nil on any problem.
+        feedback = try? container.decodeIfPresent(FeedbackNotice.self, forKey: .feedback)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,6 +100,7 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         try container.encodeIfPresent(latestVersion, forKey: .latestVersion)
         try container.encodeIfPresent(message, forKey: .message)
         try container.encodeIfPresent(appStoreURL?.absoluteString, forKey: .appStoreURL)
+        try container.encodeIfPresent(feedback, forKey: .feedback)
     }
 
     // MARK: Sanitizers
@@ -121,7 +134,12 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
 
         guard !collapsed.isEmpty else { return nil }
         if collapsed.count > maximumMessageLength {
-            return String(collapsed.prefix(maximumMessageLength))
+            // Trimmed after the cut: it can land just after a space, and a
+            // message that ends in one is not what a second pass (the
+            // policy cache re-decodes what it encoded) would produce, so the
+            // cached policy would not equal the fetched one.
+            let cut = String(collapsed.prefix(maximumMessageLength)).trimmingCharacters(in: .whitespaces)
+            return cut.isEmpty ? nil : cut
         }
         return collapsed
     }

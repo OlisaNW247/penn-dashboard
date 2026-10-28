@@ -178,13 +178,19 @@ public enum GradeEngine {
         // docs/grades.md §14.4 already states. Looked up by map category id,
         // which `GradeRegrouper` preserves as the regrouped `GradeCategory`'s
         // own id.
+        // First wins on a repeated map id (both tables below): ids come from
+        // Canvas group and syllabus names, and a duplicate here used to trap
+        // the app at launch. The builders now keep ids distinct, but a map
+        // saved or suggested by an older build can still carry a pair, and an
+        // engine that crashes on a malformed map takes the whole app with it.
         let mapExpectedCounts: [String: Int] = Dictionary(
-            uniqueKeysWithValues: (input.categoryMap?.categories ?? []).compactMap { category in
+            (input.categoryMap?.categories ?? []).compactMap { category in
                 category.expectedCount.map { (category.id, $0) }
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
         let mapWeightSourceByCategoryID: [String: ScoreSource] = Dictionary(
-            uniqueKeysWithValues: (input.categoryMap?.categories ?? []).map { category in
+            (input.categoryMap?.categories ?? []).map { category in
                 let source: ScoreSource
                 switch category.provenance {
                 case .syllabus, .sharedProfile: source = .syllabus
@@ -192,7 +198,8 @@ public enum GradeEngine {
                 case .canvas:                   source = .canvas
                 }
                 return (category.id, source)
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
 
         // Computed ONCE per course, off the override-adjusted items (so an

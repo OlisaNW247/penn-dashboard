@@ -82,6 +82,23 @@ final class NotificationScheduler: ObservableObject {
     }
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
+    /// What the latest reschedule pass did, counted: the notifications the
+    /// center took or refused, the stale ones taken back, the alarms AlarmKit
+    /// would not hold. Nil until a pass has run. Not shown to the student and
+    /// not persisted; it exists so a failed add is a number somewhere
+    /// (`ReminderPassReport`, hardening plan C5). Set by `applyReminders`, so
+    /// a pass that never got that far (reminders off) leaves the last one.
+    var lastPassReport: ReminderPassReport?
+
+    /// How long a pass waits for the notification center to list what is
+    /// pending before it gives up on removing the stale ones
+    /// (`applyNotifications`). Five seconds: the read is a local IPC and
+    /// normally takes milliseconds, and the pass that waits on it holds the
+    /// `RescheduleSerializer`, so a read that never came back would stop every
+    /// later reschedule. A property, not a constant, so a test can shorten it.
+    var pendingReadDeadline: TimeInterval = NotificationScheduler.defaultPendingReadDeadline
+    nonisolated static let defaultPendingReadDeadline: TimeInterval = 5
+
     // Lazy so launch on an unbundled binary never touches the notification center.
     private lazy var center = UNUserNotificationCenter.current()
 
@@ -121,8 +138,22 @@ final class NotificationScheduler: ObservableObject {
     /// same reason. Nil in the app.
     var authStatusOverride: UNAuthorizationStatus?
 
+    /// What one reschedule pass is asked to do: plan from `items`, and whether
+    /// it may put the alarm-permission question to the student.
+    ///
+    /// The permission rides in the serializer's input, not beside it, because a
+    /// call folded into a running pass is applied by that pass's rerun
+    /// (`RescheduleSerializer`), and the rerun has to honour the folded call's
+    /// permission, not the first caller's. A background re-plan that arrived
+    /// behind a foreground pass must not be allowed to prompt just because
+    /// the pass it joined was.
+    private struct PassRequest {
+        let items: [DashItem]
+        let mayPrompt: Bool
+    }
+
     /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
-    private let reschedulePasses = RescheduleSerializer<[DashItem]>()
+    private let reschedulePasses = RescheduleSerializer<PassRequest>()
 
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
@@ -155,6 +186,22 @@ final class NotificationScheduler: ObservableObject {
     /// ordinary reminders and never the loud one, which defeats the point of
     /// it. The nearest ten are the ones the cap keeps.
     nonisolated static let maxLoudItems = 10
+
+    /// How far ahead a reminder counts as urgent when the slots are shared
+    /// out: one that fires inside this window is given a slot before any that
+    /// fires later (`allocate`). Two days, because that is the longest a
+    /// student can go without opening the app and still be expected to be
+    /// reminded of what is about to be due; anything further out is certain to
+    /// be re-planned long before it would fire.
+    nonisolated static let urgentWindow: TimeInterval = 48 * 3600
+
+    /// Whether a reminder that fires at `fireDate` is urgent at `now`: the
+    /// window's end is inclusive, so one firing at exactly 48 hours is. Judged
+    /// on when the reminder fires, not on when the work is due: a 2-day lead on
+    /// work due in 50 hours fires in 2, and is the one that matters first.
+    nonisolated static func isUrgent(fireDate: Date, now: Date) -> Bool {
+        fireDate <= now.addingTimeInterval(urgentWindow)
+    }
 
     init(defaults: UserDefaults = .lhf) {
         self.defaults = defaults
@@ -323,37 +370,70 @@ final class NotificationScheduler: ObservableObject {
     ///
     /// See `applyReminders` for what one pass does, and why in that order.
     func reschedule(from items: [DashItem], now: Date = Date()) async {
-        lastScheduledItems = items
+        await submitPass(PassRequest(items: items, mayPrompt: true), now: now)
+    }
+
+    /// The re-plan for code that runs without the student: a background wake
+    /// (`LHFBackgroundRefresh`). The same pass as `reschedule`, except that it
+    /// never shows the alarm-permission prompt.
+    ///
+    /// **Why this is not `reschedule` called as it is.** `resolveLoudDelivery`
+    /// asks AlarmKit for permission whenever it has never been asked and
+    /// there is an alarm to ring, and AlarmKit cannot show that question from
+    /// the background: the request would hang or throw in a process nobody is
+    /// looking at, and the first thing the feature ever said to a student
+    /// would be a system prompt out of nowhere on the lock screen. Here a
+    /// permission that was never asked reads as "not allowed yet", so the
+    /// loud alert is the three buzzes for this pass, and the question is put
+    /// the next time the app is open (the dashboard's own `reschedule`). The
+    /// wrong fix is to call `reschedule` and rely on the wake never
+    /// reaching the prompt: nothing in `reschedule` knows it is in a wake.
+    func rescheduleWithoutPrompting(from items: [DashItem], now: Date = Date()) async {
+        await submitPass(PassRequest(items: items, mayPrompt: false), now: now)
+    }
+
+    private func submitPass(_ request: PassRequest, now: Date) async {
+        lastScheduledItems = request.items
         rescheduleGeneration += 1
         var firstPassNow: Date? = now
-        await reschedulePasses.submit(items) { items in
+        await reschedulePasses.submit(request) { request in
             let passNow = firstPassNow ?? Date()
             firstPassNow = nil
-            await self.performReschedule(from: items, now: passNow)
+            await self.performReschedule(from: request.items, now: passNow, mayPrompt: request.mayPrompt)
         }
     }
 
-    private func performReschedule(from items: [DashItem], now: Date) async {
+    private func performReschedule(from items: [DashItem], now: Date, mayPrompt: Bool) async {
         let sink: any PendingNotificationSink = notificationSinkOverride ?? self
         guard isEnabled else { sink.removeAllPending(); cancelAlarms(); return }
         await refreshAuthStatus()
-        // Reminders that cannot be delivered are not reminders the student
-        // asked to hear from: with notifications refused there is no loud
-        // alert to replace, so an alarm left over from an earlier state goes.
-        guard authStatus == .authorized || authStatus == .provisional else { cancelAlarms(); return }
-        await applyReminders(from: items, now: now, sink: sink)
+        // The notification permission gates the notifications, and nothing
+        // else. This used to `cancelAlarms()` and return when it was refused,
+        // on the reasoning that undeliverable reminders are not reminders the
+        // student asked for. But the AlarmKit alarm is a different permission
+        // with a different question, and declining notifications is the
+        // commonest answer at onboarding: a student who refused them and
+        // allowed alarms had the alarm switched off at every pass, with
+        // nothing to show for it (hardening plan C2, NOT-02). The pass now
+        // goes on without the notification half (`applyReminders`), and an
+        // alarm is taken back only for the reasons that are about alarms.
+        let notificationsAllowed = authStatus == .authorized || authStatus == .provisional
+        await applyReminders(from: items, now: now, sink: sink, mayPrompt: mayPrompt,
+                             notificationsAllowed: notificationsAllowed)
     }
 
     /// Re-plans from `lastScheduledItems` after the student changed a per-course
     /// preference, coalescing a burst of edits into one pass.
     ///
-    /// The debounce is not politeness. Rescheduling is a full
-    /// `removeAllPendingNotificationRequests()` followed by up to sixty
-    /// `add(_:)` calls, and a student setting up a class flips five or six
-    /// switches in about as many seconds — running the whole cycle per switch
-    /// would mean the app spends that entire interval with an empty or
-    /// half-populated pending queue. Coalescing means it is empty once, briefly,
-    /// after they stop.
+    /// The debounce is not politeness. Rescheduling is up to sixty awaited
+    /// `add(_:)` calls plus a read of what is pending, and a student setting up
+    /// a class flips five or six switches in about as many seconds — running
+    /// the whole cycle per switch would mean the app spends that entire
+    /// interval re-planning and re-adding the same requests. Coalescing means
+    /// it happens once, after they stop. (It used to be a full
+    /// `removeAllPendingNotificationRequests()` first, and the debounce also
+    /// kept the queue from sitting empty; a pass now removes only what the plan
+    /// no longer holds, `applyNotifications`.)
     func rescheduleAfterPreferenceChange(debounce: Duration = .milliseconds(600)) {
         pendingPreferenceReschedule?.cancel()
         guard isEnabled, !itemsForPreferenceReschedule().isEmpty else { return }
@@ -608,6 +688,24 @@ final class NotificationScheduler: ObservableObject {
     /// then on the request identifier, so the same inputs always produce the
     /// same plan — `Set<LeadOffset>` has no iteration order to rely on.
     ///
+    /// # Urgent first, then round-robin
+    ///
+    /// Round-robin by class says who gets a slot, and nothing about when the
+    /// reminder fires. With sixty slots and a busy fortnight that is the wrong
+    /// thing to be even-handed about: a class with a dozen assignments due next
+    /// month took slots in the same rotation as the class whose problem set is
+    /// due tomorrow, so a reminder for tomorrow could be the one the cut fell
+    /// on while a reminder three weeks out was kept (hardening plan C4,
+    /// NOT-04). So the candidates are split at `urgentWindow` (48 hours) and
+    /// the slots are shared out in two rounds: the reminders that fire inside
+    /// the window first, round-robin by class among themselves, and only what
+    /// is left goes round-robin by class to the rest. If more than the budget
+    /// fires inside the window, the urgent round is itself shared by class, so
+    /// even then no class goes quiet. The reasons for round-robin above all
+    /// still hold inside each round. The wrong fix is a flat sort by fire date
+    /// with no rotation: that is the original plan, and it let the class whose
+    /// lead times had been tuned take every slot.
+    ///
     /// # The loud alerts come out of the same sixty
     ///
     /// The loud 10-minute alert (`loudAlerts`) is planned first and its
@@ -624,20 +722,40 @@ final class NotificationScheduler: ObservableObject {
     ///
     /// When the loud alert is delivered as an AlarmKit alarm instead
     /// (`BerserkAlarmPlan`), the three buzzes must not also go out. Passing
-    /// `true` leaves exactly the loud buzzes out of the result and changes
-    /// nothing else: the same items are still chosen by `loudAlerts`, so they
-    /// still get no plain "10 minutes before" reminder (the alarm replaces it
-    /// just as the buzzes did), and the budget is still divided as if the
-    /// buzzes were there, so every other request is the one that was planned
-    /// before. The wrong fix is to hand the freed slots to the round-robin:
-    /// that would make the same student's other reminders differ with the
-    /// delivery mode, and a fallback to buzzes after an AlarmKit error could
-    /// then push the plan over the cap. `false` is today's output, untouched.
+    /// `true` leaves exactly the loud buzzes out of the result, and **the slots
+    /// they would have taken are given to the other reminders**: the budget
+    /// counts only the requests that are actually returned. The same items are
+    /// still chosen by `loudAlerts`, so they still get no plain "10 minutes
+    /// before" reminder (the alarm replaces it just as the buzzes did).
+    ///
+    /// Until C4 the budget was spent on the buzzes whether or not they were
+    /// emitted, so a student in alarm mode, who is the one with the most
+    /// ringing for them, had thirty of sixty slots sitting idle in a busy
+    /// fortnight. It was kept that way on the reasoning that a fallback to
+    /// buzzes after an AlarmKit error could otherwise push the plan over the
+    /// cap, and that reasoning does not hold: a pass plans against the delivery
+    /// it ends up with, and the fallback pass plans again from scratch with the
+    /// buzzes counted (`applyReminders`), so no plan is ever larger than
+    /// `maxPending`. The cost is the one the old note named: the same student's
+    /// other reminders differ with the delivery mode. That is the point.
+    /// `false` is today's output, untouched.
+    ///
+    /// `calendar` is where the ordinary reminders' wall-clock triggers are read
+    /// and pinned; the app passes nothing and gets the phone's current one, a
+    /// test passes a fixed zone.
+    ///
+    /// `buzzFallbackAssignmentIDs` names the items (`Assignment.id`) whose
+    /// alarm AlarmKit would not take while it took the others
+    /// (`BerserkAlarmPlan.Settlement`): with `loudAlertsAsAlarms` true they
+    /// alone keep their buzzes, so every item the loud alert covers has an
+    /// alarm or its buzzes, and the budget counts the buzzes that are returned.
     func plannedRequests(
         from items: [DashItem],
         now: Date = Date(),
         preferences: CoursePreferencesStore? = nil,
-        loudAlertsAsAlarms: Bool = false
+        loudAlertsAsAlarms: Bool = false,
+        buzzFallbackAssignmentIDs: Set<String> = [],
+        calendar: Calendar = .current
     ) -> [UNNotificationRequest] {
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
@@ -653,7 +771,11 @@ final class NotificationScheduler: ObservableObject {
         // reminder, if the student asked for one, because otherwise it would
         // have neither.
         let loudItemIDs = Set(loud.map(\.item.id))
-        let loudRequests = loud.flatMap { Self.loudRequests(for: $0, now: now, nameOverrides: nameOverrides, minutes: sweeperMinutes, sound: sweeperSound) }
+        let loudByItem = loud.map { alert in
+            (id: alert.item.assignment.id,
+             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides,
+                                         minutes: sweeperMinutes, sound: sweeperSound))
+        }
 
         var byCourse: [String: [Candidate]] = [:]
         for item in items {
@@ -705,12 +827,15 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        // The budget is spent on the buzzes whether or not they are emitted;
-        // see `loudAlertsAsAlarms` above.
-        let budget = Self.maxPending - loudRequests.count
-        let calendar = Calendar.current
+        // Only the buzzes that are really returned take slots; in alarm mode
+        // that is none, or just those of the items whose alarm AlarmKit would
+        // not take. See `loudAlertsAsAlarms` above.
+        let buzzes = loudByItem
+            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
+            .flatMap(\.requests)
+        let budget = Self.maxPending - buzzes.count
 
-        let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget).map { pair in
+        let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget, now: now).map { pair in
             let content = UNMutableNotificationContent()
             // The class name is the headline; the body is the assignment's
             // name and then the lead phrase ("Problem Set 4. Due in 1 hour").
@@ -743,13 +868,31 @@ final class NotificationScheduler: ObservableObject {
             )
             content.sound = .default
             content.interruptionLevel = urgency.isTimeSensitive ? .timeSensitive : .active
-            let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
+            var comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: pair.fireDate)
+            // Pin the zone the wall-clock components were read in. Without one
+            // the system reads them in whatever zone the phone is in when the
+            // reminder is due, so a plan made in New York and a student who
+            // lands in Tokyo that night is reminded at 9:00 Tokyo time, 13 hours
+            // late (hardening plan C6, NOT-06). Measured on this Mac:
+            // `UNCalendarNotificationTrigger.nextTriggerDate()` of Tokyo
+            // components came back 13 hours after the instant planned with no
+            // zone and on it with one (`ReminderTimeZoneTests`).
+            //
+            // The other fix is the loud buzzes' interval trigger. It was not
+            // taken here: an interval is measured from the moment of the add
+            // and the plan is re-added on every pass, so each reminder's
+            // trigger would differ from its last pass's; a calendar trigger
+            // with a zone is the same request every time the plan is unchanged,
+            // and it follows the wall clock if the student sets the time by
+            // hand. The price is the existing one: components stop at the
+            // minute, so it can land up to 59 seconds early.
+            comps.timeZone = calendar.timeZone
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             return UNNotificationRequest(identifier: Self.identifier(for: pair),
                                          content: content, trigger: trigger)
         }
 
-        return (loudAlertsAsAlarms ? [] : loudRequests) + requests
+        return buzzes + requests
     }
 
     // MARK: The loud 10-minute alert
@@ -1004,13 +1147,40 @@ final class NotificationScheduler: ObservableObject {
         "due:\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
     }
 
-    /// Shares `budget` slots out across the per-course queues, round-robin. See
-    /// `plannedRequests` for why this is round-robin and not a flat sort.
+    /// Shares `budget` slots out: the reminders that fire inside `urgentWindow`
+    /// first, then the rest, each round shared round-robin across the courses.
+    /// See `plannedRequests` for why it is round-robin and not a flat sort, and
+    /// why the urgent ones go first.
     ///
     /// Returned in fire-date order rather than in the order they were taken,
-    /// because the caller's output is easier to reason about — and to assert on
-    /// — when it reads as a timeline rather than as an interleaving artefact.
-    private static func allocate(_ byCourse: [String: [Candidate]], budget: Int) -> [Candidate] {
+    /// because the caller's output is easier to reason about, and to assert
+    /// on, when it reads as a timeline rather than as an interleaving
+    /// artefact.
+    private static func allocate(
+        _ byCourse: [String: [Candidate]], budget: Int, now: Date
+    ) -> [Candidate] {
+        guard budget > 0, !byCourse.isEmpty else { return [] }
+
+        var urgent: [String: [Candidate]] = [:]
+        var later: [String: [Candidate]] = [:]
+        for (course, candidates) in byCourse {
+            for candidate in candidates {
+                if isUrgent(fireDate: candidate.fireDate, now: now) {
+                    urgent[course, default: []].append(candidate)
+                } else {
+                    later[course, default: []].append(candidate)
+                }
+            }
+        }
+
+        let first = roundRobin(urgent, budget: budget)
+        let rest = roundRobin(later, budget: budget - first.count)
+        return (first + rest).sorted(by: isMoreUrgent)
+    }
+
+    /// One round of the sharing: takes up to `budget` candidates, one course at
+    /// a time in turn, the most urgent of each course's own queue first.
+    private static func roundRobin(_ byCourse: [String: [Candidate]], budget: Int) -> [Candidate] {
         guard budget > 0, !byCourse.isEmpty else { return [] }
 
         // Each course's own queue, most urgent first.
@@ -1046,7 +1216,7 @@ final class NotificationScheduler: ObservableObject {
             }
         }
 
-        return chosen.sorted(by: isMoreUrgent)
+        return chosen
     }
 
     /// Soonest-firing first, then real coursework ahead of recurring
@@ -1078,5 +1248,20 @@ extension NotificationScheduler: PendingNotificationSink {
 
     func removeAllPending() { cancelAll() }
 
-    func add(_ request: UNNotificationRequest) async { try? await center.add(request) }
+    func pendingIdentifiers() async -> [String] {
+        await center.pendingNotificationRequests().map(\.identifier)
+    }
+
+    func removePending(identifiers: [String]) {
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+
+    func add(_ request: UNNotificationRequest) async -> Bool {
+        do {
+            try await center.add(request)
+            return true
+        } catch {
+            return false
+        }
+    }
 }

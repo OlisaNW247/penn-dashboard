@@ -6,6 +6,10 @@ public struct GradescopeClient: Sendable {
         case notHTTP
         case invalidResponseEncoding
         case notLoggedIn
+        /// A request the client refused to make because it was not to
+        /// Gradescope over HTTPS (`CredentialOrigin`). Not an authentication
+        /// failure: it says nothing about the session.
+        case untrustedURL(URL)
 
         public var errorDescription: String? {
             switch self {
@@ -17,22 +21,41 @@ public struct GradescopeClient: Sendable {
                 return "Gradescope returned a page the app could not read."
             case .notLoggedIn:
                 return "Gradescope needs you to log in again."
+            case .untrustedURL:
+                return "Gradescope pointed at a page that is not on Gradescope, so the app did not open it."
             }
         }
 
-        /// Only these failures prove the saved Gradescope session is dead.
-        /// Offline errors, timeouts, 5xx responses and unreadable pages are
-        /// refresh failures, not reasons to discard connection state and ask
-        /// the student to authenticate again.
+        /// Failures that must stop the whole scrape rather than be demoted to
+        /// an unreadable page (`refineCompletionStatus` rethrows exactly
+        /// these). Offline errors, timeouts, 5xx responses and unreadable
+        /// pages are refresh failures and are swallowed per page.
+        ///
+        /// **This is not proof that the session is dead.** It used to be the
+        /// thing that disconnected Gradescope (any 401, any 403, or the
+        /// keyword match in `isLoginPage`), so one rate-limited 403 signed a
+        /// student out. Whether to ask for a reconnect is now
+        /// `sawLoginForm`'s evidence, judged over two runs an hour apart by
+        /// `GradescopeReauthRule`; a bare status code never counts toward it.
         public var requiresReauthentication: Bool {
             switch self {
             case .notLoggedIn:
                 return true
             case let .http(status, _):
                 return status == 401 || status == 403
-            case .notHTTP, .invalidResponseEncoding:
+            case .notHTTP, .invalidResponseEncoding, .untrustedURL:
                 return false
             }
+        }
+
+        /// True only when the response was a page shaped like a login form
+        /// (`GradescopeHTMLParser.isLoginPage`: a password input). The one
+        /// kind of failure that is evidence the saved session is dead; a 401
+        /// or 403 on its own is not, because those also come back for a
+        /// throttled or blocked request on a perfectly good session.
+        public var sawLoginForm: Bool {
+            if case .notLoggedIn = self { return true }
+            return false
         }
     }
 
@@ -90,7 +113,13 @@ public struct GradescopeClient: Sendable {
         }
 
         var assignments: [Assignment] = []
-        for course in result.courses {
+        // A course link is read out of the page's HTML, and an absolute
+        // `href` stays absolute through `URL(string:relativeTo:)`, so it can
+        // name any host. Only Gradescope's own pages are fetched, because the
+        // student's Gradescope cookie goes on every request this client makes.
+        // The link is skipped, not an error: failing the whole scrape over one
+        // odd link would also read as a broken session.
+        for course in result.courses where CredentialOrigin.isSameOrigin(course.url, as: baseURL) {
             let html = try await fetchHTML(course.url)
             let courseAssignments = GradescopeHTMLParser.assignments(
                 from: html,
@@ -192,6 +221,13 @@ public struct GradescopeClient: Sendable {
     }
 
     private func fetchHTML(_ url: URL) async throws -> String {
+        // The cookie is attached by hand below, to whatever URL is passed.
+        // Every URL here is built from `baseURL` or scraped from a Gradescope
+        // page, and the scraped ones can be absolute, so this is where
+        // "the right host, over HTTPS" is enforced (`CredentialOrigin`).
+        guard CredentialOrigin.isSameOrigin(url, as: baseURL) else {
+            throw Error.untrustedURL(url)
+        }
         var request = URLRequest(url: url)
         // See `CanvasDiscoveryClient.fetchHTML`'s matching comment — an
         // explicit `Cookie` header below means this must be `false`
@@ -207,7 +243,7 @@ public struct GradescopeClient: Sendable {
             request.setValue(value, forHTTPHeaderField: field)
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         guard (200..<300).contains(http.statusCode) else {
             throw Error.http(status: http.statusCode, url: url)
@@ -458,11 +494,27 @@ public enum GradescopeHTMLParser {
         return isCompletedStatus(in: [text])
     }
 
+    /// Whether `html` is Gradescope's login form: a page that carries an
+    /// `<input type="password">`.
+    ///
+    /// This used to be a keyword match over the page's visible text ("log in"
+    /// and "gradescope" and one of "email", "password", "school credentials").
+    /// That reads a page as a login form whenever its own words happen to
+    /// include those, an assignment titled "Log in to Gradescope: email
+    /// setup" among them, and a false positive here signed the student out.
+    /// The wrong fix is tuning the keywords: any list of words a login page
+    /// shares with an ordinary page will misfire on some course. A password
+    /// field is what a login form is, and no course, assignment or account
+    /// page the client fetches has one. It is read from the raw markup, not
+    /// from `cleanText`, which strips the very tags this needs. Quoting and
+    /// attribute order are free (`type='password'`, `type=password`,
+    /// `name=... type="password"`), while `type="hidden" name="password"` and
+    /// `data-type="password"` are not matches.
     public static func isLoginPage(_ html: String) -> Bool {
-        let text = cleanText(html).lowercased()
-        return text.contains("log in")
-            && text.contains("gradescope")
-            && (text.contains("email") || text.contains("password") || text.contains("school credentials"))
+        html.range(
+            of: #"<input\b[^>]*?(?<![\w-])type\s*=\s*(?:"password"|'password'|password(?=[\s/>]))"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
     }
 
     private static func assignmentWindows(from html: String) -> [String] {

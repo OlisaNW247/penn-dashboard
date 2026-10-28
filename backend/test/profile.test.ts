@@ -1,7 +1,9 @@
 import { strict as assert } from "node:assert";
 import {
   type ProfileSourceDocument,
+  isCoolingDown,
   isoDayOf,
+  PROFILE_BUDGET_COOLDOWN_MS,
   parseProfile,
   profileSourceHash,
   selectProfileInput,
@@ -260,4 +262,23 @@ Deno.test("isoDayOf refuses anything that isn't written as YYYY-MM-DD", () => {
   for (const raw of ["", "TBD", "October 23", "Oct 23, 2026", "10/23/2026", "2026-10", "2026-1-5", "20261023", "2026-10-23x", "week 8"]) {
     assert.equal(isoDayOf(raw), undefined, JSON.stringify(raw));
   }
+});
+
+Deno.test("isCoolingDown: inside 24 hours of a budget abort, not after, never without a usable stamp", () => {
+  const now = new Date("2026-10-27T12:00:00Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  assert.equal(isCoolingDown(ago(1000), now), true);
+  assert.equal(isCoolingDown(ago(PROFILE_BUDGET_COOLDOWN_MS - 1000), now), true);
+  assert.equal(isCoolingDown(ago(PROFILE_BUDGET_COOLDOWN_MS), now), false, "the boundary is exclusive");
+  assert.equal(isCoolingDown(ago(PROFILE_BUDGET_COOLDOWN_MS + 1000), now), false);
+  for (const missing of [null, undefined, "", "not a date"]) {
+    assert.equal(isCoolingDown(missing, now), false, String(missing));
+  }
+});
+
+Deno.test("isCoolingDown: a stamp a little in the future is clock skew and counts as just made; one far ahead is not trusted", () => {
+  const now = new Date("2026-10-27T12:00:00Z");
+  assert.equal(isCoolingDown(new Date(now.getTime() + 60_000).toISOString(), now), true);
+  assert.equal(isCoolingDown(new Date(now.getTime() + 3_600_000).toISOString(), now), false);
+  assert.equal(isCoolingDown(new Date(now.getTime() + 30 * 86_400_000).toISOString(), now), false);
 });

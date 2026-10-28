@@ -163,7 +163,7 @@ struct SyllabusExamServerPassTests {
             #expect(after.count == 3, "no exam is filed twice")
             #expect(after.first { $0.id == midterm.id }?.dueAt == Self.date(10, 30, 23, 59, 59))
             #expect(after.first { $0.sourceID.hasSuffix("final") }?.dueAt == Self.date(12, 15, 23, 59, 59))
-            #expect(store.completionRecord().ids.contains(midterm.id))
+            #expect(store.completionRecordOrFail().ids.contains(midterm.id))
         }
     }
 

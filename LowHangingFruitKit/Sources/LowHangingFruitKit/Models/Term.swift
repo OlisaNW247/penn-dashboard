@@ -44,7 +44,12 @@ public struct Term: Sendable, Hashable, Comparable, Codable {
     /// (Spring: Jan–May, Summer: Jun–Jul, Fall: Aug–Dec). August maps to fall
     /// because Penn's fall term begins in late August — treating it as summer
     /// would hide early-fall assignments during syllabus week.
+    ///
+    /// The year is the Gregorian year whatever calendar the phone is set to
+    /// (`Calendar.gregorian(matching:)`): a term code is Gregorian, and a
+    /// Buddhist-calendar phone read "Spring 2569", a term nothing carries.
     public init(date: Date, calendar: Calendar = .current) {
+        let calendar = Calendar.gregorian(matching: calendar)
         let comps = calendar.dateComponents([.year, .month], from: date)
         self.year = comps.year ?? 2000
         switch comps.month ?? 1 {
@@ -57,6 +62,7 @@ public struct Term: Sendable, Hashable, Comparable, Codable {
     /// A generous start-of-term date, used to scope the Done tab's "this
     /// semester" history. Deliberately approximate.
     public func startDate(calendar: Calendar = .current) -> Date {
+        let calendar = Calendar.gregorian(matching: calendar)
         let monthDay: (month: Int, day: Int)
         switch season {
         case .spring: monthDay = (1, 1)
@@ -73,6 +79,7 @@ public struct Term: Sendable, Hashable, Comparable, Codable {
     /// A generous end-of-term date, used to cap the "All" tab. Deliberately
     /// approximate — it favors not cutting off late-term finals over precision.
     public func endDate(calendar: Calendar = .current) -> Date {
+        let calendar = Calendar.gregorian(matching: calendar)
         let monthDay: (month: Int, day: Int)
         switch season {
         case .spring: monthDay = (5, 31)

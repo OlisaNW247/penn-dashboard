@@ -68,6 +68,13 @@ public enum SharedDefaults {
     /// widget gets the effective date through the snapshot the app writes.
     public static let dueDateEditsKey = "dueDateEditsV1"
 
+    /// True while the running build is below the enforced version floor
+    /// (`UpdateGateStore`). Written by the app, read by the widget extension,
+    /// which then shows "update smooth" instead of assignments. Born in the
+    /// shared suite, so NOT in `SharedDefaultsMigration.legacyKeys` (frozen)
+    /// or `CloudPrefsMirror.mirroredKeys` (a second device has its own build).
+    public static let updateRequiredKey = "lhf.updateRequired"
+
     /// The App Group suite, or nil when this process has no App Group
     /// entitlement (unit tests, SwiftUI previews, an unsigned binary).
     ///

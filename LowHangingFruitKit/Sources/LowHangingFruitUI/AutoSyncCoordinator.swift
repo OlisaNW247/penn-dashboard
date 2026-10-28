@@ -22,17 +22,55 @@ enum AutoSyncCoordinator {
     static let canvasGradesMinInterval: TimeInterval = 15 * 60
 
     static func syncConnectedServices(state: AppState, now: Date = Date()) async {
+        await syncConnectedServices(
+            state: state,
+            now: now,
+            gradescopeCookieProvider: gradescopeCookies,
+            emptySetOutcome: SessionCookieStore.emptyGradescopeSetOutcome
+        )
+    }
+
+    /// The seam behind `syncConnectedServices(state:now:)`: the cookie read and
+    /// the reading of an empty result are injected so a test can hand it an
+    /// empty set without touching `WKWebsiteDataStore` or the Keychain.
+    ///
+    /// **An empty cookie set never disconnects.** This used to call
+    /// `setGradescopeConnected(false)` on it, which turned "no cookies came
+    /// back this time" into a permanent disconnect: the next tick's `guard
+    /// state.isGradescopeConnected` stopped every future sync and the student
+    /// had to sign in again by hand. Gradescope's cookies carry no expiry and,
+    /// since 2026-10-27, no 24-hour clock either
+    /// (`SessionCookieStore.maxAge(for:)`), so an empty read is a Keychain
+    /// that answered badly or an item that is gone. The wrong fix is keeping
+    /// the disconnect but making it rarer: any call to
+    /// `setGradescopeConnected(false)` that a read failure can reach is the bug.
+    ///
+    /// **But a definitively gone set is evidence.** A phone restored from a
+    /// backup keeps the "connected" flag and the rows while its this-device-only
+    /// Keychain items stay behind; nothing is then sent to Gradescope, so no
+    /// login form ever answers, and the student would read stale rows forever.
+    /// `emptySetOutcome` reads the saved set once more and, when it answers
+    /// "not found" (or every entry is expired), records the same sighting a
+    /// login form is; two such runs an hour apart raise "reconnect gradescope"
+    /// (`GradescopeReauthRule`). A Keychain that would not answer counts for
+    /// nothing. Still no disconnect: the flag, the rows and the cookies stay.
+    static func syncConnectedServices(
+        state: AppState,
+        now: Date,
+        gradescopeCookieProvider: () async -> [HTTPCookie],
+        emptySetOutcome: () -> GradescopeReauthRule.Outcome
+    ) async {
         guard state.isGradescopeConnected else { return }
         if let last = state.lastGradescopeSync,
            now.timeIntervalSince(last) < gradescopeMinInterval {
             return   // synced recently — skip this tick
         }
-        let cookies = await gradescopeCookies()
-        if cookies.isEmpty {
-            state.setGradescopeConnected(false)
-        } else {
-            await state.syncGradescope(cookies: cookies, reportErrors: false)
+        let cookies = await gradescopeCookieProvider()
+        guard !cookies.isEmpty else {
+            state.recordGradescopeOutcome(emptySetOutcome(), now: now)
+            return
         }
+        await state.syncGradescope(cookies: cookies, reportErrors: false)
     }
 
     /// Refreshes Canvas grades (and thus the submission side-channel that drives
@@ -92,7 +130,7 @@ enum AutoSyncCoordinator {
     /// attempt with a dead cookie (docs/CANVAS_LOGIN_DIAGNOSIS.md H1/H2), and
     /// it served no purpose for the HTTP fetches, which never read from that
     /// store in the first place.
-    private static func gradescopeCookies() async -> [HTTPCookie] {
+    static func gradescopeCookies() async -> [HTTPCookie] {
         let live: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.gradescope.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }

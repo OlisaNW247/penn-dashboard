@@ -116,6 +116,15 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
 
+## What's New in 3.3.0 (release notes, ≤4000)
+
+Tell us how Smooth is going.
+
+• A short feedback form, one tap from the dashboard or from Profile
+• The tree knows what day it is where you are, so "tomorrow" and late-night
+  deadlines land on the right day
+• The tree reads grading tables in your class pages as tables
+
 ## What's New in 3.2.1 (release notes, ≤4000)
 
 The Smooth Sweeper, your way.
@@ -270,6 +279,9 @@ When prompted in App Store Connect → App Privacy, this app now collects data:
   announcements — uploaded from the student's own Canvas session; not used for
   tracking).
 
+The feedback form (3.3.0) does not change these answers: it is a Google
+Form opened in Safari, outside the app, and the app sends it nothing.
+
 No data type is used for tracking, and there is no third-party advertising or
 analytics SDK. Grades, completions, the work list, the student's name, and
 login credentials are not collected — they never leave the device. This is
@@ -296,12 +308,12 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 ## Build / version
 
-- Marketing version: **3.1.0**
-- Build: **13** (must exceed the live **3.0.0 (11)**; App Store Connect
-  refuses a build number it has already seen. Build 12 was stamped in the tree
-  as 3.0.1 but never archived or uploaded, and builds 7–10 of 3.0.0 went up
-  earlier, so **before archiving, confirm in App Store Connect → TestFlight →
-  Builds that no build 13 exists**, and pick the next number if one does.)
+- Marketing version: **3.3.0** (2026-10-27; before it 3.2.1 (15), 3.2.0
+  (14), 3.1.0 (13))
+- Build: **16** (must exceed every build App Store Connect has seen; the
+  last uploaded was 15. **Before archiving, confirm in App Store Connect →
+  TestFlight → Builds that no build 16 exists**, and pick the next number if
+  one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.1.0 / 13 in `project.yml` and the committed project.
+  3.3.0 / 16 in `project.yml` and the committed project.

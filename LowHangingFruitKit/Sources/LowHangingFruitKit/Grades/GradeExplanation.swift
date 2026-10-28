@@ -204,7 +204,8 @@ public struct GradeExplanation: Sendable, Hashable {
         if breakdown.leftOutCategoryIDs.isEmpty {
             leftOutLine = nil
         } else {
-            let byID = Dictionary(uniqueKeysWithValues: breakdown.categories.map { ($0.id, $0) })
+            // First wins on a repeated category id; display text must never trap on a duplicate.
+            let byID = Dictionary(breakdown.categories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let parts = breakdown.leftOutCategoryIDs.compactMap { id -> String? in
                 guard let category = byID[id] else { return nil }
                 return "\(category.name) (\(compactPercentText(category.effectiveWeight ?? 0)))"
@@ -258,13 +259,25 @@ public struct GradeExplanation: Sendable, Hashable {
     }
 }
 
+/// Both formatters below turn a whole-valued `Double` into text through
+/// `Int(...)`, which TRAPS on infinity, NaN or anything past `Int.max`. A
+/// Canvas item with 0 points possible makes a score ratio infinite or NaN,
+/// and that number can reach this panel, so the guard lives here rather than
+/// at each producer. A non-finite value reads as 0 (there is no honest number
+/// to show), and a finite one is clamped to a range far wider than any real
+/// percentage, so every ordinary value prints exactly as before.
+private func printable(_ value: Double) -> Double {
+    guard value.isFinite else { return 0 }
+    return min(max(value, -1_000_000), 1_000_000)
+}
+
 /// "94%" / "94.5%" — at most one decimal, trimmed to a whole number when the
 /// fraction rounds away. Deliberately duplicated from LowHangingFruitUI's
 /// `formatPercent` rather than shared: the Kit target never depends on the UI
 /// target (see the package layout in CLAUDE.md), and this is a three-line
 /// rounding rule, not enough to justify a new shared module.
 private func compactPercentText(_ value: Double) -> String {
-    let rounded = (value * 10).rounded() / 10
+    let rounded = (printable(value) * 10).rounded() / 10
     if rounded == rounded.rounded() {
         return "\(Int(rounded))%"
     }
@@ -275,7 +288,7 @@ private func compactPercentText(_ value: Double) -> String {
 /// values that aren't themselves a percentage (a point-apart difference, a
 /// category's raw contribution to the headline grade).
 private func compactNumberText(_ value: Double) -> String {
-    let rounded = (value * 10).rounded() / 10
+    let rounded = (printable(value) * 10).rounded() / 10
     if rounded == rounded.rounded() {
         return "\(Int(rounded))"
     }

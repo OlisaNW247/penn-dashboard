@@ -434,16 +434,52 @@ final class GradeWatcherStore: ObservableObject {
 
     /// Drops every fetched and derived grade artifact. Called when the user
     /// disconnects Canvas — grades are downstream of that session, so leaving
-    /// snapshots (and the observed-history trail behind the week delta) on
-    /// disk after a sign-out would keep showing a signed-out student's grades.
+    /// snapshots on disk after a sign-out would keep showing a signed-out
+    /// student's grades.
     /// User-authored settings (manual weights, confirmed Gradescope mappings,
     /// syllabus schemes) are preserved: re-connecting shouldn't make the user
     /// redo their setup.
-    func clearAll() {
+    ///
+    /// `keepingHistory` is what disconnect passes. The observed-history trail
+    /// (the memory behind the "this week" delta) is the student's own record
+    /// of how their grades moved, not something the Canvas session derives:
+    /// it is keyed on course ids and holds a percent per observation, nothing
+    /// that identifies anyone, and wiping it on every disconnect, which is
+    /// also the only repair a stuck student can reach, threw away weeks of
+    /// observations for a reconnect that restores the same courses. When
+    /// kept, `history` is re-read from the store so the published cache
+    /// matches what is on disk, the shape `clearPreviewFixtures` already
+    /// has. The default stays the full wipe for any caller that really means
+    /// "forget everything".
+    func clearAll(keepingHistory: Bool = false) {
         snapshots = [:]
         gradescopeItemsByCourse = [:]
-        history = [:]
-        historyStore?.clearAll()
+        if keepingHistory {
+            history = historyStore?.allHistory() ?? [:]
+        } else {
+            history = [:]
+            historyStore?.clearAll()
+        }
+        lastRefreshed = nil
+        isSessionExpired = false
+        error = nil
+    }
+
+    /// Drops what preview mode loaded (`loadPreviewSnapshots`) and nothing
+    /// else. The way out of preview used to be `clearAll()`, which also calls
+    /// `historyStore?.clearAll()`: a real student who tapped Preview out of
+    /// curiosity and then connected Canvas lost their observed grade history
+    /// (the memory behind the "this week" delta) on the way.
+    ///
+    /// `history` is re-read from the store rather than emptied, so the
+    /// published cache again matches what is on disk. Preview never records
+    /// into `historyStore`: `recordHistory` only runs from `refresh`, and
+    /// `AppState.refreshGradeWatcher` returns at its fixture guard before
+    /// reaching it, so there is nothing of the demo's to remove there.
+    func clearPreviewFixtures() {
+        snapshots = [:]
+        gradescopeItemsByCourse = [:]
+        history = historyStore?.allHistory() ?? [:]
         lastRefreshed = nil
         isSessionExpired = false
         error = nil
@@ -785,8 +821,10 @@ final class GradeWatcherStore: ObservableObject {
         // list `SyllabusMatcher.match` actually walked to build `matches` —
         // same ids either way, but matching the matcher's own input avoids
         // ever having to reason about whether the two lists could diverge.
+        // First wins on a repeated syllabus category id; a duplicate key must not trap.
         let expectedBySyllabusID = Dictionary(
-            uniqueKeysWithValues: syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) }
+            syllabus.scheme.normalizedCategories.map { ($0.id, $0.expectedItemCount) },
+            uniquingKeysWith: { first, _ in first }
         )
         return match.matches.reduce(into: [:]) { result, m in
             guard m.isApplied,
@@ -879,10 +917,10 @@ final class GradeWatcherStore: ObservableObject {
     }
 
     private static func loadItemOverrides() -> [String: [String: GradeItemOverride]] {
-        guard let data = UserDefaults.lhf.data(forKey: itemOverridesKey),
-              let dict = try? JSONDecoder().decode([String: [String: GradeItemOverride]].self, from: data)
-        else { return [:] }
-        return dict
+        // Lossy: one unreadable override costs that override, not every
+        // correction in every course, and the raw blob is kept before the next
+        // save (`GradeItemOverride.loadMap`).
+        GradeItemOverride.loadMap(from: .lhf, key: itemOverridesKey)
     }
 
     private func persistModeOverrides() {
@@ -1643,8 +1681,9 @@ final class GradeWatcherStore: ObservableObject {
         let built = GradeCategoryMapBuilder.fromSharedMapping(mapping, scheme: syllabus.scheme, canvasCategories: gradeCategories(courseID: courseID))
         guard let local = suggestedCategoryMap(courseID: courseID) else { return built }
 
-        let builtGroups = Dictionary(uniqueKeysWithValues: built.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
-        let localGroups = Dictionary(uniqueKeysWithValues: local.categories.map { ($0.id, Set($0.canvasGroupIDs)) })
+        // First wins on a repeated map category id in either map; a duplicate key must not trap.
+        let builtGroups = Dictionary(built.categories.map { ($0.id, Set($0.canvasGroupIDs)) }, uniquingKeysWith: { first, _ in first })
+        let localGroups = Dictionary(local.categories.map { ($0.id, Set($0.canvasGroupIDs)) }, uniquingKeysWith: { first, _ in first })
         guard builtGroups != localGroups || built.itemAssignments != local.itemAssignments else { return nil }
         return built
     }

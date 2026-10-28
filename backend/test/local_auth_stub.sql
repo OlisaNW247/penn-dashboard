@@ -58,3 +58,27 @@ $$;
 -- write) both work against the stub. Must come after the role exists.
 grant usage on schema auth to service_role;
 grant select, insert, update, delete on auth.users to service_role;
+
+-- Supabase's default privileges, which the stub above used to leave out and
+-- which is how this suite could pass while a real project was open.
+--
+-- On a real project every object the migration role (`postgres`) creates in
+-- `public` is granted to `anon`, `authenticated` and `service_role`
+-- automatically, by `alter default privileges in schema public grant all on
+-- tables|functions|sequences ...` run by Supabase when it provisions the
+-- project. A migration's `revoke execute on function f from public` removes
+-- only the PUBLIC pseudo-role's grant, not these explicit per-role grants,
+-- so before 20261027090000_revoke_usage_functions.sql the two quota
+-- functions and `record_ask_outcome` would be executable through
+-- `/rest/v1/rpc/...` by any anonymous JWT. A bare Postgres has none of
+-- this, so `rls.test.sql`'s "authenticated cannot call the usage functions"
+-- checks could pass against a schema that was open in production.
+--
+-- Declared here, before any migration runs, for the role running this file
+-- (which must be the role that then applies the migrations, as `postgres`
+-- is on a real project). Without `for role`, `alter default privileges`
+-- applies to the current role only.
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;

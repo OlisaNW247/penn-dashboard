@@ -157,6 +157,47 @@ public struct GradeItemOverride: Sendable, Hashable, Codable {
     /// an actual correction. The engine treats an empty override as if it
     /// weren't present at all.
     public var isEmpty: Bool { score == nil && pointsPossible == nil && !isExcluded }
+
+    /// Reads the persisted `courseID -> itemID -> override` blob, losing only
+    /// the override that is wrong.
+    ///
+    /// The student's corrections are typed in by hand ("what if I get a 90"),
+    /// so they are the one grade input that cannot be re-fetched from Canvas.
+    /// Read with a plain `decode`, one override that failed (a score stored as
+    /// a string, a value from a build that changed the shape) threw for the
+    /// whole blob, `GradeWatcherStore` fell back to `[:]`, and the next
+    /// `setItemOverride` persisted that over every correction in every
+    /// course. Lossy at both levels: a bad item drops that item, a bad course
+    /// entry drops that course's map, and `droppedCount` is the sum. A blob
+    /// that is not a map at all reads as empty and counts as one (the whole
+    /// blob was unreadable); a missing blob counts as none.
+    public static func decodeMap(
+        _ data: Data?
+    ) -> (map: [String: [String: GradeItemOverride]], droppedCount: Int) {
+        guard let data, !data.isEmpty else { return ([:], 0) }
+        guard let outer = try? JSONDecoder().decode(
+            LossyDictionary<LossyDictionary<GradeItemOverride>>.self, from: data
+        ) else { return ([:], 1) }
+        let map = outer.entries.mapValues(\.entries)
+        let inner = outer.entries.values.reduce(0) { $0 + $1.droppedCount }
+        return (map, outer.droppedCount + inner)
+    }
+
+    /// `decodeMap` over what is stored under `key`, keeping a raw copy of the
+    /// blob (`UnreadableBlob`) when any of it could not be read, because the
+    /// next `setItemOverride` saves only the survivors over it. These are
+    /// corrections the student typed and Canvas cannot give back.
+    public static func loadMap(
+        from defaults: UserDefaults,
+        key: String
+    ) -> [String: [String: GradeItemOverride]] {
+        let data = defaults.data(forKey: key)
+        let report = decodeMap(data)
+        if report.droppedCount > 0, let data {
+            UnreadableBlob.keepRawCopy(of: data, forKey: key, in: defaults)
+        }
+        return report.map
+    }
 }
 
 /// Where the weighted-vs-points decision -- and, in weighted mode, the

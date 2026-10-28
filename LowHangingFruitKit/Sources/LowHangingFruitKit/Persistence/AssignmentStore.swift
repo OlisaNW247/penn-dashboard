@@ -38,6 +38,20 @@ public final class AssignmentStore {
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
+    /// The due dates the student edited by hand, `[assignment id: Date]`, handed
+    /// in by `AppState` (which owns them; they live in defaults, not the
+    /// ledger) so the aging rule can see them. Empty until `AppState` says
+    /// otherwise, which is the old behaviour exactly.
+    ///
+    /// A property rather than a parameter on `reconcile`, `pruneAgedOut` and
+    /// every read, because the aging predicate runs on all of them
+    /// (`isVisible` guards `currentAssignments`, `assignments(source:)` and the
+    /// `reconcile` result, and `reconcile` prunes through it), and a path that
+    /// forgot to pass the dates would quietly hide, or delete, exactly what the
+    /// rule is here to keep. `AppState` pushes the dictionary on every change
+    /// and before the first read at launch. See `isAgedOut`.
+    public var editedDueDates: [String: Date] = [:]
+
     /// False when the ledger is the in-memory fallback — i.e. nothing is
     /// actually surviving a relaunch. Surfaced in Settings because "persistence
     /// is silently not persisting" is otherwise indistinguishable from working.
@@ -55,6 +69,40 @@ public final class AssignmentStore {
     public private(set) var lastSaveError: String?
     public private(set) var failedSaveCount: Int = 0
 
+    /// The read-side counterpart of the two properties above: the most recent
+    /// failed fetch of the ledger, and how many failed this session.
+    ///
+    /// A fetch that throws is not an empty ledger, and for a long time the
+    /// store treated it as one (`allRows` returned `[]`): a sync read "nothing
+    /// here", flagged nothing, refused or inserted accordingly, and the next
+    /// read, a second later, might see everything. The two callers that decide
+    /// something from the answer abort instead (`reconcile`, `completionRecord`,
+    /// `holdsFeedRows`), and every failure, whoever handles it, is counted here
+    /// so `StorageHealth` can say the ledger could not be read, which is a
+    /// different fact from "nothing is being saved". Cleared by the next fetch
+    /// that succeeds, like `lastSaveError`.
+    public private(set) var lastReadError: String?
+    public private(set) var failedReadCount: Int = 0
+
+    /// Test seam: how many fetches succeed before `readFailureForTesting` takes
+    /// effect, for the case that matters to `reconcile`: a pass whose first
+    /// fetch works and whose next one does not. Zero, the default, fails from
+    /// the first.
+    var readsBeforeFailureForTesting = 0
+
+    /// Test seam: while set, every fetch of the ledger throws this instead of
+    /// reading. A closed or corrupted container fails in ways a test cannot
+    /// arrange on demand, and the interesting behaviour is what the callers do
+    /// when the answer is an error. Never set outside tests.
+    var readFailureForTesting: (any Error)?
+
+    /// Test seam, the write-side twin of `readFailureForTesting`: while set,
+    /// every save that has something to save fails with this instead of
+    /// writing. The pending changes stay in the context, exactly as after a real
+    /// failed save, so the next save that works carries them. Never set outside
+    /// tests.
+    var saveFailureForTesting: (any Error)?
+
     public struct ReconcileResult: Sendable {
         /// The current active set for the reconciled source — what the caller
         /// should assign to `canvasItems` / `gradescopeItems`.
@@ -63,6 +111,27 @@ public final class AssignmentStore {
         /// (empty result for a source that previously had items). The prior data
         /// was kept; the caller may want to surface a soft "couldn't refresh".
         public let wasSuspectedPartial: Bool
+        /// True when the ledger could not be read, so nothing was reconciled:
+        /// nothing written, nothing flagged gone, nothing aged out, and no
+        /// verdict on whether the fetch looked suspiciously empty (the guard
+        /// compares the fetch with what the ledger holds, and the ledger could
+        /// not say). `items` is empty and means nothing in that case. The
+        /// caller must keep the pool it already has, not replace it with
+        /// `items`, or a read error becomes a wiped dashboard.
+        public let readFailed: Bool
+        /// False when the reconcile's changes are in memory but the save that
+        /// should have made them durable failed. The dashboard still shows them,
+        /// and they are written by the next save that works; a caller that is
+        /// about to forget something because "it is on disk now" must not
+        /// forget it on this.
+        public let saved: Bool
+
+        init(items: [Assignment], wasSuspectedPartial: Bool, readFailed: Bool = false, saved: Bool = true) {
+            self.items = items
+            self.wasSuspectedPartial = wasSuspectedPartial
+            self.readFailed = readFailed
+            self.saved = saved
+        }
     }
 
     // MARK: Construction
@@ -70,12 +139,16 @@ public final class AssignmentStore {
     /// Every container goes through the versioned schema and the migration
     /// plan, so a future model change is a migration rather than a throw the
     /// caller turns into a silent in-memory fallback. See `LedgerSchema.swift`.
+    ///
+    /// Through `LedgerContainer`, the one door, and not a `ModelContainer`
+    /// built here: the door is what takes the pre-migration copy and keeps the
+    /// schema-version marker, and the app is the only process that is allowed
+    /// to migrate (the widget refuses a store that is older than its schema).
+    /// A container built here instead would migrate with no copy and no marker,
+    /// and the widget, seeing no marker, would then copy the already-migrated
+    /// file as the "pre-migration" backup.
     private static func makeContainer(_ config: ModelConfiguration) throws -> ModelContainer {
-        try ModelContainer(
-            for: Schema(versionedSchema: LedgerSchemaV1.self),
-            migrationPlan: LedgerMigrationPlan.self,
-            configurations: config
-        )
+        try LedgerContainer.make(config)
     }
 
     public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {
@@ -215,6 +288,7 @@ public final class AssignmentStore {
     func saveChanges(_ operation: String = #function) -> Bool {
         guard context.hasChanges else { return true }
         do {
+            if let injected = saveFailureForTesting { throw injected }
             try context.save()
             lastSaveError = nil
             return true
@@ -230,15 +304,41 @@ public final class AssignmentStore {
     /// Merges a freshly-fetched set for one source into the ledger and returns
     /// the current active union for that source. Never deletes: items missing
     /// from `fetched` are flagged `isGoneFromFeed`, not removed.
+    ///
+    /// - Parameter holdingEmptiedCourses: Gradescope's guard against a page
+    ///   that quietly stopped parsing. The source-level guard below only fires
+    ///   when the *whole* fetch is empty, so one course whose page changed
+    ///   shape (a redesign, a half-loaded response) returned no rows while
+    ///   every other course still did, and its rows were flagged gone and,
+    ///   if long overdue, pruned in that same call. With this on, a course
+    ///   the ledger shows work for, that is missing from `fetched` entirely,
+    ///   is held (`heldCourses`): its rows are not flagged this call, nothing
+    ///   is pruned, and the result reports `wasSuspectedPartial`. The refusal
+    ///   of an entirely empty fetch gets the same patience
+    ///   (`emptyFetchIsSuspect`). Off by default and for Canvas, whose feed
+    ///   legitimately drops a whole course's events when a class ends.
     public func reconcile(
         _ fetched: [Assignment],
         source: Assignment.Source,
-        now: Date = Date()
+        now: Date = Date(),
+        holdingEmptiedCourses: Bool = false
     ) -> ReconcileResult {
         // One id-keyed view of the *whole* ledger, duplicates already collapsed.
         // Every lookup below goes through it, because it is now the only thing
         // keeping one assignment to one row.
-        var byID = rowsByID()
+        //
+        // If the ledger cannot be read, stop here. Treating the failure as an
+        // empty ledger is the one reading that does damage, whichever way the
+        // fetch went: an empty fetch would pass the guard below as a legitimate
+        // first sync, and a non-empty one would insert a twin of every row the
+        // student already has. The fetched data is refetchable on the next
+        // sync; nothing it would have written is worth guessing at.
+        var byID: [String: StoredAssignment]
+        do {
+            byID = try resolvedRowsByID()
+        } catch {
+            return ReconcileResult(items: [], wasSuspectedPartial: false, readFailed: true)
+        }
         let existing = byID.values.filter { $0.sourceRaw == source.rawValue }
 
         // Partial-fetch guard: a source that previously had items suddenly
@@ -248,14 +348,46 @@ public final class AssignmentStore {
         // Completion-only rows don't count as "this source previously had
         // items" — they're bookkeeping, and letting them arm the guard would
         // refuse a legitimately empty first sync for a migrated user.
-        if fetched.isEmpty && existing.contains(where: { !$0.isCompletionOnly }) {
+        //
+        // With `holdingEmptiedCourses` (Gradescope) the refusal has the same
+        // 24-hour patience as the per-course hold (`emptyFetchIsSuspect`).
+        // Without it, a student whose Gradescope really has no rows was shown
+        // "couldn't refresh" on every sync, forever, now that the partial
+        // result is surfaced. Past the patience, empty is real: the rows fall
+        // through to the ordinary flagging and aging below, and the notice
+        // stops. Canvas keeps the refusal indefinitely, as before.
+        let listedRows = existing.filter { !$0.isCompletionOnly }
+        if fetched.isEmpty && !listedRows.isEmpty
+            && Self.emptyFetchIsSuspect(
+                lastSeen: listedRows.map(\.lastSeenInFeed),
+                now: now,
+                withPatience: holdingEmptiedCourses
+            ) {
+            // Read off the rows already in hand, for the reason given at
+            // `active` below: a fresh fetch that failed here would hand the
+            // caller an empty list and a notice saying it is showing the
+            // saved assignments.
             return ReconcileResult(
-                items: activeAssignments(source: source, now: now),
+                items: existing.filter { isVisible($0, now: now) }.map(\.assignment),
                 wasSuspectedPartial: true
             )
         }
 
         let seenIDs = Set(fetched.map(\.id))
+
+        // Courses to leave untouched this call. Read before the loop below
+        // refreshes any row, because it compares the ledger's labels with the
+        // fetch's.
+        let held: Set<String> = holdingEmptiedCourses
+            ? Self.heldCourses(
+                ledger: existing
+                    .filter { !$0.isCompletionOnly && !$0.isFinished && !$0.isArchived && !$0.isGoneFromFeed }
+                    .map { HeldCourseCandidate(id: $0.id, course: $0.course, lastSeenInFeed: $0.lastSeenInFeed) },
+                fetchedIDs: seenIDs,
+                fetchedCourses: Set(fetched.map(\.course)),
+                now: now
+            )
+            : []
 
         for item in fetched {
             if let row = byID[item.id] {
@@ -271,21 +403,96 @@ public final class AssignmentStore {
                 byID[item.id] = row
             }
         }
-        for row in existing where !seenIDs.contains(row.id) {
+        for row in existing where !seenIDs.contains(row.id) && !held.contains(row.course) {
             row.isGoneFromFeed = true
         }
-        saveChanges()
+        let saved = saveChanges()
+
+        // The answer is read off the map this pass already holds rather than
+        // from a fresh fetch afterwards. A second fetch that failed here would
+        // come back empty and hand the caller `items: []` with `readFailed`
+        // false, which is a wiped dashboard by another route. Taken before the
+        // prune below, which is safe: it deletes only what `isVisible` already
+        // excludes.
+        let active = byID.values
+            .filter { $0.sourceRaw == source.rawValue && isVisible($0, now: now) }
+            .map(\.assignment)
 
         // Sync is the natural place to collect: the rows dropped here are ones
         // this very reconcile just confirmed are both gone from the feed and
         // long past due. Completion-only rows are safe — they're finished by
         // definition, and `isAgedOut` exempts finished work.
-        pruneAgedOut(now: now)
+        //
+        // Not in a call that held a course back: that call is the one that
+        // suspects the fetch, and a collection pass after a suspect fetch is
+        // how a redesigned page used to cost the student rows for good.
+        if held.isEmpty { pruneAgedOut(now: now) }
 
         return ReconcileResult(
-            items: activeAssignments(source: source, now: now),
-            wasSuspectedPartial: false
+            items: active,
+            wasSuspectedPartial: !held.isEmpty,
+            saved: saved
         )
+    }
+
+    /// One unfinished, still-listed ledger row, reduced to what the hold rule
+    /// reads.
+    struct HeldCourseCandidate: Equatable {
+        let id: String
+        let course: String
+        let lastSeenInFeed: Date
+    }
+
+    /// How long a course may stay missing from a fetch before it is believed.
+    /// A broken page or a flaky response mends within hours, so for a day a
+    /// vanished course is a suspicion; after that it is a fact (the class
+    /// ended, the student dropped it, the term rolled over and the account
+    /// page stopped listing it) and ordinary flagging and aging take over.
+    /// Without the limit a course that really left would be held forever and
+    /// its work would sit in the overdue pile for good. Measured from the
+    /// course's newest `lastSeenInFeed`, which only a sighting advances, so
+    /// holding it does not extend its own patience.
+    nonisolated static let heldCoursePatience: TimeInterval = 24 * 60 * 60
+
+    /// Whether an entirely empty fetch for a source that has listed rows should
+    /// still be refused as partial. `lastSeen` is each listed row's
+    /// `lastSeenInFeed`; the source was last non-empty at the newest of them.
+    /// Without patience (Canvas) the answer is always yes. With it
+    /// (`holdingEmptiedCourses`) it is yes only until `heldCoursePatience` has
+    /// passed since that sighting, and then the empty result is believed. Only
+    /// a sighting advances `lastSeenInFeed`, so refusing does not extend its
+    /// own patience, and the next non-empty fetch restarts it.
+    nonisolated static func emptyFetchIsSuspect(lastSeen: [Date], now: Date, withPatience: Bool) -> Bool {
+        guard let newest = lastSeen.max() else { return false }
+        guard withPatience else { return true }
+        return now.timeIntervalSince(newest) < heldCoursePatience
+    }
+
+    /// Pure rule behind `holdingEmptiedCourses`: which course labels to leave
+    /// unflagged this call. A course is held when the ledger lists unfinished
+    /// work for it, none of that work came back (`fetchedIDs`), nothing at all
+    /// came back under its label (`fetchedCourses`, so a course whose work was
+    /// replaced by new rows is an ordinary change, not an emptied page), and it
+    /// was last seen within `heldCoursePatience`. Matched by id first, label
+    /// second, because a course renamed on Gradescope keeps its assignment ids
+    /// and changes its label: by label alone the ledger's old name would look
+    /// emptied while every one of its rows was present.
+    nonisolated static func heldCourses(
+        ledger: [HeldCourseCandidate],
+        fetchedIDs: Set<String>,
+        fetchedCourses: Set<String>,
+        now: Date
+    ) -> Set<String> {
+        var held: Set<String> = []
+        for (course, rows) in Dictionary(grouping: ledger, by: \.course) {
+            guard !course.isEmpty, !fetchedCourses.contains(course) else { continue }
+            guard !rows.contains(where: { fetchedIDs.contains($0.id) }) else { continue }
+            guard let newest = rows.map(\.lastSeenInFeed).max(),
+                  now.timeIntervalSince(newest) < heldCoursePatience
+            else { continue }
+            held.insert(course)
+        }
+        return held
     }
 
     /// The whole active ledger across sources, for seeding `canvasItems` /
@@ -307,7 +514,7 @@ public final class AssignmentStore {
     /// archive is untouchable here.
     @discardableResult
     public func pruneAgedOut(now: Date = Date()) -> Int {
-        let doomed = allRows().filter { isAgedOut($0, now: now) }
+        let doomed = ((try? allRows()) ?? []).filter { isAgedOut($0, now: now) }
         guard !doomed.isEmpty else { return 0 }
         for row in doomed { context.delete(row) }
         saveChanges()
@@ -317,6 +524,64 @@ public final class AssignmentStore {
     public func purge(source: Assignment.Source) {
         for row in rows(source: source) { context.delete(row) }
         saveChanges()
+    }
+
+    /// Disconnect's version of `purge(source:)`: removes the unfinished feed
+    /// rows of a source and KEEPS every row that records something the student
+    /// did, flagged `isGoneFromFeed` so nothing reads it as still listed.
+    ///
+    /// Kept: a row that is finished (`isFinished`: ticked off, or reported
+    /// turned in by either platform) and a completion-only row (the
+    /// bookkeeping row that carries a completion for an id the ledger never
+    /// held a real row for). Removed: everything else, which is exactly the
+    /// feed's own copy of work nobody finished, and which a reconnect fetches
+    /// again.
+    ///
+    /// Why not `purge(source:)`. Disconnecting Canvas is also the only repair
+    /// a student whose login is stuck can reach, and `purge` took their whole
+    /// Done history and every completion with it, on a path whose
+    /// confirmation never says so. CLAUDE.md's invariant is that nothing the
+    /// student did is ever lost, and a tick is the clearest thing they did.
+    /// The wrong fix is "keep finished rows but unflag them": an unflagged
+    /// row with no session behind it reads as live, `isAgedOut` only ever
+    /// considers rows that are gone from the feed, and a row the feed no
+    /// longer lists is precisely what the flag says.
+    ///
+    /// **A row the student moved the date on is kept too** (`editedDueDates`,
+    /// pushed in by `AppState`). The edit is the student's own work, kept in
+    /// defaults beside the ledger, and it is only ever forgotten when its row
+    /// has left the ledger (`AppState.pruneDueDateEdits`). Deleting an
+    /// unfinished row whose date was edited therefore deleted the edit one
+    /// relaunch later: the finished rows that survive load the Canvas family,
+    /// the pruner sees the edited id missing from it, and forgets the edit. It
+    /// never happened when `purge` left no Canvas rows at all, which is why
+    /// the family check treated "no Canvas rows" as "nothing loaded". Such a
+    /// row stays flagged gone from the feed; the aging rule retires it once
+    /// both its dates are over a fortnight old. The cost is that an edited,
+    /// unfinished item is on the dashboard again after a relaunch, with Canvas
+    /// disconnected.
+    ///
+    /// Not `purgeIncomplete(source:)`, which has another job (re-deriving a
+    /// source from scratch after an extractor change) and deletes a
+    /// completion-only row that is not finished. Returns how many rows were
+    /// removed.
+    @discardableResult
+    public func purgeKeepingStudentWork(source: Assignment.Source) -> Int {
+        var removed = 0
+        var flagged = false
+        for row in rows(source: source) {
+            if row.isFinished || row.isCompletionOnly || editedDueDates[row.id] != nil {
+                if !row.isGoneFromFeed {
+                    row.isGoneFromFeed = true
+                    flagged = true
+                }
+            } else {
+                context.delete(row)
+                removed += 1
+            }
+        }
+        if removed > 0 || flagged { saveChanges() }
+        return removed
     }
 
     /// `purge(source:)`'s narrower sibling: deletes every row for a source
@@ -431,20 +696,34 @@ public final class AssignmentStore {
     /// breaks, and a narrower lookup is precisely what would let it insert a
     /// twin. Scanning the whole table on each call is affordable at a
     /// student's few hundred rows, and a duplicated assignment is not.
+    ///
+    /// This is the forgiving form: a ledger that cannot be read reads as empty,
+    /// and the failure is counted (`failedReadCount`). That is right for the
+    /// many callers whose worst outcome is doing nothing (a purge or a flag
+    /// finds no rows), and wrong for the ones that decide something from the
+    /// answer, which use `resolvedRowsByID()` and handle the throw themselves.
     @discardableResult
     private func rowsByID() -> [String: StoredAssignment] {
+        (try? resolvedRowsByID()) ?? [:]
+    }
+
+    /// `rowsByID()` that says when the ledger could not be read.
+    private func resolvedRowsByID() throws -> [String: StoredAssignment] {
         var byID: [String: StoredAssignment] = [:]
         var doomed: [StoredAssignment] = []
 
-        for row in allRows() {
+        for row in try allRows() {
             guard let kept = byID[row.id] else {
                 byID[row.id] = row
                 continue
             }
-            // The copy seen in the feed most recently carries the current
-            // title/date/URL, so it survives and supplies the display fields;
-            // everything worth keeping from the other is merged into it.
-            let survivor = row.lastSeenInFeed > kept.lastSeenInFeed ? row : kept
+            // `outranks` picks the survivor: a real row over a bookkeeping
+            // one, then the copy seen in the feed most recently (it carries the
+            // current title/date/URL), then a content-derived tie-break that
+            // does not depend on fetch order. Everything worth keeping from the
+            // other is merged into it, display fields included when the other
+            // is the one that ought to supply them (`StoredAssignment.absorb`).
+            let survivor = row.outranks(kept) ? row : kept
             let absorbed = survivor === row ? kept : row
             survivor.absorb(absorbed)
             byID[row.id] = survivor
@@ -473,8 +752,24 @@ public final class AssignmentStore {
     /// The raw table, duplicates and all. Only `rowsByID()` (which resolves
     /// them) and the diagnostics in `stats()` (which count them) may use this —
     /// everything else goes through a deduplicated view.
-    private func allRows() -> [StoredAssignment] {
-        (try? context.fetch(FetchDescriptor<StoredAssignment>())) ?? []
+    ///
+    /// **Throws on a failed fetch; it used to return `[]`.** An empty ledger and
+    /// an unreadable one are different facts, and the first was reported for
+    /// both (hardening plan 2026-10-25, KCR-02 and DAT-10). Every failure is
+    /// counted here, once, whether the caller aborts on it or carries on.
+    private func allRows(_ operation: String = #function) throws -> [StoredAssignment] {
+        do {
+            if let injected = readFailureForTesting {
+                if readsBeforeFailureForTesting > 0 { readsBeforeFailureForTesting -= 1 } else { throw injected }
+            }
+            let rows = try context.fetch(FetchDescriptor<StoredAssignment>())
+            lastReadError = nil
+            return rows
+        } catch {
+            failedReadCount += 1
+            lastReadError = "\(operation) — \(error.localizedDescription)"
+            throw error
+        }
     }
 
     private func activeAssignments(source: Assignment.Source, now: Date) -> [Assignment] {
@@ -526,10 +821,30 @@ public final class AssignmentStore {
     /// the predicate. An abandoned announcement row costs a few bytes and is
     /// hidden from every list by `AppState.announcementRowsToShow` and
     /// `isTooOld`; it does not need to be collected.
+    ///
+    /// **The student's own date counts (`editedDueDates`).** This used to read
+    /// only `row.dueAt`, the feed's date. A student who was granted an
+    /// extension and moved the card to next week had a row whose feed date was
+    /// long past; once Canvas stopped listing it (which is what happens to a
+    /// finished-looking old item) the row was "gone and 14 days overdue" and
+    /// `pruneAgedOut` deleted it out from under a card the student could see
+    /// was not due yet, after which `AppState.pruneDueDateEdits` found the id
+    /// missing from the ledger and forgot the edit too, so nothing was left to
+    /// show it had existed. An item now ages only when every date it has is
+    /// old: the later of the feed's and the student's, so an edit that is
+    /// still ahead keeps it, and an edit earlier than the feed's never makes
+    /// it age sooner than it did. An undated row still never ages, edit or no
+    /// edit, as before. The wrong fix is to age by the edited date alone,
+    /// which would delete rows the feed still says are ahead.
+    ///
+    /// The widget's own copy of this rule (`LedgerWidgetReader.isAgedOut`) is
+    /// not changed here; it only matters when there is no published snapshot,
+    /// since the snapshot the app writes uses the edited dates.
     private func isAgedOut(_ row: StoredAssignment, now: Date) -> Bool {
         guard !row.isFinished, !row.isArchived else { return false }
         guard row.sourceRaw != Assignment.Source.canvasAnnouncement.rawValue else { return false }
-        guard row.isGoneFromFeed, let due = row.dueAt else { return false }
+        guard row.isGoneFromFeed, let feedDue = row.dueAt else { return false }
+        let due = max(feedDue, editedDueDates[row.id] ?? feedDue)
         return due < now.addingTimeInterval(-Self.goneGracePeriod)
     }
 
@@ -659,9 +974,20 @@ public final class AssignmentStore {
     ///
     /// Goes through `rowsByID()` rather than `allRows()` so the uniqueness
     /// invariant this class now enforces in code holds on this path too.
+    ///
+    /// The result says whether the rows are on disk (`saved`), not only how many
+    /// were new. It used to return the count alone and swallow a failed save, so
+    /// a caller that then forgot its source copy (the legacy manual-task blob)
+    /// or recorded a post as read (an announcement id) did so for rows that
+    /// were never written (hardening plan 2026-10-25, B5: DAT-07).
+    ///
+    /// Written even when the ledger cannot be read, which is deliberate: a row
+    /// inserted blind can at worst become a twin, and twins fold together
+    /// (`StoredAssignment.absorb`) when the ledger reads again, whereas
+    /// refusing leaves the caller's data nowhere.
     @discardableResult
-    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> Int {
-        guard !assignments.isEmpty else { return 0 }
+    public func upsert(_ assignments: [Assignment], now: Date = Date()) -> UpsertResult {
+        guard !assignments.isEmpty else { return UpsertResult(created: 0, saved: true) }
         var byID = rowsByID()
         var created = 0
         for item in assignments {
@@ -674,8 +1000,14 @@ public final class AssignmentStore {
                 created += 1
             }
         }
-        saveChanges()
-        return created
+        return UpsertResult(created: created, saved: saveChanges())
+    }
+
+    /// What `upsert` did: how many rows were new, and whether the save that
+    /// makes them durable landed.
+    public struct UpsertResult: Sendable, Equatable {
+        public let created: Int
+        public let saved: Bool
     }
 
     /// The active rows for one source, as value types. Projects manual work
@@ -718,10 +1050,18 @@ public final class AssignmentStore {
     /// outcome rather than the bug it was built to prevent: the user deleted
     /// their own item and means it. Feed items still never take this path —
     /// they go gone-from-feed and age out.
-    public func delete(ids: Set<String>) {
-        guard !ids.isEmpty else { return }
-        for row in allRows() where ids.contains(row.id) { context.delete(row) }
-        saveChanges()
+    ///
+    /// Returns whether the deletion is on disk: false when the ledger could not
+    /// be read (nothing was found to delete) or the save failed. Nothing to do
+    /// is a success.
+    @discardableResult
+    public func delete(ids: Set<String>) -> Bool {
+        guard !ids.isEmpty else { return true }
+        // Nothing to delete is found in a ledger that cannot be read, and
+        // saving is then pointless; the failed read is already counted.
+        guard let rows = try? allRows() else { return false }
+        for row in rows where ids.contains(row.id) { context.delete(row) }
+        return saveChanges()
     }
 
     // MARK: Completion & submission truth
@@ -743,10 +1083,17 @@ public final class AssignmentStore {
         public static let empty = CompletionRecord(ids: [], dates: [:])
     }
 
-    public func completionRecord() -> CompletionRecord {
+    ///
+    /// **Nil means the ledger could not be read, which is not "nothing is
+    /// completed".** The caller that took `.empty` for that overwrote its
+    /// in-memory record of what the student had finished with nothing, and
+    /// every finished card went back to open on the next rebuild. A caller gets
+    /// nil and keeps what it has (`AppState.reloadCompletionFromLedger`).
+    public func completionRecord() -> CompletionRecord? {
+        guard let rows = try? resolvedRowsByID() else { return nil }
         var ids: Set<String> = []
         var dates: [String: Date] = [:]
-        for row in rowsByID().values where row.isCompletedByUser {
+        for row in rows.values where row.isCompletedByUser {
             ids.insert(row.id)
             if let completedAt = row.completedAt { dates[row.id] = completedAt }
         }
@@ -767,16 +1114,27 @@ public final class AssignmentStore {
     ///
     /// Un-completing deletes any row that existed *only* to hold the completion,
     /// so toggling an item on and off leaves the ledger exactly as it found it.
+    ///
+    /// Returns whether the change is on disk. False when the save failed, and
+    /// also when `clearing` could not be carried out because the ledger could
+    /// not be read: an un-tick cannot find the row it is meant to clear. A tick
+    /// on a ledger that cannot be read is still written, as a completion-only
+    /// row, because that write only ever adds (the row folds into the real one
+    /// when the ledger reads again, `StoredAssignment.absorb`) and refusing it
+    /// would lose the one thing the student just did.
+    @discardableResult
     public func setCompleted(
         ids: Set<String>,
         at date: Date?,
         clearing: Set<String> = [],
         prototypes: [Assignment] = [],
         now: Date = Date()
-    ) {
-        guard !ids.isEmpty || !clearing.isEmpty else { return }
+    ) -> Bool {
+        guard !ids.isEmpty || !clearing.isEmpty else { return true }
         var unrecorded = ids
-        for row in rowsByID().values {
+        let existing = try? resolvedRowsByID()
+        if existing == nil, !clearing.isEmpty { return false }
+        for row in (existing ?? [:]).values {
             if ids.contains(row.id) {
                 row.markCompleted(at: date ?? now)
                 unrecorded.remove(row.id)
@@ -799,7 +1157,7 @@ public final class AssignmentStore {
             ) else { continue }
             context.insert(row)
         }
-        saveChanges()
+        return saveChanges()
     }
 
     /// Completion as a plain id-to-date map.
@@ -812,8 +1170,8 @@ public final class AssignmentStore {
     /// mirrored onto rows, and when the two drifted the Done tab and the aging
     /// exemption disagreed about what was finished — with that exemption being
     /// the only thing standing between completed work and deletion.
-    public func completionDates() -> [String: Date] {
-        completionRecord().dates
+    public func completionDates() -> [String: Date]? {
+        completionRecord()?.dates
     }
 
     /// One-time import of the pre-ledger completion state — the
@@ -964,8 +1322,11 @@ public final class AssignmentStore {
     /// Pairings are only ever added here, never cleared: dropping one because
     /// the live heuristic stopped agreeing is precisely the failure this is
     /// meant to prevent. `purge(source:)` is what clears them, on disconnect.
-    public func recordPairings(_ matches: [AssignmentDeduplicator.Match], now: Date = Date()) {
-        guard !matches.isEmpty else { return }
+    ///
+    /// Returns whether the pairings are on disk; nothing to record is a success.
+    @discardableResult
+    public func recordPairings(_ matches: [AssignmentDeduplicator.Match], now: Date = Date()) -> Bool {
+        guard !matches.isEmpty else { return true }
         let gradescopeByID = Dictionary(
             rows(source: .gradescope).map { ($0.id, $0) },
             uniquingKeysWith: { a, _ in a }
@@ -987,7 +1348,7 @@ public final class AssignmentStore {
                 changed = true
             }
         }
-        if changed { saveChanges() }
+        return changed ? saveChanges() : true
     }
 
     /// The persisted Canvas submission set, for seeding `AppState` at launch
@@ -1040,8 +1401,16 @@ public final class AssignmentStore {
     /// forwards a sample item's completion to `AppState`), but "a student who
     /// previewed first is still a new student" must not depend on that staying
     /// true.
-    public func holdsFeedRows(ignoring ignoredIDs: Set<String> = []) -> Bool {
-        allRows().contains { row in
+    ///
+    /// **Nil means the ledger could not be read.** Answering `false` there says
+    /// "this is a new student", which is the one conclusion the backlog rule
+    /// must not draw from a failure: a student whose ledger is merely locked
+    /// for a moment would then be classed as new when their first feed arrives,
+    /// and their older work hidden. The caller leaves the decision for a launch
+    /// that can read (`AppState.recordSignupBacklogForExistingInstallIfNeeded`).
+    public func holdsFeedRows(ignoring ignoredIDs: Set<String> = []) -> Bool? {
+        guard let rows = try? allRows() else { return nil }
+        return rows.contains { row in
             guard let source = Assignment.Source(rawValue: row.sourceRaw),
                   SignupBacklog.isFeedSource(source)
             else { return false }
@@ -1052,7 +1421,7 @@ public final class AssignmentStore {
     // MARK: Test/diagnostic access
 
     /// Total rows on the ledger (including aged/gone), for tests and diagnostics.
-    public func rowCount() -> Int { allRows().count }
+    public func rowCount() -> Int { ((try? allRows()) ?? []).count }
 
     /// The ledger's rows, duplicates already collapsed, for tests that need to
     /// assert on stored fields the value-type `Assignment` doesn't carry —
@@ -1070,11 +1439,16 @@ public final class AssignmentStore {
         /// Most recent failed write this session, and the running count.
         public let lastSaveError: String?
         public let failedSaveCount: Int
+        /// The read-side counterpart: the most recent failed fetch this
+        /// session, and the running count (`AssignmentStore.failedReadCount`).
+        public let lastReadError: String?
+        public let failedReadCount: Int
 
-        /// True only when the ledger is on disk *and* its writes are landing.
-        /// Settings should key off this rather than `isPersistent` alone.
+        /// True only when the ledger is on disk, its writes are landing *and*
+        /// it can be read. Settings should key off this rather than
+        /// `isPersistent` alone.
         public var isHealthy: Bool {
-            isPersistent && storageFailureReason == nil && failedSaveCount == 0
+            isPersistent && storageFailureReason == nil && failedSaveCount == 0 && failedReadCount == 0
         }
         public let total: Int
         public let canvas: Int
@@ -1103,12 +1477,14 @@ public final class AssignmentStore {
     /// Completion-only rows are excluded: the panel answers "what is the ledger
     /// holding for me", and a hidden bookkeeping row is not an assignment.
     public func stats() -> LedgerStats {
-        let rows = allRows().filter { !$0.isCompletionOnly }
+        let rows = ((try? allRows()) ?? []).filter { !$0.isCompletionOnly }
         return LedgerStats(
             isPersistent: isPersistent,
             storageFailureReason: storageFailureReason,
             lastSaveError: lastSaveError,
             failedSaveCount: failedSaveCount,
+            lastReadError: lastReadError,
+            failedReadCount: failedReadCount,
             total: rows.count,
             canvas: rows.filter { $0.sourceRaw == Assignment.Source.canvas.rawValue }.count,
             gradescope: rows.filter { $0.sourceRaw == Assignment.Source.gradescope.rawValue }.count,

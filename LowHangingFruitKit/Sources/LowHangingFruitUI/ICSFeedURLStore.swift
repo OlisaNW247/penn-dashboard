@@ -28,37 +28,48 @@ enum ICSFeedURLStore {
         ]
     }
 
-    static func save(_ url: String) {
+    /// Stores the feed URL, replacing any earlier one (`KeychainItem.write`:
+    /// update in place, add only when nothing is there, so a refused write
+    /// leaves the previous URL rather than none). An empty URL clears. False
+    /// when the Keychain refused.
+    @discardableResult
+    static func save(_ url: String) -> Bool {
         guard !url.isEmpty else {
             clear()
-            return
+            return true
         }
-        guard let data = url.data(using: .utf8) else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+        guard let data = url.data(using: .utf8) else { return false }
+        return KeychainItem.write(data, base: baseQuery()) == errSecSuccess
     }
 
     static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
+    }
+
+    /// The persisted feed URL in three answers (see `KeychainRead`), without
+    /// the UserDefaults migration `load()` performs.
+    static func read() -> KeychainRead<String> {
+        KeychainItem.read(baseQuery()).decoded { String(data: $0, encoding: .utf8) }
     }
 
     /// Loads the persisted feed URL, migrating a pre-3c UserDefaults value in
     /// (and removing it from UserDefaults) the first time this runs on a
     /// device that has one. Idempotent — a no-op on every call after the
     /// first.
+    ///
+    /// The migration runs only when the Keychain said the item is not there.
+    /// On an unavailable read the old code fell straight into it, and a
+    /// leftover UserDefaults value then `save`d over an item that existed and
+    /// merely could not be read. An unavailable read answers "" for this
+    /// launch and leaves everything alone.
     static func load() -> String {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-           let data = result as? Data,
-           let value = String(data: data, encoding: .utf8) {
+        switch read() {
+        case let .found(value):
             return value
+        case .unavailable:
+            return ""
+        case .notFound:
+            break
         }
 
         // One-time migration from the old UserDefaults-backed storage.
@@ -74,9 +85,13 @@ enum ICSFeedURLStore {
         // exclusion complete rather than merely partial.
         // lhf:allow-standard-defaults — migration source, see above
         if let legacy = UserDefaults.standard.string(forKey: legacyUserDefaultsKey), !legacy.isEmpty {
-            save(legacy)
-            // lhf:allow-standard-defaults — migration source, see above
-            UserDefaults.standard.removeObject(forKey: legacyUserDefaultsKey)
+            // Removed only once the Keychain has it: the old code dropped the
+            // UserDefaults copy whatever the write returned, so one refused
+            // write on the first launch after an upgrade lost the URL.
+            if save(legacy) {
+                // lhf:allow-standard-defaults — migration source, see above
+                UserDefaults.standard.removeObject(forKey: legacyUserDefaultsKey)
+            }
             return legacy
         }
         return ""

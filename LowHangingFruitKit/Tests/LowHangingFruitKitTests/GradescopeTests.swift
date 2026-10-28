@@ -43,6 +43,66 @@ struct GradescopeTests {
         return URLSession(configuration: configuration)
     }
 
+    @Test("a 403 is never login-form evidence, and a login form is")
+    func onlyALoginFormIsEvidence() {
+        let url = URL(string: "https://www.gradescope.com/account")!
+        #expect(GradescopeClient.Error.notLoggedIn.sawLoginForm)
+        #expect(!GradescopeClient.Error.http(status: 401, url: url).sawLoginForm)
+        #expect(!GradescopeClient.Error.http(status: 403, url: url).sawLoginForm)
+        #expect(!GradescopeClient.Error.http(status: 500, url: url).sawLoginForm)
+        #expect(!GradescopeClient.Error.notHTTP.sawLoginForm)
+        #expect(!GradescopeClient.Error.invalidResponseEncoding.sawLoginForm)
+    }
+
+    @Test("a rate-limited 403 on the account page throws without being login-form evidence")
+    func bare403IsNotEvidence() async throws {
+        let session = stubSession { _ in (403, "Forbidden") }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        do {
+            _ = try await client.fetchAssignments()
+            Issue.record("expected the 403 to throw")
+        } catch let error as GradescopeClient.Error {
+            #expect(!error.sawLoginForm)
+        }
+    }
+
+    @Test("a page that merely talks about logging in is not mistaken for the login form")
+    func keywordPageIsNotALoginForm() async throws {
+        // Every word the old keyword match looked for, and no password field.
+        let account = """
+        <html><body>
+          <p>Log in to Gradescope with your school credentials, email, or password.</p>
+          <div class="courseList">
+            <div class="courseList--term">Fall 2026</div>
+            <div class="courseList--coursesForTerm">
+              <a class="courseBox" href="/courses/123">CIS 5050</a>
+            </div>
+          </div>
+        </body></html>
+        """
+        let course = """
+        <table><tr>
+          <td><a href="/courses/123/assignments/456">Log in to Gradescope: email setup</a></td>
+          <td>Sep 30, 2026 11:59 PM</td>
+          <td>Submitted</td>
+        </tr></table>
+        """
+        let session = stubSession { request in
+            switch request.url?.path {
+            case "/account": (200, account)
+            case "/courses/123": (200, course)
+            default: (404, "missing")
+            }
+        }
+        defer { StubURLProtocol.handler = nil }
+        let client = GradescopeClient(cookies: [], session: session)
+
+        let assignments = try await client.fetchAssignments()
+        #expect(assignments.count == 1)
+    }
+
     @Test("only authentication responses require a Gradescope reconnect")
     func reconnectClassification() {
         let url = URL(string: "https://www.gradescope.com/account")!
@@ -1025,7 +1085,9 @@ struct GradescopeTests {
         <main>
           <h1>Log in to Gradescope</h1>
           <label>Email</label>
+          <input type="email" name="session[email]">
           <label>Password</label>
+          <input type="password" name="session[password]">
         </main>
         """
 

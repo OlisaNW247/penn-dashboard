@@ -26,6 +26,9 @@ final class FakeAlarmStore: BerserkAlarmStore {
     var vanishingCancelIDs: Set<UUID> = []
     /// `cancel` throws and leaves the alarm.
     var failingCancelIDs: Set<UUID> = []
+    /// The first `cancel` of each of these throws and leaves the alarm; a later
+    /// one works (a transient failure).
+    var failingFirstCancelIDs: Set<UUID> = []
     /// `alarms` throws.
     var readFailure: Error?
 
@@ -42,6 +45,9 @@ final class FakeAlarmStore: BerserkAlarmStore {
     func cancel(id: UUID) throws {
         cancelAttempts.append(id)
         if failingCancelIDs.contains(id) { throw FakeAlarmError.boom }
+        if failingFirstCancelIDs.contains(id), cancelAttempts.filter({ $0 == id }).count == 1 {
+            throw FakeAlarmError.boom
+        }
         let existed = alarms.removeValue(forKey: id) != nil
         if vanishingCancelIDs.contains(id) || !existed { throw FakeAlarmError.notFound }
     }
@@ -89,7 +95,7 @@ final class FakeAlarmBackend: BerserkAlarmBackend {
         return answer
     }
 
-    func reconcile(_ plan: [PlannedAlarm]) async throws {
+    func reconcile(_ plan: [PlannedAlarm]) async throws -> BerserkReconcileReport {
         try await BerserkAlarmEngine.reconcile(plan, in: store)
     }
 
@@ -108,21 +114,78 @@ final class FakeAlarmBackend: BerserkAlarmBackend {
     }
 }
 
-/// The notification center, as a list.
+/// The notification center, as a list. Like the real one, adding a request
+/// whose identifier is pending replaces it in place.
 @MainActor
 final class FakeSink: PendingNotificationSink {
     private(set) var requests: [UNNotificationRequest] = []
+    /// How many times `removeAllPending` was called.
     private(set) var removals = 0
+    /// Every identifier `removePending` was asked for, in order.
+    private(set) var removedIdentifiers: [String] = []
+    /// Every `add`, in order, accepted or not.
+    private(set) var addAttempts: [String] = []
+    /// Every operation in the order it happened ("remove:<id>", "add:<id>"),
+    /// and the most that was ever pending at once.
+    private(set) var log: [String] = []
+    private(set) var mostPending = 0
+    /// `add` of these identifiers is refused, as the center does when it
+    /// rejects a request.
+    var refusedIdentifiers: Set<String> = []
+    /// `pendingIdentifiers` never returns (until `releaseStuckReads`), as a
+    /// center that hangs would. Several reads can be stuck at once.
+    var hangsOnPendingRead = false
+    private var stuckReads: [CheckedContinuation<Void, Never>] = []
+    private(set) var pendingReadAttempts = 0
 
     func prepare() {}
+
+    /// Puts a request in the queue as an earlier pass would have left it.
+    func seed(_ request: UNNotificationRequest) {
+        requests.removeAll { $0.identifier == request.identifier }
+        requests.append(request)
+    }
 
     func removeAllPending() {
         requests = []
         removals += 1
     }
 
-    func add(_ request: UNNotificationRequest) async {
-        requests.append(request)
+    func pendingIdentifiers() async -> [String] {
+        pendingReadAttempts += 1
+        if hangsOnPendingRead {
+            await withCheckedContinuation { stuckReads.append($0) }
+        }
+        return requests.map(\.identifier)
+    }
+
+    /// Lets the reads that are stuck return, so the tasks parked on them end
+    /// with the test instead of lingering.
+    func releaseStuckReads() {
+        let parked = stuckReads
+        stuckReads = []
+        for read in parked { read.resume() }
+    }
+
+    func removePending(identifiers: [String]) {
+        for id in identifiers {
+            removedIdentifiers.append(id)
+            log.append("remove:\(id)")
+        }
+        requests.removeAll { identifiers.contains($0.identifier) }
+    }
+
+    func add(_ request: UNNotificationRequest) async -> Bool {
+        addAttempts.append(request.identifier)
+        log.append("add:\(request.identifier)")
+        if refusedIdentifiers.contains(request.identifier) { return false }
+        if let index = requests.firstIndex(where: { $0.identifier == request.identifier }) {
+            requests[index] = request
+        } else {
+            requests.append(request)
+        }
+        mostPending = max(mostPending, requests.count)
+        return true
     }
 
     func buzzCount(for assignmentID: String) -> Int {
@@ -170,8 +233,10 @@ final class PassLog {
 
 /// One row of the "exactly one of alarm or buzzes" table.
 private struct Scenario: Sendable, CustomTestStringConvertible {
-    enum Expectation: Sendable { case alarms, buzzes, neither }
-    enum Fault: Sendable { case none, secondScheduleFails, firstScheduleThrowsButStores }
+    /// `alarmsExceptSecond`: the second of the three items has the buzzes, the
+    /// other two have their alarms.
+    enum Expectation: Sendable { case alarms, buzzes, neither, alarmsExceptSecond }
+    enum Fault: Sendable { case none, secondScheduleFails, firstScheduleThrowsButStores, storeUnreadable }
 
     let name: String
     var hasBackend = true
@@ -188,7 +253,10 @@ private struct Scenario: Sendable, CustomTestStringConvertible {
 
 private let scenarios: [Scenario] = [
     Scenario(name: "authorized, AlarmKit takes the plan", expectation: .alarms),
-    Scenario(name: "authorized, AlarmKit throws partway", fault: .secondScheduleFails, expectation: .buzzes),
+    Scenario(name: "authorized, AlarmKit refuses one item's alarm: that item has the buzzes, the others keep theirs",
+             fault: .secondScheduleFails, expectation: .alarmsExceptSecond),
+    Scenario(name: "authorized, AlarmKit cannot be read at all: every item has the buzzes",
+             fault: .storeUnreadable, expectation: .buzzes),
     Scenario(name: "authorized, schedule throws but the alarm is there",
              fault: .firstScheduleThrowsButStores, expectation: .alarms),
     Scenario(name: "denied", authorization: .denied, expectation: .buzzes),
@@ -232,10 +300,13 @@ struct BerserkAlarmDeliveryTests {
             if scenario.fault == .firstScheduleThrowsButStores {
                 backend.store.throwsButStoresIDs = [alarmID(of: items[0])]
             }
+            if scenario.fault == .storeUnreadable {
+                backend.store.readFailure = FakeAlarmError.boom
+            }
 
             await scheduler.applyReminders(from: items + noise(now), now: now, sink: sink)
 
-            for item in items {
+            for (index, item) in items.enumerated() {
                 let hasAlarm = backend.store.scheduledIDs.contains(alarmID(of: item))
                 let buzzes = sink.buzzCount(for: item.assignment.id)
                 #expect(!(hasAlarm && buzzes > 0), "\(item.assignment.id): both an alarm and buzzes")
@@ -244,10 +315,18 @@ struct BerserkAlarmDeliveryTests {
                 case .buzzes: #expect(!hasAlarm && buzzes == NotificationScheduler.loudAlertCount,
                                       "\(item.assignment.id)")
                 case .neither: #expect(!hasAlarm && buzzes == 0, "\(item.assignment.id)")
+                case .alarmsExceptSecond:
+                    if index == 1 {
+                        #expect(!hasAlarm && buzzes == NotificationScheduler.loudAlertCount,
+                                "\(item.assignment.id): the item AlarmKit refused is warned by the buzzes")
+                    } else {
+                        #expect(hasAlarm && buzzes == 0, "\(item.assignment.id): keeps its alarm")
+                    }
                 }
             }
-            #expect(backend.store.scheduledIDs.count == (scenario.expectation == .alarms ? items.count : 0),
-                    "no stray alarms")
+            let expectedAlarms = [Scenario.Expectation.alarms: items.count,
+                                  .alarmsExceptSecond: items.count - 1][scenario.expectation] ?? 0
+            #expect(backend.store.scheduledIDs.count == expectedAlarms, "no stray alarms")
             // Nothing else about the notifications moved: the work the alert does
             // not cover keeps its own reminders in every scenario.
             #expect(sink.requests.contains { $0.identifier.hasPrefix("due:canvas:reading:") })
@@ -302,20 +381,38 @@ struct BerserkAlarmDeliveryTests {
         return (backend, sink, ringing, idle)
     }
 
-    @Test("An AlarmKit error takes back the alarms that were not ringing and leaves a ringing one alone")
+    @Test("An AlarmKit error never silences a ringing alarm, and one alarm's failure does not take back the others")
     func errorNeverSilencesARingingAlarm() async {
         await withScheduler { scheduler, now in
             let items = eligible(now)
             let (backend, sink, ringing, idle) = ringingRig(
-                scheduler, scenario: Scenario(name: "", fault: .secondScheduleFails, expectation: .buzzes))
+                scheduler, scenario: Scenario(name: "", fault: .secondScheduleFails, expectation: .alarmsExceptSecond))
             backend.store.failingScheduleIDs = [alarmID(of: items[1])]
 
             await scheduler.applyReminders(from: items, now: now, sink: sink)
 
-            #expect(backend.store.scheduledIDs == [ringing], "only the ringing alarm is left")
+            #expect(backend.store.scheduledIDs == [ringing, alarmID(of: items[0]), alarmID(of: items[2])],
+                    "the ringing alarm rings on, the stale one is gone, the two that worked stay")
             #expect(!backend.store.scheduledIDs.contains(idle))
             #expect(!backend.store.stopCalls.contains(ringing))
-            #expect(items.allSatisfy { sink.buzzCount(for: $0.assignment.id) == 3 }, "and the buzzes are back")
+            #expect(backend.cancelIdleCalls == 0 && backend.cancelAllCalls == 0, "nothing was taken back wholesale")
+            #expect(sink.buzzCount(for: items[1].assignment.id) == 3, "and the refused item has the buzzes")
+        }
+    }
+
+    @Test("When AlarmKit cannot be read at all, every item falls back to the buzzes and a ringing alarm is left alone")
+    func unreadableAlarmKitNeverSilencesARingingAlarm() async {
+        await withScheduler { scheduler, now in
+            let items = eligible(now)
+            let (backend, sink, ringing, _) = ringingRig(
+                scheduler, scenario: Scenario(name: "", fault: .storeUnreadable, expectation: .buzzes))
+            backend.store.readFailure = FakeAlarmError.boom
+
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(backend.store.scheduledIDs.contains(ringing))
+            #expect(!backend.store.stopCalls.contains(ringing))
+            #expect(items.allSatisfy { sink.buzzCount(for: $0.assignment.id) == 3 }, "the buzzes are back for all")
         }
     }
 
@@ -365,21 +462,109 @@ struct BerserkAlarmDeliveryTests {
         }
     }
 
-    @Test("Reminders off, or notifications refused, take back every alarm, ringing or not")
+    @Test("Reminders off take back every alarm, ringing or not")
     func remindersOffTakesEverything() async {
-        for (remindersOn, status) in [(false, UNAuthorizationStatus.authorized), (true, .denied)] {
-            await withScheduler(remindersOn: remindersOn) { scheduler, now in
-                let backend = FakeAlarmBackend(authorization: .authorized)
+        await withScheduler(remindersOn: false) { scheduler, now in
+            let backend = FakeAlarmBackend(authorization: .authorized)
+            backend.store.seed(UUID(), ringing: true)
+            backend.store.seed(UUID())
+            scheduler.alarmBackendOverride = backend
+            scheduler.notificationSinkOverride = FakeSink()
+            scheduler.authStatusOverride = .authorized
+
+            await scheduler.reschedule(from: eligible(now), now: now)
+
+            #expect(backend.store.scheduledIDs.isEmpty)
+        }
+    }
+
+    // MARK: Refusing notifications is not refusing alarms
+
+    /// The notification permission and the AlarmKit permission are two
+    /// questions, and declining notifications is the commonest onboarding
+    /// answer. A pass used to take every alarm back and return as soon as it
+    /// saw the notification refusal (hardening plan C2, NOT-02).
+    private func declinedRig(
+        _ scheduler: NotificationScheduler, status: UNAuthorizationStatus,
+        alarms: BerserkAlarmAuthorization, answer: BerserkAlarmAuthorization = .authorized
+    ) -> (FakeAlarmBackend, FakeSink) {
+        let backend = FakeAlarmBackend(authorization: alarms, answer: answer)
+        let sink = FakeSink()
+        scheduler.alarmBackendOverride = backend
+        scheduler.notificationSinkOverride = sink
+        scheduler.authStatusOverride = status
+        return (backend, sink)
+    }
+
+    @Test("With notifications refused or unanswered, the alarms are still planned and reconciled", arguments: [
+        UNAuthorizationStatus.denied, .notDetermined,
+    ])
+    func declinedNotificationsStillPlanAlarms(status: UNAuthorizationStatus) async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = declinedRig(scheduler, status: status, alarms: .authorized)
+            let items = eligible(now)
+            let stale = UUID(), ringing = UUID()
+            backend.store.seed(stale)
+            backend.store.seed(ringing, ringing: true)
+
+            await scheduler.reschedule(from: items + noise(now), now: now)
+
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))).union([ringing]),
+                    "every eligible item has its alarm, the stale one is gone, the ringing one rings on")
+            #expect(backend.cancelAllCalls == 0, "nothing here is the student's own off")
+            #expect(sink.requests.isEmpty && sink.removals == 0,
+                    "nothing can be delivered, so the notification center is not touched")
+        }
+    }
+
+    @Test("With notifications refused, AlarmKit's own refusal, the loud switch and preview still take every alarm back")
+    func declinedNotificationsKeepTheAlarmOffSwitches() async {
+        let rows: [(name: String, alarms: BerserkAlarmAuthorization, loudOn: Bool, fixture: Bool)] = [
+            ("AlarmKit refused", .denied, true, false),
+            ("loud switch off", .authorized, false, false),
+            ("preview or demo data", .authorized, true, true),
+        ]
+        for row in rows {
+            await withScheduler(remindersOn: true) { scheduler, now in
+                let (backend, sink) = declinedRig(scheduler, status: .denied, alarms: row.alarms)
+                scheduler.setLoudAlertEnabled(row.loudOn)
+                scheduler.fixtureDataProbe = { row.fixture }
                 backend.store.seed(UUID(), ringing: true)
                 backend.store.seed(UUID())
-                scheduler.alarmBackendOverride = backend
-                scheduler.notificationSinkOverride = FakeSink()
-                scheduler.authStatusOverride = status
 
                 await scheduler.reschedule(from: eligible(now), now: now)
 
-                #expect(backend.store.scheduledIDs.isEmpty, "reminders \(remindersOn), notifications \(status)")
+                #expect(backend.store.scheduledIDs.isEmpty, "\(row.name)")
+                #expect(sink.requests.isEmpty, "\(row.name)")
             }
+        }
+    }
+
+    @Test("With notifications refused, AlarmKit's own question is still asked once, and a yes means alarms")
+    func declinedNotificationsStillAskAlarmKit() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = declinedRig(scheduler, status: .denied, alarms: .notDetermined, answer: .authorized)
+            let items = eligible(now)
+
+            await scheduler.reschedule(from: items, now: now)
+            await scheduler.reschedule(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 1)
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))))
+        }
+    }
+
+    @Test("With notifications refused, a finished item's ringing alarm is still stopped")
+    func declinedNotificationsStillStopFinishedAlarms() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = declinedRig(scheduler, status: .denied, alarms: .authorized)
+            let done = item("CIS 1200", "done", due: now + 300, completed: true)
+            backend.store.seed(alarmID(of: done), ringing: true)
+
+            await scheduler.reschedule(from: [done], now: now)
+
+            #expect(backend.store.stopCalls == [alarmID(of: done)])
+            #expect(backend.store.scheduledIDs.isEmpty)
         }
     }
 
@@ -470,14 +655,15 @@ struct BerserkAlarmDeliveryTests {
         let planned = planAlarm("a")
         let stored = FakeAlarmStore()
         stored.throwsButStoresIDs = [planned.id]
-        try await BerserkAlarmEngine.reconcile([planned], in: stored)
+        let kept = try await BerserkAlarmEngine.reconcile([planned], in: stored)
         #expect(stored.scheduledIDs == [planned.id])
+        #expect(kept.isClean)
 
         let failed = FakeAlarmStore()
         failed.failingScheduleIDs = [planned.id]
-        await #expect(throws: FakeAlarmError.self) {
-            try await BerserkAlarmEngine.reconcile([planned], in: failed)
-        }
+        let report = try await BerserkAlarmEngine.reconcile([planned], in: failed)
+        #expect(report.unscheduled == [planned.id])
+        #expect(report.uncancelled.isEmpty)
     }
 
     @Test("A cancel that throws is a failure only if the alarm is still there afterwards")
@@ -486,14 +672,92 @@ struct BerserkAlarmDeliveryTests {
         let vanishing = FakeAlarmStore()
         vanishing.seed(gone)
         vanishing.vanishingCancelIDs = [gone]
-        try await BerserkAlarmEngine.reconcile([], in: vanishing)
+        let vanished = try await BerserkAlarmEngine.reconcile([], in: vanishing)
+        #expect(vanished.isClean)
 
         let failing = FakeAlarmStore()
         failing.seed(stuck)
         failing.failingCancelIDs = [stuck]
-        await #expect(throws: FakeAlarmError.self) {
-            try await BerserkAlarmEngine.reconcile([], in: failing)
+        let report = try await BerserkAlarmEngine.reconcile([], in: failing)
+        #expect(report.uncancelled == [stuck])
+        #expect(report.unscheduled.isEmpty)
+        #expect(failing.cancelAttempts.filter { $0 == stuck }.count == 2, "tried, then tried once more")
+    }
+
+    /// The old throw path ended in `cancelIdle`, which cancelled every idle alarm
+    /// a second time, so a cancel that failed once got a retry. A background wake
+    /// has no next pass, so without the retry an alarm for work already handed
+    /// in could ring.
+    @Test("A cancel that fails once is retried, and the alarm is gone and not reported")
+    func failedCancelIsRetriedOnce() async throws {
+        let stale = UUID()
+        let store = FakeAlarmStore()
+        store.seed(stale)
+        store.failingFirstCancelIDs = [stale]
+
+        let report = try await BerserkAlarmEngine.reconcile([], in: store)
+
+        #expect(store.scheduledIDs.isEmpty, "the stale alarm is gone")
+        #expect(report.isClean && report.uncancelled.isEmpty)
+        #expect(store.cancelAttempts.filter { $0 == stale }.count == 2)
+    }
+
+    @Test("The retry cancels only what failed: the alarms just scheduled are left alone")
+    func retryOnlyTouchesTheFailedCancels() async throws {
+        let wanted = planAlarm("wanted")
+        let stale = UUID(), fine = UUID()
+        let store = FakeAlarmStore()
+        store.seed(stale)
+        store.seed(fine)
+        store.failingFirstCancelIDs = [stale]
+
+        let report = try await BerserkAlarmEngine.reconcile([wanted], in: store)
+
+        #expect(report.isClean)
+        #expect(store.scheduledIDs == [wanted.id])
+        #expect(store.cancelAttempts.filter { $0 == fine }.count == 1, "a cancel that worked is not repeated")
+        #expect(!store.cancelAttempts.contains(wanted.id), "a wanted alarm is never cancelled")
+    }
+
+    @Test("A pass takes back a finished item's alarm whose first cancel failed, with nothing left uncancelled")
+    func passRetriesAFailedCancel() async {
+        await withScheduler { scheduler, now in
+            var items = eligible(now)
+            let (backend, sink) = arrange(Scenario(name: "", expectation: .alarms), scheduler)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let before = alarmID(of: items[0])
+            #expect(backend.store.scheduledIDs.contains(before))
+
+            items[0].isCompleted = true                       // handed in; no next pass will follow
+            backend.store.failingFirstCancelIDs = [before]
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(!backend.store.scheduledIDs.contains(before), "it must not ring")
+            #expect(report.alarmsUncancelled == 0)
+            #expect(report.isClean)
         }
+    }
+
+    /// The first failure used to end the pass: the alarms after it in the diff
+    /// were never tried, and the throw sent every item to the buzzes
+    /// (hardening plan C5, NOT-07).
+    @Test("One alarm's failure does not stop the others being scheduled or cancelled")
+    func oneFailureDoesNotAbortTheRest() async throws {
+        let a = planAlarm("a"), b = planAlarm("b"), c = planAlarm("c")
+        let stuck = UUID(), stale = UUID()
+        let store = FakeAlarmStore()
+        store.seed(stuck)
+        store.seed(stale)
+        store.failingCancelIDs = [stuck]
+        store.failingScheduleIDs = [b.id]
+
+        let report = try await BerserkAlarmEngine.reconcile([a, b, c], in: store)
+
+        #expect(report.unscheduled == [b.id])
+        #expect(report.uncancelled == [stuck])
+        #expect(store.scheduledIDs == [a.id, c.id, stuck], "a and c were scheduled, stale went, stuck could not")
+        #expect(store.scheduleAttempts.contains(a.id) && store.scheduleAttempts.contains(c.id))
+        #expect(store.cancelAttempts.contains(stale))
     }
 
     @Test("An unreadable store is a failure, not a pass")
@@ -512,6 +776,9 @@ struct BerserkAlarmDeliveryTests {
         typealias Plan = BerserkAlarmPlan
         #expect(Plan.settlement(for: .alarmsReconciled)
                 == Plan.Settlement(loudAlertsAsAlarms: true, alarmAction: .keep))
+        #expect(Plan.settlement(for: .alarmsPartlyReconciled(buzzFor: ["canvas:b"]))
+                == Plan.Settlement(loudAlertsAsAlarms: true, alarmAction: .keep,
+                                   buzzFallbackAssignmentIDs: ["canvas:b"]))
         #expect(Plan.settlement(for: .alarmKitThrew)
                 == Plan.Settlement(loudAlertsAsAlarms: false, alarmAction: .cancelIdle))
         #expect(Plan.settlement(for: .buzzes(.idleOnly))
@@ -527,7 +794,8 @@ struct BerserkAlarmDeliveryTests {
     @Test("No outcome leaves the buzzes out without the alarms, or the alarms in with the buzzes")
     func settlementNeverSplits() {
         let outcomes: [BerserkAlarmPlan.Outcome] = [
-            .alarmsReconciled, .alarmKitThrew, .buzzes(.idleOnly), .buzzes(.everything),
+            .alarmsReconciled, .alarmsPartlyReconciled(buzzFor: ["canvas:b"]), .alarmKitThrew,
+            .buzzes(.idleOnly), .buzzes(.everything),
         ]
         for outcome in outcomes {
             let settlement = BerserkAlarmPlan.settlement(for: outcome)
@@ -726,6 +994,312 @@ struct BerserkAlarmDeliveryTests {
                 #expect(sink.buzzCount(for: assignmentID) == 0, "\(assignmentID): alarms, so no buzzes")
             }
             #expect(backend.cancelIdleCalls == 0 && backend.cancelAllCalls == 0, "and no fallback happened")
+        }
+    }
+
+    // MARK: Re-planning the notifications without emptying the queue
+
+    /// Buzz-mode scenario (AlarmKit refused), so the sink holds both the
+    /// ordinary reminders and the buzzes.
+    private func buzzRig(_ scheduler: NotificationScheduler) -> (FakeAlarmBackend, FakeSink) {
+        arrange(Scenario(name: "", authorization: .denied, expectation: .buzzes), scheduler)
+    }
+
+    /// A re-plan used to `removeAllPending()` and then `add` every request
+    /// again, so for the length of the awaited adds the queue held a fraction
+    /// of the plan (hardening plan C5, UCR-4). A request the plan still wants
+    /// is now never removed.
+    @Test("A re-plan over unchanged items removes nothing and never shrinks the queue")
+    func replanOverUnchangedItemsRemovesNothing() async {
+        await withScheduler { scheduler, now in
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now) + noise(now)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let before = Set(sink.requests.map(\.identifier))
+            #expect(!before.isEmpty)
+
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(sink.removals == 0, "removeAllPending is for reminders-off, not a re-plan")
+            #expect(sink.removedIdentifiers.isEmpty, "nothing was stale")
+            #expect(Set(sink.requests.map(\.identifier)) == before)
+            #expect(sink.mostPending == before.count, "the queue never held more than the plan")
+        }
+    }
+
+    @Test("Only the requests the plan no longer holds are taken back, and before anything is added")
+    func staleRequestsAreTakenBackFirst() async {
+        await withScheduler { scheduler, now in
+            let (_, sink) = buzzRig(scheduler)
+            var items = eligible(now) + noise(now)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let first = sink.log.count
+
+            items[0].isCompleted = true            // "a" is handed in
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            let pass = Array(sink.log[first...])
+            let removed = pass.filter { $0.hasPrefix("remove:") }.map { String($0.dropFirst("remove:".count)) }
+            #expect(!removed.isEmpty)
+            #expect(removed.allSatisfy { $0.contains("canvas:a") }, "only the finished item's requests: \(removed)")
+            #expect(removed.contains { $0.hasPrefix("loud:canvas:a:") }, "its buzzes are taken back")
+            #expect(sink.buzzCount(for: "canvas:a") == 0)
+            #expect(sink.buzzCount(for: "canvas:b") == NotificationScheduler.loudAlertCount)
+            let firstAdd = pass.firstIndex { $0.hasPrefix("add:") } ?? pass.count
+            let lastRemove = pass.lastIndex { $0.hasPrefix("remove:") } ?? -1
+            #expect(lastRemove < firstAdd, "removals first, so the queue never passes the cap")
+            #expect(sink.removals == 0)
+        }
+    }
+
+    /// The whole plan swapped for another of the same size. Adding the new
+    /// plan beside the old and removing the old afterwards would hold twice the
+    /// cap for a moment, and iOS keeps about sixty-four.
+    @Test("Swapping a full plan for another never holds more than the plan at once")
+    func replanStaysUnderTheCap() async {
+        await withScheduler { scheduler, now in
+            let (_, sink) = arrange(
+                Scenario(name: "", authorization: .denied, loudSwitchOn: false, expectation: .neither), scheduler)
+            let courses = ["CIS 1200", "MATH 1400", "PHYS 0150"]
+            @MainActor func plan(_ tag: String) -> [DashItem] {
+                (0..<40).map { item(courses[$0 % 3], "\(tag)\($0)", due: now + 8 * 86_400 + Double($0) * 3600) }
+            }
+            await scheduler.applyReminders(from: plan("old"), now: now, sink: sink)
+            #expect(sink.requests.count == NotificationScheduler.maxPending)
+
+            await scheduler.applyReminders(from: plan("new"), now: now, sink: sink)
+
+            #expect(sink.requests.count == NotificationScheduler.maxPending)
+            #expect(sink.requests.allSatisfy { $0.identifier.contains("canvas:new") })
+            #expect(sink.mostPending <= NotificationScheduler.maxPending, "at most the cap at every step")
+        }
+    }
+
+    @Test("A request the center refuses is counted, the rest are still added, and the next pass adds it")
+    func refusedAddsAreCounted() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now)
+            let refused = "due:canvas:b:3600"
+            sink.refusedIdentifiers = [refused]
+
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(report.notificationsFailed == 1)
+            #expect(report.notificationsAdded == sink.requests.count)
+            #expect(sink.requests.count > 1, "one refusal does not stop the others")
+            #expect(!sink.requests.contains { $0.identifier == refused })
+            #expect(!report.isClean)
+
+            sink.refusedIdentifiers = []
+            let next = await scheduler.applyReminders(from: items, now: now, sink: sink)
+            #expect(next.isClean && sink.requests.contains { $0.identifier == refused })
+        }
+    }
+
+    @Test("The scheduler keeps the latest pass's counts")
+    func lastPassReportIsKept() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let backend = FakeAlarmBackend(authorization: .authorized)
+            let sink = FakeSink()
+            scheduler.alarmBackendOverride = backend
+            scheduler.notificationSinkOverride = sink
+            scheduler.authStatusOverride = .authorized
+            #expect(scheduler.lastPassReport == nil)
+            let items = eligible(now)
+            backend.store.failingScheduleIDs = [alarmID(of: items[1])]
+            sink.refusedIdentifiers = ["due:canvas:c:3600"]
+
+            await scheduler.reschedule(from: items, now: now)
+
+            let report = scheduler.lastPassReport
+            #expect(report?.notificationsFailed == 1)
+            #expect(report?.alarmsUnscheduled == 1)
+            #expect(report?.alarmsUncancelled == 0)
+            #expect(report?.isClean == false)
+        }
+    }
+
+    /// The partial fallback adds one item's buzzes and nothing else changes:
+    /// the first pass's reminders are still wanted by the second.
+    @Test("A fallback for one refused alarm adds that item's buzzes and removes nothing the plan still holds")
+    func fallbackAddsWithoutRemoving() async {
+        await withScheduler { scheduler, now in
+            let items = eligible(now)
+            let (backend, sink) = arrange(
+                Scenario(name: "", fault: .secondScheduleFails, expectation: .alarmsExceptSecond), scheduler)
+            backend.store.failingScheduleIDs = [alarmID(of: items[1])]
+
+            await scheduler.applyReminders(from: items + noise(now), now: now, sink: sink)
+
+            #expect(sink.removals == 0)
+            #expect(sink.removedIdentifiers.isEmpty, "the buzzes were added to what the first pass left")
+            #expect(sink.buzzCount(for: items[1].assignment.id) == NotificationScheduler.loudAlertCount)
+            #expect(sink.buzzCount(for: items[0].assignment.id) == 0)
+        }
+    }
+
+    // MARK: A center that does not answer
+
+    /// A pass holds the `RescheduleSerializer` while it runs, so a read of the
+    /// pending requests that never came back would stop every reschedule after
+    /// it. The read has a deadline; on timeout the stale removal is skipped and
+    /// the plan is added regardless.
+    @Test("A pending read that never returns times out: the plan is added, nothing is removed, and the timeout is counted")
+    func pendingReadTimeoutStillAddsThePlan() async {
+        await withScheduler { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now) + noise(now)
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            let planned = Set(sink.requests.map(\.identifier))
+            // A request an earlier plan left that this one no longer holds.
+            let stale = "due:canvas:gone:3600"
+            sink.seed(UNNotificationRequest(identifier: stale, content: UNMutableNotificationContent(), trigger: nil))
+            sink.hangsOnPendingRead = true
+            defer { sink.releaseStuckReads() }
+
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(report.pendingReadTimeouts == 1)
+            #expect(!report.isClean)
+            #expect(sink.removedIdentifiers.isEmpty, "nothing is known to be stale, so nothing is removed")
+            #expect(planned.isSubset(of: Set(sink.requests.map(\.identifier))), "the whole plan was added")
+            #expect(report.notificationsAdded == planned.count && report.notificationsFailed == 0)
+            #expect(sink.requests.contains { $0.identifier == stale }, "left for the next pass that gets an answer")
+        }
+    }
+
+    @Test("The pass after a timeout removes what the timed-out one left")
+    func nextPassRemovesTheLeftovers() async {
+        await withScheduler { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = buzzRig(scheduler)
+            let items = eligible(now)
+            let stale = "due:canvas:gone:3600"
+            sink.seed(UNNotificationRequest(identifier: stale, content: UNMutableNotificationContent(), trigger: nil))
+            sink.hangsOnPendingRead = true
+            await scheduler.applyReminders(from: items, now: now, sink: sink)
+            sink.hangsOnPendingRead = false
+            sink.releaseStuckReads()
+
+            let report = await scheduler.applyReminders(from: items, now: now, sink: sink)
+
+            #expect(report.pendingReadTimeouts == 0 && report.isClean)
+            #expect(sink.removedIdentifiers == [stale])
+        }
+    }
+
+    @Test("A hung read does not wedge the serializer: later reschedules still run, and the scheduler keeps the count")
+    func hungReadDoesNotWedgeReschedules() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            scheduler.pendingReadDeadline = 0.05
+            let (_, sink) = wakeRig(scheduler, authorization: .denied)
+            sink.hangsOnPendingRead = true
+            defer { sink.releaseStuckReads() }
+            let items = eligible(now)
+
+            await scheduler.reschedule(from: items, now: now)
+            #expect(scheduler.lastPassReport?.pendingReadTimeouts == 1)
+
+            // The serializer is idle again, so this runs a pass of its own.
+            let readsBefore = sink.pendingReadAttempts
+            await scheduler.reschedule(from: items + noise(now), now: now)
+            #expect(sink.pendingReadAttempts > readsBefore, "a second pass ran")
+            #expect(sink.requests.contains { $0.identifier.hasPrefix("due:canvas:reading:") })
+        }
+    }
+
+    // MARK: A re-plan with nobody at the phone (the background wake)
+
+    /// A rig for `reschedule` and `rescheduleWithoutPrompting`: reminders on,
+    /// notifications allowed, AlarmKit as the scenario says.
+    private func wakeRig(
+        _ scheduler: NotificationScheduler,
+        authorization: BerserkAlarmAuthorization,
+        answer: BerserkAlarmAuthorization = .authorized
+    ) -> (FakeAlarmBackend, FakeSink) {
+        let backend = FakeAlarmBackend(authorization: authorization, answer: answer)
+        let sink = FakeSink()
+        scheduler.alarmBackendOverride = backend
+        scheduler.notificationSinkOverride = sink
+        scheduler.authStatusOverride = .authorized
+        return (backend, sink)
+    }
+
+    /// The background wake cannot show AlarmKit's permission question. A
+    /// never-asked permission therefore means "not allowed yet": the buzzes
+    /// for this pass, and the question stays for the next time the app is
+    /// open. The control half is the same scheduler through `reschedule`,
+    /// which does ask, so the test cannot pass because the question was
+    /// never going to be asked.
+    @Test("A re-plan without a prompt never asks AlarmKit for permission, and a never-asked permission means the buzzes")
+    func replanWithoutPromptNeverAsks() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = wakeRig(scheduler, authorization: .notDetermined)
+            let items = eligible(now)
+
+            await scheduler.rescheduleWithoutPrompting(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 0, "nobody is looking at the phone")
+            #expect(backend.store.scheduledIDs.isEmpty)
+            #expect(items.allSatisfy { sink.buzzCount(for: $0.assignment.id) == NotificationScheduler.loudAlertCount },
+                    "the student is still warned, by the buzzes")
+
+            await scheduler.reschedule(from: items, now: now)
+
+            #expect(backend.authorizationRequests == 1, "the foreground pass puts the question")
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))))
+        }
+    }
+
+    @Test("A re-plan without a prompt takes back the alarm of work handed in since, and stops one that is ringing")
+    func replanWithoutPromptTakesBackFinishedWork() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, sink) = wakeRig(scheduler, authorization: .authorized)
+            var items = eligible(now)
+            // Due in five minutes, so its alarm time has passed: it is
+            // ringing, and the plan no longer wants it.
+            let late = item("CIS 1200", "late", due: now + 300)
+            backend.store.seed(alarmID(of: late), ringing: true)
+            await scheduler.reschedule(from: items + [late], now: now)
+            #expect(backend.store.scheduledIDs == Set(items.map(alarmID(of:))).union([alarmID(of: late)]))
+
+            // Between the two passes the student hands in `a` and `late` on
+            // Canvas, and the wake's sync learns it.
+            items[0].isCompleted = true
+            let lateDone = item("CIS 1200", "late", due: now + 300, completed: true)
+            await scheduler.rescheduleWithoutPrompting(from: items + [lateDone], now: now)
+
+            #expect(!backend.store.scheduledIDs.contains(alarmID(of: items[0])), "the finished item's alarm is gone")
+            #expect(backend.store.stopCalls == [alarmID(of: lateDone)], "the ringing one is stopped")
+            #expect(backend.store.scheduledIDs == [alarmID(of: items[1]), alarmID(of: items[2])])
+            #expect(backend.authorizationRequests == 0)
+            #expect(sink.buzzCount(for: items[0].assignment.id) == 0)
+        }
+    }
+
+    /// The serializer folds a call that arrives mid-pass into the running
+    /// pass's rerun. That rerun has to be judged by the folded call's
+    /// permission: the question is never answered here (`.failed` leaves the
+    /// permission unasked), so a rerun that kept the first caller's right to
+    /// prompt would ask a second time, from what is now a background pass.
+    @Test("A background re-plan that joins a running pass keeps its no-prompt rule for the rerun")
+    func foldedNoPromptCallKeepsItsRule() async {
+        await withScheduler(remindersOn: true) { scheduler, now in
+            let (backend, _) = wakeRig(scheduler, authorization: .notDetermined, answer: .failed)
+            let gate = Gate()
+            backend.duringRequest = { await gate.wait() }
+            let a = item("CIS 1200", "a", due: now + 3 * 3600)
+            let b = item("CIS 1200", "b", due: now + 4 * 3600)
+
+            let foreground = Task { await scheduler.reschedule(from: [a], now: now) }
+            while !gate.isWaiting { await Task.yield() }
+            await scheduler.rescheduleWithoutPrompting(from: [a, b], now: now)
+            gate.open()
+            await foreground.value
+
+            #expect(backend.authorizationRequests == 1, "the rerun is the background call's, and must not ask again")
         }
     }
 

@@ -378,7 +378,7 @@ struct AnnouncementTaskRulesTests {
             #expect(onDashboard(state, course).isEmpty)
             #expect(Set(prev(state, course, at: Self.date(4)).map(\.assignment.title))
                 == ["Submit the reflection", "Attend the weekly rotation quiz"])
-            #expect(store.completionRecord().ids.isSuperset(of: [undated.id, reminder.id]))
+            #expect(store.completionRecordOrFail().ids.isSuperset(of: [undated.id, reminder.id]))
         }
     }
 

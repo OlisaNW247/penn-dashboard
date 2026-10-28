@@ -222,6 +222,14 @@ struct OnboardingView: View {
 
     private var schoolSelectionStep: some View {
         VStack(spacing: 0) {
+            // The picker has no header of its own. While a reconnect cover is
+            // open it gets the shared top bar, whose trailing end carries the
+            // close control (`reconnectCloseButton`), as a row above the
+            // scroll view so it never overlaps the picker's content. A first
+            // run has no cover to close and keeps the bare picker.
+            if state.isReconnecting {
+                topBar(onBack: nil)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Where do you use Canvas?")
@@ -360,8 +368,24 @@ struct OnboardingView: View {
             // `c999c38`. Pinned to the bottom safe area, below the entire
             // login pane above it, so it never competes with actually
             // connecting a real account.
+            //
+            // Not shown to a student who is already signed in and has a real
+            // dashboard underneath (a reconnect cover): the door's job is for
+            // someone who cannot sign in at all. Keyed on `isReconnecting`
+            // *or* `hasCompletedOnboarding`, not on the first alone, because
+            // `completeOnboarding()` clears `isReconnecting` before the
+            // cover's dismiss animation has finished, and the footer would
+            // flash back under the Canvas step as it slid away. A cover leaves
+            // `hasCompletedOnboarding` true throughout (`restartOnboarding`
+            // never clears it on that path), so the pair covers the whole
+            // animation. Neither can hide the door from the reviewer: a true
+            // first run has both false, and the "start over" and preview-exit
+            // path (`.full`, or preview mode) writes `hasCompletedOnboarding`
+            // false, which is what puts a reviewer back on this screen.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                previewFooter
+                if !(state.isReconnecting || state.hasCompletedOnboarding) {
+                    previewFooter
+                }
             }
             .background(Color.v2Bg.ignoresSafeArea())
     }
@@ -409,7 +433,15 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var gradescopeStep: some View {
-        if state.isGradescopeConnected {
+        // `!state.gradescopeNeedsReauth`: a connected Gradescope whose server
+        // stopped recognising this phone (`GradescopeReauthRule`) still has
+        // `isGradescopeConnected` true on purpose (its rows, cookies and
+        // syncing carry on), and the "reconnect gradescope" banner opens this
+        // step as a cover. Without the second half that cover showed
+        // "gradescope is connected." and a continue button, a dead end that
+        // could never clear the verdict. First-time connect and a disconnected
+        // Gradescope are unchanged.
+        if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
             connectedStep(
                 step: 2,
                 message: "gradescope is connected.",
@@ -688,11 +720,41 @@ struct OnboardingView: View {
                     .font(.lhfSans(14, weight: .medium))
                     .foregroundStyle(Color.v2DateText)
             }
+
+            reconnectCloseButton
         }
         .padding(.horizontal, 24)
         .padding(.top, 18)
         .padding(.bottom, 16)
         .background(Color.v2Bg)
+    }
+
+    /// The way out of a reconnect cover: an `xmark` at the trailing end of the
+    /// header or top bar of every step the cover can show (the Canvas sign-in,
+    /// the school picker, the Gradescope step, and the confirmation panes). It
+    /// closes the cover and nothing else, so the student is back on the
+    /// dashboard they left. Absent everywhere else: the root walk has nothing
+    /// to return to. No text, per the app's copy rule; the accessibility label
+    /// carries the word.
+    ///
+    /// No fixed frame, on purpose: `loginHeader` aligns on the title's text
+    /// baseline, which a framed image would shift, so it is sized like the
+    /// back chevron beside it and given a larger touch area instead.
+    @ViewBuilder
+    private var reconnectCloseButton: some View {
+        if state.isReconnecting {
+            Button {
+                lhfHapticLight()
+                state.dismissReconnect()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .contentShape(Rectangle().inset(by: -12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("close")
+        }
     }
 
     /// Shared back/skip chrome for the non-login steps.
@@ -704,8 +766,16 @@ struct OnboardingView: View {
             backButton(onBack)
                 .frame(width: 44, height: 32, alignment: .leading)
             Spacer()
-            skipButton(skip)
-                .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
+            HStack(spacing: 16) {
+                // The 44x32 placeholder `skipButton` returns for "no skip"
+                // keeps the bar's height; while a reconnect cover shows the
+                // close control instead it would only add dead space beside it.
+                if skip != nil || !state.isReconnecting {
+                    skipButton(skip)
+                }
+                reconnectCloseButton
+            }
+            .frame(minWidth: 44, minHeight: 32, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -833,6 +903,51 @@ struct OnboardingView: View {
 
 // MARK: - Canvas login pane
 
+/// What the Canvas login pane does when a connect attempt comes back
+/// unconnected, as a pure rule so a test can pin it without a WebView.
+///
+/// Two things pull against each other. At Penn, `39b2fff`'s rule is that a
+/// failed connect never calls `LoginNavigationObserver.reset()`: that also
+/// zeroes `autoLoginAttempts`, the counter that holds the saved PennKey
+/// password to one auto-submission per pane appearance, and resetting it with
+/// the pane still mid-Duo lets a re-rendered credential form be filled a
+/// second time. So Penn only ever shows the failure and waits for the student.
+/// Everywhere else the reset is what brings the login page back after a
+/// custom host commits its landing page before a session exists, and it is
+/// also a loop: a single sign-on that bounces straight back to Canvas arrives
+/// "signed in", fails to connect, is reset, bounces back, and so on with a
+/// spinner behind it. Two automatic resets per pane lifetime is enough for
+/// the landing-page case (one is the bounce, the second is a slow cookie
+/// write) and a hard stop for the loop; after that the student has the
+/// "try again" button and the "I've finished signing in" button.
+///
+/// The wrong fix is a longer cap or a timer between resets: a bouncing
+/// sign-on is not a timing problem, and a loop that eventually ends is still
+/// a loop the student sits behind.
+enum CanvasConnectRetryRule {
+
+    /// The most automatic reset-and-retry cycles one pane lifetime gets at a
+    /// school other than Penn.
+    static let maxAutomaticResets = 2
+
+    enum FailedConnectAction: Equatable {
+        /// Leave the observer (and so its auto-login counter) alone: show the
+        /// failure and the retry control. Penn always, and any other school
+        /// once the cap is spent.
+        case showFailureKeepingCounter
+        /// `LoginNavigationObserver.reset()` and let the page come back.
+        case resetAndRetry
+    }
+
+    nonisolated static func failedConnectAction(
+        for installation: CanvasInstallation,
+        automaticResetsSoFar: Int
+    ) -> FailedConnectAction {
+        if installation.id == CanvasInstallation.penn.id { return .showFailureKeepingCounter }
+        return automaticResetsSoFar < maxAutomaticResets ? .resetAndRetry : .showFailureKeepingCounter
+    }
+}
+
 /// Canvas login WebView whose "Connect" action captures the ICS feed URL,
 /// syncs Canvas, and scans for requirements in one step.
 private struct CanvasLoginPane: View {
@@ -844,6 +959,18 @@ private struct CanvasLoginPane: View {
     @State private var isReadingCookies = false
     @State private var isPurging = true
     @State private var message: String?
+    /// True once a connect has failed with the observer's
+    /// `reachedSignedInDestination` still latched. That flag is `private(set)`
+    /// and its only clearer, `reset()`, also zeroes the auto-login counter
+    /// (see `CanvasConnectRetryRule`), so the pane keeps its own record that
+    /// the destination no longer means "connecting": without it the body kept
+    /// showing the spinner forever, with no message and no button, because
+    /// `onChange` only fires on a change and the flag never changed back.
+    @State private var connectFailed = false
+    /// How many times a failed connect has already reset the observer and
+    /// retried by itself in this pane's lifetime
+    /// (`CanvasConnectRetryRule.maxAutomaticResets`).
+    @State private var automaticResets = 0
     @StateObject private var navObserver: LoginNavigationObserver
 
     init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void) {
@@ -883,7 +1010,7 @@ private struct CanvasLoginPane: View {
 
     var body: some View {
         Group {
-            if isPurging || isReadingCookies || navObserver.reachedSignedInDestination {
+            if isPurging || isReadingCookies || (navObserver.reachedSignedInDestination && !connectFailed) {
                 VStack {
                     Spacer()
                     ProgressView()
@@ -893,13 +1020,19 @@ private struct CanvasLoginPane: View {
             } else {
                 VStack(spacing: 0) {
                     if let message {
-                        Text(message)
-                            .font(.lhfSans(12, weight: .medium))
-                            .foregroundStyle(Color.smoothTomatoInk)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.smoothTomato.opacity(0.13))
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(message)
+                                .font(.lhfSans(12, weight: .medium))
+                                .foregroundStyle(Color.smoothTomatoInk)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button("try again", action: reloadLogin)
+                                .font(.lhfSans(12, weight: .semibold))
+                                .foregroundStyle(Color.smoothTomatoInk)
+                                .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.smoothTomato.opacity(0.13))
                     }
                     if installation.id == CanvasInstallation.penn.id {
                         Text("Signing in securely saves your PennKey on this device so Smooth can reconnect. Disconnect at any time in Settings.")
@@ -959,12 +1092,14 @@ private struct CanvasLoginPane: View {
             state.isCanvasLoginPaneActive = true
             // Belt-and-suspenders (2026-09-21 review): `navObserver` is a
             // fresh `LoginNavigationObserver()` every time this pane gets a
-            // NEW identity in the view tree (each `restartOnboarding()` call
-            // swaps `RootView.mainContent`'s top-level branch from
-            // `ContentView` to a brand-new `OnboardingView`, and nothing in
-            // this file reuses the same pane instance across two separate
-            // login attempts today), so `autoLoginAttempts` already starts
-            // at 0 for every real attempt without this call. It's here
+            // NEW identity in the view tree. Each `restartOnboarding()` call
+            // builds a brand-new `OnboardingView`: as the reconnect cover
+            // `ContentView` presents for a single-service reconnect, or, for
+            // the whole walk and the exit from preview, by swapping
+            // `RootView.mainContent`'s top-level branch from `ContentView`.
+            // Nothing in this file reuses the same pane instance across two
+            // separate login attempts today, so `autoLoginAttempts` already
+            // starts at 0 for every real attempt without this call. It's here
             // anyway, cheap and idempotent on a fresh observer, in case that
             // stops being true later — a stale attempt count of 1 carried
             // over from a previous login would make the very FIRST real
@@ -1111,24 +1246,55 @@ private struct CanvasLoginPane: View {
 
                     guard paneActive else { return }
                     onConnected(persistenceNotice)
-                } else if installation.id != CanvasInstallation.penn.id {
-                    // A custom host can commit its landing page before a
-                    // session exists. Return to the WebView instead of
-                    // leaving the pane behind an endless progress spinner.
-                    //
-                    // Never at Penn, where a failed connect stays the silent
-                    // no-op it was at 39b2fff, the build that has kept a real
-                    // phone signed in. `navObserver.reset()` zeroes
-                    // `autoLoginAttempts`, the counter that holds the saved
-                    // PennKey password to one auto-submission per pane
-                    // appearance; resetting it while Penn's pane is still
-                    // mid-Duo would let a re-rendered credential form be
-                    // auto-filled a second time.
+                } else {
+                    // The student's own fixed sentence, never the raw sync
+                    // error (`state.error` can be a bare `localizedDescription`;
+                    // DashboardSmallFixesTests pins this since 9e1ccae).
                     message = "couldn't sign in. try again."
-                    navObserver.reset()
+                    switch CanvasConnectRetryRule.failedConnectAction(
+                        for: installation,
+                        automaticResetsSoFar: automaticResets
+                    ) {
+                    case .resetAndRetry:
+                        // A custom host can commit its landing page before a
+                        // session exists. Return to the WebView instead of
+                        // leaving the pane behind an endless progress
+                        // spinner, at most twice (`CanvasConnectRetryRule`).
+                        automaticResets += 1
+                        navObserver.reset()
+                    case .showFailureKeepingCounter:
+                        // Penn, or any school whose retries are spent. Never
+                        // `navObserver.reset()` here: at Penn a failed connect
+                        // stays as `39b2fff`, the build that has kept a real
+                        // phone signed in, left it, because `reset()` zeroes
+                        // `autoLoginAttempts`, the counter that holds the
+                        // saved PennKey password to one auto-submission per
+                        // pane appearance, and resetting it while the pane is
+                        // still mid-Duo would let a re-rendered credential
+                        // form be auto-filled a second time. The counter is
+                        // the part of `39b2fff` worth keeping; its spinner is
+                        // not (it had the same dead end, where the destination
+                        // flag stays latched and the spinner never clears). So
+                        // the pane records that the connect failed and shows
+                        // the WebView again, with the message and "try again"
+                        // above it.
+                        connectFailed = true
+                    }
                 }
             }
         }
+    }
+
+    /// "try again": loads the login start URL into the WebView already on
+    /// screen. It does not touch the observer's counters, for the reason in
+    /// `connect()`'s failure branch, and it does not call `connect()`: a
+    /// reload is a new sign-in, and if it lands signed in the student's
+    /// "I've finished signing in" button, below the page, completes it.
+    private func reloadLogin() {
+        message = nil
+        navObserver.webView?.load(
+            URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        )
     }
 }
 
@@ -1198,7 +1364,13 @@ private struct GradescopeLoginPane: View {
                 isReadingCookies = false
                 guard !gradescopeCookies.isEmpty else { return }
                 await state.syncGradescope(cookies: gradescopeCookies)
-                if state.isGradescopeConnected {
+                // `isGradescopeConnected` alone is not "signed in": during a
+                // reconnect (hardening plan A4) the flag is already true, and
+                // the saved `gradescopeNeedsReauth` verdict is what opened
+                // this pane, so a login that finished with the sync still
+                // refused would close the cover and bring the banner straight
+                // back. Same condition as the step's own "connected" branch.
+                if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
                     onConnected()
                 }
             }

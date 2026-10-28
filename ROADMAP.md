@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-24 on `v8` (the tree research plan). Before that,
+Last updated 2026-10-28 on `release/3.3.1` (the 3.3.1 release). Before
+that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
 with Marco's `v8-loud-alert-actions`; not compiled). Marco's
@@ -20,9 +21,10 @@ The rest of Marco's branches the plan of 2026-10-23
 same order; none of it is compiled yet, and the launch refresh and the
 course-sync salvage are separate briefs, not merges.
 
-Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
-iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
-**3.0.1 (12)**, the sign-out fix, from `v8`. Marco's launch-prep work
+Live on the App Store: **3.3.0 (16)**, since 2026-10-27 22:37 UTC by the
+public iTunes lookup; it still has the launch crash. The next release is
+**3.3.1 (17)**, the two crash fixes plus the hardening round, from
+`release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`). Marco's launch-prep work
 (2026-10-09/10, built on `v8-launch-prep`) was merged into `v8` on
 2026-10-10 through pull request 9, at his instruction, so it now rides
 in whatever is built from `v8` next. Most of it has not been on a phone:
@@ -41,6 +43,31 @@ dates.
 These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
+
+- **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
+  few hundred people installed 3.2.1 (15) on launch day and some of them
+  crash a few seconds after every open. The code says why: two Canvas
+  assignment groups whose names slug to the same id trap
+  `GradeEngine`'s `Dictionary(uniqueKeysWithValues:)` on every grade
+  fetch, which the automatic sync runs at launch for everyone.
+  `docs/LAUNCH_CRASH_2026-10-26.md` is the record and the plan: the fix
+  is on `fix/duplicate-category-ids`, then 3.2.2 (16) with an expedited
+  review, then the floor. Not yet proven from a crash report: Xcode's
+  Organizer needs Marco's Apple ID signed in before it will list them.
+  On 2026-10-27, at Marco's say, A2 (reconnect as a cover over the
+  dashboard, never a persisted "not onboarded" flag) and A3 ("expired"
+  decided by whether a session cookie is still fresh) landed on the same
+  branch, each in its own commit so either can be dropped; both compiled
+  and tested, neither run on a phone.
+  Later that day, at Marco's say ("continue with everything"), the rest
+  of the plan that needs no phone answer or product call landed on the
+  same branch in seven reviewed groups (sign-in edges, ledger integrity,
+  alarms and the background wake, the Kit hardening and fuzz suite,
+  privacy text and ask links, sessions and Keychain, the backend track,
+  not deployed). `docs/WHAT_CHANGED_3.2.2.md` explains each commit and
+  lists what was skipped and why: A6 and A9 (the renewer, Olisa), B2
+  (reinstall policy, Marco), C3, C8, C10 (product calls), D3-D7 (measure
+  first), P2 (pairing protocol), BE-D/E/G (Olisa's sync).
 
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).

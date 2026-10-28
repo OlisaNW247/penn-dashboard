@@ -102,7 +102,7 @@ public enum WorkKindFilter: Sendable, Hashable {
         case .any: return true
         case .assessment: return item.isAssessment
         case .quiz:
-            return item.kind == .quiz || item.title.range(of: #"(?i)\bquiz(zes)?\b"#, options: .regularExpression) != nil
+            return item.kind == .quiz || RegexCache.contains(#"(?i)\bquiz(zes)?\b"#, in: item.title)
         case .exam:
             // `ExamDetector` is the shared, negation-aware rule (see its
             // header for the phone transcript that made a bare keyword
@@ -143,8 +143,52 @@ public struct ParsedQuestion: Sendable, Hashable {
 /// Rule-based question understanding. Deterministic on purpose: it runs on
 /// every device with no model, and its output is exact where dates are involved.
 public enum QuestionParser {
+    /// The most characters of a question the parser reads. A real question is
+    /// a sentence; 2,000 characters is a paragraph and a half, which is more
+    /// than anyone types. Past it the text is cut to its first
+    /// `headLength` characters and its last `maxQuestionLength - headLength - 1`,
+    /// joined by a space: a pasted assignment prompt, or a syllabus with the
+    /// question typed under it, puts what the student is asking at the *end*,
+    /// and keeping only the head would answer a question the student did not
+    /// ask. Both cuts are at character boundaries, so neither splits an emoji
+    /// or an accent.
+    ///
+    /// This bounds what the on-device parser reads and what `ParsedQuestion
+    /// .original` carries to retrieval. It does not bound what the server path
+    /// sends: `AssistantView` still sends the student's full prompt to the
+    /// backend `ask` function, which has its own limits.
+    ///
+    /// **Why it exists.** `classify` runs a dozen regular expressions over
+    /// the question, and some of them have two `.*` in them
+    /// (`\b(what|which|anything)\b.*\b(not|...)\b.*\b(submit|...)\b`), which
+    /// backtrack: on a pasted 100,000-character syllabus that is billions of
+    /// steps on the main actor, a frozen app with no crash and nothing to
+    /// read (`KCR-13` in `docs/HARDENING_PLAN_2026-10-25.md`). The bound is
+    /// applied before anything else touches the text, so it also bounds the
+    /// lowercasing, the replacements, the course search and the `lookup`
+    /// query that goes on to retrieval. The wrong fix is a timeout around the
+    /// regexes: the work would still be done, just abandoned, and the
+    /// question would then be answered from half a classification.
+    public static let maxQuestionLength = 2_000
+
+    /// Characters kept from the start of an over-long question; the rest of
+    /// the budget (less the joining space) is kept from the end.
+    static let headLength = 1_500
+
+    /// `question` unchanged when it fits, else its head and its tail joined by
+    /// a space, `maxQuestionLength` characters in all. Walks only as far as
+    /// the cap from each end, so a megabyte of pasted text is not scanned to
+    /// be discarded.
+    static func bounded(_ question: String) -> String {
+        guard question.index(question.startIndex, offsetBy: maxQuestionLength, limitedBy: question.endIndex) != nil,
+              question.index(question.startIndex, offsetBy: maxQuestionLength + 1, limitedBy: question.endIndex) != nil
+        else { return question }
+        let tailLength = maxQuestionLength - headLength - 1
+        return String(question.prefix(headLength)) + " " + String(question.suffix(tailLength))
+    }
+
     public static func parse(_ question: String, courses: [CourseSummary]) -> ParsedQuestion {
-        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = bounded(question).trimmingCharacters(in: .whitespacesAndNewlines)
         let match = CourseMatcher.match(in: trimmed, courses: courses)
         var q = " " + trimmed.lowercased()
             .replacingOccurrences(of: "’", with: "'")

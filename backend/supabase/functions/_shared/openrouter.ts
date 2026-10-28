@@ -406,9 +406,9 @@ async function requestWithFallback(
 
   if (!retryable || !fallbackModel) {
     if (primaryResponse) {
-      const errorBody = await readErrorBody(primaryResponse);
+      const errorBody = await describeErrorBody(primaryResponse);
       throw new UpstreamError(
-        `OpenRouter responded ${primaryResponse.status}: ${errorBody}`,
+        `OpenRouter responded ${primaryResponse.status} (${errorBody})`,
         primaryResponse.status,
       );
     }
@@ -441,9 +441,9 @@ async function requestFallback(
     throw new UpstreamError(`OpenRouter fallback request failed: ${describeError(err)}`);
   }
   if (!fallbackResponse.ok) {
-    const errorBody = await readErrorBody(fallbackResponse);
+    const errorBody = await describeErrorBody(fallbackResponse);
     throw new UpstreamError(
-      `OpenRouter fallback responded ${fallbackResponse.status}: ${errorBody}`,
+      `OpenRouter fallback responded ${fallbackResponse.status} (${errorBody})`,
       fallbackResponse.status,
     );
   }
@@ -455,22 +455,29 @@ function describeError(err: unknown): string {
 }
 
 /**
- * Best-effort read of a failed response's body, capped at 400 characters, so
- * an `UpstreamError` carries OpenRouter's own rejection reason instead of
- * just a bare status code -- the 2026-09-14 `reasoning: {enabled:false}` 400
- * was undiagnosable from the logs precisely because nothing here ever read
- * it. OpenRouter error bodies are its own JSON (`{"error":{"message":...}}`),
- * never the prompt or the student's question, so logging them is safe. Reading
- * the body can itself throw (an already-consumed stream, a network hiccup
- * mid-read); swallow that and fall back to an empty string rather than
- * letting a diagnostic best-effort read replace the real error.
+ * Describes a failed response's body without repeating it: its length, or
+ * "unreadable". An `UpstreamError`'s message is logged (`ask: upstream
+ * failure detail`) and, for `ask`, stored in `ask_outcomes.detail`, so
+ * whatever is in it is retained, and an upstream error body is not ours to
+ * keep. OpenRouter forwards the provider's own message, and providers
+ * sometimes quote the request back (a context-length or content-filter
+ * refusal can include part of the prompt, which here is a student's course
+ * material and question). The status is in the message and is what tells a
+ * 4xx from a 5xx; the length is enough to tell an empty body from a verbose
+ * one. This used to read and keep the first 400 characters, which is how the
+ * 2026-09-14 `reasoning: {enabled:false}` 400 was finally diagnosed; the cost
+ * of removing it is that an unfamiliar 4xx now has to be reproduced by hand
+ * (the canary and `scripts/ask-probe.mjs` exist for that) instead of read
+ * out of the log. Reading the body can itself throw (an already-consumed
+ * stream, a network hiccup mid-read); that becomes "unreadable" rather than
+ * replacing the real error.
  */
-async function readErrorBody(response: Response): Promise<string> {
+async function describeErrorBody(response: Response): Promise<string> {
   try {
     const text = await response.text();
-    return text.slice(0, 400);
+    return `error body ${text.length} chars, not logged`;
   } catch {
-    return "";
+    return "error body unreadable";
   }
 }
 

@@ -73,4 +73,35 @@ struct StorageHealthTests {
         state.forceFixtureDataForTesting(false)
         #expect(!state.showsNotSavingBanner)
     }
+
+    // MARK: The read-side counterpart
+
+    @Test("the failure counts add up across stores and direction, and clean means both are zero")
+    func failuresAddUp() {
+        #expect(StorageHealth.Failures().isClean)
+        let reads = StorageHealth.Failures(ledgerReads: 2)
+        #expect(reads.reads == 2)
+        #expect(reads.saves == 0)
+        #expect(!reads.isClean, "a ledger that could not be read is not a clean bill of health")
+        let saves = StorageHealth.Failures(ledgerSaves: 1)
+        #expect(saves.saves == 1)
+        #expect(!saves.isClean)
+    }
+
+    @MainActor
+    @Test("AppState reports the ledger's failed reads, which used to leave no trace")
+    func appStateCountsLedgerReadFailures() throws {
+        struct Injected: Error {}
+        let store = try AssignmentStore(inMemory: true)
+        let state = AppState(assignmentStore: store)
+        #expect(state.storageFailures == StorageHealth.Failures(),
+                "a fresh in-memory ledger has failed nothing, whatever its persistence")
+
+        store.readFailureForTesting = Injected()
+        _ = store.currentAssignments()
+        store.readFailureForTesting = nil
+
+        #expect(state.storageFailures.ledgerReads >= 1)
+        #expect(state.storageFailures.ledgerSaves == 0)
+    }
 }

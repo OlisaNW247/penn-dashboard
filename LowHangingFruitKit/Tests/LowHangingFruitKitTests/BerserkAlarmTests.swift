@@ -285,9 +285,12 @@ struct BerserkAlarmTests {
         return parts.joined(separator: "|")
     }
 
-    @Test("Alarm mode omits exactly the loud buzzes and changes no other request")
+    @Test("Alarm mode omits exactly the loud buzzes, and the slots they would have taken go to the other reminders")
     func alarmModeOmitsExactlyTheBuzzes() {
         // The busy fixture of the budget test: 65 requests wanted for 60 slots.
+        // 30 of them are the buzzes of the 10 nearest items, 35 are plain
+        // reminders (a 24-hour one for the 10 items due after tomorrow, and a
+        // 1-hour one for all 25).
         withScheduler { scheduler, prefs, now in
             let courses = ["CIS 1200", "MATH 1400", "PHYS 0150"]
             let items = (0..<25).map {
@@ -303,12 +306,29 @@ struct BerserkAlarmTests {
             #expect(today.count == NotificationScheduler.maxPending)
 
             let withoutBuzzes = today.filter { !$0.identifier.hasPrefix("loud:") }
-            #expect(!withoutBuzzes.isEmpty)
-            #expect(on.map(signature) == withoutBuzzes.map(signature),
-                    "exactly the buzzes are gone, every other request is as it was")
-            #expect(on.allSatisfy { !$0.identifier.hasPrefix("loud:") })
-            #expect(on.count == NotificationScheduler.maxPending - 30,
-                    "the freed slots are not handed to other reminders")
+            #expect(withoutBuzzes.count == NotificationScheduler.maxPending - 30)
+            #expect(on.allSatisfy { !$0.identifier.hasPrefix("loud:") }, "exactly the buzzes are gone")
+            #expect(Set(withoutBuzzes.map(\.identifier)).isSubset(of: Set(on.map(\.identifier))),
+                    "every plain reminder the buzz plan had, the alarm plan has too")
+            #expect(on.count == 35, "the freed slots are given to the reminders that were cut: all 35 wanted fit")
+        }
+    }
+
+    @Test("Alarm mode never plans more than the cap, and fills it when more is wanted")
+    func alarmModeStaysUnderTheCap() {
+        withScheduler { scheduler, prefs, now in
+            let courses = ["CIS 1200", "MATH 1400", "PHYS 0150"]
+            // 90 items: far more plain reminders than 60 slots.
+            let items = (0..<90).map {
+                item(courses[$0 % 3], "j\($0)", due: now + 2 * 3600 + Double($0) * 5400)
+            }
+            let on = scheduler.plannedRequests(
+                from: items, now: now, preferences: prefs, loudAlertsAsAlarms: true)
+            let off = scheduler.plannedRequests(
+                from: items, now: now, preferences: prefs, loudAlertsAsAlarms: false)
+            #expect(on.count == NotificationScheduler.maxPending, "all sixty slots are in use")
+            #expect(off.count == NotificationScheduler.maxPending,
+                    "and a fallback to the buzzes re-plans within the same cap")
         }
     }
 

@@ -79,7 +79,11 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
                 askTrace.info("1 reply task started; building request")
                 let prepared = Self.prepareRequest(question: prompt, context: context)
                 let request = prepared.request
-                askTrace.info("2 request built: \(request.excerpts.count, privacy: .public) excerpt chars, \(request.courseIDs.count, privacy: .public) courses")
+                // The class count and the size of the excerpts retrieved for
+                // this question describe the student's classes and the
+                // question; the rest of the trace is about the stream, and
+                // stays public (SEC-17).
+                askTrace.info("2 request built: \(request.excerpts.count, privacy: .private) excerpt chars, \(request.courseIDs.count, privacy: .private) courses")
                 await Self.run(
                     request: request,
                     excerptSources: prepared.sources,

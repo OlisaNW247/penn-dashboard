@@ -23,6 +23,8 @@ struct SettingsPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var scheduler: NotificationScheduler
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.feedbackFormURL) private var feedbackFormURL
     @State private var showRecurring = false
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
@@ -34,6 +36,11 @@ struct SettingsPage: View {
     /// `stayLoggedInRows`) and by its "update password" button after a
     /// rejection.
     @State private var showStayLoggedInSheet = false
+    /// Whether a PennKey is on file, read from the Keychain once on appearing
+    /// and again when `PennKeyCredentialsSheet` closes, never from `body`.
+    /// `nil` until the first read, so the "save pennkey" row cannot flash up
+    /// for the student who already has one saved.
+    @State private var pennKeyCredentialSaved: Bool?
     /// Shown under the accounts rows when the server-side delete that
     /// disconnecting Canvas triggers didn't go through.
     @State private var backendDataDeletionError: String?
@@ -158,6 +165,7 @@ struct SettingsPage: View {
                     }
                     #endif
                     stayLoggedInRows
+                    savePennKeyRow
                     // Only while a pairing key is held; pairing starts from
                     // the laptop's QR code.
                     ProfileLaptopRow()
@@ -193,6 +201,27 @@ struct SettingsPage: View {
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
+
+            // Always last of the student's sections. The link is the live
+            // notice's when the manifest has one, else the default form; no
+            // query parameters are ever added (see `FeedbackForm`).
+            Section {
+                Button {
+                    openURL(feedbackFormURL)
+                } label: {
+                    HStack {
+                        Text("send feedback")
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .foregroundStyle(Color.v2DateText)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } header: {
+                SmoothSectionHeader("feedback", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothCobalt)
 
             // Debug builds only. The troubleshooting section was removed from
             // Settings on purpose so students never see it, but these two rows
@@ -252,7 +281,11 @@ struct SettingsPage: View {
         }
         .task {
             state.refreshPairedLaptop()
+            refreshPennKeyCredentialSaved()
             await scheduler.refreshAuthStatus()
+        }
+        .onChange(of: showStayLoggedInSheet) { _, _ in
+            refreshPennKeyCredentialSaved()
         }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
@@ -417,12 +450,20 @@ struct SettingsPage: View {
     /// the student who wants their server rows gone too, and docs/PRIVACY.md
     /// says so. A failure is reported here rather than swallowed, since
     /// the disconnect itself has already happened by then.
+    ///
+    /// The line is the truth about what happens next, and no longer asks the
+    /// student to do anything: a request that did not get through is
+    /// remembered and retried by the app (`PendingBackendDeletion`), so the
+    /// old instruction to reconnect and disconnect again was wrong, and
+    /// following it would have cancelled the retry. It shows only while that
+    /// retry is still pending. A refusal no retry will change drops the
+    /// record, and a line promising a retry would then be false.
     private func deleteServerData() {
         guard BackendServices.client != nil else { return }
         backendDataDeletionError = nil
         Task {
-            if !(await state.deleteBackendData()) {
-                backendDataDeletionError = "couldn't delete your server data. reconnect, then disconnect again."
+            if !(await state.deleteBackendData()), PendingBackendDeletion.isPending() {
+                backendDataDeletionError = "couldn't reach smooth \u{00B7} will retry"
             }
         }
     }
@@ -694,6 +735,42 @@ struct SettingsPage: View {
                 showStayLoggedInSheet = true
             }
         }
+    }
+
+    /// Whether the accounts section offers "save pennkey": Canvas is connected
+    /// at Penn and no PennKey is on file. Pure so a test can pin it.
+    ///
+    /// The password vault used to be reachable from exactly one place, the
+    /// "update password" button, and that appears only after Penn has
+    /// rejected a password that was saved. A student who skipped or lost the
+    /// save (the automatic one after a Canvas sign-in can fail, and says so
+    /// once) had no way to put a PennKey back, so every Duo-free renewal was
+    /// off for good. Penn only, because the sheet asks for a PennKey and no
+    /// other school may ever see it. The wrong fix is to show it whenever
+    /// `autoLoginDisabledReason` is set: a rejection already has its own row,
+    /// and a missing credential is a different state.
+    nonisolated static func showsSavePennKey(
+        installation: CanvasInstallation,
+        isCanvasConnected: Bool,
+        credentialSaved: Bool
+    ) -> Bool {
+        installation.id == CanvasInstallation.penn.id && isCanvasConnected && !credentialSaved
+    }
+
+    @ViewBuilder
+    private var savePennKeyRow: some View {
+        if let saved = pennKeyCredentialSaved,
+           Self.showsSavePennKey(installation: state.canvasInstallation,
+                                 isCanvasConnected: state.isCanvasConnected,
+                                 credentialSaved: saved) {
+            Button("save pennkey") {
+                showStayLoggedInSheet = true
+            }
+        }
+    }
+
+    private func refreshPennKeyCredentialSaved() {
+        pennKeyCredentialSaved = PennKeyCredentialStore.hasCredentials
     }
 
     /// One tappable source row. Its trailing status says what is true; tapping

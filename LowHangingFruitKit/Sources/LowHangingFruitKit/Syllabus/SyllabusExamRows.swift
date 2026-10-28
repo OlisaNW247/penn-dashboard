@@ -66,6 +66,9 @@ public enum SyllabusExamRows {
         referenceDate: Date,
         calendar: Calendar = .current
     ) -> [Assignment] {
+        // Gregorian whatever the phone is set to (`Calendar.gregorian(matching:)`);
+        // the extractor and `ExamDate.day(in:)` read years off the page.
+        let calendar = Calendar.gregorian(matching: calendar)
         let readable = documents
             .compactMap { document -> (rank: Int, document: CourseDocument)? in
                 guard let rank = kindOrder.firstIndex(of: document.kind),
@@ -211,6 +214,7 @@ public enum SyllabusExamRows {
         referenceDate: Date,
         calendar: Calendar
     ) -> [Assignment] {
+        let calendar = Calendar.gregorian(matching: calendar)
         guard !profiles.isEmpty,
               let cutoff = calendar.date(byAdding: .day, value: -SyllabusExamExtractor.staleAfterDays, to: referenceDate)
         else { return [] }

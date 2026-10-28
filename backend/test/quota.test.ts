@@ -5,9 +5,12 @@ import {
   lookupUsageCounts,
   nextUTCMidnight,
   nextUTCMonthStart,
+  NO_LEASE,
   quotaDecision,
   recordUsage,
+  reserveUsage,
   type RPCClientLike,
+  settleUsage,
   type UsageLookup,
 } from "../supabase/functions/_shared/quota.ts";
 
@@ -265,4 +268,179 @@ Deno.test("recordUsage: never throws and returns promptly when the rpc hangs pas
   const started = Date.now();
   await recordUsage(client, "user-1", 10, 20, 50);
   assert.ok(Date.now() - started < 2000);
+});
+
+// ---------------------------------------------------------------------
+// reserveUsage / settleUsage / UsageLease (hardening BE-C)
+//
+// The reservation is one RPC that checks and charges together
+// (`reserve_ask_usage`), and a lease settles it exactly once afterwards.
+// The SQL half is pinned by test/rls.test.sql; these pin the client half:
+// what is sent, how each answer is read, and that every way the call can
+// fail leaves the request running (fail open) rather than refused.
+// ---------------------------------------------------------------------
+
+type Recorded = { fn: string; params: Record<string, unknown>; signal?: AbortSignal };
+
+/** A fake service client that answers per function name and records every
+ *  call, so a test can assert both what came back and what was sent. */
+function recordingClient(
+  answers: Record<string, RPCOutcome>,
+): { client: RPCClientLike; calls: Recorded[] } {
+  const calls: Recorded[] = [];
+  const client: RPCClientLike = {
+    rpc(fn: string, params: Record<string, unknown>) {
+      const call: Recorded = { fn, params };
+      calls.push(call);
+      return {
+        abortSignal(signal: AbortSignal) {
+          call.signal = signal;
+          const outcome = answers[fn] ?? { kind: "resolve", data: null, error: null };
+          switch (outcome.kind) {
+            case "resolve":
+              return Promise.resolve({ data: outcome.data, error: outcome.error });
+            case "reject":
+              return Promise.reject(outcome.error);
+            case "hang":
+              return new Promise(() => {});
+          }
+        },
+      };
+    },
+  };
+  return { client, calls };
+}
+
+const GRANTED_ROW = { allowed: true, reserved_day: "2026-01-15", today_requests: 5, month_requests: 900 };
+
+Deno.test("reserveUsage: sends the user, the daily limit and the monthly limit, and grants with a live lease", async () => {
+  const { client, calls } = recordingClient({ reserve_ask_usage: { kind: "resolve", data: [GRANTED_ROW], error: null } });
+  const reservation = await reserveUsage(client, "user-1", { dailyLimit: 40, monthlyGlobalLimit: 100000 }, NOON_JAN_15);
+  assert.equal(reservation.status, "granted");
+  assert.equal((reservation as { degraded: boolean }).degraded, false);
+  assert.notEqual((reservation as { lease: unknown }).lease, NO_LEASE);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, "reserve_ask_usage");
+  assert.deepEqual(calls[0].params, { p_user_id: "user-1", p_daily_limit: 40, p_monthly_global_limit: 100000 });
+});
+
+Deno.test("reserveUsage: reads a single-object response as well as PostgREST's array", async () => {
+  const { client } = recordingClient({ reserve_ask_usage: { kind: "resolve", data: GRANTED_ROW, error: null } });
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+  assert.equal(reservation.status, "granted");
+  assert.equal((reservation as { degraded: boolean }).degraded, false);
+});
+
+Deno.test("reserveUsage: denied at the daily limit resets at the next UTC midnight", async () => {
+  const { client } = recordingClient({
+    reserve_ask_usage: {
+      kind: "resolve",
+      data: [{ allowed: false, reserved_day: "2026-01-15", today_requests: 40, month_requests: 500 }],
+      error: null,
+    },
+  });
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+  assert.equal(reservation.status, "denied");
+  assert.equal((reservation as { resetAt: Date }).resetAt.toISOString(), "2026-01-16T00:00:00.000Z");
+});
+
+Deno.test("reserveUsage: denied at the monthly limit alone resets on the first of next month", async () => {
+  const { client } = recordingClient({
+    reserve_ask_usage: {
+      kind: "resolve",
+      data: [{ allowed: false, reserved_day: "2026-01-15", today_requests: 3, month_requests: 100000 }],
+      error: null,
+    },
+  });
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+  assert.equal(reservation.status, "denied");
+  assert.equal((reservation as { resetAt: Date }).resetAt.toISOString(), "2026-02-01T00:00:00.000Z");
+});
+
+Deno.test("reserveUsage: fails open on an rpc error, a rejection and a malformed answer, with no lease to settle", async () => {
+  const answers: RPCOutcome[] = [
+    { kind: "resolve", data: null, error: { message: "Gateway Timeout" } },
+    { kind: "reject", error: new Error("network down") },
+    { kind: "resolve", data: [], error: null },
+    { kind: "resolve", data: [{ today_requests: 1 }], error: null },
+    // Granted, but with no day a settle could target.
+    { kind: "resolve", data: [{ allowed: true, today_requests: 1, month_requests: 1 }], error: null },
+  ];
+  for (const outcome of answers) {
+    const { client, calls } = recordingClient({ reserve_ask_usage: outcome });
+    const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+    assert.equal(reservation.status, "granted");
+    assert.equal((reservation as { degraded: boolean }).degraded, true);
+    const lease = (reservation as { lease: { settle(a: number, b: number): Promise<void>; release(): Promise<void> } }).lease;
+    await lease.settle(10, 10);
+    await lease.release();
+    assert.equal(calls.length, 1, "an unmetered request has nothing to settle, so no second rpc");
+  }
+});
+
+Deno.test("reserveUsage: fails open within the deadline when the rpc hangs, and aborts it (quota fails open at 1.5 s)", async () => {
+  const { client, calls } = recordingClient({ reserve_ask_usage: { kind: "hang" } });
+  const started = Date.now();
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15, 50);
+  assert.ok(Date.now() - started < 2000);
+  assert.equal(reservation.status, "granted");
+  assert.equal((reservation as { degraded: boolean }).degraded, true);
+  assert.equal(calls[0].signal?.aborted, true);
+});
+
+Deno.test("the lease settles tokens once, against the day the reservation was made", async () => {
+  const { client, calls } = recordingClient({ reserve_ask_usage: { kind: "resolve", data: [GRANTED_ROW], error: null } });
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+  const lease = (reservation as { lease: { settle(a: number, b: number): Promise<void>; release(): Promise<void> } }).lease;
+  await lease.settle(120, 45);
+  await lease.settle(999, 999);
+  await lease.release();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].fn, "settle_ask_usage");
+  assert.deepEqual(calls[1].params, {
+    p_user_id: "user-1",
+    p_day: "2026-01-15",
+    p_prompt_tokens: 120,
+    p_completion_tokens: 45,
+    p_refund: false,
+  });
+});
+
+Deno.test("the lease gives the request back once, and never after it was settled", async () => {
+  const { client, calls } = recordingClient({ reserve_ask_usage: { kind: "resolve", data: [GRANTED_ROW], error: null } });
+  const reservation = await reserveUsage(client, "user-1", LIMITS, NOON_JAN_15);
+  const lease = (reservation as { lease: { settle(a: number, b: number): Promise<void>; release(): Promise<void> } }).lease;
+  await lease.release();
+  await lease.release();
+  await lease.settle(5, 5);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].params.p_refund, true);
+  assert.equal(calls[1].params.p_prompt_tokens, 0);
+
+  const second = recordingClient({ reserve_ask_usage: { kind: "resolve", data: [GRANTED_ROW], error: null } });
+  const settledFirst = (await reserveUsage(second.client, "user-1", LIMITS, NOON_JAN_15)) as {
+    lease: { settle(a: number, b: number): Promise<void>; release(): Promise<void> };
+  };
+  await settledFirst.lease.settle(1, 1);
+  await settledFirst.lease.release();
+  assert.equal(second.calls.length, 2, "a release after a settle must not refund");
+  assert.equal(second.calls[1].params.p_refund, false);
+});
+
+Deno.test("settleUsage: never throws, whatever the rpc does, and returns promptly when it hangs", async () => {
+  await settleUsage(recordingClient({ settle_ask_usage: { kind: "resolve", data: null, error: { message: "write failed" } } }).client, "u", "2026-01-15", 1, 1, false);
+  await settleUsage(recordingClient({ settle_ask_usage: { kind: "reject", error: new Error("network down") } }).client, "u", "2026-01-15", 1, 1, true);
+  const started = Date.now();
+  await settleUsage(recordingClient({ settle_ask_usage: { kind: "hang" } }).client, "u", "2026-01-15", 1, 1, false, 50);
+  assert.ok(Date.now() - started < 2000);
+});
+
+Deno.test("settleUsage: negative, fractional and NaN token counts are sent as non-negative integers", async () => {
+  const { client, calls } = recordingClient({});
+  await settleUsage(client, "u", "2026-01-15", -5, 12.9, false);
+  await settleUsage(client, "u", "2026-01-15", Number.NaN, Number.POSITIVE_INFINITY * 0, false);
+  assert.equal(calls[0].params.p_prompt_tokens, 0);
+  assert.equal(calls[0].params.p_completion_tokens, 12);
+  assert.equal(calls[1].params.p_prompt_tokens, 0);
+  assert.equal(calls[1].params.p_completion_tokens, 0);
 });

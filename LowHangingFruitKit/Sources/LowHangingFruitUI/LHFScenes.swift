@@ -10,7 +10,9 @@ import AppKit
 /// macOS menu-bar extra both read and drive the same state instead of each
 /// holding a private copy. `App/LHFApp.swift` just presents `LHFScenes()`.
 public struct LHFScenes: Scene {
-    @StateObject private var state = AppState()
+    // `makeLive` records the state for the background wake
+    // (`LiveAppStateRegistry`): one ledger store per process.
+    @StateObject private var state = LiveAppStateRegistry.shared.makeLive()
     @StateObject private var scheduler = NotificationScheduler()
 
     public init() {}

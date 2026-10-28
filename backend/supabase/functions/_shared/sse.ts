@@ -58,23 +58,44 @@ export function encodeSSEEvent(event: SSEEvent): Uint8Array {
  * primary error path: `ask/index.ts` is what decides *when* an error is a
  * plain JSON response (nothing streamed yet) versus a mid-stream `error`
  * event, because only it knows whether any `delta` has gone out yet.
+ *
+ * When the client goes away, the runtime cancels the body. That used to
+ * mean nothing at all: the loop kept pulling from `events`, `enqueue` threw
+ * on the dead stream, the `catch` below tried to enqueue again and threw
+ * again, and the generator behind `events` only learned about it on its
+ * next yield, which for a stalled upstream is never, so the model call ran
+ * on and the request was never charged. Now `cancel` records the fact and
+ * calls `onCancel`, which is how the caller aborts its upstream request,
+ * and the loop stops enqueuing, leaves `events` (which runs its `finally`),
+ * and does not touch the closed stream.
  */
-export function streamResponse(events: AsyncIterable<SSEEvent>): Response {
+export function streamResponse(
+  events: AsyncIterable<SSEEvent>,
+  options: { onCancel?: () => void } = {},
+): Response {
+  let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         for await (const event of events) {
+          if (cancelled) break;
           controller.enqueue(encodeSSEEvent(event));
         }
       } catch (_err) {
-        controller.enqueue(encodeSSEEvent({
-          type: "error",
-          code: "upstream",
-          message: "the stream ended unexpectedly",
-        }));
+        if (!cancelled) {
+          controller.enqueue(encodeSSEEvent({
+            type: "error",
+            code: "upstream",
+            message: "the stream ended unexpectedly",
+          }));
+        }
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
+    },
+    cancel() {
+      cancelled = true;
+      options.onCancel?.();
     },
   });
 

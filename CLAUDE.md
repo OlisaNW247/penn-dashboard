@@ -59,7 +59,11 @@ shares completions, due-date edits, their own tasks and the work list
 with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
 goes from the laptop's screen to the phone's camera and never to the
 server); the server stores ciphertext it cannot read. Name, reminder
-settings and grades are never in it. The
+settings and grades are never in it. Backend requests carry the app's
+marketing version (`X-Smooth-Version`, since 2026-10-27) so the server can
+refuse builds below the update floor; it is the same for every copy of a
+release. The feedback card and Profile row (3.3.0) open a
+Google Form in Safari; the app adds nothing to the link. The
 PennKey password is saved automatically (since 2026-10-23) after a verified
 Penn Canvas sign-in inside the app's own login page, with a one-line
 disclosure above that page; it stays in this phone's Keychain
@@ -150,9 +154,14 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.2.0 (build 14)** (App Store
-id `6783911002`), per Olisa on 2026-10-25; **3.2.1 (build 15)** was
-submitted for review by Olisa on 2026-10-25. Before them, **3.1.0 (build
+**Release state.** Live on the App Store: **3.3.0 (build 16)** (App Store
+id `6783911002`), released 2026-10-27 at 22:37 UTC per the public iTunes
+lookup, read 2026-10-28. It still carries the launch crash recorded in
+`docs/LAUNCH_CRASH_2026-10-26.md` (Known gaps) and the notification-tap
+crash; **3.3.1 (17)** from `release/3.3.1` fixes both. Before it, **3.2.1
+(build 15)**, released 2026-10-25 at 18:46 UTC, the build the launch-day
+installs of 2026-10-26 got. Before it, **3.2.0 (build
+14)**, live per Olisa on 2026-10-25. Before them, **3.1.0 (build
 13)**, released 2026-10-21 at 19:07 UTC per the public iTunes lookup, read
 2026-10-23
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`); before it,
@@ -186,12 +195,16 @@ a `sync` carrying them is deployed (v14 or later; v13 is the NUL guard
 alone, see below) (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
+**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Olisa created the 3.3.0 version record, attached build 16 and submitted it for review on 2026-10-27, per his word that day; it was approved and **released at 22:37 UTC on 2026-10-27** (public iTunes lookup, read 2026-10-28), so **3.3.0 (16) is what is live**. It carries neither the duplicate-category launch-crash fix nor the notification-tap crash fix: both ship in **3.3.1 (17)** from `release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`), which lands in `v8` through PR #14. The live manifest has carried the feedback object (`2026-10-smoothie`) since the same day, checked against the sanitizer's rules; builds below 3.3.0 ignore it.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
-archived. The `update-manifest` floor is **3.2.0** since
-2026-10-25 (`feec931`, at Olisa's word, once 3.2.0 was live; it had been
-1.2.1 since 2026-09-09), so every gated build below 3.2.0 shows the update
-wall. Raise it to 3.2.1 only once 3.2.1 is downloadable, and only at
-Olisa's word. Marco's
+archived. The `update-manifest` floor is **3.3.0** since 08:52 UTC on
+2026-10-28 (`f133993`, the `update-floor` workflow's automatic run, about
+ten hours after 3.3.0 went live rather than six). Before that it was 3.2.1
+from 2026-10-27 (`9a49cc5`, the workflow's first real run, at Olisa's
+word), 3.2.0 from 2026-10-25 (`feec931`) and 1.2.1 from 2026-09-09. Every
+gated build below 3.3.0 shows the update wall, so until 3.3.1 is live every
+student is held on the build with the launch crash. From here the workflow raises it on each
+release (Update gate, below). Marco's
 read of the public iTunes lookup on 2026-10-08
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
 (build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to
@@ -278,7 +291,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     the session is dead ("reconnect canvas", "duo needs you", or "pennkey
     password rejected"), and, since 2026-10-10, "not saving on this
     phone" when the ledger is running in memory or its last save failed
-    (`StorageHealth`; never in preview or demo mode).
+    (`StorageHealth`; never in preview or demo mode). Since 2026-10-27
+    tapping the Canvas banner opens the sign-in as a cover over the
+    dashboard, with an xmark to close it; it no longer restarts
+    onboarding (the lock-out trap below). A "reconnect gradescope" banner
+    (since 2026-10-27, hardening A4) appears only after a real login page
+    was seen on two syncs an hour apart, and opens the same cover.
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
@@ -615,6 +633,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
+  - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
+    mockup): under the header, a one-time card ("how's smooth so far?" /
+    "takes 2 minutes.", grape speech bubble, ×) styled like the update
+    banner (`FeedbackNoticeCard.swift`). Tap opens the form in Safari, ×
+    dismisses; either marks the notice's id handled in `UserDefaults.lhf`
+    (`lhf.feedbackNoticeHandled.<id>`), so it never returns, and a new id
+    shows again. It exists only while the update manifest carries a
+    `feedback` object (`FeedbackNotice`, sanitized: https to
+    `docs.google.com` or `forms.gle` only), never in preview or demo,
+    during onboarding or behind the update wall. Remove the object from
+    `lhf-update.json` to stop it without a release. The link carries
+    nothing about the student.
   - **Turned in** (how a card knows, read from the code on 2026-10-18).
     A card is done when the student swiped it; when Canvas's grades fetch
     reports its assignment submitted (`submittedCanvasAssignmentIDs`,
@@ -685,7 +715,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
      only when Penn rejected a saved PennKey password; "sign in to
      canvas" under the canvas row when Canvas is connected with no saved
-     login, since 2026-10-18). The sign-in health lines and the "ed
+     login, since 2026-10-18; since 2026-10-27 every reconnect row opens
+     the sign-in as a cover over the dashboard, never the first-run
+     walk; a "save pennkey" row while Penn is connected with no saved
+     password; "couldn't reach smooth · will retry" while a disconnect's
+     server deletion is still pending). The sign-in health lines and the "ed
      discussion" status row that `v8` added here were taken off the page
      on 2026-10-10 ("a whole yap about Canvas", Marco), moved into one
      collapsed "sign-in diagnostics" disclosure, and on 2026-10-18 put
@@ -897,6 +931,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
+  8. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
+     opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
+     or the live notice's link when the manifest carries one)
 
   `ProfileSemesterSection` (semester rollover, "add a class") exists but
   is only reachable from its `#Preview`; `VisualStructureTests` forbids
@@ -1104,7 +1141,11 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
+**Current: 3373 tests / 322 suites on `release/3.3.1` (the three-way merge of `fix/duplicate-category-ids`, `origin/v8` and `claude/sharp-newton-qwv18v`, plus the notification-tap crash fix; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** Deno: 614 tests, `deno task check` green. iOS Simulator and device Debug builds of the same tree succeeded; the device build (3.3.1 (17)) was installed on Marco's phone that evening, launched, refreshed once, and left no crash report. Before that: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
+
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
+**Current: 2933 tests / 264 suites, all green, on `claude/sharp-newton-qwv18v` at `3c23d9d` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 13.4 s), first run: the feedback card and Profile row of 3.3.0 (16), +19 tests and +2 suites (`FeedbackNoticeTests`), nothing lost. The iOS Debug build of the same tree (widget included) succeeded the same run.**
+Before it: **2914 tests / 262 suites, all green, on `claude/sharp-newton-qwv18v` at `c6d404b` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.3 s), second run.** The first run (`99d4006`, 17.7 s) failed one test, `AskCitationLinkTests` "the encoded request is byte-identical…", whose golden string `aeaf982` (2026-10-25, blind) re-typed with a bare `/` where `JSONEncoder` writes `\/`; `c6d404b` fixed the string. These runs are the first compile of the 2026-10-25 tree-plan work and of the update lock (`f89d908`, seven new `UpdateGateStoreTests`). The iOS Debug build of the same tree (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`, widget included) succeeded on Olisa's Mac the same day.
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
@@ -1577,8 +1618,35 @@ and because GitHub's web UI can edit it from a phone, which is the only way to
 lift a bad block.
 
 `minimumVersion` and `latestVersion` are kept **equal** — every release is
-mandatory, so `UpdateAvailableBanner` never fires in practice. Bump both on each
-release, but **only once the new build is actually downloadable**. A floor above
+mandatory, so `UpdateAvailableBanner` never fires in practice. **Since
+2026-10-27 nobody bumps them by hand.** `.github/workflows/update-floor.yml`
+(script and tests in `scripts/update-floor/`; `node --test
+"scripts/update-floor/*.test.mjs"`) asks Apple's public lookup every 30 minutes
+and raises both to the live version once it has been live six hours. It never
+lowers the floor and writes nothing on an odd lookup. It only runs from the
+default branch, `main`. To pause it (a new build crashes), set the repository
+variable `UPDATE_FLOOR_HOLD` to `true`; set it **before** hand-lowering the
+floor, or the next run raises it straight back. It was written because
+students were still on builds below 3.2.0 after the floor was raised by hand
+on 2026-10-25.
+
+The manifest may also carry an optional `feedback` object (3.3.0+, the
+dashboard's feedback card, What the app does). It is decoded with `try?` so
+a bad one can never cost `minimumVersion`, and older builds ignore the key.
+
+The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
+only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
+are gone), the store clears pending and delivered notifications, and writes
+`lhf.updateRequired` so the widget shows "update smooth". Backend functions
+refuse a present `X-Smooth-Version` below the floor with 426
+(`backend/supabase/functions/_shared/version.ts`, fail open);
+`LHF_REQUIRE_VERSION_HEADER=true` also refuses requests with no header, and
+should be set only once the floor is at or above the first build that sends
+it. `delete-account` is never gated, and functions the Chrome extension calls
+never require the header. The macOS menu-bar extra (`LHFScenes`) is outside
+`RootCore` and keeps syncing behind the wall: a known gap.
+
+The floor must never be above what is actually downloadable. A floor above
 what the App Store will serve is the one unrecoverable mistake here: the wall's
 button leads to a version that still fails the check, and everyone is stuck. The
 30-day ceiling in `UpdatePolicyCache` only rescues people who are offline.
@@ -1846,6 +1914,70 @@ itself.
 
 ## Traps that have already bitten
 
+- **Two `swift test` runs at once share one scratch defaults domain, and a
+  run killed half-way poisons the next one.** Under the test runner
+  `UserDefaults.lhf` lands in the `swiftpm-testing-helper` domain on the
+  Mac, one domain for every worktree. On 2026-10-27 seven worktrees were
+  testing at once; a usage-limit cutoff killed several runs mid-suite,
+  and from then on `ProfileTabTests` and `SyllabusExamDashboardTests`
+  failed in a third worktree, in isolation, with another suite's course
+  preferences (`ADDU 1200`, `SYLDASH 96xx`) and a flipped announcement
+  switch left behind. The in-process guards (scratch suites, backup and
+  restore) cannot see another process. The tells: a failure naming a
+  course code from a different test file, and `defaults read
+  swiftpm-testing-helper coursePreferences` showing fixture names. Fix:
+  wait until `pgrep -f LowHangingFruitKitPackageTests` is empty, run
+  `defaults delete swiftpm-testing-helper`, then test again; and never
+  trust a full run that overlapped another worktree's. The wrong fix is
+  editing the failing test to tolerate the leak.
+- **A persisted "onboarding not done" flag is a lock-out, not a
+  navigation state.** `restartOnboarding(for: .canvas)` used to write
+  `hasCompletedOnboarding = false` to disk so `RootView` would show the
+  sign-in walk, and the walk's Canvas step had only a back chevron to
+  the school picker. A student who tapped "reconnect canvas" with no
+  signal, without their Duo phone, or who force-quit mid-login woke up
+  on the first-run walk on every relaunch, their ledger intact but
+  unreachable. Four auditors found it independently on 2026-10-25
+  (hardening plan A2). Since 2026-10-27 a reconnect from the banner,
+  Profile → accounts or the grades screen is a memory-only
+  `isReconnecting` cover over the dashboard (`fullScreenCover` on iOS, a
+  sheet on macOS) with an xmark close on every step, and a force-quit
+  lands on the dashboard; only "start over" (`.full`) still clears the
+  flag, and preview mode still takes the old root swap. The wrong fixes:
+  a skip on the first-run Canvas step, which must stay required, and
+  removing the preview link, which is App Review's only way in. Two
+  tells for next time: a flag another launch reads must never be
+  written to express where the UI is right now; and a cover that keeps
+  the dashboard mounted must re-run whatever the old root swap re-ran on
+  remount (here `refreshSessionSourcesAtLaunch`, from
+  `.onChange(of: isReconnecting)`), or the reconnect looks done and
+  nothing refreshes until the next five-minute tick.
+- **A slug built from outside names is not a unique key, and
+  `Dictionary(uniqueKeysWithValues:)` turns the first collision into a
+  crash.** `GradeCategoryMapBuilder.mirroringCanvas` gave every Canvas
+  assignment group the id `"map:" + slug(name)`, where the slug is the
+  lowercased alphanumeric runs of the name, and `GradeEngine` keyed
+  `Dictionary(uniqueKeysWithValues:)` on it. Two groups named "Homework"
+  and "homework", or "Quiz (EC)" and "Quiz - EC", or the two
+  "Assignments" groups a Canvas course copy leaves behind, share an id,
+  and the dictionary traps. The automatic sync runs the grade fetch at
+  launch for every selected course, in Release, with the grades UI
+  hidden, and `recordHistory → breakdown` runs the engine on the result:
+  so the app died a few seconds after every open, for every student in
+  such a course, with nothing on screen and no way to reinstall out of
+  it. It shipped in every build since Grade Watcher existed and was
+  found by the 2026-10-25 audit the day before the 2026-10-26 launch made
+  it visible (`docs/LAUNCH_CRASH_2026-10-26.md`). The tells: a crash
+  that follows the dashboard by a few seconds, is per course rather than
+  per phone, and survives a reinstall. Two wrong fixes: dropping one of
+  the colliding groups (its weight and items vanish from the grade,
+  silently), and changing the id scheme for everyone (student edits and
+  the server's suggested mappings are persisted keyed on the bare id, so
+  a non-colliding name must keep exactly `"map:" + slug`). The right
+  shape: suffix only the collision with the Canvas group id, and make
+  every dictionary keyed on Canvas, Gradescope, syllabus or server ids
+  first-wins (`uniquingKeysWith:`), because a trap on outside data is
+  never the right failure mode.
 - **Canvas answers 401 for "not allowed", not only for "signed out".**
   On 2026-10-23 the owner paired the Chrome extension, sync worked both
   ways, and 40 minutes later the collector had uploaded nothing. Every
@@ -2531,6 +2663,20 @@ itself.
   day: the saved password was on file and worked, and the Canvas Student
   app (installed, 8.12.1) did not take the hidden renewer's return hop.
   Penn's app-association file now claims only `/canvas/login`.
+  **Fixed at read time on 2026-10-27** (hardening plan A3, on
+  `fix/duplicate-category-ids`): `SessionCookieStore.load` runs its old
+  per-cookie pass and then `gatedOnLiveSession`: a Canvas set that once
+  held a session-named cookie (`canvas_session`, `_normandy_session`)
+  and has none fresh reads empty, so `isExpired` trips and renew-on-open
+  runs; a set that never held one keeps the old rule, so an unknown
+  school is never read as signed out; a fresh session cookie returns the
+  whole set, analytics included. The harvests still save `_ga` on
+  purpose (Olisa's `39b2fff` code, untouched), because the gate heals
+  sets already on students' phones and a harvest filter never would. One
+  tell above has moved: `debugRenewalLogV1`'s "still fresh" count is now
+  taken after the gate, so a polluted phone reads 0 there, and the
+  `-LHFSessionDiagnostics` lines, which now mark session cookies with
+  `| session`, are what to read. Not yet run on a phone.
 - **Nothing under `backend/` can be exercised from `swift test`**; run its deno
   tests separately (`cd backend && deno task test`, `deno task check`).
   `BackendServices.client` is nil under tests and in an unconfigured build, so
@@ -2557,6 +2703,22 @@ itself.
   ids. The fix was to pick one of each, and give the survivor what the
   other had that it lacked. The wrong fix is keeping both "for safety".
   Grep the diff of each side for the same noun before merging.
+- **The async `didReceive` delegate form calls iOS's completion on the
+  cooperative thread, and UIKit aborts.** Every tap on a Smooth notification
+  (a reminder, a loud buzz, one of its buttons) killed the app: five crash
+  reports read off Marco's phone on 2026-10-27, dated 2026-10-19 to 10-26,
+  builds 12, 13 and 14. The tell is an `.ips` with `SIGABRT` (not
+  `EXC_BREAKPOINT`) whose triggered thread is
+  `com.apple.root.user-initiated-qos.cooperative`, running `@objc closure #1
+  in NotificationResponseDelegate.userNotificationCenter(_:didReceive:)` into
+  `_updateSnapshotAndStateRestorationWithAction`, which asserts it is on the
+  main thread. The async form's thunk calls the completion handler wherever
+  the async body ends, a cooperative-pool thread. Fixed on `release/3.3.1`
+  with the completion-handler form, calling `completionHandler()` at the end
+  of one `Task { @MainActor in }`. The wrong fixes: marking the method
+  `@MainActor` (iOS calls it off-main, so Swift 6 kills it on entry, the
+  background-refresh trap) and keeping the async form while hopping inside
+  it (the thunk's completion still runs on the cooperative thread).
 
 ## Conventions
 
@@ -2615,6 +2777,39 @@ none is a ship line.
 
 ## Known gaps
 
+- **3.2.1 (15), the live build, crashes a few seconds after every open for
+  any student in a course whose Canvas assignment groups have two names
+  that slug alike** ("Homework" and "homework", two "Assignments" groups
+  in a recycled site). Reported on launch day, 2026-10-26, by several of
+  the few hundred people who installed that day, and by a few before.
+  Traced in the code (the slug trap below) to hardening plan item A1; the
+  fix is on `fix/duplicate-category-ids` for 3.2.2 (16).
+  `docs/LAUNCH_CRASH_2026-10-26.md` is the record and the plan. **Not yet
+  proven from a crash report**: Xcode's Organizer needs Marco's Apple ID
+  signed in before it lists App Store users' crashes, and no affected
+  phone has been read. Treat the first `.ips` that arrives as the proof,
+  and look for `EXC_BREAKPOINT` inside `GradeEngine`.
+- **The hardening groups of 2026-10-27 have not run on a phone.** Every
+  item from `docs/HARDENING_PLAN_2026-10-25.md` that landed on
+  `fix/duplicate-category-ids` that day (Release A remainder, Release B,
+  Release C, the Kit hardening, the backend track) is compiled, tested
+  and reviewed, and none of it has been watched on a device.
+  `docs/WHAT_CHANGED_3.2.2.md` lists every change with what to look at
+  on the phone; the backend commits are not deployed (Olisa's go, with
+  the checklist in that file).
+- **The feedback card and Profile row (3.3.0) are compiled but not seen on
+  a phone** (2026-10-27: 2933/264 green and the iOS Debug build succeeded
+  on Olisa's Mac at `3c23d9d`). Not yet watched: the card appearing once
+  the live manifest carries a `feedback` object, × and tap both keeping it
+  away for good, and the Profile row opening the form in Safari.
+- **The hardened update lock (2026-10-27) is compiled but not seen on a
+  phone.** `swift test --no-parallel` (2914/262 green) and the iOS Debug
+  build, widget included, both passed on Olisa's Mac the same day. Not yet
+  watched: the wall replacing the app with a sheet open, notifications
+  cleared, the widget's "update smooth" view (build with
+  `MARKETING_VERSION=1.0.0` to see the wall for real). The `update-floor` workflow has not run against the real App Store
+  lookup yet (the container cannot reach Apple), and the backend version
+  check is not deployed.
 - **A class's Ed posts can vanish from the phone and come back**
   (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
   over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620
@@ -3175,9 +3370,11 @@ none is a ship line.
 - **Stay signed in is fragile in 3.0.0 (11), the live build** (Marco's
   phone, 2026-10-08: the refresh banner sometimes clears by itself and
   sometimes stays). Three causes, the first proven on the device and the
-  other two read from the code, none fixed yet (`ROADMAP.md` → Now):
+  other two read from the code (`ROADMAP.md` → Now); the first is fixed
+  on `fix/duplicate-category-ids` (2026-10-27, A3) but not yet run on a
+  phone, the other two are not fixed:
   1. The 24-hour trigger is off on a phone with a saved analytics cookie
-     (the trap above).
+     (the trap above, and its fix at read time).
   2. Any silent attempt that fails to finish is recorded as "confirmed
      dead" and raises the banner: a network error (`SettleWaiter`'s
      `.failed` falls through to `.landedOnLoginPage`), the 30-second cap,

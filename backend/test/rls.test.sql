@@ -1,16 +1,22 @@
--- Proves the RLS policies and the two ask_usage functions in
+-- Proves the RLS policies, the grants on the usage functions and the
+-- tables, and the ask_usage functions in
 -- supabase/migrations/20260907000000_init.sql, plus the course-website
 -- tables added by 20260907180000_websites.sql, behave as PROTOCOL.md
 -- requires. Run against a scratch database after local_auth_stub.sql and
--- every migration in order:
+-- every migration in order, as ONE role throughout (the stub's default
+-- privileges apply to the role that runs it, and must be the role that
+-- then creates the objects, as `postgres` is on a real project):
 --
 --   psql ... -f test/local_auth_stub.sql
---   psql ... -f supabase/migrations/20260907000000_init.sql
---   psql ... -f supabase/migrations/20260907120000_catalog.sql
---   psql ... -f supabase/migrations/20260907180000_websites.sql
---   psql ... -f supabase/migrations/20261002090000_ed_kind.sql
---   psql ... -f supabase/migrations/20261022090000_chrome_extension.sql
+--   for f in supabase/migrations/*.sql; do psql ... -v ON_ERROR_STOP=1 -f "$f"; done
 --   psql ... -v ON_ERROR_STOP=1 -f test/rls.test.sql
+--
+-- The stub reproduces Supabase's default privileges (every new object in
+-- `public` is granted to anon, authenticated and service_role). Without
+-- that, the "authenticated cannot call the usage functions" checks below
+-- could pass against a schema that was wide open on a real project, because
+-- a bare Postgres has only the PUBLIC grant a migration's `revoke ... from
+-- public` removes. See 20261027090000_revoke_usage_functions.sql.
 --
 -- Every check is a `DO $$ ... RAISE EXCEPTION ... $$` block so a failure
 -- aborts the script with a nonzero exit and a message naming what failed,
@@ -438,6 +444,420 @@ begin
 end $$;
 
 rollback;
+
+-- The same refusal for `anon` (an unauthenticated caller with only the
+-- publishable key), and for `record_ask_outcome`, which was exposed the same
+-- way as the two usage functions.
+begin;
+set local role anon;
+select set_config('request.jwt.claims', '', true);
+
+do $$
+begin
+  begin
+    perform public.record_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1::bigint, 1::bigint);
+    raise exception 'anon was able to call record_ask_usage directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    perform public.ask_usage_counts('11111111-1111-1111-1111-111111111111'::uuid);
+    raise exception 'anon was able to call ask_usage_counts directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+do $$
+begin
+  begin
+    perform public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+    raise exception 'anon was able to call record_ask_outcome directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+
+do $$
+begin
+  begin
+    perform public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+    raise exception 'authenticated was able to call record_ask_outcome directly -- grant hole';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+-- is_enrolled is the one function the API roles are meant to be able to
+-- run (RLS policies call it as `authenticated`).
+do $$
+begin
+  perform public.is_enrolled('100');
+end $$;
+
+rollback;
+
+-- The service role still can: the Edge Functions run as it.
+set role service_role;
+select public.record_ask_outcome('11111111-1111-1111-1111-111111111111'::uuid, 'm', 'answered');
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.ask_outcomes where model = 'm' and outcome = 'answered';
+  if n <> 1 then
+    raise exception 'expected service_role to record exactly 1 ask_outcomes row, saw %', n;
+  end if;
+end $$;
+reset role;
+
+-- reserve_ask_usage / settle_ask_usage (20261027100000_reserve_ask_usage.sql):
+-- the check and the charge are one statement, so a request over the limit
+-- never gets a reservation and a refused request never moves the counter.
+-- (Real parallelism cannot be shown from one psql session; what is shown
+-- here is the outcome of the single statement that makes it safe: the
+-- increment happens only `where requests < limit`.)
+set role service_role;
+insert into auth.users (id) values
+  ('44444444-4444-4444-4444-444444444444'),
+  ('55555555-5555-5555-5555-555555555555');
+
+do $$
+declare
+  r record;
+  i int;
+begin
+  for i in 1..3 loop
+    select * into r from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+    if not r.allowed or r.today_requests <> i then
+      raise exception 'reservation % of 3 should be allowed with today_requests=%, got allowed=% today=%', i, i, r.allowed, r.today_requests;
+    end if;
+    if r.reserved_day <> (now() at time zone 'utc')::date then
+      raise exception 'reserved_day should be today UTC, got %', r.reserved_day;
+    end if;
+  end loop;
+
+  -- Over the limit: refused, and refusing does not move the counter.
+  for i in 1..2 loop
+    select * into r from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+    if r.allowed or r.today_requests <> 3 then
+      raise exception 'reservation over the daily limit should be refused at today_requests=3, got allowed=% today=%', r.allowed, r.today_requests;
+    end if;
+  end loop;
+  select requests into i from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if i <> 3 then
+    raise exception 'refused reservations must not increment: expected 3, got %', i;
+  end if;
+end $$;
+
+-- Another user is unaffected by the first user's limit.
+do $$
+declare
+  r record;
+begin
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 3, 1000000::bigint);
+  if not r.allowed or r.today_requests <> 1 then
+    raise exception 'a different user should get their own first reservation, got allowed=% today=%', r.allowed, r.today_requests;
+  end if;
+end $$;
+
+-- Settling adds tokens without changing the request count; p_refund gives
+-- the request back; a refund never takes the counter below zero; and a
+-- settle against another day touches nothing.
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, (now() at time zone 'utc')::date, 100, 50);
+do $$
+declare
+  r record;
+begin
+  select * into r from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if r.requests <> 3 or r.prompt_tokens <> 100 or r.completion_tokens <> 50 then
+    raise exception 'settle should add tokens only: expected 3/100/50, got %/%/%', r.requests, r.prompt_tokens, r.completion_tokens;
+  end if;
+end $$;
+
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+select public.settle_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, ((now() at time zone 'utc')::date - 1), 999, 999, true);
+do $$
+declare
+  r record;
+  g record;
+begin
+  select * into r from public.ask_usage
+    where user_id = '44444444-4444-4444-4444-444444444444' and day = (now() at time zone 'utc')::date;
+  if r.requests <> 2 or r.prompt_tokens <> 100 then
+    raise exception 'refund should give back one request and leave other days alone: got %/%', r.requests, r.prompt_tokens;
+  end if;
+  -- The refunded unit can be reserved again.
+  select * into g from public.reserve_ask_usage('44444444-4444-4444-4444-444444444444'::uuid, 3, 1000000::bigint);
+  if not g.allowed or g.today_requests <> 3 then
+    raise exception 'a refunded unit should be reservable again, got allowed=% today=%', g.allowed, g.today_requests;
+  end if;
+end $$;
+
+select public.settle_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+select public.settle_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, (now() at time zone 'utc')::date, 0, 0, true);
+do $$
+declare
+  n int;
+begin
+  select requests into n from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  if n <> 0 then
+    raise exception 'a refund must never take requests below zero, got %', n;
+  end if;
+end $$;
+
+-- The global monthly limit: refused without touching the user's counter.
+do $$
+declare
+  r record;
+  total bigint;
+  before_count int;
+  after_count int;
+begin
+  select sum(requests) into total from public.ask_usage
+    where day >= date_trunc('month', (now() at time zone 'utc')::date)::date;
+  select requests into before_count from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 40, total);
+  if r.allowed or r.month_requests <> total then
+    raise exception 'a month already at the global limit should refuse, got allowed=% month=% (total %)', r.allowed, r.month_requests, total;
+  end if;
+  select requests into after_count from public.ask_usage
+    where user_id = '55555555-5555-5555-5555-555555555555' and day = (now() at time zone 'utc')::date;
+  if after_count <> before_count then
+    raise exception 'a monthly refusal must not increment the user''s counter (% -> %)', before_count, after_count;
+  end if;
+  -- One below the limit still reserves, and reports the month including itself.
+  select * into r from public.reserve_ask_usage('55555555-5555-5555-5555-555555555555'::uuid, 40, total + 1);
+  if not r.allowed or r.month_requests <> total + 1 then
+    raise exception 'one below the monthly limit should reserve, got allowed=% month=%', r.allowed, r.month_requests;
+  end if;
+end $$;
+reset role;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+do $$
+begin
+  begin
+    perform public.reserve_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1000, 1000000::bigint);
+    raise exception 'authenticated was able to call reserve_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.settle_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, current_date, 0, 0, true);
+    raise exception 'authenticated was able to call settle_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+begin
+  begin
+    perform public.reserve_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, 1000, 1000000::bigint);
+    raise exception 'anon was able to call reserve_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.settle_ask_usage('11111111-1111-1111-1111-111111111111'::uuid, current_date, 0, 0, true);
+    raise exception 'anon was able to call settle_ask_usage directly -- grant hole';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+-- ask_usage_counts' monthly figure (20261027110000_ask_usage_month_range.sql):
+-- the same rows as before, found with a range on the bare `day` column so an
+-- index can serve it. Rows on both sides of both month boundaries, so an
+-- off-by-one in either bound shows up.
+set role service_role;
+insert into auth.users (id) values ('66666666-6666-6666-6666-666666666666');
+insert into public.ask_usage (user_id, day, requests) values
+  ('66666666-6666-6666-6666-666666666666', date_trunc('month', (now() at time zone 'utc')::date)::date - 1, 1000),
+  ('66666666-6666-6666-6666-666666666666', date_trunc('month', (now() at time zone 'utc')::date)::date, 100),
+  ('66666666-6666-6666-6666-666666666666', (date_trunc('month', (now() at time zone 'utc')::date) + interval '1 month')::date - 1, 10),
+  ('66666666-6666-6666-6666-666666666666', (date_trunc('month', (now() at time zone 'utc')::date) + interval '1 month')::date, 100000);
+
+do $$
+declare
+  r record;
+  expected bigint;
+begin
+  -- An independent formulation of "this calendar month": compare the year-month text.
+  select coalesce(sum(requests), 0) into expected from public.ask_usage
+    where to_char(day, 'YYYY-MM') = to_char((now() at time zone 'utc')::date, 'YYYY-MM');
+  select * into r from public.ask_usage_counts('66666666-6666-6666-6666-666666666666'::uuid);
+  if r.month_requests <> expected then
+    raise exception 'month_requests should be % (this month only), got %', expected, r.month_requests;
+  end if;
+  if r.month_requests >= 1000 then
+    raise exception 'month_requests counted a row from outside this month: %', r.month_requests;
+  end if;
+end $$;
+reset role;
+
+-- Sargable: with sequential scans made as unattractive as possible, the
+-- range form's plan uses an index condition on `day`, and the old
+-- function-of-the-column form cannot (it can at best scan the whole index and
+-- filter). This is a statement about the predicate, run directly, because a
+-- function body's plan is not visible from outside.
+do $$
+declare
+  line record;
+  range_plan text := '';
+  old_plan text := '';
+begin
+  perform set_config('enable_seqscan', 'off', true);
+  for line in execute $q$
+    explain select sum(requests) from public.ask_usage
+     where day >= date_trunc('month', current_date)::date
+       and day <  (date_trunc('month', current_date) + interval '1 month')::date
+  $q$ loop
+    range_plan := range_plan || line."QUERY PLAN" || E'\n';
+  end loop;
+  for line in execute $q$
+    explain select sum(requests) from public.ask_usage
+     where date_trunc('month', day) = date_trunc('month', current_date)
+  $q$ loop
+    old_plan := old_plan || line."QUERY PLAN" || E'\n';
+  end loop;
+  if range_plan !~ 'ask_usage_day_idx' or range_plan !~ 'Index Cond: .*day >=' then
+    raise exception E'the range predicate should use an index condition on day, plan was:\n%', range_plan;
+  end if;
+  if old_plan ~ 'Index Cond: .*day >=' then
+    raise exception E'control failed: the function-of-column predicate should not give an index condition on day, plan was:\n%', old_plan;
+  end if;
+end $$;
+
+-- And the functions themselves use that form: no function applied to the
+-- `day` column anywhere in either body.
+do $$
+declare
+  fn text;
+begin
+  foreach fn in array array['public.ask_usage_counts(uuid)', 'public.reserve_ask_usage(uuid, integer, bigint)'] loop
+    if pg_get_functiondef(fn::regprocedure) ~* 'date_trunc\([^)]*,\s*(au\.)?day\s*\)' then
+      raise exception '% applies a function to the day column (not sargable)', fn;
+    end if;
+    if pg_get_functiondef(fn::regprocedure) !~ 'au\.day >=' then
+      raise exception '% does not use a range on day for the monthly count', fn;
+    end if;
+  end loop;
+end $$;
+
+-- courses.profile_budget_aborted_at (20261027120000_profile_budget_cooldown.sql):
+-- a nullable timestamp nothing has set yet, written only by the service role.
+set role service_role;
+do $$
+declare
+  stamp timestamptz;
+begin
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is not null then
+    raise exception 'existing courses must read as never aborted, got %', stamp;
+  end if;
+  update public.courses set profile_budget_aborted_at = now() where course_id = '100';
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is null then
+    raise exception 'service_role should be able to stamp profile_budget_aborted_at';
+  end if;
+end $$;
+reset role;
+
+-- A signed-in student cannot clear it (there is no UPDATE policy for them: the
+-- statement either errors or touches no row), so a student cannot reset the
+-- cool-down to force another build.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+do $$
+begin
+  begin
+    update public.courses set profile_budget_aborted_at = null where course_id = '100';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+commit;
+
+set role service_role;
+do $$
+declare
+  stamp timestamptz;
+begin
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is null then
+    raise exception 'authenticated was able to clear profile_budget_aborted_at';
+  end if;
+  update public.courses set profile_budget_aborted_at = null where course_id = '100';
+end $$;
+reset role;
+
+-- A catch-all over the catalog, so the next function someone adds cannot
+-- repeat this: apart from is_enrolled, no function in `public` may be
+-- executable by anon or authenticated, whether through the PUBLIC grant or
+-- an explicit one (has_function_privilege sees both).
+do $$
+declare
+  fn record;
+begin
+  for fn in
+    select p.oid, p.oid::regprocedure as signature
+    from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.proname <> 'is_enrolled'
+  loop
+    if has_function_privilege('anon', fn.oid, 'execute') then
+      raise exception '% is executable by anon', fn.signature;
+    end if;
+    if has_function_privilege('authenticated', fn.oid, 'execute') then
+      raise exception '% is executable by authenticated', fn.signature;
+    end if;
+  end loop;
+end $$;
+
+-- The default privileges themselves: a function created now must not be
+-- handed to anon or authenticated by the schema's defaults. (PUBLIC's
+-- built-in grant is not asserted here; the catch-all above is what holds a
+-- new function to an explicit revoke from it.)
+create function public._acl_probe() returns int language sql as 'select 1';
+do $$
+declare
+  grantee_name text;
+begin
+  select r.rolname into grantee_name
+  from pg_proc p
+  cross join lateral aclexplode(p.proacl) a
+  join pg_roles r on r.oid = a.grantee
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname = '_acl_probe'
+    and r.rolname in ('anon', 'authenticated')
+  limit 1;
+  if grantee_name is not null then
+    raise exception 'a new function in public is granted to % by default privileges', grantee_name;
+  end if;
+end $$;
+drop function public._acl_probe();
 
 -- Chrome extension tables (20261022090000_chrome_extension.sql): service
 -- role only. Neither anon nor authenticated may read or write pairings,

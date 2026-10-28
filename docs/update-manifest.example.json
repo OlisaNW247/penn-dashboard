@@ -2,5 +2,11 @@
   "minimumVersion": "2.0.0",
   "latestVersion": "2.1.0",
   "message": "This version can no longer read Canvas. Please update to keep your assignments in sync.",
-  "appStoreURL": "https://apps.apple.com/app/id0000000000"
+  "appStoreURL": "https://apps.apple.com/app/id0000000000",
+  "feedback": {
+    "id": "2026-10-smoothie",
+    "title": "how's smooth so far?",
+    "subtitle": "takes 2 minutes.",
+    "url": "https://docs.google.com/forms/d/e/1FAIpQLScZJ4BBXicAOFYSbCkHGcM5kWcDD8OXSSWtkK64kSSUO4WcJQ/viewform"
+  }
 }

@@ -55,20 +55,25 @@ enum CanvasAccessTokenStore {
         ]
     }
 
-    /// Persists `token`, replacing whatever was stored before — Keychain has
-    /// no upsert, so this is delete-then-add like every other store in this
-    /// codebase (`SessionCookieStore.write`, `ICSFeedURLStore.save`).
-    static func save(_ token: CanvasAccessToken) {
-        guard let data = try? JSONEncoder().encode(token) else { return }
-        SecItemDelete(baseQuery() as CFDictionary)
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        // Readable after first unlock only, same as every other credential
-        // this app persists — a locked device (or one restored from an
-        // unencrypted backup, which this accessibility class refuses to
-        // migrate into at all) must not be able to read this out.
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+    /// Persists `token`, replacing whatever was stored before: update in
+    /// place, add only when nothing is there (`KeychainItem.write`), where it
+    /// used to be delete-then-add like every other store here. False when the
+    /// Keychain refused, in which case the previous token is still in place.
+    ///
+    /// Readable after first unlock only, same as every other credential this
+    /// app persists — a locked device (or one restored from an unencrypted
+    /// backup, which that accessibility class refuses to migrate into at all)
+    /// must not be able to read this out.
+    @discardableResult
+    static func save(_ token: CanvasAccessToken) -> Bool {
+        guard let data = try? JSONEncoder().encode(token) else { return false }
+        return KeychainItem.write(data, base: baseQuery()) == errSecSuccess
+    }
+
+    /// The persisted token in three answers (see `KeychainRead`), with no
+    /// usability check.
+    static func read() -> KeychainRead<CanvasAccessToken> {
+        KeychainItem.read(baseQuery()).decoded { try? JSONDecoder().decode(CanvasAccessToken.self, from: $0) }
     }
 
     /// The raw persisted token, if any — with no usability check. Most
@@ -78,15 +83,7 @@ enum CanvasAccessTokenStore {
     /// `CanvasAccessTokenMinter.revoke` for the outgoing token when a new one
     /// replaces it).
     static func load() -> CanvasAccessToken? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
-        return try? JSONDecoder().decode(CanvasAccessToken.self, from: data)
+        read().value
     }
 
     /// Removes the persisted token outright — called on Canvas disconnect
@@ -94,7 +91,7 @@ enum CanvasAccessTokenStore {
     /// when Canvas itself has rejected the token (`AppState
     /// .noteCanvasAccessTokenRejected`).
     static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        KeychainItem.delete(baseQuery())
     }
 
     /// The persisted token, but only if `CanvasAccessTokenPolicy.isUsable`

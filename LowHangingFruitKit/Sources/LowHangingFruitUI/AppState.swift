@@ -240,6 +240,36 @@ final class AppState: ObservableObject {
     /// falls back to the due date to place those, and the weekly ring skips
     /// them — so the absence is load-bearing, not a gap to paper over.
     @Published private(set) var completionDates: [String: Date] = [:]
+    /// Which ledger ids each dashboard card stands in for, `[survivor id:
+    /// hidden ids]`, as the most recent `rebuildDashboardItems` found them in
+    /// its collapse passes (`carryCompletion` records every pair it is shown,
+    /// ticked or not). `markActive` clears the whole set so an un-tick is not
+    /// undone by the next rebuild carrying a hidden twin's old completion back
+    /// onto the card. Derived, rebuilt from nothing on every rebuild, never
+    /// persisted. See `CompletionTwins`.
+    private var completionTwins: [String: Set<String>] = [:]
+    /// The carries `carryCompletion` has already made (`CompletionTwins
+    /// .carryKey`), so one tick on a hidden twin lands on its card once. In
+    /// memory only: the twin's own completion is cleared in the ledger by
+    /// `markActive`, so after a relaunch there is nothing left to carry, and a
+    /// persisted record would only have to be pruned.
+    private var carriedCompletions: Set<String> = []
+
+    /// Re-plans reminders and alarms from what the dashboard now shows.
+    /// `ContentView` wires it (next to `NotificationScheduler.liveItems`),
+    /// because the scheduler and the dashboard's items belong to the view
+    /// layer and `AppState` stays free of notification plumbing. Nil while no
+    /// dashboard is mounted, which is also when there is nothing to re-plan
+    /// from. `disconnectCanvas` runs it (`replanRemindersAfterDisconnect`).
+    var reminderReplanner: (@MainActor () async -> Void)?
+    private var pendingReminderReplan: Task<Void, Never>?
+
+    /// Assignments whose completion `commitCompletion` has already written to
+    /// the ledger, waiting for the swipe's exit animation to finish and
+    /// `markCompleted` to run. Not published: nothing on screen changes at the
+    /// commit, and a publish would reload the dashboard and take the card off
+    /// the list before its animation.
+    private var committedCompletionIDs: Set<String> = []
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh, so a Canvas correction (a
@@ -375,6 +405,20 @@ final class AppState: ObservableObject {
     /// `recordSignupBacklogForExistingInstallIfNeeded`.
     private var signupBacklogPersistedFlagsOverride: (complete: Bool, inPreview: Bool)?
 
+    /// Set for the life of this process when the launch-time check for an
+    /// existing install could not read the ledger (`AssignmentStore.holdsFeedRows`
+    /// answered nil). While set, placement 2 takes no decision either.
+    ///
+    /// The check stays undecided on a failed read, which is right, but
+    /// "undecided" is also exactly what placement 2 reads as "a student who has
+    /// not synced yet" and records a sign-up for when their first feed items
+    /// arrive. A ledger that was only briefly unreadable (protected data not yet
+    /// available, a locked store) would then be taken for a new student the
+    /// moment it could be read again, and everything of theirs older than a week
+    /// hidden. In memory only: the next launch asks the question again against
+    /// a ledger it can read, and decides properly.
+    private var signupBacklogDecisionDeferred = false
+
     /// How many otherwise-visible unfinished items the sign-up rule withholds
     /// from the dashboard (or would, while `signupBacklogRevealed`). Zero for an
     /// existing install and for anyone before their first sync. Drives the
@@ -393,7 +437,15 @@ final class AppState: ObservableObject {
     /// through `setDueDateEdit` and `pruneDueDateEdits` (`AppState+DueDateEdits
     /// .swift`, where the rules are); internal rather than `private(set)`
     /// because `private` is file-scoped and those live in that extension.
-    @Published var dueDateEdits: [String: Date] = [:]
+    ///
+    /// Every change is pushed to the ledger (`AssignmentStore.editedDueDates`),
+    /// because the aging rule has to know which rows the student moved ahead
+    /// (hardening plan B3). `init` also pushes the loaded copy by name, before
+    /// the ledger is first read, so that ordering does not rest on whether a
+    /// property observer fires inside an initializer.
+    @Published var dueDateEdits: [String: Date] = [:] {
+        didSet { assignmentStore?.editedDueDates = dueDateEdits }
+    }
 
     /// The edits' persisted copy (`DueDateEditStore`). Nil under the test runner
     /// unless a test constructed this `AppState` with `dueDateEditsDefaults:` (a
@@ -501,8 +553,37 @@ final class AppState: ObservableObject {
     let coursePreferences: CoursePreferencesStore
     @Published private(set) var isCanvasDiscoveryConnected: Bool
     @Published private(set) var isGradescopeConnected: Bool
+    /// The saved verdict that Gradescope's server stopped recognising this
+    /// phone: a login-form response on two runs at least an hour apart, with
+    /// no accepted fetch between (`GradescopeReauthRule`). Independent of
+    /// `isGradescopeConnected`, which this never touches: the rows, the
+    /// cookies and the syncing all carry on, and the dashboard shows one
+    /// reconnect line (`needsGradescopeConnection`).
+    @Published private(set) var gradescopeNeedsReauth: Bool
+    /// The rule's full state, held in memory and written through, so each run
+    /// advances this instance's own copy instead of re-reading the shared
+    /// defaults (a read-modify-write there is exactly what another suite's
+    /// `AppState` could race in tests; see the `canvasSessionConfirmedDeadV1`
+    /// trap in CLAUDE.md). One `AppState` lives per process; a cold background
+    /// launch builds a new one that loads what this one saved.
+    private var gradescopeReauthState: GradescopeReauthRule.State
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var onboardingDestination: OnboardingDestination = .full
+    /// True while a single-service reconnect (Canvas or Gradescope) is open as
+    /// a cover over the dashboard (`ContentView`), as opposed to the whole app
+    /// having been sent back to onboarding. It is set only by
+    /// `restartOnboarding(for:)`, and only when `reconnectsInCover` says the
+    /// cover is the right shape. Three things clear it: `completeOnboarding()`,
+    /// `dismissReconnect()`, and the other branch of `restartOnboarding(for:)`
+    /// itself (the whole walk, preview exit, a first run), which sets it false
+    /// because that path replaces the root and leaves no cover to be open.
+    ///
+    /// Deliberately never true over a first-run root (`needsOnboarding`) or in
+    /// preview mode. `OnboardingView` hides its "preview with sample data" door
+    /// while this is true, because a signed-in student reconnecting should not
+    /// be one stray tap from sample data over their own dashboard; over a
+    /// first-run root that would hide the one door App Review can get in by.
+    @Published private(set) var isReconnecting = false
     /// Whether the first-run mission panes (`IntroView`) have been shown.
     /// Deliberately *separate* from `hasCompletedOnboarding`: the Settings
     /// reconnect buttons call `restartOnboarding()`, which clears that flag to
@@ -904,6 +985,9 @@ final class AppState: ObservableObject {
             || !SessionCookieStore.load(service: .canvas).isEmpty
         self.isCanvasDiscoveryConnected = UserDefaults.lhf.bool(forKey: Self.canvasDiscoveryConnectedKey)
         self.isGradescopeConnected = UserDefaults.lhf.bool(forKey: Self.gradescopeConnectedKey)
+        let loadedGradescopeReauth = GradescopeReauthStore.load()
+        self.gradescopeReauthState = loadedGradescopeReauth
+        self.gradescopeNeedsReauth = loadedGradescopeReauth.needsReauth
         self.hasCompletedOnboarding = UserDefaults.lhf.bool(forKey: Self.onboardingCompletedKey)
         self.hasSeenIntro = UserDefaults.lhf.bool(forKey: Self.introSeenKey)
         self.isPreviewMode = UserDefaults.lhf.bool(forKey: Self.previewModeKey)
@@ -1071,11 +1155,43 @@ final class AppState: ObservableObject {
         signupBacklogPersistedFlagsOverride = persistedFlagsForSignupBacklog
         recordSignupBacklogForExistingInstallIfNeeded()
 
+        // The student's edited due dates, read back before the ledger is first
+        // read: `currentAssignments()` just below hides a row the aging rule
+        // calls gone and overdue, and the rule has to know about an edit that
+        // moves the date ahead (`AssignmentStore.editedDueDates`), or a
+        // launch would seed `canvasItems` without that row and the first
+        // rebuild's `pruneDueDateEdits` would then forget the edit as well.
+        // Also before the first rebuild, which publishes the widget snapshot
+        // (it carries them) and may prune them: a prune against an empty
+        // in-memory copy would write that emptiness over what the last launch
+        // saved.
+        if let dueDateEditsDefaults {
+            precondition(
+                dueDateEditsDefaults !== UserDefaults.lhf,
+                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
+            )
+            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
+        }
+        // Before the edits are read: moves ticks and edited dates on recurring
+        // occurrences to the zone-independent ids this build mints, once
+        // (`RecurringOccurrenceRekey`). A no-op on a phone in Eastern time.
+        // It sits here rather than later in init because B3 moved this read
+        // ahead of the ledger's first read, and the re-key has to precede it.
+        RecurringOccurrenceRekey.runIfNeeded(assignmentStore: store, dueDateEditStore: dueDateEditStore)
+        dueDateEdits = dueDateEditStore?.load() ?? [:]
+        store?.editedDueDates = dueDateEdits
+
         if let store {
             // Completion is read back out of the ledger rather than out of its
             // own UserDefaults copy: one record of the fact, and the one that
             // survives a reinstall.
-            let completion = store.completionRecord()
+            //
+            // `nil` is a ledger that could not be read, not a student who has
+            // finished nothing. Nothing is overwritten by taking it as empty
+            // here, because these sets start empty, and the first rebuild that
+            // can read the ledger fills them (`reloadCompletionFromLedger`,
+            // which keeps what it has on a failed read).
+            let completion = store.completionRecord() ?? .empty
             self.completedAssignmentIDs = completion.ids
             self.completionDates = completion.dates
 
@@ -1124,12 +1240,24 @@ final class AppState: ObservableObject {
             // blob while the ledger is the in-memory fallback would destroy the
             // user's own assignments on the next launch, which is the precise
             // opposite of the point.
+            //
+            // The blob is released only after the save that holds its contents
+            // has landed. `upsert` used to swallow a failed save, and this line
+            // then removed the only durable copy of the student's own tasks on
+            // the strength of rows that were still in memory: a full disk, or
+            // protected data not yet available, and the next launch started
+            // with none of them (hardening plan 2026-10-25, B5: DAT-07). On a
+            // failed save the blob stays, and so does the list read from it;
+            // the next launch tries again.
             if store.isPersistent {
-                store.upsert(self.manualAssignments.map { $0.asAssignment() })
-                self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
-                self.manualAssignments = store
-                    .assignments(source: .manual)
-                    .compactMap(ManualAssignment.init)
+                let migrated = self.manualAssignments.isEmpty
+                    || store.upsert(self.manualAssignments.map { $0.asAssignment() }).saved
+                if migrated {
+                    self.ownTasksDefaults.removeObject(forKey: Self.manualAssignmentsKey)
+                    self.manualAssignments = store
+                        .assignments(source: .manual)
+                        .compactMap(ManualAssignment.init)
+                }
             }
         }
 
@@ -1190,19 +1318,8 @@ final class AppState: ObservableObject {
             scheduleSyllabusExamPass()
         }
 
-        // The student's edited due dates, read back before the first rebuild:
-        // that rebuild publishes the widget snapshot (which carries them) and
-        // may prune them, and a prune against an empty in-memory copy would
-        // write that emptiness over what the last launch saved.
-        if let dueDateEditsDefaults {
-            precondition(
-                dueDateEditsDefaults !== UserDefaults.lhf,
-                "dueDateEditsDefaults needs a scratch UserDefaults suite, not the shared domain"
-            )
-            dueDateEditStore = DueDateEditStore(defaults: dueDateEditsDefaults)
-        }
-        dueDateEdits = dueDateEditStore?.load() ?? [:]
-
+        // (The student's edited due dates were read back above, before the
+        // ledger's first read; see there.)
         rebuildDashboardItems()
 
         // Backfill for anyone who onboarded before the intro existed: they have
@@ -1588,10 +1705,26 @@ final class AppState: ObservableObject {
         let firstLaunch = backlogStore.claimFirstLaunch()
         let onboardingComplete = signupBacklogPersistedFlagsOverride?.complete ?? hasCompletedOnboarding
         let inPreview = signupBacklogPersistedFlagsOverride?.inPreview ?? isPreviewMode
+        // A ledger that cannot be read answers neither yes nor no. `false`
+        // would be "no feed rows, so a new student", and that conclusion is
+        // not the failure's to draw; the decision is left for a launch that can
+        // read, and `signupBacklogDecisionDeferred` keeps placement 2 from
+        // taking it in the meantime. Evaluated lazily, as before: the scan runs
+        // only on the launches that need it.
+        var ledgerUnreadable = false
+        func ledgerHoldsFeedRows() -> Bool {
+            guard let store = assignmentStore else { return false }
+            guard let holds = store.holdsFeedRows(ignoring: Self.sampleDataIDs) else {
+                ledgerUnreadable = true
+                return false
+            }
+            return holds
+        }
         backlogStore.recordExistingInstallIfUndecided(
             preDatesFeature: firstLaunch && onboardingComplete && !inPreview,
-            ledgerHoldsFeedRows: assignmentStore?.holdsFeedRows(ignoring: Self.sampleDataIDs) ?? false
+            ledgerHoldsFeedRows: ledgerHoldsFeedRows()
         )
+        if ledgerUnreadable { signupBacklogDecisionDeferred = true }
     }
 
     /// Placement 2: called from `rebuildDashboardItems()` just before its
@@ -1603,6 +1736,7 @@ final class AppState: ObservableObject {
     /// only be items that arrived since launch: a first sign-up.
     private func recordSignupBacklogAtFirstFeedIfNeeded(now: Date) {
         guard !isUsingFixtureData,
+              !signupBacklogDecisionDeferred,
               let backlogStore = signupBacklogStore,
               backlogStore.decision == .undecided,
               !(canvasItems.isEmpty && gradescopeItems.isEmpty
@@ -1829,30 +1963,28 @@ final class AppState: ObservableObject {
         cookieSessionExpiredOverrideForTesting = value
     }
 
-    /// True when the dashboard is quietly missing a whole data source — the
-    /// "half your work" warning this pair of properties exists to drive. Both
-    /// gaps below are reachable even though onboarding requires Canvas before
-    /// it lets anyone reach the dashboard at all (so "nothing connected"
-    /// itself is not a state a live user can be in): Gradescope is never
-    /// required by onboarding, and Canvas has two connection paths that look
-    /// identical from `isCanvasConnected`'s point of view but are not
-    /// equivalent in what they unlock.
+    /// True when Gradescope was connected and its server has stopped
+    /// recognising this phone, so the dashboard should say so with one
+    /// reconnect line (`ContentView`). Gradescope's own "half your work"
+    /// state, "never connected", is deliberately NOT this: Gradescope is
+    /// optional (onboarding lets a student skip it), and a line that nagged
+    /// every student who skipped it would be a banner for a choice, not a
+    /// fault. Until 2026-10-27 this was `!isUsingFixtureData &&
+    /// !isGradescopeConnected` and nothing read it; giving it its first reader
+    /// with that meaning would have put "reconnect gradescope" on every
+    /// Canvas-only install.
     ///
-    /// Explicitly excludes `isUsingFixtureData`, unlike `canvasIsLinkOnly`
-    /// below, because nothing else in this expression supplies that guard:
-    /// `isGradescopeConnected` is backed by a plain persisted flag that
-    /// starts (and stays) `false` for a reviewer in preview mode, since
-    /// `enterPreviewMode()` never touches it. Preview mode is deliberately
-    /// the ONE path through this app for someone who cannot pass Penn SSO —
-    /// notably an App Store reviewer — and it renders entirely off bundled
-    /// fixtures that were never going to come from Gradescope either. Without
-    /// this guard, that reviewer would be shown a "connect your accounts" nag
-    /// on the one screen the app promises will just work; the fixture data
-    /// itself would look fine, so the bug would read as a small copy problem
-    /// rather than the "reviewer sees a broken-looking dashboard" risk it
-    /// actually is.
+    /// Needs `isGradescopeConnected` too: an explicit disconnect resets the
+    /// verdict (`setGradescopeConnected`), and the Profile row already says
+    /// "not connected" for a student who never connected.
+    ///
+    /// Explicitly excludes `isUsingFixtureData`: preview mode is the ONE path
+    /// through this app for someone who cannot pass Penn SSO, notably an App
+    /// Store reviewer, and it renders entirely off bundled fixtures. A
+    /// reviewer must never be shown a reconnect nag for a service the demo
+    /// never had.
     var needsGradescopeConnection: Bool {
-        !isUsingFixtureData && !isGradescopeConnected
+        !isUsingFixtureData && isGradescopeConnected && gradescopeNeedsReauth
     }
 
     /// True when Canvas is connected only by a pasted calendar feed link
@@ -3660,6 +3792,7 @@ final class AppState: ObservableObject {
 
     func completeOnboarding() {
         onboardingDestination = .full
+        isReconnecting = false
         hasCompletedOnboarding = true
         UserDefaults.lhf.set(true, forKey: Self.onboardingCompletedKey)
     }
@@ -3725,13 +3858,48 @@ final class AppState: ObservableObject {
         rebuildDashboardItems()
     }
 
+    /// Whether a reconnect for `destination` opens as a cover over the
+    /// dashboard (`isReconnecting`) rather than sending the whole app back to
+    /// onboarding. Only a single-service reconnect, from a real (non-preview)
+    /// install that has finished onboarding: `.full` is the whole walk and has
+    /// always replaced the root, preview mode must keep exiting through the
+    /// old path (which is what drops its fixtures), and a first-run root has
+    /// no dashboard underneath to keep mounted. Pure so it can be tested.
+    ///
+    /// `nonisolated` for the same reason as `OnboardingView.initialPhase`:
+    /// tests call it off the main actor.
+    nonisolated static func reconnectsInCover(
+        for destination: OnboardingDestination,
+        isPreviewMode: Bool,
+        hasCompletedOnboarding: Bool
+    ) -> Bool {
+        destination != .full && !isPreviewMode && hasCompletedOnboarding
+    }
+
     /// Sends the user back to the connect flow (used by the dashboard's reconnect
     /// buttons). Already-connected services stay connected and show as done.
+    ///
+    /// A single-service reconnect from a finished, non-preview install opens
+    /// as a cover over the still-mounted dashboard (`reconnectsInCover`,
+    /// `isReconnecting`) and touches neither `hasCompletedOnboarding` nor its
+    /// persisted flag, so closing the cover, or the app being killed with it
+    /// open, leaves the student on the dashboard they came from. Everything
+    /// else takes the original path below: clear the flag and let `RootView`
+    /// swap the root to `OnboardingView`.
     ///
     /// Deliberately leaves `hasSeenIntro` alone: this lands the user on the
     /// connect checklist, not back at the first-run pitch.
     func restartOnboarding(for destination: OnboardingDestination = .full) {
         onboardingDestination = destination
+        if Self.reconnectsInCover(
+            for: destination,
+            isPreviewMode: isPreviewMode,
+            hasCompletedOnboarding: hasCompletedOnboarding
+        ) {
+            isReconnecting = true
+            return
+        }
+        isReconnecting = false
         hasCompletedOnboarding = false
         UserDefaults.lhf.set(false, forKey: Self.onboardingCompletedKey)
         // Leaving onboarding via "Connect Canvas" also exits the demo, so a real
@@ -3743,11 +3911,25 @@ final class AppState: ObservableObject {
             // Drop the fixtures on the way out. They'd never render again
             // (their course ids leave with preview mode), but leaving demo
             // grades in the store means the first real refresh merges into
-            // sample data rather than starting clean.
+            // sample data rather than starting clean. Not `clearAll()`: that
+            // also wipes the observed grade history, which belongs to a real
+            // student who tapped Preview out of curiosity (see
+            // `GradeWatcherStore.clearPreviewFixtures`).
             canvasItems = []
-            gradeWatcher.clearAll()
+            gradeWatcher.clearPreviewFixtures()
             rebuildDashboardItems()
         }
+    }
+
+    /// Closes the reconnect cover without connecting anything (the cover's
+    /// close control, and the macOS sheet's own dismissal). The student never
+    /// left the dashboard, so there is nothing to restore beyond forgetting
+    /// which service the cover was for. A no-op when no cover is open, so it
+    /// is safe to call from a presentation binding's setter.
+    func dismissReconnect() {
+        guard isReconnecting else { return }
+        isReconnecting = false
+        onboardingDestination = .full
     }
 
     /// Enters a read-only demo populated with sample courses and assignments, so
@@ -3798,7 +3980,7 @@ final class AppState: ObservableObject {
         guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
         if installation != canvasInstallation,
            (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
-            disconnectCanvas()
+            disconnectCanvas(keepingStudentWork: false)
         }
         canvasInstallation = installation
         hasChosenCanvasInstallation = true
@@ -3859,7 +4041,20 @@ final class AppState: ObservableObject {
     /// Canvas and Gradescope can both leave cookies on `upenn.edu` (Penn
     /// SSO) — so disconnecting one service never silently signs the user out
     /// of the other.
-    func disconnectCanvas() {
+    ///
+    /// **What it keeps (`keepingStudentWork`, the default).** The ledger rows
+    /// the student finished or that carry only a completion, and the observed
+    /// grade history. Disconnect is also the only repair a student with a
+    /// stuck login can reach, and it used to delete their whole Done history,
+    /// every tick and the grade trail with it, on a confirmation that never
+    /// says so; CLAUDE.md's invariant is that nothing the student did is ever
+    /// lost. Unfinished rows, which are only the feed's own copy, still go.
+    /// `selectCanvasInstallation` passes `false`: switching school must keep
+    /// removing every row, because the kept ones are keyed on ids from the
+    /// old school's Canvas and a numeric id means something else at the new
+    /// one. Keeping across schools needs rows stamped with the account they
+    /// came from (hardening plan B1, second bullet), which does not exist yet.
+    func disconnectCanvas(keepingStudentWork: Bool = true) {
         let websiteDataHints = canvasInstallation.websiteDataDomainHints
         // Disconnecting Canvas is the student saying "forget my Canvas" —
         // the stored PennKey password goes with it. Called first, ahead of
@@ -3914,8 +4109,10 @@ final class AppState: ObservableObject {
         courseContentDecisions = [:]
         CourseContentDecisionStore.clear()
         // Propagate the clear to the iCloud copy too, or the next external
-        // pull resurrects decisions this disconnect just threw away.
-        if cloudSyncEnabled { cloudPrefsMirror.push(key: "courseContentDecisionsV1") }
+        // pull resurrects decisions this disconnect just threw away. A
+        // removal, so `pushRemoval`: `push(key:)` never removes, because an
+        // absent local value is not the same as a cleared one.
+        if cloudSyncEnabled { cloudPrefsMirror.pushRemoval(key: "courseContentDecisionsV1") }
         submittedCanvasAssignmentIDs = []
         // The no-submission cache is Canvas-session-derived the same way the
         // submitted-ids side channel is — clear it wholesale rather than
@@ -3923,15 +4120,24 @@ final class AppState: ObservableObject {
         // Canvas account) would otherwise inherit and caveat incorrectly.
         noSubmissionCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
-        gradeWatcher.clearAll()
+        gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
-        // account's work survives in the store and reappears on the dashboard.
-        assignmentStore?.purge(source: .canvas)
+        // account's unfinished work survives in the store and reappears on
+        // the dashboard. Finished and completion-only rows stay, flagged
+        // gone from the feed (`purgeKeepingStudentWork`).
+        let purgeLedger: (Assignment.Source) -> Void = { [assignmentStore] source in
+            if keepingStudentWork {
+                assignmentStore?.purgeKeepingStudentWork(source: source)
+            } else {
+                assignmentStore?.purge(source: source)
+            }
+        }
+        purgeLedger(.canvas)
         // Module-imported readings are session-derived the same way the probe
         // state above is — purge their ledger rows too, or a disconnected
         // account's readings survive the reconnect and reappear once the
         // course re-qualifies for a decision.
-        assignmentStore?.purge(source: .canvasModules)
+        purgeLedger(.canvasModules)
         moduleReadingItems = []
         // Announcement-extracted tasks are session-derived the identical way
         // — purge the ledger rows (a disconnected/reconnected account,
@@ -3939,7 +4145,7 @@ final class AppState: ObservableObject {
         // extracted tasks reappear) and clear the in-memory array so they
         // vanish from the dashboard immediately rather than waiting for the
         // next `syncAnnouncements()` to notice they're gone.
-        assignmentStore?.purge(source: .canvasAnnouncement)
+        purgeLedger(.canvasAnnouncement)
         announcementItems = []
         // The plain announcement list is Canvas-derived text too, and goes
         // here, unconditionally: `clearCourseKnowledge()` only runs when the
@@ -3989,6 +4195,9 @@ final class AppState: ObservableObject {
         // (`hasOfferedStayLoggedIn` is never reset) cannot bring it back.
         setCanvasLoginEverCaptured(false)
         refreshCanvasSessionExpiredState()
+        // Last of the synchronous teardown, after the ledger purge and the
+        // dashboard rebuild above, so the re-plan sees the work that is left.
+        replanRemindersAfterDisconnect()
         // Also drop the live WebView cookie/cache jar for Canvas's isolated
         // store, not just the Keychain copy above — otherwise a still-resident
         // WKWebsiteDataStore session survives disconnect and gets presented
@@ -4002,6 +4211,36 @@ final class AppState: ObservableObject {
                 in: LoginDataStores.canvas
             )
         }
+    }
+
+    /// Re-plans reminders and alarms at the end of a Canvas disconnect, through
+    /// the same path every other re-plan takes (`NotificationScheduler.reschedule
+    /// (from:)`, wired in `reminderReplanner`).
+    ///
+    /// Until this, the notifications and Berserk alarms already scheduled for a
+    /// Canvas assignment kept ringing after the student disconnected, until
+    /// they next opened the dashboard (the screen that re-plans), so a student
+    /// who had just taken their Canvas off the phone was still woken for work
+    /// from it (hardening plan C9). `reschedule` removes
+    /// what is pending and adds back only what the items still justify, so the
+    /// Gradescope and manual work that is left keeps its reminders.
+    ///
+    /// Not `rescheduleAfterPreferenceChange`, which looks cheaper: it returns
+    /// at once when the item list is empty, and for a student whose only
+    /// source was Canvas the list is exactly empty after a disconnect, which is
+    /// the one case where everything pending has to go. Run as a task so the
+    /// disconnect stays synchronous; with no dashboard mounted
+    /// (`reminderReplanner` is nil: a school switch or a login reset from
+    /// onboarding) there are no items to plan from and the dashboard's own
+    /// re-plan covers it on its return.
+    func replanRemindersAfterDisconnect() {
+        guard let replanner = reminderReplanner else { return }
+        pendingReminderReplan = Task { @MainActor in await replanner() }
+    }
+
+    /// Waits for the re-plan `disconnectCanvas` started, if any.
+    func awaitPendingReminderReplan() async {
+        await pendingReminderReplan?.value
     }
 
     /// Lazy decision used by `disconnectCanvas`: when the token experiment is
@@ -4122,6 +4361,59 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// The notice a Canvas sync leaves when it could not safely replace what the
+    /// dashboard shows: the fetch looked suspiciously empty, or the ledger could
+    /// not be read to reconcile it into. Either way the saved assignments stay.
+    private static let canvasKeptSavedNotice =
+        "couldn't fully refresh canvas just now. showing your saved assignments."
+
+    /// What `sync()` does with a fetched Canvas feed once it has one: reconcile
+    /// it into the ledger and take the ledger's answer as the pool. A function
+    /// of its own so a test can drive it without a network.
+    ///
+    /// If the ledger could not be read (`readFailed`), nothing was reconciled
+    /// and the pool is left exactly as it was. Replacing it with the result's
+    /// empty `items` would turn a read error into a wiped dashboard, and
+    /// replacing it with `fetched` would show the feed's rolling window as if
+    /// it were everything the student has. Same notice as a suspiciously empty
+    /// fetch, because to the student it is the same thing: Canvas could not be
+    /// refreshed just now, and what they see is what was saved.
+    func reconcileCanvasFetch(_ fetched: [Assignment], into store: AssignmentStore) {
+        let result = store.reconcile(fetched, source: .canvas)
+        guard !result.readFailed else {
+            syncNotice = Self.canvasKeptSavedNotice
+            return
+        }
+        canvasItems = result.items.sorted(by: Self.byDueDate)
+        if result.wasSuspectedPartial {
+            syncNotice = Self.canvasKeptSavedNotice
+        }
+        // Rows this reconcile just created may be the ones a carried-over
+        // completion has been waiting for.
+        reloadCompletionFromLedger()
+    }
+
+    /// The Gradescope half of `reconcileCanvasFetch`: same ledger, same rule
+    /// that an unreadable ledger leaves the pool alone. It posts no notice,
+    /// as before; a Gradescope sync that did not land is not announced either.
+    func reconcileGradescopeFetch(_ fetched: [Assignment], into store: AssignmentStore) {
+        // `holdingEmptiedCourses` is the A4 rule: a course that had rows and
+        // now reads empty is held rather than emptied (see `AssignmentStore.
+        // reconcile`), and the B6 rule is that a ledger read failure is a
+        // failure, not an empty fetch. Both have to hold here, which is why
+        // the two groups' edits met in this one function.
+        let result = store.reconcile(fetched, source: .gradescope, holdingEmptiedCourses: true)
+        guard !result.readFailed else { return }
+        gradescopeItems = result.items
+        // A fetch the ledger refused as partial (nothing came back for the
+        // whole source, or for one course that had work) kept the saved rows.
+        // Say so with the existing refresh-failure line.
+        if result.wasSuspectedPartial {
+            syncNotice = "Gradescope couldn\u{2019}t refresh right now."
+        }
+        reloadCompletionFromLedger()
+    }
+
     func sync() async {
         guard let url = URL(string: canvasICSURL), !canvasICSURL.isEmpty else {
             error = "Paste your Canvas calendar feed URL first."
@@ -4149,14 +4441,7 @@ final class AppState: ObservableObject {
             // items that dropped out of the rolling feed are retained, and a
             // suspiciously empty fetch is refused so one blip can't wipe the list.
             if let store = assignmentStore {
-                let result = store.reconcile(fetched, source: .canvas)
-                canvasItems = result.items.sorted(by: Self.byDueDate)
-                if result.wasSuspectedPartial {
-                    syncNotice = "couldn't fully refresh canvas just now. showing your saved assignments."
-                }
-                // Rows this reconcile just created may be the ones a carried-over
-                // completion has been waiting for.
-                reloadCompletionFromLedger()
+                reconcileCanvasFetch(fetched, into: store)
             } else {
                 canvasItems = fetched
             }
@@ -4255,9 +4540,10 @@ final class AppState: ObservableObject {
     }
 
     /// Scrapes the user's Gradescope assignments using the captured login cookies
-    /// and folds them into the dashboard. Only a response that proves the
-    /// session is rejected marks Gradescope disconnected; an offline/temporary
-    /// failure keeps the session and retries on the next normal refresh.
+    /// and folds them into the dashboard. Nothing here marks Gradescope
+    /// disconnected: a login-form response counts toward a saved reconnect
+    /// verdict (`GradescopeReauthRule`) and every other failure keeps the
+    /// session and retries on the next normal refresh.
     func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool) async {
         // Reentrancy guard: the 5-min loop and a scene-activation can both fire a
         // sync; without this they'd run two full scrapes concurrently. The check
@@ -4269,7 +4555,10 @@ final class AppState: ObservableObject {
 
         guard !cookies.isEmpty else {
             if reportErrors { error = "No Gradescope session was found yet. Finish logging in, then try again." }
-            setGradescopeConnected(false)
+            // Not `setGradescopeConnected(false)`: an empty cookie set proves
+            // nothing about the server's session (a read that came back empty,
+            // a pane read before its cookies landed), and a disconnect here
+            // stopped the coordinator for good. See `GradescopeReauthRule`.
             return
         }
 
@@ -4290,8 +4579,7 @@ final class AppState: ObservableObject {
             )
             // Same durable reconciliation as Canvas (see `sync()`).
             if let store = assignmentStore {
-                gradescopeItems = store.reconcile(fetched, source: .gradescope).items
-                reloadCompletionFromLedger()
+                reconcileGradescopeFetch(fetched, into: store)
             } else {
                 gradescopeItems = fetched
             }
@@ -4310,14 +4598,23 @@ final class AppState: ObservableObject {
             // `fetchAssignments`), and `merge` itself drops any with a past
             // expiry, so nothing the server deleted is resurrected. This
             // sits on the success path only: a failed or rejected fetch never
-            // refreshes the clock, so a dead session still ages out.
+            // re-stamps anything. Since 2026-10-27 the 24-hour clock this
+            // refreshed is gone for Gradescope (`SessionCookieStore.maxAge`
+            // is nil), so the merge now only keeps the saved set equal to
+            // the cookies the server last accepted.
             SessionCookieStore.merge(cookies, service: .gradescope)
             setGradescopeConnected(true)
+            recordGradescopeOutcome(.sessionAccepted)
             rebuildDashboardItems()
         } catch {
-            let needsLogin = (error as? GradescopeClient.Error)?.requiresReauthentication == true
-            if needsLogin { setGradescopeConnected(false) }
-            let message = needsLogin
+            // Never `setGradescopeConnected(false)` from here: one failed
+            // fetch, even a login form, is a single observation. Only a login
+            // form counts as evidence, and it takes a second one an hour
+            // later to raise the reconnect line (`GradescopeReauthRule`).
+            // A 401/403, a timeout or an unreadable page changes nothing.
+            let sawLoginForm = (error as? GradescopeClient.Error)?.sawLoginForm == true
+            let verdict = recordGradescopeOutcome(sawLoginForm ? .loginForm : .inconclusive)
+            let message = verdict.needsReauth
                 ? "Gradescope needs you to reconnect."
                 : "Gradescope couldn\u{2019}t refresh right now."
             if reportErrors {
@@ -4331,6 +4628,28 @@ final class AppState: ObservableObject {
     func setGradescopeConnected(_ connected: Bool) {
         isGradescopeConnected = connected
         UserDefaults.lhf.set(connected, forKey: Self.gradescopeConnectedKey)
+        // An explicit disconnect is a fresh start: a verdict about the old
+        // session must not follow the student into the next one.
+        if !connected {
+            gradescopeReauthState = .clear
+            GradescopeReauthStore.reset()
+            gradescopeNeedsReauth = false
+        }
+    }
+
+    /// Feeds one Gradescope run's result into the saved reconnect verdict
+    /// (`GradescopeReauthRule`) and publishes it. Never disconnects, hides rows
+    /// or touches cookies: the only effect of a verdict is the reconnect line.
+    @discardableResult
+    func recordGradescopeOutcome(
+        _ outcome: GradescopeReauthRule.Outcome,
+        now: Date = Date()
+    ) -> GradescopeReauthRule.State {
+        let next = GradescopeReauthRule.advance(gradescopeReauthState, after: outcome, now: now)
+        gradescopeReauthState = next
+        GradescopeReauthStore.save(next)
+        if gradescopeNeedsReauth != next.needsReauth { gradescopeNeedsReauth = next.needsReauth }
+        return next
     }
 
     /// Refreshes Grade Watcher for the SELECTED courses only (docs/grades.md
@@ -5552,6 +5871,10 @@ final class AppState: ObservableObject {
 
         var collected: [Assignment] = []
         var newlyProcessedIDs: [String] = []
+        // The posts whose extraction produced rows, which are only "read" once
+        // those rows are on disk. A post that found nothing, or was judged
+        // informational, has nothing to lose and is recorded either way.
+        var idsNeedingSave: Set<String> = []
         // Each post's relevance judgment, by read-state key, for the megaphone
         // sheet (`recordAnnouncementRelevance`).
         var relevanceByKey: [String: AnnouncementRelevance] = [:]
@@ -5672,6 +5995,7 @@ final class AppState: ObservableObject {
             // dashboard presentation rule; the announcements page remains a
             // complete, inspectable inbox even when official coursework wins.
             collected.append(contentsOf: candidates)
+            if !candidates.isEmpty { idsNeedingSave.insert(announcement.id) }
             // Marked processed even when extraction yielded zero results —
             // per the method's own doc comment on `processedAnnouncementIDs`,
             // "extracted, found nothing actionable" is a completed parse, not
@@ -5679,8 +6003,16 @@ final class AppState: ObservableObject {
             newlyProcessedIDs.append(announcement.id)
         }
 
-        if !collected.isEmpty {
-            store.upsert(collected)
+        // Save first, then forget. "Read" is a ratchet: a recorded id is never
+        // sent to an extractor again, so recording one whose rows were never
+        // written loses the task for good. `upsert` used to swallow a failed
+        // save, and the ids were recorded all the same (hardening plan
+        // 2026-10-25, B5: DAT-07). Now the ids of posts that produced rows wait
+        // for a save that landed, and are simply read again on the next sync
+        // if it did not. The rows themselves stay in the context and show on
+        // the dashboard meanwhile, and the next save that works writes them.
+        if !collected.isEmpty, !store.upsert(collected).saved {
+            newlyProcessedIDs.removeAll { idsNeedingSave.contains($0) }
         }
         recordProcessedAnnouncementIDs(newlyProcessedIDs)
         // Before the rebuild below, which ends in the badge: the sheet's list
@@ -5966,7 +6298,8 @@ final class AppState: ObservableObject {
     }
 
     private func persistEnrolledCanvasCourses() {
-        let byID = Dictionary(uniqueKeysWithValues: enrolledCanvasCourses.map { ($0.id, $0.name) })
+        // First wins if Canvas lists a course id twice; a duplicate key must not trap on the way to disk.
+        let byID = Dictionary(enrolledCanvasCourses.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         UserDefaults.lhf.set(byID, forKey: Self.enrolledCanvasCoursesKey)
     }
 
@@ -6328,10 +6661,18 @@ final class AppState: ObservableObject {
 
     /// Console-log mirror of `courseIntelDiagnosticLines`, so a puzzling
     /// on-device profile is visible live in Xcode's console without the user
-    /// having to export the copyable report. Same privacy budget as that
-    /// report — `.public` is safe here because the content is built to stay
-    /// inside it. Skipped in fixture/preview mode: that's sample data, not a
-    /// real account worth logging.
+    /// having to export the copyable report. Skipped in fixture/preview mode:
+    /// that's sample data, not a real account worth logging.
+    ///
+    /// `.private`, not `.public` (2026-10-27, SEC-17). The report is built to
+    /// stay inside a privacy budget (course keys, Canvas course ids and
+    /// counts, never a title), and that budget is right for a report the
+    /// student chooses to copy out. It is the wrong one for the unified log,
+    /// which a Release build writes too and which a sysdiagnose carries off
+    /// the phone: these lines name every class the student takes and how many
+    /// items each has. An attached debugger still shows the values, which is
+    /// the only place this was ever read; the wrong fix would be to delete the
+    /// mirror, since the live console is how a puzzling profile gets seen.
     private static let courseIntelLog = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "LHF",
         category: "course-intel"
@@ -6340,7 +6681,7 @@ final class AppState: ObservableObject {
     private func logCourseIntelDiagnostics() {
         guard !isUsingFixtureData else { return }
         for line in courseIntelDiagnosticLines {
-            Self.courseIntelLog.info("\(line, privacy: .public)")
+            Self.courseIntelLog.info("\(line, privacy: .private)")
         }
     }
 
@@ -7133,11 +7474,23 @@ final class AppState: ObservableObject {
     /// `markCompleted` ends by calling `rebuildDashboardItems()` itself, and
     /// this helper is only ever called FROM `rebuildDashboardItems`, so
     /// routing through it here would recurse.
+    ///
+    /// **Two guards against undoing an un-tick (hardening plan B4).** Every
+    /// call records the pair as a twin (`completionTwins`) whether or not a
+    /// carry is due, so `markActive` can clear the hidden copy as well as the
+    /// card. And a carry fires once per tick (`carriedCompletions`): this runs
+    /// on every rebuild, so a hidden twin that still held the old completion
+    /// after the student un-ticked the card, for any reason, would otherwise
+    /// tick the card again each time. A fresh tick on the twin has a new
+    /// completion time and so a new key, and does carry.
     private func carryCompletion(from hiddenID: String, to survivorID: String) {
+        completionTwins[survivorID, default: []].insert(hiddenID)
         guard completedAssignmentIDs.contains(hiddenID),
               !completedAssignmentIDs.contains(survivorID)
         else { return }
         let completedAt = completionDates[hiddenID]
+        let key = CompletionTwins.carryKey(hiddenID: hiddenID, survivorID: survivorID, completedAt: completedAt)
+        guard carriedCompletions.insert(key).inserted else { return }
         assignmentStore?.setCompleted(ids: [survivorID], at: completedAt)
         completedAssignmentIDs.insert(survivorID)
         if let completedAt {
@@ -7146,6 +7499,9 @@ final class AppState: ObservableObject {
     }
 
     func rebuildDashboardItems(now: Date = Date()) {
+        // Found afresh by the collapse passes below (`carryCompletion`), so a
+        // pair that no longer exists is not cleared with an unrelated card.
+        completionTwins = [:]
         updateCanvasCourseIDCache()
         refreshArchiveState(now: now)
         let recurringAssignments = effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
@@ -7331,12 +7687,14 @@ final class AppState: ObservableObject {
             confirmedPairings: storedPairings
         )
         assignmentStore?.recordPairings(pairings)
-        // Passing the resolved pairings straight through means the heuristic
-        // isn't run a second time inside `merge`.
+        // `merge(pairs:)` collapses exactly the pairs just resolved and runs no
+        // heuristic. This used to pass them back as `confirmedPairings`, which
+        // are only the first step of `matchPairs`, so the whole pairing scan
+        // ran a second time over every unmatched item.
         let dedupedCoursework = AssignmentDeduplicator.merge(
             canvasItems: canvasRelevant,
             gradescopeItems: gradescopePool,
-            confirmedPairings: pairings
+            pairs: pairings
         )
         mergedCoursework = dedupedCoursework
         let allItems = (dedupedCoursework + recurringAssignments + manualItems)
@@ -7704,10 +8062,21 @@ final class AppState: ObservableObject {
     /// (`linkedID` set — see `AssignmentDeduplicator`), also marks its
     /// Gradescope counterpart done directly, so completion stays correct for
     /// both identities even if a later sync no longer matches the pair.
+    ///
+    /// If a swipe already committed this completion (`commitCompletion`), the
+    /// ledger holds it and the sync log has it, and this does neither again:
+    /// no second write, no second change record, and the timestamp stays the
+    /// moment of the swipe. It still reads the completion back and rebuilds,
+    /// which is what takes the card off the list. The committed mark is only
+    /// honoured if the ledger confirms the completion is there, so a stale
+    /// mark (the card left before its animation ended, the completion cleared
+    /// since by another path) falls through to the full write.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
-        recordSyncChange(.completion, ids: Array(touched))
+        let alreadyCommitted = committedCompletionIDs.remove(assignment.id) != nil
+            && assignmentStore?.completionRecord()?.ids.contains(assignment.id) == true
+        if !alreadyCommitted { recordSyncChange(.completion, ids: Array(touched)) }
 
         guard let store = assignmentStore else {
             applyCompletionInMemory(touched, at: date)
@@ -7722,25 +8091,66 @@ final class AppState: ObservableObject {
         // a completion with no idea what was completed. This also covers work
         // no feed reconciles at all, a manual or recurring task, which would
         // otherwise be dropped for want of a row.
-        store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment))
+        if !alreadyCommitted {
+            store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment))
+        }
         reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
 
+    /// The write half of a swipe, made the instant the swipe is accepted and
+    /// before the card starts to leave: the completion goes to the ledger and
+    /// the sync log, and nothing else happens. No published property changes,
+    /// no dashboard rebuild, no reminder re-plan, so the card is still on the
+    /// list for its exit animation, and `markCompleted` follows when the
+    /// animation ends to do the rest.
+    ///
+    /// This is the fix for a completion shown to the student and lost if the
+    /// process ended in the 0.38 seconds before that write (hardening plan
+    /// 2026-10-25, B10: UCR-14). The wrong fix is to call `markCompleted`
+    /// first: it saves and rebuilds in one go, and the rebuild takes the card
+    /// off the list at once, with the animation it was built around.
+    ///
+    /// Returns whether the completion is on disk. False without a ledger or
+    /// when the save failed, and then nothing is marked committed, so
+    /// `markCompleted` writes it in full as it always did.
+    @discardableResult
+    func commitCompletion(_ assignment: Assignment, at date: Date = Date()) -> Bool {
+        guard let store = assignmentStore else { return false }
+        var touched: Set<String> = [assignment.id]
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        guard store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment)) else {
+            return false
+        }
+        recordSyncChange(.completion, ids: Array(touched), at: date)
+        committedCompletionIDs.insert(assignment.id)
+        return true
+    }
+
+    /// Un-ticks `assignment`, and every hidden twin that stood in for it.
+    ///
+    /// The card is often several ledger ids (`completionTwins`), and a tick
+    /// on any of them shows on the card (`carryCompletion`), so clearing only
+    /// the card's own id left the hidden copy ticked and the rebuild at the
+    /// end of this method put the tick straight back: the student saw the
+    /// card flick off and on. The sync stamp stays on the ids the student
+    /// actually touched, which is what the other device is told.
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        committedCompletionIDs.subtract(touched)
         recordSyncChange(.completion, ids: Array(touched))
+        let cleared = CompletionTwins.closure(of: touched, twins: completionTwins)
 
         guard assignmentStore != nil else {
             // Same session-only degradation as `applyCompletionInMemory`: with
             // no store there is nowhere for the un-tick to be recorded either.
-            completedAssignmentIDs.subtract(touched)
-            for id in touched { completionDates[id] = nil }
+            completedAssignmentIDs.subtract(cleared)
+            for id in cleared { completionDates[id] = nil }
             rebuildDashboardItems()
             return
         }
-        assignmentStore?.setCompleted(ids: [], at: nil, clearing: touched)
+        assignmentStore?.setCompleted(ids: [], at: nil, clearing: cleared)
         reloadCompletionFromLedger()
         rebuildDashboardItems()
     }
@@ -7778,6 +8188,11 @@ final class AppState: ObservableObject {
     /// so the two can never drift; without one (store creation failed — see
     /// `assignmentStore`), the optimistic values stand and completion is
     /// session-only, which is the same degradation the rest of the ledger has.
+    ///
+    /// A ledger that cannot be read answers nil, and then nothing changes: the
+    /// sets keep what they hold. Taking that for "no completions" overwrote the
+    /// student's finished work with an empty set and reopened every card,
+    /// though every row was intact on disk.
     func reloadCompletionFromLedger() {
         guard let record = assignmentStore?.completionRecord() else { return }
         completedAssignmentIDs = record.ids
@@ -8232,10 +8647,9 @@ final class AppState: ObservableObject {
     }
 
     private static func loadRecurringTasks(from defaults: UserDefaults) -> [RecurringTask] {
-        guard let data = defaults.data(forKey: recurringTasksKey),
-              let tasks = try? JSONDecoder().decode([RecurringTask].self, from: data)
-        else { return [] }
-        return tasks
+        // Lossy: one unreadable task costs that task, not the list, and the raw
+        // blob is kept before the next save (`RecurringTask.load`).
+        RecurringTask.load(from: defaults, key: recurringTasksKey)
     }
 
     private func persistManualAssignments() {

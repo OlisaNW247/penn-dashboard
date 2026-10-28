@@ -284,6 +284,16 @@ Request:
   "history": [ { "role": "user" | "assistant", "content": string } ] } -- may be []
 ```
 
+Size caps (`_shared/askRequest.ts`, since 2026-10-27): `contextDocument` at
+most 400,000 characters, `excerpts` 100,000, `question` 20,000, `history` 40
+turns and 100,000 characters in all. A body over any cap is refused before the
+model is called with `413 { "error": "payload_too_large", "message":
+"ask request over size cap: <field>" }` (the message names the field, never
+echoes content) and an `ask_outcomes` row of outcome `client_error`. A wrong
+shape is a `400 bad_request`. The caps are ceilings on abuse, not on a heavy
+student: a syllabus-sized prompt is about 56,000 characters of context
+document.
+
 A request may also carry an optional `x-lhf-probe` request header (at most
 40 characters, `[A-Za-z0-9-]` only) to tag the `ask_outcomes` row this
 request produces as belonging to a specific harness run rather than a real
@@ -365,15 +375,39 @@ actually produced the streamed answer, not necessarily the primary.
 
 Quota: `ASK_DAILY_LIMIT` requests per user per UTC day (default 40) and
 `ASK_MONTHLY_GLOBAL_LIMIT` requests across all users per calendar month
-(default 100000). Usage is recorded in `ask_usage` after the stream ends;
-questions and answers are never stored.
+(default 100000). **A request is reserved before the model is called and
+settled afterwards** (since 2026-10-27, hardening BE-C): `reserve_ask_usage`
+checks both limits and charges one request in a single statement, so ten
+parallel requests at 39 of 40 get exactly one reservation (the daily limit
+is atomic; the global monthly limit is a snapshot read in the same call and
+can overshoot by the number of requests in flight), and a refused request
+never reaches the model and never moves the counter. `settle_ask_usage`
+then adds the request's tokens to the day it was reserved on, in the
+stream's `finally`, so it runs whether the stream ends cleanly, breaks, or
+the student leaves. A reserved request stays counted if the model was called
+and the student was shown something or walked away; it is given back
+(`settle_ask_usage` with `p_refund`) only when it never reached the model or
+failed before the student was shown anything *while still connected*.
+Refunding an abandoned request would make "send a large prompt, hang up, get
+the unit back" a free loop, so a client that left is never refunded. When the
+client goes away (`req.signal`, or the response body being cancelled) every
+upstream model request is aborted, including a hedge that would have started
+afterwards. Questions and answers are never stored. The same reservation
+guards `extract-announcement` (given back on a failure while the student is
+still there, so a deterministic failure the phone keeps retrying cannot drain
+the asks), `extract-profile` and `map-categories` (charged up front and not
+given back, as before, and deliberately not aborted on disconnect: their
+work is shared with classmates). The older `record_ask_usage` and
+`ask_usage_counts` RPCs remain in the database for functions deployed before
+`20261027100000_reserve_ask_usage.sql`; apply that migration before
+deploying functions that call the new pair.
 
-The quota lookup (`ask_usage_counts`) and record (`record_ask_usage`) RPCs
-each carry a 4s client-side deadline (`_shared/quota.ts`'s
-`lookupUsageCounts` / `recordUsage`) and fail open with a `console.warn`
-rather than propagate the failure: a lookup that times out or errors is
-treated as "allow this call, unmetered," and a record that times out or
-errors just drops one request from the count. A database stall degrades
+The reservation RPC carries a 1.5s client-side deadline and the settle RPC
+4s (`_shared/quota.ts`'s `reserveUsage` / `settleUsage`), and both fail open
+with a `console.warn` rather than propagate the failure: a reservation that
+times out or errors is treated as "allow this call, unmetered" (no lease, so
+nothing to settle), and a settle that times out or errors just leaves one
+request's tokens uncounted, or one refund undone. A database stall degrades
 the quota counter to "unmetered for that call," never a 502 -- the counter
 protects the aggregate budget, not the individual student, so it must
 never be the thing that makes `ask` (or the extract functions) unusable.
@@ -391,15 +425,19 @@ with zero characters -- the 2026-09-14 "reasoning ate the whole output cap"
 shape this table exists to catch happening again, unnoticed, a second
 time), `upstream_error` (the model backend failed, before or during
 streaming), `quota` (the 429 path) or `client_error` (a malformed request
-body); `timeout` is reserved in the schema for a future caller (such as a
-canary harness's own client-side deadline) and nothing in `ask/index.ts`
+body, a refused or oversized one, or, with `detail` `"client disconnected"`, a
+student who left mid-stream); `timeout` is reserved in the schema for a
+future caller (such as a canary harness's own client-side deadline) and nothing in `ask/index.ts`
 produces it today. The row carries the model, token counts (including
 `reasoning_tokens` when OpenRouter's response reports one), content-length
 and delta-count counters, latency, and -- for a failure -- the upstream
-status and a capped error message, but never the question, the context
-document, the excerpts or the answer; `probe` carries the `x-lhf-probe` tag
+status and a capped error message (for an upstream error, the status and
+the length of the provider's error body; since 2026-10-27 never the body's
+text, in the log or the row, because a provider's refusal can quote the
+prompt back), but never the question, the context document, the excerpts or
+the answer; `probe` carries the `x-lhf-probe` tag
 above, or is `null` for an ordinary request. Both this write and
-`record_ask_usage` are scheduled via Supabase Edge Runtime's
+the usage settlement (`settle_ask_usage`) are scheduled via Supabase Edge Runtime's
 `EdgeRuntime.waitUntil` rather than awaited before the SSE stream's `done`
 event is yielded (the SSE stream itself is always yielded last): awaiting
 either one first would hold up the student's answer for a database
@@ -415,6 +453,34 @@ to both. This table has no read policy for `anon`/`authenticated` at all
 something a student's own client ever reads back.
 
 ## `ask-canary`
+
+**Closed by default (2026-10-27).** The function answers only a request that
+carries `x-lhf-probe-secret` equal, compared in constant time, to the
+function secret `LHF_PROBE_SECRET`. With that secret unset, or with a missing
+or wrong header, every request (OPTIONS included) gets Supabase's own
+`404 { "code": "NOT_FOUND", "message": "Requested function was not found" }`,
+so a gated canary looks undeployed. A valid anonymous JWT alone no longer
+opens it: before this, anyone could pick the model, token cap and provider on
+LHF's own OpenRouter key through it. Even with the secret, `probe` values are
+held to a policy (`_shared/probe.ts`'s `ProbePolicy`):
+
+- `model` and `fallbackModel` must be `openai/gpt-4.1-mini`,
+  `z-ai/glm-5.3-flash`, the current `LHF_MODEL` / `LHF_ASK_FALLBACK_MODEL`, an
+  entry of the comma-separated secret `LHF_PROBE_MODELS`, or start with
+  `invalid/` (which cannot run; it is how to force the primary to fail).
+- `maxTokens` is clamped to 4096, `hedgeAfterMs` to 30000, `temperature` to
+  0..2.
+- `provider` may carry only `order` (at most 8 plain names),
+  `allow_fallbacks` and `data_collection: "deny"`; `reasoning` only `effort`
+  (`low`/`medium`/`high`), `enabled` and `exclude`.
+
+A well-formed value the policy refuses is a `400 bad_request` whose message
+names the field (`probe.model is not on the canary's model allow-list`), with
+a `client_error` outcome row; it is never silently replaced by the default,
+which would record the default model's numbers under the candidate's tag. A
+wrong-typed field is still dropped, as before. The harness
+(`scripts/ask-probe.mjs`) reads the secret from the `LHF_PROBE_SECRET`
+environment variable.
 
 A harness-only twin of `ask` (`ask-canary/index.ts`), serving the exact same
 `handleAsk` logic (`ask/index.ts`) with one difference: an optional
@@ -673,6 +739,63 @@ documents. A crawled page whose title or URL matches
 true`, since that page is exactly the kind `extract-profile` wants to read
 (see below).
 
+**What it may fetch** (since 2026-10-27, hardening BE-F; `_shared/netguard.ts`).
+Candidate URLs include any link a phone reported from a course page, so the
+function holds every request, from verification and the CIS directory to
+`robots.txt` and each crawled page, to these rules:
+
+- **https only**, on the default port, no credentials in the URL. A URL we
+  were handed that is spelled `http://` on the default port is **upgraded** to
+  `https://` for the same host, path and query before any other rule looks at
+  it (a Canvas link written `http://www.seas.upenn.edu/~cis2400/` is the same
+  page, and most Penn hosts redirect to https anyway), whether it is a stored
+  candidate, a crawl's start URL or an absolute link on a crawled page, so one
+  page is not crawled under two schemes. Only that: a redirect that sends the
+  request *down* to `http://` is still refused, and `http://host:8080/` is
+  still refused by the port rule. The host must be a *name*: never an IP literal, never a name that only means
+  something inside a network (`localhost`, a single label, `*.local`,
+  `*.internal`, `*.intranet`, `*.lan`, `*.home.arpa`, `*.corp`, and the other
+  reserved top-level names). **Any public host is allowed by default**,
+  because a course's own site is often on its own domain (`cis1912.org`,
+  `*.github.io`, a lab's site) and finding those is what discovery is for.
+  The **host allow-list is opt-in**: setting the function secret
+  `LHF_DISCOVERY_HOSTS` to a comma-separated list of suffixes restricts
+  discovery to `upenn.edu` plus those suffixes (a blank value counts as
+  unset). It is the switch for narrowing the function if it is ever abused.
+  A candidate the rules refuse is left exactly as it was, like a network
+  failure, so it is picked up again if the rules change. A `verified` site
+  the rules refuse is **skipped for that call**: nothing is fetched, no
+  existing website document is marked gone, and `last_crawled_at` is not
+  stamped, so the next call tries it again instead of waiting seven days. That
+  holds for a refusal found up front (an internal name, off the allow-list,
+  resolving to a private address, or an address check that cannot run on this
+  runtime) and for one found on the way (the start URL redirecting to a host
+  the rules refuse), and the course is left out of the response's `crawled`
+  list. It does not hold for a site that answered and had nothing to read, or
+  returned a non-2xx start page: those are still a crawl that found no pages,
+  and still retire the course's earlier website documents.
+- **Public addresses only**, with or without an allow-list. The name is
+  resolved (`Deno.resolveDns`, 3 s) and every address must be outside
+  loopback, private, link-local (including the `169.254.169.254` metadata
+  service), carrier-grade NAT, multicast, reserved and documentation ranges,
+  in IPv4 and IPv6 (IPv4-mapped, NAT64, 6to4 and Teredo forms included). A
+  name that does not resolve is refused. With no allow-list this is the
+  control that stops an attacker-chosen name pointed at a private address, so
+  if the runtime has no DNS API at all the URL is refused (discovery stays
+  off until `LHF_DISCOVERY_HOSTS` is set); with an allow-list the hostname
+  rules stand on their own, with a warning in the log. Residual risk: the
+  name is resolved here and again by `fetch`, so DNS that changes between the
+  two is not caught; an allow-list narrows who could try it.
+- **Redirects are followed by the function, hop by hop** (`redirect:
+  "manual"`, at most 5), and every hop is held to the rules above before it
+  is requested. `redirect: "follow"` checked nothing.
+- **Bodies are streamed with a cap and a deadline** and the connection is
+  cancelled at either: HTML pages 1 MB (cut, and the text read so far is
+  used), `robots.txt` 100 KB, a PDF 200 KB (over it, skipped), a
+  verification fetch 500 KB, the CIS directory 2 MB (a truncated directory is
+  not cached). The deadline per body is the request timeout (8 s). The crawl
+  also stops starting pages once the call's 45 s budget is spent.
+
 ## `discover-websites`
 
 Request `{ "courseIDs": [courseID] }`, at most 3 per call (batch a longer
@@ -700,6 +823,31 @@ one `course_profiles` row from that course's live `syllabus`, `home` and
 `PROFILE_INPUT_CHARS`, default 60000; input order is syllabus, then a
 matching website page, then home, then page) and clears `profile_stale`.
 Response `{ "updated": [courseID] }`.
+
+**Time budget** (since 2026-10-27, hardening BE-12): one call may rebuild up
+to 20 profiles, one model call after another, and now has a 40 second budget
+(`EXTRACT_PROFILE_BUDGET_MS`). Past it no further course is started and a
+model call in flight is aborted. A course not reached, or whose call was cut
+off, keeps `profile_stale` set and is simply absent from `updated`, the same
+outcome as an upstream failure, so the next sync's call picks it up. The wire
+shape is unchanged.
+
+**Cool-down for a course that always overruns** (migration
+`20261027120000_profile_budget_cooldown.sql`, column
+`courses.profile_budget_aborted_at`). Retrying a course whose build always
+runs past the budget cost a unit of the student's quota and 40 seconds on
+every sync, for nothing. When the budget cuts a course's model call off, the
+course is stamped; for the next 24 hours calls skip it (it stays
+`profile_stale`) and a call whose every stale course is cooling down makes no
+model call and gives its reserved unit back. A successful build clears the
+stamp, and the course is tried again once 24 hours have passed. A course that
+was never reached because the budget was already spent is not stamped, only
+the one whose call was aborted. The stamp is read and written best-effort: if
+the column does not exist yet, nothing is cooling down and builds proceed as
+before, so the function and the migration can be deployed in either order. Still charged once per call, not per course: charging per
+course would let a sync of several courses spend several of the student's 40
+daily requests, and `profile_stale` is re-set whenever a page's content
+changes, so that is a product decision, not part of this change.
 
 Profile JSON (every field optional, strings are verbatim quotes or close
 paraphrases of the source, never inferred):
@@ -946,6 +1094,18 @@ the caller's `enrollments` and `ask_usage` rows, every linked device's auth
 user, the device links and every sync blob, then the auth user. Shared
 course material is untouched (it is not the user's data). Response
 `{ "deleted": true }`.
+
+**Idempotent** (since 2026-10-27, hardening BE-14): a second call, or a
+retry after a failure part way, completes the deletion and answers 200
+`{ "deleted": true }`. An owner's linked devices are deleted first, while the
+link rows that name them still exist (deleting a device's auth user cascades
+its link away), then the owner's rows, then the owner; an auth user that is
+already gone is skipped rather than failing the call, so it can fail at any
+step and be called again. A call whose token is genuine but whose account no
+longer exists (GoTrue answers `user_not_found`, which `requireUser` surfaces
+as a 401 with code `user_not_found`) is answered 200 by this function only:
+the deletion already finished. A bad or expired token is still 401
+`unauthorized`.
 
 From a **linked device**: never deletes the owner. It behaves as `unpair` of
 that device (link, blob row, auth user) and answers `{ "deleted": true }`.

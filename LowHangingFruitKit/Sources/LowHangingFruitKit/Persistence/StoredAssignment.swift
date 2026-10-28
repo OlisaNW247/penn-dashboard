@@ -423,10 +423,45 @@ extension StoredAssignment {
     /// would notice missing. A collapse is already a surprise; it must not also
     /// be the thing that loses a completion tick or a recorded grade.
     ///
-    /// Display fields are deliberately untouched — the caller absorbs *into*
-    /// whichever copy was seen in the feed most recently, so those are already
-    /// the freshest ones available.
+    /// Field by field, so the next reader does not have to infer it. The store
+    /// resolves a duplicate in whatever order a fetch returns the rows, and a
+    /// rule that is right in one order only is a rule that works until the
+    /// order changes; so most fields are merged the same whichever row is
+    /// `self`, and the ones that are not are named.
+    ///
+    /// - **The outranking copy's value** (`outranks`): the display fields
+    ///   `sourceRaw`, `sourceID`, `kindRaw`, `course`, `title`, `dueAt`,
+    ///   `urlString`, `termYear` and `termSeasonRaw`. Copied onto `self` only
+    ///   when `other` outranks it.
+    /// - **Merged the same in either order:** `firstSeen` (earlier),
+    ///   `lastSeenInFeed` (later), `isGoneFromFeed` (and), `completedAt`
+    ///   (earlier of the two that exist), `userCompleted` (or),
+    ///   `isCompletionOnly` (and), `canvasSubmitted` and `gradescopeSubmitted`
+    ///   (or), `canvasSubmissionObservedAt` and `gradescopeSubmissionObservedAt`
+    ///   (later: the later observation is the truer one), and the archive
+    ///   (unarchived if either copy is live).
+    /// - **`self`'s value when both copies carry one, so order matters:**
+    ///   `scoreEarned` and `scoreMax` (a known score beats none), `linkedID` and
+    ///   `pairingConfirmedAt` (an existing pairing beats none, and the two move
+    ///   together), and the archived term when both are archived. The store
+    ///   always absorbs the loser into the outranking copy, so there `self`
+    ///   is the outranking row and these are its values too; a caller that
+    ///   absorbs the other way gets the other row's.
+    ///
+    /// Display fields come from the copy that outranks the other, which is
+    /// always the real row when one of the two is bookkeeping. The caller used
+    /// to absorb *into* whichever copy was seen in the feed most recently and
+    /// leave display fields alone, on the reasoning that this copy held the
+    /// freshest ones. That reasoning is wrong for a completion-only row: it is
+    /// stamped when the completion is recorded, not when a feed showed it, so
+    /// it routinely reads as "seen most recently" while carrying no title, no
+    /// course and no date, and it is hidden from every list. Absorbing the real
+    /// row into it deleted the only copy anyone could see. The wrong fix is to
+    /// stop comparing `lastSeenInFeed`; it is still the right way to choose
+    /// between two *real* rows, which is why `outranks` keeps it second.
     func absorb(_ other: StoredAssignment) {
+        // Decided before anything below changes the two rows' own fields.
+        if other.outranks(self) { copyDisplayFields(from: other) }
         // The archive reaches back as far as the earlier sighting, and aging is
         // measured from the later one. Both directions favor retention.
         firstSeen = min(firstSeen, other.firstSeen)
@@ -437,8 +472,26 @@ extension StoredAssignment {
         // Any evidence of finished work counts, dated from the earlier tick —
         // that's when the student actually finished it.
         completedAt = [completedAt, other.completedAt].compactMap { $0 }.min()
+        // The flag is the record that a tick happened; the timestamp is only
+        // when. A tick with no timestamp ("completed, when unknown", see
+        // `completedAt`) is carried by this flag alone, so merging the dates
+        // without it lost exactly the completions that had nothing else to
+        // fall back on.
+        userCompleted = userCompleted || other.userCompleted
+        // Hidden only if *both* copies are bookkeeping. One real copy makes the
+        // row a real assignment, and the title it was just given is what makes
+        // that true; leaving the flag as the survivor had it hid the row from
+        // every list whenever the survivor was the bookkeeping copy.
+        isCompletionOnly = isCompletionOnly && other.isCompletionOnly
         canvasSubmitted = canvasSubmitted || other.canvasSubmitted
         gradescopeSubmitted = gradescopeSubmitted || other.gradescopeSubmitted
+        // The submitted flags above are merged toward "yes", and the date each
+        // was last confirmed travels with them: the later observation is the
+        // truer one, and `hasFreshSubmissionState` reads it. Dropping it left a
+        // merged row claiming a submission it had no date for, which reads as
+        // "never checked".
+        canvasSubmissionObservedAt = Self.later(canvasSubmissionObservedAt, other.canvasSubmissionObservedAt)
+        gradescopeSubmissionObservedAt = Self.later(gradescopeSubmissionObservedAt, other.gradescopeSubmissionObservedAt)
         // A known score beats no score. Earned and max move together so a
         // half-merged fraction can't be displayed.
         if scoreEarned == nil, let earned = other.scoreEarned {
@@ -460,6 +513,87 @@ extension StoredAssignment {
             linkedID = linked
             pairingConfirmedAt = other.pairingConfirmedAt
         }
+    }
+
+    /// Whether this copy should be the one kept when two rows carry one id.
+    ///
+    /// A strict total order, so exactly one of `a.outranks(b)` and
+    /// `b.outranks(a)` is true for any two distinct rows:
+    ///
+    /// 1. **A real row beats a bookkeeping row**, whatever the dates say. A
+    ///    completion-only row (`completionOnly(...)`) has no title, course or
+    ///    date, and is hidden from every list.
+    /// 2. **The copy seen in the feed last** carries the current title, date and
+    ///    URL.
+    /// 3. **A stable key built from the row's own content.** Before this, a tie
+    ///    on step 2 fell to whichever row the fetch returned first, so two
+    ///    devices sweeping the same pair could each keep a different copy and
+    ///    each delete the other's; under CloudKit both deletions sync and the
+    ///    assignment is gone (hardening plan, DAT-13). Content is the only
+    ///    thing the two devices share, since a row's store identifier is local
+    ///    to the device that holds it.
+    /// 4. **The store-local identifier, then object identity**, only for
+    ///    byte-identical copies, so a tie is still always broken within one
+    ///    device (a row not yet saved has only a temporary identifier, and
+    ///    every temporary identifier prints the same, hence the second key).
+    ///    Two devices can still pick differently here, and for two rows that
+    ///    are identical in every field the cost is a duplicate that survives
+    ///    one more sweep, not a lost assignment: the survivor's content is what
+    ///    both would have kept.
+    func outranks(_ other: StoredAssignment) -> Bool {
+        if isCompletionOnly != other.isCompletionOnly { return !isCompletionOnly }
+        if lastSeenInFeed != other.lastSeenInFeed { return lastSeenInFeed > other.lastSeenInFeed }
+        let mine = stableTieKey
+        let theirs = other.stableTieKey
+        if mine != theirs { return mine > theirs }
+        let myStoreID = String(describing: persistentModelID)
+        let theirStoreID = String(describing: other.persistentModelID)
+        if myStoreID != theirStoreID { return myStoreID > theirStoreID }
+        return ObjectIdentifier(self) > ObjectIdentifier(other)
+    }
+
+    /// Every content field, rendered in a fixed order and format, so two
+    /// devices holding the same pair compare them identically. Nothing here
+    /// reads a clock, a locale or a collection's iteration order. Only ever
+    /// compared, never parsed: the separator is a control character no title
+    /// contains, and equal rows render equal.
+    private var stableTieKey: String {
+        func render(_ date: Date?) -> String { date.map { String($0.timeIntervalSince1970) } ?? "-" }
+        func render(_ number: Double?) -> String { number.map { String($0) } ?? "-" }
+        func render(_ number: Int?) -> String { number.map { String($0) } ?? "-" }
+        return [
+            title, course, kindRaw, sourceRaw, sourceID, urlString ?? "-",
+            render(dueAt), render(termYear), render(termSeasonRaw),
+            render(firstSeen), render(completedAt),
+            String(userCompleted), String(canvasSubmitted), String(gradescopeSubmitted),
+            render(scoreEarned), render(scoreMax),
+            render(archivedTermYear), render(archivedTermSeasonRaw),
+            linkedID ?? "-", render(pairingConfirmedAt),
+        ].joined(separator: "\u{1F}")
+    }
+
+    /// The later of two optional dates; either alone if only one exists.
+    private static func later(_ a: Date?, _ b: Date?) -> Date? {
+        switch (a, b) {
+        case let (a?, b?): return max(a, b)
+        case let (a?, nil): return a
+        case let (nil, b?): return b
+        case (nil, nil): return nil
+        }
+    }
+
+    /// The feed-supplied fields `refresh(from:now:)` also writes, copied from
+    /// the other copy. `id` is the same on both rows by construction.
+    private func copyDisplayFields(from other: StoredAssignment) {
+        sourceRaw = other.sourceRaw
+        sourceID = other.sourceID
+        kindRaw = other.kindRaw
+        course = other.course
+        title = other.title
+        dueAt = other.dueAt
+        urlString = other.urlString
+        termYear = other.termYear
+        termSeasonRaw = other.termSeasonRaw
     }
 
     /// A fresh ledger row for a never-before-seen assignment.

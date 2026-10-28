@@ -24,12 +24,21 @@ public enum NonClassCanvasSite {
     /// Whether `courseKey` (a parsed course key such as "TAP 2028", or the
     /// raw Canvas site name) names a site that is never a class.
     public static func matches(_ courseKey: String) -> Bool {
+        verdicts.value(for: courseKey, compute: compute)
+    }
+
+    /// The rebuild asks this of every course key of every item, and the
+    /// answer is a function of the key alone (a regex, and a `CourseCode.parse`
+    /// that costs more than the regex), so it is remembered per key.
+    private static let verdicts = BoundedMemo<Bool>(capacity: 1024)
+
+    private static func compute(_ courseKey: String) -> Bool {
         let raw = courseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if isProgramYear(raw) { return true }
         return isProgramYear(CourseCode.parse(raw).code.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private static func isProgramYear(_ text: String) -> Bool {
-        text.range(of: #"^(?i)TAP\s+(19|20)\d{2}$"#, options: .regularExpression) != nil
+        RegexCache.contains(#"^(?i)TAP\s+(19|20)\d{2}$"#, in: text)
     }
 }

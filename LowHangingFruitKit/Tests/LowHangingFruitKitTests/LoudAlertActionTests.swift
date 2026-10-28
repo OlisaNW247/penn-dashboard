@@ -513,4 +513,17 @@ struct LoudAlertActionTests {
         #expect(source.contains("center.removePendingNotificationRequests(withIdentifiers:"))
         #expect(source.contains("center.removeDeliveredNotifications(withIdentifiers:"))
     }
+
+    // Five crash reports off Marco's phone (builds 12 to 14, 2026-10-19 to
+    // 10-26) died here: the async `didReceive` form makes the Swift thunk call
+    // iOS's completion handler on a cooperative-pool thread, and UIKit's
+    // snapshot path aborts off the main thread. A source scan, because only
+    // a real notification tap reproduces it; the old signature must not return.
+    @Test("didReceive uses the completion-handler form, never the async one")
+    func didReceiveIsTheCompletionHandlerForm() throws {
+        let source = try uiSource("NotificationResponseRouter.swift")
+        let pattern = try Regex(#"didReceive response: UNNotificationResponse,\s*withCompletionHandler completionHandler:"#)
+        #expect(source.firstMatch(of: pattern) != nil)
+        #expect(!source.contains("didReceive response: UNNotificationResponse) async"))
+    }
 }

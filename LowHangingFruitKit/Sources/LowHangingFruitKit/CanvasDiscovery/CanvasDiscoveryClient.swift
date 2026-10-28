@@ -156,6 +156,11 @@ public struct CanvasDiscoveryClient: Sendable {
     }
 
     private func fetchHTML(_ url: URL) async throws -> String {
+        // The session cookie is attached by hand below. Every URL here is
+        // built from `baseURL`, so this is the backstop for the day one is
+        // not, and for a `baseURL` that is not HTTPS: cookies go to the
+        // student's Canvas host over HTTPS only (`CredentialOrigin`).
+        guard CredentialOrigin.isSameOrigin(url, as: baseURL) else { throw Error.notHTTP }
         var request = URLRequest(url: url)
         // We attach the session cookie explicitly as a `Cookie` header below,
         // so cookie handling must be off here — leaving it `true` alongside a
@@ -168,7 +173,7 @@ public struct CanvasDiscoveryClient: Sendable {
             request.setValue(value, forHTTPHeaderField: field)
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.credentialSafeData(for: request)
         guard let http = response as? HTTPURLResponse else { throw Error.notHTTP }
         guard (200..<300).contains(http.statusCode) else {
             throw Error.http(status: http.statusCode, url: url)

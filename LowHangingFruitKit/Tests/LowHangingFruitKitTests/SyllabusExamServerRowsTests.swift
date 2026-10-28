@@ -392,7 +392,7 @@ struct SyllabusExamServerRowsTests {
     func updatesInPlaceInTheLedger() throws {
         let store = try AssignmentStore(inMemory: true)
         let phone = try #require(rows(documents: [document(text: "Midterm 1: Oct 23")], profiles: []).first)
-        #expect(store.upsert([phone], now: Self.now) == 1)
+        #expect(store.upsert([phone], now: Self.now).created == 1)
         store.setCompleted(ids: [phone.id], at: Self.now)
 
         let server = rows(
@@ -401,14 +401,14 @@ struct SyllabusExamServerRowsTests {
         )
         #expect(server.map(\.sourceID) == ["syllabus-9701-midterm-1", "syllabus-9701-final"])
         // One of the two is new; the Midterm is the row that was already there.
-        #expect(store.upsert(server, now: Self.now) == 1)
+        #expect(store.upsert(server, now: Self.now).created == 1)
 
         let stored = store.assignments(source: .canvasAnnouncement, now: Self.now)
         #expect(stored.count == 2)
         #expect(stored.first { $0.id == phone.id }?.dueAt == Self.date(10, 30, 23, 59, 59))
-        #expect(store.completionRecord().ids.contains(phone.id))
+        #expect(store.completionRecordOrFail().ids.contains(phone.id))
 
         // And a third reading, the same, adds nothing.
-        #expect(store.upsert(server, now: Self.now) == 0)
+        #expect(store.upsert(server, now: Self.now).created == 0)
     }
 }

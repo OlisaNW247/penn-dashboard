@@ -225,8 +225,11 @@ struct AskCitationLinkTests {
     /// nothing else: the block opens with the student's local date and time
     /// (the context below is in America/New_York, 12:00 PM EDT), and the
     /// passage keeps its line break, the continuation indented two spaces,
-    /// where it used to be flattened into one run.
-    private static let goldenRequest = #"{"askedAt":"2026-10-10T16:00:00.000Z","contextDocument":"the exact document text","courseIDs":["1"],"excerpts":"The student's local date and time: Saturday, October 10, 2026, 12:00 PM (America/New_York, UTC-04:00). Due times in the work list carry this offset; \"today\" and \"tomorrow\" mean the student's calendar day.\nRETRIEVED EXCERPTS (from the student's synced course materials):\nExcerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted.\n[1] CIS 2400 · ed discussion · posted Oct 3 · \"Midterm room change\": [ed · announcement] General\n  The zeppelin midterm moves to Towne 100.","history":[],"question":"when is the zeppelin midterm?"}"#
+    /// where it used to be flattened into one run. The zone is written
+    /// `America\/New_York` because `JSONEncoder` escapes a forward slash by
+    /// default; that re-typing first wrote it bare and failed on its first
+    /// compile (2026-10-27). The escaped form is what the wire carries.
+    private static let goldenRequest = #"{"askedAt":"2026-10-10T16:00:00.000Z","contextDocument":"the exact document text","courseIDs":["1"],"excerpts":"The student's local date and time: Saturday, October 10, 2026, 12:00 PM (America\/New_York, UTC-04:00). Due times in the work list carry this offset; \"today\" and \"tomorrow\" mean the student's calendar day.\nRETRIEVED EXCERPTS (from the student's synced course materials):\nExcerpts labelled \"ed discussion\" are posts by course staff on the class's Ed board, and carry the date they were posted.\n[1] CIS 2400 · ed discussion · posted Oct 3 · \"Midterm room change\": [ed · announcement] General\n  The zeppelin midterm moves to Towne 100.","history":[],"question":"when is the zeppelin midterm?"}"#
 
     @Test("the encoded request is byte-identical to what it was before citations carried links")
     func requestBytesUnchanged() throws {

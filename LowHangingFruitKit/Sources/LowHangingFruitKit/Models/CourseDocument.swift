@@ -215,11 +215,21 @@ public struct CourseKnowledgeBase: Codable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        courses = try container.decode([CourseSummary].self, forKey: .courses)
-        documents = try container.decode([CourseDocument].self, forKey: .documents)
-        lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
-        catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
-        gradingProfiles = try container.decodeIfPresent([CourseGradingProfile].self, forKey: .gradingProfiles) ?? []
+        // Element by element, so one document, course, catalog entry or
+        // grading profile that cannot be read costs that one element and not
+        // the file (`CourseKnowledgeStore.load()` used to fall back to
+        // `.empty` on any throw, and the next save then wrote the empty base
+        // over every document the student had). The count of what was
+        // dropped goes to the decoder's `LossyDecodeTally`, which
+        // `CourseKnowledgeStore.loadReport()` reads: it is a fact about this
+        // read, not about the value, so it is deliberately not a stored
+        // property here, where it would join `==` and `hash`.
+        courses = try LossyDecoding.requiredArray(CourseSummary.self, in: container, forKey: .courses, decoder: decoder)
+        documents = try LossyDecoding.requiredArray(CourseDocument.self, in: container, forKey: .documents, decoder: decoder)
+        // A timestamp that will not parse is a lost timestamp, not a lost file.
+        lastSyncedAt = try? container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        catalog = LossyDecoding.array(CourseCatalogEntry.self, in: container, forKey: .catalog, decoder: decoder)
+        gradingProfiles = LossyDecoding.array(CourseGradingProfile.self, in: container, forKey: .gradingProfiles, decoder: decoder)
     }
 
     public static let empty = CourseKnowledgeBase()

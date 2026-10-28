@@ -10,6 +10,7 @@ import {
   decodedBase64Length,
   DeviceValidationError,
   generatePairingCode,
+  isAuthUserGone,
   isPairingLive,
   MAX_BLOB_BYTES,
   PAIRING_CODE_PATTERN,
@@ -243,4 +244,17 @@ Deno.test("decideDeviceSyncAccess: devices and owners with devices only", () => 
   assertEquals(decideDeviceSyncAccess(deviceIdentity, true), null);
   assertEquals(decideDeviceSyncAccess(ownerIdentity, true), null);
   assertEquals(decideDeviceSyncAccess(ownerIdentity, false), { status: 403, code: "not_paired" });
+});
+
+Deno.test("isAuthUserGone: GoTrue's user_not_found, by code or by message, and nothing broader", () => {
+  assertEquals(isAuthUserGone({ code: "user_not_found" }), true);
+  assertEquals(isAuthUserGone({ code: "user_not_found", message: "anything" }), true);
+  assertEquals(isAuthUserGone({ message: "User from sub claim in JWT does not exist" }), true);
+  assertEquals(isAuthUserGone({ message: "User not found" }), true);
+  // Not "already deleted": a bad token, a server fault, an unrelated 404.
+  assertEquals(isAuthUserGone({ code: "bad_jwt", message: "invalid JWT" }), false);
+  assertEquals(isAuthUserGone({ code: "unexpected_failure", message: "database error" }), false);
+  assertEquals(isAuthUserGone({ message: "requested path is invalid" }), false);
+  assertEquals(isAuthUserGone({}), false);
+  assertEquals(isAuthUserGone({ code: null, message: null }), false);
 });

@@ -25,8 +25,31 @@ import LowHangingFruitKit
 /// which is the moment you have actually asked about this one assignment.
 struct AssignmentCardView: View {
     let item: DashItem
-    /// Called once the exit animation has finished.
+    /// Called once the exit animation has finished. This is what takes the card
+    /// off the list, so it cannot be called earlier without losing the
+    /// animation: the card is gone the moment the list stops holding it.
     let onComplete: () -> Void
+    /// Called the instant a swipe is accepted, before any animation starts and
+    /// before `onComplete`. This is the place to write the completion down.
+    ///
+    /// The swipe used to save only when `onComplete` ran, 0.38 seconds after
+    /// the finger lifted (0.18 with reduced motion), so a process that ended
+    /// inside that window (the phone dying, the app swiped away) lost a
+    /// completion the student had just made and been shown (hardening plan
+    /// 2026-10-25, B10: UCR-14). A caller that persists here must not also
+    /// remove the card here: persisting through the path that rebuilds the
+    /// dashboard would take the card off the list at once, and with it the
+    /// exit animation. It needs a write that stops at the ledger.
+    ///
+    /// **Who passes one.** The dashboard's timeline does (`TimelineSectionView`
+    /// from `ContentView`, through `DashboardViewModel.commitCompletion` to
+    /// `AppState.commitCompletion`). The megaphone sheet's cards
+    /// (`AnnouncementFindsView`) do not, so a swipe there still saves when
+    /// `onComplete` runs, 0.38 seconds late: UCR-14 is open for that surface.
+    ///
+    /// Defaulted to nothing, so every construction site that does not pass one
+    /// behaves exactly as it did.
+    var onCommit: () -> Void = {}
     let onEdit: () -> Void
     /// Called after the student confirms removing their own task
     /// (`item.removal`). Defaulted so previews and every other construction
@@ -389,6 +412,10 @@ struct AssignmentCardView: View {
     private func triggerComplete(state: DueState) {
         guard !isCompleting else { return }
         isCompleting = true
+        // Save first, then animate: the completion is recorded before the card
+        // starts to leave, not when it has finished leaving (`onCommit`). Kept
+        // above both animation branches below so neither can run without it.
+        onCommit()
         lhfHaptic(for: state)
 
         if reduceMotion {

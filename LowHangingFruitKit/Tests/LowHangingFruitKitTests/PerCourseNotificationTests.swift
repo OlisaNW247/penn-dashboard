@@ -372,7 +372,13 @@ struct PerCourseNotificationTests {
     func occurrenceIDRoundTrips() {
         let taskID = UUID()
         let due = Date(timeIntervalSince1970: 1_800_000_000)
-        let sourceID = RecurringTask.occurrenceSourceID(taskID: taskID, due: due)
+        // Counted in the anchor zone explicitly: the id ends in the local date
+        // and clock time re-read there, so a bare call would depend on which
+        // zone this machine is in. In the anchor zone it is the instant itself,
+        // byte for byte what builds before the zone fix wrote.
+        let sourceID = RecurringTask.occurrenceSourceID(
+            taskID: taskID, due: due, zone: RecurringTask.occurrenceAnchorZone
+        )
         #expect(sourceID == "\(taskID.uuidString)-1800000000")
         #expect(RecurringTask.occurrenceTaskID(fromSourceID: sourceID) == taskID)
     }
