@@ -211,7 +211,8 @@ later commits are docs only) at 18:49 UTC and exported with
 
 Owed now: Marco submits 3.4.0 (17) in App Store Connect with expedited
 review, using the notes in `docs/appstore/LISTING.md`; his live PennKey
-sign-in test on the Debug 3.4.0 (17) build, which installs the moment the
-phone is back on the cable; Olisa deploys the backend for the `prompt.ts`
+sign-in test on the Debug 3.4.0 (17) build, which was installed and launched on
+his iPhone 17 Pro at 19:05 UTC (the phone reports 3.4.0 (17); the process was
+still running a minute later, well past the old launch-crash window); Olisa deploys the backend for the `prompt.ts`
 wording change. The `update-manifest` floor stays at 3.3.0 until the
 automation raises it after release.
