@@ -3568,14 +3568,17 @@ UI or simulator used. Live multi-school sign-in remains outside this automated
 coverage. The owner approved the preceding onboarding screens on-device.
 
 
-### Dashboard introduction (2026-10-28)
-First-time setup now ends with a six-step, anchored tour of the actual dashboard:
-list tabs, class filter, add task, announcements, AI, and profile/Sweeper.
-Each step has one sentence, an arrow, Back/Next, and Skip. Underlying controls
-are inactive during the tour. Reduce Motion and VoiceOver focus are supported;
-long text can scroll within the available space. Returning launches, Preview,
-and single-service reconnects do not start the tour.
-DEBUG: launch with `-LHFDemoData -LHFDashboardTourHarness` to review it without
-changing saved connections. Device installation and visual tap-through for this
-addition remain pending because the phone was unavailable and Mirroring locked.
-Validation: iOS Debug build passed; 25 focused gesture, tour-state, and reconnect checks passed.
+### Dashboard practice (2026-10-28)
+The standalone practice card and six-step feature tour are replaced by two
+sample-dashboard states during first Canvas sync. The real AssignmentCardView
+swipes right into prev; the real DoneCardView taps/swipes left back into todo.
+The surrounding sample cards and dashboard controls are muted; concise arrows
+introduce lists, classes, adding tasks, announcements, settings, and AI across
+those two states. Continue requires both completed practice and successful sync.
+All fixtures and progress are local to CanvasCompletionGuide; nothing is loaded
+into AppState or persisted. The underlying login WebView stays mounted. Optional
+Gradescope and reminder setup follow as before, then the real dashboard opens.
+There is no separate dashboard tour after setup or on reconnect.
+DEBUG review: `-LHFFullOnboardingReview -LHFSkipIntro -LHFCompletionGuideHarness`.
+Phone installation and visual tap-through are pending device availability.
+Validation: iOS Debug build and 25 focused tests in 5 suites passed.

@@ -44,32 +44,6 @@ struct ReconnectCoverTests {
 
     // MARK: - State
 
-    @Test("first setup offers the dashboard tour once per completed flow")
-    func firstSetupOffersTour() {
-        withFlags(onboarded: false) {
-            let state = makeState()
-            #expect(!state.showsDashboardTour)
-            state.completeOnboarding()
-            #expect(state.showsDashboardTour)
-            state.showsDashboardTour = false
-            state.completeOnboarding()
-            #expect(!state.showsDashboardTour)
-            #expect(!makeState().showsDashboardTour)
-        }
-    }
-
-    @Test("reconnecting either service does not replay the dashboard tour")
-    func reconnectDoesNotOfferTour() {
-        withFlags(onboarded: true) {
-            for destination in [AppState.OnboardingDestination.canvas, .gradescope] {
-                let state = makeState()
-                state.restartOnboarding(for: destination)
-                state.completeOnboarding()
-                #expect(!state.showsDashboardTour)
-            }
-        }
-    }
-
     @Test("a Canvas reconnect opens the cover and leaves onboarding, in memory and on disk, finished")
     func canvasReconnectKeepsOnboardingFinished() {
         withFlags(onboarded: true) {
