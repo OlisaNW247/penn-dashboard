@@ -154,11 +154,13 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.2.1 (build 15)** (App Store
-id `6783911002`), released 2026-10-25 at 18:46 UTC per the public iTunes
-lookup, read 2026-10-26. It is the build the launch-day installs of
-2026-10-26 got, and it carries the launch crash recorded in
-`docs/LAUNCH_CRASH_2026-10-26.md` (Known gaps). Before it, **3.2.0 (build
+**Release state.** Live on the App Store: **3.3.0 (build 16)** (App Store
+id `6783911002`), released 2026-10-27 at 22:37 UTC per the public iTunes
+lookup, read 2026-10-28. It still carries the launch crash recorded in
+`docs/LAUNCH_CRASH_2026-10-26.md` (Known gaps) and the notification-tap
+crash; **3.3.1 (17)** from `release/3.3.1` fixes both. Before it, **3.2.1
+(build 15)**, released 2026-10-25 at 18:46 UTC, the build the launch-day
+installs of 2026-10-26 got. Before it, **3.2.0 (build
 14)**, live per Olisa on 2026-10-25. Before them, **3.1.0 (build
 13)**, released 2026-10-21 at 19:07 UTC per the public iTunes lookup, read
 2026-10-23
@@ -193,13 +195,15 @@ a `sync` carrying them is deployed (v14 or later; v13 is the NUL guard
 alone, see below) (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
-**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Olisa created the 3.3.0 version record, attached build 16 and submitted it for review on 2026-10-27, per his word that day; approval and release are not recorded yet. The live manifest has carried the feedback object (`2026-10-smoothie`) since the same day, checked against the sanitizer's rules; builds below 3.3.0 ignore it. The branch is not merged into `v8`.
+**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Olisa created the 3.3.0 version record, attached build 16 and submitted it for review on 2026-10-27, per his word that day; it was approved and **released at 22:37 UTC on 2026-10-27** (public iTunes lookup, read 2026-10-28), so **3.3.0 (16) is what is live**. It carries neither the duplicate-category launch-crash fix nor the notification-tap crash fix: both ship in **3.3.1 (17)** from `release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`), which lands in `v8` through PR #14. The live manifest has carried the feedback object (`2026-10-smoothie`) since the same day, checked against the sanitizer's rules; builds below 3.3.0 ignore it.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
-archived. The `update-manifest` floor is **3.2.1** since
-2026-10-27 (`9a49cc5`, the first real run of the `update-floor` workflow,
-at Olisa's word; 3.2.1 had been live about 42 hours). It was 3.2.0 from
-2026-10-25 (`feec931`) and 1.2.1 from 2026-09-09. Every gated build below
-3.2.1 shows the update wall. From here the workflow raises it on each
+archived. The `update-manifest` floor is **3.3.0** since 08:52 UTC on
+2026-10-28 (`f133993`, the `update-floor` workflow's automatic run, about
+ten hours after 3.3.0 went live rather than six). Before that it was 3.2.1
+from 2026-10-27 (`9a49cc5`, the workflow's first real run, at Olisa's
+word), 3.2.0 from 2026-10-25 (`feec931`) and 1.2.1 from 2026-09-09. Every
+gated build below 3.3.0 shows the update wall, so until 3.3.1 is live every
+student is held on the build with the launch crash. From here the workflow raises it on each
 release (Update gate, below). Marco's
 read of the public iTunes lookup on 2026-10-08
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0

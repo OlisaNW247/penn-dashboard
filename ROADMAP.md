@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-24 on `v8` (the tree research plan). Before that,
+Last updated 2026-10-28 on `release/3.3.1` (the 3.3.1 release). Before
+that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
 with Marco's `v8-loud-alert-actions`; not compiled). Marco's
@@ -20,9 +21,10 @@ The rest of Marco's branches the plan of 2026-10-23
 same order; none of it is compiled yet, and the launch refresh and the
 course-sync salvage are separate briefs, not merges.
 
-Live on the App Store: **3.0.0 (11)**, since 2026-09-28 by the public
-iTunes lookup (`v8`'s notes say about 2026-10-01). The next release is
-**3.0.1 (12)**, the sign-out fix, from `v8`. Marco's launch-prep work
+Live on the App Store: **3.3.0 (16)**, since 2026-10-27 22:37 UTC by the
+public iTunes lookup; it still has the launch crash. The next release is
+**3.3.1 (17)**, the two crash fixes plus the hardening round, from
+`release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`). Marco's launch-prep work
 (2026-10-09/10, built on `v8-launch-prep`) was merged into `v8` on
 2026-10-10 through pull request 9, at his instruction, so it now rides
 in whatever is built from `v8` next. Most of it has not been on a phone:
