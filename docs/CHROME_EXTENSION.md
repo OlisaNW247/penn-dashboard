@@ -508,3 +508,39 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   once-per-run `/users/self` check (482 node tests); the collector's
   hourly throttle (`collectRunAtV1`) has to be cleared once for the fixed
   build to run before the hour is up.
+- 2026-10-24 to 2026-10-27: **the collector works on real Canvas.** After
+  the fix, Olisa's laptop uploaded 685 documents as `collector =
+  'extension'`: 396 pages (CIS 4500 alone 384; the phone stops at 40),
+  145 assignments, 70 modules, 18 announcements, 3 syllabi and 53 PDFs
+  (322 to 5,278 characters of text each, none near empty; all from
+  "Physics Exam Archive", the one site with visible Files). No extra host
+  permission was needed for the download redirect. The extension retired
+  nothing: the 16 rows marked gone in those days are all in courses it
+  never uploaded to (one is the website-crawl gap in CLAUDE.md).
+  Encrypted sync was still exchanging on 2026-10-27 (phone 01:45, laptop
+  12:05 UTC).
+- 2026-10-27: the owner's extension error panel showed why the other
+  courses' PDFs never arrived: the download redirect lands on Instructure's
+  S3 bucket, whose wildcard CORS Chrome refuses for a credentialed fetch.
+  Files now go through `/api/v1/files/:id/public_url` and an
+  uncredentialed fetch of the signed URL (486 node tests). Not yet run on
+  his laptop.
+- 2026-10-27: Files through `public_url` confirmed on the owner's laptop
+  (50 PDFs extracted in one run, 16 empty, 0 failed), but the upload
+  stopped at its first batch: `sync` answered 500 because one PDF's text
+  held NUL characters, which Postgres refuses. Every document's title and
+  text is now cleaned before hashing (`storableText`: NULs dropped, lone
+  surrogates to U+FFFD). 488 tests. The server-side guard is not deployed.
+- 2026-10-27: PDFs linked from a course's pages, assignments, syllabus and
+  File module items are collected too (`canvasFileIDsFromLinks`, the
+  `linkedFileIDs` path in `collectFiles`), because most courses hide the
+  Files listing. Non-PDF links are remembered and skipped; the summary's
+  `files` gains `linked` and `linkedForbidden`. 498 tests. Not yet run
+  against real Canvas.
+- 2026-10-27: linked PDFs confirmed live (47 uploaded, PHYS 0151 and MATH
+  1400 among them; 92 lookups, 0 refused, 19 failed). A link to a file in
+  another course's site is now retried as `/api/v1/files/:id`; the summary
+  adds `linkedMissing` and `unparseable`. 499 tests.
+- 2026-10-27, later: the next run looked up 186 linked ids, found 23
+  missing both ways and 3 refused, and had nothing new to extract. The
+  remaining courses without PDFs link none the student can open.

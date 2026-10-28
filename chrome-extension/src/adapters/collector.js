@@ -16,6 +16,7 @@
 import {
   DEFAULT_BASE_URL, MAX_PAGES, assignmentsURL, pagesListURL, pageBodyURL, modulesURL,
   syllabusBodyURL, announcementsRequestURL, stripAntiHijackPrefix, looksLikeHTML, nextPageURL,
+  canvasFileIDsFromLinks,
 } from "../core/canvasApi.js";
 import {
   decodeAssignments, assignmentDocument, linksFromAssignment,
@@ -231,7 +232,8 @@ const READERS = {
   async modules(ctx, course, now) {
     const pages = await canvasPaged(ctx, modulesURL(course.courseID));
     const items = decoding(() => decodeModuleItems(pages));
-    return { documents: moduleDocuments(items, course, { now }), links: linksFromModuleItems(items, course) };
+    const fileIDs = items.filter((i) => i.typeRaw === "File" && i.contentID).map((i) => i.contentID);
+    return { documents: moduleDocuments(items, course, { now }), links: linksFromModuleItems(items, course), fileIDs };
   },
 
   async assignments(ctx, course, now) {
@@ -365,9 +367,11 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   let forbidden = 0;
   let filesForbidden = 0;
   const filesSeen = { ...(files?.seen ?? {}) };
-  const fileCounts = { extracted: 0, empty: 0, failed: 0 };
+  const fileCounts = { extracted: 0, empty: 0, failed: 0, linked: 0, linkedForbidden: 0, linkedMissing: 0, unparseable: 0 };
   for (const course of list) {
     const failed = [];
+    const courseLinks = [];
+    const moduleFileIDs = [];
     if (rateLimited) {
       failures[course.courseID] = ["skipped"];
       continue;
@@ -377,6 +381,8 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
         const got = await READERS[name](ctx, course, when);
         documents.push(...got.documents);
         links.push(...got.links);
+        courseLinks.push(...got.links);
+        moduleFileIDs.push(...(got.fileIDs ?? []));
       } catch (e) {
         if (!(e instanceof CollectError)) { failed.push(name); continue; }
         if (e.kind === "out") return empty("out"); // sign-in page: nothing is uploaded
@@ -391,6 +397,9 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
         fetch: fetchFn, courseID: course.courseID, course, extractText: files.extractText,
         seen: filesSeen[course.courseID] ?? {}, now: when, sleep: sleep ?? limits.sleep,
         confirmSession: () => ctx.confirmSession(),
+        // File ids this run's own material for the course points at (2026-10-27):
+        // the Files tab is usually hidden, the links are not.
+        linkedFileIDs: [...new Set([...canvasFileIDsFromLinks(courseLinks), ...moduleFileIDs])],
         limits: { delayMs: limits.delayMs, maxFiles: files.maxFiles },
       });
       ctx.requests += got.counts.requests;

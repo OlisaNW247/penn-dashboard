@@ -38,10 +38,26 @@ function isoOrUndefined(value) {
 // CourseDocument.init + CourseDocumentWire.init(document:). Keys in sorted
 // order, as BackendJSON.encoder() (.sortedKeys) writes them. `submitted` is
 // not on the wire.
+// Text Postgres can store. The server writes documents through PostgREST,
+// which reads the body as JSON into a text column, and Postgres refuses a
+// NUL ("unsupported Unicode escape sequence") and a lone surrogate. One such
+// character failed a whole 200-document upload with a 500 on 2026-10-27: a
+// Canvas PDF whose text pdf.js returned with NULs in it. Cleaned here, before
+// the hash, so the hash describes exactly the text the server stores. A lone
+// surrogate becomes U+FFFD, as TextEncoder would make it anyway.
+export function storableText(s) {
+  if (typeof s !== "string") return s;
+  return s
+    .replace(/\u0000/g, "")
+    .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
+}
+
 export function courseDocumentWire({
-  courseID, course, kind, sourceID, title, url, text,
+  courseID, course, kind, sourceID, title: rawTitle, url, text: rawText,
   updatedAt, fetchedAt = new Date(), dueAt, pointsPossible,
 }) {
+  const title = storableText(rawTitle);
+  const text = storableText(rawText);
   const wire = {
     contentHash: documentContentHash(title, text),
     course,

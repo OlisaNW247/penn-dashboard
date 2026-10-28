@@ -129,6 +129,14 @@ every function that resolves a caller now knows a paired laptop. `sync` v12 (the
 window-kind rules of `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2) went
 live on 2026-10-23 at Olisa's go, about 16:00 UTC; before it the pool held
 40 live announcement documents, every one from spring 2026, and 97 Ed.
+`sync` v13 went live on 2026-10-27 at about 14:22 UTC, at Olisa's go: v12's
+own source (`a2e2b1b`) plus the NUL guard in `validateDocuments`, deployed
+from a worktree on purpose so that `v8`'s undeployed `sync` changes (the
+server exam dates) did not ride along. `sync` v14 and `discover-websites` v5
+followed the same day at Olisa's go, with migration
+`20261027150000_server_collector.sql`, from the same v12 base plus both
+patches (exam dates still left out): crawled website rows are stamped
+`collector = 'server'` and no client's complete-set report retires them.
 
 **Visual language.** Marco's Smooth design: a white paper ground with
 tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
@@ -177,7 +185,8 @@ weak). Creating the 3.2.1 version record, attaching build 15 and
 submitting are Olisa's steps in App Store Connect; whether done is not
 recorded here yet (`docs/appstore/CHECKLIST.md`, top). The What's New in `LISTING.md` leaves out the AI
 judgments and the server exam dates until `extract-announcement` and
-`sync` v13 are deployed (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
+a `sync` carrying them is deployed (v14 or later; v13 is the NUL guard
+alone, see below) (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
@@ -1085,7 +1094,7 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 482 tests, all green, on `v8` (2026-10-23, `cd chrome-extension
+counts): 499 tests, all green, on `v8` (2026-10-27, `cd chrome-extension
 && npm test`, node 22 in the cloud container).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
@@ -1109,6 +1118,7 @@ a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
+**Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
@@ -1458,13 +1468,22 @@ the count, so a later drop can be traced:
   - 736/76 and 769/78 (`assistant-ui`)
   - 693/70 (old `v6`), 608/61 (v3.5+v4 merge), 517/55 (`v3.5`)
   - 456/40 (`v4`)
+- Deno: 473 passed, 0 failed on `v8` (2026-10-27, later): +2 for the
+  `'server'` collector (the in-memory rule and the query's `neq`). The
+  deployed `sync` v14 / `discover-websites` v5 source is v12's `a2e2b1b`
+  with both patches: 424 there.
+- Deno: 471 passed, 0 failed on `v8` (2026-10-27, Deno 2.9.8 `--no-check`,
+  `deno check --no-lock` of `sync` clean): the 468 of PR #13 plus 3 for
+  `storableText` (NULs and lone surrogates). The deployed `sync` v13 is
+  v12's source `a2e2b1b` with the same patch: 422 there (419 plus 3).
 - Deno, pending: 428 passed, 0 failed on `v8-merge-marco` (2026-10-23, the
   merge of Marco's `v8-server-exam-dates`: +9 in `db.test.ts` and
   `profile.test.ts` for `examDates`, the first run of them under real
   Deno; Deno 2.9.8 `--no-check`, and `deno check --no-lock` of every
   function's `index.ts` clean under 2.1.4). The merged tree is not
-  compiled in Swift and `sync` is not redeployed (the next deploy would be
-  v13).
+  compiled in Swift and `sync` is not redeployed with it (v13, of
+  2026-10-27, is v12's source plus the NUL guard only, so the exam dates
+  wait for v14).
 - Deno: 419 passed, 0 failed (2026-10-23, `v8`, the window-kind rules of
   `docs/ANNOUNCEMENTS_FOR_ASK_PLAN.md` Phase 2: announcements and Ed
   posts exempt from the complete-set rule, a 120-day age-out on read,
@@ -2653,7 +2672,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` v13 deploy before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
+| `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` deploy from `v8`, v14 or later, before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
 | `v8-announcements` | **Pushed to origin 2026-10-18 as one commit on `v8` at `beed156`; not merged into `v8`.** Grade Watcher hidden (flag off, code and the grade fetch kept), the megaphone in the header, Olisa's sign-in lines back under canvas in DEBUG builds, "sign in to canvas" when no login is saved, announcement and Ed tasks as cards (per class, hidden once past or stale, deletion-flagged, deduped), the megaphone sheet redesigned (found cards and the past 7 days of announcements under one class filter), exam cards from feed / announcements / syllabus, the loud 10-minute alert (with the time-sensitive entitlement), and "the vault". `v8-loud-alert` and `v8-exams` were folded in as patches, so those two branches hold nothing extra. Its four local WIP commits were squashed into that one commit before the push. 2230/206 green. The last build installed on Marco's phone predates the sheet and the rules; the current build waits on the phone being reachable. Sign-in and sync files are byte-identical to `v8`. |
@@ -2661,7 +2680,7 @@ it holds work that exists nowhere else.
 | `fix/submission-status` | **Pushed to origin 2026-10-19 as one commit on `v8-announcements` at `75dc7aa`; no PR; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** Why submitted work can read "not done" (Traps, the three 2026-10-18 entries; Known gaps, "Turned-in state"). Lands two accuracy fixes with their tests: module rows with a different Canvas assignment id no longer collapse into a calendar row (`AssignmentDeduplicator`), and a Gradescope assignment's name no longer counts as its status, on the list row or the detail page (`GradescopeHTMLParser.removingTitle`). Also pins section-override rows through `isCompleted` and corrects the `submittedCanvasAssignmentIDs` doc comment. `syncGradescope`, `sync()`, `connectCanvas` and every sign-in and sync file are byte-identical to `75dc7aa`. Mac tests and an iOS Debug compile only (Test baseline); never on a phone. |
 | `parked/launch-submission-refresh` | **Parked, do not merge without Marco's say (Olisa's too: it moves his sync).** One commit `56d27b9` on `75dc7aa`, pushed to origin 2026-10-19 (no PR), 2233/207 green on its own: the iOS dashboard runs the session half of its refresh once at a cold launch, so a submission made since the last refresh is seen at once instead of after the first 5-minute tick. It also brings a full Gradescope scrape, the course-knowledge/Ed sync and the silent-renewal checks forward to launch, as a resume already does, and `fix/canvas-signin-bulletproof` edits the same `ContentView.refresh`. |
 | `parked/gradescope-unverified-submission` | **Was parked; merged into `v8-merge-marco` on 2026-10-23 (not compiled).** One commit `5847e02` on `75dc7aa`, pushed to origin 2026-10-19 (no PR): a Gradescope detail page that fails to load (timeout, 5xx) keeps the row's last known "submitted" instead of turning it back to not done (`GradescopeClient.FetchReport`, `preservingUnverifiedSubmissions`). It edits one line of `syncGradescope`, the sync Marco said not to touch. 2240/206 green on its own. |
-| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v12 is live and v13 would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
+| `v8-server-exam-dates` | **Local, 2026-10-18, one commit on `75dc7aa` (the `v8-announcements` commit, pull request 10's head); not pushed; merged into `v8-merge-marco`, see that row.** (Merged into `v8-merge-marco` on 2026-10-23, Swift not compiled; Deno 428/0 there. The deploy note below still stands: `sync` v13 is live without it, v12's source plus the NUL guard; a deploy from `v8`, v14 or later, would carry this, with Olisa's go.) The exam dates `extract-profile` already stored now reach the app: `sync`'s manifest carries `examDates` per course (`profileRowToWire` and `isoDayOf` in `backend/supabase/functions/_shared/`, `backend/PROTOCOL.md`), `CourseProfileWire` and `CourseGradingProfile` keep them (decoded leniently, an older server or an old saved knowledge base still loads), and `SyllabusExamRows` prefers a dated server exam over the on-device parse under the same `syllabus-...` id. 2270/208 green; compiled for iOS (Debug, generic device); never on a phone. **The backend half needs a deploy before the app sees anything, and nobody has approved one.** It touches one function, `sync` (`node backend/scripts/deploy-function.mjs sync`): the other functions import the edited `_shared` files but do not call the changed code. A deploy is a production change to the live Supabase project, so it needs Marco's explicit go, and Olisa should be told first because `sync` is the call every install makes. The Deno tests for it were written but not run (no Deno on this Mac); the new cases were run only under Node 24 with a `Deno.test` shim. |
 | `olisa-grade-watcher-beta` | Local, 2026-10-15, superseded: Olisa's `ba75e97` plus a grades button and a "beta" tag, uncommitted in `.claude/worktrees/olisa-latest`. Grade Watcher was removed three days later, so nothing there needs merging. |
 | `parked/ask-course-sync-fixes` | **Parked, do not merge as is.** Fixes to the course-material sync written on 2026-10-09 and set aside when Marco said not to touch the sync: a half-failed sync no longer erasing documents, a 403 on one course no longer aborting all, 120 page bodies with the front page first. Its commit message lists what an independent review found still open, including one regression and two server-side prerequisites. |
 | `parked/missing-login-banner` | **Merged into `v8-merge-marco` on 2026-10-23 (not compiled); it had been parked since 2026-10-18, written for Olisa to review.** On `v8` at `beed156` (2026-10-18). When the saved Canvas cookies are removed entirely (Grade Watcher's rejected fetch, the DEBUG "simulate canvas logout"), `SessionCookieStore.isExpired` reads false, so `canvasSessionExpired` stays false: no refresh banner, no renew-on-open, the saved PennKey password never used. Marco's phone sat signed out from 2026-10-10 to 2026-10-18 that way. The fix adds `canvasLoginEverCaptured` to `AppState` (persisted, set on a login or a renewal, cleared by disconnect, inferred once for older installs from a saved password, the stay-signed-in offer or saved cookies) and ORs a "login is missing" rule into `refreshCanvasSessionExpiredState`; `isExpired` is deliberately unchanged. 1994 tests / 190 suites green with `swift test --no-parallel`; the iOS Debug build succeeds; not run on a phone. |
@@ -2779,20 +2798,77 @@ none is a ship line.
   Settings", the disclosure line) is capitalised and says "Settings" where
   the app says Profile; the copy rule is Marco's own, so it is his to
   settle, not rewritten here.
-- **The extension downloads Canvas Files for at least one course**
-  (2026-10-24: 53 PDF `file` documents in the pool, all from one course
-  whose Files tab is visible; whether a course with a hidden Files tab,
-  which answers 401, ever yields any is still unknown, and so is the
-  redirect host question below for other courses). Written 2026-10-22,
-  when it was unknown: Canvas redirects a file download to a separate signed
-  file host (Inst-FS for Instructure-hosted Canvas; Penn's not
-  confirmed), and a service-worker fetch with credentials can only read
-  it if that host's CORS allows it or the extension holds a host
-  permission for it. None was added: the host is unknown and a wildcard
-  would be a broad grant shown at install. A failed download is skipped
-  and retried next run, never fatal. The owner's first run says which:
-  if files never appear, read the redirect host off one download in
-  Chrome's network panel and add exactly that host.
+- **Website crawls were retired by a phone that had not downloaded
+  them yet** (seen 2026-10-26, ECON 0100: five `website` rows fetched at
+  14:33 UTC and marked gone at 14:54 by a classmate's phone sync), because
+  crawled rows took the column's default, `collector = 'phone'`. Fixed
+  2026-10-27 at Olisa's go: migration `20261027150000_server_collector.sql`
+  (the `'server'` value; the 8 existing website rows restamped),
+  `discover-websites` v5 stamps its rows `'server'`, and `sync` v14 never
+  lets a client report retire one (`selectLiveDocumentIDsForCourse`,
+  `liveIDsRetirableBy`); the crawl retires its own pages. Checked live the
+  same day with a throwaway user: a phone's empty complete-set report
+  retired the course's phone page and left the server row live, and
+  every row it made was deleted after. A real crawl writing `'server'`
+  has not been seen yet.
+- **Canvas Files reach the extension through `public_url`, not the
+  download link** (2026-10-27, not yet seen on the owner's laptop). Until
+  then only one course's 53 PDFs arrived: `files.js` fetched
+  `/files/:id/download` with credentials, Canvas redirected to a signed
+  URL on `instructure-uploads.s3.amazonaws.com`, and that bucket answers
+  `Access-Control-Allow-Origin: *`, which Chrome refuses for a request
+  carrying credentials (seen in the extension's error panel). Now each
+  file costs one Canvas call, `/api/v1/files/:id/public_url`, and the
+  returned signed URL is fetched with `credentials: "omit"`. Rejected: a
+  host permission for the bucket (shown at install, and cookies there do
+  nothing) and keeping credentials through the redirect. The signed URL is
+  a bearer link for hours and is never logged or stored. **The fix works**:
+  the owner's next run (2026-10-27 12:49 UTC) extracted 50 PDFs, 16 empty
+  (scans with no text layer), none failed. It then uploaded nothing,
+  because one PDF's text held NUL characters and the server's `sync` answered
+  the whole batch with a 500 (next entry).
+- **One NUL in one document fails a whole `sync` upload batch** (seen
+  2026-10-27 12:57 UTC: `sync error: unexpected [object Object]`, then
+  Postgres's `unsupported Unicode escape sequence`). Postgres text cannot
+  hold `\u0000` or a lone surrogate, and `validateDocuments` does not
+  checked for either, so the error surfaced at the upsert and was not a
+  per-document `rejected` entry. Fixed on both sides: the extension cleans
+  every document's title and text before hashing (`storableText` in
+  `chrome-extension/src/core/canvasDocuments.js`), and since `sync` v13
+  (2026-10-27) the server cleans title, course, url and text in
+  `validateDocument` (`storableText` in `_shared/manifest.ts`; a document
+  that is nothing but NULs is a `rejected` entry), which covers the phone's
+  PDF syllabus text too. Seen live the same day: a throwaway user's upload
+  of `"a\u0000b \ud800c"` was stored as `"ab \ufffdc"`, and every row it
+  made was deleted after. The client's hash is kept as sent, so a phone
+  that hashed the dirty text does not re-upload in a loop.
+- **PDFs linked from a course's own pages now reach the extension**
+  (2026-10-27, not yet run against real Canvas). Most Penn courses hide
+  the Files tab, so the Files listing answers 401/403 and only "Physics
+  Exam Archive" ever yielded PDFs, while the server held 58 CIS 4500, 17
+  PHYS 0151 and 10 ACCT 1010 documents linking them. `collectFiles` now
+  also takes the file ids in that course's page, assignment and syllabus
+  links (`canvasFileIDsFromLinks`) and File module items, looks each up
+  with `/api/v1/courses/:c/files/:id`, and sends PDFs down the same
+  `public_url` path; a non-PDF is remembered (`seen[id] = "not-pdf"`) so
+  it is not looked up every run, and lookups are capped at twice the
+  60-file cap per course. **It works**: the owner's run of 2026-10-27
+  (about 14:15 UTC) uploaded 47 PDFs, PHYS 0151's 16 and MATH 1400's 13
+  among them (both had none before), from 92 linked lookups with none
+  refused; 19 failed and CIS 4500 and ACCT 1010 still have none. The
+  likely cause, fixed the same hour and not yet seen live: a page linking
+  a file that lives in another course's site, which the course-scoped
+  lookup answers with a 404, so a non-OK answer is now asked again as
+  `/api/v1/files/:id` and the document links `/files/<id>`. The summary's
+  `files` now also says `linkedMissing` (not found either way) and
+  `unparseable` (pdf.js could not read it), so the next run tells which.
+  It did (2026-10-27, about 17:00 UTC): 186 linked ids, 23 missing both
+  ways, 3 refused, 0 unparseable, nothing new to extract. So the earlier
+  failures were files Canvas no longer serves to students (deleted or
+  unpublished), not a wrong lookup, and CIS 4500 and ACCT 1010 hold no
+  PDF the student can open through Canvas; their text carries no
+  `http…pdf` link either. Their material, if it exists, lives on an
+  outside site, which is the server's website crawl, not the extension.
 - **The Chrome extension's Swift half compiled green on 2026-10-23 (2606/237) but has not run on a phone** (written 2026-10-22,
   written in the cloud container with no toolchain): the `file` document
   kind, `client` and `acceptsKinds` on the sync requests and the lossy
@@ -3022,10 +3098,9 @@ none is a ship line.
   `Current date:` is a UTC instant, so an 11:59 pm Eastern deadline is the
   next calendar day to the model and from 8 pm Eastern "today" is already
   tomorrow. UTC was chosen for the byte-stable prefix, which a fixed
-  per-student zone keeps just as well. **Fixed blind on 2026-10-25**
+  per-student zone keeps just as well. **Fixed on 2026-10-25**
   (zone-aware due times in the document, the local-date line at the top
-  of the excerpts block; 13 tests predicted, none compiled): the Mac
-  compile and an evening "what's due tomorrow" on the phone are the
+  of the excerpts block; compiled green on 2026-10-27, 2933/264):  an evening "what's due tomorrow" on the phone are the
   checks. Before the fix the on-device answerer, which uses the device
   calendar, was the only path that got the day right.
 - **The phone's `discover-websites` call fails whenever more than three
@@ -3036,9 +3111,9 @@ none is a ship line.
   crawl. On 2026-10-24 `course_websites` held 213 candidates, 3 verified
   and no row ever crawled; CIS 2400 and CIS 2620 have nothing in the pool
   but Ed posts because their syllabi live on external sites. The extension
-  chunks by three and is the only caller that ever has. **Fixed blind on
+  chunks by three and is the only caller that ever has. **Fixed on
   2026-10-25** (`WebsiteDiscoveryBatches`, one call per three distinct
-  ids, 3 tests): after the build is on a phone and one sync has run,
+  ids, 3 tests; compiled green 2026-10-27, 2933/264, not yet on a phone): after the build is on a phone and one sync has run,
   `course_websites` should show `verified` rows and a `last_crawled_at`
   for the CIS courses; if candidates stay candidates, the next suspects
   are the verification rule (code and term in the first 3,000 characters)

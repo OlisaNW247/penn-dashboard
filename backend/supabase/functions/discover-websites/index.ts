@@ -408,7 +408,9 @@ export async function crawlBestSite(
   }
 
   if (wireDocs.length > 0) {
-    await upsertDocuments(ctx.serviceClient, wireDocs);
+    // Stamped 'server' so no client's complete-set report can retire a
+    // crawl it never downloaded (`selectLiveDocumentIDsForCourse`).
+    await upsertDocuments(ctx.serviceClient, wireDocs, "server");
   }
   // Any website document this course had before that this crawl didn't
   // re-see is gone -- the same `goneIDs` rule `sync`'s upload step applies

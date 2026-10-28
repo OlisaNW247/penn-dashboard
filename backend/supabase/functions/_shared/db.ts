@@ -64,8 +64,13 @@ export interface CourseDocumentRow {
   gone_at: string | null;
   /** Who uploaded the row; absent on rows read by the explicit column
    *  lists above (the default, 'phone', applies in the database). */
-  collector?: "phone" | "extension";
+  collector?: DocumentCollector;
 }
+
+/** Who wrote a `course_documents` row: one of the two sync clients, or the
+ *  server itself (`discover-websites`' crawl of a course's own website,
+ *  since 2026-10-27). */
+export type DocumentCollector = SyncClient | "server";
 
 export function documentRowToWire(row: CourseDocumentRow): CourseDocumentWire {
   return {
@@ -91,7 +96,7 @@ export function rowToStub(row: Pick<CourseDocumentRow, "id" | "content_hash">): 
 
 function documentWireToInsertRow(
   doc: CourseDocumentWire,
-  collector: SyncClient,
+  collector: DocumentCollector,
 ): Omit<CourseDocumentRow, "first_seen_at"> {
   return {
     // Stamped on every upsert, so the row belongs to whoever uploaded it
@@ -305,7 +310,14 @@ export async function selectLiveDocumentIDsForCourse(
     .eq("course_id", courseID)
     .not("kind", "in", `(${WINDOW_KINDS.join(",")})`)
     .is("gone_at", null);
-  if (onlyCollector) query = query.eq("collector", onlyCollector);
+  //
+  // And no client report ever retires a row the server wrote (2026-10-27).
+  // A crawl's pages are the server's to retire, which `discover-websites`
+  // does itself when a later crawl stops seeing a page; a phone that synced
+  // between a crawl and its own next manifest simply had not downloaded
+  // them, which is exactly how ECON 0100 lost five fresh crawl rows on
+  // 2026-10-26, when crawled rows still carried the default 'phone'.
+  query = onlyCollector ? query.eq("collector", onlyCollector) : query.neq("collector", "server");
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => (row as { id: string }).id);
@@ -319,7 +331,7 @@ export async function selectLiveDocumentIDsForCourse(
 export async function upsertDocuments(
   client: SupabaseClient,
   documents: CourseDocumentWire[],
-  collector: SyncClient = "phone",
+  collector: DocumentCollector = "phone",
 ): Promise<void> {
   for (const batch of chunk(documents, UPSERT_BATCH_SIZE)) {
     const rows = batch.map((doc) => documentWireToInsertRow(doc, collector));

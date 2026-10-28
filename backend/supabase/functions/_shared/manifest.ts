@@ -419,16 +419,19 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
     );
   }
 
-  const text = requireString(raw, "text").slice(0, MAX_TEXT_LENGTH);
+  // Cleaned after the cut, so a surrogate pair the cut splits is mended too.
+  const text = storableText(requireString(raw, "text").slice(0, MAX_TEXT_LENGTH));
+  if (text.length === 0) throw new ManifestValidationError(`expected non-empty string field "text"`);
+  const url = optionalString(raw, "url");
 
   return {
     id,
     courseID,
-    course,
+    course: storableText(course),
     kind: kindRaw,
     sourceID,
-    title,
-    url: optionalString(raw, "url"),
+    title: storableText(title),
+    url: url === undefined ? undefined : storableText(url),
     text,
     updatedAt: optionalString(raw, "updatedAt"),
     fetchedAt,
@@ -436,6 +439,22 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
     dueAt: optionalString(raw, "dueAt"),
     pointsPossible: optionalNumber(raw, "pointsPossible"),
   };
+}
+
+/** Text Postgres can store. A NUL (`\u0000`) or a lone UTF-16 surrogate in
+ * a string the upsert sends makes Postgres refuse the whole statement
+ * ("unsupported Unicode escape sequence"), which used to surface as a 500
+ * for the entire upload batch, not a per-document `rejected` entry: on
+ * 2026-10-27 one PDF whose extracted text held NULs failed 200 documents
+ * at once. Cleaned rather than rejected, because the rest of such a
+ * document is real course material. The client's `contentHash` is kept as
+ * sent: it is only compared with the same client's next hash, and that
+ * client hashes the same uncleaned text again, so nothing re-uploads in a
+ * loop. A lone surrogate becomes U+FFFD. */
+export function storableText(s: string): string {
+  return s
+    .replace(/\u0000/g, "")
+    .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
 }
 
 export interface RejectedDocument {
@@ -573,6 +592,7 @@ export function liveIDsRetirableBy<T extends { id: string; kind: string; collect
   const only = retirableCollector(client);
   return liveRows
     .filter((row) => !isWindowKind(row.kind))
+    .filter((row) => (row.collector ?? "phone") !== "server")
     .filter((row) => only === undefined || (row.collector ?? "phone") === only)
     .map((row) => row.id);
 }

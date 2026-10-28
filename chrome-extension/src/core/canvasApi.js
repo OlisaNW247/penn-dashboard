@@ -246,3 +246,28 @@ export function nextPageURL(header, baseURL = DEFAULT_BASE_URL) {
   }
   return null;
 }
+
+// Canvas file ids named by a course's own links (2026-10-27). Most Penn courses
+// hide the Files tab, so the listing is forbidden, yet their pages, assignments,
+// syllabi and modules link PDFs as `/courses/<n>/files/<id>` or `/files/<id>`
+// (optionally `/download`, `/preview`, a query or a fragment). Only the Canvas
+// host and relative hrefs count; folder links (`/files/folder/...`) have no
+// numeric id and fall out of the pattern. The wrong fix would be fetching each
+// href: a link is not known to be a PDF until Canvas says so.
+export function canvasFileIDsFromLinks(links, { baseURL = DEFAULT_BASE_URL } = {}) {
+  const host = new URL(baseURL).host;
+  const ids = [];
+  const seen = new Set();
+  for (const link of Array.isArray(links) ? links : []) {
+    const href = typeof link === "string" ? link : link?.href;
+    if (typeof href !== "string") continue;
+    let u;
+    try { u = new URL(href.trim(), baseURL); } catch { continue; }
+    if (u.protocol !== "https:" || u.host !== host) continue;
+    const m = /^(?:\/courses\/\d+)?\/files\/(\d+)(?:\/(?:download|preview))?\/?$/.exec(u.pathname);
+    if (!m || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    ids.push(m[1]);
+  }
+  return ids;
+}
