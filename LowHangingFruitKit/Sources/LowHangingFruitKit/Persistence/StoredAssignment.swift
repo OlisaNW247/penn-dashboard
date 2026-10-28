@@ -423,11 +423,30 @@ extension StoredAssignment {
     /// would notice missing. A collapse is already a surprise; it must not also
     /// be the thing that loses a completion tick or a recorded grade.
     ///
-    /// The result does not depend on which of the two rows is `self`: every
-    /// field is either merged symmetrically (min, max, or, and) or supplied by
-    /// whichever copy `outranks` the other. The store resolves a duplicate in
-    /// whatever order a fetch returns the rows, and a rule that is right in one
-    /// order only is a rule that works until the order changes.
+    /// Field by field, so the next reader does not have to infer it. The store
+    /// resolves a duplicate in whatever order a fetch returns the rows, and a
+    /// rule that is right in one order only is a rule that works until the
+    /// order changes; so most fields are merged the same whichever row is
+    /// `self`, and the ones that are not are named.
+    ///
+    /// - **The outranking copy's value** (`outranks`): the display fields
+    ///   `sourceRaw`, `sourceID`, `kindRaw`, `course`, `title`, `dueAt`,
+    ///   `urlString`, `termYear` and `termSeasonRaw`. Copied onto `self` only
+    ///   when `other` outranks it.
+    /// - **Merged the same in either order:** `firstSeen` (earlier),
+    ///   `lastSeenInFeed` (later), `isGoneFromFeed` (and), `completedAt`
+    ///   (earlier of the two that exist), `userCompleted` (or),
+    ///   `isCompletionOnly` (and), `canvasSubmitted` and `gradescopeSubmitted`
+    ///   (or), `canvasSubmissionObservedAt` and `gradescopeSubmissionObservedAt`
+    ///   (later: the later observation is the truer one), and the archive
+    ///   (unarchived if either copy is live).
+    /// - **`self`'s value when both copies carry one, so order matters:**
+    ///   `scoreEarned` and `scoreMax` (a known score beats none), `linkedID` and
+    ///   `pairingConfirmedAt` (an existing pairing beats none, and the two move
+    ///   together), and the archived term when both are archived. The store
+    ///   always absorbs the loser into the outranking copy, so there `self`
+    ///   is the outranking row and these are its values too; a caller that
+    ///   absorbs the other way gets the other row's.
     ///
     /// Display fields come from the copy that outranks the other, which is
     /// always the real row when one of the two is bookkeeping. The caller used
@@ -466,6 +485,13 @@ extension StoredAssignment {
         isCompletionOnly = isCompletionOnly && other.isCompletionOnly
         canvasSubmitted = canvasSubmitted || other.canvasSubmitted
         gradescopeSubmitted = gradescopeSubmitted || other.gradescopeSubmitted
+        // The submitted flags above are merged toward "yes", and the date each
+        // was last confirmed travels with them: the later observation is the
+        // truer one, and `hasFreshSubmissionState` reads it. Dropping it left a
+        // merged row claiming a submission it had no date for, which reads as
+        // "never checked".
+        canvasSubmissionObservedAt = Self.later(canvasSubmissionObservedAt, other.canvasSubmissionObservedAt)
+        gradescopeSubmissionObservedAt = Self.later(gradescopeSubmissionObservedAt, other.gradescopeSubmissionObservedAt)
         // A known score beats no score. Earned and max move together so a
         // half-merged fraction can't be displayed.
         if scoreEarned == nil, let earned = other.scoreEarned {
@@ -544,6 +570,16 @@ extension StoredAssignment {
             render(archivedTermYear), render(archivedTermSeasonRaw),
             linkedID ?? "-", render(pairingConfirmedAt),
         ].joined(separator: "\u{1F}")
+    }
+
+    /// The later of two optional dates; either alone if only one exists.
+    private static func later(_ a: Date?, _ b: Date?) -> Date? {
+        switch (a, b) {
+        case let (a?, b?): return max(a, b)
+        case let (a?, nil): return a
+        case let (nil, b?): return b
+        case (nil, nil): return nil
+        }
     }
 
     /// The feed-supplied fields `refresh(from:now:)` also writes, copied from

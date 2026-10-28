@@ -130,6 +130,77 @@ struct DuplicateRowCompletionTests {
         #expect(bookkeeping.urlString != nil)
     }
 
+    // MARK: The observation dates travel with the flags
+
+    @MainActor
+    @Test("the later observation of each platform's submission wins, in either order")
+    func observedAtTakesTheLaterOfTheTwo() {
+        let early = Date(timeIntervalSince1970: 1_700_100_000)
+        let middle = early.addingTimeInterval(3_600)
+        let late = early.addingTimeInterval(7_200)
+
+        func older() -> StoredAssignment {
+            let row = realRow()
+            row.canvasSubmitted = true
+            row.canvasSubmissionObservedAt = early
+            return row
+        }
+        func newer() -> StoredAssignment {
+            let row = realRow(seen: recently)
+            row.canvasSubmissionObservedAt = late
+            row.gradescopeSubmissionObservedAt = middle
+            return row
+        }
+        func onlyOneSide() -> StoredAssignment {
+            let row = realRow(seen: recently)
+            row.gradescopeSubmissionObservedAt = early
+            return row
+        }
+
+        let a = older(); a.absorb(newer())
+        let b = newer(); b.absorb(older())
+        for merged in [a, b] {
+            #expect(merged.canvasSubmissionObservedAt == late)
+            #expect(merged.gradescopeSubmissionObservedAt == middle)
+            #expect(merged.canvasSubmitted)
+        }
+
+        // A date on only one copy survives whichever copy that is.
+        let c = older(); c.absorb(onlyOneSide())
+        let d = onlyOneSide(); d.absorb(older())
+        for merged in [c, d] {
+            #expect(merged.canvasSubmissionObservedAt == early)
+            #expect(merged.gradescopeSubmissionObservedAt == early)
+        }
+    }
+
+    @MainActor
+    @Test("a known score, an existing pairing and an archived term stay with self when both rows have one, as the doc comment says")
+    func bothKnownValuesStayWithSelf() {
+        let spring = Term(year: 2026, season: .spring)
+        let fall = Term(year: 2025, season: .fall)
+        func row(earned: Double, link: String, term: Term) -> StoredAssignment {
+            let r = realRow()
+            r.scoreEarned = earned
+            r.scoreMax = 100
+            r.linkedID = link
+            r.pairingConfirmedAt = longAgo
+            r.setArchivedTerm(term)
+            return r
+        }
+        let mine = row(earned: 90, link: "gradescope:mine", term: spring)
+        mine.absorb(row(earned: 70, link: "gradescope:theirs", term: fall))
+        #expect(mine.scoreEarned == 90)
+        #expect(mine.linkedID == "gradescope:mine")
+        #expect(mine.archivedTerm == spring)
+
+        // And a value on only one side is kept from either.
+        let bare = realRow()
+        bare.absorb(row(earned: 70, link: "gradescope:theirs", term: fall))
+        #expect(bare.scoreEarned == 70)
+        #expect(bare.linkedID == "gradescope:theirs")
+    }
+
     // MARK: Which copy wins
 
     @MainActor
