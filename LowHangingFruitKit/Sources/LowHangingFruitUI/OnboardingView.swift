@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import LowHangingFruitKit
 import os
+#if os(iOS)
+import UIKit
+#endif
 
 /// First-run welcome flow. Blocks the dashboard until Canvas is connected. The
 /// Canvas calendar feed URL is captured automatically from the logged-in
@@ -43,9 +46,10 @@ struct OnboardingView: View {
     @EnvironmentObject var scheduler: NotificationScheduler
     @State private var phase: Phase = .schoolSelection
     @State private var canvasConnectionNotice: String?
-    @State private var schoolSearch = ""
-    @State private var customCanvasAddress = ""
-    @State private var customAddressError: String?
+    @State private var isKeyboardVisible = false
+    @State private var showsCompletionGuide = false
+    @State private var showsCanvasConfirmation = false
+    @State private var completionGuideReady = false
     /// The school the student tapped while a different one was already
     /// chosen, held here until they answer the "switch school?" dialog.
     /// `CanvasInstallation` is `Identifiable`, but the dialog is driven by a
@@ -63,6 +67,7 @@ struct OnboardingView: View {
         case schoolSelection
         case canvasLogin
         case canvasConnected
+        case gradescopeChoice
         case gradescopeLogin
         case reminders
     }
@@ -136,6 +141,12 @@ struct OnboardingView: View {
         let initialPhase: Phase = Self.initialPhase(for: destination, hasChosenSchool: hasChosenSchool)
         #endif
         _phase = State(initialValue: initialPhase)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LHFCompletionGuideHarness") {
+            _showsCompletionGuide = State(initialValue: true)
+            _completionGuideReady = State(initialValue: true)
+        }
+        #endif
     }
 
     var body: some View {
@@ -143,8 +154,33 @@ struct OnboardingView: View {
             stepContent
                 .id(phase)
                 .transition(.opacity)
+                .allowsHitTesting(!showsCompletionGuide && !showsCanvasConfirmation)
+                .accessibilityHidden(showsCompletionGuide || showsCanvasConfirmation)
+            if showsCanvasConfirmation {
+                connectedStep(step: 1, message: "Canvas connected",
+                              detail: "Disconnect at any time in Settings",
+                              isReady: false, onBack: nil, onContinue: {})
+            }
+            if showsCompletionGuide {
+                CanvasCompletionGuide(isReady: completionGuideReady, notice: canvasConnectionNotice) {
+                    guard completionGuideReady else { return }
+                    showsCompletionGuide = false
+                    advancePastCanvasStep()
+                }
+            }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: phase)
+        #if os(iOS)
+        // Keyboard notifications cover both native search/address fields and
+        // Canvas's web login fields. Removing the whole inset also frees its
+        // padding, rather than leaving an empty panel above the keyboard.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
+        }
+        #endif
             // The walk has to declare that it fills. `RootCore` hosts this
             // inside a `ZStack` — it shares that stack with the splash — and a
             // ZStack centres any child that reports back a smaller size than
@@ -185,7 +221,9 @@ struct OnboardingView: View {
             connectedStep(step: 1, message: "Canvas connected",
                           detail: "Disconnect at any time in Settings",
                           notice: canvasConnectionNotice, onBack: nil,
-                          onContinue: advancePastCanvasStep)
+                          onContinue: beginCanvasWalkthrough)
+        case .gradescopeChoice:
+            gradescopeChoiceStep
         case .gradescopeLogin:
             gradescopeStep
         case .reminders:
@@ -211,115 +249,19 @@ struct OnboardingView: View {
 
     // MARK: - Connect Canvas (required, not skippable)
 
-    private var matchingSchools: [CanvasInstallation] {
-        let query = schoolSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return CanvasInstallation.verifiedSchools }
-        return CanvasInstallation.verifiedSchools.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-                || $0.host.localizedCaseInsensitiveContains(query)
-        }
-    }
-
     private var schoolSelectionStep: some View {
         VStack(spacing: 0) {
-            // The picker has no header of its own. While a reconnect cover is
-            // open it gets the shared top bar, whose trailing end carries the
-            // close control (`reconnectCloseButton`), as a row above the
-            // scroll view so it never overlaps the picker's content. A first
-            // run has no cover to close and keeps the bare picker.
-            if state.isReconnecting {
-                topBar(onBack: nil)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Where do you use Canvas?")
-                        .font(.lhfSerif(34))
-                        .foregroundStyle(Color.v2Ink)
-
-                    TextField("Search schools", text: $schoolSearch)
-                        .font(.lhfSans(16, weight: .medium))
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 52)
-                        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                    VStack(spacing: 8) {
-                        ForEach(matchingSchools) { school in
-                            schoolButton(school)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        SmoothSectionHeader("another school", accent: .smoothTeal)
-                        TextField("canvas.school.edu", text: $customCanvasAddress)
-                            .font(.lhfSans(15, weight: .medium))
-                            .textFieldStyle(.plain)
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.URL)
-                            #endif
-                            .autocorrectionDisabled()
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 52)
-                            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                        if let customAddressError {
-                            Text(customAddressError)
-                                .font(.lhfSans(12))
-                                .foregroundStyle(Color.v2SpineRed)
-                        }
-
-                        Button("Continue with this address", action: chooseCustomCanvas)
-                            .font(.lhfSans(14, weight: .semibold))
-                            .foregroundStyle(Color.v2ToggleActiveTx)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Capsule().fill(Color.v2Ink))
-                            .buttonStyle(.plain)
-                            .disabled(customCanvasAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 24)
+            if state.isReconnecting { topBar(onBack: nil) }
+            SchoolSelectionView { school in
+                lhfHapticLight()
+                chooseSchool(school)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.v2Bg.ignoresSafeArea())
-    }
-
-    private func schoolButton(_ school: CanvasInstallation) -> some View {
-        Button {
-            lhfHapticLight()
-            chooseSchool(school)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(school.name)
-                        .font(.lhfSans(15, weight: .semibold))
-                        .foregroundStyle(Color.v2Ink)
-                    Text(school.host)
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                Spacer()
-                Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(Color.v2SpineGreen)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !(state.isReconnecting || state.hasCompletedOnboarding) {
+                previewFooter
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 58)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("opens this school's Canvas sign-in")
-    }
-
-    private func chooseCustomCanvas() {
-        guard let installation = CanvasInstallation.custom(address: customCanvasAddress) else {
-            customAddressError = "enter a canvas address, like canvas.school.edu"
-            return
-        }
-        customAddressError = nil
-        chooseSchool(installation)
     }
 
     /// The one path from the picker (a listed school or a typed address) to
@@ -350,12 +292,21 @@ struct OnboardingView: View {
     /// The login pane stays mounted until verified connection and credential saving
     /// finish. Confirmation is a separate phase, not a reaction to partial state.
     private var canvasStep: some View {
-        CanvasLoginPane(installation: state.canvasInstallation, onConnected: canvasConnected)
+        CanvasLoginPane(
+            installation: state.canvasInstallation,
+            onConnected: canvasConnected,
+            onSyncStarted: {
+                canvasConnectionNotice = nil
+                completionGuideReady = false
+                showsCanvasConfirmation = true
+            },
+            onConnectionFailed: { showsCompletionGuide = false; showsCanvasConfirmation = false }
+        )
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
                 loginHeader(
                     title: "Sign in to \(state.canvasInstallation.name)",
-                    onBack: { phase = .schoolSelection }
+                    onBack: { if !state.isCanvasDiscoveryLoading { phase = .schoolSelection } }
                 )
             }
             // The reviewer's door, restored here after a regression
@@ -392,44 +343,105 @@ struct OnboardingView: View {
 
     /// Same door as `IntroView.previewLink`, on the screen a reviewer
     /// actually lands on after skipping the intro.
+    @ViewBuilder
     private var previewFooter: some View {
-        Button {
-            lhfHapticLight()
-            state.enterPreviewMode()
-        } label: {
-            VStack(spacing: 3) {
-                Text("just exploring?")
-                    .font(.lhfSans(13))
-                    .foregroundStyle(Color.v2DateText)
-                Text("preview with sample data")
-                    .font(.lhfSans(14, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .underline()
+        if !isKeyboardVisible {
+            HStack {
+                Spacer()
+                Button {
+                    lhfHapticLight()
+                    state.enterPreviewMode()
+                } label: {
+                    Text("Preview")
+                        .font(.lhfSans(14, weight: .semibold))
+                        .foregroundStyle(Color.v2Ink)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 44)
+                        .background(Color.v2ToggleBg, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview")
+                .accessibilityHint("Explore a demo dashboard without logging in")
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
             .padding(.vertical, 12)
+            .background(Color.v2Bg)
         }
-        .buttonStyle(.plain)
-        .background(Color.v2Card)
-        .accessibilityLabel("preview the app with sample data")
-        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
-    /// Keep the confirmation visible until Continue, including Settings reconnects.
+    /// Only the current login can advance to connection confirmation.
+    nonisolated static func acceptsCanvasConnection(in phase: Phase, alreadyReady: Bool) -> Bool {
+        phase == .canvasLogin && !alreadyReady
+    }
+
     private func canvasConnected(_ notice: String?) {
+        guard Self.acceptsCanvasConnection(in: phase, alreadyReady: completionGuideReady) else { return }
         canvasConnectionNotice = notice
+        completionGuideReady = true
         phase = .canvasConnected
+        showsCanvasConfirmation = false
+    }
+
+    private func beginCanvasWalkthrough() {
+        if state.onboardingDestination == .full {
+            showsCompletionGuide = true
+        } else {
+            advancePastCanvasStep()
+        }
     }
 
     private func advancePastCanvasStep() {
         if state.onboardingDestination == .canvas {
             state.completeOnboarding()
         } else {
-            phase = .gradescopeLogin
+            phase = .gradescopeChoice
         }
     }
 
     // MARK: - Step 2: Connect Gradescope (optional, skippable)
+
+    @ViewBuilder
+    private var gradescopeChoiceStep: some View {
+        if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
+            gradescopeStep
+        } else {
+            gradescopeInvitation
+        }
+    }
+
+    private var gradescopeInvitation: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("Do you use Gradescope?")
+                        .font(.lhfSerif(34))
+                        .foregroundStyle(Color.v2Ink)
+                        .multilineTextAlignment(.center)
+                    Spacer(minLength: 48)
+                    Button(action: gradescopeSkipped) {
+                        Text("Continue with Canvas only")
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.v2Ink, in: Capsule())
+                    }
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    Button { phase = .gradescopeLogin } label: {
+                        Text("Add Gradescope")
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.v2Card, in: Capsule())
+                    }
+                    .foregroundStyle(Color.v2Ink)
+                }
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .buttonStyle(.plain)
+                .frame(minHeight: max(0, geometry.size.height - max(48, geometry.size.height * 0.2) - 48))
+                .padding(.horizontal, 24)
+                .padding(.top, max(48, geometry.size.height * 0.2))
+                .padding(.bottom, 48)
+            }
+        }
+        .background(Color.v2Bg.ignoresSafeArea())
+    }
 
     @ViewBuilder
     private var gradescopeStep: some View {
@@ -445,7 +457,7 @@ struct OnboardingView: View {
             connectedStep(
                 step: 2,
                 message: "gradescope is connected.",
-                onBack: { phase = .canvasConnected },
+                onBack: { phase = .gradescopeChoice },
                 onContinue: gradescopeConnected
             )
         } else {
@@ -485,7 +497,7 @@ struct OnboardingView: View {
     /// Profile, so onboarding never creates a second notification preference.
     private var remindersStep: some View {
         VStack(spacing: 0) {
-            topBar(onBack: { phase = .gradescopeLogin })
+            topBar(onBack: { phase = .gradescopeChoice })
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -599,18 +611,11 @@ struct OnboardingView: View {
     private var sweeperSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
-            // Two lines, not one (owner, 2026-10-20, from the phone): the
-            // description is the first sentence alone, larger and in ink,
-            // and the nudge sits under it in parentheses at the smaller
-            // secondary size, so the page says what the sweeper is before
-            // it says what to do about it.
+            // Explain the alarm above the control; keep the optional
+            // keep-on note below the toggle.
             Text("an alarm 10 minutes before anything you haven't turned in.")
                 .font(.lhfSans(17))
                 .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("(if you actually never want to miss an assignment, keep this on.)")
-                .font(.lhfSans(14))
-                .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)
             notificationOption(
                 title: "Smooth Sweeper",
@@ -622,6 +627,10 @@ struct OnboardingView: View {
                     }
                 )
             )
+            Text("(if you actually never want to miss an assignment, keep this on.)")
+                .font(.lhfSans(14))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -848,6 +857,7 @@ struct OnboardingView: View {
         message: String,
         detail: String? = nil,
         notice: String? = nil,
+        isReady: Bool = true,
         onBack: (() -> Void)?,
         onContinue: @escaping () -> Void
     ) -> some View {
@@ -881,10 +891,10 @@ struct OnboardingView: View {
             Spacer()
 
             VStack(spacing: 14) {
-                progressDots(current: step)
+                if step != 1 { progressDots(current: step) }
 
                 Button(action: onContinue) {
-                    Text("continue")
+                    Text(isReady ? "continue" : "Syncing Canvas…")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(Color.v2ToggleActiveTx)
                         .frame(maxWidth: .infinity)
@@ -892,6 +902,7 @@ struct OnboardingView: View {
                         .background(Capsule().fill(Color.v2Ink))
                 }
                 .buttonStyle(.plain)
+                .disabled(!isReady)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
@@ -954,6 +965,8 @@ private struct CanvasLoginPane: View {
     @EnvironmentObject private var state: AppState
     let installation: CanvasInstallation
     let onConnected: (String?) -> Void
+    let onSyncStarted: () -> Void
+    let onConnectionFailed: () -> Void
 
     @State private var paneActive = false
     @State private var isReadingCookies = false
@@ -973,9 +986,12 @@ private struct CanvasLoginPane: View {
     @State private var automaticResets = 0
     @StateObject private var navObserver: LoginNavigationObserver
 
-    init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void) {
+    init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void,
+         onSyncStarted: @escaping () -> Void, onConnectionFailed: @escaping () -> Void) {
         self.installation = installation
         self.onConnected = onConnected
+        self.onSyncStarted = onSyncStarted
+        self.onConnectionFailed = onConnectionFailed
         let observer = LoginNavigationObserver()
         observer.credentialCapture = installation.id == CanvasInstallation.penn.id ? PennKeyLoginCapture() : nil
         observer.signedInHostMarker = installation.host
@@ -1143,6 +1159,12 @@ private struct CanvasLoginPane: View {
         guard !isReadingCookies else { return }
         message = nil
         isReadingCookies = true
+        // Keep this pane mounted beneath the guide: it owns credential
+        // capture and finishes secure storage after the Canvas sync returns.
+        #if os(iOS)
+        navObserver.webView?.endEditing(true)
+        #endif
+        onSyncStarted()
         // Must read from the SAME store instance the WebView above was
         // configured with (`LoginDataStores.canvas`), not `.default()` — see
         // that type's doc comment. Reading the wrong store returns an empty
@@ -1262,6 +1284,7 @@ private struct CanvasLoginPane: View {
                         // spinner, at most twice (`CanvasConnectRetryRule`).
                         automaticResets += 1
                         navObserver.reset()
+                        onConnectionFailed()
                     case .showFailureKeepingCounter:
                         // Penn, or any school whose retries are spent. Never
                         // `navObserver.reset()` here: at Penn a failed connect
@@ -1279,6 +1302,7 @@ private struct CanvasLoginPane: View {
                         // the WebView again, with the message and "try again"
                         // above it.
                         connectFailed = true
+                        onConnectionFailed()
                     }
                 }
             }

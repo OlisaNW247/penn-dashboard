@@ -4,10 +4,10 @@ import SwiftUI
 import os
 
 /// One turn in the conversation.
-struct AssistantMessage: Identifiable, Sendable {
-    enum Role: Sendable { case student, assistant }
+struct AssistantMessage: Identifiable, Sendable, Codable {
+    enum Role: String, Sendable, Codable { case student, assistant }
 
-    let id = UUID()
+    var id = UUID()
     var role: Role
     var text: String
     var citations: [AssistantCitation] = []
@@ -37,9 +37,14 @@ final class AssistantConversation: ObservableObject {
 
     private let responder: AssistantResponder
     private var inFlight: Task<Void, Never>?
+    private var requestID = UUID()
+    private var chatID = UUID()
+    private var lastSave = Date.distantPast
+    private let history: AssistantHistoryStore?
 
-    init(responder: AssistantResponder = ScriptedAssistantResponder()) {
+    init(responder: AssistantResponder = ScriptedAssistantResponder(), history: AssistantHistoryStore? = nil) {
         self.responder = responder
+        self.history = history
     }
 
     func send(_ prompt: String, context: AssistantContext) {
@@ -70,24 +75,30 @@ final class AssistantConversation: ObservableObject {
         messages.append(AssistantMessage(role: .assistant, text: "", isStreaming: true))
         isResponding = true
 
+        saveToHistory()
+        let currentRequest = UUID()
+        requestID = currentRequest
         let index = messages.count - 1
         askTrace.info("0 send: consumer task starting")
         inFlight = Task { [responder] in
             for await chunk in responder.reply(to: trimmed, context: turnContext) {
                 askTrace.info("8 chunk delivered to conversation")
-                guard !Task.isCancelled, messages.indices.contains(index) else { break }
+                guard !Task.isCancelled, requestID == currentRequest, messages.indices.contains(index) else { break }
                 switch chunk {
                 case let .text(piece):
                     messages[index].text += piece
                 case let .citations(list):
                     messages[index].citations = list
                 }
+                if Date().timeIntervalSince(lastSave) > 0.75 { saveToHistory() }
             }
+            guard requestID == currentRequest else { return }
             askTrace.info("9 consumer loop ended")
             if messages.indices.contains(index) {
                 messages[index].isStreaming = false
             }
             isResponding = false
+            saveToHistory()
         }
     }
 
@@ -96,18 +107,35 @@ final class AssistantConversation: ObservableObject {
     /// something the student may already have read.
     func stop() {
         askTrace.info("S stop() called; cancelling the in-flight answer")
+        requestID = UUID()
         inFlight?.cancel()
         inFlight = nil
         if let last = messages.indices.last {
             messages[last].isStreaming = false
         }
         isResponding = false
+        saveToHistory()
+    }
+
+    func saveToHistory() {
+        guard !messages.isEmpty else { return }
+        history?.save(AssistantSavedChat(id: chatID, updatedAt: Date(), messages: messages))
+        lastSave = Date()
+    }
+
+    func open(_ chat: AssistantSavedChat) {
+        stop()
+        chatID = chat.id
+        messages = chat.messages.map { message in
+            var copy = message
+            copy.isStreaming = false
+            return copy
+        }
     }
 
     func clear() {
-        askTrace.info("C clear() called; cancelling the in-flight answer")
-        inFlight?.cancel()
-        inFlight = nil
+        stop()
+        chatID = UUID()
         messages.removeAll()
         isResponding = false
     }

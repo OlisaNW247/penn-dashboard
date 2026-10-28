@@ -200,7 +200,8 @@ struct ContentView: View {
                         work: state.assistantWorkItems(),
                         userName: state.userName,
                         canvasHost: state.canvasBaseURL.host,
-                        allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id
+                        allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id,
+                        savesHistory: !state.isUsingFixtureData
                     )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
@@ -1273,7 +1274,7 @@ struct ContentView: View {
 /// like a wave for a moment and sweeps a highlight across the letters — a
 /// small reward for poking the logo, nothing more, so it does no work and
 /// skips itself entirely under Reduce Motion.
-private struct SmoothWordmark: View {
+struct SmoothWordmark: View {
     let pointSize: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

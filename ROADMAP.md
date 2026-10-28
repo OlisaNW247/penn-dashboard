@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-28 on `release/3.3.1` (the 3.3.1 release). Before
+Last updated 2026-10-28 on `release/3.4.0` (the 3.4.0 release, renamed
+from 3.3.1 that afternoon when PR #16 was folded in). Before
 that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
@@ -23,11 +24,12 @@ course-sync salvage are separate briefs, not merges.
 
 Live on the App Store: **3.3.0 (16)**, since 2026-10-27 22:37 UTC by the
 public iTunes lookup; it still has the launch crash. The next release is
-**3.3.1 (17)**, the two crash fixes plus the hardening round, from
-`release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`). Marco's launch-prep work
-(2026-10-09/10, built on `v8-launch-prep`) was merged into `v8` on
-2026-10-10 through pull request 9, at his instruction, so it now rides
-in whatever is built from `v8` next. Most of it has not been on a phone:
+**3.4.0 (17)**, the two crash fixes plus the hardening round and the
+onboarding work of PR #16, from `release/3.4.0` (`docs/RELEASE_3.3.1_PLAN.md`,
+which also records the rename; 3.3.1 was stamped but never uploaded). Marco's
+launch-prep work (2026-10-09/10, built on `v8-launch-prep`) was merged into
+`v8` on 2026-10-10 through pull request 9, at his instruction, so it now
+rides in whatever is built from `v8` next. Most of it has not been on a phone:
 the first item under Now is the check that should happen before a build
 from `v8` goes to TestFlight.
 Marco's `fix/canvas-signin-bulletproof` (last updated 2026-10-08, on `V7`,
@@ -995,3 +997,37 @@ Kept so nobody rebuilds them blind.
   - Multi-school sign-in (`fbfc702`).
   - Canvas and Gradescope sessions kept alive until the server rejects them,
     not a local 24-hour clock (`fac110d`..`99609c0`).
+
+### 3.4.0 onboarding work (2026-10-28)
+
+Marco's PR #16 was folded into the release, now **3.4.0 (17)** on
+`release/3.4.0`. School search runs locally over 220 bundled US university
+Canvas sites, with a manual address as the fallback. A two-step practice
+lesson on a sample dashboard runs while the first Canvas sync does: swipe
+right to complete, tap or swipe left in "prev" to undo. Done cards take a
+left swipe to undo a completion. Gradescope is a two-button choice, "Continue
+with Canvas only" or "Add Gradescope". Preview labels all read "Preview",
+bottom-right, hidden under the keyboard. The empty AI screen has no
+suggestion buttons: a placeholder example, the Smooth mark as the send
+control, the shared `SmoothFormShapes` cluster top-right and the rotating
+greeting centred under it. Chats are saved on the device as per-conversation
+files under Application Support, scoped by Canvas host, never synced; a
+history icon reopens them and "New chat" archives the current one. The
+matching backend prompt change takes effect only when Olisa deploys.
+Assignment-card Canvas links try the Canvas Student app before HTTPS. The
+connect flow confirms first: a "Canvas connected" page with a disabled
+"Syncing Canvas…" button over the still-mounted login pane, then Continue
+starts the practice lesson (a Canvas-only reconnect completes directly). The
+PR's rewrite of Canvas sign-in detection was not taken: v8's host-marker
+detection and `CanvasConnectRetryRule` are restored verbatim, since the
+proven phone behaviour is the standard and the rewrite was never checked with
+a live sign-in; the author's later `isCheckingCanvasPage` page-hiding
+addition was dropped with it. Details in CLAUDE.md → 3.4.0 section.
+
+Open, from the 2026-10-28 verifier pass (details in CLAUDE.md → 3.4.0 → Review
+notes): the chat-history store is rebuilt on every Ask re-render (move it into
+the `StateObject` autoclosure), the first-run "Syncing Canvas…" overlay has no
+X, the store's error banner never clears, viewing a chat bumps its date, the
+empty streaming row is saved early, saved chats carry no schema version, and
+"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
+the prompt change; the Canvas app hand-off, unchecked on a device.

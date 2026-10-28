@@ -248,6 +248,8 @@ struct IntroView: View {
             // be able to strand anyone. Below "Get started" so it never
             // competes with the primary path of connecting a real account.
             previewLink
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 24)
                 .opacity(ctaVisible ? 1 : 0)
                 .disabled(!ctaVisible)
                 .padding(.bottom, 22)
@@ -259,18 +261,15 @@ struct IntroView: View {
             lhfHapticLight()
             state.enterPreviewMode()
         } label: {
-            VStack(spacing: 3) {
-                Text("just exploring?")
-                    .font(.lhfSans(13))
-                    .foregroundStyle(Color.v2DateText)
-                Text("preview with sample data")
-                    .font(.lhfSans(14, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .underline()
-            }
+            Text("Preview")
+                .font(.lhfSans(14, weight: .semibold))
+                .foregroundStyle(Color.v2Ink)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(Color.v2ToggleBg, in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("preview the app with sample data")
+        .accessibilityLabel("Preview")
         .accessibilityHint("explore a demo dashboard without logging in")
     }
 

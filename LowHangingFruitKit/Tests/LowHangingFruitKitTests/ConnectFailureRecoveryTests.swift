@@ -84,6 +84,12 @@ struct ConnectFailureRecoveryTests {
         #expect(keepBody.contains("connectFailed = true"))
         let keepCode = keepBody.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }.joined(separator: "\n")
         #expect(!keepCode.contains("navObserver.reset()"))
+        // A successful connect saves the captured PennKey itself; there is no
+        // separate credentials sheet or stay-signed-in offer left to show.
+        #expect(body.contains("navObserver.credentialCapture"))
+        #expect(body.contains("state.enableStayLoggedIn(username:"))
+        #expect(!source.contains("PennKeyCredentialsSheet("))
+        #expect(!source.contains("showStayLoggedInOffer"))
     }
 
     @Test("Settings offers save pennkey beside the repair row and reads the Keychain outside body")

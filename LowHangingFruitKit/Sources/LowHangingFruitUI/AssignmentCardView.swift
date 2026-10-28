@@ -65,6 +65,7 @@ struct AssignmentCardView: View {
     /// other caller, so the dashboard's cards draw exactly as before.
     var isNew: Bool = false
 
+    @Environment(\.openURL) private var openURL
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
     @State private var confirmingRemoval = false
@@ -333,6 +334,7 @@ struct AssignmentCardView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .environment(\.openURL, link.label == SourceLink.canvasLabel ? CanvasAppLink.action : openURL)
                 .accessibilityHint("opens the original page")
             }
 

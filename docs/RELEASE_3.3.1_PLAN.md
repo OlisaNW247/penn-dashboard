@@ -149,3 +149,53 @@ Nothing has run on a phone yet.
   conflicts in the session code and read every one against the cookie
   rules in CLAUDE.md before taking either side.
 
+
+## Renamed to 3.4.0 (2026-10-28, afternoon)
+
+Marco folded PR #16 ("Simplify Canvas onboarding and add dashboard swipe
+practice", eight commits on `origin/v8` `63125b6`) into the release, so what
+ships is **3.4.0 (17)** from `release/3.4.0`, not 3.3.1. The build number
+stays 17: 14, 15 and 16 are taken in App Store Connect, and 17 has never
+been uploaded. The two crash fixes above ride along unchanged.
+
+The sign-in decision: the PR rewrote Canvas sign-in detection as a
+JavaScript probe of `window.ENV.current_user_id` polled every 2 s and
+deleted `CanvasConnectRetryRule`. That rewrite was not taken. v8's detection
+(the host marker, `signedInRequiresForeignHost`, `CanvasConnectRetryRule`) is
+restored verbatim, because the proven phone behaviour is the standard and the
+rewrite was never verified with a live sign-in. "Stay signed in" (PennKey
+credential capture, cookie renewal) is untouched.
+
+Later that afternoon (2026-10-28) the branch was re-based onto PR #16's final
+head, `80079f0`, which added five more commits: the assistant's new look, chat
+history saved on the device, and the confirmation-first onboarding flow. The
+author's later `isCheckingCanvasPage` / page-hiding addition in
+`LoginNavigationObserver` was dropped along with the detection rewrite; the
+sign-in path stays v8's.
+
+The 3.3.1 Release archive built at 14:20 UTC (`build/Smooth.xcarchive` in the
+3.3.1 worktree) is superseded by this tree and must never be uploaded.
+
+GATES ON THE MERGED TREE (2026-10-28, 18:30–19:00 UTC, Marco's Mac, PR #16's final
+head 80079f0 plus the sign-in restoration): `swift test --no-parallel` 3399 tests /
+327 suites (+3 tests, +1 suite over the 9082182 run: `AssistantHistoryTests`), all
+passing except the one deliberate `withKnownIssue` in `EdFilterParityTests` that v8
+has too (SEC-10, Olisa's extension), and one wall-clock fuzz test
+(`FuzzTests.hostileHTML`) that recorded 200–400 s "durations" because the Mac went
+into clamshell sleep from 14:33 to 14:44 local during the run; its code is untouched
+since v8 and it passed alone on the idle machine afterwards (24 s, budget 60 s;
+under a concurrent xcodebuild one case ran 6.3 s against a 5 s budget, so it is
+load-sensitive, not a regression). Deno 614 tests passed and `deno task check` green.
+The signed iOS Debug build (`generic/platform=iOS`, `-allowProvisioningUpdates`, team
+24A3TDB277) succeeded and the product reads 3.4.0 (17), widget included; the phone
+was off the cable at the time, so the install waits for it.
+
+Remaining steps, in order:
+
+1. The gates on the merged tree (`swift test --no-parallel`, `deno task
+   test` and `deno task check`, the iOS Debug build to Marco's phone, never the Simulator).
+2. Debug install on Marco's iPhone.
+3. Marco's live PennKey sign-in test on that install.
+4. Archive 3.4.0 (17) from `release/3.4.0` and upload.
+5. Marco submits in App Store Connect with expedited review.
+6. Olisa deploys the backend for the prompt change.
