@@ -199,3 +199,19 @@ Remaining steps, in order:
 4. Archive 3.4.0 (17) from `release/3.4.0` and upload.
 5. Marco submits in App Store Connect with expedited review.
 6. Olisa deploys the backend for the prompt change.
+
+## Shipped to App Store Connect (2026-10-28, 18:55 UTC)
+
+PR #16 (with the sign-in restoration and the 3.4.0 stamp, tip `780331b`) was
+merged into `v8` as `316bd28` at about 18:52 UTC; `v8`'s tree equals the
+release tip. The Release archive was built from `69efb63` (same app tree; the
+later commits are docs only) at 18:49 UTC and exported with
+`docs/appstore/ExportOptions.plist` at 18:54–18:55 UTC: "Upload succeeded",
+"EXPORT SUCCEEDED". Build 17 was accepted, so no build 17 existed before.
+
+Owed now: Marco submits 3.4.0 (17) in App Store Connect with expedited
+review, using the notes in `docs/appstore/LISTING.md`; his live PennKey
+sign-in test on the Debug 3.4.0 (17) build, which installs the moment the
+phone is back on the cable; Olisa deploys the backend for the `prompt.ts`
+wording change. The `update-manifest` floor stays at 3.3.0 until the
+automation raises it after release.
