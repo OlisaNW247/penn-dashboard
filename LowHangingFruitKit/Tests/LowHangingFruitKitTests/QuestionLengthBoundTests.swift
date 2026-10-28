@@ -38,24 +38,49 @@ struct QuestionLengthBoundTests {
         #expect(seconds < 2.0, "took \(seconds)s")
     }
 
-    @Test("the cut is at the cap, on a character boundary, and short questions are untouched")
-    func theCutIsExact() {
-        let exact = String(repeating: "a", count: QuestionParser.maxQuestionLength)
+    @Test("over the cap the head and the tail are kept, at the cap, on character boundaries; anything that fits is untouched")
+    func theCutKeepsHeadAndTail() {
+        let max = QuestionParser.maxQuestionLength
+        let exact = String(repeating: "a", count: max)
         #expect(QuestionParser.bounded(exact) == exact)
-        #expect(QuestionParser.bounded(exact + "b").count == QuestionParser.maxQuestionLength)
         #expect(QuestionParser.bounded("") == "")
         #expect(QuestionParser.bounded("When is my next exam?") == "When is my next exam?")
 
+        // One over: cut, to exactly the cap, head then tail.
+        let over = String(repeating: "h", count: QuestionParser.headLength) + String(repeating: "m", count: 700) + String(repeating: "t", count: 499)
+        let cut = QuestionParser.bounded(over)
+        #expect(cut.count == max)
+        #expect(cut.hasPrefix(String(repeating: "h", count: QuestionParser.headLength) + " "))
+        #expect(cut.hasSuffix(String(repeating: "t", count: 499)))
+        #expect(!cut.contains("m"))
+        #expect(QuestionParser.bounded(exact + "b").count == max)
+        #expect(QuestionParser.bounded(exact + "b").hasSuffix("ab"))
+
         // A grapheme cluster (family emoji, 7 scalars) is one character and
-        // is not cut in half, and an accent stays with its letter.
+        // is not cut in half at either end, and an accent stays with its letter.
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
-        let emoji = String(repeating: family, count: QuestionParser.maxQuestionLength + 5)
-        let cut = QuestionParser.bounded(emoji)
-        #expect(cut.count == QuestionParser.maxQuestionLength)
-        #expect(cut == String(repeating: family, count: QuestionParser.maxQuestionLength))
-        let accents = String(repeating: "e\u{0301}", count: QuestionParser.maxQuestionLength + 3)
-        #expect(QuestionParser.bounded(accents).count == QuestionParser.maxQuestionLength)
-        #expect(QuestionParser.bounded(accents).unicodeScalars.count == 2 * QuestionParser.maxQuestionLength)
+        let emoji = String(repeating: family, count: max + 5)
+        let emojiCut = QuestionParser.bounded(emoji)
+        #expect(emojiCut.count == max)
+        #expect(emojiCut == String(repeating: family, count: QuestionParser.headLength) + " "
+            + String(repeating: family, count: max - QuestionParser.headLength - 1))
+        let accents = String(repeating: "e\u{0301}", count: max + 3)
+        let accentCut = QuestionParser.bounded(accents)
+        #expect(accentCut.count == max)
+        #expect(accentCut.unicodeScalars.filter { $0 == "\u{0301}" }.count == max - 1)   // every kept e still has its accent
+    }
+
+    @Test("a question typed under a long paste is still the one that is answered")
+    func theQuestionAtTheTailSurvives() {
+        let paste = String(repeating: "Here is some context from my syllabus about the course. ", count: 600)   // ~36,000 characters
+        #expect(paste.count > 30_000)
+        let parsed = QuestionParser.parse(paste + "\n\nAnything overdue?", courses: Self.courses)
+        #expect(parsed.intent == .overdue)
+        #expect(parsed.original.count <= QuestionParser.maxQuestionLength)
+        #expect(parsed.original.hasSuffix("Anything overdue?"))
+        // And the head is still there for a question typed above the paste.
+        let headFirst = QuestionParser.parse("When is my next exam? " + paste, courses: Self.courses)
+        #expect(headFirst.intent == .nextItem(kind: .exam))
     }
 
     @Test("an ordinary question parses exactly as before, and a keyword inside the cap is still found")
