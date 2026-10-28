@@ -240,11 +240,40 @@ public final class GradeHistoryStore {
     /// history the live path would never have produced.
     @discardableResult
     public func importLegacyHistory(_ history: [String: [Observation]]) -> Int {
+        importingLegacyHistory(history).imported
+    }
+
+    /// What an import did, for a caller that decides whether it is finished.
+    public struct LegacyImportResult: Sendable, Equatable {
+        /// Observations written.
+        public let imported: Int
+        /// Courses with something to import whose existing rows could not be
+        /// read, so they were left alone. Not the courses skipped because the
+        /// store already has their history, which is the guard working: these
+        /// are courses the import has not yet been able to look at, and an
+        /// import that skipped any is not done.
+        public let unreadableCourses: Int
+    }
+
+    /// `importLegacyHistory`, reporting the courses it could not look at.
+    ///
+    /// A course whose rows cannot be read is skipped, not imported blind: the
+    /// already-has-rows guard exists so a re-run cannot duplicate what is
+    /// there, and it cannot be applied to a course that cannot be read. That is
+    /// the right thing for this pass and a trap for the caller, who used to
+    /// take "returned" for "finished" and record the migration as done, so the
+    /// blob was never imported (`LegacyStateMigration` now leaves its version
+    /// alone when `unreadableCourses` is not zero).
+    public func importingLegacyHistory(_ history: [String: [Observation]]) -> LegacyImportResult {
         var imported = 0
+        var unreadable = 0
         for (courseID, observations) in history {
-            // A course whose rows cannot be read is skipped, not imported blind:
-            // the guard exists so a re-run cannot duplicate what is there.
-            guard !observations.isEmpty, (try? rows(courseID: courseID))?.isEmpty == true else { continue }
+            guard !observations.isEmpty else { continue }
+            guard let existing = try? rows(courseID: courseID) else {
+                unreadable += 1
+                continue
+            }
+            guard existing.isEmpty else { continue }
             for observation in Self.collapsedByDay(observations).suffix(Self.retentionPerCourse) {
                 context.insert(StoredGradeObservation(
                     courseID: courseID,
@@ -255,7 +284,7 @@ public final class GradeHistoryStore {
             }
         }
         if imported > 0 { saveChanges() }
-        return imported
+        return LegacyImportResult(imported: imported, unreadableCourses: unreadable)
     }
 
     /// Drops every observation. Called when the user disconnects Canvas —

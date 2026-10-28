@@ -214,6 +214,58 @@ struct GradeHistoryStoreHealthTests {
         #expect(store.importLegacyHistory(legacy) == 1)
     }
 
+    // MARK: The one-time legacy import
+
+    /// The legacy blob is the only copy of the old history. A read error during
+    /// the one-time import skips the course, and recording the migration as done
+    /// anyway would leave it behind a version gate that never opens again.
+    @MainActor
+    @Test("a legacy import that could not read a course is retried next launch, not recorded as done")
+    func unreadableLegacyImportIsRetried() throws {
+        let suite = "lhf.legacy-history.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let blob = ["111": [GradeHistoryStore.Observation(date: t0, percent: 80)],
+                    "222": [GradeHistoryStore.Observation(date: t0, percent: 70)]]
+        defaults.set(try JSONEncoder().encode(blob), forKey: LegacyStateMigration.legacyGradeHistoryKey)
+
+        let ledger = try AssignmentStore(inMemory: true)
+        let history = try GradeHistoryStore(inMemory: true)
+
+        history.readFailureForTesting = InjectedFailure()
+        let first = LegacyStateMigration.runIfNeeded(
+            defaults: defaults, assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(first.didRun)
+        #expect(first.historyCoursesSkipped == 2)
+        #expect(first.observationsImported == 0)
+        #expect(defaults.integer(forKey: LegacyStateMigration.versionKey) < LegacyStateMigration.ledgerVersion,
+                "the version must not be recorded while the import is unfinished")
+        #expect(defaults.data(forKey: LegacyStateMigration.legacyGradeHistoryKey) != nil, "and the blob is still there")
+
+        // The next launch can read, runs again, and finishes the job.
+        history.readFailureForTesting = nil
+        let second = LegacyStateMigration.runIfNeeded(
+            defaults: defaults, assignmentStore: ledger, gradeHistoryStore: history)
+        #expect(second.didRun, "the gate was left open")
+        #expect(second.historyCoursesSkipped == 0)
+        #expect(second.observationsImported == 2)
+        #expect(history.history(courseID: "222").map(\.percent) == [70])
+        #expect(defaults.integer(forKey: LegacyStateMigration.versionKey) == LegacyStateMigration.currentVersion)
+
+        // And a third launch is the ordinary no-op.
+        #expect(!LegacyStateMigration.runIfNeeded(
+            defaults: defaults, assignmentStore: ledger, gradeHistoryStore: history).didRun)
+    }
+
+    @MainActor
+    @Test("a course the store already holds is not an unreadable one: it does not hold the migration open")
+    func alreadyImportedCourseIsNotASkip() throws {
+        let history = try GradeHistoryStore(inMemory: true)
+        history.record(courseID: "111", percent: 90, now: t0)
+        let result = history.importingLegacyHistory(["111": [GradeHistoryStore.Observation(date: t0, percent: 80)]])
+        #expect(result == GradeHistoryStore.LegacyImportResult(imported: 0, unreadableCourses: 0))
+    }
+
     // MARK: StorageHealth
 
     @MainActor
