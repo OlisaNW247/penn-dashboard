@@ -116,6 +116,17 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
 
+## What's New in 3.3.1 (release notes, ≤4000)
+
+Two crashes fixed.
+
+• Smooth no longer quits a few seconds after opening when a class has two
+  Canvas grading groups with the same name
+• Tapping a Smooth notification opens the app instead of closing it
+• Reconnecting Canvas happens over your dashboard, with an X, and never
+  sends you back to the first-run screens
+• A sign-in that fails says so and offers to try again
+
 ## What's New in 3.3.0 (release notes, ≤4000)
 
 Tell us how Smooth is going.
