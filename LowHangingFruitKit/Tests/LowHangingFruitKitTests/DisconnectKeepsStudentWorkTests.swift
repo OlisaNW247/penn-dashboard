@@ -255,8 +255,8 @@ struct DisconnectKeepsStudentWorkTests {
         #expect(settleBody.contains("state.startPendingBackendDeletionRetryIfNeeded()"))
         #expect(!settleBody.contains("await state.startPendingBackendDeletionRetryIfNeeded()"))
         let deletion = try uiSource("AppState+BackendDeletion.swift")
-        let starter = try #require(deletion.range(of: "func startPendingBackendDeletionRetryIfNeeded() {"))
-        #expect(String(deletion[starter.lowerBound...].prefix(500)).contains("Task {"))
+        let starter = try #require(deletion.range(of: "func startPendingBackendDeletionRetryIfNeeded("))
+        #expect(String(deletion[starter.lowerBound...].prefix(2_200)).contains("Task { [weak self] in"))
         // The disconnect itself makes no network call.
         let appState = try uiSource("AppState.swift")
         let disconnect = try #require(appState.range(of: "func disconnectCanvas(keepingStudentWork: Bool = true) {"))

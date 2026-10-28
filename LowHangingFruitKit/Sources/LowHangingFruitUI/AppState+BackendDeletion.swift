@@ -7,7 +7,9 @@ import LowHangingFruitKit
 /// it can fail offline, and until now a failure was reported once, on a
 /// Settings line that told the student to reconnect and disconnect again,
 /// while the rows sat on the server indefinitely. This remembers the request
-/// until the server confirms it.
+/// until the server confirms it, and stops remembering it when the server has
+/// answered in a way no retry will change (`shouldKeepRetrying`) or there is no
+/// account on this phone to delete.
 ///
 /// The record is a boolean in `UserDefaults.lhf`, device-local on purpose: it
 /// is not in `CloudPrefsMirror.mirroredKeys`, because a second device deciding
@@ -50,20 +52,53 @@ enum PendingBackendDeletion {
         return canvasConnected ? .dropSuperseded : .retry
     }
 
+    /// Whether a deletion that just failed with `error` is worth asking for
+    /// again. Pure, so a test can pin the table.
+    ///
+    /// Retry what time or a better connection can change: no answer at all
+    /// (`.transport`, or any non-backend error such as a cancelled or timed-out
+    /// request), a 5xx, 408 and 429, and 401 (a token the next call refreshes).
+    /// Give up on what the server has already answered for good: any other
+    /// 4xx (a 403 or a 404 will say the same thing on every pass), and the
+    /// two cases that are not about the network at all, `.notConfigured` (there
+    /// is no server to ask) and `.decoding` (the server answered, so asking
+    /// again cannot change what it said). Without this a permanent refusal was
+    /// retried on every dashboard refresh, for the life of the install.
+    nonisolated static func shouldKeepRetrying(after error: Error) -> Bool {
+        guard let backendError = error as? BackendError else { return true }
+        switch backendError {
+        case .transport, .unauthorized, .quotaExceeded:
+            return true
+        case let .http(status):
+            return status >= 500 || [401, 408, 429].contains(status)
+        case .notConfigured, .decoding:
+            return false
+        }
+    }
+
     enum Attempt: Equatable {
         case nothingPending
         case superseded
         case alreadyRunning
         case deleted
+        /// Failed in a way worth another try; the record stays.
         case failed
+        /// Failed in a way no retry will change; the record was dropped.
+        case abandoned
     }
 }
 
 extension AppState {
 
-    /// One in-flight retry per process: the launch pass and the five-minute
-    /// loop can both reach `startPendingBackendDeletionRetryIfNeeded()`.
+    /// One deletion call in flight per process, whoever started it: the
+    /// launch pass and the five-minute loop can both reach
+    /// `startPendingBackendDeletionRetryIfNeeded()`, and so can a refresh pass
+    /// that lands while the disconnect's own first call is still waiting on
+    /// the network (`performBackendDeletion` takes the flag too).
     private static var backendDeletionRetryInFlight = false
+    /// The retry task `startPendingBackendDeletionRetryIfNeeded` spawned, so a
+    /// test can wait for it.
+    private static var backendDeletionRetryTask: Task<Void, Never>?
 
     /// Runs the deletion and keeps the record honest. The record is written
     /// BEFORE the call and cleared only after the server confirms, rather
@@ -90,10 +125,23 @@ extension AppState {
         delete: () async throws -> Void
     ) async -> Bool {
         PendingBackendDeletion.setPending(true, in: defaults)
+        // Held for the length of this call, so a refresh pass that reaches
+        // `retryPendingBackendDeletion` while it is still waiting on the
+        // network sees one in flight instead of sending a second
+        // `delete-account`. Only released if this call took it: a retry that
+        // is already running keeps its own.
+        let ownsFlight = !Self.backendDeletionRetryInFlight
+        if ownsFlight { Self.backendDeletionRetryInFlight = true }
+        defer { if ownsFlight { Self.backendDeletionRetryInFlight = false } }
         do {
             try await delete()
         } catch {
             courseKnowledgeNotice = "couldn't delete your data from lhf's server: \(error.localizedDescription)"
+            // An answer no retry will change is not kept for retrying; the
+            // record stays only for what time or a connection can fix.
+            if !PendingBackendDeletion.shouldKeepRetrying(after: error) {
+                PendingBackendDeletion.setPending(false, in: defaults)
+            }
             return false
         }
         PendingBackendDeletion.setPending(false, in: defaults)
@@ -106,11 +154,44 @@ extension AppState {
     /// spawns its own task, so the dashboard never waits on it. With no
     /// backend configured there is nothing to retry and the record is left
     /// alone.
-    func startPendingBackendDeletionRetryIfNeeded() {
-        guard PendingBackendDeletion.isPending(), let client = BackendServices.client else { return }
-        Task { [weak self] in
-            await self?.retryPendingBackendDeletion { try await client.deleteAccount() }
+    ///
+    /// **With no backend identity on this phone, the record is dropped and no
+    /// call is made.** `delete-account` authenticates as the anonymous
+    /// account, and `BackendSession` creates one on the first call that needs
+    /// it, so asking to delete an account this phone never had would sign up a
+    /// new one only to delete it. The identity is created by the first
+    /// backend call (a Penn install's first sync or question); no identity
+    /// means there is nothing on the server to delete.
+    ///
+    /// `defaults`, `hasIdentity`, `afterConfirmed` and `delete` are test
+    /// seams; the app passes none of them.
+    func startPendingBackendDeletionRetryIfNeeded(
+        defaults: UserDefaults = .lhf,
+        hasIdentity: () -> Bool = { BackendIdentityStore.load() != nil },
+        afterConfirmed: (() -> Void)? = nil,
+        delete: (@Sendable () async throws -> Void)? = nil
+    ) {
+        guard PendingBackendDeletion.isPending(in: defaults) else { return }
+        guard hasIdentity() else {
+            PendingBackendDeletion.setPending(false, in: defaults)
+            return
         }
+        let call: @Sendable () async throws -> Void
+        if let delete {
+            call = delete
+        } else if let client = BackendServices.client {
+            call = { try await client.deleteAccount() }
+        } else {
+            return
+        }
+        Self.backendDeletionRetryTask = Task { [weak self] in
+            await self?.retryPendingBackendDeletion(defaults: defaults, afterConfirmed: afterConfirmed, delete: call)
+        }
+    }
+
+    /// Waits for the retry `startPendingBackendDeletionRetryIfNeeded` started.
+    func awaitPendingBackendDeletionRetry() async {
+        await Self.backendDeletionRetryTask?.value
     }
 
     /// The retry itself, with the network call injected so a test can fail
@@ -146,6 +227,10 @@ extension AppState {
         do {
             try await delete()
         } catch {
+            guard PendingBackendDeletion.shouldKeepRetrying(after: error) else {
+                PendingBackendDeletion.setPending(false, in: defaults)
+                return .abandoned
+            }
             return .failed
         }
         PendingBackendDeletion.setPending(false, in: defaults)
