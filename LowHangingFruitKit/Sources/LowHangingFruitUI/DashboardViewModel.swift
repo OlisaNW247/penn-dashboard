@@ -296,6 +296,17 @@ final class DashboardViewModel: ObservableObject {
         if !usingSampleData { appState?.markCompleted(item.assignment) }
     }
 
+    /// The write half of completing a card, for the swipe to make before its
+    /// exit animation: the completion reaches the ledger now (`AppState
+    /// .commitCompletion`) and nothing on screen changes, so the card is still
+    /// here to animate away. `complete` follows when the animation ends and
+    /// finds the write already made. Sample data writes nothing, as for
+    /// `complete`.
+    func commitCompletion(_ item: DashItem) {
+        guard !usingSampleData, index(of: item) != nil else { return }
+        appState?.commitCompletion(item.assignment)
+    }
+
     func uncomplete(_ item: DashItem) {
         guard let i = index(of: item) else { return }
         items[i].isCompleted = false

@@ -963,7 +963,10 @@ struct ContentView: View {
                                 vm.removeOwnTask(item)
                             }
                             rescheduleNotifications()
-                        }
+                        },
+                        // The swipe's write, made before the card animates away;
+                        // `onComplete` above follows and finds it done.
+                        onCommit: { item in vm.commitCompletion(item) }
                     )
                 }
             }

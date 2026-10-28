@@ -263,6 +263,13 @@ final class AppState: ObservableObject {
     /// from. `disconnectCanvas` runs it (`replanRemindersAfterDisconnect`).
     var reminderReplanner: (@MainActor () async -> Void)?
     private var pendingReminderReplan: Task<Void, Never>?
+
+    /// Assignments whose completion `commitCompletion` has already written to
+    /// the ledger, waiting for the swipe's exit animation to finish and
+    /// `markCompleted` to run. Not published: nothing on screen changes at the
+    /// commit, and a publish would reload the dashboard and take the card off
+    /// the list before its animation.
+    private var committedCompletionIDs: Set<String> = []
     /// Canvas assignment ids the grades fetch reports as submitted (see
     /// `AssignmentSubmissionInfo.indicatesSubmitted`). DERIVED state, recomputed
     /// from grade snapshots on every refresh, so a Canvas correction (a
@@ -7984,10 +7991,21 @@ final class AppState: ObservableObject {
     /// (`linkedID` set — see `AssignmentDeduplicator`), also marks its
     /// Gradescope counterpart done directly, so completion stays correct for
     /// both identities even if a later sync no longer matches the pair.
+    ///
+    /// If a swipe already committed this completion (`commitCompletion`), the
+    /// ledger holds it and the sync log has it, and this does neither again:
+    /// no second write, no second change record, and the timestamp stays the
+    /// moment of the swipe. It still reads the completion back and rebuilds,
+    /// which is what takes the card off the list. The committed mark is only
+    /// honoured if the ledger confirms the completion is there, so a stale
+    /// mark (the card left before its animation ended, the completion cleared
+    /// since by another path) falls through to the full write.
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
-        recordSyncChange(.completion, ids: Array(touched))
+        let alreadyCommitted = committedCompletionIDs.remove(assignment.id) != nil
+            && assignmentStore?.completionRecord()?.ids.contains(assignment.id) == true
+        if !alreadyCommitted { recordSyncChange(.completion, ids: Array(touched)) }
 
         guard let store = assignmentStore else {
             applyCompletionInMemory(touched, at: date)
@@ -8002,9 +8020,40 @@ final class AppState: ObservableObject {
         // a completion with no idea what was completed. This also covers work
         // no feed reconciles at all, a manual or recurring task, which would
         // otherwise be dropped for want of a row.
-        store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment))
+        if !alreadyCommitted {
+            store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment))
+        }
         reloadCompletionFromLedger()
         rebuildDashboardItems()
+    }
+
+    /// The write half of a swipe, made the instant the swipe is accepted and
+    /// before the card starts to leave: the completion goes to the ledger and
+    /// the sync log, and nothing else happens. No published property changes,
+    /// no dashboard rebuild, no reminder re-plan, so the card is still on the
+    /// list for its exit animation, and `markCompleted` follows when the
+    /// animation ends to do the rest.
+    ///
+    /// This is the fix for a completion shown to the student and lost if the
+    /// process ended in the 0.38 seconds before that write (hardening plan
+    /// 2026-10-25, B10: UCR-14). The wrong fix is to call `markCompleted`
+    /// first: it saves and rebuilds in one go, and the rebuild takes the card
+    /// off the list at once, with the animation it was built around.
+    ///
+    /// Returns whether the completion is on disk. False without a ledger or
+    /// when the save failed, and then nothing is marked committed, so
+    /// `markCompleted` writes it in full as it always did.
+    @discardableResult
+    func commitCompletion(_ assignment: Assignment, at date: Date = Date()) -> Bool {
+        guard let store = assignmentStore else { return false }
+        var touched: Set<String> = [assignment.id]
+        if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        guard store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment)) else {
+            return false
+        }
+        recordSyncChange(.completion, ids: Array(touched), at: date)
+        committedCompletionIDs.insert(assignment.id)
+        return true
     }
 
     /// Un-ticks `assignment`, and every hidden twin that stood in for it.
@@ -8018,6 +8067,7 @@ final class AppState: ObservableObject {
     func markActive(_ assignment: Assignment) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        committedCompletionIDs.subtract(touched)
         recordSyncChange(.completion, ids: Array(touched))
         let cleared = CompletionTwins.closure(of: touched, twins: completionTwins)
 

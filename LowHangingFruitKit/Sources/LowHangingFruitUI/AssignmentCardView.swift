@@ -41,6 +41,12 @@ struct AssignmentCardView: View {
     /// dashboard would take the card off the list at once, and with it the
     /// exit animation. It needs a write that stops at the ledger.
     ///
+    /// **Who passes one.** The dashboard's timeline does (`TimelineSectionView`
+    /// from `ContentView`, through `DashboardViewModel.commitCompletion` to
+    /// `AppState.commitCompletion`). The megaphone sheet's cards
+    /// (`AnnouncementFindsView`) do not, so a swipe there still saves when
+    /// `onComplete` runs, 0.38 seconds late: UCR-14 is open for that surface.
+    ///
     /// Defaulted to nothing, so every construction site that does not pass one
     /// behaves exactly as it did.
     var onCommit: () -> Void = {}

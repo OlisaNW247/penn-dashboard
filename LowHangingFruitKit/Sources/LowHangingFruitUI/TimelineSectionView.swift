@@ -22,6 +22,10 @@ struct TimelineSectionView: View {
     let onEdit: (DashItem) -> Void
     /// The student confirmed removing their own task from an opened card.
     let onRemove: (DashItem) -> Void
+    /// A swipe was accepted: write the completion down now, before the card
+    /// animates away (`AssignmentCardView.onCommit`). Defaulted so a caller
+    /// that does not pass one behaves as before.
+    var onCommit: (DashItem) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -31,6 +35,7 @@ struct TimelineSectionView: View {
                 AssignmentCardView(
                     item: item,
                     onComplete: { onComplete(item) },
+                    onCommit: { onCommit(item) },
                     onEdit: { onEdit(item) },
                     onRemove: { onRemove(item) },
                     isExamOverride: item.examStyleOverride
