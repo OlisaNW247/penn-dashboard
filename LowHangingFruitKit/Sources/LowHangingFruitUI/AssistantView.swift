@@ -88,19 +88,23 @@ struct AssistantView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
             Color.v2Bg.ignoresSafeArea()
+
+            if conversation.isFresh && !composerFocused {
+                AssistantShapes()
+                    .padding(.trailing, 22)
+                    .padding(.top, 4)
+            }
 
             VStack(spacing: 0) {
                 titleBlock
                     .padding(.horizontal, 22)
+                    .padding(.top, conversation.isFresh ? 100 : 0)
 
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
-                        if conversation.isFresh && !composerFocused {
-                            AssistantShapes()
-                                .transition(.opacity.combined(with: .offset(y: -14)))
-                        } else if !conversation.isFresh {
+                        if !conversation.isFresh {
                             transcript
                                 .transition(.opacity)
                         }

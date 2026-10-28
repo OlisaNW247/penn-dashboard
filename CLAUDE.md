@@ -3614,5 +3614,5 @@ Canvas app handoff remains to be checked on device. Backend is not deployed.
 
 AI empty-state refinement: removed suggestion buttons and the top-left logo.
 “What’s due this week?” is placeholder text only; it does not populate the draft.
-The Smooth mark is the send control. Noninteractive colorful geometric shapes
-fill the empty screen and disappear while typing or reading a conversation.
+The Smooth mark is the send control. A compact noninteractive geometric cluster
+sits in the top-right corner of the empty screen and disappear while typing or reading a conversation.
