@@ -146,8 +146,11 @@ struct ContentView: View {
 
                     HStack(alignment: .center, spacing: 8) {
                         DashViewPicker(selection: $filter)
+                            .dashboardTourTarget(.views)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
+                            .dashboardTourTarget(.classes)
                         addInlineButton
+                            .dashboardTourTarget(.add)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
@@ -180,6 +183,13 @@ struct ContentView: View {
                 }
 
                 assistantButton
+            }
+            .allowsHitTesting(!state.showsDashboardTour)
+            .accessibilityHidden(state.showsDashboardTour)
+            .overlayPreferenceValue(DashboardTourAnchors.self) { anchors in
+                if state.showsDashboardTour {
+                    DashboardTour(anchors: anchors) { state.showsDashboardTour = false }
+                }
             }
             .background(Color.smoothPaper.ignoresSafeArea())
             .navigationDestination(for: DashRoute.self) { route in
@@ -465,6 +475,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("ask about your classes")
+        .dashboardTourTarget(.assistant)
         .padding(.trailing, 22)
         .padding(.bottom, 24)
     }
@@ -725,10 +736,12 @@ struct ContentView: View {
                 // with the sync leaves the header a different shape on every
                 // launch, and the sheet says "no announcements" by itself.
                 announcementFindsButton
+                    .dashboardTourTarget(.announcements)
                 if FeatureFlags.gradeWatcher && state.canUseGradeWatcher {
                     navButton(to: .grades, icon: "chart.line.uptrend.xyaxis", title: "grades", color: .smoothGrape)
                 }
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
+                    .dashboardTourTarget(.profile)
             }
         }
     }

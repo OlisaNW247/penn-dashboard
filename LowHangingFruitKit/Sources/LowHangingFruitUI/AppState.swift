@@ -567,6 +567,7 @@ final class AppState: ObservableObject {
     /// trap in CLAUDE.md). One `AppState` lives per process; a cold background
     /// launch builds a new one that loads what this one saved.
     private var gradescopeReauthState: GradescopeReauthRule.State
+    @Published var showsDashboardTour = false
     @Published private(set) var hasCompletedOnboarding: Bool
     @Published private(set) var onboardingDestination: OnboardingDestination = .full
     /// True while a single-service reconnect (Canvas or Gradescope) is open as
@@ -1346,6 +1347,7 @@ final class AppState: ObservableObject {
         // Screenshot/preview seam: launch with `-LHFDemoData` to skip onboarding
         // and show a fully-populated dashboard. DEBUG-only; never in release.
         if ProcessInfo.processInfo.arguments.contains("-LHFDemoData") {
+            showsDashboardTour = ProcessInfo.processInfo.arguments.contains("-LHFDashboardTourHarness")
             hasCompletedOnboarding = true
             hasSeenIntro = true
             userName = "Marco"
@@ -3791,6 +3793,9 @@ final class AppState: ObservableObject {
     }
 
     func completeOnboarding() {
+        if !hasCompletedOnboarding && onboardingDestination == .full && !isReconnecting && !isPreviewMode {
+            showsDashboardTour = true
+        }
         onboardingDestination = .full
         isReconnecting = false
         hasCompletedOnboarding = true

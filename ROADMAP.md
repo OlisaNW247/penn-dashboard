@@ -1032,3 +1032,16 @@ passed; installed on the owner's iPhone 17 Pro and opened the practice lesson.
 Catalog regeneration is deterministic; `git diff --check` is clean. No Xcode
 UI or simulator used. Live multi-school sign-in remains outside this automated
 coverage. The owner approved the preceding onboarding screens on-device.
+
+
+### Dashboard introduction (2026-10-28)
+First-time setup now ends with a six-step, anchored tour of the actual dashboard:
+list tabs, class filter, add task, announcements, AI, and profile/Sweeper.
+Each step has one sentence, an arrow, Back/Next, and Skip. Underlying controls
+are inactive during the tour. Reduce Motion and VoiceOver focus are supported;
+long text can scroll within the available space. Returning launches, Preview,
+and single-service reconnects do not start the tour.
+DEBUG: launch with `-LHFDemoData -LHFDashboardTourHarness` to review it without
+changing saved connections. Device installation and visual tap-through for this
+addition remain pending because the phone was unavailable and Mirroring locked.
+Validation: iOS Debug build passed; 25 focused gesture, tour-state, and reconnect checks passed.
