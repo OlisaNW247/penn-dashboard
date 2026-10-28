@@ -3580,5 +3580,9 @@ into AppState or persisted. The underlying login WebView stays mounted. Optional
 Gradescope and reminder setup follow as before, then the real dashboard opens.
 There is no separate dashboard tour after setup or on reconnect.
 DEBUG review: `-LHFFullOnboardingReview -LHFSkipIntro -LHFCompletionGuideHarness`.
-Phone installation and visual tap-through are pending device availability.
+Installed on iPhone 17 Pro and verified via Mirroring: swipe right enters prev,
+swipe left restores todo, and Continue opens the optional Gradescope question.
+School-search screen and bottom-right Preview were visually confirmed. All
+Preview labels now use exactly “Preview,” including intro and Sweeper audio.
+Full authenticated sign-in remains separate from this sample-data review.
 Validation: iOS Debug build and 25 focused tests in 5 suites passed.
