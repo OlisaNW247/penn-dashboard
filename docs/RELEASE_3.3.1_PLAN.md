@@ -149,3 +149,7 @@ Nothing has run on a phone yet.
   conflicts in the session code and read every one against the cookie
   rules in CLAUDE.md before taking either side.
 
+
+### Phone install (2026-10-28, 17:13 UTC)
+
+Debug 3.3.1 (17), built from the release tree, was installed on Marco's iPhone 17 Pro with `xcrun devicectl device install app` and launched. The phone reports Smooth 3.3.1 (17); the process was still alive well past the point where 3.2.1 trapped. Marco's final hands-on test comes next, then the merge of the onboarding/UI branch he names (not `codex/simplify-canvas-onboarding`), then the App Store upload.
