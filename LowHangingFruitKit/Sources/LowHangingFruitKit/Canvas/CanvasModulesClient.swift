@@ -331,7 +331,7 @@ public struct CanvasModulesClient: Sendable {
                         // types can carry the field with unrelated meaning
                         // in principle, so this narrows on Canvas's own type
                         // tag rather than "is the field present".
-                        externalURL: item.type == "ExternalUrl" ? item.externalURL : nil
+                        externalURL: item.type == "ExternalUrl" ? item.externalURL?.url : nil
                     ))
                 }
             }
@@ -557,13 +557,26 @@ private struct ModuleItemDTO: Decodable {
     let type: String
     let contentID: Int?
     let contentDetails: ContentDetailsDTO?
-    let externalURL: URL?
+    /// Read leniently: an `external_url` that is not a URL ("", a typo with a
+    /// space in it, a number) costs the link and not the item. Decoded as a
+    /// plain `URL?` it threw for the item, and a module item with a bad link
+    /// lost its title and its place in the course's readings too (found by
+    /// `ModulesFuzzTests`).
+    let externalURL: LenientURL?
 
     enum CodingKeys: String, CodingKey {
         case id, title, type
         case contentID = "content_id"
         case contentDetails = "content_details"
         case externalURL = "external_url"
+    }
+
+    struct LenientURL: Decodable {
+        let url: URL?
+
+        init(from decoder: Decoder) {
+            url = (try? decoder.singleValueContainer().decode(String.self)).flatMap { URL(string: $0) }
+        }
     }
 
     struct ContentDetailsDTO: Decodable {

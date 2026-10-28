@@ -121,7 +121,12 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
 
         guard !collapsed.isEmpty else { return nil }
         if collapsed.count > maximumMessageLength {
-            return String(collapsed.prefix(maximumMessageLength))
+            // Trimmed after the cut: it can land just after a space, and a
+            // message that ends in one is not what a second pass (the
+            // policy cache re-decodes what it encoded) would produce, so the
+            // cached policy would not equal the fetched one.
+            let cut = String(collapsed.prefix(maximumMessageLength)).trimmingCharacters(in: .whitespaces)
+            return cut.isEmpty ? nil : cut
         }
         return collapsed
     }

@@ -385,11 +385,20 @@ public final class CanvasAnnouncementsClient {
 
         // Whatever tags remain (opening tags, `<a href=...>`, `<strong>`,
         // etc.) carry no useful text content once stripped.
-        text = Self.tagStripRegex.stringByReplacingMatches(
-            in: text,
-            range: NSRange(text.startIndex..., in: text),
-            withTemplate: ""
-        )
+        // Only up to the last `>`: a tag cannot end after it, and an
+        // unclosed `<` otherwise scanned to the end of the text looking for
+        // one, which is quadratic over a text of nothing but `<`
+        // (`AnnouncementFuzzTests`).
+        if let lastClose = text.utf16.lastIndex(of: 0x3E) {
+            let end = text.utf16.index(after: lastClose)
+            let head = String(text[..<end])
+            let stripped = Self.tagStripRegex.stringByReplacingMatches(
+                in: head,
+                range: NSRange(location: 0, length: head.utf16.count),
+                withTemplate: ""
+            )
+            text = stripped + text[end...]
+        }
 
         // Common entities only — not a general HTML entity decoder. `&amp;`
         // is decoded LAST so a message that literally typed out "&lt;" (which
