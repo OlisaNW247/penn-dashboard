@@ -57,6 +57,15 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   decided by whether a session cookie is still fresh) landed on the same
   branch, each in its own commit so either can be dropped; both compiled
   and tested, neither run on a phone.
+  Later that day, at Marco's say ("continue with everything"), the rest
+  of the plan that needs no phone answer or product call landed on the
+  same branch in seven reviewed groups (sign-in edges, ledger integrity,
+  alarms and the background wake, the Kit hardening and fuzz suite,
+  privacy text and ask links, sessions and Keychain, the backend track,
+  not deployed). `docs/WHAT_CHANGED_3.2.2.md` explains each commit and
+  lists what was skipped and why: A6 and A9 (the renewer, Olisa), B2
+  (reinstall policy, Marco), C3, C8, C10 (product calls), D3-D7 (measure
+  first), P2 (pairing protocol), BE-D/E/G (Olisa's sync).
 
 - **The Chrome extension: built 2026-10-22, now the owner's to try**
   (`docs/CHROME_EXTENSION.md` is the design record and its Status list).

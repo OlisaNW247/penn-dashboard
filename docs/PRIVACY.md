@@ -350,9 +350,11 @@ your usage counters, your per-request log rows (see "What we keep"), and the
 anonymous account itself, and it removes the Canvas calendar feed address, the
 saved PennKey password and the Ed Discussion session from this phone, and it
 unpairs every laptop: their anonymous accounts and encrypted sync copies are
-deleted too. The confirmation says so before you tap it. If our server can't
-be reached at that moment, the app says so and nothing is deleted there;
-reconnect, then disconnect again. It does not delete the shared course
+deleted too. The confirmation says so before you tap it. If our server can't be reached at that moment, your login still comes off
+the phone right away, and the app keeps retrying the server-side deletion
+on later launches until it succeeds (Settings shows "couldn't reach smooth
+· will retry" meanwhile). If the server refuses the deletion outright, the
+app stops retrying and says so. It does not delete the shared course
 material other students are still using, because that material was never
 yours alone — it's the same syllabus and assignment pages every enrolled
 student can already see on Canvas. Disconnecting Gradescope removes your

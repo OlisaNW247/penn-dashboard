@@ -275,7 +275,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
     (`StorageHealth`; never in preview or demo mode). Since 2026-10-27
     tapping the Canvas banner opens the sign-in as a cover over the
     dashboard, with an xmark to close it; it no longer restarts
-    onboarding (the lock-out trap below).
+    onboarding (the lock-out trap below). A "reconnect gradescope" banner
+    (since 2026-10-27, hardening A4) appears only after a real login page
+    was seen on two syncs an hour apart, and opens the same cover.
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (the add sheet: a
@@ -684,7 +686,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      canvas" under the canvas row when Canvas is connected with no saved
      login, since 2026-10-18; since 2026-10-27 every reconnect row opens
      the sign-in as a cover over the dashboard, never the first-run
-     walk). The sign-in health lines and the "ed
+     walk; a "save pennkey" row while Penn is connected with no saved
+     password; "couldn't reach smooth · will retry" while a disconnect's
+     server deletion is still pending). The sign-in health lines and the "ed
      discussion" status row that `v8` added here were taken off the page
      on 2026-10-10 ("a whole yap about Canvas", Marco), moved into one
      collapsed "sign-in diagnostics" disclosure, and on 2026-10-18 put
@@ -1103,7 +1107,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 2953 tests / 266 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, A2 and A3; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
+**Current: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
@@ -1837,6 +1841,22 @@ itself.
 
 ## Traps that have already bitten
 
+- **Two `swift test` runs at once share one scratch defaults domain, and a
+  run killed half-way poisons the next one.** Under the test runner
+  `UserDefaults.lhf` lands in the `swiftpm-testing-helper` domain on the
+  Mac, one domain for every worktree. On 2026-10-27 seven worktrees were
+  testing at once; a usage-limit cutoff killed several runs mid-suite,
+  and from then on `ProfileTabTests` and `SyllabusExamDashboardTests`
+  failed in a third worktree, in isolation, with another suite's course
+  preferences (`ADDU 1200`, `SYLDASH 96xx`) and a flipped announcement
+  switch left behind. The in-process guards (scratch suites, backup and
+  restore) cannot see another process. The tells: a failure naming a
+  course code from a different test file, and `defaults read
+  swiftpm-testing-helper coursePreferences` showing fixture names. Fix:
+  wait until `pgrep -f LowHangingFruitKitPackageTests` is empty, run
+  `defaults delete swiftpm-testing-helper`, then test again; and never
+  trust a full run that overlapped another worktree's. The wrong fix is
+  editing the failing test to tolerate the leak.
 - **A persisted "onboarding not done" flag is a lock-out, not a
   navigation state.** `restartOnboarding(for: .canvas)` used to write
   `hasCompletedOnboarding = false` to disk so `RootView` would show the
@@ -2680,6 +2700,14 @@ none is a ship line.
   signed in before it lists App Store users' crashes, and no affected
   phone has been read. Treat the first `.ips` that arrives as the proof,
   and look for `EXC_BREAKPOINT` inside `GradeEngine`.
+- **The hardening groups of 2026-10-27 have not run on a phone.** Every
+  item from `docs/HARDENING_PLAN_2026-10-25.md` that landed on
+  `fix/duplicate-category-ids` that day (Release A remainder, Release B,
+  Release C, the Kit hardening, the backend track) is compiled, tested
+  and reviewed, and none of it has been watched on a device.
+  `docs/WHAT_CHANGED_3.2.2.md` lists every change with what to look at
+  on the phone; the backend commits are not deployed (Olisa's go, with
+  the checklist in that file).
 - **A class's Ed posts can vanish from the phone and come back**
   (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
   over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620
