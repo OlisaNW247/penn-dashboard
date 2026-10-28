@@ -366,7 +366,12 @@ struct OnboardingView: View {
 
     /// First-run sync keeps the lesson visible until Continue. Settings
     /// reconnects keep their existing connection confirmation instead.
+    nonisolated static func acceptsCanvasConnection(in phase: Phase, alreadyReady: Bool) -> Bool {
+        phase == .canvasLogin && !alreadyReady
+    }
+
     private func canvasConnected(_ notice: String?) {
+        guard Self.acceptsCanvasConnection(in: phase, alreadyReady: completionGuideReady) else { return }
         canvasConnectionNotice = notice
         if showsCompletionGuide {
             completionGuideReady = true
@@ -442,7 +447,7 @@ struct OnboardingView: View {
             connectedStep(
                 step: 2,
                 message: "gradescope is connected.",
-                onBack: { phase = .canvasConnected },
+                onBack: { phase = .gradescopeChoice },
                 onContinue: gradescopeConnected
             )
         } else {

@@ -1058,3 +1058,22 @@ Validation: iOS Debug build and 25 focused tests in 5 suites passed.
 Latest revision: iOS build and 26 focused tests passed; installed the centered
 Gradescope choices and separate feature steps. Verified swipe-first entry on
 the phone; Mirroring input errors blocked the new feature-step tap-through.
+
+
+### AI presentation and onboarding routing (2026-10-28)
+AssistantView now uses three aligned suggestions, regular sans text, a rounded
+multiline composer, and idle-only rotating greetings (Ask about classes / How
+can I help? / Happy weekday). Rotation pauses for typing or a conversation and
+is disabled by Reduce Motion. Answer formatting preserves paragraphs and source
+links while removing strong emphasis. Backend prompt changes request concise,
+phone-readable answers without bold; those instructions require backend deploy.
+Late/repeated Canvas completion callbacks are ignored outside canvasLogin or
+once the guide is ready, preventing backward routing into the Gradescope
+choice. The reported duplicate question still needs live reproduction.
+Assignment-card Canvas links try universal links, then canvas-courses:// with
+the same host/course/item/query, then fall back to HTTPS. Other providers and
+macOS keep normal links. Scheme reference: https://instructure.github.io/mobile-app-api/
+Validation: 62 targeted Swift tests / 9 suites, 20 backend prompt tests, and
+iOS Debug build passed. Installed and visually checked AI on iPhone 17 Pro;
+Mirroring input errors prevented completing the live repeat-question check.
+Canvas app handoff remains to be checked on device. Backend is not deployed.

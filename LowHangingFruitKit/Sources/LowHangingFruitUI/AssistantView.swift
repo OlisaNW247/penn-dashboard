@@ -1,72 +1,7 @@
 import SwiftUI
 import LowHangingFruitKit
 
-// MARK: – the tree
-//
-// A chat over everything LHF already holds about the student's classes:
-// syllabi, deadlines, announcements. "what's my phys attendance policy" →
-// the answer, with the syllabus section it came from.
-//
-// ## The idea the screen is built on
-//
-// The app is called Low Hanging Fruit and its mark is a persimmon on a
-// branch. This screen takes that literally: the backdrop is the whole tree —
-// a rooted trunk and its full canopy — and the suggested questions sit as
-// fruit-bearing chips over it, four of them, zigzagging down the page. That
-// is not ornament — it is the only bit of the design doing real work,
-// because the hardest problem with an assistant like this is not answering,
-// it is that a student opening a blank chat box has no idea what it knows.
-// Four answerable questions, sitting where the eye already is, are the
-// affordance. A row of grey suggestion pills would have said the same thing
-// and meant nothing.
-//
-// The tree itself used to be drawn — vectors, boughs, a full `Canvas` of
-// `BranchGeometry` curves — specifically so the chips could hang from actual
-// branch tips on short stems. Two things about that are now history rather
-// than current fact, and it is worth being honest about both:
-//
-// The backdrop is now a bundled illustration (`TreeBackdrop`, `thetree.png`)
-// rather than a drawing, supplied by the product owner in place of the
-// hand-built vector tree. A raster has no queryable branch tips, so the
-// chip layout stopped being tied to the backdrop's geometry the moment the
-// backdrop became a picture — see `TreeGeometry` for what's left of the
-// old branch-tip table now that nothing draws limbs to hang chips from.
-//
-// The stems are gone too, and for a reason that predates the illustration:
-// a single bough with the suggestion chips at fixed depths down its length
-// used to put every chip on one shared stem run, and because the chips are
-// wide and left-anchored, a lower chip's stem ran *behind* every chip above
-// it before re-emerging below it — three parallel strings threading through
-// cards on a real device. Moving to four separate branch tips fixed that
-// structurally, by giving each chip its own short stem with nowhere far
-// enough to reach sideways. Now that there is no branch drawn at all, a stem
-// would be pointing at nothing — a line drawn toward an attachment point
-// that doesn't exist in the artwork reads as a rendering bug, not as
-// craft — so the chips sit flush against the screen edges with no stem at
-// all. `PersimmonMark` already draws its own short stem on the fruit itself,
-// which is enough to say "this is hanging fruit" without a second one
-// reaching for a branch that isn't there.
-//
-// Once a question is asked the tree does not go away — it fades from a
-// scene-setting 0.5 down to a faint 0.10 and the transcript scrolls straight
-// over the top of it. The tree is the room the conversation happens in, so
-// the room stays.
-//
-// ## Why the answers do not look like chat bubbles
-//
-// The student's own message gets a bubble, because a bubble is a good way to
-// say "you said this". The answer does not. It is set in the display serif on
-// the bare paper background with a coloured spine down its left edge — the
-// same spine language as the assignment cards, in the purple `RedesignTokens`
-// reserves for *provenance*: things that came out of the student's own
-// syllabus. An answer set as a grey chat bubble is a message from a chatbot.
-// An answer set like the rest of the app's content is a fact about your
-// classes, which is the thing being sold.
-//
-// The citation chips underneath exist for the same reason. An academic
-// assistant that quietly invents an attendance policy is worse than none, so
-// every answer names its sources and the student can go and check.
-
+/// Questions and source-backed answers about the student’s classes.
 struct AssistantView: View {
     /// Course codes drive the suggested questions, so the fruit on the tree
     /// name classes the student actually takes.
@@ -83,14 +18,8 @@ struct AssistantView: View {
     @StateObject private var conversation: AssistantConversation
     @State private var draft = ""
     @State private var sendPulse: Double = 0
-    /// Which suggestion chip, if any, is mid-pick — driving the fade on the
-    /// other three chips and, together with `pickedDetach`, that one chip's
-    /// own falling persimmon. `nil` at rest and reset in `conversation.clear()`
-    /// so a second visit to the empty state never shows a chip already fallen.
-    @State private var pickedIndex: Int?
-    /// 0 at rest, 1 fully detached — the picked chip's `PersimmonMark` reads
-    /// this the same way the send button's does.
-    @State private var pickedShapeProgress: Double = 0
+    @State private var greetingIndex = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
     #if os(iOS)
     /// Dictation is iOS-only (on-device recognition, see `VoiceDictationRules`).
@@ -102,7 +31,6 @@ struct AssistantView: View {
     @Environment(\.scenePhase) private var scenePhase
     #endif
 
-    private let tree = TreeGeometry()
 
     /// Picks the responder once, at construction, rather than the view
     /// re-checking on every render: whether a backend is configured shouldn't
@@ -170,7 +98,7 @@ struct AssistantView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
                         if conversation.isFresh && !composerFocused {
-                            hangingSuggestions(in: geo.size)
+                            suggestedQuestions
                                 .transition(.opacity.combined(with: .offset(y: -14)))
                         } else if !conversation.isFresh {
                             transcript
@@ -190,21 +118,24 @@ struct AssistantView: View {
         // idempotent, so opening this screen twice in one launch (or after
         // `AppState.init` already called it) costs nothing.
         .task { SentenceEmbeddingProvider.shared.warmUp() }
-        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: conversation.isFresh)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: conversation.isFresh)
+        .task(id: conversation.isFresh && !composerFocused && !reduceMotion) {
+            guard conversation.isFresh && !composerFocused && !reduceMotion else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(7)) } catch { return }
+                withAnimation(.easeInOut(duration: 0.35)) { greetingIndex = (greetingIndex + 1) % 3 }
+            }
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             if !conversation.isFresh {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("new") {
+                    Button("New chat") {
                         withAnimation {
                             conversation.clear()
-                            // Otherwise the next empty state opens with one
-                            // chip already fallen and faded, from the last
-                            // conversation's pick.
-                            pickedIndex = nil
-                            pickedShapeProgress = 0
+
                         }
                     }
                     .font(.lhfSans(14, weight: .medium))
@@ -217,136 +148,51 @@ struct AssistantView: View {
     // MARK: Title
 
     private var titleBlock: some View {
-        Text(greeting)
-            .font(.lhfSerif(38))
-            .foregroundStyle(Color.v2Ink)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 16) {
+            if conversation.isFresh { SmoothStarMark(size: 36).accessibilityHidden(true) }
+            Text(conversation.isFresh ? greeting : "Ask about classes")
+                .font(.lhfSans(conversation.isFresh ? 32 : 22, weight: .regular))
+                .foregroundStyle(Color.v2Ink)
+                .id(conversation.isFresh ? greetingIndex : -1)
+                .transition(.opacity)
+                .accessibilityAddTraits(.isHeader)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 12)
+        .padding(.bottom, 24)
     }
 
     private var greeting: String {
-        let firstName = userName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: " ")
-            .first
-            .map(String.init)
-        return firstName.map { "Hello \($0)" } ?? "Hello"
+        AssistantPresentation.greeting(index: greetingIndex, date: Date())
     }
 
-    // MARK: The fruit on the tree
-
-    /// The suggestions, positioned against `TreeGeometry.slots` — four
-    /// fixed points down the page, alternating sides, with no branch tip or
-    /// stem involved any more (see this file's header for why: the backdrop
-    /// is a bundled illustration now, not a drawing with queryable limbs).
-    /// `growsRight` on each slot says which screen edge the chip sits flush
-    /// against: `true` docks it to the left with the fruit first and the
-    /// text running right of it, `false` docks it to the right with the
-    /// mirror image — text first, fruit trailing — so in both cases the
-    /// fruit sits on the outer edge, away from the centre of the screen,
-    /// the same visual role it had when it was the part nearest the wood.
-    private func hangingSuggestions(in size: CGSize) -> some View {
-        let pairs = Array(zip(suggestions, tree.slots).enumerated())
-        // Every slot uses the same near-edge inset on both sides, so the
-        // room available to grow toward the opposite edge is identical for
-        // a left-docked and a right-docked chip; there is nothing left that
-        // varies per chip, unlike the old tip-relative calculation.
-        let width = Self.availableWidth(totalWidth: size.width)
-
-        return ZStack(alignment: .topLeading) {
-            ForEach(pairs, id: \.element.0.id) { index, pair in
-                let (item, slot) = pair
-                let boxX = slot.growsRight ? Self.edgeInset : size.width - Self.edgeInset - width
-                let boxY = slot.y * size.height
-
-                suggestionChip(item, index: index, growsRight: slot.growsRight, maxWidth: width)
-                    .opacity(pickedIndex == nil || pickedIndex == index ? 1 : 0)
-                    .animation(.easeOut(duration: 0.2), value: pickedIndex)
-                    .offset(x: boxX, y: boxY)
-            }
-        }
-    }
-
-    /// How wide a chip may grow before it would run into the screen edge
-    /// opposite the one it's docked against. Both edges use the same inset,
-    /// so this no longer depends on which slot is asking — it did back when
-    /// width was measured from a branch tip's x-position toward whichever
-    /// screen edge was farther away.
-    private static func availableWidth(totalWidth: CGFloat) -> CGFloat {
-        max(150, totalWidth - Self.edgeInset * 2)
-    }
-
-    /// Distance kept between a chip's docked edge (and, symmetrically, the
-    /// opposite edge it must not run into) and the actual screen edge.
-    private static let edgeInset: CGFloat = 20
-
-    private func suggestionChip(_ item: Suggestion, index: Int, growsRight: Bool, maxWidth: CGFloat) -> some View {
-        Button {
-            pickSuggestion(index)
-        } label: {
-            HStack(alignment: .top, spacing: 9) {
-                let shape = suggestionShape(index: index)
-                let label = Text(item.prompt)
-                    .font(.lhfSerif(16))
-                    .foregroundStyle(Color.v2Ink)
-                    .multilineTextAlignment(growsRight ? .leading : .trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if growsRight {
-                    shape
-                    label
-                } else {
-                    label
-                    shape
+    private var suggestedQuestions: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(suggestions.prefix(3).enumerated()), id: \.offset) { index, item in
+                    Button { ask(item.prompt) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: ["calendar", "clock", "text.book.closed"][index])
+                                .foregroundStyle(Color.smoothCobaltInk)
+                                .frame(width: 24)
+                            Text(item.prompt)
+                                .font(.lhfSans(16, weight: .regular))
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                        .foregroundStyle(Color.v2Ink)
+                        .padding(.vertical, 20)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if index < 2 { Divider().overlay(Color.v2Divider) }
                 }
             }
-            .padding(.leading, growsRight ? 12 : 15)
-            .padding(.trailing, growsRight ? 15 : 12)
-            .padding(.vertical, 10)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(suggestionGradient(index: index))
-                    .shadow(color: Color.v2CardShadow.opacity(0.08), radius: 6, y: 2)
-            )
-            .frame(maxWidth: maxWidth, alignment: growsRight ? .leading : .trailing)
+            .padding(.horizontal, 22)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(item.prompt)
-        .accessibilityHint("Asks this question")
-    }
-
-    private func suggestionShape(index: Int) -> some View {
-        let progress = index == pickedIndex ? pickedShapeProgress : 0
-        return Image(systemName: Self.suggestionSymbols[index % Self.suggestionSymbols.count])
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(Self.suggestionColors[index % Self.suggestionColors.count])
-            .frame(width: 26, height: 26)
-            .scaleEffect(1 - progress * 0.24)
-            .rotationEffect(.degrees(progress * 24))
-            .offset(y: progress * 12)
-            .opacity(1 - progress * 0.2)
-    }
-
-    private static let suggestionSymbols = [
-        "diamond.fill", "circle.fill", "triangle.fill", "hexagon.fill",
-    ]
-
-    private static let suggestionColors: [Color] = [
-        .smoothGrapeInk, .smoothCobaltInk, .smoothMarigoldInk, .smoothTealInk,
-    ]
-
-    private static let suggestionFields: [Color] = [
-        .smoothGrape, .smoothCobalt, .smoothMarigold, .smoothTeal,
-    ]
-
-    private func suggestionGradient(index: Int) -> LinearGradient {
-        let color = Self.suggestionFields[index % Self.suggestionFields.count]
-        return LinearGradient(
-            colors: [color.opacity(0.20), Color.v2Card.opacity(0.94), color.opacity(0.08)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
     // MARK: Transcript
@@ -419,7 +265,7 @@ struct AssistantView: View {
                     pickingIndicator
                 } else {
                     Text(body(of: message))
-                        .font(.lhfSerif(17))
+                        .font(.lhfSans(17, weight: .regular))
                         .foregroundStyle(Color.v2Ink)
                         .lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
@@ -452,11 +298,7 @@ struct AssistantView: View {
             // U+258C, a half-block, standing in for a cursor.
             return AttributedString(message.text + "\u{258C}")
         }
-        let parsed = try? AttributedString(
-            markdown: message.text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )
-        return parsed ?? AttributedString(message.text)
+        return AssistantPresentation.answer(message.text)
     }
 
     /// "picking…" — three dots that fill in sequence. Named after what the
@@ -470,7 +312,7 @@ struct AssistantView: View {
                     .opacity(0.35)
                     .modifier(PulseModifier(delay: Double(index) * 0.18))
             }
-            Text("picking")
+            Text("Thinking…")
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.v2CourseCode)
                 .padding(.leading, 3)
@@ -538,8 +380,8 @@ struct AssistantView: View {
     private var composer: some View {
         HStack(spacing: 11) {
             HStack(spacing: 8) {
-                TextField("ask about your classes…", text: $draft, axis: .vertical)
-                    .font(.lhfSerif(16))
+                TextField("Ask about classes…", text: $draft, axis: .vertical)
+                    .font(.lhfSans(16, weight: .regular))
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(1...4)
                     .focused($composerFocused)
@@ -557,10 +399,10 @@ struct AssistantView: View {
             .padding(.leading, 17)
             .padding(.trailing, composerTrailingInset)
             .background(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(Color.v2Card)
                     .overlay(
-                        Capsule(style: .continuous)
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .strokeBorder(Color.v2Divider, lineWidth: 1)
                     )
             )
@@ -704,26 +546,6 @@ struct AssistantView: View {
         }
     }
 
-    /// Tapping a suggestion picks its fruit rather than quietly filling the
-    /// composer: that chip's own `PersimmonMark` runs the detach animation
-    /// the send button uses, the other three chips fade out over the same
-    /// beat so the picked one is the last thing left on screen, and the
-    /// actual send — `ask(_:)`, which is what calls `conversation.send` — is
-    /// delayed just long enough for the fall to read before the transcript
-    /// replaces the empty state under it. Any longer than this and the
-    /// screen would feel unresponsive; any shorter and the fall never
-    /// finishes before the tree it's falling in front of disappears.
-    private func pickSuggestion(_ index: Int) {
-        guard pickedIndex == nil, suggestions.indices.contains(index) else { return }
-        let prompt = suggestions[index].prompt
-        pickedIndex = index
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.68)) { pickedShapeProgress = 1 }
-        Task {
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            ask(prompt)
-        }
-    }
-
     // MARK: Suggestions
 
     struct Suggestion: Identifiable {
@@ -747,10 +569,9 @@ struct AssistantView: View {
         let codes = courseCodes.isEmpty ? ScriptedAssistantResponder.placeholderCodes : courseCodes
         func code(_ index: Int) -> String { codes[index % codes.count].lowercased() }
         return [
-            Suggestion(prompt: "what's my \(code(0)) attendance policy?"),
-            Suggestion(prompt: "when's my next exam?"),
-            Suggestion(prompt: "what's due this week?"),
-            Suggestion(prompt: "how much is the \(code(1)) final worth?"),
+            Suggestion(prompt: "What’s due this week?"),
+            Suggestion(prompt: "When’s my next exam?"),
+            Suggestion(prompt: "What’s the attendance policy for \(code(0))?"),
         ]
     }
 
