@@ -395,30 +395,36 @@ struct OnboardingView: View {
     }
 
     private var gradescopeInvitation: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Label("Canvas is connected", systemImage: "checkmark.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.v2SpineGreen)
-                Text("Do you use Gradescope?")
-                    .font(.lhfSerif(34))
-                    .foregroundStyle(Color.v2Ink)
-                Button("Continue with Canvas only", action: gradescopeSkipped)
-                    .font(.headline)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Label("Canvas is connected", systemImage: "checkmark.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(Color.v2SpineGreen)
+                    Text("Do you use Gradescope?")
+                        .font(.lhfSerif(34))
+                        .foregroundStyle(Color.v2Ink)
+                        .multilineTextAlignment(.center)
+                    Button(action: gradescopeSkipped) {
+                        Text("Continue with Canvas only")
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.v2Ink, in: Capsule())
+                    }
                     .foregroundStyle(Color.v2ToggleActiveTx)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color.v2Ink, in: Capsule())
-                    .buttonStyle(.plain)
-                Button("Connect Gradescope") { phase = .gradescopeLogin }
-                    .font(.headline)
+                    Button { phase = .gradescopeLogin } label: {
+                        Text("Add Gradescope")
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.v2Card, in: Capsule())
+                    }
                     .foregroundStyle(Color.v2Ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color.v2Card, in: Capsule())
-                    .buttonStyle(.plain)
+                }
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .buttonStyle(.plain)
+                .padding(24)
+                .frame(minHeight: geometry.size.height)
             }
-            .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.v2Bg.ignoresSafeArea())
     }
 

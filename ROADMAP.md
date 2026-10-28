@@ -1038,13 +1038,16 @@ coverage. The owner approved the preceding onboarding screens on-device.
 The standalone practice card and six-step feature tour are replaced by two
 sample-dashboard states during first Canvas sync. The real AssignmentCardView
 swipes right into prev; the real DoneCardView taps/swipes left back into todo.
-The surrounding sample cards and dashboard controls are muted; concise arrows
-introduce lists, classes, adding tasks, announcements, settings, and AI across
-those two states. Continue requires both completed practice and successful sync.
+The surrounding sample cards and dashboard controls are muted. After swipe and
+undo practice, Next introduces lists, classes, adding tasks, announcements, AI,
+and settings one at a time, with a highlighted control, arrow, one-sentence
+explanation, and Back/Next navigation. Continue requires finished lessons and
+successful sync. Gradescope choices are centered vertically/horizontally, with
+“Continue with Canvas only” and “Add Gradescope.”
 All fixtures and progress are local to CanvasCompletionGuide; nothing is loaded
 into AppState or persisted. The underlying login WebView stays mounted. Optional
 Gradescope and reminder setup follow as before, then the real dashboard opens.
-There is no separate dashboard tour after setup or on reconnect.
+The feature lessons stay inside the practice flow; reconnect does not replay them.
 DEBUG review: `-LHFFullOnboardingReview -LHFSkipIntro -LHFCompletionGuideHarness`.
 Installed on iPhone 17 Pro and verified via Mirroring: swipe right enters prev,
 swipe left restores todo, and Continue opens the optional Gradescope question.
@@ -1052,3 +1055,6 @@ School-search screen and bottom-right Preview were visually confirmed. All
 Preview labels now use exactly “Preview,” including intro and Sweeper audio.
 Full authenticated sign-in remains separate from this sample-data review.
 Validation: iOS Debug build and 25 focused tests in 5 suites passed.
+Latest revision: iOS build and 26 focused tests passed; installed the centered
+Gradescope choices and separate feature steps. Verified swipe-first entry on
+the phone; Mirroring input errors blocked the new feature-step tap-through.
