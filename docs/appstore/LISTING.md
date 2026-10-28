@@ -132,6 +132,9 @@ Two crashes fixed, and a simpler first run.
 • Swiping left on a finished assignment brings it back
 • Gradescope is one question, yes or no
 • Shorter, easier-to-read answers from the assistant
+• Your chats with the assistant are saved on your phone, so you can pick one
+  back up
+• A cleaner assistant screen
 • Canvas links open in the Canvas Student app when it is installed
 
 ## What's New in 3.3.0 (release notes, ≤4000)

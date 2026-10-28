@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-28 on `release/3.3.1` (the 3.3.1 release). Before
+Last updated 2026-10-28 on `release/3.4.0` (the 3.4.0 release, renamed
+from 3.3.1 that afternoon when PR #16 was folded in). Before
 that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
@@ -23,11 +24,12 @@ course-sync salvage are separate briefs, not merges.
 
 Live on the App Store: **3.3.0 (16)**, since 2026-10-27 22:37 UTC by the
 public iTunes lookup; it still has the launch crash. The next release is
-**3.3.1 (17)**, the two crash fixes plus the hardening round, from
-`release/3.3.1` (`docs/RELEASE_3.3.1_PLAN.md`). Marco's launch-prep work
-(2026-10-09/10, built on `v8-launch-prep`) was merged into `v8` on
-2026-10-10 through pull request 9, at his instruction, so it now rides
-in whatever is built from `v8` next. Most of it has not been on a phone:
+**3.4.0 (17)**, the two crash fixes plus the hardening round and the
+onboarding work of PR #16, from `release/3.4.0` (`docs/RELEASE_3.3.1_PLAN.md`,
+which also records the rename; 3.3.1 was stamped but never uploaded). Marco's
+launch-prep work (2026-10-09/10, built on `v8-launch-prep`) was merged into
+`v8` on 2026-10-10 through pull request 9, at his instruction, so it now
+rides in whatever is built from `v8` next. Most of it has not been on a phone:
 the first item under Now is the check that should happen before a build
 from `v8` goes to TestFlight.
 Marco's `fix/canvas-signin-bulletproof` (last updated 2026-10-08, on `V7`,
@@ -37,16 +39,6 @@ was 3.0.1 with the sign-in fixes at the top of Now) is merged in on
 dates.
 
 ---
-
-## Onboarding review — 2026-10-28
-
-Work moved to `codex/onboarding-current`, based on current `origin/v8` 4316bba
-(includes release 3.3.1). The old onboarding checkout was based on 3.0.0 and
-must not be installed again. The current Canvas credential capture is retained:
-no post-login vault sheet or second credential entry. Search includes 220
-curated sites with relevance and typo ranking; Preview hides with the keyboard;
-Gradescope is optional with the explanatory paragraph removed. Device login
-and automatic reconnection still require interactive verification.
 
 ## Now: before the next release
 
@@ -1006,106 +998,31 @@ Kept so nobody rebuilds them blind.
   - Canvas and Gradescope sessions kept alive until the server rejects them,
     not a local 24-hour clock (`fac110d`..`99609c0`).
 
-2026-10-28 verification on `codex/onboarding-current`: 61 targeted tests in
-8 suites passed (catalog/ranking, credential capture/write, Canvas login
-hardening, failure recovery and reconnect behavior). iOS Debug device build
-succeeded; 3.3.1 (17) installed and launched on the owner's iPhone 17 Pro.
-No Xcode UI or simulator used. Interactive sign-in/renewal is still for device
-review; these tests do not claim a live authentication result.
+### 3.4.0 onboarding work (2026-10-28)
 
-### Canvas sync lesson and undo gestures — 2026-10-28
+Marco's PR #16 was folded into the release, now **3.4.0 (17)** on
+`release/3.4.0`. School search runs locally over 220 bundled US university
+Canvas sites, with a manual address as the fallback. A two-step practice
+lesson on a sample dashboard runs while the first Canvas sync does: swipe
+right to complete, tap or swipe left in "prev" to undo. Done cards take a
+left swipe to undo a completion. Gradescope is a two-button choice, "Continue
+with Canvas only" or "Add Gradescope". Preview labels all read "Preview",
+bottom-right, hidden under the keyboard. The empty AI screen has no
+suggestion buttons: a placeholder example, the Smooth mark as the send
+control, the shared `SmoothFormShapes` cluster top-right and the rotating
+greeting centred under it. Chats are saved on the device as per-conversation
+files under Application Support, scoped by Canvas host, never synced; a
+history icon reopens them and "New chat" archives the current one. The
+matching backend prompt change takes effect only when Olisa deploys.
+Assignment-card Canvas links try the Canvas Student app before HTTPS. The
+connect flow confirms first: a "Canvas connected" page with a disabled
+"Syncing Canvas…" button over the still-mounted login pane, then Continue
+starts the practice lesson (a Canvas-only reconnect completes directly). The
+PR's rewrite of Canvas sign-in detection was not taken: v8's host-marker
+detection and `CanvasConnectRetryRule` are restored verbatim, since the
+proven phone behaviour is the standard and the rewrite was never checked with
+a live sign-in; the author's later `isCheckingCanvasPage` page-hiding
+addition was dropped with it. Details in CLAUDE.md → 3.4.0 section.
 
-Full onboarding now shows one concise completion lesson while Canvas syncs.
-A local practice card teaches swipe-right to mark done and tap/swipe-left in
-`prev` to undo; it never touches real assignments. Continue waits for verified
-connection and credential persistence, then goes to the optional Gradescope
-choice. Fast sync leaves the lesson visible; failure returns to the retained
-login web view. Settings reconnects keep their existing confirmation.
-Completed dashboard cards now support left-swipe undo through the same persisted
-`markActive` path as tapping. Vertical scrolling and short nudges do not undo.
-These actions only change Smooth's completion state, never Canvas submissions.
-
-Final validation on 2026-10-28: `swift test --package-path LowHangingFruitKit
---jobs 2 --no-parallel` passed 3,388 tests in 324 suites, with the pre-existing
-known `EdFilterParityTests` anonymous-thread issue. The iOS Debug device build
-passed; installed on the owner's iPhone 17 Pro and opened the practice lesson.
-Catalog regeneration is deterministic; `git diff --check` is clean. No Xcode
-UI or simulator used. Live multi-school sign-in remains outside this automated
-coverage. The owner approved the preceding onboarding screens on-device.
-
-
-### Dashboard practice (2026-10-28)
-The standalone practice card and six-step feature tour are replaced by two
-sample-dashboard states during first Canvas sync. The real AssignmentCardView
-swipes right into prev; the real DoneCardView taps/swipes left back into todo.
-The surrounding sample cards and dashboard controls are muted. After swipe and
-undo practice, Next introduces lists, classes, adding tasks, announcements, AI,
-and settings one at a time, with a highlighted control, arrow, one-sentence
-explanation, and Back/Next navigation. Continue requires finished lessons and
-successful sync. Gradescope choices are centered vertically/horizontally, with
-“Continue with Canvas only” and “Add Gradescope.”
-All fixtures and progress are local to CanvasCompletionGuide; nothing is loaded
-into AppState or persisted. The underlying login WebView stays mounted. Optional
-Gradescope and reminder setup follow as before, then the real dashboard opens.
-The feature lessons stay inside the practice flow; reconnect does not replay them.
-DEBUG review: `-LHFFullOnboardingReview -LHFSkipIntro -LHFCompletionGuideHarness`.
-Installed on iPhone 17 Pro and verified via Mirroring: swipe right enters prev,
-swipe left restores todo, and Continue opens the optional Gradescope question.
-School-search screen and bottom-right Preview were visually confirmed. All
-Preview labels now use exactly “Preview,” including intro and Sweeper audio.
-Full authenticated sign-in remains separate from this sample-data review.
-Validation: iOS Debug build and 25 focused tests in 5 suites passed.
-Latest revision: iOS build and 26 focused tests passed; installed the centered
-Gradescope choices and separate feature steps. Verified swipe-first entry on
-the phone; Mirroring input errors blocked the new feature-step tap-through.
-
-
-### AI presentation and onboarding routing (2026-10-28)
-AssistantView now uses a single example as the input placeholder, regular sans
-text, a rounded multiline composer, and idle-only rotating greetings (Ask about classes / How
-can I help? / Happy weekday). Rotation pauses for typing or a conversation and
-is disabled by Reduce Motion. Answer formatting preserves paragraphs and source
-links while removing strong emphasis. Backend prompt changes request concise,
-phone-readable answers without bold; those instructions require backend deploy.
-Late/repeated Canvas completion callbacks are ignored outside canvasLogin or
-once the guide is ready, preventing backward routing into the Gradescope
-choice. The reported duplicate question still needs live reproduction.
-Assignment-card Canvas links try universal links, then canvas-courses:// with
-the same host/course/item/query, then fall back to HTTPS. Other providers and
-macOS keep normal links. Scheme reference: https://instructure.github.io/mobile-app-api/
-Validation: 62 targeted Swift tests / 9 suites, 20 backend prompt tests, and
-iOS Debug build passed. Installed and visually checked AI on iPhone 17 Pro;
-Mirroring input errors prevented completing the live repeat-question check.
-Canvas app handoff remains to be checked on device. Backend is not deployed.
-
-AI empty-state refinement: removed suggestion buttons and the top-left logo.
-“What’s due this week?” is placeholder text only; it does not populate the draft.
-The Smooth mark is the send control. A compact noninteractive geometric cluster
-sits in the top-right corner of the empty screen and disappear while typing or reading a conversation.
-
-
-### Centered AI entry and chat history (2026-10-28)
-The empty AI screen centers its regular-weight rotating greeting below the
-exact SmoothFormShapes component shared with Profile. A top-right history
-icon opens locally saved conversations; reopening restores message IDs,
-answers, and citations and allows follow-up questions. New chat archives the
-current transcript. History uses atomic per-chat files in Application Support,
-scoped by Canvas host, and does not participate in app cloud/paired sync.
-Preview/demo sessions stay in memory. Partial answers checkpoint during
-streaming and save on stop/exit; request IDs prevent cancelled streams from
-altering a newly opened chat. Older unsaved conversations cannot be recovered.
-
-### Onboarding review polish (2026-10-28)
-Verified Canvas connection now shows the Canvas Connected confirmation first.
-Continue starts the practice dashboard and feature tour for full onboarding;
-Canvas-only reconnect still completes directly. After practice undo, the sample
-card fades and the instruction points to Next. The Sweeper keep-on note sits
-below its toggle. The login pane stays mounted until verified connection.
-
-### Canvas sign-in presentation polish (2026-10-28)
-Candidate Canvas documents are hidden before rendering while authenticated ENV
-evidence is checked. Verified sign-in immediately displays Canvas Connected over
-the still-mounted login pane during sync/credential saving; failures return to
-retry, and Continue stays gated until completion. This confirmation has no dots.
-The optional Gradescope page has its heading near the top and buttons below,
-without the repeated Canvas-connected label.
+Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
+the prompt change; the Canvas app hand-off, unchecked on a device.

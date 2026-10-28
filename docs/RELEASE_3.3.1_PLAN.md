@@ -166,16 +166,29 @@ restored verbatim, because the proven phone behaviour is the standard and the
 rewrite was never verified with a live sign-in. "Stay signed in" (PennKey
 credential capture, cookie renewal) is untouched.
 
+Later that afternoon (2026-10-28) the branch was re-based onto PR #16's final
+head, `80079f0`, which added five more commits: the assistant's new look, chat
+history saved on the device, and the confirmation-first onboarding flow. The
+author's later `isCheckingCanvasPage` / page-hiding addition in
+`LoginNavigationObserver` was dropped along with the detection rewrite; the
+sign-in path stays v8's.
+
 The 3.3.1 Release archive built at 14:20 UTC (`build/Smooth.xcarchive` in the
 3.3.1 worktree) is superseded by this tree and must never be uploaded.
 
-GATES ON THE MERGED TREE (2026-10-28, ~18:00 UTC, Marco's Mac, this tree with the
-sign-in restoration): `swift test --no-parallel` 3396 tests / 326 suites passed in
-123 s, with the one deliberate `withKnownIssue` in `EdFilterParityTests` that v8
-has too (SEC-10, Olisa's extension); Deno 614 tests passed and `deno task check`
-green; the iOS Debug device build (`-destination id=<Marco's iPhone 17 Pro>`,
-`-allowProvisioningUpdates`) succeeded and the product reads 3.4.0 (17), widget
-included. Up from 3373 / 322 on `release/3.3.1`: +23 tests, +4 suites, nothing lost.
+GATES ON THE MERGED TREE (2026-10-28, 18:30–19:00 UTC, Marco's Mac, PR #16's final
+head 80079f0 plus the sign-in restoration): `swift test --no-parallel` 3399 tests /
+327 suites (+3 tests, +1 suite over the 9082182 run: `AssistantHistoryTests`), all
+passing except the one deliberate `withKnownIssue` in `EdFilterParityTests` that v8
+has too (SEC-10, Olisa's extension), and one wall-clock fuzz test
+(`FuzzTests.hostileHTML`) that recorded 200–400 s "durations" because the Mac went
+into clamshell sleep from 14:33 to 14:44 local during the run; its code is untouched
+since v8 and it passed alone on the idle machine afterwards (24 s, budget 60 s;
+under a concurrent xcodebuild one case ran 6.3 s against a 5 s budget, so it is
+load-sensitive, not a regression). Deno 614 tests passed and `deno task check` green.
+The signed iOS Debug build (`generic/platform=iOS`, `-allowProvisioningUpdates`, team
+24A3TDB277) succeeded and the product reads 3.4.0 (17), widget included; the phone
+was off the cable at the time, so the install waits for it.
 
 Remaining steps, in order:
 
