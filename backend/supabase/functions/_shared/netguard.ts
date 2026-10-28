@@ -326,6 +326,20 @@ export function isFetchableURL(raw: string, guard: Pick<NetGuard, "allowedHostSu
 
 let warnedResolverUnavailable = false;
 
+/** `assertSafeURL` as a yes/no for a URL held as text: true when a fetch of it
+ *  would be allowed right now (shape, then the name's addresses). For a caller
+ *  that wants to decide "skip this site and try again next time" before it
+ *  changes any state, rather than discover the refusal inside a fetch. */
+export async function isSafeToFetch(raw: string, guard: NetGuard): Promise<boolean> {
+  try {
+    await assertSafeURL(new URL(raw), guard);
+    return true;
+  } catch (err) {
+    if (err instanceof BlockedURLError || err instanceof TypeError) return false;
+    throw err;
+  }
+}
+
 /** The full check for one URL: its shape, then its name's addresses. A name
  *  that does not resolve is refused (the fetch would fail anyway).
  *

@@ -22,7 +22,14 @@ import {
   pageTitle,
   type ExtractedLink,
 } from "./websites.ts";
-import { guardedFetch, type NetGuard, productionNetGuard, readCapped, readTextCapped } from "./netguard.ts";
+import {
+  BlockedURLError,
+  guardedFetch,
+  type NetGuard,
+  productionNetGuard,
+  readCapped,
+  readTextCapped,
+} from "./netguard.ts";
 
 export interface CrawlOptions {
   /** Injected, never the global `fetch` -- see the module doc comment. */
@@ -67,6 +74,14 @@ export interface CrawlResult {
    *  silently skipped) so a caller or a test can prove the crawler actually
    *  obeyed it, not just that a page happens to be absent from `pages`. */
   blockedByRobots: string[];
+  /** `true` when the guard refused the start URL, or a redirect hop on the way
+   *  to it, so nothing was fetched at all: not a policy-clean URL, an internal
+   *  name, off the allow-list, resolving to a private address, or an address
+   *  check that could not run. An empty result then says nothing about the
+   *  site, and a caller must not treat it as "the site has no pages" (which
+   *  retires every document the course already has). Absent otherwise,
+   *  including when the site was reachable and simply had nothing to read. */
+  refused?: true;
 }
 
 const DEFAULT_MAX_PAGES = 40;
@@ -91,6 +106,7 @@ const ROBOTS_MAX_BYTES = 100_000;
 const PDF_MAX_TEXT_CHARS = 60_000;
 
 const EMPTY_RESULT: CrawlResult = { pages: [], links: [], blockedByRobots: [] };
+const REFUSED_RESULT: CrawlResult = { pages: [], links: [], blockedByRobots: [], refused: true };
 
 /** One guarded GET: https and a public host only (and, if configured, an
  *  allow-listed one), every redirect hop re-checked, never `redirect: "follow"` (see `_shared/netguard.ts`). Throws
@@ -261,8 +277,9 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
   let startResponse: Response;
   try {
     startResponse = await fetchWithTimeout(fetchImpl, startURL, timeoutMs, userAgent, guard);
-  } catch {
-    return EMPTY_RESULT;
+  } catch (err) {
+    // A refusal is not an unreachable site: see `CrawlResult.refused`.
+    return err instanceof BlockedURLError ? REFUSED_RESULT : EMPTY_RESULT;
   }
   if (!startResponse.ok) return EMPTY_RESULT;
 

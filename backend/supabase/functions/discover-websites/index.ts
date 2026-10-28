@@ -13,7 +13,14 @@ import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_share
 import { requireUser } from "../_shared/auth.ts";
 import type { CatalogCourseRow } from "../_shared/catalog.ts";
 import { crawlSite } from "../_shared/crawl.ts";
-import { guardedFetch, isFetchableURL, type NetGuard, productionNetGuard, readTextCapped } from "../_shared/netguard.ts";
+import {
+  guardedFetch,
+  isFetchableURL,
+  isSafeToFetch,
+  type NetGuard,
+  productionNetGuard,
+  readTextCapped,
+} from "../_shared/netguard.ts";
 import {
   conventionURLs,
   lastPathSegment,
@@ -119,7 +126,7 @@ interface DiscoveredEntry {
   status: CourseWebsiteRow["status"];
 }
 
-interface DiscoverContext {
+export interface DiscoverContext {
   serviceClient: SupabaseClient;
   fetchImpl: typeof fetch;
   courseInfoByID: Map<string, DiscoveryCourseInfo>;
@@ -305,7 +312,7 @@ async function verifyCandidates(
  *  pages (a real attempt against a site that turned out to be
  *  unreachable this run is still "this course was crawled", not silently
  *  equivalent to never having tried). */
-async function crawlBestSite(
+export async function crawlBestSite(
   ctx: DiscoverContext,
   courseID: string,
   now: Date,
@@ -326,6 +333,19 @@ async function crawlBestSite(
   const target = eligible[0];
   if (!target) return false;
 
+  // Whether the guard will let this site be fetched *now* is decided before
+  // anything is changed. The shape filter above cannot know whether the name
+  // resolves to a public address, or whether the runtime can check addresses
+  // at all, and a crawl that finds out halfway returns zero pages, which the
+  // code below would read as "the site has nothing" (retiring every website
+  // document the course has and stamping `last_crawled_at`, so nothing
+  // retried for seven days). A refusal is "skipped, try again next time":
+  // nothing is written, so the row stays eligible.
+  if (!(await isSafeToFetch(target.url, ctx.guard))) {
+    console.warn("discover-websites: a verified site was refused by the fetch rules, skipped this call");
+    return false;
+  }
+
   const crawlResult = await crawlSite({
     fetchImpl: ctx.fetchImpl,
     startURL: target.url,
@@ -336,6 +356,14 @@ async function crawlBestSite(
     guard: ctx.guard,
     deadline: ctx.deadline,
   });
+
+  // The same, for a refusal that only shows up on the way in (the start URL
+  // redirected somewhere the guard will not follow): `pages` is empty because
+  // nothing was fetched, not because the site is empty.
+  if (crawlResult.refused) {
+    console.warn("discover-websites: a crawl was refused by the fetch rules, skipped this call");
+    return false;
+  }
 
   const liveBeforeIDs = await selectLiveWebsiteDocumentIDsForCourse(ctx.serviceClient, courseID);
   const courseCode = ctx.courseInfoByID.get(courseID)?.code ?? courseID;
@@ -425,7 +453,7 @@ async function discoverForCourse(ctx: DiscoverContext, courseID: string): Promis
   return { discovered, crawled };
 }
 
-Deno.serve(async (req: Request) => {
+export async function handleDiscoverWebsites(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -519,4 +547,12 @@ Deno.serve(async (req: Request) => {
     console.error("discover-websites error: unexpected", err instanceof Error ? err.message : String(err));
     return errorResponse("internal_error", "unexpected server error", 500);
   }
-});
+}
+
+// Guarded by `import.meta.main`, like `ask/index.ts`, so a test can import
+// `crawlBestSite` and the handler without starting a second server. Deployed,
+// this file is the entry point the runtime executes, so it serves exactly as
+// before.
+if (import.meta.main) {
+  Deno.serve(handleDiscoverWebsites);
+}

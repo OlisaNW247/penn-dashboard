@@ -6,7 +6,7 @@
 // merely absent from the result.
 import { strict as assert } from "node:assert";
 import { crawlSite as crawlSiteWithGuard, type CrawlOptions } from "../supabase/functions/_shared/crawl.ts";
-import type { NetGuard } from "../supabase/functions/_shared/netguard.ts";
+import { type NetGuard, ResolverUnavailableError } from "../supabase/functions/_shared/netguard.ts";
 
 const USER_AGENT = "LowHangingFruit-test/1";
 
@@ -223,7 +223,7 @@ Deno.test("crawlSite: deduplicates a link back to an already-visited page", asyn
   assert.equal(homeFetches.length, 1);
 });
 
-Deno.test("crawlSite: a start-page network failure returns the empty result, never throws", async () => {
+Deno.test("crawlSite: a start-page network failure returns the empty result, never throws, and is not 'refused'", async () => {
   const fetchImpl = (async () => {
     throw new Error("network unreachable");
   }) as typeof fetch;
@@ -232,7 +232,7 @@ Deno.test("crawlSite: a start-page network failure returns the empty result, nev
   assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [] });
 });
 
-Deno.test("crawlSite: a non-ok start response returns the empty result", async () => {
+Deno.test("crawlSite: a non-ok start response returns the empty result, and is not 'refused'", async () => {
   const fetchImpl = (async () => new Response("nope", { status: 404 })) as typeof fetch;
 
   const result = await crawlSite({ fetchImpl, startURL: START_URL, userAgent: USER_AGENT });
@@ -283,7 +283,8 @@ Deno.test("crawlSite: a start URL that redirects to a metadata address is never 
     "https://169.254.169.254/latest/meta-data/": () => htmlResponse("https://169.254.169.254/latest/meta-data/", "secrets"),
   });
   const result = await crawlSite({ fetchImpl: site.fetchImpl, startURL: START_URL, userAgent: USER_AGENT });
-  assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [] });
+  // `refused`: nothing was fetched, so the empty result says nothing about the site.
+  assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [], refused: true });
   assert.deepEqual(site.calls, [START_URL], "the redirect target must never be requested");
 });
 
@@ -291,7 +292,7 @@ Deno.test("crawlSite: a start URL on a host off the allow-list, or not https, is
   for (const startURL of ["https://example.org/course/", "http://www.seas.upenn.edu/~cis2400/", "https://127.0.0.1/"]) {
     const site = fakeSite({ [startURL]: () => htmlResponse(startURL, "<title>x</title>") });
     const result = await crawlSite({ fetchImpl: site.fetchImpl, startURL, userAgent: USER_AGENT });
-    assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [] }, startURL);
+    assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [], refused: true }, startURL);
     assert.deepEqual(site.calls, [], `${startURL} must not be requested`);
   }
 });
@@ -413,4 +414,18 @@ Deno.test("crawlSite, no allow-list: a public site that redirects to a name reso
   const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL: start, userAgent: USER_AGENT, guard: OPEN_GUARD });
   assert.deepEqual(result.pages, []);
   assert.deepEqual(site.calls, [start], "the inward-resolving target must never be requested");
+});
+
+Deno.test("crawlSite: a guard that cannot check addresses reports the start URL as refused, not as an empty site", async () => {
+  const noDNS: NetGuard = {
+    allowedHostSuffixes: null,
+    resolve: () => Promise.reject(new ResolverUnavailableError("no dns")),
+    maxRedirects: 5,
+    resolveTimeoutMs: 1000,
+  };
+  const site = fakeSite({ [START_URL]: () => htmlResponse(HOME_URL, "<title>x</title>") });
+  const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL: START_URL, userAgent: USER_AGENT, guard: noDNS });
+  assert.equal(result.refused, true);
+  assert.deepEqual(result.pages, []);
+  assert.deepEqual(site.calls, []);
 });

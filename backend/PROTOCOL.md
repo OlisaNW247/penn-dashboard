@@ -753,9 +753,17 @@ function holds every request, from verification and the CIS directory to
   discovery to `upenn.edu` plus those suffixes (a blank value counts as
   unset). It is the switch for narrowing the function if it is ever abused.
   A candidate the rules refuse is left exactly as it was, like a network
-  failure, so it is picked up again if the rules change, and a `verified`
-  site the rules refuse is skipped rather than crawled into an empty result
-  (an empty crawl would mark the course's existing website documents gone).
+  failure, so it is picked up again if the rules change. A `verified` site
+  the rules refuse is **skipped for that call**: nothing is fetched, no
+  existing website document is marked gone, and `last_crawled_at` is not
+  stamped, so the next call tries it again instead of waiting seven days. That
+  holds for a refusal found up front (an internal name, off the allow-list,
+  resolving to a private address, or an address check that cannot run on this
+  runtime) and for one found on the way (the start URL redirecting to a host
+  the rules refuse), and the course is left out of the response's `crawled`
+  list. It does not hold for a site that answered and had nothing to read, or
+  returned a non-2xx start page: those are still a crawl that found no pages,
+  and still retire the course's earlier website documents.
 - **Public addresses only**, with or without an allow-list. The name is
   resolved (`Deno.resolveDns`, 3 s) and every address must be outside
   loopback, private, link-local (including the `169.254.169.254` metadata
