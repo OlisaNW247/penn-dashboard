@@ -31,9 +31,9 @@ engine built a lookup table with two entries for one key, and Swift kills
 the app for that. Fix: colliding groups get a unique suffix, and every
 such lookup table is now first-wins. Ids that never collided are unchanged,
 so saved edits still match. 17 tests die with the production error on the
-old code and pass on the new. Honest caveat: proven from the code, not yet
-from a crash report. One `.ips` file from an affected phone, or Xcode →
-Organizer → Crashes with Marco's Apple ID signed in, turns it into proof.
+old code and pass on the new. Proven from the code on 2026-10-26 and **by the App Store crash
+reports on 2026-10-28**: Organizer → Crashes shows this stack on 6 devices,
+all on 3.2.1 (`docs/LAUNCH_CRASH_2026-10-26.md` → "Proven").
 
 **The "frozen" screens.** Three things in the fix branch, one in 3.3.0:
 - A reconnect that was not finished (lost signal, gave up, force-quit)
@@ -125,3 +125,27 @@ Nothing has run on a phone yet.
   branch already carries.
 - Raise the manifest floor by hand.
 - Deploy the backend in the same step as the app.
+
+## Where it stands (2026-10-28, midday)
+
+- PR #14 merged into `v8` at 14:19 UTC (merge commit `4316bba`); `v8`'s
+  tree is byte-identical to `fbd34ca`, so the gates above stand for `v8`.
+- A Release archive of `fbd34ca`, stamped 3.3.1 (17), was built at 14:20
+  UTC (`build/Smooth.xcarchive` in the release worktree; app and widget
+  read 3.3.1/17, AlarmKit weak-linked, dSYMs present). **Not exported, not
+  uploaded**: Marco's word that morning was to merge, test on his phone,
+  then merge his separate onboarding/UI branch, and only then go to the
+  App Store. The next store build will therefore come from that later
+  tree, not from this archive.
+- The crash reports are read and match (the section in
+  `docs/LAUNCH_CRASH_2026-10-26.md`); no third cause.
+- Still owed: the Debug build on Marco's iPhone for his final check (the
+  phone was unplugged when the install was tried), and the onboarding
+  merge. That branch is `codex/simplify-canvas-onboarding`, whose work is
+  **uncommitted in the main checkout on a base 295 commits behind `v8`**
+  and touches `SessionCookieStore`, `CanvasSessionRenewer`,
+  `LoginNavigationObserver`, `OnboardingView`, `UpdateGate`, `AppState`
+  and the cookie tests, all of which `v8` also changed; expect real
+  conflicts in the session code and read every one against the cookie
+  rules in CLAUDE.md before taking either side.
+

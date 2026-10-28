@@ -266,4 +266,26 @@ calls iOS's completion handler on a cooperative-pool thread, and
 thread. This is unrelated to the duplicate-key trap. It is fixed on
 `release/3.3.1` in `NotificationResponseRouter.swift` (completion-handler
 form, completion called from a `@MainActor` task). The duplicate-key crash is
-still unproven by any report.
+still unproven by any report. (Proven the next morning; see the section
+below.)
+
+## Proven: the App Store crash reports (2026-10-28, morning)
+
+With an Apple ID signed into Xcode, Organizer → Crashes for Smooth listed
+eight crash groups for the last two weeks (read 2026-10-28, about 15:00
+UTC). Every one of them is a crash this branch already knows:
+
+| Group (Organizer's label) | Devices | Binary | What it is |
+|---|---|---|---|
+| `Smooth: specialized _NativeDictionary.init(capacity:)` | 6 | 3.2.1 (15), 100% | **The launch crash.** `_assertionFailure` ← `_NativeDictionary.merge(isUnique:uniquingKeysWith:)` ← `Dictionary.init(uniqueKeysWithValues:)` ← `GradeRegrouper.apply(_:to:)` ← `GradeEngine.compute` ← `GradeWatcherStore.breakdown` ← `recordHistory` ← `refresh` ← `AppState.refreshGradeWatcher` ← `AutoSyncCoordinator.refreshCanvasGrades` ← `ContentView.fetchSessionSources` ← `refreshSessionSourcesAtLaunch`. Exactly the chain in "The cause" above. The trapping site is `GradeRegrouper.swift:39` of `4fe7a4f`; on this branch both of that file's dictionaries are first-wins. |
+| `UIKitCore: -[UIApplication _perfor…]` | 4 | 3.0.1–3.2.x | **The notification-tap crash.** `_updateStateRestorationArchive` / `_updateSnapshotAndStateRestoration…` ← `@objc closure #1 in NotificationResponseDelegate.userNotificationCenter(_:didReceive:)` ← `completeTaskWithClosure(swift::AsyncContext…)`. Fixed in `fc74fee`. |
+| `UIKitCore: -[UIApplication _perfor…]` (second group) | 2 | | Same stack as the row above. |
+| `libswift_Concurrency.dylib: _swift_task_ch…` | 2 | 3.0.0 (11) | **The background-refresh crash** (CLAUDE.md → the background-refresh trap): `_swift_task_checkIsolatedSwift` ← `closure #1 in LHFBackgroundRefresh.register()` ← `BGTaskScheduler _runTask`. Known, unfixed on purpose, and 3.0.0 is below the floor. |
+| `AttributeGraph: AG::swift::metadata::…` | 1 | 3.0.0 | Same background-refresh stack. |
+| `BoardServices: +[BSXPCServiceConne…]` | 1 | 3.0.0 | Same background-refresh stack. |
+| `libdispatch.dylib: _dispatch_thread_m…` | 1 | 2.0.1 / 3.0.0 | Same background-refresh stack. |
+| `Smooth: NO_CRASH_STACK` | 1 | 3.0.0 | Same background-refresh stack on the crashed thread. |
+
+So there is no third cause. 3.3.0 (16) had no reports yet (live for
+under a day). The honest caveats above ("proven from the code, not yet
+from a crash report") are closed by this table.
