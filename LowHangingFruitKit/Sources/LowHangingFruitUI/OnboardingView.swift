@@ -1364,7 +1364,13 @@ private struct GradescopeLoginPane: View {
                 isReadingCookies = false
                 guard !gradescopeCookies.isEmpty else { return }
                 await state.syncGradescope(cookies: gradescopeCookies)
-                if state.isGradescopeConnected {
+                // `isGradescopeConnected` alone is not "signed in": during a
+                // reconnect (hardening plan A4) the flag is already true, and
+                // the saved `gradescopeNeedsReauth` verdict is what opened
+                // this pane, so a login that finished with the sync still
+                // refused would close the cover and bring the banner straight
+                // back. Same condition as the step's own "connected" branch.
+                if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
                     onConnected()
                 }
             }
