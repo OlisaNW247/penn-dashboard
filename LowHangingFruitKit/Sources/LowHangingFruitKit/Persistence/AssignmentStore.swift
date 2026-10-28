@@ -139,12 +139,16 @@ public final class AssignmentStore {
     /// Every container goes through the versioned schema and the migration
     /// plan, so a future model change is a migration rather than a throw the
     /// caller turns into a silent in-memory fallback. See `LedgerSchema.swift`.
+    ///
+    /// Through `LedgerContainer`, the one door, and not a `ModelContainer`
+    /// built here: the door is what takes the pre-migration copy and keeps the
+    /// schema-version marker, and the app is the only process that is allowed
+    /// to migrate (the widget refuses a store that is older than its schema).
+    /// A container built here instead would migrate with no copy and no marker,
+    /// and the widget, seeing no marker, would then copy the already-migrated
+    /// file as the "pre-migration" backup.
     private static func makeContainer(_ config: ModelConfiguration) throws -> ModelContainer {
-        try ModelContainer(
-            for: Schema(versionedSchema: LedgerSchemaV1.self),
-            migrationPlan: LedgerMigrationPlan.self,
-            configurations: config
-        )
+        try LedgerContainer.make(config)
     }
 
     public init(inMemory: Bool = false, storageFailureReason: String? = nil) throws {

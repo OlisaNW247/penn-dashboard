@@ -47,16 +47,24 @@ enum LedgerMigrationPlan: SchemaMigrationPlan {
 /// The only place a ledger `ModelContainer` is built.
 ///
 /// **Why one door.** The ledger file is opened by two processes: the app
-/// (`AssignmentStore`) and the widget extension (`LedgerWidgetReader`). The
-/// widget used to build `ModelContainer(for: StoredAssignment.self, …)`, an
-/// anonymous, unversioned schema, while the app went through
-/// `LedgerSchemaV1` and `LedgerMigrationPlan`. That is harmless while there
-/// is one version. The day a second exists it is a bug in both directions:
-/// the app (or the widget, whichever the system launches first after an
-/// update) migrates the file, and the other process, still asking for the
-/// unversioned model, either fails to open it, so the widget sits blank, or
-/// opens a store whose model hash it does not know. Building both through
-/// this function makes "same schema, same plan" true by construction.
+/// (`AssignmentStore.makeContainer`) and the widget extension
+/// (`LedgerWidgetReader`). The widget used to build
+/// `ModelContainer(for: StoredAssignment.self, …)`, an anonymous, unversioned
+/// schema, while the app went through `LedgerSchemaV1` and
+/// `LedgerMigrationPlan`. That is harmless while there is one version. The
+/// day a second exists it is a bug in both directions: one process migrates
+/// the file, and the other, still asking for the unversioned model, either
+/// fails to open it, so the widget sits blank, or opens a store whose model
+/// hash it does not know. Building both through this function makes "same
+/// schema, same plan" true by construction.
+///
+/// **Only the app migrates.** The system may launch the widget before the app
+/// after an update. `allowMigration: false`, which the widget passes, makes
+/// the door refuse (`LedgerContainerError.migrationNeeded`) a store whose
+/// recorded version is older than the schema being opened, so the widget shows
+/// its snapshot, or nothing, until the app has run and migrated the file with
+/// the copy taken first. Letting the widget migrate would put the migration,
+/// and its copy, in a process with a few seconds and a memory limit.
 ///
 /// **What it does besides open.** Before the first open at a newer schema
 /// than the one a store was last opened at, it copies the store aside
@@ -66,14 +74,27 @@ enum LedgerMigrationPlan: SchemaMigrationPlan {
 ///
 /// `schema` and `plan` are parameters so a test can rehearse a V1 to V2
 /// migration against a throwaway plan; production callers pass neither.
+enum LedgerContainerError: Error, Equatable {
+    /// The store on disk was last opened at `recorded`, older than the
+    /// `needed` schema, and the caller is not allowed to migrate it.
+    case migrationNeeded(recorded: Schema.Version, needed: Schema.Version)
+}
+
 enum LedgerContainer {
     static func make(
         _ configuration: ModelConfiguration,
         schema: any VersionedSchema.Type = LedgerMigrationPlan.currentSchema,
-        plan: any SchemaMigrationPlan.Type = LedgerMigrationPlan.self
+        plan: any SchemaMigrationPlan.Type = LedgerMigrationPlan.self,
+        allowMigration: Bool = true
     ) throws -> ModelContainer {
         // An in-memory store has no file to protect and no marker to keep.
         let storeURL: URL? = configuration.isStoredInMemoryOnly ? nil : configuration.url
+        if let storeURL, !allowMigration, FileManager.default.fileExists(atPath: storeURL.path) {
+            let recorded = LedgerStoreBackup.recordedVersion(for: storeURL)
+            if recorded < schema.versionIdentifier {
+                throw LedgerContainerError.migrationNeeded(recorded: recorded, needed: schema.versionIdentifier)
+            }
+        }
         if let storeURL {
             LedgerStoreBackup.prepare(storeURL: storeURL, opening: schema.versionIdentifier)
         }
@@ -196,11 +217,14 @@ enum LedgerStoreBackup {
     }
 
     /// Records that the store at `storeURL` has now been opened at `version`.
+    /// Only ever moves the marker forward (or creates it): a process opening an
+    /// older schema must not write the older version over a newer one, or the
+    /// next launch of the newer build would take a "pre-migration" copy of a
+    /// file that is already migrated.
     static func recordOpened(storeURL: URL, version: Schema.Version) {
         guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
-        guard recordedVersion(for: storeURL) != version
-            || !FileManager.default.fileExists(atPath: markerURL(for: storeURL).path)
-        else { return }
+        let markerExists = FileManager.default.fileExists(atPath: markerURL(for: storeURL).path)
+        guard !markerExists || recordedVersion(for: storeURL) < version else { return }
         let text = "\(version.major).\(version.minor).\(version.patch)\n"
         try? text.write(to: markerURL(for: storeURL), atomically: true, encoding: .utf8)
     }

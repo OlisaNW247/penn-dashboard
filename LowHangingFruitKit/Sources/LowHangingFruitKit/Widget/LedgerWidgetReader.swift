@@ -68,15 +68,19 @@ public enum LedgerWidgetReader {
         // construction" (see AssignmentStore's local inits).
         //
         // Opened through `LedgerContainer`, the same versioned schema and
-        // migration plan the app uses, not an anonymous `StoredAssignment`
-        // container. The widget used to ask for the unversioned model, which
-        // is fine with one schema version and breaks the day there are two:
-        // whichever process the system launches first after an update
-        // migrates the file, and the other must open it the same way. The
-        // door also takes the pre-migration copy, so a migration that
-        // happens to run in the widget is as safe as one in the app.
+        // migration plan the app uses (`AssignmentStore.makeContainer`), not an
+        // anonymous `StoredAssignment` container. The widget used to ask for
+        // the unversioned model, which is fine with one schema version and
+        // breaks the day there are two.
+        //
+        // `allowMigration: false`: the widget never migrates. After an update
+        // the system may run it before the app has been opened; a store still
+        // at the older schema is then not this process's to rewrite (the app
+        // takes the pre-migration copy and migrates on its first launch), so
+        // the door throws and the widget shows its snapshot or nothing.
         guard let container = try? LedgerContainer.make(
-            ModelConfiguration(url: url, cloudKitDatabase: .none)
+            ModelConfiguration(url: url, cloudKitDatabase: .none),
+            allowMigration: false
         ) else { return nil }
 
         let context = ModelContext(container)

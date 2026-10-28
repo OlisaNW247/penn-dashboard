@@ -360,6 +360,75 @@ struct LedgerSchemaRehearsalTests {
         #expect(restoredRows.count == 5)
     }
 
+    // MARK: The app goes through the door, and the widget does not migrate
+
+    @Test("opening the ledger with AssignmentStore writes the schema-version marker")
+    @MainActor
+    func assignmentStoreWritesTheMarker() throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // A fresh install.
+        let fresh = directory.appendingPathComponent("Fresh.store")
+        let store = try AssignmentStore(url: fresh)
+        #expect(store.isPersistent)
+        #expect(FileManager.default.fileExists(atPath: LedgerStoreBackup.markerURL(for: fresh).path))
+        #expect(LedgerStoreBackup.recordedVersion(for: fresh) == LedgerSchemaV1.versionIdentifier)
+
+        // An existing V1 store written before the marker existed.
+        let old = directory.appendingPathComponent("Old.store")
+        try writeFrozenV1Store(at: old)
+        #expect(!FileManager.default.fileExists(atPath: LedgerStoreBackup.markerURL(for: old).path))
+        _ = try AssignmentStore(url: old)
+        #expect(FileManager.default.fileExists(atPath: LedgerStoreBackup.markerURL(for: old).path))
+    }
+
+    @Test("the widget's door refuses a store older than its schema, copies nothing, and leaves the file as it was")
+    func widgetDoorRefusesToMigrate() throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Assignments.store")
+        try writeFrozenV1Store(at: url)
+        let before = try Data(contentsOf: url)
+
+        // A V2 build's widget, against a store the app has not migrated yet.
+        #expect(throws: LedgerContainerError.migrationNeeded(
+            recorded: FrozenLedgerSchemaV1.versionIdentifier, needed: RehearsalLedgerSchemaV2.versionIdentifier
+        )) {
+            try LedgerContainer.make(
+                config(url), schema: RehearsalLedgerSchemaV2.self, plan: RehearsalLedgerMigrationPlan.self,
+                allowMigration: false
+            )
+        }
+        #expect(!FileManager.default.fileExists(atPath: LedgerStoreBackup.backupURL(for: url).path))
+        #expect(!FileManager.default.fileExists(atPath: LedgerStoreBackup.markerURL(for: url).path))
+        #expect(try Data(contentsOf: url) == before)
+
+        // The app, with the same schema, migrates it: copy first, then marker.
+        _ = try LedgerContainer.make(
+            config(url), schema: RehearsalLedgerSchemaV2.self, plan: RehearsalLedgerMigrationPlan.self
+        )
+        #expect(FileManager.default.fileExists(atPath: LedgerStoreBackup.backupURL(for: url).path))
+        #expect(LedgerStoreBackup.recordedVersion(for: url) == RehearsalLedgerSchemaV2.versionIdentifier)
+
+        // Now the widget opens it: it is at the schema it asks for.
+        _ = try LedgerContainer.make(
+            config(url), schema: RehearsalLedgerSchemaV2.self, plan: RehearsalLedgerMigrationPlan.self,
+            allowMigration: false
+        )
+    }
+
+    @Test("an older build opening a newer store never moves the marker backwards")
+    func markerOnlyMovesForward() throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Assignments.store")
+        try writeFrozenV1Store(at: url)
+        LedgerStoreBackup.recordOpened(storeURL: url, version: RehearsalLedgerSchemaV2.versionIdentifier)
+        LedgerStoreBackup.recordOpened(storeURL: url, version: LedgerSchemaV1.versionIdentifier)
+        #expect(LedgerStoreBackup.recordedVersion(for: url) == RehearsalLedgerSchemaV2.versionIdentifier)
+    }
+
     @Test("an in-memory ledger writes no marker and takes no copy")
     func inMemoryTakesNoCopy() throws {
         _ = try LedgerContainer.make(ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
