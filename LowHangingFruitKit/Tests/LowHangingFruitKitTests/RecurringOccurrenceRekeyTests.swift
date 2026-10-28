@@ -72,7 +72,7 @@ struct RecurringOccurrenceRekeyTests {
         )
 
         #expect(outcome == .init(completionsCopied: 1, editsCopied: 1))
-        let record = store.completionRecord()
+        let record = store.completionRecordOrFail()
         #expect(record.ids.contains(ticked.id))
         #expect(record.dates[ticked.id] == tickedAt)
         #expect(!record.ids.contains(untouched.id))
@@ -94,13 +94,13 @@ struct RecurringOccurrenceRekeyTests {
         store.setCompleted(ids: [legacyID(occurrence)], at: Self.now)
 
         RecurringOccurrenceRekey.runIfNeeded(assignmentStore: store, dueDateEditStore: editStore, defaults: defaults, zone: Self.pacific)
-        let afterFirst = store.completionRecord()
+        let afterFirst = store.completionRecordOrFail()
         let second = RecurringOccurrenceRekey.runIfNeeded(
             assignmentStore: store, dueDateEditStore: editStore, defaults: defaults, zone: Self.pacific
         )
 
         #expect(second == .init())
-        #expect(store.completionRecord() == afterFirst)
+        #expect(store.completionRecordOrFail() == afterFirst)
         #expect(defaults.bool(forKey: RecurringOccurrenceRekey.doneKey))
     }
 
@@ -120,7 +120,7 @@ struct RecurringOccurrenceRekeyTests {
             assignmentStore: store, dueDateEditStore: editStore, defaults: scratchDefaults(), zone: Self.eastern
         )
         #expect(outcome == .init())
-        #expect(store.completionRecord().ids == [occurrence.id])
+        #expect(store.completionRecordOrFail().ids == [occurrence.id])
     }
 
     @Test("only occurrence ids are touched: one-off manual tasks, Canvas rows and ticks with no time are left alone")
@@ -132,12 +132,12 @@ struct RecurringOccurrenceRekeyTests {
         let bareNumber = "manual:\(Self.taskID.uuidString)"   // a UUID with no number on the end
         store.setCompleted(ids: [manual, canvas, bareNumber], at: Self.now)
 
-        let before = store.completionRecord()
+        let before = store.completionRecordOrFail()
         let outcome = RecurringOccurrenceRekey.runIfNeeded(
             assignmentStore: store, dueDateEditStore: nil, defaults: scratchDefaults(), zone: Self.pacific
         )
         #expect(outcome == .init())
-        #expect(store.completionRecord() == before)
+        #expect(store.completionRecordOrFail() == before)
 
         #expect(RecurringOccurrenceRekey.newID(forLegacyID: manual, zone: Self.pacific) == nil)
         #expect(RecurringOccurrenceRekey.newID(forLegacyID: canvas, zone: Self.pacific) == nil)

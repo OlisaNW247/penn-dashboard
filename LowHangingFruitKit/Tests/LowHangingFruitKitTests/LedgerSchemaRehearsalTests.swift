@@ -220,7 +220,7 @@ struct LedgerSchemaRehearsalTests {
         let store = try AssignmentStore(url: url)
 
         #expect(store.rowCount() == 3)
-        #expect(store.completionRecord().ids == ["canvas:0"])
+        #expect(store.completionRecordOrFail().ids == ["canvas:0"])
     }
 
     @Test("the widget reader opens the V1 fixture through the same door as the app")
