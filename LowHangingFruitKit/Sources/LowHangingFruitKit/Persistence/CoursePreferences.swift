@@ -380,7 +380,19 @@ public final class CoursePreferencesStore: ObservableObject {
     /// app's private domain does to the widget.
     public init(defaults: UserDefaults = .lhf) {
         self.defaults = defaults
-        self.byCourseKey = Self.decodeMap(defaults.data(forKey: Self.storageKey))
+        self.byCourseKey = Self.readKeepingUnreadable(from: defaults)
+    }
+
+    /// The stored map, with a raw copy of the blob kept (`UnreadableBlob`)
+    /// when any record in it could not be read, before the next `persist`
+    /// writes the survivors over it.
+    private static func readKeepingUnreadable(from defaults: UserDefaults) -> [String: CoursePreferences] {
+        let data = defaults.data(forKey: storageKey)
+        let report = decodeMapReport(data)
+        if report.droppedCount > 0, let data {
+            UnreadableBlob.keepRawCopy(of: data, forKey: storageKey, in: defaults)
+        }
+        return report.map
     }
 
     // MARK: Reading
@@ -647,7 +659,7 @@ public final class CoursePreferencesStore: ObservableObject {
     /// pushed straight back to the cloud, or two devices would echo each
     /// other's writes forever.
     public func reloadFromDefaults() {
-        let next = Self.decodeMap(defaults.data(forKey: Self.storageKey))
+        let next = Self.readKeepingUnreadable(from: defaults)
         guard next != byCourseKey else { return }
         willChange?()
         byCourseKey = next
@@ -744,13 +756,15 @@ public final class CoursePreferencesStore: ObservableObject {
     /// the record that cannot be read resets to defaults (the same as a
     /// course nobody ever touched) and every other record survives.
     /// `droppedCount` is how many records that was; a blob that is not a map
-    /// at all reads as empty with nothing counted, as before.
+    /// at all reads as empty and counts as one, because the whole blob was
+    /// unreadable (a missing blob counts as none).
     public nonisolated static func decodeMapReport(
         _ data: Data?
     ) -> (map: [String: CoursePreferences], droppedCount: Int) {
-        guard let data,
-              let decoded = try? JSONDecoder().decode(LossyDictionary<CoursePreferences>.self, from: data)
-        else { return ([:], 0) }
+        guard let data, !data.isEmpty else { return ([:], 0) }
+        guard let decoded = try? JSONDecoder().decode(LossyDictionary<CoursePreferences>.self, from: data) else {
+            return ([:], 1)
+        }
         return (decoded.entries, decoded.droppedCount)
     }
 

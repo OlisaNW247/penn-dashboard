@@ -8647,8 +8647,9 @@ final class AppState: ObservableObject {
     }
 
     private static func loadRecurringTasks(from defaults: UserDefaults) -> [RecurringTask] {
-        // Lossy: one unreadable task costs that task, not the list.
-        RecurringTask.decodeAll(defaults.data(forKey: recurringTasksKey)).tasks
+        // Lossy: one unreadable task costs that task, not the list, and the raw
+        // blob is kept before the next save (`RecurringTask.load`).
+        RecurringTask.load(from: defaults, key: recurringTasksKey)
     }
 
     private func persistManualAssignments() {

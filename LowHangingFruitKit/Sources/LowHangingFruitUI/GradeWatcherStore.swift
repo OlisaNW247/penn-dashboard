@@ -918,8 +918,9 @@ final class GradeWatcherStore: ObservableObject {
 
     private static func loadItemOverrides() -> [String: [String: GradeItemOverride]] {
         // Lossy: one unreadable override costs that override, not every
-        // correction in every course (`GradeItemOverride.decodeMap`).
-        GradeItemOverride.decodeMap(UserDefaults.lhf.data(forKey: itemOverridesKey)).map
+        // correction in every course, and the raw blob is kept before the next
+        // save (`GradeItemOverride.loadMap`).
+        GradeItemOverride.loadMap(from: .lhf, key: itemOverridesKey)
     }
 
     private func persistModeOverrides() {

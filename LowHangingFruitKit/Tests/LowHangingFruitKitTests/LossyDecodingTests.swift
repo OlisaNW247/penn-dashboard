@@ -349,3 +349,102 @@ struct CollectorModuleDropTests {
         #expect(!report.knowledge.documents.contains { $0.id == "module:1111:stored-module" })
     }
 }
+
+// MARK: - The raw blob is kept before the next save overwrites it
+
+/// The student-authored blobs (course preferences, recurring tasks, grade
+/// overrides) keep what could not be read: the survivors are what the next
+/// save writes, so without a copy the unreadable element is gone for good.
+@Suite("Unreadable student-authored blobs are kept before they are overwritten")
+struct UnreadableBlobTests {
+
+    private func scratchDefaults() -> UserDefaults {
+        let name = "unreadable-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    private let preferences = Data(#"""
+        {"CIS 1110": {"courseKey": "CIS 1110", "displayName": "Programming"},
+         "CIS 2400": {"courseKey": "CIS 2400", "isVisible": "from a newer build"}}
+        """#.utf8)
+
+    @Test("course preferences: the raw blob is kept when a record is unreadable, the survivors load, and the copy is made once")
+    @MainActor
+    func coursePreferences() {
+        let defaults = scratchDefaults()
+        defaults.set(preferences, forKey: CoursePreferencesStore.storageKey)
+
+        let store = CoursePreferencesStore(defaults: defaults)
+        #expect(Set(store.byCourseKey.keys) == ["CIS 1110"])
+        #expect(UnreadableBlob.rawCopy(forKey: CoursePreferencesStore.storageKey, in: defaults) == preferences)
+
+        // The next save overwrites the live blob with the survivors only...
+        store.setDisplayName("CIS 1110", to: "Programming II")
+        #expect(defaults.data(forKey: CoursePreferencesStore.storageKey) != preferences)
+        // ...and the copy is still the original, and is not replaced.
+        #expect(UnreadableBlob.rawCopy(forKey: CoursePreferencesStore.storageKey, in: defaults) == preferences)
+        defaults.set(Data(#"{"X": {"isVisible": 3}}"#.utf8), forKey: CoursePreferencesStore.storageKey)
+        _ = CoursePreferencesStore(defaults: defaults)
+        #expect(UnreadableBlob.rawCopy(forKey: CoursePreferencesStore.storageKey, in: defaults) == preferences)
+    }
+
+    @Test("course preferences: a blob that is not a map is kept too, and a clean blob leaves no copy")
+    @MainActor
+    func coursePreferencesWholeBlobAndClean() {
+        let garbage = Data("[1, 2, 3".utf8)
+        let broken = scratchDefaults()
+        broken.set(garbage, forKey: CoursePreferencesStore.storageKey)
+        #expect(CoursePreferencesStore(defaults: broken).byCourseKey.isEmpty)
+        #expect(UnreadableBlob.rawCopy(forKey: CoursePreferencesStore.storageKey, in: broken) == garbage)
+
+        let clean = scratchDefaults()
+        clean.set(Data(#"{"CIS 1110": {"courseKey": "CIS 1110", "displayName": "P"}}"#.utf8), forKey: CoursePreferencesStore.storageKey)
+        _ = CoursePreferencesStore(defaults: clean)
+        #expect(UnreadableBlob.rawCopy(forKey: CoursePreferencesStore.storageKey, in: clean) == nil)
+        _ = CoursePreferencesStore(defaults: scratchDefaults())   // nothing stored at all
+    }
+
+    @Test("recurring tasks: the raw list is kept when a task is unreadable")
+    func recurringTasks() throws {
+        let defaults = scratchDefaults()
+        let good = RecurringTask(
+            title: "Weekly reading", course: "CIS 1110", weekday: 2, hour: 9, minute: 0,
+            startDate: Date(timeIntervalSince1970: 1_800_000_000), endDate: nil, origin: .manual
+        )
+        var list = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode([good])) as? [[String: Any]])
+        list.append(["id": UUID().uuidString, "title": "From a newer build", "origin": "telepathy"])
+        let raw = try JSONSerialization.data(withJSONObject: list)
+        defaults.set(raw, forKey: "recurringTasks")
+
+        let tasks = RecurringTask.load(from: defaults, key: "recurringTasks")
+
+        #expect(tasks.map(\.title) == ["Weekly reading"])
+        #expect(UnreadableBlob.rawCopy(forKey: "recurringTasks", in: defaults) == raw)
+        // A clean list leaves nothing behind.
+        let clean = scratchDefaults()
+        clean.set(try JSONEncoder().encode([good]), forKey: "recurringTasks")
+        #expect(RecurringTask.load(from: clean, key: "recurringTasks").count == 1)
+        #expect(UnreadableBlob.rawCopy(forKey: "recurringTasks", in: clean) == nil)
+    }
+
+    @Test("grade overrides: the raw blob is kept when an override is unreadable")
+    func gradeOverrides() {
+        let defaults = scratchDefaults()
+        let raw = Data(#"{"1001": {"hw1": {"score": 9, "isExcluded": false}, "hw2": {"score": "ninety", "isExcluded": false}}}"#.utf8)
+        defaults.set(raw, forKey: "gradeWatcherItemOverrides")
+
+        let map = GradeItemOverride.loadMap(from: defaults, key: "gradeWatcherItemOverrides")
+
+        #expect(map["1001"]?["hw1"]?.score == 9)
+        #expect(map["1001"]?["hw2"] == nil)
+        #expect(UnreadableBlob.rawCopy(forKey: "gradeWatcherItemOverrides", in: defaults) == raw)
+        // Whole blob unreadable counts, too; nothing stored does not.
+        let garbage = scratchDefaults()
+        garbage.set(Data("not json".utf8), forKey: "k")
+        #expect(GradeItemOverride.loadMap(from: garbage, key: "k").isEmpty)
+        #expect(UnreadableBlob.rawCopy(forKey: "k", in: garbage) == Data("not json".utf8))
+        #expect(GradeItemOverride.loadMap(from: scratchDefaults(), key: "k").isEmpty)
+    }
+}

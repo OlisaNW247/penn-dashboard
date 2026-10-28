@@ -88,12 +88,26 @@ struct RecurringTask: Codable, Hashable, Identifiable {
     /// `AppState` fell back to `[]` and the next `persistRecurringTasks`
     /// wrote that empty list over every task. Now the readable ones survive
     /// and `droppedCount` says how many did not. A blob that is not a list at
-    /// all reads as empty with nothing counted.
+    /// all reads as empty and counts as one (the whole blob was unreadable); a
+    /// missing blob counts as none.
     static func decodeAll(_ data: Data?) -> (tasks: [RecurringTask], droppedCount: Int) {
-        guard let data,
-              let decoded = try? JSONDecoder().decode(LossyArray<RecurringTask>.self, from: data)
-        else { return ([], 0) }
+        guard let data, !data.isEmpty else { return ([], 0) }
+        guard let decoded = try? JSONDecoder().decode(LossyArray<RecurringTask>.self, from: data) else {
+            return ([], 1)
+        }
         return (decoded.elements, decoded.droppedCount)
+    }
+
+    /// `decodeAll` over what is stored under `key`, keeping a raw copy of the
+    /// blob (`UnreadableBlob`) when any task could not be read, because
+    /// `persistRecurringTasks` saves only the survivors over it.
+    static func load(from defaults: UserDefaults, key: String) -> [RecurringTask] {
+        let data = defaults.data(forKey: key)
+        let report = decodeAll(data)
+        if report.droppedCount > 0, let data {
+            UnreadableBlob.keepRawCopy(of: data, forKey: key, in: defaults)
+        }
+        return report.tasks
     }
 
     /// - Parameter calendar: injectable so a test can put the phone in any
